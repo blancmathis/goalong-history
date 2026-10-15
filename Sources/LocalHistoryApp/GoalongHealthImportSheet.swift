@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import LocalHistoryCore
 import LocalHistoryQueryCLI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -14,6 +15,7 @@ struct GoalongHealthImportSheet: View {
     @State private var preferred: [GoalongHealthGroup: String] = [:]
     @State private var result: GoalongHealthImportResult?
     @State private var payload: Data?
+    @State private var previewPrivacyRevision: String?
     @State private var days: [[String: Any]] = []
     @State private var previewDate = ""
     @State private var savedDates: [String] = []
@@ -183,7 +185,7 @@ struct GoalongHealthImportSheet: View {
         }
     }
 
-    private func invalidate() { payload = nil; result = nil; days = []; consent = false; message = nil; error = nil }
+    private func invalidate() { payload = nil; previewPrivacyRevision = nil; result = nil; days = []; consent = false; message = nil; error = nil }
     private func setPayload(_ data: Data) throws {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard object?["source"] as? String == "apple-health", let rows = object?["days"] as? [[String: Any]] else { throw CocoaError(.fileReadCorruptFile) }
@@ -203,14 +205,20 @@ struct GoalongHealthImportSheet: View {
         guard let file else { return }
         let options = GoalongHealthImportOptions(from: from, through: through, groups: selected, preferredSources: preferred)
         invalidate(); busy = true
+        let privacyRoot = AppPaths.applicationSupportDirectory
+        let before = GoalongPrivacyPolicy.load(in: privacyRoot)
         let task = Task.detached(priority: .userInitiated) { try GoalongHealthImport.read(file: file, options: options) }
         readTask = task
         Task { @MainActor in
             defer { busy = false; readTask = nil }
             do {
                 let value = try await task.value
+                let after = GoalongPrivacyPolicy.load(in: privacyRoot)
+                guard !before.blocked else { throw GoalongSiteExportError.invalid("Les exclusions sont illisibles. Vérifiez-les dans les réglages, puis préparez un nouvel aperçu.") }
+                guard after.revision == before.revision else { throw GoalongSiteExportError.invalid("Les exclusions ont changé pendant la préparation. Préparez un nouvel aperçu.") }
                 result = value; sourceChoices = value.sources; try setPayload(value.payload)
-            } catch { self.error = String(describing: error) }
+                previewPrivacyRevision = before.revision
+            } catch { self.error = goalongUserMessage(error) }
         }
     }
     private func saveLocally() {
@@ -219,18 +227,22 @@ struct GoalongHealthImportSheet: View {
             try GoalongHealthArchive.save(result, root: AppPaths.applicationSupportDirectory)
             savedDates = try GoalongHealthArchive.dates(root: AppPaths.applicationSupportDirectory)
             message = "\(result.dayCount) journée(s) Santé conservée(s) sur ce Mac. Aucun envoi effectué."
-        } catch { self.error = String(describing: error) }
+        } catch { self.error = goalongUserMessage(error) }
     }
     private func readSaved() {
         invalidate(); file = nil
-        do { try setPayload(GoalongHealthArchive.read(day: savedDate, root: AppPaths.applicationSupportDirectory)) }
-        catch { self.error = String(describing: error) }
+        let policy = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)
+        do {
+            guard !policy.blocked else { throw GoalongSiteExportError.invalid("Les exclusions sont illisibles. Vérifiez-les dans les réglages, puis préparez un nouvel aperçu.") }
+            try setPayload(GoalongHealthArchive.read(day: savedDate, root: AppPaths.applicationSupportDirectory))
+            previewPrivacyRevision = policy.revision
+        } catch { self.error = goalongUserMessage(error) }
     }
     private func trashSavedDay() {
         guard let window = host.window, !savedDate.isEmpty else { return }
         let date = savedDate
         do { _ = try GoalongHealthArchive.read(day: date, root: AppPaths.applicationSupportDirectory) }
-        catch { self.error = String(describing: error); return }
+        catch { self.error = goalongUserMessage(error); return }
         let confirmation = NSAlert()
         confirmation.messageText = "Retirer les données Santé du \(date) de ce Mac ?"
         confirmation.informativeText = "Le fichier compact de cette journée sera déplacé dans la corbeille. L’export Apple original, le temps d’écran et les données déjà envoyées au site seront conservés. Vous gérez les données du site séparément dans votre compte."
@@ -276,23 +288,25 @@ struct GoalongHealthImportSheet: View {
                     alert.beginSheetModal(for: window) { choice in
                         guard choice == .alertFirstButtonReturn else { return }
                         do { try GoalongSiteSubmission.protectTokenFile(file: url, reviewed: review); tokenFilePath = url.path }
-                        catch { self.error = String(describing: error) }
+                        catch { self.error = goalongUserMessage(error) }
                     }
                 } else { _ = try GoalongSiteSubmission.readToken(file: url); tokenFilePath = url.path }
-            } catch { self.error = String(describing: error) }
+            } catch { self.error = goalongUserMessage(error) }
         }
     }
     private func sendReviewedHealth() {
         guard let payload, consent else { return }
+        let privacyRevision = previewPrivacyRevision
+        let privacyRoot = AppPaths.applicationSupportDirectory
         let target = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let token = URL(fileURLWithPath: tokenFilePath)
         busy = true; error = nil; message = nil; consent = false
         Task { @MainActor in
             defer { busy = false }
             do {
-                _ = try await Task.detached { try GoalongSiteSubmission.send(payload: payload, origin: target, tokenFile: token) }.value
+                _ = try await Task.detached { try GoalongSiteSubmission.send(payload: payload, origin: target, tokenFile: token, privacyRoot: privacyRoot, expectedPrivacyRevision: privacyRevision) }.value
                 message = "Données reçues par Goalong. Vous pouvez maintenant les consulter et choisir leurs partages sur le site."
-            } catch { self.error = String(describing: error) }
+            } catch { self.error = goalongUserMessage(error) }
         }
     }
     static let metricNames = ["steps": "Pas", "walkingRunningMeters": "Distance à pied / course", "cyclingMeters": "Distance à vélo",
