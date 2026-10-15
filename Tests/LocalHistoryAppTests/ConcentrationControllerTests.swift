@@ -286,6 +286,25 @@ extension ConcentrationControllerTests {
         try c.startSession(intent: "Encore", mode: FocusMode(minutes: 5))
         XCTAssertNotNil(c.currentSession)
     }
+    @MainActor func testRetrySavesTheStopOfAFreeSessionEndedInMemory() throws {
+        let s = store(); try quiet(s)
+        let now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now })
+        try c.startSession(intent: "Libre", mode: FocusMode(minutes: nil))
+        let first = try XCTUnwrap(c.currentSession).id
+        let dir = s.directory.appendingPathComponent("sessions").path
+        chmod(dir, 0o500); defer { chmod(dir, 0o700) }
+        XCTAssertThrowsError(try c.stopSession())
+        XCTAssertThrowsError(try c.stopSession())
+        XCTAssertNil(c.currentSession)
+        chmod(dir, 0o700)
+        XCTAssertTrue(c.retryStorage())
+        try c.startSession(intent: "Suite", mode: FocusMode(minutes: nil))
+        let relaunched = try ConcentrationController(store: s, clock: { now })
+        XCTAssertNotNil(relaunched.currentSession)
+        let saved = try s.sessions(BlockingController.dayKey(now)).first { $0.id == first }
+        XCTAssertEqual(saved?.events.last?.kind, .stop)
+    }
     @MainActor func testStopWhileTheWriteLatchIsSetClearsTheSessionInMemory() throws {
         let s = store(); try quiet(s)
         let now = Date(timeIntervalSince1970: 1791201600)

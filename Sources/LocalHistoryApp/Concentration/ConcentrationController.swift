@@ -71,6 +71,8 @@ struct FocusPanel: Equatable {
     private var phaseBlockID: UUID?
     private var phaseBlockKey: String?
     private var storageFailed = false
+    /// A stop that could not be saved. `retryStorage` writes it before it clears the latch.
+    private var pendingStop: (session: FocusSession, end: Date, reason: FocusSession.Event.Reason)?
     private var lastStorageRetry = Date.distantPast
     private var promptState: FocusPromptState
     private var phaseIdentity: String?
@@ -152,11 +154,23 @@ struct FocusPanel: Equatable {
             sessionCache.removeAll()
             if day != currentDay { currentDay = day; promptState = FocusPromptState(day: day); measurementRefresh?() }
         } catch { return false }
+        if let pending = pendingStop {
+            // Save the stop first, so the disk never holds two open sessions. A failure re-sets the latch.
+            storageFailed = false
+            var value = pending.session
+            value.events.append(.init(kind: .stop, at: pending.end, reason: pending.reason))
+            value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
+            let shown = error
+            do { try persist(value) } catch { storageFailed = true; self.error = shown; return false }
+            pendingStop = nil
+            do { try blocking()?.creditEarnedTime(for: value) } catch { self.error = String(describing: error); return true }
+        }
         storageFailed = false; error = nil
         return true
     }
-    /// The disk keeps the open session. The next launch closes it with `.appClosed` (see init).
-    private func endInMemory() {
+    /// The disk keeps the open session until `retryStorage` saves the pending stop (or the next launch closes a timed one).
+    private func endInMemory(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) {
+        if pendingStop == nil { pendingStop = (session, end, reason) }
         if let id = phaseBlockID, !hasLockedPhaseBlock { blocking()?.stop(id); phaseBlockID = nil; phaseBlockKey = nil }
         currentSession = nil; phase = nil; phaseIdentity = nil; audio.stop()
     }
@@ -209,7 +223,7 @@ struct FocusPanel: Equatable {
         if storageFailed, currentSession != nil {
             // Nothing can be written: end the session in memory only. The next launch closes it on disk.
             if hasLockedPhaseBlock { throw FocusFailure.locked }
-            endInMemory(); publishStatus(); scheduleTimer(); throw FocusFailure.storageFailed
+            endInMemory(currentSession!, at: clock(), reason: .member); publishStatus(); scheduleTimer(); throw FocusFailure.storageFailed
         }
         try admit(); refresh()
         guard var value = currentSession else { throw FocusFailure.notFound }
@@ -458,7 +472,7 @@ struct FocusPanel: Equatable {
                 do { try finish(value, at: p.startedAt, reason: .completed) } catch {
                     // The stop cannot be saved: end the session in memory so it does not run on and re-raise the error.
                     if self.error == nil { self.error = String(describing: error) }
-                    endInMemory()
+                    endInMemory(value, at: p.startedAt, reason: .completed)
                 }
             } else {
                 let key = phaseKey(p)
