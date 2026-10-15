@@ -21,7 +21,7 @@
         let deviceID: String
     }
 
-    enum ShareBuildError: Error, CustomStringConvertible {
+    enum ShareBuildError: LocalizedError, CustomStringConvertible {
         case noSeals
         case brokenSeal(UInt64)
         case missingEvents(UInt64)
@@ -30,6 +30,8 @@
         case sourceIncomplete(String)
         case exclusionsUnreadable
         case exclusionsChanged
+
+        var errorDescription: String? { description }
 
         var description: String {
             switch self {
