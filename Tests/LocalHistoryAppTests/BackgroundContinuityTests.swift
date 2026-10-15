@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import ServiceManagement
     import XCTest
     @testable import LocalHistoryApp
 
@@ -19,6 +20,38 @@
             XCTAssertTrue(preferences.keepRunning)
             XCTAssertNil(defaults.object(forKey: BackgroundContinuityPreferences.keepRunningKey))
             XCTAssertFalse(preferences.manuallyPaused)
+        }
+
+        func testBlockingRemovesOnlyTheLoginItemItForcedAndOnlyAfterAnOptOut() {
+            typealias P = BackgroundContinuityPreferences
+            // A lock registers a missing item once, never one already there or pending approval.
+            XCTAssertEqual(P.blockingLoginAction(locked: true, registered: false, requested: false, forced: false, consentEnabled: false), .register)
+            XCTAssertEqual(P.blockingLoginAction(locked: true, registered: false, requested: true, forced: true, consentEnabled: false), .none)
+            XCTAssertEqual(P.blockingLoginAction(locked: true, registered: true, requested: false, forced: false, consentEnabled: false), .none)
+            // The lock ended: an item Blocage forced goes away when the member's choice is off.
+            XCTAssertEqual(P.blockingLoginAction(locked: false, registered: true, requested: true, forced: true, consentEnabled: false), .release)
+            XCTAssertEqual(P.blockingLoginAction(locked: false, registered: true, requested: false, forced: true, consentEnabled: true), .none)
+            XCTAssertEqual(P.blockingLoginAction(locked: false, registered: true, requested: false, forced: false, consentEnabled: false), .none)
+            XCTAssertEqual(P.blockingLoginAction(locked: false, registered: false, requested: false, forced: true, consentEnabled: false), .none)
+        }
+
+        func testOptOutDuringALockKeepsTheLoginItemUntilTheLockEnds() {
+            typealias P = BackgroundContinuityPreferences
+            XCTAssertTrue(P.keepsLoginItem(enabled: false, registered: true, lockActive: true))
+            XCTAssertFalse(P.keepsLoginItem(enabled: false, registered: true, lockActive: false))
+            XCTAssertFalse(P.keepsLoginItem(enabled: true, registered: true, lockActive: true))
+            XCTAssertFalse(P.keepsLoginItem(enabled: false, registered: false, lockActive: true))
+            let defaults = isolatedDefaults()
+            XCTAssertFalse(P(defaults: defaults).blockingForcedLogin)
+            P(defaults: defaults).blockingForcedLogin = true
+            XCTAssertTrue(P(defaults: defaults).blockingForcedLogin)
+        }
+
+        func testLoginStatusMapping() {
+            XCTAssertEqual(LaunchAtLoginManager.state(for: .enabled), .enabled)
+            XCTAssertEqual(LaunchAtLoginManager.state(for: .requiresApproval), .requiresApproval)
+            XCTAssertEqual(LaunchAtLoginManager.state(for: .notRegistered), .disabled)
+            XCTAssertEqual(LaunchAtLoginManager.state(for: .notFound), .unavailable)
         }
 
         func testBackgroundOptOutSurvivesRecreation() {

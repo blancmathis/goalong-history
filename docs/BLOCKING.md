@@ -249,7 +249,11 @@ App launches and activations also arrive through the existing `NSWorkspace` noti
   (`siteBlockingAvailable == false`) and every known browser is treated as unsupported.
 - **Persistence**: on launch, the controller restores sessions, usage and freeze before the first
   window appears. Launch at login is required while anything is locked: the controller registers
-  `SMAppService.mainApp` if needed and shows its state.
+  `SMAppService.mainApp` if needed and shows its state. While a locked block runs, turning launch
+  at login off (Settings, onboarding, Braise) records the choice but keeps the item. When nothing
+  needs it any more, Blocage removes an item it registered or kept itself if the member's choice
+  is off (`blockingForcedLoginItem`). It never removes an item the member turned on, and it never
+  re-registers, during the same lock, an item removed in System Settings.
 - **Quit**: while anything is locked, « Quitter Goalong » explains it cannot quit and offers to
   close the window. (A forced quit is covered by the Strict level.)
 

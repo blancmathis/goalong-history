@@ -4,6 +4,8 @@ import Foundation
 struct BackgroundContinuityPreferences {
     static let keepRunningKey = "goalong.keepRunningInBackground.v1"
     static let manualPauseKey = "goalong.recordingManuallyPaused.v1"
+    /// Set when Blocage registered the login item itself, or kept it against an opt-out during a lock.
+    static let blockingForcedLoginKey = "blockingForcedLoginItem"
     let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
@@ -16,6 +18,26 @@ struct BackgroundContinuityPreferences {
     var manuallyPaused: Bool {
         get { defaults.bool(forKey: Self.manualPauseKey) }
         nonmutating set { defaults.set(newValue, forKey: Self.manualPauseKey) }
+    }
+
+    var blockingForcedLogin: Bool {
+        get { defaults.bool(forKey: Self.blockingForcedLoginKey) }
+        nonmutating set { defaults.set(newValue, forKey: Self.blockingForcedLoginKey) }
+    }
+
+    enum BlockingLoginAction: Equatable { case none, register, release }
+
+    /// What Blocage does with the login item. While blocking needs it, it registers a missing item once.
+    /// Afterwards it removes only an item it forced, and only when the member's choice is off.
+    static func blockingLoginAction(locked: Bool, registered: Bool, requested: Bool,
+                                    forced: Bool, consentEnabled: Bool) -> BlockingLoginAction {
+        if locked { return registered || requested ? .none : .register }
+        return forced && registered && !consentEnabled ? .release : .none
+    }
+
+    /// A locked block needs Goalong at the next login: an opt-out waits for the end of the lock.
+    static func keepsLoginItem(enabled: Bool, registered: Bool, lockActive: Bool) -> Bool {
+        !enabled && registered && lockActive
     }
 
     static func suggestedLoginPreference(

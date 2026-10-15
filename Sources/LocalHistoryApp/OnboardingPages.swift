@@ -168,7 +168,9 @@
                     Toggle(isOn: $launchAtLoginPreference) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Ouvrir Goalong à la connexion").font(.system(size: 13, weight: .medium))
-                            Text("Conseillé et sélectionné par défaut. Seules les sources que vous avez activées démarrent.")
+                            Text(launchAtLogin.heldByBlocking
+                                 ? LaunchAtLoginManager.heldMessage
+                                 : "Conseillé et sélectionné par défaut. Seules les sources que vous avez activées démarrent.")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }

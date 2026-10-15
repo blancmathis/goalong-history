@@ -126,12 +126,26 @@ private final class BlockingFreezePanel: NSPanel {
     }
 
     func updateProtection(locked: Bool) -> BlockingProtectionState {
-        if locked, currentLoginStatus() != .enabled, currentLoginStatus() != .requiresApproval, !requestedLogin {
+        let preferences = BackgroundContinuityPreferences()
+        let before = currentLoginStatus()
+        let forced = preferences.blockingForcedLogin
+        switch BackgroundContinuityPreferences.blockingLoginAction(
+            locked: locked, registered: before == .enabled || before == .requiresApproval, requested: requestedLogin,
+            forced: forced, consentEnabled: forced && GoalongCapabilityConsentStore.shared.isEnabled(.launchAtLogin)) {
+        case .register:
             requestedLogin = true
-            do { try SMAppService.mainApp.register() }
+            do { try SMAppService.mainApp.register(); preferences.blockingForcedLogin = true }
             catch { loginError = "Démarrage à la connexion indisponible : \(error.localizedDescription)" }
             loginStatus = nil
-        } else if !locked { requestedLogin = false }
+        case .release:
+            // The lock is over: give the member back the choice they made (off).
+            try? SMAppService.mainApp.unregister()
+            preferences.blockingForcedLogin = false
+            loginStatus = nil
+        case .none:
+            if !locked && forced { preferences.blockingForcedLogin = false }
+        }
+        if !locked { requestedLogin = false }
         var result = BlockingProtectionState()
         let status = currentLoginStatus()
         result.launchAtLogin = status == .enabled
