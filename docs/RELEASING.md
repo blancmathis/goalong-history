@@ -1,10 +1,12 @@
 # Releasing the single Goalong app
 
-The public app is one universal Community Build (ad-hoc signed, not Apple-notarized). Every
+The public app is one universal Community Build (Apple Development-signed, not Apple-notarized). Every
 successful `main` push runs tests, builds arm64/x86_64 and publishes an authenticated update.
 
 Required GitHub secrets are `SPARKLE_PRIVATE_ED_KEY` and `SPARKLE_PUBLIC_ED_KEY` (the public
-key may alternatively be a repository variable for compatibility). No Apple credential is required.
+key may alternatively be a repository variable for compatibility), plus `MACOS_SIGNING_CERTIFICATE_P12`
+and `MACOS_SIGNING_CERTIFICATE_PASSWORD` for the pinned Apple Development identity (CI refuses ad-hoc
+public releases; see `STABLE_RELEASE_IDENTITY.md`). No Developer ID or notarization credential is required.
 The repository remains public; Actions need contents, id-token, attestations and artifact-metadata
 write permissions. Private keys must never be logged, committed, or passed on command lines.
 
@@ -29,6 +31,6 @@ their synthetic fixtures must use the runtime timezone, while DST-specific fixtu
 Never weaken the production timezone/privacy checks or skip failing tests to publish an update.
 
 Release notes must disclose initial bootstrap installation for old no-updater builds, user-approved
-installation, configurable hourly checks, and the ad-hoc macOS permission limitation. Preserve
+installation, configurable hourly checks, and that the build is Apple Development-signed but not notarized. Preserve
 bundle identity and application data. Never claim Apple notarization or guaranteed permission continuity.
 See `UPDATE-SECURITY.md` for authentication and remaining publisher trust.

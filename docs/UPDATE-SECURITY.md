@@ -49,9 +49,10 @@ The app trusts code signed by the release Ed25519 key and the release pipeline. 
 standing code-update capability, not a network sandbox. GitHub/Sigstore provenance and SHA-256
 inventories remain available; neither is a substitute for protecting the private signing key.
 
-Community artifacts are ad-hoc code signed, **not Apple-notarized**. Ed25519 authenticates the
-update but does not supply a stable Apple identity or guarantee macOS permission continuity.
-An update may require fresh Goalong permissions. Existing history and settings are preserved.
+Community artifacts are signed with the pinned Apple Development identity, **not Apple-notarized**
+(see `STABLE_RELEASE_IDENTITY.md`). Ed25519 authenticates the update; the stable signing identity
+keeps macOS permissions across updates. A migration from a legacy ad-hoc build may require fresh
+Goalong permissions. Existing history and settings are preserved.
 Never disable Gatekeeper globally or remove quarantine to hide an installation problem. For a
 blocked first launch, use **System Settings → Privacy & Security → Open Anyway** after verification.
 Do not use `codesign --deep` to sign; nested components are signed explicitly. Deep signature

@@ -2,12 +2,12 @@
 
 ## Commandes
 
-La page **Surveillance temps réel**, dans la navigation principale entre
-Historique et Réglages, regroupe l’activation, l’état de Jev et les pauses. La capacité `jevMonitoring` est désactivée par
+La page **Jev**, dans **Réglages** (la barre latérale n’a plus d’entrée « Surveillance temps réel »),
+regroupe l’activation, l’état de Jev et les pauses. La capacité `jevMonitoring` est désactivée par
 défaut et indépendante de Computer History, ChatGPT, de l’envoi au site et du
 choix de collecte locale de texte. Son activation demande une confirmation
 explicite de l’envoi à TypeSafe. L’utilisateur fournit sa propre clé API dans le
-champ protégé de **Connecter Jev** ; aucun secret n’est inclus dans le code ou envoyé au site Goalong.
+champ protégé de **Connecter l’API** (ou **Gérer la connexion** quand une clé existe) ; aucun secret n’est inclus dans le code ou envoyé au site Goalong.
 L’API TypeSafe peut être facturée selon son offre. Aucun appel n’est fait sans clé.
 
 Le menu **Surveillance temps réel** permet une pause de 5, 10, 15 ou 30 minutes,
