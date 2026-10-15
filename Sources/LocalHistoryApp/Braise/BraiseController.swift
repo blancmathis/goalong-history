@@ -86,19 +86,12 @@ import ServiceManagement
         loginApprovalRequired = status == .requiresApproval
     }
     func setLogin(_ enabled: Bool) throws {
-        do {
-            if !enabled, BackgroundContinuityPreferences.keepsLoginItem(
-                enabled: enabled, registered: loginEnabled || loginApprovalRequired,
-                lockActive: BlockingRuntime.shared.controller?.hasLocks == true) {
-                errorMessage = LaunchAtLoginManager.heldMessage
-                return
-            }
-            if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-            refreshLoginStatus()
-        } catch {
-            errorMessage = "Le démarrage de Goalong à la connexion n’a pas pu être modifié."
-            refreshLoginStatus(); throw GoalongFocusError.storageFailed
-        }
+        // Same path as Settings and onboarding: consent, preference and lock bookkeeping change together.
+        let manager = LaunchAtLoginManager()
+        let ok = manager.setUserPreference(enabled, surface: .settings)
+        errorMessage = manager.message
+        refreshLoginStatus()
+        if !ok { throw GoalongFocusError.storageFailed }
     }
     func saveRule(_ rule: ScheduleRule) throws {
         guard rule.isValid else { throw GoalongFocusError.invalidArgument }
