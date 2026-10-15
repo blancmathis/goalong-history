@@ -56,6 +56,7 @@ enum SupportSourceAllowlist {
         "BraisePage.swift",
         "BraiseRuntime.swift",
         "BraiseStore.swift",
+        "BrowserIdentity.swift",
         "BuildIdentityReader.swift",
         "CLIHelpPage.swift",
         "CapabilityConsentStore.swift",
