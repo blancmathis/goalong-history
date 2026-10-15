@@ -107,6 +107,22 @@ final class InstallationLocationManagerTests: XCTestCase {
         XCTAssertEqual(InstallationLocationManager.replacementDecision(source: volume, destination: installed), .installedIsNewer)
     }
 
+    func testAggregateDecisionChecksEveryExistingCopy() throws {
+        let root = try makeRoot()
+        let newerCopy = try makeBundle(in: root.appendingPathComponent("A", isDirectory: true), version: "10")
+        let olderCopy = try makeBundle(in: root.appendingPathComponent("B", isDirectory: true), version: "3")
+        let missing = root.appendingPathComponent("C/Goalong History.app", isDirectory: true)
+        let older = try makeBundle(in: root.appendingPathComponent("AppTranslocation/x/d", isDirectory: true), version: "9")
+        let result = InstallationLocationManager.aggregateDecision(source: older, candidates: [missing, newerCopy])
+        XCTAssertEqual(result.0, .installedIsNewer)
+        XCTAssertEqual(result.1, newerCopy)
+        XCTAssertEqual(InstallationLocationManager.aggregateDecision(source: older, candidates: [olderCopy, missing]).0, .replace)
+        let same = try makeBundle(in: root.appendingPathComponent("AppTranslocation/y/d", isDirectory: true), version: "3")
+        let sameResult = InstallationLocationManager.aggregateDecision(source: same, candidates: [missing, olderCopy])
+        XCTAssertEqual(sameResult.0, .alreadyInstalled)
+        XCTAssertEqual(sameResult.1, olderCopy)
+    }
+
     func testRevealFolderFallsBackToApplications() {
         let system = URL(fileURLWithPath: "/Applications", isDirectory: true)
         let user = URL(fileURLWithPath: "/Users/x/Applications", isDirectory: true)
