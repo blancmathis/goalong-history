@@ -176,6 +176,20 @@ enum ComputerHistoryEpisodeBuilder {
             linkedSourceSequences: Set<UInt64>,
             provenanceReferenceLimit: Int?
         ) -> EpisodeEventSummary {
+            // Provenance drives targeted deletion, so the time window only adds
+            // rows that belong to no interaction at all. Continuity boundaries
+            // (lock, pause, sleep, suppressed rows) and rows linked to another
+            // episode's interactions stay out; this episode's linked rows stay in.
+            let temporalIndices = temporalIndices.filter { index in
+                let event = events[index]
+                let sequence = event.integrity?.sequence
+                if linkedSourceIDs.contains(event.id) { return true }
+                if let sequence, linkedSourceSequences.contains(sequence) { return true }
+                if event.isObservationContinuityBoundary { return false }
+                if linkedIndicesByID[event.id] != nil { return false }
+                if let sequence, linkedIndicesBySequence[sequence] != nil { return false }
+                return true
+            }
             var linkedOutsideTemporalRange: [Int] = []
             for sourceID in linkedSourceIDs {
                 if let indices = linkedIndicesByID[sourceID] {

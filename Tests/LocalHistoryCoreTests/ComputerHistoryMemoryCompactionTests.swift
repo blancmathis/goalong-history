@@ -4,6 +4,116 @@ import XCTest
 @testable import LocalHistoryCore
 
 final class ComputerHistoryMemoryCompactionTests: XCTestCase {
+    func testEpisodeProvenanceExcludesBoundaryRowsRightAfterTheLastAction() throws {
+        let events = [
+            fixtureEvent(
+                id: "boundary-click",
+                sequence: 1,
+                offset: 0,
+                kind: .mouseClick,
+                windowTitle: "Boundary fixture",
+                host: "boundary.example"
+            ),
+            fixtureEvent(
+                id: "boundary-private",
+                sequence: 2,
+                offset: 0.3,
+                kind: .urlChanged,
+                windowTitle: nil,
+                host: nil,
+                suppression: .privateBrowserWindow
+            ),
+            fixtureEvent(
+                id: "boundary-lock",
+                sequence: 3,
+                offset: 0.5,
+                kind: .sessionLocked,
+                windowTitle: nil,
+                host: nil
+            ),
+        ]
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+        let episode = try XCTUnwrap(memory.episodes.first)
+        let exact = try XCTUnwrap(
+            ComputerHistoryEngine.exactSourceEventIDs(
+                forEpisodeID: episode.id,
+                events: events,
+                day: fixtureStart,
+                calendar: utcCalendar
+            )
+        )
+
+        XCTAssertEqual(exact, ["boundary-click"])
+        XCTAssertEqual(episode.eventCount, 1)
+    }
+
+    func testAdjacentEpisodesHaveDisjointProvenance() throws {
+        let events = [
+            fixtureEvent(
+                id: "first-episode-click",
+                sequence: 1,
+                offset: 0,
+                kind: .mouseClick,
+                app: fixtureApp("Safari"),
+                windowTitle: "Atlas invoice draft",
+                host: "invoices.example"
+            ),
+            // A short lock splits the episodes while the second click still falls
+            // inside the first episode's one-second temporal window.
+            fixtureEvent(
+                id: "between-lock",
+                sequence: 2,
+                offset: 0.2,
+                kind: .sessionLocked,
+                windowTitle: nil,
+                host: nil
+            ),
+            fixtureEvent(
+                id: "between-unlock",
+                sequence: 3,
+                offset: 0.4,
+                kind: .sessionUnlocked,
+                windowTitle: nil,
+                host: nil
+            ),
+            fixtureEvent(
+                id: "second-episode-click",
+                sequence: 4,
+                offset: 0.6,
+                kind: .mouseClick,
+                app: AppSnapshot(
+                    name: "Google Chrome",
+                    bundleIdentifier: "com.google.Chrome",
+                    processIdentifier: 43
+                ),
+                windowTitle: "Weather forecast Lyon",
+                host: "weather.example"
+            ),
+        ]
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+        XCTAssertEqual(memory.episodes.count, 2)
+        let exact = try memory.episodes.map { episode in
+            try XCTUnwrap(
+                ComputerHistoryEngine.exactSourceEventIDs(
+                    forEpisodeID: episode.id,
+                    events: events,
+                    day: fixtureStart,
+                    calendar: utcCalendar
+                )
+            )
+        }
+
+        XCTAssertEqual(exact, [["first-episode-click"], ["second-episode-click"]])
+    }
+
     func testExactEpisodeDeletionProvenanceCanBeRecoveredFromCompactedMemory() throws {
         let actionCount = 1_100
         let events = (0..<actionCount).map { index in
@@ -393,5 +503,11 @@ final class ComputerHistoryMemoryCompactionTests: XCTestCase {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
         XCTAssertLessThan(try encoder.encode(memory).count, 5 * 1_024 * 1_024)
+    }
+
+    private var utcCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
     }
 }
