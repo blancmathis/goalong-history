@@ -75,6 +75,9 @@
             self.onQuit = onQuit
 
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            // Control Centre keeps a stale "blocked" record for the default key Item-0 that the
+            // Menu Bar setting no longer reaches (2026-10-15): a fixed name gives the item a fresh key.
+            statusItem.autosaveName = "goalong-menu"
             super.init()
 
             configureStatusItem()
