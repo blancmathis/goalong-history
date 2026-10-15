@@ -57,11 +57,11 @@ final class AmbianceAudioTests: XCTestCase {
         output.interrupted = { calls += 1 }
         do { try output.start(volume: 0) } catch { throw XCTSkip("No audio output device: \(error)") }
         let engine = try XCTUnwrap(output.engineForTesting)
-        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: engine)
+        NotificationCenter.default.post(name: AmbianceAudioOutput.configurationChangeForTesting, object: engine)
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         XCTAssertEqual(calls, 1)
         output.stop()
-        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: engine)
+        NotificationCenter.default.post(name: AmbianceAudioOutput.configurationChangeForTesting, object: engine)
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         XCTAssertEqual(calls, 1)
     }

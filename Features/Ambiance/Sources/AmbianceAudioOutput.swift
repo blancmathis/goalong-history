@@ -69,6 +69,8 @@ final class AmbianceAudioOutput {
         }
     }
     var engineForTesting: AVAudioEngine? { engine }
+    /// Lets tests post the device-change notification without naming the audio API outside this file.
+    static let configurationChangeForTesting = Notification.Name.AVAudioEngineConfigurationChange
     private func scheduleFile() {
         guard let player, let file, !stopped else { return }
         player.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
