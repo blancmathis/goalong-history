@@ -2433,7 +2433,7 @@ public enum GoalongQueryCLI {
         )
     }
 
-    private static func encodedScreenTime(
+    static func encodedScreenTime(
         day: Date,
         macOnly: Bool,
         selectedDeviceIDs: [String],
@@ -2459,7 +2459,11 @@ public enum GoalongQueryCLI {
         )
         let scope: AppleScreenTimeScope
         if macOnly {
-            scope = .macOnly
+            // Match the dashboard: "this Mac" is the current Mac only, not every Mac in the account.
+            scope = AppleScreenTimeScope(
+                mode: .selectedDevices,
+                selectedDeviceIDs: [currentMac.id]
+            )
         } else if !selectedDeviceIDs.isEmpty {
             scope = AppleScreenTimeScope(
                 mode: .selectedDevices,
@@ -2484,7 +2488,7 @@ public enum GoalongQueryCLI {
                 day: localDayString(day),
                 generatedAt: Date(),
                 freshness: screenTimeFreshness(for: collection.storageState),
-                scope: scope.mode.rawValue,
+                scope: macOnly ? AppleScreenTimeScope.macOnly.mode.rawValue : scope.mode.rawValue,
                 sourceAssurance: summary?.provenance.sourceAssurance.rawValue,
                 status: ScreenTimeStatusEnvelope(
                     kind: collection.status.kind.rawValue,

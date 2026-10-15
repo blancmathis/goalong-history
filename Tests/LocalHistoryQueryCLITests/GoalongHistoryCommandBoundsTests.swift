@@ -1,5 +1,7 @@
 import XCTest
 import AgentActivity
+import AppleScreenTime
+import AppleSystemScreenTime
 import LocalHistoryCore
 @testable import LocalHistoryQueryCLI
 
@@ -144,5 +146,35 @@ final class GoalongHistoryCommandBoundsTests: XCTestCase {
         let score = GoalongQueryCLI.agentEntryPriority(
             entry, dayStart: start, dayEnd: start.addingTimeInterval(86_400), liveModifiedAt: nil)
         XCTAssertEqual(score, 0)
+    }
+}
+
+final class GoalongScreenTimeMacOnlyTests: XCTestCase {
+    func testMacOnlyKeepsOnlyTheCurrentMac() throws {
+        let start = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        let end = start.addingTimeInterval(86_400)
+        let current = AppleScreenTimeDevice(id: "current", name: "This Mac", kind: .mac)
+        let remote = AppleScreenTimeDevice(id: "remote", name: "Other Mac", kind: .mac)
+        let phone = AppleScreenTimeDevice(id: "phone", name: "iPhone", kind: .iPhone)
+        let devices = [current, remote, phone]
+        let segment = AppleScreenTimeSegment(start: start, end: end, totalScreenOnDuration: 600)
+        let stored = AppleScreenTimeStoredExport(verification: .unsigned, envelope: .init(
+            requestedStart: start, requestedEnd: end, requestedScope: .allDevices,
+            provenance: .init(api: AppleScreenTimeProvenance.screenTimeAgentAggregateAPI,
+                              collectorBundleIdentifier: "test", collectorVersion: "test", collectorPlatform: "macOS",
+                              authorization: .unknown, fetchPolicy: .cached, euCustomerRequirementAcknowledged: false),
+            reports: devices.map { AppleScreenTimeDeviceReport(device: $0, lastUpdatedAt: end, segments: [segment]) }))
+        let collection = AppleSystemScreenTimeCollection(storedExport: stored, availableDevices: devices,
+            status: .init(kind: .ready, title: "t", message: "m"), deviceSourceLabels: [:],
+            latestAppleUpdate: end, knowledgeIntervalCount: 0, biomeIntervalCount: 0)
+        let data = try GoalongQueryCLI.encodedScreenTime(day: start, macOnly: true, selectedDeviceIDs: [],
+            collectionProvider: { _ in collection }, currentMacProvider: { current })
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["scope"] as? String, "macOnly")
+        let reports = try XCTUnwrap(json["reports"] as? [[String: Any]])
+        let ids = reports.compactMap { ($0["device"] as? [String: Any])?["id"] as? String }
+        XCTAssertEqual(ids.count, 1)
+        XCTAssertFalse(ids.contains("remote"))
+        XCTAssertFalse(ids.contains("phone"))
     }
 }

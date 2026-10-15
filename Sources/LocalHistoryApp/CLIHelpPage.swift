@@ -173,7 +173,7 @@
                     evidenceRow(
                         symbol: "curlybraces",
                         title: "JSON clair",
-                        detail: "Données et erreurs sont en JSON structuré. L’aide est en texte ; `help --json` décrit le contrat machine."
+                        detail: "Données et erreurs sont en JSON structuré. L’aide est en texte ; « goalong help --json » décrit le contrat machine."
                     )
                     evidenceRow(
                         symbol: "lock.shield",
