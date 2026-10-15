@@ -166,12 +166,13 @@
 
             // A seal is not allowed to become durable before every raw event already
             // handed to it has crossed the event-journal durability barrier.
-            minuteSealer.setDurabilityBarrier { [weak store, weak integrityJournal] in
-                guard let store, let integrityJournal else {
-                    throw EventRecorderPersistenceError.recorderClosed
-                }
-                try store.flushAndWait()
-                try integrityJournal.checkpointPersistedEvents()
+            // It runs on the writer queue, so no event can be appended and committed between
+            // the sync and the checkpoint: the checkpoint never gets ahead of synced rows.
+            // Writer-queue code only hands roots to the sealer asynchronously, so this
+            // sealer-to-writer wait cannot deadlock.
+            minuteSealer.setDurabilityBarrier { [weak self] in
+                guard let self else { throw EventRecorderPersistenceError.recorderClosed }
+                try self.flushAndWait()
             }
 
             do {
