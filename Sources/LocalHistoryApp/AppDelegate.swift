@@ -978,6 +978,7 @@
             clearingCallPresence = false
             configureCallPresence()
             ActivityAnalysisRuntime.shared.refreshAfterHistoryClear()
+            ChatGPTRecapRuntime.shared.refreshAfterHistoryClear()
             Task { @MainActor in GoalongActivitySummaryBackfill.shared.start() }
             completion(completedResult)
         }

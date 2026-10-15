@@ -334,7 +334,7 @@
             if let development = try GoalongDeveloperRecap.build(day: day, selection: selection, agents: safeAgents, privacy: privacy, onProjects: { developerProjects = $0 }) { sections.append(development) }
             let assembled = sections.joined(separator: "\n\n")
             guard let rendered = ActivitySemanticTextSanitizer.redact(assembled), rendered.count <= maximumRenderedDataCharacters else {
-                throw CodexAppServerError.protocolLimitExceeded("selected context exceeded its bound")
+                throw CodexAppServerError.protocolLimitExceeded("les données choisies dépassent la taille permise.")
             }
             let counts = ChatGPTRecapSourceCounts(localEvents: details ? activity.coverage.sourceEventCount : 0,
                 activeMinutes: apps.reduce(0) { $0 + $1.activeSeconds } / 60,
@@ -474,7 +474,7 @@
                 """
             guard prompt.count <= maximumPromptCharacters else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "the complete recap prompt exceeded \(maximumPromptCharacters) characters"
+                    "la consigne complète du bilan dépasse \(maximumPromptCharacters) caractères."
                 )
             }
             return prompt
@@ -650,7 +650,7 @@
                 )
             } catch {
                 throw CodexAppServerError.generationFailed(
-                    "The stored Activity Analysis could not be read safely."
+                    "L’analyse d’activité enregistrée n’a pas pu être lue de façon sûre."
                 )
             }
             return try decoder.decode(
@@ -711,7 +711,7 @@
             )
             guard manifest.count <= maximumSourceManifestCharacters else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "the exact recap source manifest exceeded its reserved budget"
+                    "la liste des sources du bilan dépasse la taille réservée."
                 )
             }
             let sections = [
@@ -744,7 +744,7 @@
                 redacted.count <= maximumRenderedDataCharacters
             else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "the assembled recap context exceeded \(maximumRenderedDataCharacters) characters"
+                    "les données du bilan dépassent \(maximumRenderedDataCharacters) caractères."
                 )
             }
             return redacted

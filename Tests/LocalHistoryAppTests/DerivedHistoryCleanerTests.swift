@@ -331,6 +331,43 @@
             for URL in [note, calls, developer] { XCTAssertFalse(FileManager.default.fileExists(atPath: URL.path)) }
         }
 
+        func testHistoryClearsEraseTheChatGPTRecapsOfTheClearedDays() throws {
+            let container = FileManager.default.temporaryDirectory
+                .appendingPathComponent("goalong-derived-recaps-\(UUID().uuidString)", isDirectory: true)
+            let root = container.appendingPathComponent("LocalHistory", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: container) }
+            let recaps = root.appendingPathComponent("chatgpt/recaps", isDirectory: true)
+            let today = Calendar.current.startOfDay(for: Date())
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+            func files(_ day: Date) -> [URL] {
+                [".chatgpt-recap.json", ".chatgpt-recap.md"].map {
+                    recaps.appendingPathComponent(dayKey(day) + $0)
+                }
+            }
+            let foreign = recaps.appendingPathComponent("notes.txt")
+            let cleaner = DerivedHistoryCleaner(rootDirectory: root, codexMemoryDirectory: container.appendingPathComponent("codex"))
+            func seed() throws {
+                try FileManager.default.createDirectory(at: recaps, withIntermediateDirectories: true)
+                for URL in files(today) + files(yesterday) + [foreign] { try writeFixture(to: URL) }
+            }
+            func exists(_ URLs: [URL]) -> [Bool] { URLs.map { FileManager.default.fileExists(atPath: $0.path) } }
+
+            try seed()
+            _ = try cleaner.prepareDeletion(since: today).execute()
+            XCTAssertEqual(exists(files(today)), [false, false])
+            XCTAssertEqual(exists(files(yesterday)), [true, true])
+
+            try seed()
+            _ = try cleaner.prepareDeletion(days: [yesterday]).execute()
+            XCTAssertEqual(exists(files(today)), [true, true])
+            XCTAssertEqual(exists(files(yesterday)), [false, false])
+
+            try seed()
+            _ = try cleaner.prepareDeletion(since: nil).execute()
+            XCTAssertEqual(exists(files(today) + files(yesterday)), [false, false, false, false])
+            XCTAssertTrue(FileManager.default.fileExists(atPath: foreign.path))
+        }
+
         func testFullClearRemovesOrphanSummaryTemporariesAndKeepsForeignFiles() throws {
             let container = FileManager.default.temporaryDirectory
                 .appendingPathComponent("goalong-derived-temp-\(UUID().uuidString)", isDirectory: true)

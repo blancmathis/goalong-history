@@ -38,7 +38,8 @@ produce explicit bounded states.
 Exports contain only selected disclosure. Manual exports require an explicit action; the separately enabled website schedule uses its saved reviewed selection.
 Optional ChatGPT analysis is a separate consent: Goalong prepares a bounded context, starts the
 fixed local Codex `app-server`, and keeps only the bounded derived recap/proof. Disabling analysis
-stops the runtime but does not delete an already generated recap; deletion remains explicit.
+stops the runtime but does not delete an already generated recap. Clearing history (all of it,
+a period or chosen days) also erases the saved recaps of the cleared days.
 
 The retired commitment uploader remains excluded. The Sparkle update check contacts only the signed release feed and sends no history data. The optional website
 sender is an explicit disclosure path, described below and in [`NETWORK.md`](NETWORK.md).

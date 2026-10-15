@@ -75,7 +75,7 @@ import LocalHistoryCore
                         .font(.system(size: 13, weight: .medium))
                     if retentionEnabled { Text(retentionSummary).font(.system(size: 13)).foregroundStyle(.secondary) }
                     Button("Choisir la conservation par type de données…") { showingRetention = true }.buttonStyle(LHSecondaryButtonStyle())
-                    Text("Les fichiers d’activité sont lisibles par votre compte macOS : les permissions de fichiers ne sont pas un chiffrement. La conservation ne couvre pas tout : données Apple, conversations IA d’origine, historique des analyses ChatGPT, exports, sauvegardes et copies distantes ont leurs propres réglages.")
+                    Text("Les fichiers d’activité sont lisibles par votre compte macOS : les permissions de fichiers ne sont pas un chiffrement. La conservation ne couvre pas tout : données Apple, conversations IA d’origine, exports, sauvegardes et copies distantes ont leurs propres réglages. Les bilans ChatGPT s’effacent avec l’historique détaillé des jours concernés.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }.fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             }

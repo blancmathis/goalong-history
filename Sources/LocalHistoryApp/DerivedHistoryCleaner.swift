@@ -568,8 +568,12 @@
                 "memories",
                 isDirectory: true
             )
+            // ChatGPT recaps quote the day's activity: a history clear must erase them too.
+            let chatGPTRecapsDirectory = rootDirectory
+                .appendingPathComponent("chatgpt", isDirectory: true)
+                .appendingPathComponent("recaps", isDirectory: true)
             let trustedAncestor = OwnedFileDeletionPlan.trustedAncestor(
-                for: [analysisDirectory, memoryDirectory]
+                for: [analysisDirectory, memoryDirectory, chatGPTRecapsDirectory]
                     + computerHistoryStore.memoryDeletionDirectories
             )
             let analysisPlan = try deletionPlan(
@@ -608,7 +612,10 @@
 
             let developerPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("developer"),
                 trustedAncestor: trustedAncestor, suffixes: [".jsonl"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
-            let analysisPlans = [analysisPlan, developerPlan].compactMap { $0 }
+            let chatGPTRecapPlan = try deletionPlan(in: chatGPTRecapsDirectory,
+                trustedAncestor: trustedAncestor, suffixes: [".chatgpt-recap.json", ".chatgpt-recap.md"],
+                cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
+            let analysisPlans = [analysisPlan, developerPlan, chatGPTRecapPlan].compactMap { $0 }
             // The day note is user-written content for a whole day, not activity of a
             // period: only a full history clear removes it. Calls and developer counts
             // have no per-record rewrite, so a partial clear erases their whole day file.

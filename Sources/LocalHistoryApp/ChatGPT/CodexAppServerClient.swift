@@ -45,7 +45,7 @@
                 return
                     "Goalong n’utilise pas les identifiants \(Self.boundedDetail(mode)) actifs, car ils peuvent être facturés comme un usage de l’API. Connectez-vous plutôt avec ChatGPT."
             case .signedOut:
-                return "Vous n’êtes pas connecté à ChatGPT. Connectez-vous pour générer le rapport."
+                return "Vous n’êtes pas connecté à ChatGPT. Connectez-vous, puis réessayez."
             case .homeBusy:
                 return "Une autre analyse utilise déjà la connexion Codex de Goalong. Réessayez dans un instant."
             case .generationFailed(let message):
@@ -155,12 +155,12 @@
             limits: CodexAppServerLimits = .production
         ) throws -> Data {
             guard JSONSerialization.isValidJSONObject(object) else {
-                throw CodexAppServerError.malformedResponse("client attempted to send invalid JSON")
+                throw CodexAppServerError.malformedResponse("Goalong a tenté d’envoyer un JSON invalide.")
             }
             var data = try JSONSerialization.data(withJSONObject: object, options: [])
             guard data.count <= limits.maximumProtocolLineBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "an outgoing JSON line exceeded \(limits.maximumProtocolLineBytes) bytes"
+                    "une ligne JSON envoyée dépasse \(limits.maximumProtocolLineBytes) octets."
                 )
             }
             data.append(0x0A)
@@ -243,7 +243,7 @@
             guard message.keys.contains("id") else { return nil }
             guard let id = strictIntegerID(from: message["id"]) else {
                 throw CodexAppServerError.malformedResponse(
-                    "a JSON-RPC response id was not a strict integer"
+                    "l’identifiant d’une réponse JSON-RPC n’est pas un entier."
                 )
             }
             return id
@@ -252,12 +252,12 @@
         static func notificationMethod(in message: [String: Any]) throws -> String {
             guard try responseID(in: message) == nil else {
                 throw CodexAppServerError.malformedResponse(
-                    "an unmatched JSON-RPC response was received"
+                    "une réponse JSON-RPC ne correspond à aucune demande."
                 )
             }
             guard let method = message["method"] as? String, !method.isEmpty else {
                 throw CodexAppServerError.malformedResponse(
-                    "a JSON-RPC notification method was missing"
+                    "la méthode d’une notification JSON-RPC est absente."
                 )
             }
             return method
@@ -302,7 +302,7 @@
             guard !data.isEmpty else { return }
             guard data.count <= limits.maximumBufferedStdoutBytes - outputBuffer.count else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "stdout buffered more than \(limits.maximumBufferedStdoutBytes) bytes"
+                    "la sortie de Codex dépasse \(limits.maximumBufferedStdoutBytes) octets en attente."
                 )
             }
             outputBuffer.append(data)
@@ -336,7 +336,7 @@
             {
                 guard outputBuffer.distance(from: lineStart, to: newline) <= limits.maximumProtocolLineBytes else {
                     throw CodexAppServerError.protocolLimitExceeded(
-                        "a JSON line exceeded \(limits.maximumProtocolLineBytes) bytes"
+                        "une ligne JSON dépasse \(limits.maximumProtocolLineBytes) octets."
                     )
                 }
                 lineStart = outputBuffer.index(after: newline)
@@ -346,7 +346,7 @@
                     <= limits.maximumProtocolLineBytes
             else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "a JSON line exceeded \(limits.maximumProtocolLineBytes) bytes without a newline"
+                    "une ligne JSON dépasse \(limits.maximumProtocolLineBytes) octets sans fin de ligne."
                 )
             }
         }
@@ -354,14 +354,14 @@
         private mutating func decode(_ line: Data) throws -> [String: Any] {
             guard messageCount < limits.maximumMessages else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "more than \(limits.maximumMessages) JSON messages were received"
+                    "plus de \(limits.maximumMessages) messages JSON ont été reçus."
                 )
             }
             messageCount += 1
             do {
                 let value = try JSONSerialization.jsonObject(with: line, options: [])
                 guard let dictionary = value as? [String: Any] else {
-                    throw CodexAppServerError.malformedResponse("a JSON line was not an object")
+                    throw CodexAppServerError.malformedResponse("une ligne JSON n’est pas un objet.")
                 }
                 return dictionary
             } catch let error as CodexAppServerError {
@@ -372,7 +372,7 @@
                     maximumBytes: limits.maximumErrorBytes
                 )
                 throw CodexAppServerError.malformedResponse(
-                    "\(error.localizedDescription): \(preview)"
+                    "une ligne JSON est illisible : \(preview)"
                 )
             }
         }
@@ -382,7 +382,7 @@
                 byteCount <= limits.maximumBlankLineBytes - blankLineBytes
             else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "blank JSONL records exceeded their configured work budget"
+                    "trop de lignes vides ont été reçues."
                 )
             }
             blankLineCount += 1
@@ -410,12 +410,12 @@
             let encoded = try JSONSerialization.data(withJSONObject: message, options: [])
             guard entries.count < limits.maximumDeferredMessages else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "more than \(limits.maximumDeferredMessages) unmatched messages were deferred"
+                    "plus de \(limits.maximumDeferredMessages) messages en attente sans demande correspondante."
                 )
             }
             guard encoded.count <= limits.maximumDeferredBytes - byteCount else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "deferred messages exceeded \(limits.maximumDeferredBytes) bytes"
+                    "les messages en attente dépassent \(limits.maximumDeferredBytes) octets."
                 )
             }
             entries.append(Entry(message: message, byteCount: encoded.count))
@@ -451,7 +451,7 @@
             let deltaBytes = delta.utf8.count
             guard deltaBytes <= limits.maximumRecapCandidateBytes - streamedBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "streamed recap output exceeded \(limits.maximumRecapCandidateBytes) bytes"
+                    "le bilan reçu en flux dépasse \(limits.maximumRecapCandidateBytes) octets."
                 )
             }
             streamed.append(delta)
@@ -461,7 +461,7 @@
         mutating func setFinalText(_ text: String) throws {
             guard text.utf8.count <= limits.maximumRecapCandidateBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "final recap output exceeded \(limits.maximumRecapCandidateBytes) bytes"
+                    "le bilan final dépasse \(limits.maximumRecapCandidateBytes) octets."
                 )
             }
             finalText = text
@@ -491,7 +491,7 @@
             }
             guard redactedMarkdown.utf8.count <= limits.maximumRecapMarkdownBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "recap Markdown exceeded \(limits.maximumRecapMarkdownBytes) bytes"
+                    "le texte du bilan dépasse \(limits.maximumRecapMarkdownBytes) octets."
                 )
             }
             return redactedMarkdown
@@ -504,7 +504,7 @@
             }
             guard raw.utf8.count <= limits.maximumRecapMarkdownBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "daily assessment output exceeded \(limits.maximumRecapMarkdownBytes) bytes"
+                    "le bilan quotidien dépasse \(limits.maximumRecapMarkdownBytes) octets."
                 )
             }
             return try ChatGPTDailyAssessment.decode(raw)
@@ -535,12 +535,12 @@
         ) throws {
             guard (0...100).contains(productivityScore), (0...100).contains(confidenceScore) else {
                 throw CodexAppServerError.malformedResponse(
-                    "daily assessment scores must be between 0 and 100"
+                    "les notes du bilan doivent être comprises entre 0 et 100."
                 )
             }
             guard summaryLines.count == Self.requiredSummaryLineCount else {
                 throw CodexAppServerError.malformedResponse(
-                    "daily assessment must contain exactly five summary lines"
+                    "le bilan doit contenir exactement cinq lignes."
                 )
             }
             let sanitized = summaryLines.map { raw -> String in
@@ -552,7 +552,7 @@
             }
             guard sanitized.allSatisfy({ !$0.isEmpty }) else {
                 throw CodexAppServerError.malformedResponse(
-                    "daily assessment summary lines must not be empty"
+                    "une ligne du bilan est vide."
                 )
             }
             self.productivityScore = productivityScore
@@ -565,7 +565,7 @@
 
         static func decode(_ raw: String) throws -> ChatGPTDailyAssessment {
             guard let data = raw.data(using: .utf8) else {
-                throw CodexAppServerError.malformedResponse("daily assessment was not UTF-8")
+                throw CodexAppServerError.malformedResponse("le bilan n’est pas un texte UTF-8 valide.")
             }
             do {
                 let decoded = try JSONDecoder().decode(Unvalidated.self, from: data)
@@ -579,7 +579,7 @@
                 throw error
             } catch {
                 throw CodexAppServerError.malformedResponse(
-                    "daily assessment did not match the required JSON schema"
+                    "le bilan ne respecte pas le format attendu."
                 )
             }
         }
@@ -855,7 +855,7 @@
                     .standardizedFileURL.resolvingSymlinksInPath()
                 guard expectedHome == actualHome else {
                     throw CodexAppServerError.launchFailed(
-                        "Codex ignored Goalong's isolated CODEX_HOME directory."
+                        "Codex n’a pas utilisé le dossier isolé de Goalong."
                     )
                 }
                 try send(
@@ -884,7 +884,7 @@
             guard let rawAccount = result["account"] else { return nil }
             guard !(rawAccount is NSNull), let account = rawAccount as? [String: Any] else { return nil }
             guard let type = account["type"] as? String else {
-                throw CodexAppServerError.malformedResponse("account.type is missing")
+                throw CodexAppServerError.malformedResponse("le type de compte est absent.")
             }
             return CodexAccount(
                 type: type,
@@ -908,7 +908,7 @@
                 let rawURL = result["authUrl"] as? String,
                 let authorizationURL = URL(string: rawURL)
             else {
-                throw CodexAppServerError.malformedResponse("the ChatGPT login URL is missing")
+                throw CodexAppServerError.malformedResponse("l’adresse de connexion à ChatGPT est absente.")
             }
             return CodexLoginStart(loginID: loginID, authorizationURL: authorizationURL)
         }
@@ -925,7 +925,7 @@
             }
 
             guard let params = message["params"] as? [String: Any] else {
-                throw CodexAppServerError.malformedResponse("login completion parameters are missing")
+                throw CodexAppServerError.malformedResponse("la fin de la connexion ne contient pas les informations attendues.")
             }
             guard params["success"] as? Bool == true else {
                 throw CodexAppServerError.loginFailed(params["error"] as? String ?? "")
@@ -1008,8 +1008,11 @@
             guard try FileManager.default.contentsOfDirectory(atPath: workingDirectory.path).isEmpty else {
                 throw CodexAppServerError.generationFailed("Le dossier de travail isolé de l’analyse doit être vide.")
             }
-            guard let account = try readAccount(refreshToken: true), account.isManagedChatGPT else {
-                throw CodexAppServerError.accountNotChatGPT("non-ChatGPT")
+            guard let account = try readAccount(refreshToken: true) else {
+                throw CodexAppServerError.signedOut
+            }
+            guard account.isManagedChatGPT else {
+                throw CodexAppServerError.accountNotChatGPT(account.type)
             }
             try requireDailyAssessmentModel()
             let started = try request(
@@ -1033,7 +1036,7 @@
             guard let thread = started["thread"] as? [String: Any],
                 let threadID = thread["id"] as? String, !threadID.isEmpty
             else {
-                throw CodexAppServerError.malformedResponse("thread.id is missing")
+                throw CodexAppServerError.malformedResponse("l’identifiant du fil d’analyse est absent.")
             }
             guard thread["ephemeral"] as? Bool == true else {
                 _ = try? request(method: "thread/delete", params: ["threadId": threadID],
@@ -1103,14 +1106,14 @@
                         item["phase"] == nil || item["phase"] as? String == "final_answer"
                     {
                         guard content.utf8.count <= maximumResponseBytes else {
-                            throw CodexAppServerError.protocolLimitExceeded("La réponse de l’analyse dépasse 32 Kio.")
+                            throw CodexAppServerError.protocolLimitExceeded("La réponse de l’analyse dépasse \(maximumResponseBytes / 1024) Kio.")
                         }
                         finalText = content
                     }
                 case "item/agentMessage/delta":
                     streamedBytes += (params["delta"] as? String)?.utf8.count ?? 0
                     guard streamedBytes <= maximumResponseBytes * 2 else {
-                        throw CodexAppServerError.protocolLimitExceeded("Le flux de l’analyse dépasse 64 Kio.")
+                        throw CodexAppServerError.protocolLimitExceeded("Le flux de l’analyse dépasse \(maximumResponseBytes * 2 / 1024) Kio.")
                     }
                 case "error":
                     throw CodexAppServerError.generationFailed("ChatGPT n’a pas pu terminer l’analyse. Vérifiez la connexion et l’usage du compte, puis réessayez.")
@@ -1213,7 +1216,7 @@
                 let threadID = thread["id"] as? String,
                 !threadID.isEmpty
             else {
-                throw CodexAppServerError.malformedResponse("thread.id is missing")
+                throw CodexAppServerError.malformedResponse("l’identifiant du fil d’analyse est absent.")
             }
             guard thread["ephemeral"] as? Bool == true else {
                 _ = try? request(
@@ -1324,7 +1327,7 @@
                     }
                 case "turn/completed":
                     guard let turn = params["turn"] as? [String: Any] else {
-                        throw CodexAppServerError.malformedResponse("turn completion is missing")
+                        throw CodexAppServerError.malformedResponse("la fin du tour d’analyse est absente.")
                     }
                     let status = turn["status"] as? String ?? "unknown"
                     if status == "completed" {
@@ -1337,7 +1340,7 @@
                     }
                     let error = turn["error"] as? [String: Any]
                     let message = CodexAppServerLimits.boundedUTF8(
-                        error?["message"] as? String ?? failureMessage ?? status,
+                        error?["message"] as? String ?? failureMessage ?? "le tour s’est terminé avec l’état « \(status) ».",
                         maximumBytes: limits.maximumErrorBytes
                     )
                     throw CodexAppServerError.generationFailed(message)
@@ -1364,7 +1367,7 @@
                     operation: "vérification de la disponibilité de GPT-5.6 Luna"
                 )
                 guard let models = result["data"] as? [[String: Any]] else {
-                    throw CodexAppServerError.malformedResponse("model/list data is missing")
+                    throw CodexAppServerError.malformedResponse("la liste des modèles est absente.")
                 }
                 if let model = models.first(where: {
                     ($0["model"] as? String) == CodexDailyAssessmentContract.model
@@ -1426,7 +1429,7 @@
                 if let responseID = try CodexAppServerMessageRouter.responseID(in: message) {
                     guard responseID == id else {
                         throw CodexAppServerError.malformedResponse(
-                            "an unmatched JSON-RPC response was received"
+                            "une réponse JSON-RPC ne correspond à aucune demande."
                         )
                     }
                     return try responseResult(message, method: method)
@@ -1550,14 +1553,14 @@
         ) throws -> [String: Any] {
             if let error = message["error"] as? [String: Any] {
                 let detail = CodexAppServerLimits.boundedUTF8(
-                    error["message"] as? String ?? "Unknown JSON-RPC error",
+                    error["message"] as? String ?? "erreur inconnue.",
                     maximumBytes: limits.maximumErrorBytes
                 )
                 throw CodexAppServerError.server(detail)
             }
             guard let result = message["result"] as? [String: Any] else {
                 if message["result"] is NSNull { return [:] }
-                throw CodexAppServerError.malformedResponse("result for \(method) is missing")
+                throw CodexAppServerError.malformedResponse("le résultat de \(method) est absent.")
             }
             return result
         }

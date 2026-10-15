@@ -57,7 +57,7 @@ final class SelectedSiteAnalysisTests: XCTestCase {
         let executable: URL
         let transcript: URL
 
-        init(root: URL, account: String = "chatgpt", profile: String = "goalong-site-analysis",
+        init(root: URL, account: String? = "chatgpt", profile: String = "goalong-site-analysis",
              rootOverride: String? = nil, ephemeral: Bool = true,
              startItems: [[String: Any]] = [], dynamicWorkspace: Bool = false,
              events: [[String: Any]]) throws {
@@ -74,7 +74,7 @@ final class SelectedSiteAnalysisTests: XCTestCase {
             var lines = ["#!/bin/sh", "set -eu",
                 "take() { IFS= read -r line || exit 0; printf '%s\\n' \"$line\" >> \(quote(transcript.path)); }",
                 "take", try emit(["id": 1, "result": ["codexHome": home.path]]), "take", "take",
-                try emit(["id": 2, "result": ["account": ["type": account, "planType": "plus"]]]),
+                try emit(["id": 2, "result": ["account": account.map { ["type": $0, "planType": "plus"] as Any } ?? NSNull()]]),
                 "take", try emit(["id": 3, "result": ["data": [["id": "luna", "model": "gpt-5.6-luna",
                     "displayName": "GPT-5.6 Luna", "description": "fixture", "hidden": false,
                     "isDefault": false, "defaultReasoningEffort": "medium",
@@ -180,6 +180,40 @@ final class SelectedSiteAnalysisTests: XCTestCase {
             guard case CodexAppServerError.accountNotChatGPT = $0 else { return XCTFail("Expected account rejection: \($0)") }
         }
         XCTAssertEqual(try fixture.requests().compactMap { $0["method"] as? String }, ["initialize", "initialized", "account/read"])
+    }
+
+    func testSignedOutAccountIsReportedAsSignedOutNotAsApiBilling() throws {
+        let fixture = try Fixture(root: directory(), account: nil, events: [])
+        let session = try fixture.session()
+        defer { session.close() }
+        XCTAssertThrowsError(try session.generateSiteAnalysis(request: GoalongSiteAnalysisRequest.parse(selectedData()), workingDirectory: fixture.workspace)) {
+            guard case CodexAppServerError.signedOut = $0 else { return XCTFail("Expected signed-out: \($0)") }
+            XCTAssertFalse($0.localizedDescription.contains("API"))
+        }
+        XCTAssertEqual(try fixture.requests().compactMap { $0["method"] as? String }, ["initialize", "initialized", "account/read"])
+    }
+
+    func testApiKeyAccountKeepsItsTypeInTheRejection() throws {
+        let fixture = try Fixture(root: directory(), account: "apiKey", events: [])
+        let session = try fixture.session()
+        defer { session.close() }
+        XCTAssertThrowsError(try session.generateSiteAnalysis(request: GoalongSiteAnalysisRequest.parse(selectedData()), workingDirectory: fixture.workspace)) {
+            guard case CodexAppServerError.accountNotChatGPT(let type) = $0 else { return XCTFail("Expected account rejection: \($0)") }
+            XCTAssertEqual(type, "apiKey")
+        }
+    }
+
+    func testOversizedAnswerQuotesTheRealLimitOfTheAnalysis() throws {
+        let day = Calendar.current.startOfDay(for: Date())
+        let events = [0.0, 30.0].map { HistoryEvent(sessionID: "fixture", timestamp: day.addingTimeInterval(36000 + $0), kind: .applicationActivated, app: .init(name: "Safari", bundleIdentifier: nil, processIdentifier: 0), window: .init(title: "SELECTED", role: nil, subrole: nil)) }
+        let selected = try GoalongContextualRhythm.build(events: events, day: day, project: "Test", intent: "Review", device: "Synthetic Mac")
+        let oversized: [String: Any] = ["interpretation": String(repeating: "a", count: 257 * 1024)]
+        let fixture = try Fixture(root: directory(), events: finalEvents(output: oversized))
+        let session = try fixture.session(); defer { session.close() }
+        XCTAssertThrowsError(try session.generateRhythmAnalysis(request: selected, workingDirectory: fixture.workspace)) {
+            guard case CodexAppServerError.protocolLimitExceeded(let detail) = $0 else { return XCTFail("Expected limit: \($0)") }
+            XCTAssertTrue(detail.contains("256 Kio"), detail)
+        }
     }
 
     func testOrdinaryRecapSessionCannotAnalyzeSiteSelection() throws {

@@ -38,7 +38,8 @@
                 fileRevealer: { _ in },
                 delayedAutomaticScheduler: { _ in },
                 automaticRetryScheduler: { _, _ in },
-                analysisConsentProvider: { true }
+                analysisConsentProvider: { true },
+                dayOverviewReader: { _ in throw CodexAppServerError.generationFailed("journée de test") }
             )
         }
 
@@ -100,6 +101,26 @@
                 let text = error.localizedDescription
                 for phrase in ["could not", "did not", "analyzing", "generating the", "requires", "returned"] {
                     XCTAssertFalse(text.contains(phrase), "\(phrase) in \(text)")
+                }
+            }
+        }
+
+        func testGoalongWrittenErrorDetailsAreFrench() throws {
+            var messages: [String] = []
+            func capture(_ body: () throws -> Void) {
+                do { try body(); XCTFail("expected an error") } catch { messages.append(error.localizedDescription) }
+            }
+            capture { _ = try ChatGPTDailyAssessment(productivityScore: 50, confidenceScore: 50, summaryLines: ["a", "b", "c", "d"]) }
+            capture { _ = try ChatGPTDailyAssessment(productivityScore: 101, confidenceScore: 50, summaryLines: ["a", "b", "c", "d", "e"]) }
+            capture { _ = try ChatGPTDailyAssessment(productivityScore: 50, confidenceScore: 50, summaryLines: ["a", "b", "c", "d", " "]) }
+            capture { _ = try ChatGPTDailyAssessment.decode("{}") }
+            capture { _ = try CodexAppServerMessageRouter.notificationMethod(in: ["id": 2]) }
+            var decoder = CodexAppServerMessageDecoder(limits: .production)
+            capture { try decoder.append(Data("[1]\n".utf8)); _ = try decoder.popMessage() }
+            XCTAssertEqual(messages.count, 6)
+            for text in messages {
+                for token in ["is missing", "must", "did not", "was not", "Unknown", "exceeded", "is not"] {
+                    XCTAssertFalse(text.contains(token), "\(token) in \(text)")
                 }
             }
         }
@@ -228,6 +249,58 @@
             try waitUntil { !runtime.isConnecting }
             XCTAssertEqual(runtime.connectionState, .signedOut)
             XCTAssertNil(runtime.alert)
+        }
+
+        func testDayOverviewDoesNotWaitBehindARecapRun() throws {
+            let container = try makeContainer()
+            defer { try? FileManager.default.removeItem(at: container) }
+            let runtime = makeRuntime(container: container)
+            runtime.configure(deviceID: "overview-test-device")
+            let release = DispatchSemaphore(value: 0)
+            defer { release.signal() }
+            runtime.blockQueueForTesting(reads: false, until: release)
+            let today = Calendar.current.startOfDay(for: Date())
+            runtime.selectDay(today.addingTimeInterval(-86_400))
+            XCTAssertTrue(runtime.isLoadingDayOverview)
+            try waitUntil { !runtime.isLoadingDayOverview }
+            XCTAssertTrue(runtime.dayOverview != nil || runtime.dayOverviewError != nil)
+        }
+
+        func testOnlyTheLastChosenDayIsRead() throws {
+            let container = try makeContainer()
+            defer { try? FileManager.default.removeItem(at: container) }
+            let runtime = makeRuntime(container: container)
+            runtime.configure(deviceID: "overview-test-device")
+            let release = DispatchSemaphore(value: 0)
+            runtime.blockQueueForTesting(reads: true, until: release)
+            let today = Calendar.current.startOfDay(for: Date())
+            for offset in 1...3 { runtime.selectDay(today.addingTimeInterval(Double(-offset) * 86_400)) }
+            release.signal()
+            try waitUntil { !runtime.isLoadingDayOverview }
+            XCTAssertEqual(runtime.dayOverviewBuildCountForTesting, 1)
+            XCTAssertEqual(runtime.selectedDay, Calendar.current.startOfDay(for: today.addingTimeInterval(-3 * 86_400)))
+        }
+
+        func testFailedDisconnectKeepsAutomaticRecapsAndFreesTheCodexHome() throws {
+            let container = try makeContainer()
+            defer { try? FileManager.default.removeItem(at: container) }
+            let key = "chatgptRecap.automaticEnabled"
+            let saved = UserDefaults.standard.object(forKey: key)
+            defer { UserDefaults.standard.set(saved, forKey: key) }
+            let runtime = makeRuntime(
+                container: container, executable: container.appendingPathComponent("codex"),
+                sessionFactory: { _ in throw CodexAppServerError.homeBusy })
+            runtime.automaticRecapsEnabled = true
+            runtime.setConnectionStateForTesting(.connected(email: nil, plan: nil))
+
+            runtime.disconnectChatGPT()
+            XCTAssertTrue(runtime.isBusyWithCodex, "the work agent must not start during the logout")
+            try waitUntil { runtime.alert != nil }
+            XCTAssertEqual(runtime.alert?.title, "ChatGPT n’a pas pu être déconnecté")
+            XCTAssertTrue(runtime.automaticRecapsEnabled, "a failed logout keeps the automatic setting")
+            XCTAssertFalse(runtime.isCheckingAccount)
+            XCTAssertTrue(runtime.isAccountConnected)
+            runtime.stop()
         }
 
         private func waitUntil(timeout: TimeInterval = 15, _ condition: () -> Bool) throws {
