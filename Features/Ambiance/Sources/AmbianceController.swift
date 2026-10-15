@@ -52,11 +52,17 @@ import OndeCore
                 }
             }
             prepared.volume = volume; runtime = prepared
+            prepared.onInterrupted = { [weak self] in self?.outputInterrupted() }
             try prepared.startOutput()
             settings.lastSource = canonical.id; state = .playing(canonical)
         } catch {
             stop(); state = .error("Lecture impossible : \(error.localizedDescription)")
         }
+    }
+    /// The audio device changed under a playing source: release everything and say so.
+    func outputInterrupted() {
+        guard case .playing = state else { return }
+        stop(); state = .error("Sortie audio modifiée : relancez la lecture.")
     }
     public func stop() { runtime?.stop(); runtime = nil; state = .idle }
     public func shutdown() {

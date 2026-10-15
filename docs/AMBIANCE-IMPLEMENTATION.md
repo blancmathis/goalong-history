@@ -178,8 +178,10 @@ La première passe AppKit Confluence s’est arrêtée à 119 s. Les logs natifs
 `iounit configuration changed > stopping the engine` : changement de périphérique
 CoreAudio, sans appel Stop du runner. Cette passe n’est pas une mesure de 300 s.
 La seconde passe a tenu 300 s ; ses valeurs sont dans le tableau. Un changement
-de sortie peut interrompre le graphe ;
-il faut alors Stop puis Play. Aucun redémarrage automatique ou observateur ajouté.
+de sortie peut interrompre le graphe. Un seul observateur de
+`AVAudioEngineConfigurationChange` existe, créé au démarrage de la lecture et retiré par Stop :
+le contrôleur s’arrête alors et affiche « Sortie audio modifiée : relancez la lecture. »
+Aucun redémarrage automatique : il faut Play de nouveau.
 
 Une variante isolée remplaçant les lectures Foundation par un buffer réutilisé
 64 Kio, avec la même vérification SHA-256, a passé un essai court mais échoué après

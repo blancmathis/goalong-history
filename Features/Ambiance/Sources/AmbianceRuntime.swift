@@ -19,6 +19,8 @@ public struct AmbianceRenderMeasure {
     private var bank: OrchestraBank.Loaded?
     private var output: AmbianceAudioOutput?
     public private(set) var copiedSampleBytes = 0
+    /// Set before startOutput; called when the audio device changed and playback stopped.
+    var onInterrupted: (() -> Void)?
     public init(source: AmbianceSource, orchestraDirectory: URL) throws {
         guard let profile = source.profile else { throw AmbianceError.unavailable }
         let configuration = try profile.configuration.validated()
@@ -48,6 +50,7 @@ public struct AmbianceRenderMeasure {
             output = AmbianceAudioOutput(core: core)
         }
         guard let output else { throw AmbianceError.unavailable }
+        output.interrupted = onInterrupted
         do { try output.start(volume: volume) }
         catch { stop(); throw error }
     }
@@ -61,6 +64,7 @@ public struct AmbianceRenderMeasure {
         return result
     }
     public func stop() {
+        onInterrupted = nil
         output?.stop(); output = nil
         if let core { onde_dsp_destroy(core) }
         core = nil; bank = nil; copiedSampleBytes = 0
