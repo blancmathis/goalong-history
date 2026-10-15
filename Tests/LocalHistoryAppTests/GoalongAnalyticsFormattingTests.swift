@@ -17,5 +17,12 @@ final class GoalongAnalyticsFormattingTests: XCTestCase {
             XCTAssertEqual(GoalongAnalyticsFormatting.duration(value), "—")
         }
     }
+    func testMacSourceRowFollowsConsentAndPermissions() {
+        XCTAssertEqual(GoalongSourceRow.macState(consentEnabled: false, runtime: .recording), .off)
+        XCTAssertEqual(GoalongSourceRow.macState(consentEnabled: false, runtime: .permissionsMissing), .off)
+        XCTAssertEqual(GoalongSourceRow.macState(consentEnabled: true, runtime: .permissionsMissing), .needsPermission)
+        XCTAssertEqual(GoalongSourceRow.macState(consentEnabled: true, runtime: .inputTapUnavailable), .needsPermission)
+        XCTAssertEqual(GoalongSourceRow.macState(consentEnabled: true, runtime: .recording), .ready)
+    }
 }
 #endif

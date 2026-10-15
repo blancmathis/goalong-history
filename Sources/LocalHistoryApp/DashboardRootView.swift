@@ -23,7 +23,7 @@
                             .frame(width: 1)
                         page
                             // Changing destination is a short crossfade, never a slide.
-                            .id(model.selectedSection)
+                            .id("\(model.selectedSection)|\(model.knownDeviceID ?? "")")
                             .transition(.opacity)
                             .animation(reduceMotion ? nil : LHTheme.ease(0.16), value: model.selectedSection)
                             .safeAreaInset(edge: .top, spacing: 0) {

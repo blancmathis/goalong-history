@@ -481,7 +481,7 @@
                         Text("Identifiant de l’appareil")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
-                        Text(model.deviceID)
+                        Text(model.knownDeviceID ?? "Indisponible (Trousseau inaccessible)")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)

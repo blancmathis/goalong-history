@@ -42,6 +42,14 @@
         let trustTier: String
         let algorithm: String
 
+        /// Placeholder ID of a degraded identity with no persisted ID. Never a real device.
+        static let unavailableDeviceID = "unavailable"
+
+        /// The device ID, or nil when the identity is degraded and no earlier ID is known.
+        var knownDeviceID: String? {
+            deviceID.isEmpty || deviceID == Self.unavailableDeviceID ? nil : deviceID
+        }
+
         var protectionTitle: String {
             switch trustTier {
             case "secure_enclave": return "Protégée par la Secure Enclave"
@@ -72,7 +80,7 @@
         init(status: OSStatus, deviceID: String?) {
             self.status = status
             info = DeviceIdentityInfo(
-                deviceID: deviceID ?? "unavailable", publicKeyBase64: "", trustTier: "unavailable",
+                deviceID: deviceID ?? DeviceIdentityInfo.unavailableDeviceID, publicKeyBase64: "", trustTier: "unavailable",
                 algorithm: "P-256/ECDSA-X9.62-SHA256")
         }
         func sign(_ message: Data) throws -> Data { throw DeviceIdentityError.identityUnavailable(status) }

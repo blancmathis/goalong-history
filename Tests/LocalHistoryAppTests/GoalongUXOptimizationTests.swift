@@ -133,7 +133,7 @@ final class GoalongUXOptimizationTests: XCTestCase {
         let success = try isolatedModel(deleteTargeted: { _, done in done(.success(3)) })
         success.deleteTargetedDetails(request, successMessage: "Supprimé.")
         try await waitForAlert(success)
-        XCTAssertEqual(success.alert?.message, "Supprimé. 3 élément(s) local(aux) supprimé(s).")
+        XCTAssertEqual(success.alert?.message, "Supprimé. 3 éléments locaux supprimés.")
         XCTAssertFalse(success.alert?.message.contains("Removed") ?? true)
 
         let failure = try isolatedModel(deleteTargeted: { _, done in done(.failure(TargetedHistoryDeletionError.selectionExceedsLimit(10, 5))) })

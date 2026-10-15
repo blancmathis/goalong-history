@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Outbound-only owner-Mac deploy coordinator. No GitHub runner or feed writes."""
 import argparse
+import atexit
 import concurrent.futures
 import fcntl
 import hashlib
@@ -11,6 +12,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -157,8 +159,8 @@ def main():
         env["TMPDIR"] = str(temporary) + "/"
         # No P12 import or keychain search-list/default mutation is used anywhere.
         command("signing-preflight", ["bash", "-c", 'source scripts/source_codesign_identity.sh; localhistory_verify_source_codesign_identity "$LOCALHISTORY_CODESIGN_IDENTITY"'], cwd=checkout, env=env)
-        fixture = run / "test-home"
-        fixture.mkdir()
+        fixture = Path(tempfile.mkdtemp(prefix="goalong-", dir="/tmp"))  # tests require HOME under /tmp/goalong-
+        atexit.register(shutil.rmtree, fixture, True)
         test_env = {**env, "HOME": str(fixture), "CFFIXED_USER_HOME": str(fixture)}
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(command, "tests", ["xcrun", "swift", "test", "-j", "4", "--scratch-path", str(cache / "tests")], checkout, test_env),

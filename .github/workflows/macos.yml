@@ -80,6 +80,9 @@ jobs:
             fi
           fi
 
+      - name: Isolated-HOME recording and navigation tests
+        run: ./scripts/test_isolated_home.sh --skip-build
+
       - name: Exercise full-row disclosure interactions
         timeout-minutes: 2
         run: |

@@ -182,6 +182,15 @@ struct GoalongActivityTextureSection: View {
 
 /// One source of the page, as « Couverture et sources » lists it: what it is, its state, one action.
 struct GoalongSourceRow: Identifiable {
+    /// State of the Mac's own source: off without consent, blocked while macOS access is missing.
+    static func macState(consentEnabled: Bool, runtime: RuntimeStateKind) -> State {
+        guard consentEnabled else { return .off }
+        switch runtime {
+        case .permissionsMissing, .inputTapUnavailable: return .needsPermission
+        default: return .ready
+        }
+    }
+
     enum State {
         case ready, partial, off, needsPermission, unavailable, noData, failed
         var word: String {

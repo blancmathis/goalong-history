@@ -5,6 +5,7 @@ ARCHS ?= $(shell uname -m)
 
 test:
 	xcrun swift test
+	./scripts/test_isolated_home.sh
 
 build:
 	xcrun swift build -c release --product LocalHistory

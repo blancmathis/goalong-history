@@ -81,7 +81,7 @@
             }
             .background(LHTheme.pageBackground)
             .onAppear {
-                recapRuntime.configure(deviceID: model.deviceID)
+                recapRuntime.configure(deviceID: model.knownDeviceID ?? "")
                 recapRuntime.selectDay(model.selectedDay)
                 if consents.isEnabled(.chatGPTAnalysis) {
                     recapRuntime.activate()

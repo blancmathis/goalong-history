@@ -290,8 +290,13 @@ struct GoalongAnalyticsPage: View {
         let settings = { model.openRecordingSettings() }
         let isDay = selection.period == 1
         let value = isDay ? developer.value.flatMap { Calendar.current.isDate($0.day, inSameDayAs: selection.day) ? $0 : nil } : nil
-        var rows = [GoalongSourceRow(id: "mac", title: "Activité de ce Mac", state: .ready,
-                                     detail: "Applications, sites et saisie : la source du temps actif.")]
+        let macState = GoalongSourceRow.macState(consentEnabled: consents.isEnabled(.localComputerHistory),
+                                                 runtime: model.runtime.state)
+        var rows = [GoalongSourceRow(id: "mac", title: "Activité de ce Mac", state: macState,
+                                     detail: "Applications, sites et saisie : la source du temps actif.",
+                                     actionTitle: macState == .off ? "Activer…" : macState == .needsPermission ? "Autorisations…" : nil,
+                                     action: macState == .off ? settings
+                                        : { model.selectSection(.settings); model.settingsPane = .permissions })]
         rows += systemRows(settings: settings)
         if !ai {
             rows.append(.init(id: "agents", title: "Conversations d’agents", state: .off,
