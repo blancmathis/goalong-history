@@ -171,8 +171,8 @@ import OndeCore
         catch { setStatus(id, .failed("Suppression impossible : \(error.localizedDescription)")) }
     }
     /// Most own files kept in the list, and most directory entries looked at in one import.
-    public static let ownFilesLimit = 500
-    static let visitedEntriesLimit = 50_000
+    public nonisolated static let ownFilesLimit = 500
+    nonisolated static let visitedEntriesLimit = 50_000
     /// Audio files in `urls` (folders walked recursively), not already in `existing`, without copying anything.
     /// Pure file-system work: runs off the main actor and stops when cancelled.
     nonisolated static func collectAudioFiles(_ urls: [URL], existing: [String], limit: Int = ownFilesLimit) -> (paths: [String], truncated: Bool) {
