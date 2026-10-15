@@ -134,6 +134,31 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertFalse(try String(contentsOf: store.indexFile, encoding: .utf8).contains(prompt))
     }
 
+    func testClaudeConversationTitleIsFirstUserRequestNotToolNameOrSessionID() throws {
+        let claudeRoot = try makeTemporaryDirectory("claude-title-source")
+        let project = claudeRoot.appendingPathComponent("projects/-tmp-demo", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let sessionID = "20000000-0000-4000-8000-000000000321"
+        let lines = [
+            #"{"sessionId":"\#(sessionID)","timestamp":"2026-08-28T20:00:00.000Z","type":"user","message":{"role":"user","content":"Ajouter un test pour le parseur"}}"#,
+            #"{"sessionId":"\#(sessionID)","timestamp":"2026-08-28T20:00:05.000Z","type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}"#,
+            #"{"sessionId":"\#(sessionID)","timestamp":"2026-08-28T20:00:09.000Z","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Fait."}]}}"#,
+        ]
+        try Data((lines.joined(separator: "\n") + "\n").utf8)
+            .write(to: project.appendingPathComponent("\(sessionID).jsonl"))
+
+        let store = try AgentActivityStore(rootDirectory: try makeTemporaryDirectory("claude-title-store"))
+        let folder = AgentWatchedFolder(displayName: "Claude Code", path: claudeRoot.path, provider: .claudeCode)
+        let result = AgentActivityScanner(store: store).scan(
+            configuration: AgentActivityConfiguration(watchedFolders: [folder]),
+            forceFullDiscovery: true
+        )
+        let capture = try XCTUnwrap(result.captures.first)
+        XCTAssertEqual(capture.summary.title, "Ajouter un test pour le parseur")
+        XCTAssertNotEqual(capture.summary.title, "Bash")
+        XCTAssertNotEqual(capture.summary.title, sessionID)
+    }
+
     func testOptInRealCodexCatalogReadsCurrentOriginalTitle() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let catalogPath = environment["GOALONG_REAL_CODEX_CATALOG"],

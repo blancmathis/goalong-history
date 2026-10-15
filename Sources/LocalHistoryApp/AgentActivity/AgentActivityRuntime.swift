@@ -18,7 +18,7 @@
         var errorDescription: String? {
             switch self {
             case .unauthorizedSource(let entryID):
-                return "The indexed source \(entryID) is not authorized by an active monitored folder."
+                return "La source indexée \(entryID) n’est autorisée par aucun dossier surveillé actif."
             }
         }
     }
@@ -35,6 +35,15 @@
         @Published private(set) var indexIsValid: Bool
         @Published var selectedDay: Date
         @Published var alert: AgentActivityAlert?
+        /// Read failures already shown in an alert. Main thread only. A source that stays
+        /// unreadable is retried by the scanner; it must not raise the same modal on each retry.
+        private var reportedScanFailures: Set<String> = []
+
+        /// Failures from this scan that were not already reported by the previous scan.
+        /// Reported failures are kept until a folder change, so backoff-skipped scans do not reset them.
+        static func newScanFailures(previous: Set<String>, current: [String]) -> [String] {
+            current.filter { !previous.contains($0) }
+        }
 
         let rootDirectory: URL
 
@@ -226,7 +235,7 @@
             panel.allowsMultipleSelection = true
             panel.canCreateDirectories = false
             panel.message = "Choisissez des dossiers contenant des conversations, sessions ou journaux d’agents."
-            panel.prompt = "Watch folders"
+            panel.prompt = "Surveiller"
             guard panel.runModal() == .OK else { return }
             addFolders(panel.urls)
         }
@@ -534,6 +543,8 @@
                     alert = AgentActivityAlert(title: "Sources mises à jour", message: successMessage)
                 }
                 rescheduleTimer()
+                // A folder change is an explicit action: show read errors again.
+                reportedScanFailures.removeAll()
                 // Newly enabled folders have no discovery cursor and will be fully discovered.
                 // Existing folders reuse their bounded index instead of being recursively rescanned.
                 scanNow(forceFullDiscovery: false)
@@ -641,12 +652,18 @@
                 }
                 if let bytes { self.storageBytes = bytes }
                 if let validIndex { self.indexIsValid = validIndex }
-                if let first = failures.first {
+                let newFailures = Self.newScanFailures(
+                    previous: self.reportedScanFailures,
+                    current: failures
+                )
+                // Union: a scan skipped by backoff reports nothing, which must not forget the failure.
+                self.reportedScanFailures.formUnion(failures)
+                if let first = newFailures.first {
                     self.alert = AgentActivityAlert(
                         title: "Certains fichiers d’agents n’ont pas pu être lus",
-                        message: failures.count == 1
+                        message: newFailures.count == 1
                             ? first
-                            : "\(first)\n\nEt \(failures.count - 1) autre(s) erreur(s) de lecture."
+                            : "\(first)\n\nEt \(newFailures.count - 1) autre(s) erreur(s) de lecture."
                     )
                 }
             }

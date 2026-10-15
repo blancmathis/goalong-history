@@ -5,11 +5,24 @@ public struct AgentIntegrationStatus: Equatable, Sendable {
     public var kind: AgentIntegrationKind
     public var isInstalled: Bool
     public var configurationPath: String
+    /// Set when Goalong hooks are present but point to another executable (a dev build, or an
+    /// app that was moved). `isInstalled` is false in that case: it only means "for this copy".
+    public var otherExecutablePath: String?
+    /// False when `otherExecutablePath` no longer exists or is not executable (broken hooks).
+    public var otherExecutableExists: Bool
 
-    public init(kind: AgentIntegrationKind, isInstalled: Bool, configurationPath: String) {
+    public init(
+        kind: AgentIntegrationKind,
+        isInstalled: Bool,
+        configurationPath: String,
+        otherExecutablePath: String? = nil,
+        otherExecutableExists: Bool = false
+    ) {
         self.kind = kind
         self.isInstalled = isInstalled
         self.configurationPath = configurationPath
+        self.otherExecutablePath = otherExecutablePath
+        self.otherExecutableExists = otherExecutableExists
     }
 }
 
@@ -25,22 +38,22 @@ public enum AgentIntegrationInstallerError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .invalidConfiguration(let url):
-            return "The existing configuration at \(url.path) is not a JSON object. It was not changed."
+            return "La configuration existante dans \(url.path) n’est pas un objet JSON. Elle n’a pas été modifiée."
         case .configurationUnavailable(let url):
-            return "The existing configuration at \(url.path) is not readable. It was not changed."
+            return "La configuration existante dans \(url.path) n’est pas lisible. Elle n’a pas été modifiée."
         case .unsafeConfiguration(let url):
             return
-                "The existing configuration at \(url.path) is not a regular file or is a symbolic link. It was not changed."
+                "La configuration existante dans \(url.path) n’est pas un fichier ordinaire ou est un lien symbolique. Elle n’a pas été modifiée."
         case .configurationTooLarge(let url, let actualBytes, let maximumBytes):
             return
-                "The existing configuration at \(url.path) is \(actualBytes) bytes and exceeds the \(maximumBytes)-byte safety limit. It was not changed."
+                "La configuration existante dans \(url.path) fait \(actualBytes) octets et dépasse la limite de sécurité de \(maximumBytes) octets. Elle n’a pas été modifiée."
         case .configurationChangedDuringRead(let url):
             return
-                "The existing configuration at \(url.path) changed while it was being read. It was not changed by Goalong History."
+                "La configuration existante dans \(url.path) a changé pendant la lecture. Goalong History ne l’a pas modifiée."
         case .executableUnavailable:
-            return "The Goalong History executable path is unavailable."
+            return "Le chemin de l’exécutable Goalong History est indisponible."
         case .unmanagedOpenCodePlugin(let url):
-            return "A different file already exists at \(url.path). It was not overwritten."
+            return "Un autre fichier existe déjà dans \(url.path). Il n’a pas été écrasé."
         }
     }
 }
@@ -69,12 +82,17 @@ public final class AgentIntegrationInstaller: @unchecked Sendable {
     public func status(for kind: AgentIntegrationKind) -> AgentIntegrationStatus {
         let url = configurationURL(for: kind)
         let installed: Bool
+        var otherPath: String?
         switch kind {
         case .codexHooks, .claudeCodeHooks, .cursorHooks:
-            installed = jsonFile(
-                at: url,
-                recursivelyContainsAll: [marker, executableURL.path]
-            )
+            var hookPaths: [String] = []
+            if let data = try? readConfigurationIfPresent(at: url),
+                let object = try? JSONSerialization.jsonObject(with: data)
+            {
+                hookPaths = Self.hookExecutablePaths(in: object, marker: marker)
+            }
+            installed = hookPaths.contains(executableURL.path)
+            otherPath = installed ? nil : hookPaths.first
         case .openCodePlugin:
             let source: String?
             do {
@@ -89,8 +107,17 @@ public final class AgentIntegrationInstaller: @unchecked Sendable {
                 source?.contains(openCodeMarker) == true
                 && (source?.contains(executableURL.path) == true
                     || encodedPath.map { source?.contains($0) == true } == true)
+            if !installed, let source, source.contains(openCodeMarker) {
+                otherPath = Self.openCodeExecutablePath(in: source)
+            }
         }
-        return AgentIntegrationStatus(kind: kind, isInstalled: installed, configurationPath: url.path)
+        return AgentIntegrationStatus(
+            kind: kind,
+            isInstalled: installed,
+            configurationPath: url.path,
+            otherExecutablePath: otherPath,
+            otherExecutableExists: otherPath.map { fileManager.isExecutableFile(atPath: $0) } ?? false
+        )
     }
 
     public func install(_ kind: AgentIntegrationKind) throws {
@@ -434,13 +461,6 @@ public final class AgentIntegrationInstaller: @unchecked Sendable {
         }
     }
 
-    private func jsonFile(at url: URL, recursivelyContainsAll needles: [String]) -> Bool {
-        guard let data = try? readConfigurationIfPresent(at: url),
-            let object = try? JSONSerialization.jsonObject(with: data)
-        else { return false }
-        return needles.allSatisfy { Self.recursivelyContains(object, needle: $0) }
-    }
-
     private struct FileSnapshot: Equatable {
         let device: UInt64
         let inode: UInt64
@@ -652,6 +672,55 @@ public final class AgentIntegrationInstaller: @unchecked Sendable {
             return dictionary.values.contains { recursivelyContains($0, needle: needle) }
         }
         return false
+    }
+
+    /// Executable paths of every Goalong hook command: the inverse of `hookCommand`.
+    private static func hookExecutablePaths(in value: Any, marker: String) -> [String] {
+        if let string = value as? String {
+            guard string.contains(marker), let path = leadingShellQuotedToken(string) else { return [] }
+            return [path]
+        }
+        if let array = value as? [Any] {
+            return array.flatMap { hookExecutablePaths(in: $0, marker: marker) }
+        }
+        if let dictionary = value as? [String: Any] {
+            return dictionary.keys.sorted().flatMap {
+                hookExecutablePaths(in: dictionary[$0] as Any, marker: marker)
+            }
+        }
+        return []
+    }
+
+    private static func leadingShellQuotedToken(_ command: String) -> String? {
+        guard command.hasPrefix("'") else { return nil }
+        var result = ""
+        var index = command.index(after: command.startIndex)
+        while index < command.endIndex {
+            let character = command[index]
+            if character == "'" {
+                let escaped = "'\\''"
+                if command[index...].hasPrefix(escaped) {
+                    result.append("'")
+                    index = command.index(index, offsetBy: escaped.count)
+                    continue
+                }
+                return result.isEmpty ? nil : result
+            }
+            result.append(character)
+            index = command.index(after: index)
+        }
+        return nil
+    }
+
+    private static func openCodeExecutablePath(in source: String) -> String? {
+        guard let declaration = source.range(of: "const GOALONG_EXECUTABLE = ") else { return nil }
+        let rest = source[declaration.upperBound...]
+        guard let line = rest.split(whereSeparator: \.isNewline).first,
+            let data = String(line).trimmingCharacters(in: .whitespaces).data(using: .utf8),
+            let decoded = try? JSONSerialization.jsonObject(
+                with: Data("[".utf8) + data + Data("]".utf8)) as? [String]
+        else { return nil }
+        return decoded.first
     }
 
     private static func shellQuote(_ value: String) -> String {
