@@ -3,6 +3,7 @@ import AppKit
 import Combine
 import Foundation
 import LocalHistoryCore
+import LocalHistoryQueryCLI
 
 /// Owns the module while it is on. Created by `BlockingRuntime` only when
 /// `goalong.module.blocking.enabled` is true; destroyed when it is turned off.
@@ -1138,9 +1139,10 @@ import LocalHistoryCore
         return minutes
     }
 
+    /// Gregorian `yyyy-MM-dd` in the calendar's time zone, the same key as commitments and limits,
+    /// whatever calendar the member chose in System Settings.
     nonisolated static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+        GoalongFocusCalendar.dayKey(date, calendar: calendar)
     }
 }
 /// Holds the controller only while the module is on.
