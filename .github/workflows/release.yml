@@ -36,8 +36,14 @@ jobs:
       - name: Refuse a manual release from a non-main or stale commit
         if: github.event_name == 'workflow_dispatch'
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
+          if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+            echo "Invalid version: $INPUT_VERSION" >&2
+            exit 1
+          fi
           if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "Manual releases must run from main, not $GITHUB_REF." >&2
             exit 1
@@ -46,7 +52,7 @@ jobs:
             echo "main moved since this run started; refusing a stale release." >&2
             exit 1
           fi
-          TAG="v${{ inputs.version }}"
+          TAG="v$INPUT_VERSION"
           EXISTING="$(git ls-remote origin "refs/tags/$TAG^{}" "refs/tags/$TAG" | tail -n 1 | cut -f1)"
           if [[ -n "$EXISTING" && "$EXISTING" != "$GITHUB_SHA" ]]; then
             echo "Tag $TAG already exists at another commit." >&2

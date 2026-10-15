@@ -339,6 +339,11 @@ jobs:
       - name: Render rolling release notes
         run: python3 scripts/render_rolling_notes.py "${{ steps.version.outputs.value }}" "${{ steps.version.outputs.build }}" "$GITHUB_SHA" "$RUNNER_TEMP/rolling-notes.md"
 
+      - name: Recheck main before the rolling assets and manifest are replaced
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+
       - name: Publish rolling GitHub release
         uses: softprops/action-gh-release@5113cdc90fd4d541c801c55356214017bf5ae34b # v3
         with:
