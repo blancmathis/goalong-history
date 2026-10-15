@@ -203,6 +203,34 @@ final class ConcentrationControllerTests: XCTestCase {
         XCTAssertEqual(try c.plan(on: "2026-10-06").items.map(\.title), ["Relire", "Rédiger"])
         XCTAssertTrue(try c.plan(on: "2026-10-07").items.isEmpty)
     }
+    @MainActor func testReReviewWithdrawsOnlyTheStillOpenMovedCopy() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 20))!
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        let (d0, d1, d2) = ("2026-10-05", "2026-10-06", "2026-10-07")
+        let item = try c.addPlanItem(title: "Rédiger", day: d0), human = try c.addPlanItem(title: "Appeler", day: d1)
+        // (a) moved, then answered done: the open copy leaves tomorrow; the human item stays.
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, toDay: d1)], tomorrowFirst: "Relire"))
+        XCTAssertTrue(try c.plan(on: d1).items.contains { $0.id == item.id })
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, outcome: .done)], tomorrowFirst: "Relire"))
+        XCTAssertEqual(try c.plan(on: d1).items.map(\.title), ["Relire", "Appeler"])
+        XCTAssertEqual(try c.plan(on: d0).items.first?.status, .done)
+        // (b) moved to D+1, then to D+2: one copy, in D+2 only.
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, toDay: d1)]))
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, toDay: d2)]))
+        XCTAssertFalse(try c.plan(on: d1).items.contains { $0.id == item.id })
+        XCTAssertEqual(try c.plan(on: d2).items.filter { $0.id == item.id }.count, 1)
+        // (c) a copy finished in its new day stays when the review changes again.
+        try c.setItemStatus(item.id, day: d2, status: .done)
+        try c.setReview(FocusReview(day: d0, items: [.init(id: item.id, outcome: .notDone)]))
+        XCTAssertEqual(try c.plan(on: d2).items.first { $0.id == item.id }?.status, .done)
+        // (d) a removal that empties the day is saved without error; reopen also withdraws the copy.
+        try c.movePlanItem(item.id, day: d0, to: "2026-10-08")
+        try c.reopenPlanItem(item.id, day: d0)
+        XCTAssertTrue(try c.plan(on: "2026-10-08").items.isEmpty)
+        XCTAssertEqual(try c.plan(on: d0).items.first?.status, .open)
+        XCTAssertTrue(try c.plan(on: d1).items.contains { $0.id == human.id })
+    }
 }
 private final class AudioSpy: FocusSessionAudio {
     var actions: [String] = []

@@ -890,10 +890,8 @@ struct FocusThreadModel: Equatable {
     }
 
     private func reopen(_ item: FocusPlanItem) {
-        var next = plan
-        guard let index = next.items.firstIndex(where: { $0.id == item.id }) else { return }
-        next.items[index].status = .open; next.items[index].toDay = nil
-        act { try controller.setPlan(next) }
+        guard plan.items.contains(where: { $0.id == item.id }) else { return }
+        act { try controller.reopenPlanItem(item.id, day: plan.day) }
     }
 
     private func remove(_ item: FocusPlanItem) {

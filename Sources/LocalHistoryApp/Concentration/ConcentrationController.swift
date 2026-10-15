@@ -274,24 +274,53 @@ struct FocusPanel: Equatable {
     }
     func setItemStatus(_ id: UUID, day: String, status: FocusPlanItem.Status) throws {
         guard status == .done || status == .dropped else { throw FocusFailure.invalidArgument }
-        var value = try plan(on: day); guard let i = value.items.firstIndex(where: { $0.id == id }) else { throw FocusFailure.notFound }
-        value.items[i].status = status; value.items[i].toDay = nil; try setPlan(value)
+        try settleItem(id, day: day, status: status)
+    }
+    /// Reopens an item; a copy an earlier move left open in another day is withdrawn.
+    func reopenPlanItem(_ id: UUID, day: String) throws { try settleItem(id, day: day, status: .open) }
+    private func settleItem(_ id: UUID, day: String, status: FocusPlanItem.Status) throws {
+        var value = try plan(on: day), changed: [String: FocusPlan] = [:]
+        guard let i = value.items.firstIndex(where: { $0.id == id }) else { throw FocusFailure.notFound }
+        if value.items[i].status == .moved, let previous = value.items[i].toDay { try withdrawMovedCopy(id, from: previous, into: &changed) }
+        value.items[i].status = status; value.items[i].toDay = nil
+        guard !changed.isEmpty else { try setPlan(value); return }
+        guard value.valid, !value.items.isEmpty else { throw FocusFailure.invalidArgument }
+        changed[day] = value; try savePlanChanges(changed)
     }
     func movePlanItem(_ id: UUID, day: String, to target: String) throws {
         guard FocusValidation.day(target), target != day else { throw FocusFailure.invalidArgument }
-        var source = try plan(on: day), destination = try plan(on: target)
+        var source = try plan(on: day), changed: [String: FocusPlan] = [:]
         guard let i = source.items.firstIndex(where: { $0.id == id }) else { throw FocusFailure.notFound }
+        if source.items[i].status == .moved, let previous = source.items[i].toDay, previous != target {
+            try withdrawMovedCopy(id, from: previous, into: &changed)
+        }
+        var destination = try changed[target] ?? plan(on: target)
         var item = source.items[i]; item.status = .open; item.toDay = nil
         if !destination.items.contains(where: { $0.id == id }) { destination.items.append(item) }
         source.items[i].status = .moved; source.items[i].toDay = target
-        try saving { try store.savePlans([source, destination]) }
-        if day == currentDay { plan = source } else if target == currentDay { plan = destination }; updateMeasures()
+        changed[target] = destination; changed[day] = source
+        try savePlanChanges(changed)
+    }
+    /// A moved item left an open copy in `day`. Removes that copy only while it is still open there:
+    /// a copy the member finished, moved or dropped in its new day stays.
+    private func withdrawMovedCopy(_ id: UUID, from day: String, into changed: inout [String: FocusPlan]) throws {
+        var value = try changed[day] ?? plan(on: day)
+        guard let j = value.items.firstIndex(where: { $0.id == id }), value.items[j].status == .open else { return }
+        value.items.remove(at: j); changed[day] = value
+    }
+    private func savePlanChanges(_ changed: [String: FocusPlan], review value: FocusReview? = nil) throws {
+        try saving { try store.savePlans(Array(changed.values), review: value) }
+        if let today = changed[currentDay] { plan = today }; if let value, value.day == currentDay { review = value }; updateMeasures()
     }
     func setReview(_ value: FocusReview) throws {
         guard value.valid else { throw FocusFailure.invalidArgument }
         var source = try plan(on: value.day), changed: [String: FocusPlan] = [:]
         for item in value.items {
             guard let i = source.items.firstIndex(where: { $0.id == item.id }) else { throw FocusFailure.notFound }
+            // A new answer replaces an earlier move: its still-open copy leaves the old target day.
+            if source.items[i].status == .moved, let previous = source.items[i].toDay, previous != item.toDay {
+                try withdrawMovedCopy(item.id, from: previous, into: &changed)
+            }
             if let target = item.toDay {
                 guard target != value.day else { throw FocusFailure.invalidArgument }
                 var destination = try changed[target] ?? plan(on: target)
@@ -311,8 +340,7 @@ struct FocusPanel: Equatable {
             next.items.insert(FocusPlanItem(id: carryID, title: title), at: 0); changed[tomorrow] = next
         }
         changed[source.day] = source
-        try saving { try store.savePlans(Array(changed.values), review: value) }
-        if let today = changed[currentDay] { plan = today }; if value.day == currentDay { review = value }; updateMeasures()
+        try savePlanChanges(changed, review: value)
     }
     private func carryItemID(day: String) -> UUID {
         let digits = day.replacingOccurrences(of: "-", with: "")
