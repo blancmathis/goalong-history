@@ -89,7 +89,7 @@ final class GoalongHistoryCommandBoundsTests: XCTestCase {
         XCTAssertEqual(hitCount(json), 2)
         XCTAssertEqual((json["window"] as? [String: Any])?["isClamped"] as? Bool, true)
         XCTAssertThrowsError(try output([
-            "--root", root.path, "gaps", "--start", "2026-01-02", "--end", "2026-01-01",
+            "--root", root.path, "gaps", "--start", "2026-01-03", "--end", "2026-01-01",
         ]))
     }
 
@@ -102,6 +102,52 @@ final class GoalongHistoryCommandBoundsTests: XCTestCase {
         XCTAssertEqual(window.end, now)
         XCTAssertTrue(window.isDefault)
         XCTAssertFalse(window.isClamped)
+    }
+
+    func testBareDayEndCoversTheWholeDay() throws {
+        let calendar = Calendar.current
+        let now = Date()
+        let today = calendar.startOfDay(for: now)
+        let end = try GoalongQueryCLI.parseEndTimestamp("today", now: now)
+        XCTAssertEqual(end, max(today, now))
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
+        XCTAssertEqual(try GoalongQueryCLI.parseEndTimestamp("yesterday", now: now), today)
+        let past = try GoalongQueryCLI.parseEndTimestamp("2026-01-01", now: now)
+        XCTAssertEqual(past, calendar.date(from: DateComponents(year: 2026, month: 1, day: 2)))
+        XCTAssertEqual(try GoalongQueryCLI.parseEndTimestamp("2026-01-01T12:00:00Z", now: now),
+                       ISO8601DateFormatter().date(from: "2026-01-01T12:00:00Z"))
+        XCTAssertLessThan(yesterday, today)
+
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeEvents(root: root, daysAgo: [1], title: "Zephyrfoo")
+        let json = try output([
+            "--root", root.path, "search", "Zephyrfoo", "--start", "yesterday", "--end", "yesterday",
+        ])
+        XCTAssertEqual(hitCount(json), 1)
+    }
+
+    func testExportProofFailsNonzeroInsteadOfReportingOnStdout() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = root.appendingPathComponent("existing.goalong-proof")
+        try Data("keep".utf8).write(to: destination)
+        XCTAssertThrowsError(try output(["--root", root.path, "export-proof", "yesterday"]))
+        XCTAssertThrowsError(try output([
+            "--root", root.path, "export-proof", "yesterday", "--output", destination.path,
+        ]))
+        XCTAssertThrowsError(try output([
+            "--root", root.path, "export-proof", "yesterday", "--output", root.appendingPathComponent("foo.txt").path,
+        ]))
+        XCTAssertEqual(try Data(contentsOf: destination), Data("keep".utf8))
+    }
+
+    func testComputerHistoryRejectsTokensButContextAcceptsIt() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertThrowsError(try output(["--root", root.path, "computer-history", "today", "--tokens", "500"]))
+        let json = try output(["--root", root.path, "computer-history-context", "today", "--tokens", "2000"])
+        XCTAssertFalse(json.isEmpty)
     }
 
     func testRecentRejectsOutOfRangeMinutesInsteadOfTrapping() throws {

@@ -79,4 +79,49 @@ final class GoalongProfileAnalysisTests: XCTestCase {
             try GoalongContextualRhythm.encode(A.Archive(request: r, result: result)).write(to: URL(fileURLWithPath: path))
         }
     }
+
+    private func loadRoot(_ events: [HistoryEvent]) throws -> (URL, Date, Date) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-profile-load-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("events"), withIntermediateDirectories: true)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let day = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        var data = Data()
+        for event in events { data.append(try encoder.encode(event)); data.append(10) }
+        let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
+        try data.write(to: root.appendingPathComponent("events/\(formatter.string(from: day)).jsonl"))
+        return (root, day, day.addingTimeInterval(86_000))
+    }
+    private func event(_ app: String, bundle: String, host: String? = nil, at day: Date, offset: TimeInterval) -> HistoryEvent {
+        HistoryEvent(sessionID: "s", timestamp: day.addingTimeInterval(offset), kind: .applicationActivated,
+            app: .init(name: app, bundleIdentifier: bundle, processIdentifier: 0),
+            window: .init(title: "\(app) window", role: nil, subrole: nil),
+            url: host.map { .init(value: "https://\($0)/page", host: $0, redactionApplied: false) })
+    }
+    func testLoadOmitsEventsExcludedByGlobalPolicyAndFailsClosedWhenUnreadable() throws {
+        let day = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        let (root, start, end) = try loadRoot([
+            event("Keeper", bundle: "test.keeper", at: day, offset: 60),
+            event("Secret", bundle: "test.secret", at: day, offset: 120),
+            event("Browser", bundle: "test.browser", host: "private.example", at: day, offset: 180),
+        ])
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertEqual(try A.load(root: root, start: start, end: end, rich: false).count, 3)
+        var policy = GoalongPrivacyPolicy()
+        policy.applications = ["test.secret": "Secret"]; policy.domains = ["private.example"]
+        try policy.save(in: root)
+        let rows = try A.load(root: root, start: start, end: end, rich: false)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertFalse(rows.contains { $0.text.contains("Secret") || $0.text.contains("private.example") })
+        try Data("not json".utf8).write(to: GoalongPrivacyPolicy.file(in: root))
+        XCTAssertThrowsError(try A.load(root: root, start: start, end: end, rich: false))
+    }
+    func testLoadReadsNothingWhileGlobalPauseIsOn() throws {
+        let day = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        let (root, start, end) = try loadRoot([event("Keeper", bundle: "test.keeper", at: day, offset: 60)])
+        defer { try? FileManager.default.removeItem(at: root) }
+        try GoalongGlobalPause.setPaused(true, in: root)
+        XCTAssertThrowsError(try A.load(root: root, start: start, end: end, rich: false))
+        try GoalongGlobalPause.setPaused(false, in: root)
+        XCTAssertEqual(try A.load(root: root, start: start, end: end, rich: false).count, 1)
+    }
 }

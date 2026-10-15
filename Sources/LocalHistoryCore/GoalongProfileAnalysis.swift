@@ -209,13 +209,17 @@ public enum GoalongProfileAnalysis {
     /// Read actual events with their timestamps. Suppressed and secure observations never enter the request.
     public static func load(root: URL, start: Date, end: Date, rich: Bool) throws -> [Evidence] {
         guard end > start, end.timeIntervalSince(start) <= 31*86400 else { throw invalid("Choisissez une période de 31 jours maximum.") }
+        // Global pause and global exclusions apply to this read: nothing excluded or paused may reach the agent.
+        _ = try GoalongGlobalPause.admit(in: root)
+        let privacy = GoalongPrivacyPolicy.load(in: root)
+        guard !privacy.blocked else { throw invalid("Exclusions illisibles : aucune donnée n’est lue tant qu’elles ne sont pas réparées.") }
         let loaded = HistoryLocalStoreReader(rootDirectory: root).loadComputerHistoryEvidence(start: start, endExclusive: end, includeSemanticText: rich)
         let m = loaded.metrics
         guard !m.wasCancelled, !m.sourceChangedDuringRead, !m.sourceAccessWasIncomplete, !m.evidenceBudgetExceeded, loaded.issues.isEmpty else { throw invalid("Lecture incomplète ou modifiée. Réduisez la période ; aucun trou ne sera interprété comme une activité.") }
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601; encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var rows: [Evidence] = []
-        for event in loaded.events where event.suppressionReason == nil && event.element?.isSecure != true {
+        for event in loaded.events where event.suppressionReason == nil && event.element?.isSecure != true && privacy.permits(event) {
             let encoded = try encoder.encode(event)
             let raw = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] ?? [:]
             let allowed = ["kind", "window", "element", "url", "pointer", "keyboard", "scroll", "inputOrigin", "classification", "message", "metadata"]
