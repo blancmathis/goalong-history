@@ -109,6 +109,9 @@ import LocalHistoryQueryCLI
                 }
             } catch { failStore() }
         }
+        if migrateLegacyDayKeys(), let store, !storeFailed {
+            do { try store.save(self.document) } catch { failStore() }
+        }
         lastGood = self.document
         lastClock = self.document.clock
         backend?.appStillBlocked = { [weak self] target in
@@ -1136,6 +1139,44 @@ import LocalHistoryQueryCLI
             }
         }
         if blocks != activeBlocks { activeBlocks = blocks }
+    }
+
+    /// Before R1-231 day keys followed the system calendar (Buddhist « 2569-10-15 », Japanese « 0008-10-15 »).
+    /// Re-keys them to the Gregorian key of the same day, once: Gregorian keys are left alone, so a second pass changes nothing.
+    /// Returns whether the document changed.
+    private func migrateLegacyDayKeys() -> Bool {
+        guard calendar.identifier != .gregorian else { return false }
+        let now = clock(), era = calendar.component(.era, from: now)
+        func gregorian(_ key: String) -> String? {
+            let parts = key.split(separator: "-", omittingEmptySubsequences: false)
+            guard key.count == 10, parts.count == 3, let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
+                  !(1900...2100).contains(year) else { return nil }
+            for candidate in stride(from: era, through: max(0, era - 4), by: -1) {
+                let parts = DateComponents(era: candidate, year: year, month: month, day: day, hour: 12)
+                guard let date = calendar.date(from: parts), date <= now.addingTimeInterval(86_400),
+                      calendar.dateComponents([.era, .year, .month, .day], from: date) == DateComponents(era: candidate, year: year, month: month, day: day)
+                else { continue }
+                let result = Self.dayKey(date, calendar: calendar)
+                return result == key ? nil : result
+            }
+            return nil
+        }
+        var changed = false
+        if var usage = document.usage, let key = gregorian(usage.day) {
+            usage.day = key; document.usage = usage; changed = true
+        }
+        if let history = document.usageHistory {
+            var next: [String: BlockDayUsage] = [:]
+            for (key, value) in history where gregorian(key) == nil { next[key] = value }
+            for (key, value) in history.sorted(by: { $0.key < $1.key }) {
+                guard let new = gregorian(key) else { continue }
+                changed = true
+                var usage = value; usage.day = new
+                if next[new] == nil { next[new] = usage }
+            }
+            if changed { document.usageHistory = next }
+        }
+        return changed
     }
 
     /// Every write path reads today's usage here, so a previous day is archived before it can be replaced.

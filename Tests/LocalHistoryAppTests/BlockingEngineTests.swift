@@ -383,6 +383,26 @@ final class BlockingEngineTests: XCTestCase {
         clockNow = now.addingTimeInterval(3601); c.refresh()
         XCTAssertFalse(c.hasLocks); XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
     }
+    /// R2-019: day keys written under a Buddhist or Japanese calendar are re-keyed to Gregorian once, counters kept.
+    @MainActor func testLegacyCalendarDayKeysAreRekeyedOnLoad() throws {
+        let now = date(15), list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        for (identifier, today, yesterday) in [(Calendar.Identifier.buddhist, "2569-10-15", "2569-10-14"), (.japanese, "0008-10-15", "0008-10-14")] {
+            var legacy = Calendar(identifier: identifier); legacy.timeZone = calendar.timeZone
+            var usage = BlockDayUsage(day: today); usage.quotaSecondsUsed[list.id] = 120; usage.breaksTaken[list.id] = 1
+            var past = BlockDayUsage(day: yesterday); past.quotaSecondsUsed[list.id] = 300
+            let store = try temporaryStore()
+            try store.save(BlockingDocument(lists: [list], usage: usage, usageHistory: [yesterday: past]))
+            for _ in 0..<2 {  // the second launch changes nothing
+                let c = BlockingController(clock: { now }, store: store, calendarProvider: { legacy }, continuous: { now.timeIntervalSince1970 })
+                XCTAssertEqual(c.frictionCounts(day: "2026-10-15").quotaSecondsUsed[list.id], 120, "\(identifier)")
+                XCTAssertEqual(c.frictionCounts(day: "2026-10-15").breaksTaken[list.id], 1)
+                XCTAssertEqual(c.frictionCounts(day: "2026-10-14").quotaSecondsUsed[list.id], 300, "\(identifier)")
+                let saved = try store.load()
+                XCTAssertEqual(saved.usage?.day, "2026-10-15"); XCTAssertEqual(Set(saved.usageHistory?.keys ?? [:].keys), ["2026-10-14"])
+                XCTAssertEqual(saved.usageHistory?["2026-10-14"]?.day, "2026-10-14")
+            }
+        }
+    }
     /// R2-065: the icon cluster lists each app or host once, so ids stay unique and "+N" counts unique items.
     func testIconClusterDeduplicatesItems() {
         let mail = BlockAppRule(bundleIdentifier: "com.apple.mail", name: "Mail")
