@@ -113,6 +113,31 @@ final class AppleBiomeFormatTests: XCTestCase {
         }
     }
 
+    func testOversizedProtobufLengthsFailClosedWithoutTrapping() throws {
+        let hugeLength: [UInt8] = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F]
+        // Timestamp field first so the cursor is >= 1 when the length is read.
+        var prefix = Data()
+        appendVarint(UInt64((4 << 3) | 1), to: &prefix)
+        prefix.append(uint64LE(0))
+
+        // App.InFocus bundle field (6, wire type 2).
+        let focus = makeV2([prefix + Data([0x32]) + Data(hugeLength)])
+        XCTAssertEqual(try AppleBiomeSEGBDecoder.decode(focus).count, 0)
+        // Unknown wire-type-2 field reaches skipField.
+        let skipped = makeV2([prefix + Data([0x52]) + Data(hugeLength)])
+        XCTAssertEqual(try AppleBiomeSEGBDecoder.decode(skipped).count, 0)
+
+        // ScreenTime app usage bundle field (3, wire type 2) reaches readString.
+        let usage = makeV2([Data([0x08, 0x01, 0x1A]) + Data(hugeLength)])
+        XCTAssertThrowsError(try AppleBiomeSEGBDecoder.decodeScreenTimeAppUsage(usage)) { error in
+            XCTAssertEqual(error as? AppleBiomeFormatError, .unsupportedPayload)
+        }
+        let usageSkipped = makeV2([Data([0x08, 0x01, 0x52]) + Data(hugeLength)])
+        XCTAssertThrowsError(try AppleBiomeSEGBDecoder.decodeScreenTimeAppUsage(usageSkipped)) { error in
+            XCTAssertEqual(error as? AppleBiomeFormatError, .unsupportedPayload)
+        }
+    }
+
     func testScreenTimeAppUsageKeepsDistinctOverlappingApplications() {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         let events = [
