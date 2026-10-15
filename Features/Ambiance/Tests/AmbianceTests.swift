@@ -129,6 +129,36 @@ final class AmbianceTests: XCTestCase {
         await task?.value
         XCTAssertTrue(settings.ownFiles.isEmpty)
     }
+    @MainActor func testTwoBackToBackFolderImportsBothMerge() async throws {
+        let support = try root(), a = try root(), b = try root()
+        try Data([1]).write(to: a.appendingPathComponent("a.wav"))
+        try Data([1]).write(to: b.appendingPathComponent("b.wav"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        let first = controller.addOwnFiles([a]), second = controller.addOwnFiles([b])
+        await first?.value; await second?.value
+        XCTAssertEqual(settings.ownFiles.map { URL(fileURLWithPath: $0).lastPathComponent }.sorted(), ["a.wav", "b.wav"])
+    }
+    @MainActor func testShutdownCancelsEveryConcurrentFolderImport() async throws {
+        let support = try root(), a = try root(), b = try root()
+        try Data([1]).write(to: a.appendingPathComponent("a.wav"))
+        try Data([1]).write(to: b.appendingPathComponent("b.wav"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        let first = controller.addOwnFiles([a]), second = controller.addOwnFiles([b])
+        controller.shutdown()
+        await first?.value; await second?.value
+        XCTAssertTrue(settings.ownFiles.isEmpty)
+    }
+    func testNetworkErrorsAreNotReportedAsInvalidPack() {
+        for error in [AmbianceError.network, .serverUnavailable] {
+            let text = error.localizedDescription
+            XCTAssertFalse(text.contains("Pack invalide"), text)
+            XCTAssertFalse(text.contains("http"), text)
+        }
+        XCTAssertTrue(AmbianceError.network.localizedDescription.contains("Connexion"))
+        XCTAssertTrue(AmbianceError.invalidPack("taille incorrecte").localizedDescription.contains("taille incorrecte"))
+    }
     func testRemoveOrphansKeepsPacksAndDoesNotFollowSymlinks() throws {
         let support = try root(), outside = try root()
         let store = AmbiancePackStore(supportDirectory: support)
