@@ -46,7 +46,7 @@ import SwiftUI
                 guard consents.isEnabled(.localComputerHistory), !rich || ActivityAnalysisPreferences.richContextEnabled else { throw GoalongContextualRhythm.Failure.invalid("Une source a été désactivée pendant la lecture.") }
                 request = value; selectedEvidence = Set(value.rhythm.episodes?.flatMap { ($0.evidence ?? []).map(\.id) } ?? [])
                 status = "Sélection locale prête. Choisissez les éléments à confier à l'agent."; busy = false
-            } catch { guard operation == id else { return }; self.error = error.localizedDescription; busy = false }
+            } catch { guard operation == id else { return }; self.error = error.localizedDescription; status = ""; busy = false }
         }
     }
     func selectionChanged() { consentToAnalyze = false; result = nil; interpretation = "" }
@@ -72,13 +72,15 @@ import SwiftUI
                     defer { try? FileManager.default.removeItem(at: directory) }
                     return try active.generateRhythmAnalysis(request: selected, workingDirectory: directory)
                 }.value
-                guard operation == id, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis),
+                guard operation == id else { return }
+                guard GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis),
                       GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory),
-              !usedRichContext || ActivityAnalysisPreferences.richContextEnabled else { busy = false; return }
+                      !usedRichContext || ActivityAnalysisPreferences.richContextEnabled
+                else { throw GoalongContextualRhythm.Failure.invalid("Autorisation retirée pendant l’analyse.") }
                 result = try GoalongContextualRhythm.apply(annotation, to: selected)
                 interpretation = result?.interpretation ?? ""; consentToAnalyze = false; busy = false
                 status = "Interprétation prête. Relisez les associations avant de préparer l'envoi au site."
-            } catch { guard operation == id else { return }; self.error = error.localizedDescription; busy = false; consentToAnalyze = false }
+            } catch { guard operation == id else { return }; self.error = error.localizedDescription; status = ""; busy = false; consentToAnalyze = false }
         }
     }
     func importAnnotation(_ url: URL) {
