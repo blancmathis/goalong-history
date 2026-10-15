@@ -261,7 +261,7 @@ series, jokers left, stake window.
 All new commands go through the running app over the existing owner-only socket
 (`GoalongReadOnlyQueryBroker`, `0600`), extended with Concentration routes. The app is the only
 writer. Output: sorted JSON on stdout like every data command; errors as JSON on stderr, nonzero exit
-(`appNotRunning`, `moduleDisabled`, `invalidArgument`, `locked`, `notFound`). Text arguments are
+(`appNotRunning`, `moduleDisabled`, `invalidArgument`, `locked`, `notFound`, `outcomeUnknown` for a timeout after the request was sent: run `focus status` before retrying). Text arguments are
 bounded and control characters are rejected; `--file -` reads stdin, at most 64 KB.
 
 ```bash

@@ -281,8 +281,10 @@ A missing count means zero. Concentration can be off for both of these reads.
 
 All commands return JSON on stdout. `focus watch` is NDJSON; errors are sorted JSON on stderr with
 nonzero exit status and `error` equal to `appNotRunning`, `moduleDisabled`, `invalidArgument`,
-`locked`, `notFound`, `storageFailed`, or `tooManyWatchers`. Only unavailable `focus status`/`watch`
-use the stable success object above. `--file -` reads stdin; every JSON input is bounded to 64 KiB.
+`locked`, `notFound`, `storageFailed`, `tooManyWatchers`, or `outcomeUnknown`. `appNotRunning` means the
+socket could not be reached, so nothing was sent. `outcomeUnknown` means the request was sent but no answer came
+within 10 seconds (or the connection dropped): the app may have applied it, so run `focus status` before retrying.
+Only unavailable `focus status`/`watch` use the stable success object above. `--file -` reads stdin; every JSON input is bounded to 64 KiB.
 Text control characters are rejected. A disabled module answers `moduleDisabled` before creating
 its controller, store, timer, observer or panel. Local module writes require the member's explicit
 instruction; plans, intentions and limits are never inferred by an agent.
@@ -363,7 +365,7 @@ intersecting that local-day range; series and reserve totals still use all retai
 Each annotated commitment adds `progress`, `series`, `jokersLeft`, `canUseJoker`, `canDeclare`,
 `exitUntil`, `limitHours`, `editMode` (`free`/`harderOnly`/`locked`) and `editUntil`. Successful delete returns `{schema:1,deleted:true,period}`.
 Errors use the same JSON stderr/exit contract: `appNotRunning`, `moduleDisabled`,
-`invalidArgument`, `locked`, `notFound`, `storageFailed`. No command launches the app.
+`invalidArgument`, `locked`, `notFound`, `storageFailed`, `outcomeUnknown`. No command launches the app.
 # Braise
 
 Le module filtre rouge dispose des commandes `goalong braise enable|disable|status|probe|show`,

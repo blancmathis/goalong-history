@@ -1302,9 +1302,8 @@
                 readOnlyQueryServer = server
             } catch {
                 server.stop()
-                Diagnostics.write(
-                    "Screen Time CLI broker stayed off because it could not start safely: \(error)"
-                )
+                // The CLI broker stayed off: record a structured, shareable failure.
+                SupportDiagnostics.shared.failure(error, component: .app)
             }
         }
 

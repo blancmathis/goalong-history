@@ -64,13 +64,7 @@
             setNoSigPipe(descriptor)
             setTimeout(descriptor)
 
-            var address = try unixAddress(for: socketURL(rootDirectory: rootDirectory).path)
-            let result = withUnsafePointer(to: &address.value) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    Darwin.connect(descriptor, $0, address.length)
-                }
-            }
-            guard result == 0 else { throw BrokerFailure.system("connect", errno) }
+            try connect(descriptor, rootDirectory: rootDirectory)
 
             var request = try JSONEncoder().encode(
                 GoalongBrokerRequest(
@@ -111,13 +105,7 @@
             setNoSigPipe(descriptor)
             setTimeout(descriptor)
 
-            var address = try unixAddress(for: socketURL(rootDirectory: rootDirectory).path)
-            let result = withUnsafePointer(to: &address.value) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    Darwin.connect(descriptor, $0, address.length)
-                }
-            }
-            guard result == 0 else { throw BrokerFailure.system("connect", errno) }
+            try connect(descriptor, rootDirectory: rootDirectory)
 
             var request = try JSONEncoder().encode(
                 GoalongBrokerRequest(
@@ -145,25 +133,99 @@
             return response
         }
 
-        public static func requestFocus(rootDirectory: URL, request focus: GoalongFocusRequest) throws -> Data {
+        public static func requestFocus(
+            rootDirectory: URL, request focus: GoalongFocusRequest, timeoutSeconds: Int = 10
+        ) throws -> Data {
             guard focus.body.map({ $0.count <= GoalongFocusCLI.maximumInputBytes }) ?? true else { throw GoalongFocusError.invalidArgument }
             let request = GoalongBrokerRequest(schemaVersion: 1, command: "focus-route", day: nil, days: nil, macOnly: nil, selectedDeviceIDs: nil, focus: focus)
             guard try JSONEncoder().encode(request).count < maximumRequestBytes else { throw GoalongFocusError.invalidArgument }
             do {
-                let data = try self.request(rootDirectory: rootDirectory, request: request, maximumResponseBytes: 2 * 1024 * 1024)
+                let data = try self.request(
+                    rootDirectory: rootDirectory, request: request, maximumResponseBytes: 2 * 1024 * 1024,
+                    timeoutSeconds: timeoutSeconds
+                )
                 if let failure = try? JSONDecoder().decode(GoalongFocusRemoteError.self, from: data) {
                     throw GoalongFocusError(rawValue: failure.focusError) ?? .invalidArgument
                 }
                 return data
             } catch let error as GoalongFocusError { throw error }
-            catch BrokerFailure.system(_, _) { throw GoalongFocusError.appNotRunning }
-            catch BrokerFailure.emptyResponse { throw GoalongFocusError.appNotRunning }
+            catch BrokerFailure.system(let operation, _) where operation == "socket" || operation == "connect" {
+                // Nothing was sent: the app is not listening.
+                throw GoalongFocusError.appNotRunning
+            }
+            catch BrokerFailure.system(_, _) { throw GoalongFocusError.outcomeUnknown }
+            catch BrokerFailure.emptyResponse { throw GoalongFocusError.outcomeUnknown }
         }
 
         public static func socketURL(rootDirectory: URL) -> URL {
             rootDirectory
                 .appendingPathComponent("runtime", isDirectory: true)
                 .appendingPathComponent("goalong-readonly.sock", isDirectory: false)
+        }
+
+        /// How to name the socket in `sockaddr_un`: the absolute path when it fits `sun_path`,
+        /// otherwise the leaf name relative to an open handle on the runtime directory
+        /// (`bindat`/`connectat`), so no process-wide `chdir` is needed.
+        struct Endpoint {
+            let address: sockaddr_un
+            let length: socklen_t
+            /// Open runtime directory when the absolute path is too long; the caller closes it.
+            let directoryDescriptor: Int32?
+        }
+
+        static func endpoint(rootDirectory: URL) throws -> Endpoint {
+            let url = socketURL(rootDirectory: rootDirectory)
+            do {
+                let absolute = try unixAddress(for: url.path)
+                return Endpoint(address: absolute.value, length: absolute.length, directoryDescriptor: nil)
+            } catch BrokerFailure.socketPathTooLong {
+                let directory = Darwin.open(
+                    url.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+                )
+                guard directory >= 0 else { throw BrokerFailure.system("open", errno) }
+                do {
+                    let relative = try unixAddress(for: url.lastPathComponent)
+                    return Endpoint(address: relative.value, length: relative.length, directoryDescriptor: directory)
+                } catch {
+                    Darwin.close(directory)
+                    throw error
+                }
+            }
+        }
+
+        private static let workingDirectoryLock = NSLock()
+
+        /// Runs a bind/connect with the working directory set to the runtime directory so the
+        /// short leaf name resolves (the SDK does not export `bindat`/`connectat`). The working
+        /// directory is process-wide, so the switch is serialized and always restored.
+        /// Without a directory descriptor the body runs unchanged. Returns -1 with `errno` set on failure.
+        fileprivate static func inRuntimeDirectory(_ directory: Int32?, _ body: () -> Int32) -> Int32 {
+            guard let directory else { return body() }
+            workingDirectoryLock.lock()
+            defer { workingDirectoryLock.unlock() }
+            let saved = Darwin.open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+            guard saved >= 0 else { return -1 }
+            defer { Darwin.close(saved) }
+            guard Darwin.fchdir(directory) == 0 else { return -1 }
+            let result = body()
+            let savedErrno = errno
+            _ = Darwin.fchdir(saved)
+            errno = savedErrno
+            return result
+        }
+
+        fileprivate static func connect(_ descriptor: Int32, rootDirectory: URL) throws {
+            let endpoint = try endpoint(rootDirectory: rootDirectory)
+            defer { endpoint.directoryDescriptor.map { _ = Darwin.close($0) } }
+            var address = endpoint.address
+            let result = withUnsafePointer(to: &address) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+                    inRuntimeDirectory(endpoint.directoryDescriptor) {
+                        Darwin.connect(descriptor, socketAddress, endpoint.length)
+                    }
+                }
+            }
+            guard result == 0 else { throw BrokerFailure.system("connect", errno) }
         }
 
         fileprivate static func unixAddress(for path: String) throws -> (
@@ -199,8 +261,8 @@
             }
         }
 
-        fileprivate static func setTimeout(_ descriptor: Int32) {
-            var timeout = timeval(tv_sec: 10, tv_usec: 0)
+        fileprivate static func setTimeout(_ descriptor: Int32, seconds: Int = 10) {
+            var timeout = timeval(tv_sec: seconds, tv_usec: 0)
             _ = setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
             _ = setsockopt(descriptor, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         }
@@ -240,21 +302,16 @@
         private static func request(
             rootDirectory: URL,
             request: GoalongBrokerRequest,
-            maximumResponseBytes: Int
+            maximumResponseBytes: Int,
+            timeoutSeconds: Int = 10
         ) throws -> Data {
             let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
             guard descriptor >= 0 else { throw BrokerFailure.system("socket", errno) }
             defer { Darwin.close(descriptor) }
             setNoSigPipe(descriptor)
-            setTimeout(descriptor)
+            setTimeout(descriptor, seconds: timeoutSeconds)
 
-            var address = try unixAddress(for: socketURL(rootDirectory: rootDirectory).path)
-            let result = withUnsafePointer(to: &address.value) { pointer in
-                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    Darwin.connect(descriptor, $0, address.length)
-                }
-            }
-            guard result == 0 else { throw BrokerFailure.system("connect", errno) }
+            try connect(descriptor, rootDirectory: rootDirectory)
 
             var encoded = try JSONEncoder().encode(request)
             guard encoded.count < maximumRequestBytes else { throw BrokerFailure.requestTooLarge }
@@ -340,16 +397,28 @@
             GoalongReadOnlyQueryBroker.setNoSigPipe(descriptor)
 
             do {
-                var address = try GoalongReadOnlyQueryBroker.unixAddress(for: socketURL.path)
-                let bindResult = withUnsafePointer(to: &address.value) { pointer in
-                    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                        Darwin.bind(descriptor, $0, address.length)
+                let endpoint = try GoalongReadOnlyQueryBroker.endpoint(rootDirectory: rootDirectory)
+                defer { endpoint.directoryDescriptor.map { _ = Darwin.close($0) } }
+                if let directory = endpoint.directoryDescriptor {
+                    var directoryInfo = stat()
+                    guard Darwin.fstat(directory, &directoryInfo) == 0 else { throw BrokerFailure.system("fstat", errno) }
+                    guard directoryInfo.st_uid == Darwin.getuid(), directoryInfo.st_mode & 0o077 == 0 else {
+                        throw BrokerFailure.unsafeExistingSocket
+                    }
+                }
+                var address = endpoint.address
+                let bindResult = withUnsafePointer(to: &address) { pointer in
+                    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+                        GoalongReadOnlyQueryBroker.inRuntimeDirectory(endpoint.directoryDescriptor) {
+                            Darwin.bind(descriptor, socketAddress, endpoint.length)
+                        }
                     }
                 }
                 guard bindResult == 0 else { throw BrokerFailure.system("bind", errno) }
-                guard Darwin.chmod(socketURL.path, 0o600) == 0 else {
-                    throw BrokerFailure.system("chmod", errno)
-                }
+                let chmodResult = endpoint.directoryDescriptor.map {
+                    Darwin.fchmodat($0, socketURL.lastPathComponent, 0o600, AT_SYMLINK_NOFOLLOW)
+                } ?? Darwin.chmod(socketURL.path, 0o600)
+                guard chmodResult == 0 else { throw BrokerFailure.system("chmod", errno) }
                 guard Darwin.listen(descriptor, 4) == 0 else {
                     throw BrokerFailure.system("listen", errno)
                 }

@@ -693,9 +693,9 @@ public enum GoalongQueryCLI {
             }
 
         case "computer-history", "computer-history-context":
+            let rawTokens = command == "computer-history-context" ? arguments.removeOption("--tokens") : nil
             let tokenBudget = try integer(
-                arguments.removeOption("--tokens")
-                    ?? String(ComputerHistoryAgentContextRenderer.defaultTokenBudget)
+                rawTokens ?? String(ComputerHistoryAgentContextRenderer.defaultTokenBudget)
             )
             let requestedStart = arguments.removeOption("--start-utc")
             let requestedEnd = arguments.removeOption("--end-utc")
@@ -956,7 +956,7 @@ public enum GoalongQueryCLI {
             let tokenPath = command == "send-site" ? arguments.removeOption("--token-file") : nil
             let raw = arguments.popFirst() ?? "yesterday"
             guard arguments.values.isEmpty, selectedDeviceIDs.count <= 12 else {
-                throw CLIError.usage("Use \(command) DAY [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap]; send-site also requires --url and --token-file.")
+                throw CLIError.usage("Use \(command) DAY [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured] [--mask-apps A,B] [--rhythm-project P] [--rhythm-apps A,B] [--rhythm-timeline] [--rhythm-times]; send-site also requires --url and --token-file.")
             }
             if command == "send-site" {
                 guard let origin, let tokenPath else {
@@ -1222,6 +1222,14 @@ public enum GoalongQueryCLI {
                     maximumBytes: Int64(GoalongProofArchive.maximumArchiveBytes)
                 )
                 let persistedReport = try GoalongProofPackageVerifier.verify(archive: persisted)
+                guard persistedReport.isLocallyValid else {
+                    // This invocation created the file (the exists guard ran before the write).
+                    try? FileManager.default.removeItem(at: destination)
+                    throw CLIError.usage(
+                        "The exported package failed self-verification and was removed: "
+                            + persistedReport.issues.joined(separator: ", ")
+                    )
+                }
                 try printJSON(
                     AnalysisProofExportEnvelope(
                         rootDirectory: root.path,
@@ -1230,21 +1238,8 @@ public enum GoalongQueryCLI {
                         packageBytes: persisted.count,
                         packageSHA256: GoalongProofDigest.sha256(persisted),
                         report: persistedReport,
-                        status: persistedReport.isLocallyValid ? "locallyValid" : "invalid",
-                        error: persistedReport.isLocallyValid ? nil : persistedReport.issues.joined(separator: ", ")
-                    )
-                )
-            } catch {
-                try printJSON(
-                    AnalysisProofExportEnvelope(
-                        rootDirectory: root.path,
-                        requestedDay: dayString,
-                        packagePath: nil,
-                        packageBytes: 0,
-                        packageSHA256: "",
-                        report: nil,
-                        status: "unavailableOrInvalid",
-                        error: String(describing: error)
+                        status: "locallyValid",
+                        error: nil
                     )
                 )
             }
@@ -1425,7 +1420,7 @@ public enum GoalongQueryCLI {
 
         case "search", "app", "site":
             let start = try arguments.removeOption("--start").map(parseTimestamp)
-            let end = try arguments.removeOption("--end").map(parseTimestamp)
+            let end = try arguments.removeOption("--end").map { try parseEndTimestamp($0) }
             guard !arguments.values.isEmpty else { throw CLIError.usage("\(command) requires a query") }
             let query = arguments.values.joined(separator: " ")
             let window = try GoalongQueryWindow.resolve(start: start, end: end)
@@ -1444,7 +1439,7 @@ public enum GoalongQueryCLI {
 
         case "gaps":
             let start = try arguments.removeOption("--start").map(parseTimestamp)
-            let end = try arguments.removeOption("--end").map(parseTimestamp)
+            let end = try arguments.removeOption("--end").map { try parseEndTimestamp($0) }
             guard arguments.values.isEmpty else {
                 throw CLIError.usage("gaps accepts only --start ISO_OR_DAY and --end ISO_OR_DAY")
             }
@@ -3979,6 +3974,14 @@ public enum GoalongQueryCLI {
     private static func parseTimestamp(_ raw: String) throws -> Date {
         if let value = fractionalISO.date(from: raw) ?? basicISO.date(from: raw) { return value }
         return try day(raw)
+    }
+
+    /// A bare day given to `--end` covers that whole day (up to `now`); ISO timestamps are unchanged.
+    static func parseEndTimestamp(_ raw: String, now: Date = Date()) throws -> Date {
+        if let value = fractionalISO.date(from: raw) ?? basicISO.date(from: raw) { return value }
+        let start = try day(raw)
+        let next = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
+        return max(start, min(next, now))
     }
 
     private static func expandedURL(_ raw: String) -> URL {
