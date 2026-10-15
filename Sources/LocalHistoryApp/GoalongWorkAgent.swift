@@ -285,6 +285,8 @@ extension GoalongWorkSharingFilter {
                 SupportDiagnostics.shared.failure(error, component: .analysis)
                 lastError = (error as? LocalizedError)?.errorDescription ?? "Le classement n’a pas abouti. Réessayez."
                 runningDay = nil; progress = nil
+                // An expired session: show « non connecté » instead of the cached connected state.
+                if case CodexAppServerError.signedOut = error { ChatGPTRecapRuntime.shared.refreshAccount() }
                 if store.revision != revision { attempts[start] = nil }
                 runPendingRerun()
             }

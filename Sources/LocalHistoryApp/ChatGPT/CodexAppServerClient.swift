@@ -45,7 +45,7 @@
                 return
                     "Goalong n’utilise pas les identifiants \(Self.boundedDetail(mode)) actifs, car ils peuvent être facturés comme un usage de l’API. Connectez-vous plutôt avec ChatGPT."
             case .signedOut:
-                return "Vous n’êtes pas connecté à ChatGPT. Connectez-vous pour générer le rapport."
+                return "Vous n’êtes pas connecté à ChatGPT. Connectez-vous, puis réessayez."
             case .homeBusy:
                 return "Une autre analyse utilise déjà la connexion Codex de Goalong. Réessayez dans un instant."
             case .generationFailed(let message):
@@ -1008,8 +1008,11 @@
             guard try FileManager.default.contentsOfDirectory(atPath: workingDirectory.path).isEmpty else {
                 throw CodexAppServerError.generationFailed("Le dossier de travail isolé de l’analyse doit être vide.")
             }
-            guard let account = try readAccount(refreshToken: true), account.isManagedChatGPT else {
-                throw CodexAppServerError.accountNotChatGPT("non-ChatGPT")
+            guard let account = try readAccount(refreshToken: true) else {
+                throw CodexAppServerError.signedOut
+            }
+            guard account.isManagedChatGPT else {
+                throw CodexAppServerError.accountNotChatGPT(account.type)
             }
             try requireDailyAssessmentModel()
             let started = try request(
@@ -1103,14 +1106,14 @@
                         item["phase"] == nil || item["phase"] as? String == "final_answer"
                     {
                         guard content.utf8.count <= maximumResponseBytes else {
-                            throw CodexAppServerError.protocolLimitExceeded("La réponse de l’analyse dépasse 32 Kio.")
+                            throw CodexAppServerError.protocolLimitExceeded("La réponse de l’analyse dépasse \(maximumResponseBytes / 1024) Kio.")
                         }
                         finalText = content
                     }
                 case "item/agentMessage/delta":
                     streamedBytes += (params["delta"] as? String)?.utf8.count ?? 0
                     guard streamedBytes <= maximumResponseBytes * 2 else {
-                        throw CodexAppServerError.protocolLimitExceeded("Le flux de l’analyse dépasse 64 Kio.")
+                        throw CodexAppServerError.protocolLimitExceeded("Le flux de l’analyse dépasse \(maximumResponseBytes * 2 / 1024) Kio.")
                     }
                 case "error":
                     throw CodexAppServerError.generationFailed("ChatGPT n’a pas pu terminer l’analyse. Vérifiez la connexion et l’usage du compte, puis réessayez.")
