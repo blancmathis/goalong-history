@@ -1180,6 +1180,8 @@
                                     .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Effacer la réponse")
+                            .help("Effacer la réponse")
                         }
                         Text(answer.answer)
                             .font(.system(size: 11))

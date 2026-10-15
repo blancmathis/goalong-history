@@ -729,10 +729,11 @@ public enum AgentTranscriptParser {
                 }
             }
             if excerpt == nil, let content = messageContent(from: normalized) {
-                if !suppressMetaUser, role == nil || role == "user" || role == "human", content.count >= 12,
-                    provider != .claudeCode || normalizedVisibleUserText(content) != nil
+                let candidate = provider == .claudeCode ? normalizedVisibleUserText(content) : content
+                if !suppressMetaUser, role == nil || role == "user" || role == "human",
+                    let candidate, candidate.count >= 12
                 {
-                    excerpt = bounded(content, maximum: 360)
+                    excerpt = bounded(candidate, maximum: 360)
                 }
             }
             if let role,

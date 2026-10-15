@@ -1641,7 +1641,7 @@ final class CodexThreadTitleConnection {
                 try integerConnectionPragma("PRAGMA mmap_size=0") == 0
             else {
                 throw AgentSourceReadError.unsupported(
-                    "Codex's task catalog could not be locked to read-only operation."
+                    "Le catalogue de tâches de Codex n’a pas pu être verrouillé en lecture seule."
                 )
             }
             sqlite3_busy_timeout(database, 100)
@@ -1705,7 +1705,7 @@ final class CodexThreadTitleConnection {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
             throw AgentSourceReadError.unsupported(
-                "Codex's task catalog could not be locked to read-only operation."
+                "Le catalogue de tâches de Codex n’a pas pu être verrouillé en lecture seule."
             )
         }
         defer { sqlite3_finalize(statement) }
@@ -1713,7 +1713,7 @@ final class CodexThreadTitleConnection {
             sqlite3_step(statement) == SQLITE_DONE
         else {
             throw AgentSourceReadError.unsupported(
-                "Codex's task catalog could not be locked to read-only operation."
+                "Le catalogue de tâches de Codex n’a pas pu être verrouillé en lecture seule."
             )
         }
     }
@@ -1722,7 +1722,7 @@ final class CodexThreadTitleConnection {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
             throw AgentSourceReadError.unsupported(
-                "Codex's task catalog read-only state could not be verified."
+                "Le mode lecture seule du catalogue de tâches de Codex n’a pas pu être vérifié."
             )
         }
         defer { sqlite3_finalize(statement) }
@@ -1730,7 +1730,7 @@ final class CodexThreadTitleConnection {
             sqlite3_step(statement) == SQLITE_ROW
         else {
             throw AgentSourceReadError.unsupported(
-                "Codex's task catalog read-only state could not be verified."
+                "Le mode lecture seule du catalogue de tâches de Codex n’a pas pu être vérifié."
             )
         }
         return sqlite3_column_int(statement, 0)
@@ -3555,7 +3555,7 @@ private final class SQLiteReadConnection {
             sqlite3_bind_int64(statement, 1, beforeRowID ?? Int64.max) == SQLITE_OK,
             sqlite3_bind_int64(statement, 2, Int64(boundedLimit)) == SQLITE_OK
         else {
-            throw AgentSourceReadError.unsupported("OpenCode session paging was not read-only.")
+            throw AgentSourceReadError.unsupported("La pagination des sessions d’OpenCode n’était pas en lecture seule.")
         }
         sqlite3_progress_handler(
             database,
@@ -3585,7 +3585,7 @@ private final class SQLiteReadConnection {
             let rowID = sqlite3_column_int64(statement, 0)
             guard let id = try string(statement, column: 1, maximumBytes: 1_024), !id.isEmpty else {
                 throw AgentSourceReadError.unsupported(
-                    "OpenCode returned a session without a bounded identifier."
+                    "OpenCode a renvoyé une session sans identifiant borné."
                 )
             }
             rows.append(
@@ -3610,7 +3610,7 @@ private final class SQLiteReadConnection {
             stepResult = sqlite3_step(statement)
         }
         if stepResult == SQLITE_INTERRUPT, traversalBudget.stopReason != nil { return rows }
-        guard stepResult == SQLITE_DONE else { throw sqliteReadError("session page") }
+        guard stepResult == SQLITE_DONE else { throw sqliteReadError("page de sessions") }
         if let snapshot = initialSnapshots[path] {
             Self.cacheSessions(rows.map(\.session), path: path, matching: snapshot)
         }
@@ -3785,7 +3785,7 @@ private final class SQLiteReadConnection {
                 + "WHERE session_id = ?"
             guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
                 throw AgentSourceReadError.unsupported(
-                    "OpenCode conversation size could not be bounded safely."
+                    "La taille de la conversation OpenCode n’a pas pu être bornée en sécurité."
                 )
             }
             defer {
@@ -3796,7 +3796,7 @@ private final class SQLiteReadConnection {
                 sqlite3_bind_text(statement, 1, sessionID, -1, sqliteTransient) == SQLITE_OK
             else {
                 throw AgentSourceReadError.unsupported(
-                    "OpenCode conversation size access was not read-only."
+                    "L’accès à la taille de la conversation OpenCode n’était pas en lecture seule."
                 )
             }
             installProgressHandler(bodyReadBudget)
@@ -3836,7 +3836,7 @@ private final class SQLiteReadConnection {
                 throw AgentSourceBodyReadInterrupted(reason: reason)
             }
             guard stepResult == SQLITE_DONE else {
-                throw sqliteReadError("conversation size")
+                throw sqliteReadError("taille de conversation")
             }
         }
         return byteCount
@@ -3883,13 +3883,13 @@ private final class SQLiteReadConnection {
         let tempStoreMode = try integerConnectionPragma("PRAGMA temp_store")
         guard tempStoreMode == 2 else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode temporary query storage could not be confined to memory."
+                "Le stockage temporaire des requêtes OpenCode n’a pas pu être limité à la mémoire."
             )
         }
         let memoryMapSizeBytes = try integerConnectionPragma("PRAGMA mmap_size=0")
         guard memoryMapSizeBytes == 0 else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode memory-mapped database reads could not be disabled."
+                "La lecture de la base OpenCode par projection mémoire n’a pas pu être désactivée."
             )
         }
 
@@ -3898,14 +3898,14 @@ private final class SQLiteReadConnection {
         let databaseIsReadOnly = sqlite3_db_readonly(database, "main") == 1
         guard databaseIsReadOnly, queryOnlyMode == 1 else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode's SQLite connection could not be locked to read-only queries."
+                "La connexion SQLite d’OpenCode n’a pas pu être verrouillée en lecture seule."
             )
         }
         #if DEBUG
             let pageSize = try integerConnectionPragma("PRAGMA page_size")
             guard (512...65_536).contains(pageSize), pageSize.nonzeroBitCount == 1 else {
                 throw AgentSourceReadError.unsupported(
-                    "OpenCode's SQLite page size could not be bounded for read accounting."
+                    "La taille de page SQLite d’OpenCode n’a pas pu être bornée pour le suivi des lectures."
                 )
             }
             databasePageSizeBytes = Int64(pageSize)
@@ -3933,12 +3933,12 @@ private final class SQLiteReadConnection {
         try requireNonMaterializingQueryPlan(
             sql: Self.sortFreeSessionCatalogSQL,
             binds: [.integer(1)],
-            context: "session catalog"
+            context: "catalogue de sessions"
         )
         try requireNonMaterializingQueryPlan(
             sql: Self.sortFreePaginatedSessionCatalogSQL,
             binds: [.integer(Int64.max), .integer(1)],
-            context: "paginated session catalog"
+            context: "catalogue de sessions paginé"
         )
 
         var plans: [OpenCodeBodyTable: OpenCodeBodyAccessPlan] = [:]
@@ -3957,7 +3957,7 @@ private final class SQLiteReadConnection {
             try requireNonMaterializingQueryPlan(
                 sql: sql,
                 binds: [.text("goalong-query-plan-probe")],
-                context: "\(table.rawValue) body"
+                context: "corps \(table.rawValue)"
             )
             plans[table] = OpenCodeBodyAccessPlan(orderedSQL: sql)
         }
@@ -3991,7 +3991,7 @@ private final class SQLiteReadConnection {
     private func orderedBodySQL(for table: OpenCodeBodyTable) throws -> String {
         guard let plan = bodyAccessPlans[table] else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode's bounded \(table.rawValue) access plan is unavailable."
+                "Le plan d’accès borné d’OpenCode pour \(table.rawValue) est indisponible."
             )
         }
         return plan.orderedSQL
@@ -4006,13 +4006,13 @@ private final class SQLiteReadConnection {
         let explainedSQL = "EXPLAIN QUERY PLAN \(sql)"
         guard sqlite3_prepare_v2(database, explainedSQL, -1, &statement, nil) == SQLITE_OK else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode's bounded \(context) plan could not be inspected."
+                "Le plan borné d’OpenCode (\(context)) n’a pas pu être inspecté."
             )
         }
         defer { sqlite3_finalize(statement) }
         guard sqlite3_stmt_readonly(statement) == 1 else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode's \(context) plan was not read-only."
+                "Le plan d’OpenCode (\(context)) n’était pas en lecture seule."
             )
         }
         for (offset, bind) in binds.enumerated() {
@@ -4026,7 +4026,7 @@ private final class SQLiteReadConnection {
             }
             guard result == SQLITE_OK else {
                 throw AgentSourceReadError.unsupported(
-                    "OpenCode's bounded \(context) plan parameters were rejected."
+                    "Les paramètres du plan borné d’OpenCode (\(context)) ont été refusés."
                 )
             }
         }
@@ -4041,14 +4041,14 @@ private final class SQLiteReadConnection {
                 !normalized.contains("MATERIALIZE")
             else {
                 throw AgentSourceReadError.unsupported(
-                    "OpenCode's \(context) query would materialize unbounded temporary state."
+                    "La requête d’OpenCode (\(context)) créerait un état temporaire non borné."
                 )
             }
             stepResult = sqlite3_step(statement)
         }
         guard observedPlanRow, stepResult == SQLITE_DONE else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode's bounded \(context) plan could not be verified completely."
+                "Le plan borné d’OpenCode (\(context)) n’a pas pu être vérifié entièrement."
             )
         }
     }
@@ -4083,7 +4083,7 @@ private final class SQLiteReadConnection {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode's SQLite read-only safeguards could not be configured."
+                "Les protections de lecture seule SQLite d’OpenCode n’ont pas pu être configurées."
             )
         }
         defer {
@@ -4092,7 +4092,7 @@ private final class SQLiteReadConnection {
         }
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode's SQLite read-only safeguards could not be configured."
+                "Les protections de lecture seule SQLite d’OpenCode n’ont pas pu être configurées."
             )
         }
     }
@@ -4101,7 +4101,7 @@ private final class SQLiteReadConnection {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode's SQLite read-only safeguards could not be verified."
+                "Les protections de lecture seule SQLite d’OpenCode n’ont pas pu être vérifiées."
             )
         }
         defer { sqlite3_finalize(statement) }
@@ -4109,7 +4109,7 @@ private final class SQLiteReadConnection {
             sqlite3_step(statement) == SQLITE_ROW
         else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode's SQLite read-only safeguards could not be verified."
+                "Les protections de lecture seule SQLite d’OpenCode n’ont pas pu être vérifiées."
             )
         }
         return sqlite3_column_int(statement, 0)
@@ -4132,7 +4132,7 @@ private final class SQLiteReadConnection {
         }
         defer { sqlite3_finalize(statement) }
         guard sqlite3_stmt_readonly(statement) == 1 else {
-            throw AgentSourceReadError.unsupported("OpenCode metadata access was not read-only.")
+            throw AgentSourceReadError.unsupported("L’accès aux métadonnées d’OpenCode n’était pas en lecture seule.")
         }
         for (offset, bind) in binds.enumerated() {
             let index = Int32(offset + 1)
@@ -4143,7 +4143,7 @@ private final class SQLiteReadConnection {
             case .text(let value):
                 result = sqlite3_bind_text(statement, index, value, -1, sqliteTransient)
             }
-            guard result == SQLITE_OK else { throw sqliteReadError("session metadata parameters") }
+            guard result == SQLITE_OK else { throw sqliteReadError("paramètres des métadonnées de session") }
         }
         if let traversalBudget {
             sqlite3_progress_handler(
@@ -4174,13 +4174,13 @@ private final class SQLiteReadConnection {
             }
             let id = try string(statement, column: 0, maximumBytes: 1_024)
             guard let id, !id.isEmpty else {
-                throw AgentSourceReadError.unsupported("OpenCode returned a session without a bounded identifier.")
+                throw AgentSourceReadError.unsupported("OpenCode a renvoyé une session sans identifiant borné.")
             }
             let created = Date(timeIntervalSince1970: Double(sqlite3_column_int64(statement, 3)) / 1_000)
             let modified = Date(timeIntervalSince1970: Double(sqlite3_column_int64(statement, 4)) / 1_000)
             rowCount += 1
             guard rowCount <= 50_001 else {
-                throw AgentSourceReadError.unsupported("OpenCode returned an unexpectedly large metadata result.")
+                throw AgentSourceReadError.unsupported("OpenCode a renvoyé un résultat de métadonnées inattendu et trop volumineux.")
             }
             try body(
                 AgentOpenCodeSessionMetadata(
@@ -4193,7 +4193,7 @@ private final class SQLiteReadConnection {
             stepResult = sqlite3_step(statement)
         }
         if stepResult == SQLITE_INTERRUPT, traversalBudget?.stopReason != nil { return }
-        guard stepResult == SQLITE_DONE else { throw sqliteReadError("session metadata") }
+        guard stepResult == SQLITE_DONE else { throw sqliteReadError("métadonnées de session") }
     }
 
     private func streamRows(
@@ -4212,7 +4212,7 @@ private final class SQLiteReadConnection {
     ) throws {
         var orderedStatement: OpaquePointer?
         guard sqlite3_prepare_v2(database, orderedSQL, -1, &orderedStatement, nil) == SQLITE_OK else {
-            throw AgentSourceReadError.unsupported("OpenCode's conversation rows could not be read.")
+            throw AgentSourceReadError.unsupported("Les lignes de conversation d’OpenCode n’ont pas pu être lues.")
         }
         defer {
             AgentSQLiteReadMetrics.recordStatementResources(path: path, statement: orderedStatement)
@@ -4221,7 +4221,7 @@ private final class SQLiteReadConnection {
         guard sqlite3_stmt_readonly(orderedStatement) == 1,
             sqlite3_bind_text(orderedStatement, 1, sessionID, -1, sqliteTransient) == SQLITE_OK
         else {
-            throw AgentSourceReadError.unsupported("OpenCode conversation access was not read-only.")
+            throw AgentSourceReadError.unsupported("L’accès aux conversations d’OpenCode n’était pas en lecture seule.")
         }
 
         sqlite3_progress_handler(
@@ -4246,7 +4246,7 @@ private final class SQLiteReadConnection {
         var stepResult = sqlite3_step(orderedStatement)
         while stepResult == SQLITE_ROW {
             guard let identifier = try string(orderedStatement, column: 0, maximumBytes: 2_048) else {
-                throw AgentSourceReadError.unsupported("OpenCode returned a conversation row without an identifier.")
+                throw AgentSourceReadError.unsupported("OpenCode a renvoyé une ligne de conversation sans identifiant.")
             }
             let messageID = try string(orderedStatement, column: 3, maximumBytes: 2_048)
             let createdAtMilliseconds: Int64? =
@@ -4302,7 +4302,7 @@ private final class SQLiteReadConnection {
         if stepResult == SQLITE_INTERRUPT, let reason = bodyReadBudget.stopReason {
             throw AgentSourceBodyReadInterrupted(reason: reason)
         }
-        guard stepResult == SQLITE_DONE else { throw sqliteReadError("conversation rows") }
+        guard stepResult == SQLITE_DONE else { throw sqliteReadError("lignes de conversation") }
     }
 
     private func streamOpenCodeBodyBlob(
@@ -4351,7 +4351,7 @@ private final class SQLiteReadConnection {
                 let chunkByteCount = min(Int64(bufferCapacity), rowBytes - offset)
                 guard offset <= Int64(Int32.max), chunkByteCount <= Int64(Int32.max) else {
                     throw AgentSourceReadError.unsupported(
-                        "OpenCode returned a conversation row outside SQLite's incremental-read range."
+                        "OpenCode a renvoyé une ligne de conversation hors de la plage de lecture incrémentale de SQLite."
                     )
                 }
                 let readResult = buffer.withUnsafeMutableBytes { rawBuffer in
@@ -4363,7 +4363,7 @@ private final class SQLiteReadConnection {
                     )
                 }
                 guard readResult == SQLITE_OK else {
-                    throw sqliteReadError("conversation body")
+                    throw sqliteReadError("corps de conversation")
                 }
                 guard bodyReadBudget.consume(chunkByteCount) else {
                     throw AgentSourceBodyReadInterrupted(
@@ -4403,13 +4403,13 @@ private final class SQLiteReadConnection {
             sqlite3_blob_open(database, "main", tableName, "data", rowID, 0, &blob)
         }
         guard openResult == SQLITE_OK, let blob else {
-            throw sqliteReadError("conversation body handle")
+            throw sqliteReadError("accès au corps de conversation")
         }
         defer { sqlite3_blob_close(blob) }
         let byteCount = Int64(sqlite3_blob_bytes(blob))
         guard byteCount >= 0 else {
             throw AgentSourceReadError.unsupported(
-                "OpenCode returned a conversation row outside the supported range."
+                "OpenCode a renvoyé une ligne de conversation hors de la plage prise en charge."
             )
         }
         return try body(blob, byteCount)
@@ -4440,14 +4440,14 @@ private final class SQLiteReadConnection {
         guard count >= 0, count <= maximumBytes,
             let bytes = sqlite3_column_text(statement, column)
         else {
-            throw AgentSourceReadError.unsupported("OpenCode returned an oversized metadata field.")
+            throw AgentSourceReadError.unsupported("OpenCode a renvoyé un champ de métadonnées trop volumineux.")
         }
         return String(decoding: UnsafeBufferPointer(start: bytes, count: count), as: UTF8.self)
     }
 
     private func sqliteReadError(_ context: String) -> AgentSourceReadError {
-        let detail = database.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown SQLite error"
-        return .unsupported("OpenCode \(context) could not be read completely: \(detail)")
+        let detail = database.map { String(cString: sqlite3_errmsg($0)) } ?? "erreur SQLite inconnue"
+        return .unsupported("Le contenu OpenCode (\(context)) n’a pas pu être lu entièrement : \(detail)")
     }
 
     private static func snapshot(

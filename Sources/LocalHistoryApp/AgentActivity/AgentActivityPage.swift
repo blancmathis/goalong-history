@@ -718,6 +718,7 @@
                 }
                 .buttonStyle(LHSecondaryButtonStyle())
                 .help("Ouvrir le dossier source")
+                .accessibilityLabel("Ouvrir le dossier \(folder.displayName)")
                 Button {
                     editingFolder = folder
                 } label: {
@@ -725,6 +726,7 @@
                 }
                 .buttonStyle(LHSecondaryButtonStyle())
                 .help("Modifier le suivi")
+                .accessibilityLabel("Modifier le suivi de \(folder.displayName)")
                 Button(role: .destructive) {
                     agents.removeFolder(id: folder.id)
                 } label: {
@@ -732,6 +734,7 @@
                 }
                 .buttonStyle(LHSecondaryButtonStyle())
                 .help("Arrêter de suivre ce dossier")
+                .accessibilityLabel("Arrêter de suivre \(folder.displayName)")
             }
             .padding(.vertical, 4)
         }
@@ -827,6 +830,8 @@
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 26)
+                .accessibilityLabel("Plus d’actions")
+                .help("Afficher la source ou vérifier l’empreinte")
             }
             .padding(.vertical, 5)
         }

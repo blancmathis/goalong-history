@@ -265,6 +265,7 @@
                             }
                             .buttonStyle(.plain)
                             .help(expanded ? "Masquer les détails du site" : "Afficher chaque page et interaction observée")
+                            .accessibilityLabel(expanded ? "Masquer les détails" : "Afficher les détails")
                         }
                     }
                     .frame(width: 46, alignment: .trailing)
@@ -309,6 +310,7 @@
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help("Règles permanentes du site")
+            .accessibilityLabel("Règles du site")
         }
 
         @ViewBuilder
