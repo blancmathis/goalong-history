@@ -69,9 +69,9 @@
         }
 
         var inputMonitoringStatusLabel: String {
-            if inputMonitoringDirectlyGranted { return "on" }
-            if inputMonitoringProvidedByAccessibility { return "via Accessibility" }
-            return "off"
+            if inputMonitoringDirectlyGranted { return "oui" }
+            if inputMonitoringProvidedByAccessibility { return "via Accessibilité" }
+            return "non"
         }
 
         static func resolved(
