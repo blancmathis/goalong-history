@@ -77,9 +77,10 @@ struct AmbiancePageContent: View {
                         .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 VStack(alignment: .leading, spacing: 12) {
-                    if pack("orchestra")?.status == .installed, let current {
+                    if let current {
                         AmbiancePlayer(source: current, state: state, volume: $volume, actions: actions)
-                    } else if let orchestra = pack("orchestra") {
+                    }
+                    if let orchestra = pack("orchestra"), orchestra.status != .installed {
                         AmbianceOrchestraSetup(pack: orchestra, pieces: pieces.count, actions: actions)
                     }
                     if case .error(let message) = state {
@@ -112,10 +113,17 @@ struct AmbiancePageContent: View {
 
     private var pieces: [AmbianceSource] { sources.filter { $0.kind == .focus || $0.kind == .relax } }
 
-    /// The piece that plays, else the last one played, else the first focus piece.
     private var current: AmbianceSource? {
+        Self.playerSource(sources: sources, state: state, lastSource: lastSource)
+    }
+
+    /// The source the player card shows, whatever pack is installed: the one that plays, else the last
+    /// one played, else the first available focus piece, else any available source. Never an unavailable one.
+    static func playerSource(sources: [AmbianceSource], state: AmbianceController.State, lastSource: String?) -> AmbianceSource? {
         if case .playing(let source) = state { return source }
-        return sources.first { $0.id == lastSource && $0.isAvailable } ?? sources.first { $0.kind == .focus }
+        return sources.first { $0.id == lastSource && $0.isAvailable }
+            ?? sources.first { $0.kind == .focus && $0.isAvailable }
+            ?? sources.first { $0.isAvailable }
     }
 
     private func pack(_ id: String) -> AmbiancePackState? { packs.first { $0.id == id } }
@@ -246,14 +254,7 @@ struct AmbiancePageContent: View {
 
     static func megabytes(_ bytes: Int64) -> String { "\(Int((Double(bytes) / 1_000_000).rounded())) Mo" }
 
-    static func kindLabel(_ kind: AmbianceSource.Kind) -> String {
-        switch kind {
-        case .focus: return "Concentration"
-        case .relax: return "Détente"
-        case .texture: return "Texture"
-        case .ownFile: return "Ma musique"
-        }
-    }
+    static func kindLabel(_ kind: AmbianceSource.Kind) -> String { kind.displayName }
 }
 
 // MARK: - Player

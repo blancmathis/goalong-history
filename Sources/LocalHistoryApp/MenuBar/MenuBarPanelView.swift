@@ -414,11 +414,11 @@
         }
 
         private func tabTitle(_ tab: MenuBarPanelModel.AmbianceTab) -> String {
-            switch tab { case .focus: return "Focus"; case .relax: return "Détente"; case .texture: return "Textures"; case .ownFile: return "Mes fichiers" }
+            kind(of: tab).displayName
         }
 
         private func kindTitle(_ kind: AmbianceSource.Kind) -> String {
-            switch kind { case .focus: return "Focus"; case .relax: return "Détente"; case .texture: return "Texture"; case .ownFile: return "Fichier" }
+            kind.displayName
         }
 
         private var tabs: [MenuBarPanelModel.AmbianceTab] {
@@ -488,7 +488,7 @@
                     PanelIconButton(symbol: "forward.fill", label: "Son suivant", quiet: true, action: model.playNext)
                 }
                 Button(action: model.togglePlay) {
-                    Image(systemName: model.ambiancePlaying ? "pause.fill" : "play.fill")
+                    Image(systemName: model.ambiancePlaying ? "stop.fill" : "play.fill")
                         .font(.system(size: 12, weight: .bold))
                         .frame(width: 32, height: 32)
                         .background(Circle().fill(LHTheme.elevatedBackground))
@@ -497,8 +497,8 @@
                 }
                 .buttonStyle(.plain)
                 .disabled(model.ambianceCurrent == nil || model.ambianceLoading)
-                .help(model.ambiancePlaying ? "Pause" : "Lire")
-                .accessibilityLabel(model.ambiancePlaying ? "Mettre l’Ambiance en pause" : "Lire l’Ambiance")
+                .help(model.ambiancePlaying ? "Arrêter" : "Lire")
+                .accessibilityLabel(model.ambiancePlaying ? "Arrêter l’Ambiance" : "Lire l’Ambiance")
             }
         }
 
@@ -525,9 +525,9 @@
                 HStack(spacing: 2) {
                     ForEach(tabs, id: \.self) { t in
                         Button { tab = t } label: {
-                            Text(tabTitle(t)).font(.system(size: 12, weight: .medium)).lineLimit(1).fixedSize()
+                            Text(tabTitle(t)).font(.system(size: 12, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
                                 .foregroundStyle(tab == t ? LHTheme.text : LHTheme.secondaryText)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .padding(.horizontal, 6).padding(.vertical, 3)
                                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                                     .fill(tab == t ? LHTheme.elevatedBackground : .clear))
                                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)

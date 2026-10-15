@@ -49,6 +49,27 @@ final class AmbiancePageRenderingTests: XCTestCase {
          AmbiancePackState(id: "textures", title: "Textures et Aube", bytes: 83_363_840, status: textures)]
     }
 
+    func testEveryKindHasOneNonEmptyNameSharedByPageAndPanel() {
+        let names = AmbianceSource.Kind.allCases.map(\.displayName)
+        XCTAssertTrue(names.allSatisfy { !$0.isEmpty })
+        XCTAssertEqual(Set(names).count, names.count)
+        for kind in AmbianceSource.Kind.allCases { XCTAssertEqual(AmbiancePageContent.kindLabel(kind), kind.displayName) }
+        XCTAssertEqual(AmbianceSource.Kind.ownFile.displayName, "Ma musique")
+    }
+
+    func testPlayerIsOfferedWithoutOrchestraPack() throws {
+        let texture = try XCTUnwrap(sources(orchestra: false, textures: true, files: true).first { $0.kind == .texture })
+        let all = sources(orchestra: false, textures: true, files: true)
+        XCTAssertEqual(AmbiancePageContent.playerSource(sources: all, state: .playing(texture), lastSource: nil), texture)
+        // Idle: an installed texture is offered, never an unavailable focus piece.
+        let idle = try XCTUnwrap(AmbiancePageContent.playerSource(sources: all, state: .idle, lastSource: nil))
+        XCTAssertTrue(idle.isAvailable)
+        XCTAssertNil(AmbiancePageContent.playerSource(
+            sources: sources(orchestra: false, textures: false, files: false), state: .idle, lastSource: "ambre"))
+        XCTAssertEqual(AmbiancePageContent.playerSource(
+            sources: sources(orchestra: true, textures: true, files: false), state: .idle, lastSource: nil)?.kind, .focus)
+    }
+
     @MainActor func testRenderAmbiancePage() throws {
         guard let path = ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_SNAPSHOTS"] else {
             throw XCTSkip("Opt-in native rendering with fixed data only")
