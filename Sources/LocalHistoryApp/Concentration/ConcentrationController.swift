@@ -102,7 +102,7 @@ struct FocusPanel: Equatable {
         return (phase.isWork ? "Concentration" : "Pause") + (seconds.map { " \($0 / 60):\(String(format: "%02d", $0 % 60))" } ?? "")
     }
 
-    init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .current,
+    init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
          blocking: @escaping () -> BlockingController? = { nil }, audio: FocusSessionAudio = NoOpFocusSessionAudio(), runsTimers: Bool = false) throws {
         self.store = store; self.clock = clock; self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
         let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day

@@ -159,6 +159,11 @@ end forward by the jump. Persist the last seen wall time every minute; after a r
 earlier than the last seen time keeps the remaining durations. Documented limit: across a reboot a
 forward clock change cannot be detected by the app alone.
 
+**Time zone.** Blocking keeps the time zone it read at launch, on purpose. Program hours, daily
+quotas and the break reset use that zone until Goalong restarts. A zone change while the app runs
+therefore cannot end a locked program early or reset a quota. Braise, Concentration, the menu bar
+and the Screen Time archive follow the new zone at once.
+
 ## Ralentir (friction)
 
 Decision 2026-10-04 (owner). A list can slow a target down instead of blocking it. Evidence: the

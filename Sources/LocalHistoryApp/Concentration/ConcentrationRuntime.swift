@@ -27,7 +27,7 @@ import LocalHistoryQueryCLI
     private let factory: ((FocusStore) throws -> ConcentrationController)?
     private let clock: () -> Date
     private let calendar: Calendar
-    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .current) {
+    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) {
         self.storeFactory = storeFactory; self.factory = factory; self.blockingProvider = blockingProvider; self.presentsPanels = presentsPanels
         self.clock = clock; self.calendar = calendar
     }

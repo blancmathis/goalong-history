@@ -34,6 +34,7 @@ import LocalHistoryCore
     private let clock: () -> Date
     private let store: BlockingStore?
     private let backend: BlockingEnforcementBackend?
+    /// Launch-time snapshot on purpose: a zone change while running must not end a locked program or reset a quota (docs/BLOCKING.md, « Time zone »).
     private let calendar: Calendar
     private let continuous: () -> Double
     private let boot: () -> String

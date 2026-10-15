@@ -11,7 +11,7 @@
         private let calendar: Calendar
         private var lastRunDay: Date?
 
-        init(calendar: Calendar = .current) {
+        init(calendar: Calendar = .autoupdatingCurrent) {
             self.calendar = calendar
         }
 

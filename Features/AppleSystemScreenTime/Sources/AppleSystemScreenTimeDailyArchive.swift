@@ -72,7 +72,7 @@
         public init(
             rootDirectory: URL,
             fileManager: FileManager = .default,
-            calendar: Calendar = .current,
+            calendar: Calendar = .autoupdatingCurrent,
             createIfMissing: Bool = true
         ) throws {
             self.rootDirectory = rootDirectory
@@ -372,7 +372,7 @@
         public convenience init(
             rootDirectory: URL,
             deviceID: String,
-            calendar: Calendar = .current,
+            calendar: Calendar = .autoupdatingCurrent,
             nowProvider: @escaping () -> Date = Date.init,
             activityAdmission: @escaping () -> String? = { "active" }
         ) throws {
@@ -394,7 +394,7 @@
         public init(
             rootDirectory: URL,
             currentMacDevice: AppleScreenTimeDevice,
-            calendar: Calendar = .current,
+            calendar: Calendar = .autoupdatingCurrent,
             nowProvider: @escaping () -> Date = Date.init,
             liveCollectionProvider: @escaping (Date) -> AppleSystemScreenTimeCollection,
             activityAdmission: @escaping () -> String? = { "active" }

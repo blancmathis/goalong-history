@@ -392,7 +392,7 @@
             deviceID: String,
             paths: AppleSystemScreenTimePaths = .default,
             fileManager: FileManager = .default,
-            calendar: Calendar = .current,
+            calendar: Calendar = .autoupdatingCurrent,
             nowProvider: @escaping () -> Date = Date.init,
             biomeCacheLimits: AppleBiomeFileCacheLimits = .production
         ) {

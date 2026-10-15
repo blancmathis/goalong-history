@@ -28,7 +28,7 @@ import ServiceManagement
     private var saveTask: DispatchWorkItem?
 
     init(store: BraiseStore, gamma: BraiseGammaDriving, runsTimers: Bool = true,
-         clock: @escaping () -> Date = Date.init, calendar: Calendar = .current) throws {
+         clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) throws {
         self.store = store; self.gamma = gamma; self.runsTimers = runsTimers
         self.clock = clock; self.calendar = calendar
         preferences = try store.load()
@@ -57,6 +57,8 @@ import ServiceManagement
     private func observe(_ center: NotificationCenter, names: [Notification.Name]) {
         for name in names {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // The default calendar follows the system zone; drop the cached zone first so evaluate() sees the new one.
+                if name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
                 MainActor.assumeIsolated {
                     guard let self, self.running else { return }
                     self.evaluate(); self.gamma.checkAfterSystemChange()
