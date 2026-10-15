@@ -39,7 +39,7 @@ import Foundation
         controller.stop()
     }
 
-    private static func isOurs(_ state: AmbianceController.State, _ source: AmbianceSource?) -> Bool {
+    static func isOurs(_ state: AmbianceController.State, _ source: AmbianceSource?) -> Bool {
         guard let source else { return false }
         return state == .loading || state == .playing(source)
     }
