@@ -11,20 +11,16 @@ pip install -r requirements.txt
 uvicorn app:app --host 127.0.0.1 --port 8787
 ```
 
-Then set in Goalong History's `config.json`:
+The shipped Goalong History app does not contain the anchor uploader, and it forces
+`verificationEnabled` and `verificationServerURL` off. Setting those keys in `config.json`
+has no effect. This server is a protocol reference for building and testing a compatible client.
+It is not wired to the app.
 
-```json
-{
-  "verificationEnabled": true,
-  "verificationServerURL": "http://127.0.0.1:8787"
-}
-```
-
-`http://` is accepted by the client only for localhost. Real deployments must use HTTPS.
+A real deployment must use HTTPS.
 
 ## Privacy boundary
 
-The live anchor endpoint receives only:
+The anchor endpoint of this reference server receives only:
 
 - pseudonymous device ID (SHA-256 of its public key)
 - monotonically increasing anchor sequence

@@ -21,6 +21,19 @@ final class RedactionTests: XCTestCase {
         XCTAssertTrue(snapshot.redactionApplied)
     }
 
+    func testSanitizerKeepsEmojiAndSupplementaryScalarsButDropsControls() {
+        XCTAssertEqual(StringSanitizer.clean("Release \u{1F680} planning", maxLength: 100), "Release \u{1F680} planning")
+        XCTAssertEqual(StringSanitizer.clean("\u{20BB7}\u{91CE}", maxLength: 100), "\u{20BB7}\u{91CE}")
+        XCTAssertEqual(StringSanitizer.clean("a\u{7F}b\u{85}c", maxLength: 100), "abc")
+    }
+
+    func testURLRedactionMasksCommonSecretParametersWithoutAllValuesMode() throws {
+        let url = "https://s3.example.com/f?X-Amz-Signature=aaa&id_token=bbb&api_key=ccc&my_session_token=ddd&page=2"
+        let snapshot = try XCTUnwrap(URLRedactor.sanitize(url, redactAllQueryValues: false, maxLength: 512))
+        for secret in ["aaa", "bbb", "ccc", "ddd"] { XCTAssertFalse(snapshot.value.contains(secret), secret) }
+        XCTAssertTrue(snapshot.value.contains("page=2"))
+    }
+
     func testPrivateMarkerIsCaseAndAccentInsensitive() {
         XCTAssertTrue(
             PrivacyClassifier.containsPrivateMarker(

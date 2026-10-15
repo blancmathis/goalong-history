@@ -62,6 +62,20 @@ final class AnalysisProofTests: XCTestCase {
         )
     }
 
+    func testInvalidRunSignatureDoesNotLeakSignerClaimsAndShortArchiveIsMalformed() throws {
+        let fixture = try proofFixture()
+        var entries = fixture.entries
+        entries["run.jws"] = Data("a.b.c".utf8)
+        let report = try GoalongProofPackageVerifier.verify(archive: GoalongProofArchive.create(entries: entries))
+        XCTAssertFalse(report.isLocallyValid)
+        XCTAssertEqual(report.providerObservation, "unknown")
+        XCTAssertEqual(report.externalReceipt, "not_present")
+        XCTAssertEqual(report.appAttest, "not_present")
+        XCTAssertThrowsError(try GoalongProofArchive.extract(Data())) { error in
+            XCTAssertEqual(error as? GoalongProofArchiveError, .malformedZIP)
+        }
+    }
+
     func testStandaloneProofRoundTripsAndRejectsTamperingAndUnlistedEntries() throws {
         let fixture = try proofFixture()
         let archive = try GoalongProofArchive.create(entries: fixture.entries)
