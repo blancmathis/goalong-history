@@ -30,7 +30,7 @@ import LocalHistoryCore
                 model.deleteDetails(since: seconds == 0 ? nil : Date().addingTimeInterval(-Double(seconds)))
                 dismiss()
             }
-        } message: { Text((seconds == 0 ? "Cette action est irréversible. Les verdicts et corrections de « Mon travail » sont aussi effacés. " : "Cette action est irréversible. ") + "Les preuves, les originaux Apple et IA, les bilans ChatGPT, les exports et les copies distantes ne sont pas supprimés.") }
+        } message: { Text((seconds == 0 ? "Cette action est irréversible. Les verdicts et corrections de « Mon travail » sont aussi effacés. " : "Cette action est irréversible. ") + "Les bilans ChatGPT des jours concernés sont aussi effacés, avec leur preuve locale. Les sceaux et reçus, les originaux Apple et IA, les exports et les copies distantes ne sont pas supprimés.") }
     }
 }
 #endif
