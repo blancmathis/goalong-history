@@ -64,6 +64,22 @@ public enum GoalongSiteExportError: Error, CustomStringConvertible {
     }
 }
 
+/// Text safe to show in the French UI. Curated errors keep their own wording; system errors
+/// (URLError, DecodingError, NSError) never leak raw "Error Domain=..." text. Raw errors
+/// still go to SupportDiagnostics at the call sites.
+public func goalongUserMessage(_ error: Error) -> String {
+    if let curated = error as? GoalongSiteExportError { return curated.description }
+    if let localized = error as? LocalizedError, let text = localized.errorDescription, !text.isEmpty { return text }
+    if error is URLError {
+        return "Le site n’a pas pu être joint. Vérifiez votre connexion, puis réessayez."
+    }
+    if error is DecodingError || (error as NSError).domain == NSCocoaErrorDomain && (3840...3851).contains((error as NSError).code) {
+        return "Réponse inattendue du site. Vérifiez l’historique d’import avant de réessayer."
+    }
+    let text = (error as NSError).localizedDescription
+    return text.contains("Error Domain=") ? "Une erreur inattendue est survenue. Réessayez." : text
+}
+
 /// Deliberately emits only the website's public exchange fields. Local proof metadata and
 /// transcript/event bodies have no representation here. Source provenance is not verification.
 public enum GoalongSiteExport {

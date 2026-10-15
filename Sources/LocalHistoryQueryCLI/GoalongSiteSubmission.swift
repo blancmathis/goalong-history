@@ -203,7 +203,7 @@ public enum GoalongSiteSubmission {
             }
             throw GoalongSiteExportError.invalid(reason)
         }
-        guard let response = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let response = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               response["verification"] as? String == "unverified" else {
             throw GoalongSiteExportError.invalid("The website returned an unexpected receipt; inspect import history before retrying.")
         }

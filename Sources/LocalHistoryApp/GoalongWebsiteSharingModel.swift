@@ -78,7 +78,9 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
                 if draft.websiteDomains != oldValue.websiteDomains { needsWebsiteSuggestion = false }
             }
             invalidate()
-            if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled { autoSender.stop(); status = "Synchronisation mise en pause pendant la modification. Relisez puis confirmez vos nouveaux choix." }
+            // Browsing another sample day only changes the preview; it does not change what the plan sends.
+            var samePlanOldValue = oldValue; samePlanOldValue.date = draft.date
+            if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled && samePlanOldValue != draft { autoSender.stop(); status = "Synchronisation mise en pause pendant la modification. Relisez puis confirmez vos nouveaux choix." }
         }
     }
     @Published private(set) var catalog: GoalongSiteSelectionCatalog?
@@ -156,13 +158,15 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         } catch { /* Delivery succeeded; failure to remember must not duplicate a send. */ }
     }
+    /// French plural: 0 and 1 are singular.
+    static func frCount(_ n: Int, _ singular: String, _ plural: String) -> String { "\(n) \(n > 1 ? plural : singular)" }
     private func readableError(_ error: Error) -> String {
         let message = String(describing: error)
         if message.contains("Apple Screen Time is off") { return "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer." }
         if message.contains("No saved Screen Time") { return "Aucune donnée Apple enregistrée pour cette journée. Choisissez une autre date ou actualisez l’historique." }
         if message.contains("Computer History is off") { return "Activez l’historique de ce Mac pour inclure les sites, ou désactivez Sites web." }
         if message.contains("Website details are unavailable") { return "Les sites ne sont pas disponibles pour cette date. Les applications restent utilisables sans les sites." }
-        return "Lecture locale indisponible : " + message
+        return "Lecture locale indisponible : " + goalongUserMessage(error)
     }
     var selectionHint: String? {
         if loading { return "Lecture de la journée…" }
@@ -257,7 +261,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             }
             preview = Preview(payload: bytes, draft: snapshot, origin: target, tokenPath: tokenPath,
                               credentialFingerprint: fingerprint, createdAt: Date(), privacyRevision: privacyRevision, pauseRevision: pause.revision)
-        } catch { self.error = "Aperçu non préparé : \(error)" }
+        } catch { self.error = "Aperçu non préparé : \(goalongUserMessage(error))" }
     }
     func confirm(origin: String, tokenPath: String) async {
         guard !busy, reviewed, let approved = preview else { return }
@@ -297,9 +301,10 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
                 let object = try JSONSerialization.jsonObject(with: receipt) as? [String: Any] ?? [:]
                 preview = nil; reviewed = false
                 rememberSelection()
-                status = "Reçu par Goalong : \(object["imported"] ?? 0) ajout, \(object["updated"] ?? 0) mise à jour, \(object["skipped"] ?? 0) inchangé. Aucun envoi quotidien n’a été activé."
+                func count(_ key: String) -> Int { (object[key] as? NSNumber)?.intValue ?? 0 }
+                status = "Reçu par Goalong : \(Self.frCount(count("imported"), "ajout", "ajouts")), \(Self.frCount(count("updated"), "mise à jour", "mises à jour")), \(Self.frCount(count("skipped"), "inchangé", "inchangés")). Aucun envoi quotidien n’a été activé."
             }
-        } catch { self.error = "Envoi non confirmé : \(error)" }
+        } catch { self.error = "Envoi non confirmé : \(goalongUserMessage(error))" }
     }
 }
 #endif

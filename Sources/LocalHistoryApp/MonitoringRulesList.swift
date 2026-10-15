@@ -227,6 +227,13 @@
                         help: "Ce site n’a pas d’adresse stable : Goalong ne peut pas lui associer une règle permanente."
                     )
                 }
+                if let parent = model.excludingParentDomain(for: host) {
+                    return MonitoringState(
+                        enabled: false,
+                        editable: false,
+                        help: "Exclu par la règle « \(parent) » : modifiez-la dans Réglages."
+                    )
+                }
                 return MonitoringState(
                     enabled: !model.isDomainExcludedFromCapture(host),
                     editable: true,

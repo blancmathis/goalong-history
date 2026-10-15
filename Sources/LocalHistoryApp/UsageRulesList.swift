@@ -39,11 +39,20 @@
         }
 
         private var websiteSummariesBySubjectID: [String: ActivitySiteSummary] {
+            Self.summariesBySubjectID(websiteSummaries)
+        }
+
+        /// Two hosts can normalise to the same subject key; the first summary wins instead of trapping.
+        static func summariesBySubjectID(_ summaries: [ActivitySiteSummary]) -> [String: ActivitySiteSummary] {
             Dictionary(
-                uniqueKeysWithValues: websiteSummaries.map {
-                    (SharingSubjectKey.website(host: $0.host), $0)
-                }
+                summaries.map { (SharingSubjectKey.website(host: $0.host), $0) },
+                uniquingKeysWith: { first, _ in first }
             )
+        }
+
+        /// French plural: 0 and 1 are singular.
+        static func itemCountLabel(_ count: Int) -> String {
+            "\(count) élément\(count > 1 ? "s" : "")"
         }
 
         var body: some View {
@@ -95,7 +104,7 @@
                     .frame(width: 140)
                 }
 
-                Text("\(filteredItems.count) item\(filteredItems.count == 1 ? "" : "s")")
+                Text(Self.itemCountLabel(filteredItems.count))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 58, alignment: .trailing)
@@ -126,7 +135,7 @@
                             Text("Toujours lors du partage")
                                 .frame(width: 142, alignment: .trailing)
                             if title == "Sites web" {
-                                Text("Détails")
+                                Text(websiteSummaries.isEmpty ? "" : "Détails")
                                     .frame(width: 46, alignment: .trailing)
                             }
                         }
@@ -177,7 +186,7 @@
         var body: some View {
             VStack(spacing: 0) {
                 summaryRow
-                if item.kind == .website, expanded {
+                if item.kind == .website, expanded, websiteSummary != nil {
                     Divider().padding(.leading, 58)
                     websiteDetail
                         .padding(.leading, 58)
@@ -247,13 +256,16 @@
                 if item.kind == .website {
                     HStack(spacing: 5) {
                         siteActionsMenu
-                        Button(action: onToggleExpanded) {
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
-                                .frame(width: 22, height: 22)
+                        // Without an analysis summary there is nothing to show, so no expand control.
+                        if websiteSummary != nil {
+                            Button(action: onToggleExpanded) {
+                                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .frame(width: 22, height: 22)
+                            }
+                            .buttonStyle(.plain)
+                            .help(expanded ? "Masquer les détails du site" : "Afficher chaque page et interaction observée")
                         }
-                        .buttonStyle(.plain)
-                        .help(expanded ? "Masquer les détails du site" : "Afficher chaque page et interaction observée")
                     }
                     .frame(width: 46, alignment: .trailing)
                 }
@@ -276,7 +288,10 @@
                         model.setSharingVisibility(.identity, for: item.id)
                     }
                     Divider()
-                    if model.isDomainExcludedFromCapture(host) {
+                    if let parent = model.excludingParentDomain(for: host) {
+                        Button("Exclu par la règle « \(parent) » (Réglages)") {}
+                            .disabled(true)
+                    } else if model.isDomainExcludedFromCapture(host) {
                         Button("Autoriser de nouveau les détails") {
                             model.setDomainCaptureEnabled(true, host: host)
                         }
@@ -324,6 +339,7 @@
         private func websiteControls(_ detail: ActivitySiteSummary) -> some View {
             HStack(spacing: 14) {
                 if let host = item.host {
+                    let parent = model.excludingParentDomain(for: host)
                     Toggle(
                         isOn: Binding(
                             get: { !model.isDomainExcludedFromCapture(host) },
@@ -333,12 +349,14 @@
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Mémoriser les détails futurs du site")
                                 .font(.system(size: 11, weight: .semibold))
-                            Text("Désactivez pour ne garder désormais qu’une période privée pour ce domaine.")
+                            Text(parent.map { "Exclu par la règle « \($0) » : modifiez-la dans Réglages." }
+                                ?? "Désactivez pour ne garder désormais qu’une période privée pour ce domaine.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
                     }
                     .toggleStyle(.goalongSwitch)
+                    .disabled(parent != nil)
                 }
 
                 Spacer()

@@ -35,6 +35,7 @@ import LocalHistoryCore
         var credentialFingerprint: String?
     }
     var savedConfiguration: Configuration? { configuration() }
+    private static let globalPauseStatus = "Pause globale : envoi suspendu, programmation conservée."
 
     static func sourcesAllowed(_ options: GoalongSiteExportOptions) -> Bool {
         GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)
@@ -134,8 +135,12 @@ import LocalHistoryCore
     func tick(now: Date = Date()) async {
         let pause = GoalongGlobalPause.load(in: root)
         guard !pause.blocksActivity else {
-            if enabled { status = "Pause globale : envoi suspendu, programmation conservée." }
+            if enabled { status = Self.globalPauseStatus }
             return
+        }
+        // The pause ended: drop its message even when this tick sends nothing. Other statuses stay.
+        if status == Self.globalPauseStatus, enabled, let saved = configuration(), saved.policyVersion == 3, saved.paused != true {
+            status = "Activée · la veille à partir de \(Self.timeLabel(saved)), lorsque Goalong est ouvert."
         }
         guard !busy, enabled, var current = configuration(), current.policyVersion == 3, current.paused != true,
               let zone = TimeZone(identifier: current.timeZoneIdentifier ?? "") else { return }
@@ -186,7 +191,7 @@ import LocalHistoryCore
         } catch {
             SupportDiagnostics.shared.failure(error, component: .sharing)
             stop()
-            status = "Synchronisation en pause : \(error). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre."
+            status = "Synchronisation en pause : \(goalongUserMessage(error)). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre."
         }
     }
     deinit { timer?.invalidate() }

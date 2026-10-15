@@ -6,6 +6,17 @@ import LocalHistoryCore
 @MainActor
 final class GoalongWebsitePairingCoordinator {
     private var busy = false
+    static var connectionsDirectory: URL {
+        AppPaths.applicationSupportDirectory.appendingPathComponent("website-connections", isDirectory: true)
+    }
+    /// Deletes the credential file when pairing created it (never a file the user picked) and drops
+    /// the account details bound to it. The access stays valid on the site until it is revoked there.
+    static func forgetStoredToken(path: String) {
+        GoalongSitePairing.discardManagedToken(path: path, directory: connectionsDirectory)
+        for key in ["goalong.website.accountID", "goalong.website.accountCredentialFingerprint"] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
     private var pendingPrompt: (alert: NSAlert, parent: NSWindow)?
 
     func cancelPendingPrompt() {
@@ -55,7 +66,8 @@ final class GoalongWebsitePairingCoordinator {
             confirmation.addButton(withTitle: "Relier mon Mac")
             confirmation.addButton(withTitle: "Annuler")
             guard await present(confirmation, on: window) == .alertFirstButtonReturn else { return false }
-            let directory = AppPaths.applicationSupportDirectory.appendingPathComponent("website-connections", isDirectory: true)
+            let directory = Self.connectionsDirectory
+            let previousTokenPath = UserDefaults.standard.string(forKey: "goalong.website.tokenFilePath") ?? ""
             let saved = try await Task.detached(priority: .userInitiated) {
                 let response = try pairing.exchange()
                 let accountID = try GoalongSitePairing.accountID(response: response)
@@ -69,12 +81,16 @@ final class GoalongWebsitePairingCoordinator {
             UserDefaults.standard.set(saved.file.path, forKey: "goalong.website.tokenFilePath")
             UserDefaults.standard.set(saved.accountID, forKey: "goalong.website.accountID")
             UserDefaults.standard.set(saved.fingerprint, forKey: "goalong.website.accountCredentialFingerprint")
+            // The replaced credential is deleted only now that the new one is saved and selected.
+            if previousTokenPath != saved.file.path {
+                GoalongSitePairing.discardManagedToken(path: previousTokenPath, directory: directory)
+            }
             // The caller opens the data picker directly; no second modal to dismiss.
             return true
         } catch {
             let alert = NSAlert()
             alert.messageText = "Connexion à relancer"
-            alert.informativeText = "\(error)"
+            alert.informativeText = goalongUserMessage(error)
             alert.addButton(withTitle: "Fermer")
             _ = await present(alert, on: window)
             return false

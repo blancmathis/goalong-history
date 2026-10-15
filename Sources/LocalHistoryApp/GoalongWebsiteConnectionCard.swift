@@ -57,10 +57,11 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
         .alert("Déconnecter ce compte ?", isPresented: $disconnecting) {
             Button("Annuler", role: .cancel) {}
             Button("Déconnecter") {
-                sender.forget(); tokenPath = ""; origin = ""; credentialAvailable = false
-                for key in ["goalong.website.accountID", "goalong.website.accountCredentialFingerprint"] { UserDefaults.standard.removeObject(forKey: key) }
+                sender.forget()
+                GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenPath)
+                tokenPath = ""; origin = ""; credentialAvailable = false
             }
-        } message: { Text("Les prochains envois seront arrêtés. Les données déjà reçues restent sur le site. Un envoi déjà commencé peut encore aboutir.") }
+        } message: { Text("Les prochains envois seront arrêtés et le fichier d’accès sera supprimé de ce Mac. Les données déjà reçues restent sur le site. Un envoi déjà commencé peut encore aboutir. Pour révoquer l’accès immédiatement, utilisez les réglages du site.") }
     }
     private func refreshCredential() {
         credentialAvailable = !origin.isEmpty && !tokenPath.isEmpty
@@ -77,8 +78,24 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
 
 struct GoalongWebsiteConnectionSheet: View {
     private let preparedAnalysis: Data?
-    init(preparedAnalysis: Data? = nil) {
+    /// Exports are reviewed once, then sent only if the exclusions are unchanged since that review.
+    struct ReviewedExport { let payload: Data; let privacyRevision: String }
+    /// Builds the export and binds it to the exclusions in force while its bytes were produced.
+    nonisolated static func reviewedExport(root: URL, day: String, options: GoalongSiteExportOptions,
+        export: (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) }) throws -> ReviewedExport {
+        let before = GoalongPrivacyPolicy.load(in: root)
+        guard !before.blocked else { throw GoalongSiteExportError.invalid("Les exclusions sont illisibles. Vérifiez-les dans les réglages, puis préparez un nouvel aperçu.") }
+        let bytes = try export(root, day, options)
+        guard GoalongPrivacyPolicy.load(in: root).revision == before.revision else {
+            throw GoalongSiteExportError.invalid("Les exclusions ont changé pendant la préparation. Préparez un nouvel aperçu.")
+        }
+        return ReviewedExport(payload: bytes, privacyRevision: before.revision)
+    }
+    /// `privacyRevision` is the exclusions revision captured when `preparedAnalysis` was produced.
+    /// Without it, the send is refused whenever exclusions exist (fail closed).
+    init(preparedAnalysis: Data? = nil, privacyRevision: String? = nil) {
         self.preparedAnalysis = preparedAnalysis
+        _previewPrivacyRevision = State(initialValue: preparedAnalysis == nil ? nil : privacyRevision)
         _payload = State(initialValue: preparedAnalysis)
         _previewSummary = State(initialValue: preparedAnalysis == nil ? "" : "Cartes relues et sélectionnées. Les preuves et règles privées restent locales.")
     }
@@ -110,6 +127,7 @@ struct GoalongWebsiteConnectionSheet: View {
     @State private var rhythmTimes = false
     @ObservedObject private var autoSender = GoalongWebsiteAutoSender.shared
     @State private var payload: Data?
+    @State private var previewPrivacyRevision: String?
     @State private var devices: [(id: String, name: String)] = []
     @State private var excludedDevices: Set<String> = []
     @State private var previewSummary = ""
@@ -163,7 +181,7 @@ struct GoalongWebsiteConnectionSheet: View {
                             if !tokenFilePath.isEmpty {
                                 Text(URL(fileURLWithPath: tokenFilePath).lastPathComponent)
                                     .font(.caption).lineLimit(1).truncationMode(.middle)
-                                Button("Oublier le fichier") { tokenFilePath = ""; status = nil }
+                                Button("Oublier le fichier") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = ""; status = nil }
                                     .buttonStyle(LHQuietButtonStyle())
                             }
                         }
@@ -254,7 +272,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("3. Vérifier avant l’envoi").font(.headline)
-                        if preparedAnalysis == nil { Button(payload == nil ? "Prepare offline preview" : "Actualiser l’aperçu", action: preparePreview)
+                        if preparedAnalysis == nil { Button(payload == nil ? "Préparer l’aperçu hors ligne" : "Actualiser l’aperçu", action: preparePreview)
                             .buttonStyle(LHSecondaryButtonStyle()) }
                         if let payload {
                             Text(previewSummary).font(.subheadline)
@@ -322,7 +340,7 @@ struct GoalongWebsiteConnectionSheet: View {
         .onChange(of: tokenFilePath) { _ in if preparedAnalysis == nil { invalidatePreview() }; autoSender.stop() }
     }
 
-    private func invalidatePreview() { payload = nil; status = nil; error = nil }
+    private func invalidatePreview() { payload = nil; previewPrivacyRevision = nil; status = nil; error = nil }
 
     private func chooseTokenFile() {
         guard let window = windowHost.window else {
@@ -361,12 +379,12 @@ struct GoalongWebsiteConnectionSheet: View {
                     do {
                         try GoalongSiteSubmission.protectTokenFile(file: file, reviewed: reviewed)
                         selectTokenFile(file)
-                    } catch { self.error = String(describing: error) }
+                    } catch { self.error = goalongUserMessage(error) }
                 }
                 return
             }
             selectTokenFile(file)
-        } catch { self.error = String(describing: error) }
+        } catch { self.error = goalongUserMessage(error) }
     }
 
     private func validateTokenPath() {
@@ -377,7 +395,7 @@ struct GoalongWebsiteConnectionSheet: View {
         do {
             let file = try GoalongSiteSubmission.tokenFileURL(path: tokenPathInput)
             reviewSelectedTokenFile(file, in: window)
-        } catch { self.error = String(describing: error) }
+        } catch { self.error = goalongUserMessage(error) }
     }
 
     private func selectTokenFile(_ file: URL) {
@@ -388,7 +406,7 @@ struct GoalongWebsiteConnectionSheet: View {
             showsTokenPath = false
             error = nil
             status = nil
-        } catch { self.error = String(describing: error) }
+        } catch { self.error = goalongUserMessage(error) }
     }
 
     private func openWebsite() {
@@ -400,7 +418,7 @@ struct GoalongWebsiteConnectionSheet: View {
             if let url = parts.url, !GoalongWorkspaceOpenPolicy.open(url, purpose: .goalongWebsite) {
                 error = "Le site configuré n’a pas pu être ouvert. Vérifiez son adresse et réessayez."
             }
-        } catch { self.error = String(describing: error) }
+        } catch { self.error = goalongUserMessage(error) }
     }
 
     private func splitNames(_ text: String) -> [String] { text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
@@ -463,9 +481,10 @@ struct GoalongWebsiteConnectionSheet: View {
         invalidatePreview()
         Task { @MainActor in
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: day, options: options)
+                let reviewed = try await Task.detached(priority: .userInitiated) {
+                    try Self.reviewedExport(root: root, day: day, options: options)
                 }.value
+                let result = reviewed.payload
                 let object = try JSONSerialization.jsonObject(with: result) as? [String: Any]
                 let value = (object?["days"] as? [[String: Any]])?.first
                 let telemetry = value?["telemetry"] as? [String: Any]
@@ -479,7 +498,8 @@ struct GoalongWebsiteConnectionSheet: View {
                 let applications = rows.reduce(0) { $0 + (($1["apps"] as? [Any])?.count ?? 0) }
                 previewSummary = "\(day) · \(rows.count) appareil(s) · \(applications) ligne(s) d’applications · \(result.count) octets. Vérifiez les champs exacts ci-dessous."
                 payload = result
-            } catch { self.error = String(describing: error) }
+                previewPrivacyRevision = reviewed.privacyRevision
+            } catch { self.error = goalongUserMessage(error) }
             busy = false
         }
     }
@@ -491,18 +511,21 @@ struct GoalongWebsiteConnectionSheet: View {
         }
         let target = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let tokenFile = URL(fileURLWithPath: tokenFilePath)
+        let privacyRevision = previewPrivacyRevision
+        let privacyRoot = AppPaths.applicationSupportDirectory
         busy = true
         error = nil
         status = nil
         Task { @MainActor in
             do {
                 let receipt = try await Task.detached(priority: .userInitiated) {
-                    try GoalongSiteSubmission.send(payload: reviewedPayload, origin: target, tokenFile: tokenFile)
+                    try GoalongSiteSubmission.send(payload: reviewedPayload, origin: target, tokenFile: tokenFile,
+                        privacyRoot: privacyRoot, expectedPrivacyRevision: privacyRevision)
                 }.value
                 let result = try JSONSerialization.jsonObject(with: receipt) as? [String: Any] ?? [:]
                 status = "Reçu par le site : \(result["imported"] ?? 0) nouveau(x), \(result["updated"] ?? 0) mis à jour, \(result["skipped"] ?? 0) inchangé(s). Données non vérifiées ; vos règles de partage du site s’appliquent."
-                payload = nil
-            } catch { self.error = String(describing: error) }
+                payload = nil; previewPrivacyRevision = nil
+            } catch { self.error = goalongUserMessage(error) }
             busy = false
         }
     }
