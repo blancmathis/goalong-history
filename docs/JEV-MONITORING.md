@@ -8,7 +8,7 @@ de page dans la navigation principale (la route `.monitoring` ouvre cette rubriq
 défaut et indépendante de Computer History, ChatGPT, de l’envoi au site et du
 choix de collecte locale de texte. Son activation demande une confirmation
 explicite de l’envoi à TypeSafe. L’utilisateur fournit sa propre clé API dans le
-champ protégé de **Connecter l’API** ; aucun secret n’est inclus dans le code ou envoyé au site Goalong.
+champ protégé de **Connecter l’API** (ou **Gérer la connexion** quand une clé existe) ; aucun secret n’est inclus dans le code ou envoyé au site Goalong.
 L’API TypeSafe peut être facturée selon son offre. Aucun appel n’est fait sans clé.
 
 Le menu **Surveillance temps réel** permet une pause de 5, 10, 15 ou 30 minutes,

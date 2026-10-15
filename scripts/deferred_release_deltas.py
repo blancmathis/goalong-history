@@ -53,6 +53,23 @@ def current_main():
     return subprocess.check_output(["git", "ls-remote", "origin", "refs/heads/main"], text=True).split()[0]
 
 
+def has_public_receipt(tag):
+    """True when the release was fully published: public-verification.json is uploaded only after the feed."""
+    assets = json.loads(subprocess.check_output(["gh", "release", "view", tag, "--repo", REPO, "--json", "assets"], text=True))["assets"]
+    return any(a["name"] == "public-verification.json" for a in assets)
+
+
+def select_delta_bases(tags, is_published, limit=3):
+    """Newest published main-* tags first; an orphan archive that never reached the feed is never a base."""
+    chosen = []
+    for base_tag in tags:
+        if len(chosen) == limit:
+            break
+        if is_published(base_tag):
+            chosen.append(base_tag)
+    return chosen
+
+
 def main():
     mode, tag = sys.argv[1:]
     revision = os.environ["GITHUB_SHA"]
@@ -83,7 +100,7 @@ def main():
             tags = [r["tagName"] for r in rows if re.fullmatch(r"main-[0-9]+-[0-9]+", r["tagName"]) and r["tagName"] != tag]
             tags.sort(key=lambda t: tuple(map(int, t.split("-")[1:])), reverse=True)
             by_build = {}
-            for base_tag in tags[:3]:
+            for base_tag in select_delta_bases(tags, has_public_receipt):
                 folder = work / base_tag
                 folder.mkdir()
                 run("gh", "release", "download", base_tag, "--repo", REPO, "--pattern", ZIP,
@@ -164,7 +181,9 @@ def main():
                 return
             run("gh", "release", "upload", "latest-main", str(dist / "release-manifest.json"), "--repo", REPO, "--clobber")
             run("gh", "release", "upload", "latest-main", str(dist / "community-appcast.xml"), "--repo", REPO, "--clobber")
-            run("bash", "scripts/verify_published_update.sh", str(dist))
+            run("bash", "scripts/verify_published_update.sh", str(dist),
+                env={**os.environ, "LOCALHISTORY_EXPECTED_FEED_SHA256": generation["feedSHA256"],
+                     "LOCALHISTORY_PREVIOUS_FEED_SHA256": generation["expectedFeedSHA256"]})
         else:
             raise ValueError("Expected prepare or publish")
 

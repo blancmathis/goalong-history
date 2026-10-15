@@ -2,7 +2,8 @@
 
 > Current build defaults and the key-preserving local publication workflow: [FREE-UPDATES.md](FREE-UPDATES.md). Normal source builds now include the committed public update key; no paid Apple membership or developer-key export is required.
 
-Goalong has one bundle identity, `ai.goalong.localhistory`. The free public Community Build is
+Goalong has one bundle identity, `ai.goalong.localhistory`. Local builds use a stable Apple
+Development identity when one is already available. The free public Community Build is
 signed with a pinned Apple Development identity (team 2L5SSLPX46, see
 `Distribution/release-signing.json` and [STABLE_RELEASE_IDENTITY.md](STABLE_RELEASE_IDENTITY.md)),
 not Apple-notarized and not sandboxed. Releases signed with the same pinned identity keep the same

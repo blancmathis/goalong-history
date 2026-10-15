@@ -7,6 +7,9 @@ WORK="$(mktemp -d /tmp/goalong-published-update.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 if [[ -n "${LOCALHISTORY_UPDATE_VERIFIER:-}" ]]; then cp "$LOCALHISTORY_UPDATE_VERIFIER" "$WORK/verify"; else xcrun swiftc "$ROOT/scripts/verify_update_archive.swift" -o "$WORK/verify"; fi
 source "$ROOT/scripts/sparkle_release.env"
+for feed_digest in "${LOCALHISTORY_EXPECTED_FEED_SHA256:-}" "${LOCALHISTORY_PREVIOUS_FEED_SHA256:-}"; do
+  [[ -z "$feed_digest" || "$feed_digest" =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid expected feed digest.' >&2; exit 1; }
+done
 EXPECTED_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$DIST/Goalong History.app/Contents/Info.plist")"
 # GitHub may serve the previous authenticated generation for minutes after replacement
 # (45 s was too short on 2026-10-11), so wait up to about 5 minutes.
@@ -30,10 +33,32 @@ sys.exit(2)
 PY
   STATUS=$?
   set -e
+  if [[ "$STATUS" == 0 && -n "${LOCALHISTORY_EXPECTED_FEED_SHA256:-}" ]]; then
+    # Delta mode: the build number alone cannot tell the delta feed from the same-build full feed.
+    # Only the previous (full) generation may still be served; any other digest fails at once.
+    FEED_SHA256="$(shasum -a 256 "$WORK/feed.xml" | cut -d' ' -f1)"
+    if [[ "$FEED_SHA256" != "$LOCALHISTORY_EXPECTED_FEED_SHA256" ]]; then
+      if [[ -n "${LOCALHISTORY_PREVIOUS_FEED_SHA256:-}" && "$FEED_SHA256" != "$LOCALHISTORY_PREVIOUS_FEED_SHA256" ]]; then
+        echo 'Public feed is neither the expected delta generation nor the previous full generation.' >&2
+        exit 1
+      fi
+      STATUS=2
+    fi
+  fi
   if [[ "$STATUS" == 0 ]]; then break; fi
   [[ "$STATUS" == 2 && "$attempt" -lt 59 ]] || { echo 'Expected authenticated public build is not visible.' >&2; exit 1; }
-  sleep 5
+  sleep "${LOCALHISTORY_VERIFY_RETRY_SECONDS:-5}"
 done
+if [[ -n "${LOCALHISTORY_EXPECTED_FEED_SHA256:-}" ]]; then
+  # The served delta feed must list exactly the delta files that were uploaded from $DIST.
+  python3 - "$WORK/feed.json" "$DIST" <<'PY'
+import json,sys
+from pathlib import Path
+served=sorted(Path(d['url']).name for d in json.load(open(sys.argv[1]))['deltas'])
+uploaded=sorted(p.name for p in Path(sys.argv[2]).glob('Goalong-History-macOS-universal-from-*.delta'))
+assert served and served==uploaded, 'Published delta list differs from the uploaded deltas'
+PY
+fi
 URL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["url"])' "$WORK/feed.json")"
 PUBLIC_GET_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if [[ -n "${LOCALHISTORY_PUBLIC_RECEIPT:-}" ]]; then

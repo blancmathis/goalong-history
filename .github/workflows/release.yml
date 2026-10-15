@@ -33,6 +33,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Refuse a manual release from a non-main or stale commit
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+            echo "Invalid version: $INPUT_VERSION" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Manual releases must run from main, not $GITHUB_REF." >&2
+            exit 1
+          fi
+          if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" != "$GITHUB_SHA" ]]; then
+            echo "main moved since this run started; refusing a stale release." >&2
+            exit 1
+          fi
+          TAG="v$INPUT_VERSION"
+          EXISTING="$(git ls-remote origin "refs/tags/$TAG^{}" "refs/tags/$TAG" | tail -n 1 | cut -f1)"
+          if [[ -n "$EXISTING" && "$EXISTING" != "$GITHUB_SHA" ]]; then
+            echo "Tag $TAG already exists at another commit." >&2
+            exit 1
+          fi
+
       - name: Prepare stable code-signing identity
         env:
           MACOS_SIGNING_CERTIFICATE_P12: ${{ secrets.MACOS_SIGNING_CERTIFICATE_P12 }}
@@ -114,6 +140,7 @@ jobs:
         uses: softprops/action-gh-release@5113cdc90fd4d541c801c55356214017bf5ae34b # v3
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.value) }}
+          target_commitish: ${{ github.sha }}
           name: Goalong History ${{ steps.version.outputs.value }} Community Build
           body: |
             Free Community Build of Goalong History `${{ steps.version.outputs.value }}`, built from `${{ github.sha }}`.

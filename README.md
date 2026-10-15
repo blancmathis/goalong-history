@@ -12,7 +12,7 @@ A native menu-bar app that turns foreground activity into a clear local timeline
 
 > **Community Build:** Goalong History is distributed as one free, open-source app. The public
 > DMG and ZIP are signed with a pinned Apple Development identity (team 2L5SSLPX46, see
-> `Distribution/release-signing.json`), but they are not Apple-notarized.
+> [`Distribution/release-signing.json`](Distribution/release-signing.json)), but they are not Apple-notarized.
 > Verify the published SHA-256/provenance, then use **System Settings → Privacy & Security → Open
 > Anyway** if macOS blocks the first launch. Never disable Gatekeeper globally.
 
@@ -48,7 +48,7 @@ The first launch guides the user through focused, skippable screens. Every sensi
 macOS permission state never counts as Goalong consent. A previously granted Full Disk Access,
 Accessibility or Input Monitoring switch cannot silently reactivate a Goalong source.
 
-The installed app also provides a read-only `goalong` terminal command for users and local agents. It exposes Computer History, detailed Apple Screen Time, direct-source AI conversations, available dates, daily recaps, and bounded agent context as JSON without creating query copies or another background process. See [`docs/CLI.md`](docs/CLI.md).
+The installed app also provides a `goalong` terminal command for users and local agents. Original source histories stay read-only and most commands only read. Only when called explicitly, some commands write or send: `session`, `plan`, `review` and `commitment` (focus state), `braise`, `import-health`, `export-proof` (an output file) and `send-site` (website upload); the active-day Screen Time refresh also writes. It exposes Computer History, detailed Apple Screen Time, direct-source AI conversations, available dates, daily recaps, and bounded agent context as JSON without creating query copies or another background process. See [`docs/CLI.md`](docs/CLI.md).
 
 Permission state updates live. Every step includes a direct System Settings route and a safe “set up later” path, so the user is never stranded.
 
@@ -155,8 +155,8 @@ actually included.
 
 ## Optional real-time Jev monitoring
 
-**Surveillance temps réel**, next to Activity, History and Settings, provides a
-separate, off-by-default TypeSafe consent. **Connecter Jev** opens the protected
+**Surveillance temps réel**, found in **Réglages → Jev**, provides a
+separate, off-by-default TypeSafe consent. **Connecter l’API** (or **Gérer la connexion** once a key exists) opens the protected
 API-key sheet; connection management and detailed privacy controls stay out of
 the general settings. During observable activity, Jev classifies one
 non-overlapping 15-second window. The first confident 15-second procrastination result displays one non-blocking banner.
@@ -184,20 +184,26 @@ usage. Read [the exact privacy, token and observation limits](docs/JEV-MONITORIN
 
 ## Native dashboard
 
-The SwiftUI dashboard exposes four primary destinations:
+The SwiftUI dashboard sidebar has five fixed destinations (⌘1 to ⌘4 and ⌘, in the Présentation menu):
 
-- **Today** — runtime state, daily metrics, top applications, coverage and the optional
-  five-line GPT-5.6 Luna High assessment;
-- **Analyses** — local focus proxies, hourly/daily charts, 1/7/28-day trends, usage
-  breakdowns and saved project/method/progress reports, without opening the website.
-  See [definitions and coverage limits](docs/LOCAL-ANALYTICS.md).
-- **History** — one selected-day view with an all-sources timeline and filters for causal
+- **Activité** (⌘1) — runtime state, daily metrics, top applications, coverage, local focus
+  proxies, hourly/daily charts, 1/7/28-day trends and usage breakdowns, without opening the
+  website. See [definitions and coverage limits](docs/LOCAL-ANALYTICS.md);
+- **Mon travail** (⌘2) — your own definition of work and the per-context classification you can
+  correct. See [WORK_DEFINITION.md](docs/WORK_DEFINITION.md);
+- **Historique** (⌘3) — one selected-day view with an all-sources timeline and filters for causal
   [Computer History](docs/COMPUTER_HISTORY_PARITY.md), Apple Screen Time and
   [AI conversations](Features/AgentActivity/README.md);
-- **Settings** — ChatGPT connection and a short progressive-disclosure list for recording,
-  sources, privacy, permissions and expert controls.
+- **Concentration** (⌘4) — tabs **Maintenant** (focus sessions, Pomodoro, plan and review),
+  **Distractions** (your site and app lists) and **Programme** (the optional Blocage module's
+  weekly program);
+- **Réglages** (⌘,) — ChatGPT connection, Jev monitoring and a short progressive-disclosure list
+  for recording, sources, privacy, permissions and expert controls.
 
-Sharing is a contextual **Share day** action on Today and History. Privacy, source management,
+The optional **Ambiance** and **Braise** modules add their own sidebar entry before Réglages only
+while they are enabled; they have no numbered shortcut.
+
+Sharing is a contextual share action (**Partager le …**) in the Activité and Historique headers. Privacy, source management,
 verification and detailed capture options remain available without occupying permanent sidebar
 destinations.
 
@@ -205,9 +211,9 @@ A menu-bar control keeps pause/resume, status, dashboard access, and sharing imm
 
 ## Privacy-safe support diagnostics
 
-In **Settings → Advanced → Diagnostic et assistance**, mark the moment a problem happens and select **Exporter un diagnostic…**. The readable JSON report contains technical states, numeric errors, version/signature information, timing, bounded counters and structural summaries of Goalong crashes. It never includes raw activity/history, screenshots, conversations, URLs, window titles, secrets, account/device identifiers, personal paths or old raw log files. Nothing is uploaded automatically.
+In **Settings → Advanced (Avancé) → Aide et diagnostic**, mark the moment a problem happens and select **Signaler un problème…**, which opens the support request sheet where you review and export the report (the same action is in the Help menu and the menu-bar menu). The readable JSON report contains technical states, numeric errors, version/signature information, timing, bounded counters and structural summaries of Goalong crashes. It never includes raw activity/history, screenshots, conversations, URLs, window titles, secrets, account/device identifiers, personal paths or old raw log files. Nothing is uploaded automatically.
 
-The local journal is enabled by default, can be disabled or erased without affecting activity history, and retains up to seven UTC dates within a 3.5 MiB disk limit. A bounded memory fallback remains available when disk logging fails. Permission screens also offer the export and an explicitly confirmed repair of just one Goalong permission, not a global reset. See [the diagnostic schema, safeguards and limitations](docs/SUPPORT_DIAGNOSTICS.md).
+The local journal is enabled by default, can be disabled or erased without affecting activity history, and retains up to seven UTC dates within a 5.25 MiB disk limit (excluding metadata). A bounded memory fallback remains available when disk logging fails. Permission screens also offer the export and an explicitly confirmed repair of just one Goalong permission, not a global reset. See [the diagnostic schema, safeguards and limitations](docs/SUPPORT_DIAGNOSTICS.md).
 
 ## Updates and start at login
 
@@ -223,8 +229,9 @@ builds (`LOCALHISTORY_DISABLE_UPDATES=1`) do not contact the feed. No private ke
 or paid Apple membership is required to build the updater. See
 [`docs/FREE-UPDATES.md`](docs/FREE-UPDATES.md) for the key-preserving local publication workflow. Release inventories and GitHub
 provenance remain published for independent inspection.
-Because the free public build has no stable Apple-issued signing identity, macOS can ask for Goalong
-permissions again after a replacement. Goalong preserves the history and settings directory.
+Updates keep the same pinned signing identity, so macOS privacy grants normally persist. Only a
+migration from a legacy ad-hoc build (or a later move to another identity) may ask for approval again.
+Goalong preserves the history and settings directory.
 
 ## Build from source
 
@@ -263,14 +270,17 @@ The build script creates the single `.app` bundle, generates the `.icns` asset, 
 Info.plist, code signs the bundle, and verifies it. It also generates
 `security-capabilities.json`, an SPDX SBOM and `release-manifest.json` from the final signed
 artifact. Local builds automatically use a stable Apple Development identity when available.
-The free public Community Build is signed with a pinned Apple Development identity (team 2L5SSLPX46) and is not notarized.
+The free public Community Build is signed with a pinned Apple Development identity (team 2L5SSLPX46, see
+`Distribution/release-signing.json`) and is not notarized. CI refuses to publish an ad-hoc build.
 
 ## Release pipeline
 
 Every successful merge to `main` builds both architectures, verifies the single-app security
 manifest, creates the branded Community DMG and ZIP, publishes checksums/manifests/SBOM, records a
-Sigstore-backed GitHub provenance attestation and replaces the `latest-main` prerelease. No paid
-Apple credential is required. Updates remain manual and auditable; stable tags publish the same
+Sigstore-backed GitHub provenance attestation and replaces the `latest-main` prerelease. No Developer ID or
+notarization credential is required. The app checks the signed update feed at launch and hourly; you can
+turn checks off in Settings, installation always needs your confirmation, and the Ed25519 signature is
+verified (see [`docs/UPDATES_AND_MACOS_PERMISSIONS.md`](docs/UPDATES_AND_MACOS_PERMISSIONS.md)). Stable tags publish the same
 single Community Build through the separate stable-release workflow.
 
 Release credentials and the exact process are documented in [`docs/RELEASING.md`](docs/RELEASING.md). Installation design principles are documented in [`docs/INSTALLATION_UX.md`](docs/INSTALLATION_UX.md).
