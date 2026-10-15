@@ -222,7 +222,8 @@
 
             let handle = try FileHandle(forWritingTo: fileURL)
             do {
-                try handle.synchronize()
+                let code = DurableSync.full(handle.fileDescriptor)
+                guard code == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(code)) }
                 try handle.close()
             } catch {
                 try? handle.close()
@@ -235,7 +236,7 @@
                 open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
             }
             if directoryDescriptor >= 0 {
-                _ = fsync(directoryDescriptor)
+                _ = DurableSync.full(directoryDescriptor)
                 _ = Darwin.close(directoryDescriptor)
             }
         }

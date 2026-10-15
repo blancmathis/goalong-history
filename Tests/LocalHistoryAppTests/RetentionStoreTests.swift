@@ -356,6 +356,27 @@
             XCTAssertEqual(try Data(contentsOf: moved), original)
         }
 
+        func testDurableSyncFallsBackToFsyncOnlyWhenFullSyncIsUnsupported() throws {
+            var fallbackCalls = 0
+            let unsupported = DurableSync.sync(3, primary: { _ in errno = ENOTSUP; return -1 },
+                                               fallback: { _ in fallbackCalls += 1; return 0 })
+            XCTAssertEqual(unsupported, 0); XCTAssertEqual(fallbackCalls, 1)
+            var attempts = 0
+            let interrupted = DurableSync.sync(3, primary: { _ in attempts += 1; if attempts == 1 { errno = EINTR; return -1 }; return 0 },
+                                               fallback: { _ in fallbackCalls += 1; return 0 })
+            XCTAssertEqual(interrupted, 0); XCTAssertEqual(attempts, 2); XCTAssertEqual(fallbackCalls, 1)
+            let ioError = DurableSync.sync(3, primary: { _ in errno = EIO; return -1 },
+                                           fallback: { _ in fallbackCalls += 1; return 0 })
+            XCTAssertEqual(ioError, EIO); XCTAssertEqual(fallbackCalls, 1, "A real I/O error is not hidden by fsync")
+            let root = try makeTemporaryDirectory()
+            let file = root.appendingPathComponent("sync.bin")
+            try Data("x".utf8).write(to: file)
+            let handle = try FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            XCTAssertEqual(DurableSync.full(handle.fileDescriptor), 0)
+            XCTAssertEqual(DurableSync.barrier(handle.fileDescriptor), 0)
+        }
+
         func testJSONLAppendFailureKeepsErrnoForTheStorageBanner() throws {
             for (code, kind) in [(ENOSPC, CaptureStorageFailureKind.diskFull), (EACCES, .permissionDenied)] {
                 let root = try makeTemporaryDirectory()

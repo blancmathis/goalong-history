@@ -868,19 +868,19 @@
                 }
             }
 
-            while fsync(descriptor) != 0 {
-                if errno == EINTR { continue }
+            let fileSyncCode = DurableSync.full(descriptor)
+            if fileSyncCode != 0 {
                 throw MinuteSealPersistenceError.durabilityUncertain(
-                    posixError(path: url.path).localizedDescription
+                    posixError(path: url.path, code: fileSyncCode).localizedDescription
                 )
             }
             durabilityObserver?(.fileSynchronized)
 
             if parentDirectoryNeedsSynchronization {
-                while fsync(directoryDescriptor) != 0 {
-                    if errno == EINTR { continue }
+                let directorySyncCode = DurableSync.full(directoryDescriptor)
+                if directorySyncCode != 0 {
                     throw MinuteSealPersistenceError.durabilityUncertain(
-                        posixError(path: directoryURL.path).localizedDescription
+                        posixError(path: directoryURL.path, code: directorySyncCode).localizedDescription
                     )
                 }
                 durabilityObserver?(.parentDirectorySynchronized)

@@ -451,7 +451,9 @@
 
         private func synchronizeCurrentHandle() throws {
             guard let handle = currentHandle, writesSinceSync > 0 else { return }
-            try handle.synchronize()
+            // A barrier sync orders these rows before the integrity checkpoint written next.
+            let code = DurableSync.barrier(handle.fileDescriptor)
+            guard code == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(code)) }
             synchronizationCount += 1
             writesSinceSync = 0
         }
@@ -1064,11 +1066,8 @@
         }
 
         private static func synchronize(descriptor: Int32, fileURL: URL) throws {
-            while Darwin.fsync(descriptor) != 0 {
-                let code = errno
-                if code == EINTR { continue }
-                throw posixFailure(.couldNotSynchronizeDeletion(fileURL), code: code)
-            }
+            let code = DurableSync.full(descriptor)
+            guard code == 0 else { throw posixFailure(.couldNotSynchronizeDeletion(fileURL), code: code) }
         }
 
         private static func openVerifiedDirectory(at directoryURL: URL) throws -> DirectoryHandle {
