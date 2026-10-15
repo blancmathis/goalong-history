@@ -88,7 +88,8 @@ codesign "${SIGN[@]}" "$FRAMEWORK/Versions/B/Updater.app"
 codesign "${SIGN[@]}" "$FRAMEWORK"
 codesign "${SIGN[@]}" --identifier ai.goalong.localhistory "$APP/Contents/MacOS/goalong"
 codesign "${SIGN[@]}" --identifier ai.goalong.localhistory.relauncher "$APP/Contents/MacOS/goalong-relauncher"
-codesign "${SIGN[@]}" --identifier ai.goalong.localhistory "$APP"
+# Only the app bundle carries entitlements (as in build_app_core.sh); nested code gets none.
+codesign "${SIGN[@]}" --identifier ai.goalong.localhistory --entitlements "$ROOT/Distribution/GoalongHistory.entitlements" "$APP"
 bash scripts/verify_release_identity.sh "$APP"
 LOCALHISTORY_APP_PATH="$APP" LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 bash scripts/verify_local_bundle.sh
 fi
