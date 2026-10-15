@@ -166,8 +166,10 @@ import OndeCore
             case .failed(let message): absent = .failed(message)
             default: absent = .notInstalled
             }
+            let installed = store.isInstalled(pack)
             return AmbiancePackState(id: pack.id, title: pack.title, bytes: pack.bytes,
-                                     status: store.isInstalled(pack) ? .installed : absent)
+                                     status: installed ? .installed : absent,
+                                     hasLeftovers: !installed && store.hasLeftovers(pack))
         }
         refreshSources()
     }

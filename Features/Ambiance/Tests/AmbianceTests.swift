@@ -129,6 +129,34 @@ final class AmbianceTests: XCTestCase {
         XCTAssertFalse(store.isInstalled(fixture.pack))
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.directory(fixture.pack).path))
     }
+    func testInvalidLeftoverFolderIsReplacedByReinstall() throws {
+        let support = try root(), fixture = try fixtureArchive(), store = AmbiancePackStore(supportDirectory: support)
+        try store.install(fixture.pack, archive: fixture.url)
+        let folder = store.directory(fixture.pack)
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("manifest.json"))
+        XCTAssertFalse(store.isInstalled(fixture.pack))
+        XCTAssertTrue(store.hasLeftovers(fixture.pack))
+        try store.install(fixture.pack, archive: fixture.url)
+        XCTAssertTrue(store.isInstalled(fixture.pack))
+        XCTAssertFalse(store.hasLeftovers(fixture.pack))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.root.path), ["orchestra"])
+        // A receipt that no longer matches the catalog is also repaired.
+        let receipt = folder.appendingPathComponent(".installed.json")
+        try Data(#"{"id":"orchestra","sha256":"old","bytes":1,"files":["LICENSE.txt"]}"#.utf8).write(to: receipt)
+        XCTAssertFalse(store.isInstalled(fixture.pack))
+        try store.install(fixture.pack, archive: fixture.url)
+        XCTAssertTrue(store.isInstalled(fixture.pack))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.root.path), ["orchestra"])
+    }
+    func testSymlinkedPackFolderIsNeverReplacedNorFollowed() throws {
+        let support = try root(), outside = try root(), fixture = try fixtureArchive()
+        let store = AmbiancePackStore(supportDirectory: support)
+        try FileManager.default.createDirectory(at: store.root, withIntermediateDirectories: true)
+        let marker = outside.appendingPathComponent("keep.txt"); try Data([1]).write(to: marker)
+        try FileManager.default.createSymbolicLink(at: store.directory(fixture.pack), withDestinationURL: outside)
+        XCTAssertThrowsError(try store.install(fixture.pack, archive: fixture.url))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+    }
     func testUnsafeTarEntriesLeaveNoPublishedOrStagingDirectory() throws {
         for (name, type) in [("../outside", UInt8(48)), ("note.wav", UInt8(50))] {
             let support = try root(), fixture = try fixtureArchive(extraName: name, type: type)

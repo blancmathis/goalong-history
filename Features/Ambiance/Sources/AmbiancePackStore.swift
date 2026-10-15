@@ -19,8 +19,10 @@ public struct AmbiancePackState: Identifiable, Equatable {
     public let title: String
     public let bytes: Int64
     public var status: Status
-    public init(id: String, title: String, bytes: Int64, status: Status) {
-        self.id = id; self.title = title; self.bytes = bytes; self.status = status
+    /// A pack folder exists on disk although the pack is not valid: the page offers to remove it.
+    public var hasLeftovers: Bool
+    public init(id: String, title: String, bytes: Int64, status: Status, hasLeftovers: Bool = false) {
+        self.id = id; self.title = title; self.bytes = bytes; self.status = status; self.hasLeftovers = hasLeftovers
     }
 }
 
@@ -49,6 +51,9 @@ public struct AmbiancePackStore {
         return files.allSatisfy { name in
             safeName(name) && isRegularFile(folder.appendingPathComponent(name))
         } && !files.isEmpty
+    }
+    public func hasLeftovers(_ pack: AmbiancePack) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: directory(pack).path)) != nil && !isInstalled(pack)
     }
     public func install(_ pack: AmbiancePack, archive: URL, progress: (Double) -> Void = { _ in }) throws {
         try withoutActuallyEscaping(progress) { callback in
@@ -88,7 +93,12 @@ public struct AmbiancePackStore {
             throw AmbianceError.invalidPack("répertoire non sûr")
         }
         let destination = directory(pack)
-        guard !fm.fileExists(atPath: destination.path) else { throw AmbianceError.invalidPack("déjà installé : retirez d’abord le pack") }
+        // A folder that fails validation (missing sample, changed catalog) is replaced; a valid or unsafe one is not.
+        let leftover = (try? fm.attributesOfItem(atPath: destination.path)) != nil
+        if leftover {
+            guard !isInstalled(pack) else { throw AmbianceError.invalidPack("déjà installé : retirez d’abord le pack") }
+            guard isRegularDirectory(destination) else { throw AmbianceError.invalidPack("répertoire non sûr") }
+        }
         let staging = root.appendingPathComponent(".install-\(pack.id)-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: staging, withIntermediateDirectories: false)
         defer { try? fm.removeItem(at: staging) }
@@ -135,7 +145,15 @@ public struct AmbiancePackStore {
         try JSONSerialization.data(withJSONObject: receipt).write(to: staging.appendingPathComponent(".installed.json"), options: .withoutOverwriting)
         try checkCancellation()
         // Same-volume rename publishes the complete pack, never a partially extracted folder.
-        try fm.moveItem(at: staging, to: destination)
+        if leftover {
+            let stale = root.appendingPathComponent(".stale-\(pack.id)-\(UUID().uuidString)", isDirectory: true)
+            try fm.moveItem(at: destination, to: stale)
+            do { try fm.moveItem(at: staging, to: destination) }
+            catch { try? fm.moveItem(at: stale, to: destination); throw error }
+            try? fm.removeItem(at: stale)
+        } else {
+            try fm.moveItem(at: staging, to: destination)
+        }
         progress(1)
     }
     public func remove(_ pack: AmbiancePack) throws {

@@ -185,7 +185,7 @@ struct AmbiancePageContent: View {
     }
 
     @ViewBuilder private var downloaded: some View {
-        let kept = packs.filter { $0.status == .installed }
+        let kept = packs.filter { $0.status == .installed || $0.hasLeftovers }
         if !kept.isEmpty {
             GoalongDisclosureGroup {
                 LHCard(padding: 0) {
