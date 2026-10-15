@@ -114,6 +114,13 @@ extension GoalongWorkSharingFilter {
         }
     }
 
+    /// The day a manual "Classer maintenant" targets: the day itself for a one-day view, otherwise the
+    /// most recent ready day of the period that still has unclassified time (same filter as `classifyIfNeeded`).
+    nonisolated static func manualTarget(days: [GoalongLocalAnalytics.Day], fallback: Date) -> Date {
+        guard days.count > 1 else { return fallback }
+        return days.last(where: { $0.state == .ready && $0.seconds(.unclassified) >= 120 })?.date ?? fallback
+    }
+
     /// The day note goes to the agent only when the reviewed recap shares it, and never beside an exclusion.
     static func sharedDayNote(root: URL, day: Date, selection: GoalongAnalysisSelection, policy: GoalongPrivacyPolicy) -> String? {
         guard selection.isValid(for: policy), selection.systemSources?.dayNote == true, !policy.hasExclusions else { return nil }

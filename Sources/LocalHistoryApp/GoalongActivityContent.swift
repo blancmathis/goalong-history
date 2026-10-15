@@ -197,10 +197,7 @@ struct GoalongAnalyticsContent: View {
             lines.append("\(duration(current.activeSeconds)) actives sur \(days) jour\(days > 1 ? "s" : "") observé\(days > 1 ? "s" : "")"
                 + (summary.averageExcludesToday ? ", moyenne sans aujourd’hui" : ""))
         }
-        if let comparison = summary.comparison, abs(comparison.delta) >= 60 {
-            let reference = comparison.label.hasPrefix("les ") ? "aux " + comparison.label.dropFirst(4) : "à " + comparison.label
-            lines.append("\(comparison.delta > 0 ? "+" : "−")\(duration(abs(comparison.delta))) de temps actif par rapport \(reference)")
-        }
+        if let line = summary.comparison?.headlineLine(isDay: isDay) { lines.append(line) }
         return lines
     }
 
@@ -331,6 +328,13 @@ struct GoalongAnalyticsContent: View {
         }
     }
 
+    private var classifyLabel: String {
+        guard !isDay else { return "Classer maintenant" }
+        let target = GoalongWorkAgent.manualTarget(days: current.days, fallback: current.days.last?.date ?? Date())
+        if Calendar.current.isDateInToday(target) { return "Classer aujourd’hui" }
+        return "Classer le \(GoalongActivitySummary.weekdayDate(target))"
+    }
+
     private func workCard(_ summary: GoalongActivitySummary) -> some View {
         LHCard {
             HStack(alignment: .center, spacing: 16) {
@@ -353,7 +357,7 @@ struct GoalongAnalyticsContent: View {
                     Button(workStatus.hasDefinition ? "Ouvrir Mon travail" : "Définir mon travail", action: onWork)
                         .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("activity-define-work")
                 } else {
-                    Button("Classer maintenant", action: onClassify).buttonStyle(LHSecondaryButtonStyle())
+                    Button(classifyLabel, action: onClassify).buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("activity-classify-now")
                 }
             }
@@ -600,7 +604,9 @@ struct GoalongAnalyticsContent: View {
                         }.padding(.top, 10)
                     }.font(.system(size: 13))
                 } else {
-                    GoalongDailyClassChart(period: current, dateRange: dateRange, onDay: onDay)
+                    let averageLine = GoalongDailyClassChart.averageLine(for: summary)
+                    GoalongDailyClassChart(period: current, dateRange: dateRange, average: averageLine?.value,
+                                           averageExcludesToday: averageLine?.excludesToday ?? false, onDay: onDay)
                     GoalongDisclosureGroup("Jours et valeurs") {
                         VStack(spacing: 0) {
                             ForEach(current.days) { day in
