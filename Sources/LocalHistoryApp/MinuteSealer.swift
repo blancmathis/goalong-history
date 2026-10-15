@@ -163,36 +163,48 @@
             }
         }
 
+        /// Seals everything up to and including the current minute because capture
+        /// stops (manual pause, consent off or quit). The chronology then moves past
+        /// that minute and the time until the next start is labelled `manualPause`,
+        /// so a resume neither seals the stop minute twice nor reports the paused gap
+        /// as captured.
         @discardableResult
-        func stopAndSeal() -> Bool {
+        func stopAndSeal(now: Date = Date()) -> Bool {
             onQueue {
                 timer?.cancel()
                 timer = nil
+                // The stop is known even if the seal fails below: later roots and
+                // gaps must not inherit the pre-stop "captured" state.
+                observedCoverageState = Self.stoppedCoverageState
                 guard !signingSuspended else { return false }
                 retryNotBefore = nil
-                let now = Date()
                 guard retryFailedMinuteIfEligible(now: now, ignoreBackoff: true) else {
                     return false
                 }
                 guard sealElapsedMinutes(now: now, sealLimit: .max) else { return false }
 
                 let current = Self.floorToMinute(now)
-                let bucket =
+                var bucket =
                     buckets[current]
                     ?? MinuteBucket(
                         eventRoots: [],
-                        coverageStates: [sealedCoverageState],
-                        endingCoverageState: observedCoverageState
+                        coverageStates: [sealedCoverageState]
                     )
+                bucket.endingCoverageState = Self.stoppedCoverageState
                 guard seal(bucket: bucket, minuteStart: current, now: now) else {
+                    // A later retry advances the chronology from this bucket, so it
+                    // carries the stopped state too.
                     failedMinuteStart = current
                     buckets[current] = bucket
                     return false
                 }
                 removeBucket(forKey: current)
+                advanceChronology(after: bucket, minuteStart: current)
                 return true
             }
         }
+
+        private static let stoppedCoverageState = "manualPause"
 
         func receive(_ event: HistoryEvent) {
             guard let root = event.integrity?.eventRoot else { return }
@@ -856,19 +868,19 @@
                 }
             }
 
-            while fsync(descriptor) != 0 {
-                if errno == EINTR { continue }
+            let fileSyncCode = DurableSync.full(descriptor)
+            if fileSyncCode != 0 {
                 throw MinuteSealPersistenceError.durabilityUncertain(
-                    posixError(path: url.path).localizedDescription
+                    posixError(path: url.path, code: fileSyncCode).localizedDescription
                 )
             }
             durabilityObserver?(.fileSynchronized)
 
             if parentDirectoryNeedsSynchronization {
-                while fsync(directoryDescriptor) != 0 {
-                    if errno == EINTR { continue }
+                let directorySyncCode = DurableSync.full(directoryDescriptor)
+                if directorySyncCode != 0 {
                     throw MinuteSealPersistenceError.durabilityUncertain(
-                        posixError(path: directoryURL.path).localizedDescription
+                        posixError(path: directoryURL.path, code: directorySyncCode).localizedDescription
                     )
                 }
                 durabilityObserver?(.parentDirectorySynchronized)
@@ -938,62 +950,71 @@
                 information.st_size > 0
             else { return nil }
 
-            let maximumTailBytes = maximumEncodedSealRowBytes + 2
-            let byteCount = min(Int64(information.st_size), Int64(maximumTailBytes))
-            let offset = Int64(information.st_size) - byteCount
-            var data = Data(count: Int(byteCount))
-            var totalRead = 0
-            try data.withUnsafeMutableBytes { buffer in
-                guard let baseAddress = buffer.baseAddress else { return }
-                while totalRead < Int(byteCount) {
-                    let result = pread(
-                        descriptor,
-                        baseAddress.advanced(by: totalRead),
-                        Int(byteCount) - totalRead,
-                        off_t(offset) + off_t(totalRead)
-                    )
-                    if result > 0 {
-                        totalRead += result
+            // Start with a small tail and grow it only when no complete seal decodes,
+            // so a normal launch reads kilobytes. Same result as one full-cap read.
+            let fileSize = Int64(information.st_size)
+            let cap = min(fileSize, Int64(maximumEncodedSealRowBytes + 2))
+            var window = min(Int64(64 * 1_024), cap)
+            tailWindow: while true {
+                let byteCount = window
+                let offset = fileSize - byteCount
+                var data = Data(count: Int(byteCount))
+                var totalRead = 0
+                try data.withUnsafeMutableBytes { buffer in
+                    guard let baseAddress = buffer.baseAddress else { return }
+                    while totalRead < Int(byteCount) {
+                        let result = pread(
+                            descriptor,
+                            baseAddress.advanced(by: totalRead),
+                            Int(byteCount) - totalRead,
+                            off_t(offset) + off_t(totalRead)
+                        )
+                        if result > 0 {
+                            totalRead += result
+                            continue
+                        }
+                        if result == 0 { break }
+                        if errno == EINTR { continue }
+                        throw posixError(path: filePath)
+                    }
+                }
+                if totalRead < data.count { data.removeSubrange(totalRead..<data.count) }
+
+                var completeRows = data[data.startIndex...]
+                if offset > 0 {
+                    var precedingByte: UInt8 = 0
+                    while true {
+                        let result = pread(
+                            descriptor,
+                            &precedingByte,
+                            1,
+                            off_t(offset - 1)
+                        )
+                        if result == 1 { break }
+                        if result < 0, errno == EINTR { continue }
+                        throw posixError(path: filePath, code: result == 0 ? EIO : errno)
+                    }
+
+                    if precedingByte != 0x0A {
+                        guard let firstNewline = completeRows.firstIndex(of: 0x0A) else {
+                            if window >= cap { return nil }
+                            window = min(window * 4, cap)
+                            continue tailWindow
+                        }
+                        completeRows = completeRows[completeRows.index(after: firstNewline)...]
+                    }
+                }
+
+                let rows = completeRows.split(separator: 0x0A, omittingEmptySubsequences: true)
+                for row in rows.reversed() {
+                    guard let seal = try? decoder.decode(LocalMinuteSeal.self, from: Data(row)) else {
                         continue
                     }
-                    if result == 0 { break }
-                    if errno == EINTR { continue }
-                    throw posixError(path: filePath)
+                    return seal
                 }
+                if window >= cap { return nil }
+                window = min(window * 4, cap)
             }
-            if totalRead < data.count { data.removeSubrange(totalRead..<data.count) }
-
-            var completeRows = data[data.startIndex...]
-            if offset > 0 {
-                var precedingByte: UInt8 = 0
-                while true {
-                    let result = pread(
-                        descriptor,
-                        &precedingByte,
-                        1,
-                        off_t(offset - 1)
-                    )
-                    if result == 1 { break }
-                    if result < 0, errno == EINTR { continue }
-                    throw posixError(path: filePath, code: result == 0 ? EIO : errno)
-                }
-
-                if precedingByte != 0x0A {
-                    guard let firstNewline = completeRows.firstIndex(of: 0x0A) else {
-                        return nil
-                    }
-                    completeRows = completeRows[completeRows.index(after: firstNewline)...]
-                }
-            }
-
-            let rows = completeRows.split(separator: 0x0A, omittingEmptySubsequences: true)
-            for row in rows.reversed() {
-                guard let seal = try? decoder.decode(LocalMinuteSeal.self, from: Data(row)) else {
-                    continue
-                }
-                return seal
-            }
-            return nil
         }
 
         private static func posixError(path: String, code: Int32 = errno) -> NSError {

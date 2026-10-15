@@ -16,6 +16,11 @@ final class GoalongCallPresenceMonitor {
     private var audioListeners: [(AudioObjectID, AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
     private var cameraListeners: [(CMIOObjectID, CMIOObjectPropertyAddress, CMIOObjectPropertyListenerBlock)] = []
     private var sourceStatus: GoalongSystemSourceStatus = .disabled
+    /// Start of the day whose coverage `sourceStatus` degraded. A gap keeps that day partial
+    /// (docs/SYSTEM_SOURCES.md) but never leaks into the next day.
+    private var statusDay: Date?
+    /// A listener that could not be installed: still a gap after midnight.
+    private var structuralPartial = false
     private var recovered = false
     private var refreshScheduled = false
     private var pendingRebuild = false
@@ -27,7 +32,7 @@ final class GoalongCallPresenceMonitor {
         queue.async { [self] in
             self.config = config
             let next = enabled && config.effectiveCaptureCallPresence && !GoalongGlobalPause.isPaused(in: root)
-            if !next { closeActive(at: Date()); removeListeners(); self.enabled = false; sourceStatus = .disabled; return }
+            if !next { closeActive(at: Date()); removeListeners(); self.enabled = false; sourceStatus = .disabled; statusDay = nil; return }
             if self.enabled { refresh(); return }
             self.enabled = true
             recoverInterruptedState()
@@ -35,12 +40,12 @@ final class GoalongCallPresenceMonitor {
             refresh()
         }
     }
-    func stop() { queue.sync { closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled } }
+    func stop() { queue.sync { closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled; statusDay = nil } }
     /// At quit, the open call is saved if the queue answers within `timeout`; the app never
     /// hangs on quit (0.6.64 hung there forever, blocking its own update).
     func stopForTermination(timeout: TimeInterval = 1) {
         let done = DispatchSemaphore(value: 0)
-        queue.async { [self] in closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled; done.signal() }
+        queue.async { [self] in closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled; statusDay = nil; done.signal() }
         _ = done.wait(timeout: .now() + timeout)
     }
     func lane(day: Date, enabled: Bool, privacy: GoalongPrivacyPolicy = .init()) -> GoalongCallLane {
@@ -52,13 +57,36 @@ final class GoalongCallPresenceMonitor {
             let value = GoalongCallStore.load(root: root, day: day, enabled: enabled, live: live, privacy: privacy)
             // Today's coverage cannot be inferred from an empty file; older days keep their stored status.
             if enabled, self.enabled, Calendar.current.isDateInToday(day) {
-                if case .failed = sourceStatus { return .init(status: sourceStatus, intervals: value.intervals) }
-                if sourceStatus == .partial, value.status == .ready || value.status == .noData {
-                    return .init(status: .partial, intervals: value.intervals)
-                }
+                // A status degraded yesterday is re-evaluated, not shown for today.
+                if let statusDay, !Calendar.current.isDate(statusDay, inSameDayAs: day) { scheduleRefresh(rebuild: false) }
+                return Self.todayLane(stored: value, status: sourceStatus, statusDay: statusDay, day: day)
             }
             return value
         }
+    }
+    /// Today's lane: the in-memory degraded status applies only to the day it was raised on.
+    static func todayLane(stored value: GoalongCallLane, status: GoalongSystemSourceStatus, statusDay: Date?,
+                          day: Date, calendar: Calendar = .current) -> GoalongCallLane {
+        guard let statusDay, calendar.isDate(statusDay, inSameDayAs: day) else { return value }
+        if case .failed = status { return .init(status: status, intervals: value.intervals) }
+        if status == .partial, value.status == .ready || value.status == .noData {
+            return .init(status: .partial, intervals: value.intervals)
+        }
+        return value
+    }
+    /// At the first pass of a new day, a gap from an earlier day is dropped; a missing listener
+    /// is still a gap, so it starts the new day partial.
+    static func rolledOver(status: GoalongSystemSourceStatus, statusDay: Date?, structuralPartial: Bool,
+                           now: Date, calendar: Calendar = .current) -> (status: GoalongSystemSourceStatus, day: Date?) {
+        guard let statusDay, !calendar.isDate(statusDay, inSameDayAs: now) else { return (status, statusDay) }
+        return structuralPartial ? (.partial, calendar.startOfDay(for: now)) : (.ready, nil)
+    }
+    /// Downgrades today's coverage; a write failure is never softened to partial.
+    private func degrade(_ status: GoalongSystemSourceStatus, structural: Bool = false) {
+        if structural { structuralPartial = true }
+        statusDay = Calendar.current.startOfDay(for: Date())
+        if case .failed = sourceStatus, status == .partial { return }
+        sourceStatus = status
     }
     private func recoverInterruptedState() {
         guard !recovered else { return }; recovered = true
@@ -74,7 +102,7 @@ final class GoalongCallPresenceMonitor {
                 }
             }
             try persistState()
-        } catch { sourceStatus = .failed("État micro/caméra illisible." ) }
+        } catch { degrade(.failed("État micro/caméra illisible.")) }
     }
     static func lane(root: URL, day: Date, enabled: Bool, privacy: GoalongPrivacyPolicy) -> GoalongCallLane {
         if root.standardizedFileURL == shared.root.standardizedFileURL { return shared.lane(day: day, enabled: enabled, privacy: privacy) }
@@ -96,9 +124,9 @@ final class GoalongCallPresenceMonitor {
             do {
                 try persistInterval(.init(start: row.start, end: max(row.start, end), bundleIdentifier: row.bundleIdentifier,
                     application: row.application, microphone: row.microphone, camera: row.camera))
-            } catch { sourceStatus = .failed("Écriture micro/caméra incomplète.") }
+            } catch { degrade(.failed("Écriture micro/caméra incomplète.")) }
         }
-        active.removeAll(); do { try persistState() } catch { sourceStatus = .failed("Écriture micro/caméra incomplète.") }
+        active.removeAll(); do { try persistState() } catch { degrade(.failed("Écriture micro/caméra incomplète.")) }
     }
     private func removeListeners() {
         for (id, address, block) in audioListeners { var a = address; AudioObjectRemovePropertyListenerBlock(id, &a, queue, block) }
@@ -110,39 +138,39 @@ final class GoalongCallPresenceMonitor {
         var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.scheduleRefresh(rebuild: selector == kAudioHardwarePropertyDevices || selector == kAudioHardwarePropertyProcessObjectList) }
         if AudioObjectAddPropertyListenerBlock(object, &address, queue, block) == noErr { audioListeners.append((object, address, block)) }
-        else { sourceStatus = .partial }
+        else { degrade(.partial, structural: true) }
     }
     private func cameraListen(_ object: CMIOObjectID, selector: CMIOObjectPropertySelector) {
         guard !cameraListeners.contains(where: { $0.0 == object && $0.1.mSelector == selector }) else { return }
         var address = CMIOObjectPropertyAddress(mSelector: selector, mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
         let block: CMIOObjectPropertyListenerBlock = { [weak self] _, _ in self?.scheduleRefresh(rebuild: selector == UInt32(kCMIOHardwarePropertyDevices)) }
         if CMIOObjectAddPropertyListenerBlock(object, &address, queue, block) == noErr { cameraListeners.append((object, address, block)) }
-        else { sourceStatus = .partial }
+        else { degrade(.partial, structural: true) }
     }
     private func audioIDs(selector: AudioObjectPropertySelector) -> [AudioObjectID] {
         var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var bytes: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &bytes) == noErr,
-              bytes <= 4096 * 4 else { sourceStatus = .partial; return [] }
+              bytes <= 4096 * 4 else { degrade(.partial); return [] }
         if bytes == 0 { return [] }
         var ids = [AudioObjectID](repeating: 0, count: Int(bytes) / 4)
         let status = ids.withUnsafeMutableBytes { AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &bytes, $0.baseAddress!) }
-        guard status == noErr else { sourceStatus = .partial; return [] }; return ids
+        guard status == noErr else { degrade(.partial); return [] }; return ids
     }
     private func cameras() -> [CMIOObjectID] {
         var address = CMIOObjectPropertyAddress(mSelector: UInt32(kCMIOHardwarePropertyDevices), mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
         var bytes: UInt32 = 0
-        guard CMIOObjectGetPropertyDataSize(CMIOObjectID(kCMIOObjectSystemObject), &address, 0, nil, &bytes) == noErr, bytes <= 4096 * 4 else { sourceStatus = .partial; return [] }
+        guard CMIOObjectGetPropertyDataSize(CMIOObjectID(kCMIOObjectSystemObject), &address, 0, nil, &bytes) == noErr, bytes <= 4096 * 4 else { degrade(.partial); return [] }
         if bytes == 0 { return [] }
         var ids = [CMIOObjectID](repeating: 0, count: Int(bytes) / 4)
         let status = ids.withUnsafeMutableBytes { CMIOObjectGetPropertyData(CMIOObjectID(kCMIOObjectSystemObject), &address, 0, nil, bytes, &bytes, $0.baseAddress!) }
-        guard status == noErr else { sourceStatus = .partial; return [] }; return ids
+        guard status == noErr else { degrade(.partial); return [] }; return ids
     }
     private func audioValue<T>(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, value: inout T, scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> Bool {
         var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
         var size = UInt32(MemoryLayout<T>.size)
         let result = withUnsafeMutablePointer(to: &value) { AudioObjectGetPropertyData(object, &address, 0, nil, &size, $0) }
-        if result != noErr { sourceStatus = .partial }; return result == noErr
+        if result != noErr { degrade(.partial) }; return result == noErr
     }
     private func isInputOnlyDevice(_ object: AudioObjectID) -> Bool {
         func streamBytes(scope: AudioObjectPropertyScope) -> UInt32? {
@@ -150,10 +178,10 @@ final class GoalongCallPresenceMonitor {
             var bytes: UInt32 = 0
             return AudioObjectGetPropertyDataSize(object, &address, 0, nil, &bytes) == noErr ? bytes : nil
         }
-        guard let input = streamBytes(scope: kAudioDevicePropertyScopeInput) else { sourceStatus = .partial; return false }
+        guard let input = streamBytes(scope: kAudioDevicePropertyScopeInput) else { degrade(.partial); return false }
         guard input > 0 else { return false }
         // The old hardware running bit has no direction. Duplex devices cannot prove microphone use.
-        guard let output = streamBytes(scope: kAudioDevicePropertyScopeOutput), output == 0 else { sourceStatus = .partial; return false }
+        guard let output = streamBytes(scope: kAudioDevicePropertyScopeOutput), output == 0 else { degrade(.partial); return false }
         return true
     }
     /// Audio processes come and go in bursts (a browser test run starts dozens a second). One
@@ -185,6 +213,7 @@ final class GoalongCallPresenceMonitor {
         }
     }
     private func installListeners() {
+        structuralPartial = false
         audioListen(AudioObjectID(kAudioObjectSystemObject), selector: kAudioHardwarePropertyDevices)
         if #available(macOS 14.2, *) {
             audioListen(AudioObjectID(kAudioObjectSystemObject), selector: kAudioHardwarePropertyProcessObjectList)
@@ -210,7 +239,9 @@ final class GoalongCallPresenceMonitor {
     }
     private func refresh(rebuild: Bool = false) {
         guard enabled else { return }
-        if GoalongGlobalPause.isPaused(in: root) { closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled; return }
+        if GoalongGlobalPause.isPaused(in: root) { closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled; statusDay = nil; return }
+        (sourceStatus, statusDay) = Self.rolledOver(status: sourceStatus, statusDay: statusDay,
+                                                    structuralPartial: structuralPartial, now: Date())
         if rebuild { pruneVanishedListeners(); installListeners() }
         if case .failed = sourceStatus {} else if sourceStatus != .partial { sourceStatus = .ready }
         let privacy = GoalongPrivacyPolicy.load(in: root)
@@ -224,7 +255,7 @@ final class GoalongCallPresenceMonitor {
                 _ = audioValue(id, kAudioProcessPropertyPID, value: &pid); _ = audioValue(id, kAudioProcessPropertyBundleID, value: &reported)
                 let app = Self.application(pid: pid, reportedBundle: reported as String)
                 guard config.allowsApplication(bundleIdentifier: app.0), !privacy.excludes(appID: app.0, name: app.1) else { continue }
-                if config.browserBundleIdentifiers.contains(app.0 ?? ""), !config.excludedDomains.isEmpty || !privacy.domains.isEmpty || config.includedDomains?.isEmpty == false { sourceStatus = .partial; continue }
+                if config.browserBundleIdentifiers.contains(app.0 ?? ""), !config.excludedDomains.isEmpty || !privacy.domains.isEmpty || config.includedDomains?.isEmpty == false { degrade(.partial); continue }
                 let key = app.0 ?? "microphone"
                 next[key] = .init(start: now, end: now, bundleIdentifier: app.0, application: app.1, microphone: true, camera: false)
             }
@@ -240,7 +271,7 @@ final class GoalongCallPresenceMonitor {
             var address = CMIOObjectPropertyAddress(mSelector: UInt32(kCMIODevicePropertyDeviceIsRunningSomewhere), mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))
             var size: UInt32 = 4; var value: UInt32 = 0
             let cameraRead = CMIOObjectGetPropertyData(id, &address, 0, nil, 4, &size, &value)
-            if cameraRead != noErr { sourceStatus = .partial }
+            if cameraRead != noErr { degrade(.partial) }
             if cameraRead == noErr, value != 0, !privacy.hasExclusions, config.includedBundleIdentifiers?.isEmpty != false {
                 next["camera"] = .init(start: now, end: now, bundleIdentifier: nil, application: nil, microphone: false, camera: true)
             }
@@ -254,14 +285,14 @@ final class GoalongCallPresenceMonitor {
         for (key, value) in active where next[key] == nil {
             do { try persistInterval(.init(start: value.start, end: now, bundleIdentifier: value.bundleIdentifier,
                 application: value.application, microphone: value.microphone, camera: value.camera)) }
-            catch { sourceStatus = .failed("Écriture micro/caméra incomplète.") }
+            catch { degrade(.failed("Écriture micro/caméra incomplète.")) }
         }
         for key in next.keys { if let old = active[key] {
             next[key] = .init(start: old.start, end: now, bundleIdentifier: old.bundleIdentifier,
                 application: old.application, microphone: old.microphone, camera: old.camera)
         } }
         active = next
-        do { try persistState() } catch { sourceStatus = .failed("Écriture micro/caméra incomplète.") }
+        do { try persistState() } catch { degrade(.failed("Écriture micro/caméra incomplète.")) }
     }
 }
 #endif

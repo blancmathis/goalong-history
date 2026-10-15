@@ -13,7 +13,7 @@ l’utilisateur, avec ses mots, et appliqué par un agent à ce qu’il faisait 
 - **Activité** : tuile Travail, carte **Tâches** (temps par projet, quelles que soient les
   apps), Concentration = plus longue session sur une même tâche, changements d’app « dont
   N sans quitter la tâche ». Sans définition, une carte invite à la rédiger.
-- **Surveillance temps réel** : affiche un résumé de la même définition et renvoie vers
+- **Réglages › Jev** : affiche un résumé de la même définition et renvoie vers
   Mon travail. Il n’existe qu’une définition (`JevWorkContextStore`, 800 octets).
 
 ## Modèle

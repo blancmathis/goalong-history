@@ -126,9 +126,7 @@ final class ForegroundActivityProbe {
         if let scheme = context.url.flatMap({ URLComponents(string: $0.value)?.scheme }),
            ["http", "https"].contains(scheme.lowercased()) { return true }
         if RecorderConfig.default.browserBundleIdentifiers.contains(context.app.bundleIdentifier ?? "") { return true }
-        let identity = (context.app.name + " " + (context.app.bundleIdentifier ?? "")).lowercased()
-        return ["safari", "chrome", "chromium", "firefox", "librewolf", "floorp", "edge", "brave",
-                "arc", "opera", "vivaldi", "orion", "duckduckgo", "browser", "sigmaos"].contains { identity.contains($0) }
+        return BrowserIdentity.isNamedBrowser(name: context.app.name, bundleIdentifier: context.app.bundleIdentifier)
     }
 
     static func isCallApplication(_ identifier: String?) -> Bool {

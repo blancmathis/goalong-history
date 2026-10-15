@@ -242,6 +242,9 @@
         private var pendingCount = 0
         private var nextSequence: UInt64 = 1
         private var drainScheduled = false
+        /// A tap disable that found the ring full. It never competes with data for capacity,
+        /// so capture health always learns that macOS disabled the tap.
+        private var pendingTapDisabled: EventTapPendingInput?
         private var maximumDepth = 0
         private var acceptedCount = 0
         private var coalescedCount = 0
@@ -294,8 +297,20 @@
             }
 
             guard pendingCount < capacity else {
-                recordDrop(value)
-                return false
+                guard value.kind == .tapDisabled else {
+                    recordDrop(value)
+                    return false
+                }
+                if pendingTapDisabled != nil {
+                    pendingTapDisabled?.occurrences += value.occurrences
+                    pendingTapDisabled?.lastObservedAt = value.lastObservedAt
+                } else {
+                    pendingTapDisabled = value
+                }
+                acceptedCount += value.occurrences
+                guard !drainScheduled else { return false }
+                drainScheduled = true
+                return true
             }
 
             let tail = (head + pendingCount) % capacity
@@ -311,6 +326,10 @@
         func popFirst() -> EventTapPendingInput? {
             lock.lock()
             defer { lock.unlock() }
+            if let control = pendingTapDisabled {
+                pendingTapDisabled = nil
+                return control
+            }
             guard pendingCount > 0 else {
                 drainScheduled = false
                 return nil
@@ -327,7 +346,7 @@
         func finishDrainPass() -> Bool {
             lock.lock()
             defer { lock.unlock() }
-            guard pendingCount == 0 else { return true }
+            guard pendingCount == 0, pendingTapDisabled == nil else { return true }
             drainScheduled = false
             return false
         }
@@ -346,7 +365,8 @@
                 head = (head + 1) % capacity
                 pendingCount -= 1
             }
-            drainScheduled = false
+            // Data is dropped; a pending tap disable is kept for the next drain.
+            if pendingTapDisabled == nil { drainScheduled = false }
             return discarded
         }
 
@@ -374,7 +394,7 @@
             return EventTapIngressMetrics(
                 capacity: capacity,
                 payloadCapacityBytes: capacity * MemoryLayout<EventTapPendingInput?>.stride,
-                currentDepth: pendingCount,
+                currentDepth: pendingCount + (pendingTapDisabled == nil ? 0 : 1),
                 maximumDepth: maximumDepth,
                 acceptedCount: acceptedCount,
                 coalescedCount: coalescedCount,
