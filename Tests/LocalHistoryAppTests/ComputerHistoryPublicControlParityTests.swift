@@ -71,7 +71,8 @@
             )
 
             XCTAssertTrue(computerHistory.contains("Supprimer cet élément…"))
-            XCTAssertTrue(computerHistory.contains("uniquement ses événements exacts"))
+            XCTAssertTrue(computerHistory.contains("supprime ses événements exacts"))
+            XCTAssertTrue(computerHistory.contains("La note du jour, les sceaux"))
             XCTAssertTrue(computerHistory.contains("Journal original"))
             XCTAssertTrue(computerHistory.contains("Enregistré sur ce Mac"))
             XCTAssertTrue(computerHistory.contains("Historique local conservé"))
@@ -81,6 +82,17 @@
             XCTAssertTrue(computerHistory.contains("@StateObject private var timelineModel"))
             XCTAssertTrue(timeline.contains("Supprimer la session…"))
             XCTAssertTrue(privacy.contains("Dernière session d’application"))
+            // Every session-delete alert states the whole-day derived erasure.
+            let explorer = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/ActivityPageExplorer.swift"),
+                encoding: .utf8
+            )
+            for copy in [explorer, privacy] {
+                XCTAssertTrue(copy.contains("les appels et l’activité de développement de ce jour sont aussi effacés"))
+                XCTAssertTrue(copy.contains("La note du jour, les sceaux"))
+            }
+            XCTAssertFalse(explorer.contains("Seuls les événements locaux de cette session"))
             XCTAssertTrue(activity.contains("openSourceJSON: model.revealTodayJSON"))
             XCTAssertTrue(activity.contains("snapshotGeneration: model.snapshotGeneration"))
             XCTAssertTrue(activity.contains("isSnapshotLoading: model.isRefreshing"))

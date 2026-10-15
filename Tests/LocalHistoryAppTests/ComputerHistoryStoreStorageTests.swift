@@ -714,6 +714,61 @@
             ))
         }
 
+        func testLoadRecentAndLoadStoredAcceptAMemoryWrittenInAnotherTimeZone() throws {
+            // Swapping NSTimeZone.default in-process changes Calendar.current but not
+            // TimeZone.current, which a real Mac time-zone change moves together. So
+            // simulate the stored file instead: a memory written six hours further east
+            // (Paris seen from New York) has a dayStart six hours before local midnight.
+            let fixtureRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let codexRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer {
+                try? FileManager.default.removeItem(at: fixtureRoot)
+                try? FileManager.default.removeItem(at: codexRoot)
+            }
+
+            let store = ComputerHistoryStore(
+                rootDirectory: fixtureRoot,
+                codexMemoryDirectory: codexRoot,
+                diagnosticSink: { _ in }
+            )
+            let day = makeDay(year: 2026, month: 8, day: 19)
+            _ = try store.write(
+                makeMemory(day: day, title: "Elsewhere", summary: "Written in another time zone."),
+                for: day
+            )
+            let JSONURL = fixtureRoot
+                .appendingPathComponent("computer-history", isDirectory: true)
+                .appendingPathComponent("\(dayKey(day)).computer-history.json")
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(contentsOf: JSONURL)) as? [String: Any]
+            )
+            let shiftedStart = Calendar.current.startOfDay(for: day).addingTimeInterval(-6 * 3_600)
+            object["dayStart"] = "b:" + String(
+                shiftedStart.timeIntervalSinceReferenceDate.bitPattern,
+                radix: 16
+            )
+            try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+                .write(to: JSONURL, options: [.atomic])
+
+            let recent = store.loadRecent(maximumDays: 5)
+            XCTAssertEqual(recent.memories.map(\.title), ["Elsewhere"])
+            XCTAssertTrue(recent.skippedCandidateKeys.isEmpty)
+            XCTAssertEqual(recent.memories.first?.dayStart, shiftedStart)
+            XCTAssertEqual(store.loadStored(for: day)?.title, "Elsewhere")
+
+            // A dayStart a full day away still does not match the file key.
+            object["dayStart"] = "b:" + String(
+                shiftedStart.addingTimeInterval(-18 * 3_600).timeIntervalSinceReferenceDate.bitPattern,
+                radix: 16
+            )
+            try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+                .write(to: JSONURL, options: [.atomic])
+            XCTAssertTrue(store.loadRecent(maximumDays: 5).memories.isEmpty)
+            XCTAssertNil(store.loadStored(for: day))
+        }
+
         func testLoadRecentMarksOwnedSymlinkIncompleteAndReturnsSafeSubset() throws {
             let fixtureRoot = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -238,7 +238,11 @@
 
         func loadStored(for day: Date, renderMarkdown: Bool = true) -> ComputerHistoryDayMemory? {
             guard let loaded = loadPersistedMemory(at: JSONFile(for: day)),
-                dayString(loaded.stored.dayStart) == dayString(day),
+                Self.storedDayMatches(
+                    storedDayStart: loaded.stored.dayStart,
+                    candidateDay: Calendar.current.startOfDay(for: day),
+                    sameLocalDay: dayString(loaded.stored.dayStart) == dayString(day)
+                ),
                 loaded.stored.analysisRevision
                     == ComputerHistoryAnalysisContract.currentRevision
             else { return nil }

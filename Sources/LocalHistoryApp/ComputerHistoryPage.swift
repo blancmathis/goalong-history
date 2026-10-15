@@ -626,7 +626,7 @@
                 Alert(
                     title: Text("Supprimer cet élément de l’historique ?"),
                     message: Text(
-                        "Goalong retrouve cet élément dans le journal local d’origine, supprime uniquement ses événements exacts et les instantanés liés, puis reconstruit la journée concernée. Les sceaux, reçus, le Temps d’écran et les conversations IA sont conservés."
+                        "Goalong retrouve cet élément dans le journal local d’origine et supprime ses événements exacts et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés ; la journée sera reconstruite. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
                     ),
                     primaryButton: .destructive(Text("Supprimer")) {
                         deleteEpisode(episode)
