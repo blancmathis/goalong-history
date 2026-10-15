@@ -1,6 +1,7 @@
 #if os(macOS)
 import Darwin
 import Foundation
+import LocalHistoryQueryCLI
 
 /// Owner-only, no-follow traversal and fd-relative atomic writes, like BlockingStore.
 struct FocusStore {
@@ -78,6 +79,31 @@ struct FocusStore {
     func saveSessions(_ sessions: [FocusSession], day: String) throws {
         guard FocusValidation.day(day), sessions.count <= 200, Set(sessions.map(\.id)).count == sessions.count, sessions.allSatisfy(\.valid) else { throw FocusFailure.invalidArgument }
         try save(sessions, area: "sessions", name: day + ".json")
+    }
+    /// One-time, idempotent: day files named with a pre-Gregorian key (Buddhist, Japanese, ROC...) move to the Gregorian name.
+    /// A file whose target already exists is left alone.
+    func migrateLegacyDays(calendar: Calendar, now: Date) throws {
+        guard calendar.identifier != .gregorian else { return }
+        func target(_ day: String) -> String? { GoalongFocusCalendar.gregorianKey(fromLegacy: day, calendar: calendar, now: now) }
+        for day in try sessionDays() {
+            guard let new = target(day), try load([FocusSession].self, area: "sessions", name: new + ".json") == nil,
+                  let value = try load([FocusSession].self, area: "sessions", name: day + ".json") else { continue }
+            try save(value, area: "sessions", name: new + ".json"); try remove(area: "sessions", name: day + ".json")
+        }
+        for day in try planDays() {
+            guard let new = target(day), try load(FocusPlan.self, area: "plans", name: new + ".json") == nil,
+                  var value = try load(FocusPlan.self, area: "plans", name: day + ".json") else { continue }
+            value.day = new; try save(value, area: "plans", name: new + ".json"); try remove(area: "plans", name: day + ".json")
+        }
+        for day in try days(area: "reviews") {
+            guard let new = target(day), try load(FocusReview.self, area: "reviews", name: new + ".json") == nil,
+                  var value = try load(FocusReview.self, area: "reviews", name: day + ".json") else { continue }
+            value.day = new; try save(value, area: "reviews", name: new + ".json"); try remove(area: "reviews", name: day + ".json")
+        }
+    }
+    private func remove(area: String, name: String) throws {
+        guard let fd = try openDirectory(area, create: false) else { return }; defer { close(fd) }
+        guard unlinkat(fd, name, 0) == 0 || errno == ENOENT, fsync(fd) == 0 else { throw FocusFailure.storageFailed }
     }
     func sessionDays() throws -> [String] { try days(area: "sessions") }
     func planDays() throws -> [String] { try days(area: "plans") }

@@ -26,6 +26,25 @@ final class ConcentrationControllerTests: XCTestCase {
         // The entry stays: its tab says the module is off and offers to turn it on.
         XCTAssertTrue(DashboardSection.sidebarSections(modules: modules.enabled).contains(.concentration))
     }
+    /// R2-019: plan, review and session files saved under a pre-Gregorian key move to the Gregorian name, once.
+    @MainActor func testLegacyCalendarDayFilesAreRenamedOnLoad() throws {
+        let now = Date(timeIntervalSince1970: 1792065600)  // 2026-10-15 12:00 UTC
+        for (identifier, today, yesterday) in [(Calendar.Identifier.buddhist, "2569-10-15", "2569-10-14"), (.japanese, "0008-10-15", "0008-10-14"), (.indian, "1948-07-23", "1948-07-22")] {
+            var legacy = Calendar(identifier: identifier); legacy.timeZone = TimeZone(identifier: "UTC")!
+            let s = store(); try quiet(s)
+            let session = FocusSession(intent: "Lire", mode: FocusMode(minutes: 5), startedAt: now.addingTimeInterval(-86_400), events: [.init(kind: .start, at: now.addingTimeInterval(-86_400))])
+            try s.saveSessions([session], day: yesterday)
+            try s.savePlans([FocusPlan(day: today)], review: FocusReview(day: yesterday))
+            for _ in 0..<2 {  // the second launch changes nothing
+                let c = try ConcentrationController(store: s, clock: { now }, calendar: legacy)
+                XCTAssertEqual(try c.plan(on: "2026-10-15").day, "2026-10-15");
+                XCTAssertEqual(try s.plan("2026-10-15")?.day, "2026-10-15", "\(identifier)")
+                XCTAssertEqual(try s.sessions("2026-10-14").count, 1, "\(identifier)")
+                XCTAssertEqual(try s.review("2026-10-14")?.day, "2026-10-14")
+                XCTAssertEqual(try s.sessionDays(), ["2026-10-14"]); XCTAssertEqual(try s.planDays(), ["2026-10-15"])
+            }
+        }
+    }
     @MainActor func testRestoreRunningAndAppClosedEnd() throws {
         let s = store(); try quiet(s)
         var now = Date(timeIntervalSince1970: 1791201600)

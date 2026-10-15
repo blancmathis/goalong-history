@@ -386,7 +386,7 @@ final class BlockingEngineTests: XCTestCase {
     /// R2-019: day keys written under a Buddhist or Japanese calendar are re-keyed to Gregorian once, counters kept.
     @MainActor func testLegacyCalendarDayKeysAreRekeyedOnLoad() throws {
         let now = date(15), list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
-        for (identifier, today, yesterday) in [(Calendar.Identifier.buddhist, "2569-10-15", "2569-10-14"), (.japanese, "0008-10-15", "0008-10-14")] {
+        for (identifier, today, yesterday) in [(Calendar.Identifier.buddhist, "2569-10-15", "2569-10-14"), (.japanese, "0008-10-15", "0008-10-14"), (.indian, "1948-07-23", "1948-07-22")] {
             var legacy = Calendar(identifier: identifier); legacy.timeZone = calendar.timeZone
             var usage = BlockDayUsage(day: today); usage.quotaSecondsUsed[list.id] = 120; usage.breaksTaken[list.id] = 1
             var past = BlockDayUsage(day: yesterday); past.quotaSecondsUsed[list.id] = 300

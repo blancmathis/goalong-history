@@ -1146,21 +1146,8 @@ import LocalHistoryQueryCLI
     /// Returns whether the document changed.
     private func migrateLegacyDayKeys() -> Bool {
         guard calendar.identifier != .gregorian else { return false }
-        let now = clock(), era = calendar.component(.era, from: now)
-        func gregorian(_ key: String) -> String? {
-            let parts = key.split(separator: "-", omittingEmptySubsequences: false)
-            guard key.count == 10, parts.count == 3, let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
-                  !(1900...2100).contains(year) else { return nil }
-            for candidate in stride(from: era, through: max(0, era - 4), by: -1) {
-                let parts = DateComponents(era: candidate, year: year, month: month, day: day, hour: 12)
-                guard let date = calendar.date(from: parts), date <= now.addingTimeInterval(86_400),
-                      calendar.dateComponents([.era, .year, .month, .day], from: date) == DateComponents(era: candidate, year: year, month: month, day: day)
-                else { continue }
-                let result = Self.dayKey(date, calendar: calendar)
-                return result == key ? nil : result
-            }
-            return nil
-        }
+        let now = clock()
+        func gregorian(_ key: String) -> String? { GoalongFocusCalendar.gregorianKey(fromLegacy: key, calendar: calendar, now: now) }
         var changed = false
         if var usage = document.usage, let key = gregorian(usage.day) {
             usage.day = key; document.usage = usage; changed = true
