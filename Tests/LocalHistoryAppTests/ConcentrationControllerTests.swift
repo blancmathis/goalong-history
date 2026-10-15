@@ -1,4 +1,5 @@
 #if os(macOS)
+import Ambiance
 import XCTest
 import LocalHistoryQueryCLI
 @testable import LocalHistoryApp
@@ -251,6 +252,39 @@ final class ConcentrationControllerTests: XCTestCase {
         XCTAssertEqual(try ConcentrationController(store: s, clock: { now }, calendar: calendar).commitmentProgress(value).measured, 2)
     }
 }
+extension ConcentrationControllerTests {
+    @MainActor func testAmbianceAdapterPicksAnInstalledFocusSourceAndNothingElse() {
+        let sources = [AmbianceSource(id: "calm", title: "Calme", kind: .focus, isAvailable: false),
+                       AmbianceSource(id: "rain", title: "Pluie", kind: .texture, isAvailable: true),
+                       AmbianceSource(id: "deep", title: "Profond", kind: .focus, isAvailable: true),
+                       AmbianceSource(id: "flow", title: "Flux", kind: .focus, isAvailable: true)]
+        XCTAssertEqual(AmbianceFocusSessionAudio.focusSource(in: sources, last: "flow")?.id, "flow")
+        XCTAssertEqual(AmbianceFocusSessionAudio.focusSource(in: sources, last: "rain")?.id, "deep")
+        XCTAssertEqual(AmbianceFocusSessionAudio.focusSource(in: sources, last: "calm")?.id, "deep")
+        XCTAssertNil(AmbianceFocusSessionAudio.focusSource(in: Array(sources.prefix(2)), last: nil))
+    }
+
+    @MainActor func testAmbianceAdapterIsSilentWhileTheModuleIsOff() {
+        var asked = 0
+        let audio = AmbianceFocusSessionAudio(controller: { asked += 1; return nil }, lastSource: { nil })
+        audio.startWork(); audio.startBreak(); audio.stop()
+        XCTAssertGreaterThan(asked, 0)
+    }
+
+    @MainActor func testRuntimeHandsItsAudioToTheController() throws {
+        let s = store(); try quiet(s)
+        let spy = AudioSpy()
+        let runtime = ConcentrationRuntime(storeFactory: { s }, blockingProvider: { nil }, presentsPanels: false)
+        runtime.audio = spy
+        runtime.apply(enabled: true)
+        defer { runtime.apply(enabled: false) }
+        let controller = try XCTUnwrap(runtime.controller)
+        var mode = FocusMode(); mode.kind = .pomodoro; mode.workMinutes = 5
+        try controller.startSession(intent: "Code", mode: mode, ambiance: true)
+        XCTAssertEqual(spy.actions.first, "work")
+    }
+}
+
 private final class AudioSpy: FocusSessionAudio {
     var actions: [String] = []
     func startWork() { actions.append("work") }; func startBreak() { actions.append("break") }; func stop() { actions.append("stop") }

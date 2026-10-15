@@ -212,7 +212,9 @@ goalong friction yesterday
 explicit date. `--block` may repeat. Exactly one of `--minutes`, `--open` and `--pomodoro` is required.
 Pomodoro defaults to 25/5/15/4, optionally takes work/short/long/every-N, and accepts `--cycles 1…16`.
 `--block-during-breaks` also blocks break phases; only work phases receive `--lock`. An open free
-session cannot lock. Ambiance uses the no-op audio adapter until its separate module merges.
+session cannot lock. `--ambiance` plays an installed Focus source (the last one played, else the
+first) during work phases and stops it at breaks and at the end. It plays nothing when the Ambiance
+module is off, no Focus pack is installed or you already play a source; it never downloads.
 
 `session skip` and `session stop` fail with `locked` while the session's current work block is
 locked, including clock-extended locks. A free open session renews a short free Blocking lease.

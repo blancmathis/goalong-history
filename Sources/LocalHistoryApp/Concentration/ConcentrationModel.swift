@@ -278,12 +278,13 @@ struct FocusPromptState: Codable {
     var eveningReminderAt: Date?
 }
 
-protocol FocusSessionAudio {
+@MainActor protocol FocusSessionAudio {
     func startWork()
     func startBreak()
     func stop()
 }
 struct NoOpFocusSessionAudio: FocusSessionAudio {
+    nonisolated init() {}
     func startWork() {}
     func startBreak() {}
     func stop() {}

@@ -104,8 +104,9 @@ puis ferme le panneau. La vue finit par `dismissEditor()`.
 Autres hooks/services, conservés par le runtime : `onStatusChange`, `onLimitMark`,
 `measurementRefresh`, `observe(_:)`, `noteInput(at:count:)`, `applyMeasurements(_:hasDefinition:)`, `shutdown()`.
 
-`FocusSessionAudio` : `startWork()`, `startBreak()`, `stop()`. Implémentation actuelle :
-`NoOpFocusSessionAudio`. L’adapter Ambiance s’injectera dans l’init après son merge.
+`FocusSessionAudio` : `startWork()`, `startBreak()`, `stop()`. L’app injecte
+`AmbianceFocusSessionAudio` via `ConcentrationRuntime.audio` avant `start()` ; par défaut
+`NoOpFocusSessionAudio` (tests, contrôleurs créés sans audio).
 
 Pour Ralentir, utiliser `BlockingController.friction: BlockingFrictionPresentation?`,
 `frictionUsage: BlockDayUsage?`, `frictionCounts(day:)`, `renounceFriction()`, `continueFriction()`.
@@ -196,8 +197,6 @@ Logs locaux ignorés par git : `.build/concentration-logs/`.
 
 ## Questions ouvertes / passage de relais
 
-- Brancher l’adapter Ambiance après son merge ; l’option CLI actuelle utilise le no-op et ne joue pas
-  de musique. Aucune permission ou dépendance audio ajoutée.
 - Design de la page, éditeurs/feuilles, panneaux et barre de menu, puis parcours interactif dans une
   app signée. Les placeholders vérifient la plomberie ; les tests ne prouvent pas l’UX finale ni des
   voiles multi-écran sur la machine du membre.

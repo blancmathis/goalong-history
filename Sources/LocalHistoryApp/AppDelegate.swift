@@ -294,6 +294,10 @@
                 BlockingRuntime.shared.start(monitor: contextMonitor)
                 ConcentrationRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .concentration) }
                 ConcentrationRuntime.shared.onMenuBarText = { [weak self] text in self?.menuBarController?.setFocusTitle(text) }
+                let ambiance = dashboardViewModel.ambianceModule
+                ConcentrationRuntime.shared.audio = AmbianceFocusSessionAudio(
+                    controller: { GoalongModuleStore.shared.isEnabled(.ambiance) ? ambiance.controller : nil },
+                    lastSource: { ambiance.settings.lastSource })
                 ConcentrationRuntime.shared.start(monitor: contextMonitor)
                 BraiseRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .braise) }
                 BraiseRuntime.shared.start()

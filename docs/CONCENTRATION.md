@@ -61,9 +61,11 @@ Options per session, each shown only when its module is on:
   for each work phase, ending at the phase end. Breaks are not blocked unless « Bloquer aussi pendant
   les pauses ». « Verrouiller » locks each work-phase block (Blocking lock rules; a free session « sans
   fin » cannot lock). Stopping a session whose current block is locked is refused, CLI included.
-- **Ambiance**: plays Focus during work phases, fades out at breaks, stops at the end. Ambiance is
-  not on `main` yet: define `FocusSessionAudio` (`startWork()`, `startBreak()`, `stop()`) with a no-op
-  default; the Ambiance adapter is added after Ambiance merges.
+- **Ambiance**: plays an installed Focus source during work phases (the last one played, else the
+  first), stops it at breaks and at the end. `AmbianceFocusSessionAudio` implements
+  `FocusSessionAudio` (`startWork()`, `startBreak()`, `stop()`). It does nothing when the Ambiance
+  module is off or no Focus pack is installed, never downloads, and never replaces or stops a source
+  the user started. Tests and controllers built without it use `NoOpFocusSessionAudio`.
 
 Phase changes show a non-activating panel for 6 s (« Pause — 5 min », « On reprend : <intention> »)
 with an optional system sound (Settings, default on). The menu bar item shows the phase and the time
