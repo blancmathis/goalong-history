@@ -23,6 +23,23 @@
         }
     }
 
+    /// When to capture the tail of the active Screen Time day. Completed days are never re-read,
+    /// so the last refresh must happen while the day is still the active one.
+    enum ScreenTimeMidnightSchedule {
+        static let lead: TimeInterval = 15
+
+        /// A moment just before the next local midnight. Inside the last `lead` seconds it targets the following midnight.
+        static func fireDate(after now: Date, calendar: Calendar = .current, lead: TimeInterval = lead) -> Date? {
+            let components = DateComponents(hour: 0, minute: 0, second: 0)
+            guard var midnight = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) else { return nil }
+            if midnight.addingTimeInterval(-lead) <= now {
+                guard let following = calendar.nextDate(after: midnight, matching: components, matchingPolicy: .nextTime) else { return nil }
+                midnight = following
+            }
+            return midnight.addingTimeInterval(-lead)
+        }
+    }
+
     final class AppDelegate: NSObject, NSApplicationDelegate {
         @MainActor private lazy var websitePairing = GoalongWebsitePairingCoordinator()
         @MainActor private var pendingWebsiteURL: URL?
@@ -87,6 +104,8 @@
         private var developerActivityRuntime: GoalongDeveloperRuntime?
         private var screenTimeRepository: AppleSystemScreenTimeRepository?
         private var screenTimeArchiveTimer: Timer?
+        private var screenTimeMidnightTimer: Timer?
+        private var screenTimeClockObservers: [NSObjectProtocol] = []
         private var screenTimeArchiveRefreshInFlight = false
         private var readOnlyQueryServer: GoalongReadOnlyQueryServer?
         private var dashboardWindowController: DashboardWindowController!
@@ -489,8 +508,13 @@
             MainActor.assumeIsolated { BraiseRuntime.shared.shutdown() }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
+            flushCurrentScreenTimeDay()
             screenTimeArchiveTimer?.invalidate()
             screenTimeArchiveTimer = nil
+            screenTimeMidnightTimer?.invalidate()
+            screenTimeMidnightTimer = nil
+            for observer in screenTimeClockObservers { NotificationCenter.default.removeObserver(observer) }
+            screenTimeClockObservers = []
             if let capabilityConsentObserver {
                 NotificationCenter.default.removeObserver(capabilityConsentObserver)
             }
@@ -1227,6 +1251,8 @@
         private func configureScreenTimeDailyArchive() {
             screenTimeArchiveTimer?.invalidate()
             screenTimeArchiveTimer = nil
+            screenTimeMidnightTimer?.invalidate()
+            screenTimeMidnightTimer = nil
             guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(), screenTimeRepository != nil else {
                 return
             }
@@ -1239,6 +1265,44 @@
             timer.tolerance = 60
             RunLoop.main.add(timer, forMode: .common)
             screenTimeArchiveTimer = timer
+            installScreenTimeClockObservers()
+            scheduleScreenTimeMidnightRefresh()
+        }
+
+        /// One last refresh just before midnight, re-armed after it fires, after a day or time zone change and after wake.
+        private func scheduleScreenTimeMidnightRefresh() {
+            screenTimeMidnightTimer?.invalidate()
+            screenTimeMidnightTimer = nil
+            guard screenTimeArchiveTimer != nil, let fireDate = ScreenTimeMidnightSchedule.fireDate(after: Date()) else { return }
+            let timer = Timer(fire: fireDate, interval: 0, repeats: false) { [weak self] _ in
+                self?.refreshCurrentScreenTimeDay()
+                self?.scheduleScreenTimeMidnightRefresh()
+            }
+            timer.tolerance = 0
+            RunLoop.main.add(timer, forMode: .common)
+            screenTimeMidnightTimer = timer
+        }
+
+        private func installScreenTimeClockObservers() {
+            guard screenTimeClockObservers.isEmpty else { return }
+            for name in [Notification.Name.NSCalendarDayChanged, .NSSystemTimeZoneDidChange, .NSSystemClockDidChange] {
+                screenTimeClockObservers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: nil, queue: .main
+                ) { [weak self] _ in self?.scheduleScreenTimeMidnightRefresh() })
+            }
+        }
+
+        /// Sleep and quit can end the day's last refresh window: collect the active day now, bounded to a few seconds.
+        private func flushCurrentScreenTimeDay(timeout: TimeInterval = 2.5) {
+            guard capabilityConsents?.isEnabled(.appleScreenTime) == true, !GoalongGlobalPause.isPaused(),
+                  let screenTimeRepository else { return }
+            let finished = DispatchGroup()
+            finished.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = screenTimeRepository.collect(for: Date())
+                finished.leave()
+            }
+            _ = finished.wait(timeout: .now() + timeout)
         }
 
         private func refreshCurrentScreenTimeDay() {
@@ -1332,6 +1396,7 @@
                     self.captureState.setSystemAwake(false)
                     self.contextMonitor.invalidatePresence()
                     self.recorder.flush()
+                    self.flushCurrentScreenTimeDay()
                 }
             )
 
@@ -1347,6 +1412,7 @@
                     self.contextMonitor.resetAndSample()
                     self.checkPermissionsAndStartTap(forceRefresh: true)
                     self.refreshCurrentScreenTimeDay()
+                    self.scheduleScreenTimeMidnightRefresh()
                 }
             )
 
