@@ -171,7 +171,7 @@
                 captureState = CaptureState()
                 store = try JSONLStore(retentionDays: configManager.config.retentionDays)
                 integrityStateStore = IntegrityStateStore()
-                deviceIdentity = try DeviceIdentity()
+                deviceIdentity = try DeviceIdentity.shared()
                 screenTimeRepository = try GoalongScreenTimeRepositoryProvider.repository(
                     rootDirectory: AppPaths.screenTimeDirectory,
                     deviceID: deviceIdentity.info.deviceID
