@@ -6,6 +6,8 @@ import Darwin
 /// Bounded, content-free foreground days. Raw journals remain authoritative while present.
 public struct GoalongActivityDayStore: Sendable {
     public static let schema = "goalong.activity-day.v1"
+    /// Hidden temporary name prefix used by `writePrivateFile` before its atomic rename.
+    public static let temporaryPrefix = ".activity-"
     public static let directoryName = "activity-days"
     public static let maximumSegments = 20_000
     public static let maximumBytes = 2 * 1_024 * 1_024
@@ -187,7 +189,7 @@ public struct GoalongActivityDayStore: Sendable {
             throw Failure.unsafePath
         }
         let fd = try directory(create: true); defer { close(fd) }
-        let temporary = ".activity-" + UUID().uuidString
+        let temporary = Self.temporaryPrefix + UUID().uuidString
         var existing = stat()
         let status = fstatat(fd, name, &existing, AT_SYMLINK_NOFOLLOW)
         guard status != 0 ? errno == ENOENT : (existing.st_mode & S_IFMT == S_IFREG && existing.st_nlink == 1) else { throw Failure.unsafePath }

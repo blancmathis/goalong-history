@@ -20,7 +20,10 @@ final class GoalongSystemSourcesTests: XCTestCase {
         XCTAssertThrowsError(try GoalongDayNoteStore.set(String(repeating: "x", count: 281), root: root, day: day))
         let file = root.appendingPathComponent("notes/\(GoalongSystemSourceFiles.dayKey(day)).json")
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
-        _ = try DerivedHistoryCleaner(rootDirectory: root, codexMemoryDirectory: root.appendingPathComponent("mirror")).prepareDeletion(days: [day]).execute()
+        let cleaner = DerivedHistoryCleaner(rootDirectory: root, codexMemoryDirectory: root.appendingPathComponent("mirror"))
+        _ = try cleaner.prepareDeletion(days: [day]).execute()
+        XCTAssertEqual(try GoalongDayNoteStore.get(root: root, day: day), "Travail hors du Mac")
+        _ = try cleaner.prepareDeletion(since: nil).execute()
         XCTAssertNil(try GoalongDayNoteStore.get(root: root, day: day))
     }
     func testSourceStoresRejectLinksWithoutReadingOrWritingTheirTargets() throws {
