@@ -427,7 +427,7 @@
                 confirmDestructiveAction(
                     title: "Effacer tout l’historique détaillé ?",
                     message:
-                        "Les événements détaillés enregistrés sur ce Mac seront supprimés. Les sceaux cryptographiques sont conservés : les périodes concernées restent visibles, mais ne pourront plus être partagées qu’en mode privé."
+                        "Les événements détaillés enregistrés sur ce Mac seront supprimés, ainsi que les verdicts et corrections de « Mon travail ». Les sceaux cryptographiques sont conservés : les périodes concernées restent visibles, mais ne pourront plus être partagées qu’en mode privé."
                 )
             else { return }
 

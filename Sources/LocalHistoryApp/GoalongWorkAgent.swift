@@ -48,6 +48,48 @@ extension GoalongWorkSharingFilter {
         guard permitsVisibleContext(label), let transformer else { return nil }
         return (try? transformer.apply(text, maximumCharacters: 2_000)).map { String($0.prefix(240)) }
     }
+
+    static let maskingFailure = GoalongWorkClassification.Failure.invalid(
+        "Les remplacements de noms n’ont pas pu être appliqués. Rien n’a été envoyé.")
+
+    /// Free text (definition, note, task names) with the name replacements applied. Fails closed.
+    func text(_ value: String, maximumCharacters: Int = 4_000) throws -> String {
+        guard let transformer, let masked = try? transformer.apply(String(value.prefix(maximumCharacters)),
+                                                                   maximumCharacters: maximumCharacters * 2) else {
+            throw Self.maskingFailure
+        }
+        return masked
+    }
+
+    /// The definition as the agent may read it. Its revision is not used: callers keep the original one.
+    func definition(_ value: GoalongWorkDefinition) throws -> GoalongWorkDefinition {
+        GoalongWorkDefinition(goals: try text(value.goals), applications: try text(value.applications),
+                              content: try text(value.content), notWork: try text(value.notWork))
+    }
+
+    /// The owner's corrections, filtered with today's exclusions, scope and replacements:
+    /// a correction the current choices refuse stays on the Mac. The newest are kept.
+    func examples(_ corrections: [GoalongWorkStore.Correction]) throws -> [GoalongWorkClassification.Example] {
+        var result: [GoalongWorkClassification.Example] = []
+        for correction in corrections.reversed() where result.count < GoalongWorkClassification.maximumExamples {
+            guard let label = label(correction.label) else { continue }
+            let task = try correction.task.map { try text($0) }
+            result.append(GoalongWorkClassification.Example(label: label,
+                assignment: GoalongWorkAssignment(verdict: correction.verdict, task: task, byOwner: true)))
+        }
+        return result.reversed()
+    }
+
+    /// Verdicts whose task names (shown in the timeline) carry the name replacements.
+    func verdicts(_ value: GoalongWorkVerdicts, cache: inout [String: String]) throws -> GoalongWorkVerdicts {
+        var result = value
+        for (key, assignment) in value.contexts {
+            guard let task = assignment.task else { continue }
+            if cache[task] == nil { cache[task] = try text(task) }
+            result.contexts[key]?.task = cache[task]
+        }
+        return result
+    }
 }
 
 /// Runs the user's definition over the contexts of a day through the connected ChatGPT
@@ -76,6 +118,8 @@ extension GoalongWorkSharingFilter {
     @Published private(set) var lastRun: Date?
 
     private var attempts: [Date: (date: Date, failed: Bool)] = [:]
+    /// An automatic request (a new definition) arrived during a run: run again once it ends.
+    private var rerunRequested = false
     private var task: Task<Void, Never>?
     private var session: CodexAppServerSession?
     private var operation = UUID()
@@ -121,7 +165,10 @@ extension GoalongWorkSharingFilter {
     }
 
     func classify(day: Date, userInitiated: Bool = true, dayNote: String? = nil) {
-        guard !isRunning else { return }
+        guard !isRunning else {
+            if !userInitiated { rerunRequested = true }
+            return
+        }
         let state = readiness
         guard state == .ready else {
             if userInitiated { lastError = state.message }
@@ -141,6 +188,7 @@ extension GoalongWorkSharingFilter {
         let definition = store.definition, revision = store.revision, root = self.root
         let policy = GoalongPrivacyPolicy.load(in: root), selection = GoalongAnalysisSelection.load(root: root)
         let filter = GoalongWorkSharingFilter(policy: policy, selection: selection)
+        let selectionRevision = selection.revision
         let note = dayNote ?? Self.sharedDayNote(root: root, day: start, selection: selection, policy: policy)
         let dayName = Self.dayString(start, calendar: calendar)
         task = Task { [weak self] in
@@ -181,31 +229,45 @@ extension GoalongWorkSharingFilter {
                     codexHomeURL: AppPaths.chatGPTCodexHomeDirectory, siteAnalysisOnly: true, homeLeaseWait: 0)
                 self.session = session
                 defer { session.close(); if operation == id { self.session = nil } }
+                // Name replacements apply to everything the agent reads, not only the contexts.
+                let sharedDefinition = try filter.definition(definition)
+                let sharedNote = try note.map { try filter.text($0) }
+                var maskedTasks: [String: String] = [:]
                 var classified = 0, work = 0
                 for (index, batch) in batches.enumerated() {
-                    guard operation == id, readiness == .ready, store.revision == revision else {
+                    // Every batch leaves with the exclusions and « Données pour ChatGPT » choices it was filtered with.
+                    guard operation == id, readiness == .ready, store.revision == revision,
+                          GoalongPrivacyPolicy.load(in: root).revision == policy.revision,
+                          GoalongAnalysisSelection.load(root: root).revision == selectionRevision else {
                         throw GoalongWorkClassification.Failure.invalid("La définition ou une autorisation a changé : classement arrêté.")
                     }
                     progress = batches.count > 1
                         ? "L’agent classe \(batch.count) contextes (\(index + 1)/\(batches.count))…"
                         : "L’agent classe \(batch.count) contexte\(batch.count > 1 ? "s" : "")…"
+                    let knownTasks = try store.knownTasks.prefix(GoalongWorkClassification.maximumKnownTasks).map {
+                        try maskedTasks[$0] ?? filter.text($0)
+                    }
                     let request = GoalongWorkClassification.request(date: dayName, definition: definition, pending: pending,
-                        batch: batch, day: observation.day, verdicts: store.verdicts, knownTasks: store.knownTasks,
-                        examples: store.examples, calendar: calendar, contextExcerpts: excerpts, dayNote: note)
-                    let prompt = GoalongWorkClassification.prompt(request, definition: definition)
+                        batch: batch, day: observation.day, verdicts: try filter.verdicts(store.verdicts, cache: &maskedTasks),
+                        knownTasks: knownTasks, examples: try filter.examples(store.corrections), calendar: calendar,
+                        contextExcerpts: excerpts, dayNote: sharedNote)
+                    let prompt = GoalongWorkClassification.prompt(request, definition: sharedDefinition)
                     let privacyRevision = filter.policy.revision
                     guard store.markAsked(batch, revision: revision, day: dayName) else { throw GoalongWorkClassification.Failure.invalid("La tentative n’a pas pu être enregistrée. Rien n’a été envoyé.") }
                     let response = try await Task.detached(priority: .userInitiated) {
                         let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory()
                         defer { try? FileManager.default.removeItem(at: directory) }
                         return try session.generateWorkClassification(prompt: prompt, privacyRevision: privacyRevision,
-                                                                      workingDirectory: directory)
+                                                                      selectionRevision: selectionRevision, workingDirectory: directory)
                     }.value
                     guard operation == id else { return }
                     let assignments = try GoalongWorkClassification.apply(response, to: request)
-                    store.merge(assignments, revision: revision, day: dayName)
-                    classified += assignments.count
-                    work += assignments.values.filter { $0.verdict == .work }.count
+                    guard store.revision == revision else {
+                        throw GoalongWorkClassification.Failure.invalid("La définition ou une autorisation a changé : classement arrêté.")
+                    }
+                    let applied = store.merge(assignments, revision: revision, day: dayName)
+                    classified += applied.count
+                    work += applied.values.filter { $0.verdict == .work }.count
                 }
                 let rest = pending.keys.count - keys.count
                 finish(id, outcome: "\(classified) contexte\(classified > 1 ? "s" : "") classé\(classified > 1 ? "s" : "") le \(GoalongUIFormat.day(start)), dont \(work) de travail."
@@ -216,18 +278,30 @@ extension GoalongWorkSharingFilter {
                 SupportDiagnostics.shared.failure(error, component: .analysis)
                 lastError = (error as? LocalizedError)?.errorDescription ?? "Le classement n’a pas abouti. Réessayez."
                 runningDay = nil; progress = nil
+                if store.revision != revision { attempts[start] = nil }
+                runPendingRerun()
             }
         }
     }
 
     func cancel() {
         operation = UUID(); task?.cancel(); session?.close(); session = nil
-        runningDay = nil; progress = nil
+        runningDay = nil; progress = nil; rerunRequested = false
     }
 
     private func finish(_ id: UUID, outcome: String) {
         guard operation == id else { return }
         lastOutcome = outcome; lastRun = Date(); runningDay = nil; progress = nil
+        runPendingRerun()
+    }
+
+    /// Starts the run asked for while another one was going, through the usual guards.
+    private func runPendingRerun() {
+        guard rerunRequested, !isRunning else { return }
+        rerunRequested = false
+        attempts[Calendar.current.startOfDay(for: Date())] = nil
+        guard store.automatic, !ChatGPTRecapRuntime.shared.isGenerating else { return }
+        classify(day: Date(), userInitiated: false)
     }
 
     static func dayString(_ date: Date, calendar: Calendar = .current) -> String {

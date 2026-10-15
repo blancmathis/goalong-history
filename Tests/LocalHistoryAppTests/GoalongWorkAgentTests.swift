@@ -35,6 +35,45 @@ final class GoalongWorkAgentTests: XCTestCase {
                      "Applications removed from the selection stay on the Mac")
     }
 
+    func testExamplesDefinitionNoteAndTasksFollowTodaysChoices() throws {
+        var reviewed = GoalongAnalysisSelection()
+        reviewed.reviewed = true
+        reviewed.replacements = [GoalongTextReplacement(search: "Acme", replacement: "Client A")]
+        let mail = GoalongWorkContext.Label(application: "Mail", bundleIdentifier: "com.apple.mail", host: nil, title: "Relevé Acme")
+        let corrections = [
+            GoalongWorkStore.Correction(key: docs.key, label: docs, verdict: .work, task: "Lancement Acme"),
+            GoalongWorkStore.Correction(key: mail.key, label: mail, verdict: .other, task: nil),
+        ]
+        let filter = GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy(), selection: reviewed)
+        let examples = try filter.examples(corrections)
+        XCTAssertEqual(examples.map(\.title), ["Client A — plan de lancement", "Relevé Client A"])
+        XCTAssertEqual(examples.first?.site, "docs.Client A.example")
+        XCTAssertEqual(examples.first?.task, "Lancement Client A")
+
+        var policy = GoalongPrivacyPolicy(); policy.applications = ["com.apple.mail": "Mail"]
+        XCTAssertEqual(try GoalongWorkSharingFilter(policy: policy, selection: reviewed).examples(corrections).map(\.application),
+                       ["Safari"], "A correction on a context excluded later is no longer sent")
+        var scoped = reviewed
+        scoped.scope = GoalongAnalysisScope(applicationIDs: ["com.apple.safari"], detailApplicationIDs: ["com.apple.safari"],
+                                            websiteDomains: true)
+        let scopedExamples = try GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy(), selection: scoped).examples(corrections)
+        XCTAssertEqual(scopedExamples.count, 1)
+        XCTAssertNil(scopedExamples.first?.title, "Window titles follow « Données pour ChatGPT » in examples too")
+
+        let definition = try filter.definition(GoalongWorkDefinition(goals: "Projet Acme", notWork: "Mails perso Acme"))
+        XCTAssertEqual(definition.goals, "Projet Client A")
+        XCTAssertEqual(definition.notWork, "Mails perso Client A")
+        XCTAssertEqual(try filter.text("Appel Acme"), "Appel Client A")
+        var cache: [String: String] = [:]
+        let verdicts = try filter.verdicts(GoalongWorkVerdicts([docs.key: .init(verdict: .work, task: "Acme")]), cache: &cache)
+        XCTAssertEqual(verdicts.contexts[docs.key]?.task, "Client A")
+
+        var broken = reviewed
+        broken.replacements = Array(repeating: GoalongTextReplacement(search: "x", replacement: "y"), count: 101)
+        XCTAssertThrowsError(try GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy(), selection: broken).text("Acme"),
+                             "Without valid replacements nothing free-form is sent")
+    }
+
     func testDailyReportJudgesAgainstTheUsersDefinition() {
         let text = ChatGPTRecapContextBuilder.workDefinitionText(
             GoalongWorkDefinition(goals: "Goalong", applications: "YouTube pour le cours Swift", notWork: "Scroller X"))
@@ -50,6 +89,13 @@ final class GoalongWorkAgentTests: XCTestCase {
         XCTAssertTrue(source.contains("consents.isEnabled(.chatGPTAnalysis)"))
         XCTAssertTrue(source.contains("siteAnalysisOnly: true"), "The strict tool-less, network-less profile")
         XCTAssertTrue(source.contains("filter.label(label)"), "Every label goes through the privacy filter")
+        XCTAssertTrue(source.contains("filter.examples(store.corrections)"), "Examples go through the privacy filter")
+        XCTAssertTrue(source.contains("GoalongAnalysisSelection.load(root: root).revision == selectionRevision"),
+                      "A changed « Données pour ChatGPT » choice stops the run before the next batch")
+        XCTAssertTrue(source.contains("selectionRevision: selectionRevision"), "The client rechecks the choice before sending")
+        XCTAssertTrue(source.contains("if !userInitiated { rerunRequested = true }"), "A new definition during a run is classified afterwards")
+        XCTAssertTrue(source.contains("classified += applied.count"), "Only stored verdicts are reported as classified")
+        XCTAssertTrue(source.contains("prompt(request, definition: sharedDefinition)"), "The prompt reads the masked definition")
     }
 }
 #endif

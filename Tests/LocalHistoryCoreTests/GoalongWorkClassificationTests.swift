@@ -138,6 +138,22 @@ final class GoalongWorkClassificationTests: XCTestCase {
                        "Local cache keys never leave the Mac")
     }
 
+    func testExamplesAreBoundedAndRedactedLikeContexts() throws {
+        let observation = observe(minutes(0...20, from: 36_000, app: "Pages", title: "Rapport"))
+        let pending = GoalongWorkClassification.pending(day: observation.day, labels: observation.labels, verdicts: .init())
+        let raw = GoalongWorkClassification.Example(
+            label: label(String(repeating: "A", count: 200), String(repeating: "h", count: 300), "Clé sk-abcdefghijklmnopqrstu " + String(repeating: "x", count: 400)),
+            assignment: .init(verdict: .other, byOwner: true))
+        let request = GoalongWorkClassification.request(date: "2026-09-10", definition: .init(goals: "Rapport"), pending: pending,
+            batch: pending.keys, day: observation.day, verdicts: .init(), knownTasks: [], examples: [raw], calendar: calendar)
+        let example = try XCTUnwrap(request.examples.first)
+        XCTAssertEqual(example.application.count, 80)
+        XCTAssertEqual(example.site?.count, 100)
+        XCTAssertLessThanOrEqual(example.title?.count ?? 0, GoalongWorkContext.maximumTitleLength)
+        let prompt = GoalongWorkClassification.prompt(request, definition: .init(goals: "Rapport"))
+        XCTAssertFalse(prompt.contains("sk-abcdefghijklmnopqrstu"), "A secret in a stored correction is redacted before sending")
+    }
+
     func testAgentAnswerIsStrictlyValidated() throws {
         let observation = observe(minutes(0...20, from: 36_000, app: "Pages", title: "Rapport")
             + minutes(21...40, from: 36_000, app: "Safari", host: "video.example.org", title: "Clip"))

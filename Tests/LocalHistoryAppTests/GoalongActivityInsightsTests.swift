@@ -146,11 +146,14 @@ final class GoalongActivityInsightsTests: XCTestCase {
                      video.key: GoalongWorkAssignment(verdict: .other)], revision: store.revision, day: "2026-09-10")
         XCTAssertEqual(store.verdicts.assignment(for: docs.key)?.task, "Goalong")
         XCTAssertEqual(store.knownTasks, ["Goalong"])
-        store.merge([video.key: GoalongWorkAssignment(verdict: .work, task: "X")], revision: "stale", day: "2026-09-10")
+        XCTAssertTrue(store.merge([video.key: GoalongWorkAssignment(verdict: .work, task: "X")], revision: "stale", day: "2026-09-10").isEmpty,
+                      "Nothing is reported as classified for an older definition")
         XCTAssertEqual(store.verdicts.assignment(for: video.key)?.verdict, .other, "An answer for an older definition is ignored")
 
         store.correct(key: video.key, label: video, verdict: .work, task: "Veille", day: "2026-09-10")
-        store.merge([video.key: GoalongWorkAssignment(verdict: .other)], revision: store.revision, day: "2026-09-10")
+        let applied = store.merge([video.key: GoalongWorkAssignment(verdict: .other), docs.key: GoalongWorkAssignment(verdict: .other)],
+                                  revision: store.revision, day: "2026-09-10")
+        XCTAssertEqual(Array(applied.keys), [docs.key], "Only the verdicts actually stored are counted")
         XCTAssertEqual(store.verdicts.assignment(for: video.key)?.task, "Veille", "The user's correction always wins")
         XCTAssertEqual(store.examples.map(\.title), ["Bêtisier"])
         var status = stat()
@@ -165,6 +168,29 @@ final class GoalongActivityInsightsTests: XCTestCase {
         reloaded.correct(key: video.key, label: video, verdict: nil, task: nil, day: "2026-09-10")
         XCTAssertNil(reloaded.verdicts.assignment(for: video.key))
         XCTAssertTrue(reloaded.examples.isEmpty)
+    }
+
+    @MainActor func testFullHistoryClearErasesWorkCorrectionsAndTheirTitles() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        let bank = GoalongWorkContext.Label(application: "Browser", bundleIdentifier: "fixture.Browser",
+                                            host: "bank.example.org", title: "Relevé de compte")
+        store.correct(key: bank.key, label: bank, verdict: .other, task: nil, day: "2026-09-10")
+        store.automatic = false
+        let revision = store.revision
+        store.removeAll()
+        XCTAssertTrue(store.corrections.isEmpty); XCTAssertTrue(store.verdicts.isEmpty)
+        let reloaded = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        XCTAssertTrue(reloaded.corrections.isEmpty)
+        XCTAssertEqual(reloaded.revision, revision); XCTAssertFalse(reloaded.automatic)
+        XCTAssertFalse(try String(contentsOf: file, encoding: .utf8).contains("Relevé"), "No title stays on disk")
+
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/AppDelegate.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("if cutoff == nil {\n                    // Work corrections keep window titles"),
+                      "Only the full clear erases the work corrections")
+        XCTAssertTrue(source.contains("GoalongWorkStore.shared.removeAll()"))
     }
 
     func testCSVExportHasOneRowPerDayAndUsageAndNeutralisesFormulas() {

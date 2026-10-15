@@ -59,10 +59,16 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
 - Filtre de confidentialité (`GoalongWorkSharingFilter`) : exclusions globales, puis
   sélection « Données pour ChatGPT » si elle est confirmée (apps autorisées, sites exclus,
   titres et sites autorisés, remplacements de noms). Un contexte filtré reste à classer.
+  Les corrections envoyées comme exemples passent par le même filtre au moment de
+  l’envoi : une correction sur un contexte exclu depuis n’est plus envoyée. Les
+  remplacements de noms s’appliquent aussi à la définition, à la note du jour, aux tâches
+  connues et aux tâches de la chronologie ; s’ils ne peuvent pas être appliqués, rien
+  n’est envoyé. Les tâches renvoyées par l’agent peuvent donc porter le nom remplacé.
 - Exécution : compte ChatGPT de Goalong (`codex app-server`, `CODEX_HOME` isolé), profil
   `goalong-site-analysis` (aucun outil, aucun réseau, aucun fichier), thread éphémère,
-  `gpt-5.6-luna` / `high`, sortie JSON stricte. La révision des exclusions est revérifiée
-  avant l’envoi.
+  `gpt-5.6-luna` / `high`, sortie JSON stricte. Les révisions des exclusions et des choix « Données pour
+  ChatGPT » sont revérifiées avant chaque lot et juste avant l’envoi ; si l’une a changé,
+  le classement s’arrête sans rien envoyer.
 - Validation : même `request_id`, exactement un élément par contexte envoyé, aucun id
   inconnu ou dupliqué ; sinon rien n’est enregistré. « unknown » devient *indéterminé* et
   peut être reposé sur un autre jour observé, avec au moins 5 minutes et moins de 3 tentatives automatiques. Un verdict de l’utilisateur n’est jamais reposé.
@@ -76,6 +82,9 @@ de l’utilisateur (avec leur libellé, pour servir d’exemples), réglage « a
 
 - Changer la définition efface les verdicts de l’agent ; les corrections restent.
 - « Tout reclasser… » efface les verdicts de l’agent ; les corrections restent.
+- « Effacer tout l’historique détaillé » efface aussi les verdicts et les corrections
+  (avec leurs libellés) et arrête un classement en cours. Les effacements partiels
+  (10 min, 1 h, 24 h) les gardent : une correction n’a pas de date.
 - Renommer une tâche (ou lui donner le nom d’une autre pour les fusionner) s’applique à
   tous les contextes.
 - Les anciens choix Travail / Hors travail par app (`activity-classification.json`) ne sont

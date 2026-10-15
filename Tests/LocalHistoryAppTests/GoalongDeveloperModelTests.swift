@@ -114,5 +114,73 @@ final class GoalongDeveloperModelTests: XCTestCase {
         XCTAssertFalse(GoalongDeveloperFileMonitor.permits(relativePath: "src/.DS_Store"))
         XCTAssertTrue(GoalongDeveloperFileMonitor.permits(relativePath: "Sources/file.swift"))
     }
+    private func waitFor(_ monitor: GoalongDeveloperFileMonitor, seconds: TimeInterval = 15, until done: () -> Bool) {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            monitor.synchronizeForTesting()
+            if done() { return }
+            Thread.sleep(forTimeInterval: 0.2)
+        } while Date() < deadline
+    }
+    func testMonitorIgnoresItsOwnDataAndWritesOnlyChangedCounts() throws {
+        // The data folder sits inside the followed repository, like a dotfiles repo at ~.
+        let root = try fixture(), store = GoalongDeveloperStore(root: root.appendingPathComponent("repo/data"))
+        try store.add(root.appendingPathComponent("repo"))
+        let monitor = GoalongDeveloperFileMonitor(root: store.root)
+        monitor.start(replayHistory: false); defer { monitor.stop() }
+        let file = root.appendingPathComponent("repo/example.swift")
+        for index in 0..<3 {
+            try Data("edit \(index)".utf8).write(to: file)
+            waitFor(monitor, seconds: 5) { store.read(day: Date()).fileChanges > 0 }
+        }
+        for _ in 0..<5 { monitor.synchronizeForTesting(); Thread.sleep(forTimeInterval: 0.2) }
+        let recorded = store.read(day: Date())
+        XCTAssertEqual(recorded.fileChanges, 1, "Watcher status: \(monitor.snapshotStatus())")
+        let journal = try FileManager.default.contentsOfDirectory(at: store.root.appendingPathComponent("developer"), includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "jsonl" }.map { try String(contentsOf: $0) }.joined()
+        XCTAssertEqual(journal.split(separator: "\n").count, recorded.buckets.count)
+        XCTAssertFalse(GoalongDeveloperFileMonitor.ownDataRoots([store.root]).isEmpty)
+    }
+    @MainActor func testFullDayFileStopsTheWatcherVisiblyAndRecovers() async throws {
+        let root = try fixture(), data = root.appendingPathComponent("data"), store = GoalongDeveloperStore(root: data)
+        try store.add(root.appendingPathComponent("repo"))
+        let other = String(repeating: "a", count: 64), day = Calendar.current.startOfDay(for: Date())
+        try store.append([.init(projectID: other, start: day, modifiedFiles: 1, estimated: false, lastEventID: 1)], day: day)
+        let journal = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: data.appendingPathComponent("developer"), includingPropertiesForKeys: nil).first)
+        let handle = try FileHandle(forWritingTo: journal); try handle.seekToEnd()
+        try handle.write(contentsOf: Data(repeating: 10, count: 2_097_152 - 200)); try handle.close()
+        let monitor = GoalongDeveloperFileMonitor(root: data)
+        monitor.start(replayHistory: false); defer { monitor.stop() }
+        try Data("one".utf8).write(to: root.appendingPathComponent("repo/one.swift"))
+        let full = GoalongDeveloperLaneStatus.failed("La limite quotidienne des compteurs de fichiers est atteinte.")
+        waitFor(monitor) { monitor.snapshotStatus() == full }
+        XCTAssertEqual(monitor.snapshotStatus(), full)
+        XCTAssertEqual(GoalongDeveloperMonitorStatus.current(root: data), full)
+        let consents = GoalongCapabilityConsentStore(fileURL: data.appendingPathComponent("capability-consent.json"))
+        let model = GoalongDeveloperModel(root: data, consents: consents)
+        XCTAssertTrue(model.setEnabled(true)); await model.refresh(day: Date())
+        XCTAssertEqual(model.value?.developerStatus, .failed("Suivi des fichiers interrompu : La limite quotidienne des compteurs de fichiers est atteinte."))
+        try FileManager.default.removeItem(at: journal)
+        try Data("two".utf8).write(to: root.appendingPathComponent("repo/two.swift"))
+        waitFor(monitor) { monitor.snapshotStatus() == .ready }
+        XCTAssertEqual(monitor.snapshotStatus(), .ready)
+        await model.refresh(day: Date())
+        XCTAssertNotEqual(model.value?.developerStatus, full)
+    }
+    @MainActor func testSuggestionsDropFollowedProjectsAndSurviveARemoval() throws {
+        let root = try fixture(), day = Calendar.current.startOfDay(for: Date())
+        let projects = try ["alpha", "beta"].map { name -> GoalongDeveloperProject in
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(name + "/.git"), withIntermediateDirectories: true)
+            return GoalongDeveloperProject(root: root.appendingPathComponent(name), name: name)
+        }
+        let model = GoalongDeveloperModel(root: root.appendingPathComponent("data"), consents: GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("data/capability-consent.json")))
+        model.setValueForTesting(GoalongDeveloperDay(day: day, t3: T3CodeMetadataReader.read(day: day, enabled: false, shouldContinue: { true }),
+            agents: GoalongAgentProjectGrouping.group(.init(day: day), t3: nil, enabled: false), git: [],
+            files: .init(status: .noData, buckets: []), selectedProjects: [], suggestions: projects, developerStatus: .noData))
+        try model.addProject(projects[0])
+        XCTAssertEqual(model.suggestions.map(\.name), ["beta"])
+        try model.removeProject(id: model.selectedProjects[0].id)
+        XCTAssertEqual(model.suggestions.map(\.name), ["alpha", "beta"])
+    }
 }
 #endif

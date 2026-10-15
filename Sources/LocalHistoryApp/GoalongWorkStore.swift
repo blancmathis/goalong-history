@@ -100,16 +100,21 @@ extension Notification.Name {
     func entry(for key: String) -> Entry? { document.entries[key] }
 
     /// Saves one agent answer. A newer definition or an owner correction always wins.
-    func merge(_ assignments: [String: GoalongWorkAssignment], revision: String, day: String) {
-        guard revision == document.revision, !assignments.isEmpty else { return }
+    /// Returns the verdicts actually stored (none for an older definition).
+    @discardableResult
+    func merge(_ assignments: [String: GoalongWorkAssignment], revision: String, day: String) -> [String: GoalongWorkAssignment] {
+        guard revision == document.revision, !assignments.isEmpty else { return [:] }
+        var applied: [String: GoalongWorkAssignment] = [:]
         for (key, assignment) in assignments where document.entries[key]?.byOwner != true {
             let previous = document.entries[key]
             let attempts = min(3, (previous?.attempts ?? 0) + (previous?.lastAskedDay == day ? 0 : 1))
             document.entries[key] = Entry(verdict: assignment.verdict, task: assignment.task, byOwner: false,
                 seen: day, attempts: attempts, lastAskedDay: day)
+            applied[key] = assignment
         }
         prune()
         publish(); persist()
+        return applied
     }
 
     /// Persist a re-ask before dispatch: a failed answer still counts as an automatic attempt.
