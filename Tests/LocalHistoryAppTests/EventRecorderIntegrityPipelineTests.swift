@@ -1260,6 +1260,100 @@
             XCTAssertEqual(wakeSeal.minuteStart, wakeMinute)
         }
 
+        func testPauseThenResumeDoesNotResealTheStopMinuteAndLabelsTheGapPaused() throws {
+            let fixture = try makeFixture()
+            let state = makeState(fixture)
+            let initialMinute = Date(timeIntervalSince1970: 120)
+            var persistedSeals: [LocalMinuteSeal] = []
+            let sealer = makeSealer(
+                state: state,
+                fixture: fixture,
+                initialDate: initialMinute
+            ) { seal, _ in
+                persistedSeals.append(seal)
+            }
+
+            // Menu-bar pause: the pause event is recorded before stopAndSeal.
+            sealer.receive(
+                fixtureEvent(
+                    timestamp: initialMinute.addingTimeInterval(10),
+                    root: "pause-root",
+                    kind: .recordingPaused
+                )
+            )
+            sealer.waitUntilIdleForTesting()
+            XCTAssertTrue(sealer.stopAndSeal(now: initialMinute.addingTimeInterval(15)))
+            let resumeMinute = initialMinute.addingTimeInterval(5 * 60)
+            sealer.receive(
+                fixtureEvent(
+                    timestamp: resumeMinute.addingTimeInterval(5),
+                    root: "resume-root",
+                    kind: .recordingResumed
+                )
+            )
+            sealer.waitUntilIdleForTesting()
+            XCTAssertTrue(
+                sealer.sealElapsedMinutesForTesting(now: resumeMinute.addingTimeInterval(61.1))
+            )
+
+            let ordered = persistedSeals.sorted { $0.minuteStart < $1.minuteStart }
+            XCTAssertEqual(ordered.map(\.minuteStart.timeIntervalSince1970), [120, 180, 420])
+            for (earlier, later) in zip(ordered, ordered.dropFirst()) {
+                XCTAssertLessThanOrEqual(earlier.minuteEnd, later.minuteStart)
+            }
+            let gap = try XCTUnwrap(ordered.dropFirst().first)
+            XCTAssertTrue(gap.eventRoots.isEmpty)
+            XCTAssertEqual(gap.minuteEnd, resumeMinute)
+            let gapCoverage = try XCTUnwrap(gap.minuteFields.first { $0.name == "coverage" })
+            XCTAssertEqual(gapCoverage.opening.fields["states"], "manualPause")
+        }
+
+        func testConsentOffStopBeforeThePauseEventStillLabelsTheGapPaused() throws {
+            let fixture = try makeFixture()
+            let state = makeState(fixture)
+            let initialMinute = Date(timeIntervalSince1970: 120)
+            var persistedSeals: [LocalMinuteSeal] = []
+            let sealer = makeSealer(
+                state: state,
+                fixture: fixture,
+                initialDate: initialMinute
+            ) { seal, _ in
+                persistedSeals.append(seal)
+            }
+
+            sealer.receive(
+                fixtureEvent(timestamp: initialMinute.addingTimeInterval(10), root: "typing-root")
+            )
+            sealer.waitUntilIdleForTesting()
+            // Consent off: stopAndSeal runs first, the pause event follows.
+            XCTAssertTrue(sealer.stopAndSeal(now: initialMinute.addingTimeInterval(15)))
+            sealer.receive(
+                fixtureEvent(
+                    timestamp: initialMinute.addingTimeInterval(16),
+                    root: "pause-root",
+                    kind: .recordingPaused
+                )
+            )
+            sealer.waitUntilIdleForTesting()
+            XCTAssertTrue(persistedSeals.contains { $0.eventRoots == ["pause-root"] })
+
+            let resumeMinute = initialMinute.addingTimeInterval(5 * 60)
+            sealer.receive(
+                fixtureEvent(
+                    timestamp: resumeMinute.addingTimeInterval(5),
+                    root: "resume-root",
+                    kind: .recordingResumed
+                )
+            )
+            sealer.waitUntilIdleForTesting()
+
+            let gap = try XCTUnwrap(persistedSeals.first { $0.eventRoots.isEmpty })
+            XCTAssertEqual(gap.minuteStart, initialMinute.addingTimeInterval(60))
+            XCTAssertEqual(gap.minuteEnd, resumeMinute)
+            let gapCoverage = try XCTUnwrap(gap.minuteFields.first { $0.name == "coverage" })
+            XCTAssertEqual(gapCoverage.opening.fields["states"], "manualPause")
+        }
+
         func testSlowCatchupSealNeverBlocksTheRawEventWriter() throws {
             let fixture = try makeFixture()
             let initialMinute = Date(timeIntervalSince1970: 120)

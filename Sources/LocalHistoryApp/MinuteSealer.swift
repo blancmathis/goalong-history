@@ -163,36 +163,48 @@
             }
         }
 
+        /// Seals everything up to and including the current minute because capture
+        /// stops (manual pause, consent off or quit). The chronology then moves past
+        /// that minute and the time until the next start is labelled `manualPause`,
+        /// so a resume neither seals the stop minute twice nor reports the paused gap
+        /// as captured.
         @discardableResult
-        func stopAndSeal() -> Bool {
+        func stopAndSeal(now: Date = Date()) -> Bool {
             onQueue {
                 timer?.cancel()
                 timer = nil
+                // The stop is known even if the seal fails below: later roots and
+                // gaps must not inherit the pre-stop "captured" state.
+                observedCoverageState = Self.stoppedCoverageState
                 guard !signingSuspended else { return false }
                 retryNotBefore = nil
-                let now = Date()
                 guard retryFailedMinuteIfEligible(now: now, ignoreBackoff: true) else {
                     return false
                 }
                 guard sealElapsedMinutes(now: now, sealLimit: .max) else { return false }
 
                 let current = Self.floorToMinute(now)
-                let bucket =
+                var bucket =
                     buckets[current]
                     ?? MinuteBucket(
                         eventRoots: [],
-                        coverageStates: [sealedCoverageState],
-                        endingCoverageState: observedCoverageState
+                        coverageStates: [sealedCoverageState]
                     )
+                bucket.endingCoverageState = Self.stoppedCoverageState
                 guard seal(bucket: bucket, minuteStart: current, now: now) else {
+                    // A later retry advances the chronology from this bucket, so it
+                    // carries the stopped state too.
                     failedMinuteStart = current
                     buckets[current] = bucket
                     return false
                 }
                 removeBucket(forKey: current)
+                advanceChronology(after: bucket, minuteStart: current)
                 return true
             }
         }
+
+        private static let stoppedCoverageState = "manualPause"
 
         func receive(_ event: HistoryEvent) {
             guard let root = event.integrity?.eventRoot else { return }
