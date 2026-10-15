@@ -34,5 +34,6 @@
 
 ## Vérifications
 - Tests ciblés (`swift test --filter …`), puis `make audit`.
+- Les tests restent invisibles (`Tests/GoalongHeadlessTestSupport` : fenêtres à alpha 0, ni activation ni ouverture d’URL/app). Pour les voir : `GOALONG_TESTS_VISIBLE=1`.
 - Après ajout d’un fichier Swift dans l’app : `python3 scripts/generate_support_source_allowlist.py`.
 - Toute nouvelle sortie réseau : `docs/NETWORK.md` et `scripts/generate_security_artifacts.py`.
