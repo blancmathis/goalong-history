@@ -93,7 +93,7 @@ def audit(root: Path) -> list[str]:
             'SHA256Digest.hashHex(Data(token.utf8)) == approved.credentialFingerprint',
             'try sender(approved.payload, approved.origin', 'approved.credentialFingerprint)',
             'autoSender.enable(origin: approved.origin', 'options: approved.draft.options',
-            'if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled { autoSender.stop()',
+            'if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled && samePlanOldValue != draft { autoSender.stop()',
             'GoalongGlobalPause.revalidate(approved.pauseRevision, in: root)',
             '_ = try GoalongReadableShareData(payload: bytes)', 'func invalidate() { preview = nil; reviewed = false;',
             'var deviceIDs = Set<String>()', 'var applicationIDs = Set<String>()', 'var websiteDomains = Set<String>()',
