@@ -416,6 +416,24 @@ final class IntegrationInstallerChurnTests: XCTestCase {
         XCTAssertFalse(settings.contains("Copy A"))
     }
 
+    func testUninstallRemovesHooksOfAnotherCopyAndKeepsForeignHooks() throws {
+        let home = try makeTemporaryDirectory("uninstall-other-copy")
+        let executable = home.appendingPathComponent("Goalong History")
+        XCTAssertTrue(FileManager.default.createFile(atPath: executable.path, contents: Data()))
+        let installer = AgentIntegrationInstaller(executableURL: executable, homeDirectory: home)
+        let url = installer.configurationURL(for: .claudeCodeHooks)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let foreign = #"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/usr/bin/true"}]}]}}"#
+        try foreign.write(to: url, atomically: true, encoding: .utf8)
+        try installer.install(.claudeCodeHooks)
+        let other = AgentIntegrationInstaller(
+            executableURL: home.appendingPathComponent("Other"), homeDirectory: home)
+        try other.uninstall(.claudeCodeHooks)
+        let settings = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(settings.contains("--agent-hook-ingest"))
+        XCTAssertTrue(settings.contains("/usr/bin/true"))
+    }
+
     func testOpenCodeUninstallIsIdempotentAndKeepsPrivateBoundedBackups() throws {
         let home = try makeTemporaryDirectory("idempotent-uninstall")
         let executable = home.appendingPathComponent("Goalong History")

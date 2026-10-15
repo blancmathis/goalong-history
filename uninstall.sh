@@ -73,6 +73,7 @@ if [[ "${GOALONG_UNINSTALL_DURING_LOCK:-}" != 1 && -f "$LOCK_MARKER" && ! -L "$L
   fi
 fi
 
+AGENT_HOOKS_NOTE=false
 for app in \
   "/Applications/$APP_NAME.app" \
   "$HOME/Applications/$APP_NAME.app" \
@@ -89,8 +90,19 @@ for app in \
   fi
   if [[ -x "$executable" ]]; then
     "$executable" --unregister-login-item >/dev/null 2>&1 || true
+    # Older builds do not know this flag and would start the full app, so only call builds that do.
+    if /usr/bin/grep -qaF -- '--uninstall-agent-integrations' "$executable" 2>/dev/null; then
+      "$executable" --uninstall-agent-integrations >/dev/null 2>&1 || true
+    else
+      AGENT_HOOKS_NOTE=true
+    fi
   fi
 done
+
+if [[ "$AGENT_HOOKS_NOTE" == true ]]; then
+  echo "An older Goalong build could not remove its agent hooks. If they remain, delete the Goalong entries in:" >&2
+  echo "  ~/.claude/settings.json, ~/.codex/hooks.json, ~/.cursor/hooks.json, ~/.config/opencode/plugins/goalong-history.js" >&2
+fi
 
 launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true
 quit_running_goalong "$EXECUTABLE_NAME" "$PREVIOUS_APP_NAME" "$LEGACY_APP_NAME"
@@ -107,6 +119,9 @@ remove_goalong_cli_link
 
 tccutil reset Accessibility "$BUNDLE_ID" >/dev/null 2>&1 || true
 tccutil reset ListenEvent "$BUNDLE_ID" >/dev/null 2>&1 || true
+tccutil reset SystemPolicyAllFiles "$BUNDLE_ID" >/dev/null 2>&1 || true
+tccutil reset Calendar "$BUNDLE_ID" >/dev/null 2>&1 || true
+tccutil reset Reminders "$BUNDLE_ID" >/dev/null 2>&1 || true
 
 if [[ "$PURGE_DATA" == true ]]; then
   rm -rf "$DATA_DIR" "$DATA_DIR-Dev"
