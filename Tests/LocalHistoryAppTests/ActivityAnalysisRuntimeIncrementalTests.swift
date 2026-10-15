@@ -1019,7 +1019,7 @@
             XCTAssertEqual(analysis.coverage.sourceEventCount, 3)
         }
 
-        func testIncompletePriorComputerHistoryFailsBeforeChangingOutputsOrCache() throws {
+        func testOneCorruptPriorComputerHistoryDayDoesNotBlockTheCycle() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.container) }
             let first = fixtureEvent(at: fixture.day, id: "click-1")
@@ -1060,26 +1060,21 @@
                 fixture: fixture
             )
 
-            XCTAssertThrowsError(
+            // One unreadable prior day inside a stable listing is skipped, so it
+            // cannot block every later cycle. The new click is analysed.
+            XCTAssertNoThrow(
                 try coordinator.process(
                     day: fixture.day,
                     tokenBudget: 1_600,
                     forceVerification: true,
                     includeActivityMemory: true
                 )
-            ) { error in
-                guard let cycleError = error as? ActivityAnalysisCycleError else {
-                    return XCTFail("Expected an inaccessible retained-memory error, got \(error)")
-                }
-                guard case .sourceInaccessible = cycleError else {
-                    return XCTFail("Expected an inaccessible retained-memory error, got \(error)")
-                }
-            }
-            XCTAssertEqual(
+            )
+            XCTAssertNotEqual(
                 try outputs.map { try Data(contentsOf: $0) },
                 lastKnownGoodOutputs
             )
-            XCTAssertEqual(try Data(contentsOf: cacheURL), lastKnownGoodCache)
+            XCTAssertNotEqual(try Data(contentsOf: cacheURL), lastKnownGoodCache)
         }
 
         func testSymlinkedSourceIsInaccessibleAndKeepsLastKnownGoodViews() throws {

@@ -689,6 +689,29 @@
             let recent = store.loadRecent(maximumDays: 2)
             XCTAssertEqual(recent.memories.map(\.title), ["First", "Second"])
             XCTAssertFalse(recent.isComplete)
+            // The listing itself was stable: only one day was skipped.
+            XCTAssertTrue(recent.hasStableSnapshot)
+            XCTAssertEqual(recent.skippedCandidateKeys, ["2026-08-20"])
+            var reported: [String] = []
+            ComputerHistoryStore.reportPartialPriorContext(recent, day: secondDay) { reported.append($0) }
+            XCTAssertEqual(reported.count, 1)
+            XCTAssertTrue(reported[0].hasPrefix(ComputerHistoryStore.partialPriorContextPrefix))
+            XCTAssertTrue(reported[0].hasSuffix("skipped 2026-08-20"))
+        }
+
+        func testStoredDayMatchesAcceptsAMemoryWrittenInAnotherTimeZone() {
+            let localMidnight = makeDay(year: 2026, month: 8, day: 19)
+            // Paris midnight seen from New York is six hours earlier.
+            XCTAssertTrue(ComputerHistoryStore.storedDayMatches(
+                storedDayStart: localMidnight.addingTimeInterval(-6 * 3_600),
+                candidateDay: localMidnight,
+                sameLocalDay: false
+            ))
+            XCTAssertFalse(ComputerHistoryStore.storedDayMatches(
+                storedDayStart: localMidnight.addingTimeInterval(-24 * 3_600),
+                candidateDay: localMidnight,
+                sameLocalDay: false
+            ))
         }
 
         func testLoadRecentMarksOwnedSymlinkIncompleteAndReturnsSafeSubset() throws {
@@ -1807,7 +1830,7 @@
             XCTAssertEqual(store.loadStored(for: day)?.title, "Temporary")
         }
 
-        func testBuildAndWriteRejectsCorruptPriorAndKeepsLastKnownGood() throws {
+        func testBuildAndWriteSkipsACorruptPriorDayInsteadOfBlockingEveryLaterDay() throws {
             let fixtureRoot = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             let codexRoot = FileManager.default.temporaryDirectory
@@ -1893,14 +1916,12 @@
                 evidenceLoader: { _, _ in evidence }
             )
 
-            XCTAssertThrowsError(try rebuildingStore.buildAndWrite(for: day)) { error in
-                XCTAssertTrue(
-                    error.localizedDescription.contains("incomplete recent-memory listing")
-                )
-            }
-            XCTAssertEqual(try Data(contentsOf: jsonURL), baselineJSON)
-            XCTAssertEqual(try Data(contentsOf: markdownURL), baselineMarkdown)
-            XCTAssertEqual(rebuildingStore.loadStored(for: day)?.title, "Last known good")
+            // A corrupt prior day must not block the window forever: the stable
+            // listing lets the build continue with the readable prior days.
+            XCTAssertNotNil(try rebuildingStore.buildAndWrite(for: day))
+            XCTAssertNotEqual(try Data(contentsOf: jsonURL), baselineJSON)
+            XCTAssertNotEqual(try Data(contentsOf: markdownURL), baselineMarkdown)
+            XCTAssertNotEqual(rebuildingStore.loadStored(for: day)?.title, "Last known good")
         }
 
         func testBuildAndWriteRejectsIncompleteBoundedEvidenceAndKeepsLastKnownGood() throws {

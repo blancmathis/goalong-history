@@ -447,8 +447,12 @@ snapshot or a window too small to prove the exact newest requested days fails cl
 The recent-memory result is typed as `memories`, `isComplete`, and bounded `issues`.
 Readable last-known-good memories may still support an answer when one candidate is bad,
 but the answer and UI label that coverage as incomplete and do not treat absence as
-exhaustive. The build/runtime write paths require complete prior context before mutating
-any derived output. Memory directories are pinned as capabilities, files are opened
+exhaustive. The build/runtime write paths require a stable prior snapshot before mutating
+any derived output: an interrupted, changed or over-budget listing still fails closed.
+A single corrupt, oversized or non-regular prior day inside a stable listing is skipped
+and named in the diagnostics ("prior context is partial"), so one bad file cannot stop
+every later analysis. A memory written in another time zone still loads when its stored
+day start is within 15 hours of the day named by its file. Memory directories are pinned as capabilities, files are opened
 relative to them with no-follow descriptors, and root, ancestor, directory, and file
 identities are revalidated. A legacy-format read migrates only through compare-and-swap;
 all in-process Computer History mutations are serialized, and the temporary file plus
