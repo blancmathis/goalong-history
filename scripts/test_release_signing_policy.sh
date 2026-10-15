@@ -46,3 +46,22 @@ for file in "$WORKFLOW" "$STABLE_WORKFLOW"; do
     echo 'Public releases must not force ad-hoc signing.' >&2; exit 1
   fi
 done
+
+# The local-signing path must give the app (only) its entitlements, and the verifier must check them.
+PUBLISH_LOCAL="$ROOT_DIR/scripts/publish_local_release.sh"
+/usr/bin/grep -Eq 'codesign "\$\{SIGN\[@\]\}" --identifier ai\.goalong\.localhistory --entitlements "\$ROOT/Distribution/GoalongHistory\.entitlements" "\$APP"$' "$PUBLISH_LOCAL"
+/usr/bin/grep -Fq 'com.apple.security.personal-information.calendars' "$ROOT_DIR/scripts/verify_local_bundle.sh"
+
+# A manual release builds main's exact commit, and the tag is created at that commit.
+/usr/bin/grep -Fq 'target_commitish: ${{ github.sha }}' "$STABLE_WORKFLOW"
+/usr/bin/grep -Fq 'Manual releases must run from main' "$STABLE_WORKFLOW"
+
+# Whole runs serialize so a deferred-delta job cannot cancel a pending main publication.
+/usr/bin/grep -Eq '^concurrency:$' "$WORKFLOW"
+/usr/bin/grep -Fq 'group: goalong-history-main-publication' "$WORKFLOW"
+
+# The monotonic check runs before the public immutable archive is created.
+MONOTONIC_LINE="$(/usr/bin/grep -n 'name: Require monotonic authenticated release state' "$WORKFLOW" | /usr/bin/head -n 1 | /usr/bin/cut -d: -f1)"
+ARCHIVE_LINE="$(/usr/bin/grep -n 'name: Publish immutable update archive' "$WORKFLOW" | /usr/bin/head -n 1 | /usr/bin/cut -d: -f1)"
+test -n "$MONOTONIC_LINE" && test -n "$ARCHIVE_LINE" && test "$MONOTONIC_LINE" -lt "$ARCHIVE_LINE"
+echo "Release publication ordering policy tests passed."

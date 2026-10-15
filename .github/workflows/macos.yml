@@ -48,6 +48,7 @@ jobs:
           python3 scripts/test_update_policy.py
           python3 scripts/test_permission_requirement_policy.py
           python3 scripts/test_release_publication_policy.py
+          python3 scripts/test_deferred_release_deltas.py
           python3 scripts/test_background_continuity.py
           python3 scripts/test_prepare_presigned_release.py
           python3 scripts/test_site_submission_policy.py
