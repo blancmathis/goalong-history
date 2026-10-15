@@ -105,7 +105,9 @@ extension Notification.Name {
         task = Task {
             do {
                 guard let executable = CodexExecutableLocator.locate() else { throw CodexAppServerError.executableUnavailable }
-                let active = try CodexAppServerSession(executableURL: executable, codexHomeURL: AppPaths.chatGPTDirectory.appendingPathComponent("site-analysis-codex-home", isDirectory: true), siteAnalysisOnly: true, homeLeaseWait: 0)
+                let home = AppPaths.chatGPTDirectory.appendingPathComponent("site-analysis-codex-home", isDirectory: true)
+                guard let active = try await GoalongWorkAgent.makeOffMain({ try CodexAppServerSession(executableURL: executable, codexHomeURL: home, siteAnalysisOnly: true, homeLeaseWait: 0) },
+                                                                          isStale: { [weak self] in self?.operation != id }, close: { $0.close() }) else { return }
                 session = active; defer { active.close(); if operation == id { session = nil } }
                 guard operation == id, sourcesEnabled, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { throw GoalongProfileAnalysis.invalid("Autorisation retirée.") }
                 let output = try await Task.detached(priority: .userInitiated) {
