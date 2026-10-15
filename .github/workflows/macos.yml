@@ -87,6 +87,18 @@ jobs:
           GOALONG_FOCUS_UI_TESTS=1 GOALONG_FOCUS_UI_SNAPSHOT="$PWD/qa/local-analytics/disclosures-expanded.png" \
             swift test --skip-build --filter GoalongDisclosureInteractionTests
 
+      - name: Exercise the blocking activation regression
+        timeout-minutes: 3
+        run: |
+          LOG="$(mktemp)"
+          GOALONG_BLOCKING_UI_TESTS=1 HOME="$(mktemp -d /tmp/goalong-test-XXXX)" \
+            swift test --skip-build --filter BlockingActivationRegressionTests 2>&1 | tee "$LOG"
+          # A skipped test must fail the gate, so the env opt-in cannot quietly switch it off.
+          if grep -q "skipped" "$LOG" || ! grep -q "Executed 1 test, with 0 failures" "$LOG"; then
+            echo "BlockingActivationRegressionTests did not run" >&2
+            exit 1
+          fi
+
       - name: Render local analytics with synthetic data
         run: |
           mkdir -p qa/local-analytics
