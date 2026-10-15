@@ -531,6 +531,7 @@ import SwiftUI
         }
         .frame(width: 600).frame(minHeight: 420, idealHeight: 640, maxHeight: 760)
         .background(LHTheme.pageBackground)
+        .onExitCommand(perform: onDone)
     }
 }
 

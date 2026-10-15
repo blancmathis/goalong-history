@@ -53,6 +53,7 @@ import SwiftUI
             }
         }
         .frame(minWidth: 560, idealWidth: 620, minHeight: 380, idealHeight: 480)
+        .onExitCommand { dismiss() }
         .task(id: revision) { await developer.refresh(day: Date()) }
         .accessibilityIdentifier("developer-projects-sheet")
     }
