@@ -766,6 +766,15 @@
                         semanticContextStore.deleteEvents(since: cutoff) { [self] semanticResult in
                             switch semanticResult {
                             case .failure(let error):
+                                // Raw events are gone: still remove the derived views of the
+                                // period, then report the semantic failure (a retry is idempotent).
+                                do {
+                                    _ = try derivedPlan.execute()
+                                } catch {
+                                    Diagnostics.write(
+                                        "Derived history clear failed after a semantic clear failure: \(error)"
+                                    )
+                                }
                                 completeHistoryClear(
                                     .failure(error),
                                     suspension: suspension,
