@@ -128,8 +128,9 @@ enum AmbiancePackDownloader {
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
             do {
                 if let failure { throw failure }
-                guard let response = downloadTask.response as? HTTPURLResponse, response.statusCode == 200,
-                      (try location.resourceValues(forKeys: [.fileSizeKey])).fileSize == Int(pack.bytes) else {
+                guard let response = downloadTask.response as? HTTPURLResponse else { throw AmbianceError.network }
+                guard response.statusCode == 200 else { throw AmbianceError.serverUnavailable }
+                guard (try location.resourceValues(forKeys: [.fileSizeKey])).fileSize == Int(pack.bytes) else {
                     throw AmbianceError.invalidPack("réponse ou taille incorrecte")
                 }
                 let file = FileManager.default.temporaryDirectory.appendingPathComponent("ambiance-download-\(UUID().uuidString).tar")
@@ -141,7 +142,7 @@ enum AmbiancePackDownloader {
             // Foundation transport errors may contain the signed failing URL.
             // Never retain or expose them through the controller's public error.
             if error != nil {
-                finish(.failure(failure ?? AmbianceError.invalidPack("téléchargement du pack \(pack.id) impossible")))
+                finish(.failure(failure ?? AmbianceError.network))
             }
         }
     }

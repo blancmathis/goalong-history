@@ -115,11 +115,12 @@ final class AmbianceAudioNetworkTests: XCTestCase {
             let module = AmbianceModule(settings: settings) { support }
             let controller = try XCTUnwrap(module.controller)
             let done = expectation(description: mode)
-            var completed = false
+            var completed = false, cancelRequested = false
             let token = controller.$packs.sink { packs in
                 guard let status = packs.first(where: { $0.id == pack.id })?.status, !completed else { return }
                 switch status {
                 case .installed, .failed: completed = true; done.fulfill()
+                case .notInstalled where mode == "slow" && cancelRequested: completed = true; done.fulfill()
                 default: break
                 }
             }
@@ -128,13 +129,18 @@ final class AmbianceAudioNetworkTests: XCTestCase {
             controller.download(pack.id)
             if mode == "slow" {
                 try await Task.sleep(nanoseconds: 100_000_000)
+                cancelRequested = true
                 controller.cancelDownload(pack.id)
             }
             await fulfillment(of: [done], timeout: 45)
             token.cancel()
             let store = AmbiancePackStore(supportDirectory: support)
             XCTAssertEqual(store.isInstalled(pack), mode == "good", mode)
-            if mode != "good" {
+            if mode == "slow" {
+                // A user cancel is not a failure.
+                XCTAssertEqual(controller.packs.first?.status, .notInstalled)
+                XCTAssertFalse(FileManager.default.fileExists(atPath: store.root.path), mode)
+            } else if mode != "good" {
                 if case .failed = controller.packs.first?.status {} else { XCTFail("Expected failure for \(mode)") }
                 XCTAssertFalse(FileManager.default.fileExists(atPath: store.root.path), mode)
             }
