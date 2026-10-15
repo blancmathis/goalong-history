@@ -30,7 +30,8 @@ final class GoalongSiteSubmissionIntentTests: XCTestCase {
                 let text = goalongUserMessage($0)
                 XCTAssertFalse(text.isEmpty)
                 for english in ["website", "Upload", "token", "The "] { XCTAssertFalse(text.contains(english), "\(status): \(text)") }
-                XCTAssertTrue(String(describing: $0).contains("website") || String(describing: $0).contains("Upload"))
+                XCTAssertNotEqual(String(describing: $0), text)
+                XCTAssertTrue(String(describing: $0).range(of: "website|upload|import", options: [.regularExpression, .caseInsensitive]) != nil)
                 if status == 401 { XCTAssertTrue(text.contains("Relier mon Mac")) }
             }
         }
