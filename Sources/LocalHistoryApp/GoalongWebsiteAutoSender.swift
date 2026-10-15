@@ -235,7 +235,7 @@ import LocalHistoryCore
             status = "Journée du \(day) reçue · prochain envoi après \(Self.timeLabel(current))."
         } catch {
             SupportDiagnostics.shared.failure(error, component: .sharing)
-            stopAutomatically("Synchronisation en pause : \(goalongUserMessage(error)). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre.")
+            stopAutomatically("Synchronisation en pause : \(goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre.")
         }
     }
     deinit { timer?.invalidate() }

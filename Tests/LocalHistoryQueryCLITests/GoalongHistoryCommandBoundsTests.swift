@@ -93,6 +93,19 @@ final class GoalongHistoryCommandBoundsTests: XCTestCase {
         ]))
     }
 
+    func testReversedBareDaysAreRejectedAndPastEndGivesSevenDays() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertThrowsError(try output([
+            "--root", root.path, "gaps", "--start", "2026-01-02", "--end", "2026-01-01",
+        ]))
+        let calendar = Calendar.current
+        let bound = try GoalongQueryCLI.parseEndBound("2026-01-10", now: Date())
+        let window = try GoalongQueryWindow.resolve(start: nil, end: bound.end, endDay: bound.day, calendar: calendar)
+        XCTAssertEqual(window.start, calendar.date(from: DateComponents(year: 2026, month: 1, day: 4)))
+        XCTAssertEqual(window.end, calendar.date(from: DateComponents(year: 2026, month: 1, day: 11)))
+    }
+
     func testWindowResolutionUsesSevenLocalDaysByDefault() throws {
         let calendar = Calendar.current
         let now = Date()
