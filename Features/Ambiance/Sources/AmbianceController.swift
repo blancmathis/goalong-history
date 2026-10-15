@@ -19,6 +19,8 @@ import OndeCore
     private var runtime: AmbianceRuntime?
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var downloadTickets: [String: UUID] = [:]
+    @Published public private(set) var importNotice: String?
+    private var importTask: Task<Void, Never>?
     private var playTask: Task<Void, Never>?
     private var playTicket: UUID?
     init(settings: AmbianceSettings, supportDirectory: URL) {
@@ -97,11 +99,12 @@ import OndeCore
     }
     public func shutdown() {
         stop()
+        importTask?.cancel(); importTask = nil; importNotice = nil
         for task in downloadTasks.values { task.cancel() }
         downloadTasks.removeAll(); downloadTickets.removeAll()
         sources = []; packs = []
     }
-    deinit { playTask?.cancel(); for task in downloadTasks.values { task.cancel() } }
+    deinit { playTask?.cancel(); importTask?.cancel(); for task in downloadTasks.values { task.cancel() } }
     /// Explicit diagnostic render. It emits no device audio and always tears
     /// down the runtime, including on validation, decode and render failures.
     public func renderOffline(_ source: AmbianceSource, seconds: Double) throws -> AmbianceRenderMeasure {
@@ -167,25 +170,69 @@ import OndeCore
         do { try store.remove(pack); refresh() }
         catch { setStatus(id, .failed("Suppression impossible : \(error.localizedDescription)")) }
     }
-    public func addOwnFiles(_ urls: [URL]) {
-        guard settings.isEnabled else { return }
+    /// Most own files kept in the list, and most directory entries looked at in one import.
+    public static let ownFilesLimit = 500
+    static let visitedEntriesLimit = 50_000
+    /// Audio files in `urls` (folders walked recursively), not already in `existing`, without copying anything.
+    /// Pure file-system work: runs off the main actor and stops when cancelled.
+    nonisolated static func collectAudioFiles(_ urls: [URL], existing: [String], limit: Int = ownFilesLimit) -> (paths: [String], truncated: Bool) {
         let extensions: Set<String> = ["wav", "aiff", "aif", "m4a", "mp3", "caf", "flac"]
-        var paths = settings.ownFiles
+        var seen = Set(existing), added: [String] = [], truncated = false, visited = 0
         func include(_ file: URL) {
             guard extensions.contains(file.pathExtension.lowercased()) else { return }
             let path = file.resolvingSymlinksInPath().standardizedFileURL.path
-            if (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true, !paths.contains(path) { paths.append(path) }
+            guard !seen.contains(path), (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return }
+            if existing.count + added.count >= limit { truncated = true; return }
+            seen.insert(path); added.append(path)
         }
         for url in urls where url.isFileURL {
+            if Task.isCancelled { break }
             if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                if let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
-                    while let file = files.nextObject() as? URL { include(file) }
+                guard let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
+                while let file = files.nextObject() as? URL {
+                    if Task.isCancelled || truncated { break }
+                    visited += 1
+                    if visited > visitedEntriesLimit { truncated = true; break }
+                    include(file)
                 }
             } else {
                 include(url)
             }
         }
+        return (added, truncated)
+    }
+    /// Plain files are added at once; folders are walked off the main actor. The returned task ends when the list is updated.
+    @discardableResult public func addOwnFiles(_ urls: [URL]) -> Task<Void, Never>? {
+        guard settings.isEnabled else { return nil }
+        importNotice = nil
+        let hasFolder = urls.contains { url in
+            url.isFileURL && (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+        guard hasFolder else {
+            merge(Self.collectAudioFiles(urls, existing: settings.ownFiles)); return nil
+        }
+        let existing = settings.ownFiles
+        let task = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) { Self.collectAudioFiles(urls, existing: existing) }.value
+            guard let self, !Task.isCancelled else { return }
+            self.importTask = nil
+            self.merge(result)
+        }
+        importTask = task
+        return task
+    }
+    private func merge(_ result: (paths: [String], truncated: Bool)) {
+        // Folders can take a while: the module may have been turned off, or the list changed, meanwhile.
+        guard settings.isEnabled else { return }
+        var paths = settings.ownFiles
+        let known = Set(paths)
+        var truncated = result.truncated
+        for path in result.paths where !known.contains(path) {
+            if paths.count >= Self.ownFilesLimit { truncated = true; break }
+            paths.append(path)
+        }
         settings.ownFiles = paths; refreshSources()
+        if truncated { importNotice = "Seuls les \(Self.ownFilesLimit) premiers fichiers ont été ajoutés." }
     }
     public func removeOwnFile(_ source: AmbianceSource) {
         guard settings.isEnabled else { return }

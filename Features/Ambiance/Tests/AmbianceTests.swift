@@ -50,13 +50,13 @@ final class AmbianceTests: XCTestCase {
         XCTAssertEqual(AmbianceSettings(defaults: store).ownFiles, ["/missing/member.wav"])
         XCTAssertEqual(AmbianceSettings(defaults: store).lastSource, "ambre")
     }
-    @MainActor func testOwnFilesAndMissingFileStayListedWithoutCopying() throws {
+    @MainActor func testOwnFilesAndMissingFileStayListedWithoutCopying() async throws {
         let support = try root(), input = try root(), settings = AmbianceSettings(defaults: defaults())
         settings.isEnabled = true
         let file = input.appendingPathComponent("mon son.wav")
         try Data([1, 2, 3]).write(to: file)
         let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
-        controller.addOwnFiles([input, file])
+        await controller.addOwnFiles([input, file])?.value
         XCTAssertEqual(settings.ownFiles, [file.resolvingSymlinksInPath().path])
         XCTAssertTrue(try XCTUnwrap(controller.sources.first { $0.kind == .ownFile }).isAvailable)
         try FileManager.default.removeItem(at: file); controller.refresh()
@@ -79,16 +79,40 @@ final class AmbianceTests: XCTestCase {
         XCTAssertFalse(controller.diagnostics.runtimeCreated)
         XCTAssertEqual(controller.diagnostics.mappedBytes, 0)
     }
-    @MainActor func testFolderImportIncludesNestedAlbumWithoutCopying() throws {
+    @MainActor func testFolderImportIncludesNestedAlbumWithoutCopying() async throws {
         let support = try root(), album = try root().appendingPathComponent("Artiste/Album")
         try FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
         let file = album.appendingPathComponent("morceau.flac")
         try Data([1, 2]).write(to: file)
         let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
         let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
-        controller.addOwnFiles([album.deletingLastPathComponent().deletingLastPathComponent()])
+        await controller.addOwnFiles([album.deletingLastPathComponent().deletingLastPathComponent()])?.value
         XCTAssertEqual(settings.ownFiles, [file.resolvingSymlinksInPath().path])
         XCTAssertFalse(FileManager.default.fileExists(atPath: support.appendingPathComponent("Ambiance").path))
+    }
+    @MainActor func testFolderImportIsCappedAndNeverDuplicates() async throws {
+        let support = try root(), folder = try root()
+        let total = AmbianceController.ownFilesLimit + 5
+        for index in 0..<total { try Data([1]).write(to: folder.appendingPathComponent(String(format: "morceau-%04d.flac", index))) }
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        await controller.addOwnFiles([folder])?.value
+        XCTAssertEqual(settings.ownFiles.count, AmbianceController.ownFilesLimit)
+        XCTAssertNotNil(controller.importNotice)
+        let first = settings.ownFiles
+        await controller.addOwnFiles([folder])?.value
+        XCTAssertEqual(settings.ownFiles, first, "Importing the same folder again changes nothing")
+        XCTAssertEqual(Set(settings.ownFiles).count, settings.ownFiles.count)
+    }
+    @MainActor func testFolderImportIsDiscardedWhenModuleTurnsOffMeanwhile() async throws {
+        let support = try root(), folder = try root()
+        try Data([1]).write(to: folder.appendingPathComponent("a.wav"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        let task = controller.addOwnFiles([folder])
+        settings.isEnabled = false
+        await task?.value
+        XCTAssertTrue(settings.ownFiles.isEmpty)
     }
     @MainActor func testLocalDownloadAndRemovePublishCorrectPackState() async throws {
         guard ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_PACK_DIR"] != nil else { throw XCTSkip("Local dev archives required") }

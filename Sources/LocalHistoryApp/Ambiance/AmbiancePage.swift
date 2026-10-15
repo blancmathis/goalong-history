@@ -33,7 +33,7 @@ import UniformTypeIdentifiers
     var body: some View {
         AmbiancePageContent(
             sources: controller.sources, packs: controller.packs, state: controller.state,
-            lastSource: settings.lastSource,
+            lastSource: settings.lastSource, notice: controller.importNotice,
             volume: Binding(get: { controller.volume }, set: { controller.volume = $0 }),
             actions: AmbianceActions(
                 play: { source in settings.lastSource = source.id; controller.play(source) },
@@ -65,6 +65,7 @@ struct AmbiancePageContent: View {
     let packs: [AmbiancePackState]
     let state: AmbianceController.State
     var lastSource: String?
+    var notice: String?
     @Binding var volume: Double
     let actions: AmbianceActions
 
@@ -175,6 +176,7 @@ struct AmbiancePageContent: View {
                 .buttonStyle(LHQuietButtonStyle())
                 .accessibilityIdentifier("ambiance-add-files")
         }) {
+            if let notice { GoalongNote(notice, symbol: "info.circle", tone: .warning) }
             if files.isEmpty {
                 Text("Ajoutez des fichiers audio ou un dossier.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.tertiaryText)
