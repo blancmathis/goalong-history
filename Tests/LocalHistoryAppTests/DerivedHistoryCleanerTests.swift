@@ -390,6 +390,66 @@
             XCTAssertTrue(FileManager.default.fileExists(atPath: foreign.path))
         }
 
+        func testHistoryClearsEraseTheProofPackagesOfTheClearedRecaps() throws {
+            let container = FileManager.default.temporaryDirectory
+                .appendingPathComponent("goalong-derived-proofs-\(UUID().uuidString)", isDirectory: true)
+            let root = container.appendingPathComponent("LocalHistory", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: container) }
+            let recaps = root.appendingPathComponent("chatgpt/recaps", isDirectory: true)
+            let proofs = root.appendingPathComponent("chatgpt/proofs", isDirectory: true)
+            let today = Calendar.current.startOfDay(for: Date())
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+            let todayID = UUID().uuidString.lowercased()
+            let yesterdayID = UUID().uuidString.lowercased()
+            let orphanID = UUID().uuidString.lowercased()
+            let chainHead = proofs.appendingPathComponent("chain-head.json")
+            let fm = FileManager.default
+            func proofFile(_ id: String) -> URL { proofs.appendingPathComponent(id + "/result.json") }
+            func seed() throws {
+                try? fm.removeItem(at: container)
+                try fm.createDirectory(at: recaps, withIntermediateDirectories: true)
+                for (day, id) in [(today, todayID), (yesterday, yesterdayID)] {
+                    try Data("{\"proof\":{\"executionID\":\"\(id)\"}}".utf8)
+                        .write(to: recaps.appendingPathComponent(dayKey(day) + ".chatgpt-recap.json"))
+                    try writeFixture(to: recaps.appendingPathComponent(dayKey(day) + ".chatgpt-recap.md"))
+                }
+                for id in [todayID, yesterdayID, orphanID] {
+                    try fm.createDirectory(at: proofs.appendingPathComponent(id), withIntermediateDirectories: true)
+                    try writeFixture(to: proofFile(id))
+                    try writeFixture(to: proofs.appendingPathComponent(id + "/run.jws"))
+                }
+                try writeFixture(to: chainHead)
+            }
+            let cleaner = DerivedHistoryCleaner(rootDirectory: root, codexMemoryDirectory: container.appendingPathComponent("codex"))
+
+            try seed()
+            _ = try cleaner.prepareDeletion(since: today).execute()
+            XCTAssertFalse(fm.fileExists(atPath: proofs.appendingPathComponent(todayID).path))
+            XCTAssertTrue(fm.fileExists(atPath: proofFile(yesterdayID).path))
+            XCTAssertTrue(fm.fileExists(atPath: proofFile(orphanID).path))
+            XCTAssertTrue(fm.fileExists(atPath: chainHead.path))
+
+            try seed()
+            _ = try cleaner.prepareDeletion(days: [yesterday]).execute()
+            XCTAssertFalse(fm.fileExists(atPath: proofs.appendingPathComponent(yesterdayID).path))
+            XCTAssertTrue(fm.fileExists(atPath: proofFile(todayID).path))
+
+            try seed()
+            _ = try cleaner.prepareDeletion(since: nil).execute()
+            XCTAssertEqual(try fm.contentsOfDirectory(atPath: proofs.path), [])
+
+            // A symbolic link inside a proof package aborts the whole clear before any unlink.
+            try seed()
+            let target = container.appendingPathComponent("outside.txt")
+            try writeFixture(to: target)
+            try fm.removeItem(at: proofs.appendingPathComponent(todayID + "/run.jws"))
+            try fm.createSymbolicLink(at: proofs.appendingPathComponent(todayID + "/run.jws"), withDestinationURL: target)
+            XCTAssertThrowsError(try cleaner.prepareDeletion(since: today))
+            XCTAssertTrue(fm.fileExists(atPath: proofFile(todayID).path))
+            XCTAssertTrue(fm.fileExists(atPath: recaps.appendingPathComponent(dayKey(today) + ".chatgpt-recap.json").path))
+            XCTAssertTrue(fm.fileExists(atPath: target.path))
+        }
+
         func testFullClearRemovesOrphanSummaryTemporariesAndKeepsForeignFiles() throws {
             let container = FileManager.default.temporaryDirectory
                 .appendingPathComponent("goalong-derived-temp-\(UUID().uuidString)", isDirectory: true)

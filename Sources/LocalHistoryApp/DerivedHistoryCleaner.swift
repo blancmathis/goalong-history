@@ -479,6 +479,12 @@
         /// Only planned on a full clear and never counted as user-visible deletions.
         fileprivate var activityTemporaryPlans: [OwnedFileDeletionPlan] = []
         fileprivate var clearSummaryDirectory = false
+        /// Proof packages (`chatgpt/proofs/<executionID>/`) holding the canonical recap text,
+        /// plus the proof chain head on a full clear. Never counted as user-visible deletions.
+        fileprivate var proofPlans: [OwnedFileDeletionPlan] = []
+        fileprivate var proofDirectoryPlans: [OwnedFileDeletionPlan] = []
+        fileprivate var evidenceStore: AnalysisEvidenceCapsuleStore?
+        fileprivate var evidenceExecutionIDs: [String] = []
 
         var expectedResult: DerivedHistoryDeletionResult {
             DerivedHistoryDeletionResult(
@@ -491,7 +497,7 @@
 
         fileprivate var allPlans: [OwnedFileDeletionPlan] {
             analysisPlans + memoryPlans + computerHistoryPlans + activitySummaryPlans
-                + activityTemporaryPlans
+                + activityTemporaryPlans + proofPlans
         }
 
         fileprivate func validate() throws {
@@ -514,25 +520,37 @@
         }
 
         func execute() throws -> DerivedHistoryDeletionResult {
+            // Key-first cryptographic erasure of the encrypted response capsules, after the
+            // whole plan is revalidated so an unsafe target still aborts before any deletion.
+            if let evidenceStore, !evidenceExecutionIDs.isEmpty {
+                try OwnedFileDeletionPlan.validate(allPlans)
+                for executionID in evidenceExecutionIDs { try evidenceStore.destroy(executionID: executionID) }
+            }
             _ = try OwnedFileDeletionPlan.execute(allPlans)
+            for plan in proofDirectoryPlans { try Self.removeEmptyDirectory(plan) }
             if clearSummaryDirectory, let plan = activitySummaryPlans.first ?? activityTemporaryPlans.first {
-                var status = stat()
-                guard lstat(plan.directory.path, &status) == 0 else {
-                    throw OwnedFileDeletionPlan.posixError(operation: "lstat", URL: plan.directory)
-                }
-                guard OwnedFileDeletionPlan.DirectoryIdentity(status) == plan.directoryIdentity else {
-                    throw OwnedFileDeletionPlan.SafetyError.directoryChanged(plan.directory)
-                }
-                if rmdir(plan.directory.path) != 0 {
-                    let code = errno
-                    // Every planned file is already gone. A foreign entry (for example
-                    // .DS_Store) only keeps the empty folder; it never fails the clear.
-                    guard code == ENOTEMPTY || code == EEXIST else {
-                        throw OwnedFileDeletionPlan.posixError(operation: "rmdir", URL: plan.directory, code: code)
-                    }
-                }
+                try Self.removeEmptyDirectory(plan)
             }
             return expectedResult
+        }
+
+        private static func removeEmptyDirectory(_ plan: OwnedFileDeletionPlan) throws {
+            var status = stat()
+            guard lstat(plan.directory.path, &status) == 0 else {
+                if errno == ENOENT { return }
+                throw OwnedFileDeletionPlan.posixError(operation: "lstat", URL: plan.directory)
+            }
+            guard OwnedFileDeletionPlan.DirectoryIdentity(status) == plan.directoryIdentity else {
+                throw OwnedFileDeletionPlan.SafetyError.directoryChanged(plan.directory)
+            }
+            if rmdir(plan.directory.path) != 0 {
+                let code = errno
+                // Every planned file is already gone. A foreign entry (for example
+                // .DS_Store) only keeps the empty folder; it never fails the clear.
+                guard code == ENOTEMPTY || code == EEXIST else {
+                    throw OwnedFileDeletionPlan.posixError(operation: "rmdir", URL: plan.directory, code: code)
+                }
+            }
         }
     }
 
@@ -587,8 +605,15 @@
             let chatGPTRecapsDirectory = rootDirectory
                 .appendingPathComponent("chatgpt", isDirectory: true)
                 .appendingPathComponent("recaps", isDirectory: true)
+            // The proof of a recap keeps its canonical text (markdown, five lines, scores) and an
+            // encrypted copy of the model response: a history clear erases them with the recap.
+            let proofsDirectory = rootDirectory
+                .appendingPathComponent("chatgpt", isDirectory: true)
+                .appendingPathComponent("proofs", isDirectory: true)
+            let evidenceDirectory = proofsDirectory
+                .appendingPathComponent("private-evidence", isDirectory: true)
             let trustedAncestor = OwnedFileDeletionPlan.trustedAncestor(
-                for: [analysisDirectory, memoryDirectory, chatGPTRecapsDirectory]
+                for: [analysisDirectory, memoryDirectory, chatGPTRecapsDirectory, proofsDirectory]
                     + computerHistoryStore.memoryDeletionDirectories
             )
             let analysisPlan = try deletionPlan(
@@ -641,7 +666,7 @@
             let callsPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("calls"), trustedAncestor: trustedAncestor,
                 suffixes: [".jsonl"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
             let memoryPlans = [memoryPlan, notesPlan, callsPlan].compactMap { $0 }
-            let plan = DerivedHistoryDeletionPlan(
+            var plan = DerivedHistoryDeletionPlan(
                 analysisPlans: analysisPlans,
                 memoryPlans: memoryPlans,
                 computerHistoryPlans: computerHistoryPlans,
@@ -649,10 +674,65 @@
                 activityTemporaryPlans: [summaryTemporaryPlan].compactMap { $0 },
                 clearSummaryDirectory: isFullClear
             )
+            // A partial clear may leave chain-head.json pointing at an erased run:
+            // AnalysisProofStore.loadChainHead then returns nil and the next proof restarts the chain.
+            var executionIDs = Set(
+                (chatGPTRecapPlan?.targets ?? []).compactMap { recapExecutionID(at: $0.URL) }
+            )
+            if isFullClear {
+                for name in Self.uuidNamedEntries(in: proofsDirectory) { executionIDs.insert(name) }
+                for name in Self.uuidNamedEntries(in: evidenceDirectory, suffix: ".capsule") {
+                    executionIDs.insert(name)
+                }
+                plan.proofPlans = try deletionPlan(
+                    in: proofsDirectory, trustedAncestor: trustedAncestor, suffixes: [],
+                    cutoffKey: nil, matchingDayKeys: nil, nameKey: { $0 == "chain-head.json" ? $0 : nil }
+                ).map { [$0] } ?? []
+            }
+            for executionID in executionIDs.sorted() {
+                let directory = proofsDirectory.appendingPathComponent(executionID, isDirectory: true)
+                let known: Set<String> = [
+                    "definition.jws", "context-manifest.json", "provider-request.json",
+                    "provider-response.json", "result.json", "device-public-key.x963",
+                    "run.jws", "manifest.json",
+                ]
+                if let proof = try OwnedFileDeletionPlan.prepare(
+                    directory: directory, trustedAncestor: trustedAncestor, cutoffKey: nil,
+                    dayKey: { known.contains($0.lastPathComponent) ? $0.lastPathComponent : nil }
+                ) {
+                    plan.proofPlans.append(proof)
+                    plan.proofDirectoryPlans.append(proof)
+                }
+            }
+            plan.evidenceExecutionIDs = executionIDs.sorted()
+            plan.evidenceStore = AnalysisEvidenceCapsuleStore(directory: evidenceDirectory)
             // Sequential category discovery is followed by one whole-plan validation,
             // immediately before the caller is permitted to begin deleting raw stores.
             try plan.validate()
             return plan
+        }
+
+        /// Execution id of the proof a recap JSON references, only when it is a valid UUID.
+        /// Bounded stable read; symbolic links and unreadable or foreign files yield nil.
+        private func recapExecutionID(at URL: URL) -> String? {
+            struct Reference: Decodable { struct Proof: Decodable { let executionID: String }; let proof: Proof? }
+            guard URL.lastPathComponent.hasSuffix(".chatgpt-recap.json"),
+                let data = try? ChatGPTHistoryStore.readStableSource(
+                    at: URL, maximumBytes: Int64(ChatGPTRecapPersistence.maximumLegacyJSONBytes)),
+                let id = (try? JSONDecoder().decode(Reference.self, from: data))?.proof?.executionID,
+                UUID(uuidString: id) != nil
+            else { return nil }
+            return id
+        }
+
+        /// Names in `directory` that are UUIDs (optionally followed by `suffix`). Names only.
+        private static func uuidNamedEntries(in directory: URL, suffix: String = "") -> [String] {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            return names.compactMap { name in
+                guard name.hasSuffix(suffix) else { return nil }
+                let stem = String(name.dropLast(suffix.count))
+                return UUID(uuidString: stem) != nil ? stem : nil
+            }
         }
 
         /// Exactly `GoalongActivityDayStore.temporaryPrefix` + an uppercase UUID.
@@ -668,14 +748,18 @@
             trustedAncestor: URL,
             suffixes: [String],
             cutoffKey: String?,
-            matchingDayKeys: Set<String>?
+            matchingDayKeys: Set<String>?,
+            nameKey: ((String) -> String?)? = nil
         ) throws -> OwnedFileDeletionPlan? {
             try OwnedFileDeletionPlan.prepare(
                 directory: directory,
                 trustedAncestor: trustedAncestor,
                 cutoffKey: cutoffKey,
                 matchingDayKeys: matchingDayKeys,
-                dayKey: { [self] URL in dayKey(URL, suffixes: suffixes) }
+                dayKey: { [self] URL in
+                    if let nameKey { return nameKey(URL.lastPathComponent) }
+                    return dayKey(URL, suffixes: suffixes)
+                }
             )
         }
 

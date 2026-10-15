@@ -1037,6 +1037,30 @@
             XCTAssertFalse(FileManager.default.fileExists(atPath: oldEvent.path))
         }
 
+        func testArtifactDaysFollowTheTimeZoneInForceNotTheOneAtLaunch() throws {
+            let fixture = try makeFixture()
+            let event = fixture.events.appendingPathComponent("2026-10-01.jsonl")
+            try Data("event\n".utf8).write(to: event)
+            let store = HistoryRetentionStore(
+                legacyRetentionDays: 1,
+                storage: fixture.storage,
+                diagnostics: { _ in }
+            )
+            let original = NSTimeZone.default
+            defer { NSTimeZone.default = original }
+            for name in ["Europe/Paris", "America/New_York", "Pacific/Auckland"] {
+                NSTimeZone.default = TimeZone(identifier: name)!
+                var calendar = Calendar(identifier: .gregorian)
+                calendar.timeZone = Calendar.current.timeZone
+                let expected = calendar.date(
+                    from: DateComponents(year: 2026, month: 10, day: 1)
+                )!
+                let artifact = try XCTUnwrap(store.storedArtifacts().first { URL(fileURLWithPath: $0.localPath).lastPathComponent == event.lastPathComponent })
+                XCTAssertEqual(artifact.start, expected, name)
+                XCTAssertEqual(Calendar.current.startOfDay(for: artifact.start), artifact.start, name)
+            }
+        }
+
         func testCleanupOnlyUnlinksKnownRegularArtifacts() throws {
             let fixture = try makeFixture()
             let oldEvent = fixture.events.appendingPathComponent("2020-01-01.jsonl")

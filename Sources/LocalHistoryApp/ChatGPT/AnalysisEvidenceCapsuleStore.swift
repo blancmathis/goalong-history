@@ -125,6 +125,8 @@
                 throw AnalysisEvidenceCapsuleError.keychainFailure(status)
             }
             guard removedOrAbsent else { throw AnalysisEvidenceCapsuleError.keychainFailure(errSecItemNotFound) }
+            // No capsule directory means no capsule file: nothing left to remove.
+            guard FileManager.default.fileExists(atPath: directory.path) else { return }
             try ChatGPTSecureStorage.removeRegularFileIfPresent(
                 at: capsuleURL(executionID: executionID)
             )
