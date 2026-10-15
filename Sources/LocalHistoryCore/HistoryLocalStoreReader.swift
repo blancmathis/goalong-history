@@ -1181,6 +1181,9 @@ package struct HistoryJSONLinesStreamReader {
 /// It never asks for Accessibility/Input Monitoring and never mutates recorder files.
 public struct HistoryLocalStoreReader {
     private static let maximumCaptureHealthBytes = 1 * 1_024 * 1_024
+    /// Same ceiling as the current-day memory index; larger memory or semantic
+    /// JSON files are reported as load issues instead of being read whole.
+    private static let maximumJSONFileBytes = 16 * 1_024 * 1_024
     private static let maximumComputerHistoryIssues = 256
     private static let maximumSourceSearchDirectoryEntries = 8_192
     private static let maximumSourceSearchFiles = 4_096
@@ -1478,25 +1481,26 @@ public struct HistoryLocalStoreReader {
         )
     }
 
-    public func load(
-        start: Date? = nil,
-        end: Date? = nil
-    ) -> HistoryLoadedData {
+    /// Loads only the stored memories, without events or semantic snapshots.
+    /// Callers that only list memories avoid decoding the event journals.
+    public func loadMemories() -> HistoryLoadedData {
         var issues: [HistoryLoadIssue] = []
-        let events = loadJSONLines(
-            HistoryEvent.self,
-            from: files(
-                in: eventsDirectory,
-                extensions: ["jsonl"],
-                intersecting: start,
-                end: end
-            ),
-            start: start,
-            end: end,
-            timestamp: { $0.timestamp },
-            issues: &issues
+        let memories = loadMemoryFiles(start: nil, end: nil, issues: &issues)
+        return HistoryLoadedData(
+            events: [],
+            memories: memories.sorted { $0.start < $1.start },
+            semanticSnapshots: [:],
+            captureHealth: nil,
+            issues: issues
         )
-        let memories = loadJSONFiles(
+    }
+
+    private func loadMemoryFiles(
+        start: Date?,
+        end: Date?,
+        issues: inout [HistoryLoadIssue]
+    ) -> [ActivityMemory] {
+        loadJSONFiles(
             ActivityMemory.self,
             from: files(
                 in: memoriesDirectory,
@@ -1516,6 +1520,27 @@ public struct HistoryLocalStoreReader {
             if let end, memory.start > end { return false }
             return true
         }
+    }
+
+    public func load(
+        start: Date? = nil,
+        end: Date? = nil
+    ) -> HistoryLoadedData {
+        var issues: [HistoryLoadIssue] = []
+        let events = loadJSONLines(
+            HistoryEvent.self,
+            from: files(
+                in: eventsDirectory,
+                extensions: ["jsonl"],
+                intersecting: start,
+                end: end
+            ),
+            start: start,
+            end: end,
+            timestamp: { $0.timestamp },
+            issues: &issues
+        )
+        let memories = loadMemoryFiles(start: start, end: end, issues: &issues)
         let semanticRows =
             loadJSONLines(
                 SemanticContextPayload.self,
@@ -1668,12 +1693,8 @@ public struct HistoryLocalStoreReader {
                 parent: sourceRoot,
                 name: "events"
             )
-            guard let memoryFile = try memoryDirectory.matchingFiles(
-                extensions: ["json"]
-            ).first(where: { $0.name == memoryName }),
-                let eventFile = try eventDirectory.matchingFiles(
-                    extensions: ["jsonl"]
-                ).first(where: { $0.name == eventName })
+            guard let memoryFile = try memoryDirectory.regularFile(named: memoryName),
+                let eventFile = try eventDirectory.regularFile(named: eventName)
             else {
                 return CurrentComputerHistoryMemoryLoad(
                     memory: nil,
@@ -3416,7 +3437,11 @@ public struct HistoryLocalStoreReader {
     ) -> [T] {
         files.compactMap { file in
             do {
-                return try decoder().decode(T.self, from: Data(contentsOf: file))
+                let raw = try readBoundedFile(
+                    file,
+                    maximumBytes: Self.maximumJSONFileBytes
+                )
+                return try decoder().decode(T.self, from: raw)
             } catch {
                 issues.append(
                     HistoryLoadIssue(

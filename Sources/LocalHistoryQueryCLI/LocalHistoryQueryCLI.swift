@@ -79,6 +79,69 @@ private struct QueryEnvelope: Encodable {
     let rootDirectory: String
     let result: HistoryQueryResult
     let loadIssues: [HistoryLoadIssue]
+    /// Present when the command read a bounded interval instead of every stored day.
+    var window: GoalongQueryWindow? = nil
+}
+
+/// The interval an unbounded history command actually read.
+struct GoalongQueryWindow: Encodable, Equatable {
+    let start: Date
+    let end: Date
+    /// True when the caller gave no bound and the default window applied.
+    let isDefault: Bool
+    /// True when an explicit range was shortened to `maximumDays`.
+    let isClamped: Bool
+    let maximumDays: Int
+
+    static let defaultDays = 7
+    static let maximumDays = 31
+
+    var limitation: String {
+        let formatter = ISO8601DateFormatter()
+        let range = "\(formatter.string(from: start)) to \(formatter.string(from: end))"
+        if isClamped {
+            return "Only \(Self.maximumDays) days are read per query; the range was shortened to \(range). Use --start and --end to read another period."
+        }
+        if isDefault {
+            return "Only the last \(Self.defaultDays) days were read (\(range)). Use --start and --end to read another period of up to \(Self.maximumDays) days."
+        }
+        return "Only the requested period was read (\(range)); events outside it are not searched."
+    }
+
+    /// Resolves optional bounds to a bounded interval. No bound means the last
+    /// `defaultDays` local days; a longer range is shortened to `maximumDays`.
+    static func resolve(
+        start: Date?,
+        end: Date?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) throws -> GoalongQueryWindow {
+        let resolvedEnd = end ?? now
+        let defaulted = start == nil
+        let resolvedStart: Date
+        if let start {
+            resolvedStart = start
+        } else {
+            let today = calendar.startOfDay(for: resolvedEnd)
+            resolvedStart = calendar.date(byAdding: .day, value: -(defaultDays - 1), to: today) ?? today
+        }
+        guard resolvedStart <= resolvedEnd else {
+            throw CLIError.usage("--start must not be after --end")
+        }
+        let earliest = calendar.date(
+            byAdding: .day,
+            value: -maximumDays,
+            to: resolvedEnd
+        ) ?? resolvedStart
+        let clamped = resolvedStart < earliest
+        return GoalongQueryWindow(
+            start: clamped ? earliest : resolvedStart,
+            end: resolvedEnd,
+            isDefault: defaulted,
+            isClamped: clamped,
+            maximumDays: maximumDays
+        )
+    }
 }
 
 private struct SummaryEnvelope: Encodable {
@@ -519,7 +582,7 @@ public enum GoalongQueryCLI {
         }
     }
 
-    private static func run(arguments rawArguments: [String]) throws {
+    static func run(arguments rawArguments: [String]) throws {
         var arguments = Arguments(values: rawArguments)
         let root = arguments.removeOption("--root").map(expandedURL) ?? defaultRoot
         guard let command = arguments.popFirst() else { throw CLIError.usage("Missing command") }
@@ -567,21 +630,32 @@ public enum GoalongQueryCLI {
 
         case "recent":
             let minutes = try integer(arguments.removeOption("--minutes") ?? "60")
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(
-                start: Date().addingTimeInterval(-TimeInterval(max(1, minutes) * 60)),
-                end: Date()
-            )
+            guard (1...525_600).contains(minutes) else {
+                throw CLIError.usage("--minutes must be between 1 and 525600")
+            }
+            let actionsOnly = arguments.removeFlag("--actions-only")
+            let gapsOnly = arguments.removeFlag("--gaps-only")
+            let semanticOnly = arguments.removeFlag("--semantic-only")
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("recent accepts --minutes N and the optional --actions-only, --gaps-only, --semantic-only flags")
+            }
+            let now = Date()
+            let since = now.addingTimeInterval(-TimeInterval(minutes) * 60)
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(start: since, end: now)
             let service = service(from: loaded)
             let result = service.recent(
-                since: Date().addingTimeInterval(-TimeInterval(max(1, minutes) * 60)),
-                actionsOnly: arguments.removeFlag("--actions-only"),
-                gapsOnly: arguments.removeFlag("--gaps-only"),
-                semanticOnly: arguments.removeFlag("--semantic-only")
+                since: since,
+                actionsOnly: actionsOnly,
+                gapsOnly: gapsOnly,
+                semanticOnly: semanticOnly
             )
             try printQuery(result, loaded: loaded, root: root)
 
         case "day", "summary":
             let raw = arguments.popFirst() ?? "today"
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("Use \(command) [today|yesterday|YYYY-MM-DD]")
+            }
             let start = try day(raw)
             let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!.addingTimeInterval(-0.001)
             let loaded = HistoryLocalStoreReader(rootDirectory: root).load(start: start, end: end)
@@ -1350,9 +1424,15 @@ public enum GoalongQueryCLI {
             )
 
         case "search", "app", "site":
+            let start = try arguments.removeOption("--start").map(parseTimestamp)
+            let end = try arguments.removeOption("--end").map(parseTimestamp)
             guard !arguments.values.isEmpty else { throw CLIError.usage("\(command) requires a query") }
             let query = arguments.values.joined(separator: " ")
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
+            let window = try GoalongQueryWindow.resolve(start: start, end: end)
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(
+                start: window.start,
+                end: window.end
+            )
             let service = service(from: loaded)
             let result: HistoryQueryResult
             switch command {
@@ -1360,25 +1440,53 @@ public enum GoalongQueryCLI {
             case "app": result = service.application(query)
             default: result = service.site(query)
             }
-            try printQuery(result, loaded: loaded, root: root)
+            try printQuery(result, loaded: loaded, root: root, window: window)
 
         case "gaps":
             let start = try arguments.removeOption("--start").map(parseTimestamp)
             let end = try arguments.removeOption("--end").map(parseTimestamp)
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(start: start, end: end)
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("gaps accepts only --start ISO_OR_DAY and --end ISO_OR_DAY")
+            }
+            let window = try GoalongQueryWindow.resolve(start: start, end: end)
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(
+                start: window.start,
+                end: window.end
+            )
             try printQuery(
-                service(from: loaded).gaps(start: start, end: end),
+                service(from: loaded).gaps(start: window.start, end: window.end),
                 loaded: loaded,
-                root: root
+                root: root,
+                window: window
             )
 
         case "memories":
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
-            try printQuery(service(from: loaded).availableMemories(), loaded: loaded, root: root)
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("memories does not accept arguments")
+            }
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).loadMemories()
+            try printQuery(
+                service(from: loaded).availableMemories(),
+                loaded: loaded,
+                root: root,
+                extraLimitation: "Memories are listed without reading event journals, so event coverage counts are zero."
+            )
 
         case "sources":
-            guard let identifier = arguments.popFirst() else { throw CLIError.usage("sources requires a memory ID") }
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
+            guard let identifier = arguments.popFirst(), arguments.values.isEmpty else {
+                throw CLIError.usage("sources requires one memory ID")
+            }
+            // Read the memory list first, then only the events of that memory's interval.
+            let memoriesOnly = HistoryLocalStoreReader(rootDirectory: root).loadMemories()
+            let loaded: HistoryLoadedData
+            if let memory = memoriesOnly.memories.first(where: { $0.id == identifier }) {
+                loaded = HistoryLocalStoreReader(rootDirectory: root).load(
+                    start: memory.start,
+                    end: memory.end
+                )
+            } else {
+                loaded = memoriesOnly
+            }
             try printQuery(
                 service(from: loaded).sources(forMemoryID: identifier),
                 loaded: loaded,
@@ -3442,7 +3550,7 @@ public enum GoalongQueryCLI {
         return FileManager.default.isReadableFile(atPath: entry.reference.path)
     }
 
-    private static func agentEntryPriority(
+    static func agentEntryPriority(
         _ entry: AgentSourceIndexEntry,
         dayStart: Date,
         dayEnd: Date,
@@ -3468,8 +3576,9 @@ public enum GoalongQueryCLI {
                 entry.conversationStartedAt, entry.conversationEndedAt,
                 entry.sourceCreatedAt, entry.sourceModifiedAt, liveModifiedAt,
             ].compactMap({ $0 }).map { abs($0.timeIntervalSince(midpoint)) }.min()
-            ?? TimeInterval.greatestFiniteMagnitude
-        let boundedDistance = min(Int64(nearest.rounded()), 99_999_999)
+            ?? 99_999_999
+        // Clamp in Double: Int64(Double) traps on out-of-range values.
+        let boundedDistance = Int64(min(nearest, 99_999_999).rounded())
         score += 99_999_999 - boundedDistance
         return score
     }
@@ -3724,13 +3833,27 @@ public enum GoalongQueryCLI {
     private static func printQuery(
         _ result: HistoryQueryResult,
         loaded: HistoryLoadedData,
-        root: URL
+        root: URL,
+        window: GoalongQueryWindow? = nil,
+        extraLimitation: String? = nil
     ) throws {
+        let notes = [window?.limitation, extraLimitation].compactMap { $0 }
+        let reported = notes.isEmpty
+            ? result
+            : HistoryQueryResult(
+                schemaVersion: result.schemaVersion,
+                generatedAt: result.generatedAt,
+                queryDescription: result.queryDescription,
+                hits: result.hits,
+                coverage: result.coverage,
+                limitations: result.limitations + notes
+            )
         try printJSON(
             QueryEnvelope(
                 rootDirectory: root.path,
-                result: result,
-                loadIssues: loaded.issues
+                result: reported,
+                loadIssues: loaded.issues,
+                window: window
             )
         )
     }

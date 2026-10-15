@@ -91,7 +91,7 @@ public enum GoalongCLIContract {
         .init(name: "status", syntax: "status", summary: "Diagnose every Goalong data source without reading conversation bodies."),
         .init(
             name: "recent",
-            syntax: "recent [--minutes N] [--actions-only] [--gaps-only] [--semantic-only]",
+            syntax: "recent [--minutes N (1-525600)] [--actions-only] [--gaps-only] [--semantic-only]",
             summary: "Read recent Computer History evidence."
         ),
         .init(name: "day", syntax: "day [today|yesterday|YYYY-MM-DD]", summary: "Return the combined daily view."),
@@ -177,10 +177,10 @@ public enum GoalongCLIContract {
             summary: "Select bounded relevant evidence for a natural-language question.",
             effect: .mayRefreshActiveScreenTimeRecord
         ),
-        .init(name: "search", syntax: "search TEXT", summary: "Search Computer History text evidence."),
-        .init(name: "app", syntax: "app NAME_OR_BUNDLE_ID", summary: "Retrieve evidence for one application."),
-        .init(name: "site", syntax: "site HOST", summary: "Retrieve evidence for one observed website host."),
-        .init(name: "gaps", syntax: "gaps [--start ISO_OR_DAY] [--end ISO_OR_DAY]", summary: "List explicit coverage gaps."),
+        .init(name: "search", syntax: "search TEXT [--start ISO_OR_DAY] [--end ISO_OR_DAY]", summary: "Search Computer History text evidence (last 7 days unless --start/--end; at most 31 days)."),
+        .init(name: "app", syntax: "app NAME_OR_BUNDLE_ID [--start ISO_OR_DAY] [--end ISO_OR_DAY]", summary: "Retrieve evidence for one application (last 7 days unless --start/--end; at most 31 days)."),
+        .init(name: "site", syntax: "site HOST [--start ISO_OR_DAY] [--end ISO_OR_DAY]", summary: "Retrieve evidence for one observed website host (last 7 days unless --start/--end; at most 31 days)."),
+        .init(name: "gaps", syntax: "gaps [--start ISO_OR_DAY] [--end ISO_OR_DAY]", summary: "List explicit coverage gaps (last 7 days unless --start/--end; at most 31 days)."),
         .init(name: "memories", syntax: "memories", summary: "List available compact memories."),
         .init(name: "sources", syntax: "sources MEMORY_ID", summary: "Inspect provenance for one compact memory."),
     ]
