@@ -149,7 +149,7 @@
                 }
                 return data
             } catch let error as GoalongFocusError { throw error }
-            catch BrokerFailure.system(let operation, _) where operation == "socket" || operation == "connect" {
+            catch BrokerFailure.system(let operation, _) where operation == "socket" || operation == "connect" || operation == "open" {
                 // Nothing was sent: the app is not listening.
                 throw GoalongFocusError.appNotRunning
             }

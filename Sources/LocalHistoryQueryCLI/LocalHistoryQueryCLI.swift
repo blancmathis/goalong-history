@@ -10,6 +10,7 @@ private struct GoalongCLIErrorEnvelope: Encodable {
     let status = "error"
     let error: String
     let usage = "goalong help"
+    var hint: String? = nil
 }
 
 private struct GoalongCLIVersionEnvelope: Encodable {
@@ -572,14 +573,36 @@ public enum GoalongQueryCLI {
         do {
             try run(arguments: rawArguments)
         } catch {
-            let payload = GoalongCLIErrorEnvelope(error: String(describing: error))
-            if let data = try? encodedJSON(payload) {
+            if let data = errorEnvelopeData(for: error) {
                 FileHandle.standardError.write(data)
             } else {
                 FileHandle.standardError.write(Data("{\"status\":\"error\"}\n".utf8))
             }
             Foundation.exit(EXIT_FAILURE)
         }
+    }
+
+    /// Readable English text for errors whose `String(describing:)` would be a bare case name.
+    static func errorMessage(for error: Error) -> String {
+        if let pause = error as? GoalongGlobalPause.PauseError {
+            switch pause {
+            case .active: return "Global pause is active; this command reads nothing until Goalong is resumed."
+            case .changed: return "The global pause changed; retry after Goalong is resumed."
+            case .unreadable: return "The pause setting is unreadable; Goalong stays paused for safety."
+            case .writeFailed: return "The pause change could not be saved."
+            }
+        }
+        if let failure = error as? GoalongContextualRhythm.Failure, case .invalid(let message) = failure { return message }
+        return String(describing: error)
+    }
+
+    /// The stderr envelope. `error` stays a bare code for focus errors; advice goes in `hint`.
+    static func errorEnvelopeData(for error: Error) -> Data? {
+        var payload = GoalongCLIErrorEnvelope(error: errorMessage(for: error))
+        if let focus = error as? GoalongFocusError, focus == .outcomeUnknown {
+            payload.hint = "Goalong did not answer in time and may have applied the request; run `goalong focus status` before retrying"
+        }
+        return try? encodedJSON(payload)
     }
 
     static func run(arguments rawArguments: [String]) throws {

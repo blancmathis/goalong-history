@@ -1674,7 +1674,9 @@ public struct HistoryLocalStoreReader {
         calendar: Calendar = .current
     ) -> CurrentComputerHistoryMemoryLoad {
         let dayStart = calendar.startOfDay(for: day)
-        let components = calendar.dateComponents([.year, .month, .day], from: dayStart)
+        var civil = Calendar(identifier: .gregorian)
+        civil.timeZone = calendar.timeZone
+        let components = civil.dateComponents([.year, .month, .day], from: dayStart)
         guard let year = components.year, let month = components.month, let day = components.day else {
             return CurrentComputerHistoryMemoryLoad(
                 memory: nil,

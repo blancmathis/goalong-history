@@ -5,13 +5,7 @@ public enum GoalongFocusError: String, Error, CustomStringConvertible {
     case appNotRunning, moduleDisabled, invalidArgument, locked, notFound, storageFailed, tooManyWatchers
     /// Client side only: the request reached the app but no answer came back in time.
     case outcomeUnknown
-    public var description: String {
-        switch self {
-        case .outcomeUnknown:
-            return "outcomeUnknown: Goalong did not answer in time and may have applied the request; run `goalong focus status` before retrying"
-        default: return rawValue
-        }
-    }
+    public var description: String { rawValue }
 }
 public struct GoalongFocusRequest: Codable, Equatable {
     public var command: String

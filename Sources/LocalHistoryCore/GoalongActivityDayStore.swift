@@ -34,7 +34,7 @@ public struct GoalongActivityDayStore: Sendable {
     public enum Failure: Error { case unsafePath, invalidSummary, sourceChanged, unavailable }
 
     public static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let f = DateFormatter(); f.calendar = calendar; f.timeZone = calendar.timeZone
+        let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.timeZone = calendar.timeZone
         f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
         return f.string(from: date)
     }
@@ -288,7 +288,7 @@ public struct GoalongActivityDayStore: Sendable {
         guard lstat(folder.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { throw Failure.unsafePath }
         let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
         guard names.count <= 20_000 else { throw Failure.unavailable }
-        let f = DateFormatter(); f.calendar = calendar; f.timeZone = calendar.timeZone
+        let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.timeZone = calendar.timeZone
         f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
         return names.compactMap { name in
             guard name.hasSuffix(".jsonl"), name.count == 16 else { return nil }

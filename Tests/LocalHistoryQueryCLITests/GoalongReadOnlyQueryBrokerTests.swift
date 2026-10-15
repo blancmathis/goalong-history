@@ -4,6 +4,7 @@
     import XCTest
     import AppleScreenTime
     import AppleSystemScreenTime
+    import LocalHistoryCore
     @testable import LocalHistoryQueryCLI
 
     final class GoalongReadOnlyQueryBrokerTests: XCTestCase {
@@ -857,8 +858,34 @@
                 try GoalongReadOnlyQueryBroker.requestFocus(rootDirectory: root, request: request, timeoutSeconds: 1)
             ) {
                 XCTAssertEqual($0 as? GoalongFocusError, .outcomeUnknown)
-                XCTAssertTrue(String(describing: $0).contains("focus status"))
+                XCTAssertEqual(String(describing: $0), "outcomeUnknown")
             }
+        }
+
+        func testFocusLongSocketPathWithoutRuntimeDirectoryIsAppNotRunning() throws {
+            var root = try temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            root.appendPathComponent(String(repeating: "long-directory-name-", count: 5), isDirectory: true)
+            XCTAssertGreaterThan(GoalongReadOnlyQueryBroker.socketURL(rootDirectory: root).path.utf8.count, 104)
+            XCTAssertThrowsError(
+                try GoalongReadOnlyQueryBroker.requestFocus(rootDirectory: root, request: GoalongFocusRequest(command: "session stop"))
+            ) { XCTAssertEqual($0 as? GoalongFocusError, .appNotRunning) }
+        }
+
+        func testErrorEnvelopeKeepsBareFocusCodeAndReadablePauseMessage() throws {
+            func decoded(_ error: Error) throws -> [String: Any] {
+                let data = try XCTUnwrap(GoalongQueryCLI.errorEnvelopeData(for: error))
+                return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            }
+            let unknown = try decoded(GoalongFocusError.outcomeUnknown)
+            XCTAssertEqual(unknown["error"] as? String, "outcomeUnknown")
+            XCTAssertTrue((unknown["hint"] as? String)?.contains("focus status") == true)
+            let locked = try decoded(GoalongFocusError.locked)
+            XCTAssertEqual(locked["error"] as? String, "locked")
+            XCTAssertNil(locked["hint"])
+            let pause = try decoded(GoalongGlobalPause.PauseError.active)
+            XCTAssertNotEqual(pause["error"] as? String, "active")
+            XCTAssertTrue((pause["error"] as? String)?.contains("Global pause") == true)
         }
 
         func testBrokerWorksWhenSocketPathExceedsSunPath() throws {
