@@ -129,6 +129,12 @@ let package = Package(
                 ]
             } ?? []
         ),
+        // Test-only ObjC hook: windows invisible, no activation, no LaunchServices opens (see its header).
+        .target(
+            name: "GoalongHeadlessTestSupport",
+            path: "Tests/GoalongHeadlessTestSupport",
+            linkerSettings: [.linkedFramework("AppKit", .when(platforms: [.macOS]))]
+        ),
         .testTarget(
             name: "LocalHistoryCoreTests",
             dependencies: ["LocalHistoryCore"],
@@ -146,7 +152,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LocalHistoryAppTests",
-            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "Ambiance", "BraiseCore"],
+            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "Ambiance", "BraiseCore", "GoalongHeadlessTestSupport"],
             path: "Tests/LocalHistoryAppTests",
             exclude: appTestExcludes,
             swiftSettings: appSwiftSettings
