@@ -90,7 +90,7 @@
         private var captureState: CaptureState!
         private var store: JSONLStore!
         private var integrityStateStore: IntegrityStateStore!
-        private var deviceIdentity: DeviceIdentity!
+        private var deviceIdentityStartup: DeviceIdentityStartup!
         private var integrityJournal: IntegrityJournal!
         private var minuteSealer: MinuteSealer!
         private var clearingCallPresence = false
@@ -198,13 +198,26 @@
                 captureState = CaptureState()
                 store = try JSONLStore(retentionDays: configManager.config.retentionDays)
                 integrityStateStore = IntegrityStateStore()
-                deviceIdentity = try DeviceIdentity.shared()
-                screenTimeRepository = try GoalongScreenTimeRepositoryProvider.repository(
-                    rootDirectory: AppPaths.screenTimeDirectory,
-                    deviceID: deviceIdentity.info.deviceID
-                )
+                // An unreadable keychain key never stops the app: it records without sealing.
+                deviceIdentityStartup = DeviceIdentityStartup.resolve()
+                if let status = deviceIdentityStartup.unavailableStatus {
+                    if let error = deviceIdentityStartup.unavailableError {
+                        SupportDiagnostics.shared.failure(error, component: .app)
+                    }
+                    DeviceTrustState.shared.setSealingSuspended(status: status)
+                }
+                if let screenTimeDeviceID = knownDeviceID {
+                    screenTimeRepository = try GoalongScreenTimeRepositoryProvider.repository(
+                        rootDirectory: AppPaths.screenTimeDirectory,
+                        deviceID: screenTimeDeviceID
+                    )
+                }
                 integrityJournal = IntegrityJournal(stateStore: integrityStateStore)
-                minuteSealer = MinuteSealer(stateStore: integrityStateStore, identity: deviceIdentity)
+                minuteSealer = MinuteSealer(
+                    stateStore: integrityStateStore, identity: deviceIdentityStartup.identity)
+                if deviceIdentityStartup.isDegraded {
+                    minuteSealer.suspendSigning(reason: "Signing identity unavailable (Keychain)")
+                }
                 minuteSealer.setUploader(nil)
                 recorder = EventRecorder(
                     store: store,
@@ -250,7 +263,8 @@
                     configManager: configManager,
                     sharingRulesStore: sharingRulesStore,
                     agentActivityRuntime: agentActivityRuntime,
-                    deviceInfo: deviceIdentity.info,
+                    deviceInfo: deviceIdentityStartup.info,
+                    onRetryKeychain: { [weak self] in self?.retryDeviceIdentity() },
                     eventTapStatus: { [weak self] in self?.eventTapMonitor.isRunning ?? false },
                     currentSuppression: { [weak self] in self?.contextMonitor.latestSnapshot?.suppressionReason },
                     captureHealthSnapshot: { [unowned self] in self.captureHealthStore.snapshot },
@@ -307,6 +321,7 @@
                     onTogglePause: { [weak self] in self?.toggleManualPause() },
                     onRequestPermissions: { [weak self] in self?.requestPermissionsAndExplain() },
                     onReloadConfig: { [weak self] in self?.reloadConfiguration() },
+                    onRetryKeychain: { [weak self] in self?.retryDeviceIdentity() },
                     onQuit: { [weak self] in self?.requestUserQuit() }
                 )
             } catch {
@@ -366,7 +381,7 @@
             eventTapMonitor.concentrationInputSink = { date, count in MainActor.assumeIsolated { ConcentrationRuntime.shared.noteInput(at: date, count: count) } }
             applyCapabilityConsents(recordTransition: false)
             BackgroundContinuityController.shared.start(hasEnabledSources: hasEnabledBackgroundSources)
-            ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
+            ChatGPTRecapRuntime.shared.configure(deviceID: knownDeviceID ?? "")
             installCapabilityConsentObserver()
 
             retentionPolicyObserver = NotificationCenter.default.addObserver(
@@ -816,6 +831,34 @@
             }
         }
 
+        /// The device ID known at this launch: the resolved one, else the last persisted one.
+        private var knownDeviceID: String? {
+            deviceIdentityStartup.isDegraded
+                ? DeviceIdentity.lastPersistedDeviceID() : deviceIdentityStartup.info.deviceID
+        }
+
+        /// Retries the keychain load off the main thread; resumes sealing on success.
+        private func retryDeviceIdentity() {
+            guard deviceIdentityStartup.isDegraded else { return }
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let result = Result { try DeviceIdentity.shared(attempts: 1) }
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    switch result {
+                    case .success(let identity):
+                        self.deviceIdentityStartup = DeviceIdentityStartup(
+                            identity: identity, info: identity.info, unavailableStatus: nil)
+                        self.minuteSealer.resumeSigning(with: identity)
+                        self.dashboardViewModel.updateDeviceInfo(identity.info)
+                        ChatGPTRecapRuntime.shared.configure(deviceID: identity.info.deviceID)
+                        DeviceTrustState.shared.setSealingSuspended(status: nil)
+                    case .failure(let error):
+                        Diagnostics.write("Keychain identity retry failed: \(error)")
+                    }
+                }
+            }
+        }
+
         private func deleteDetailsAfterDerivedWritersDrain(
             since cutoff: Date?,
             suspension: DerivedHistoryWriteBarrier.Suspension,
@@ -1194,7 +1237,7 @@
                                 && capabilityConsents.isEnabled(.remoteVerification)
                                 ? (configManager.config.verificationServerURL ?? "none")
                                 : "disabled",
-                            "device_trust_tier": deviceIdentity.info.trustTier,
+                            "device_trust_tier": deviceIdentityStartup.info.trustTier,
                             "raw_text_capture": "disabled",
                             "interface_version":
                                 (Bundle.main.object(

@@ -447,6 +447,21 @@
                         }
                     }
 
+                    ForEach(model.trustNotices, id: \.self) { notice in
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(LHTheme.warning)
+                            Text(notice)
+                                .font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            if notice.hasPrefix("Preuves suspendues") {
+                                Button("Réessayer") { model.onRetryKeychain() }
+                            } else {
+                                Button("Compris") { DeviceTrustState.acknowledgeRotation() }
+                            }
+                        }
+                    }
+
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Identifiant de l’appareil")
                             .font(.system(size: 11, weight: .semibold))

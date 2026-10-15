@@ -414,7 +414,7 @@
 
     final class ChatGPTRecapRuntime: ObservableObject {
         static let shared = ChatGPTRecapRuntime(
-            analysisSigningIdentityProvider: { try DeviceIdentity.shared() }
+            analysisSigningIdentityProvider: { try DeviceIdentity.shared(attempts: 1) }
         )
 
         @Published private(set) var connectionState: ChatGPTConnectionState = .checking

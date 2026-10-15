@@ -130,11 +130,15 @@
         @Published var showWelcome: Bool
         @Published private(set) var historyDeletionGeneration = 0
 
-        let deviceID: String
-        let deviceTrustTier: String
-        let deviceAlgorithm: String
-        let deviceProtectionTitle: String
-        let deviceProtectionSummary: String
+        @Published private(set) var deviceID: String
+        @Published private(set) var deviceTrustTier: String
+        @Published private(set) var deviceAlgorithm: String
+        @Published private(set) var deviceProtectionTitle: String
+        @Published private(set) var deviceProtectionSummary: String
+        /// Changed or degraded trust state (rotation, sealing suspended), shown in the integrity section.
+        @Published private(set) var trustNotices: [String] = []
+        let onRetryKeychain: () -> Void
+        private var trustObserver: NSObjectProtocol?
         let agentActivityRuntime: AgentActivityRuntime
         /// The gate is lazy; constructing the dashboard does not create an audio module.
         @MainActor lazy var ambianceModule = AmbianceModule(
@@ -186,6 +190,7 @@
             sharingRulesStore: SharingRulesStore,
             agentActivityRuntime: AgentActivityRuntime,
             deviceInfo: DeviceIdentityInfo,
+            onRetryKeychain: @escaping () -> Void = {},
             eventTapStatus: @escaping () -> Bool,
             currentSuppression: @escaping () -> SuppressionReason?,
             captureHealthSnapshot: @escaping () -> CaptureHealthSnapshot,
@@ -205,6 +210,7 @@
             self.agentActivityRuntime = agentActivityRuntime
             self.sharingRules = sharingRulesStore.rules
             self.defaultSharingVisibility = sharingRulesStore.defaultVisibility
+            self.onRetryKeychain = onRetryKeychain
             self.deviceID = deviceInfo.deviceID
             self.deviceTrustTier = deviceInfo.trustTier
             self.deviceAlgorithm = deviceInfo.algorithm
@@ -229,10 +235,31 @@
             settingsDraft = draft
             savedSettingsDraft = draft
             showWelcome = !UserDefaults.standard.bool(forKey: "didShowLocalHistoryConsentOnboardingV5")
+            refreshTrustNotices()
+            trustObserver = NotificationCenter.default.addObserver(
+                forName: DeviceTrustState.didChange, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.refreshTrustNotices()
+            }
+        }
 
+        func refreshTrustNotices() {
+            trustNotices = [
+                DeviceTrustState.shared.sealingSuspendedNotice,
+                DeviceIdentityRotation.load()?.notice,
+            ].compactMap { $0 }
+        }
+
+        func updateDeviceInfo(_ info: DeviceIdentityInfo) {
+            deviceID = info.deviceID
+            deviceTrustTier = info.trustTier
+            deviceAlgorithm = info.algorithm
+            deviceProtectionTitle = info.protectionTitle
+            deviceProtectionSummary = info.protectionSummary
         }
 
         deinit {
+            if let trustObserver { NotificationCenter.default.removeObserver(trustObserver) }
             refreshScheduler.deactivate()
             cancelDataRequest()
             cancelMetadataRequest()

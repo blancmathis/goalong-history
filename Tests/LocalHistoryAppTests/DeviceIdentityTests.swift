@@ -47,6 +47,59 @@
             XCTAssertTrue(DeviceIdentity.identityChanged(previous: "a|secure_enclave", current: info("a", "keychain_software")))
         }
 
+        func testUserCancelledOrDeniedKeychainPromptStopsAfterOneAttempt() {
+            for status in [errSecUserCanceled, errSecAuthFailed] {
+                var calls = 0
+                let tiers: [() throws -> String] = [
+                    { calls += 1; throw DeviceIdentityError.cannotLoadKey(status) }
+                ]
+                XCTAssertThrowsError(
+                    try DeviceIdentity.resolveFirst(tiers, pause: { _ in XCTFail("No retry after a prompt answer") }))
+                XCTAssertEqual(calls, 1)
+            }
+        }
+
+        func testPersistentKeychainErrorStartsDegradedWithSealingSuspended() throws {
+            let suite = "goalong-identity-test-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set("known-device|secure_enclave", forKey: "goalong.deviceIdentity.last.v1")
+
+            let startup = DeviceIdentityStartup.resolve(
+                provider: { throw DeviceIdentityError.cannotLoadKey(errSecInteractionNotAllowed) },
+                defaults: defaults)
+            XCTAssertTrue(startup.isDegraded)
+            XCTAssertEqual(startup.unavailableStatus, errSecInteractionNotAllowed)
+            XCTAssertEqual(startup.info.deviceID, "known-device")
+            XCTAssertThrowsError(try startup.identity.sign(Data("x".utf8))) { error in
+                XCTAssertTrue((error as? DeviceIdentityError)?.shouldSuspendBackgroundSigning == true)
+            }
+
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("goalong-degraded-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let sealer = MinuteSealer(
+                stateStore: IntegrityStateStore(fileURL: directory.appendingPathComponent("state.json"), prepareStorage: {}),
+                identity: startup.identity,
+                sealDirectory: directory.appendingPathComponent("seals"),
+                prepareStorage: {})
+            sealer.suspendSigning(reason: "test")
+            XCTAssertTrue(sealer.runtimeSnapshot.signingSuspended)
+        }
+
+        func testIdentityChangeSetsAVisibleRotationFlag() throws {
+            let suite = "goalong-identity-test-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            DeviceIdentity.noteIdentity(info("a", "secure_enclave"), defaults: defaults)
+            XCTAssertNil(DeviceIdentityRotation.load(defaults: defaults))
+            DeviceIdentity.noteIdentity(info("b", "local_software"), defaults: defaults)
+            let rotation = try XCTUnwrap(DeviceIdentityRotation.load(defaults: defaults))
+            XCTAssertEqual(rotation.previousTier, "secure_enclave")
+            XCTAssertEqual(rotation.newTier, "local_software")
+            XCTAssertTrue(rotation.notice.contains("Secure Enclave"))
+        }
+
         func testOnlyTheSecureEnclaveSummaryClaimsANonExportableKey() {
             for tier in ["secure_enclave", "keychain_software", "local_software"] {
                 let summary = info("a", tier).protectionSummary

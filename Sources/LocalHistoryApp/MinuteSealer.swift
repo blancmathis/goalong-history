@@ -77,7 +77,7 @@
         private let queue = DispatchQueue(label: "ai.goalong.localhistory.minute-sealer")
         private let queueKey = DispatchSpecificKey<UInt8>()
         private let stateStore: IntegrityStateStore
-        private let identity: MinuteSealSigningIdentity
+        private var identity: MinuteSealSigningIdentity
         private let sealDirectory: URL
         private let sealAppender: SealAppender
         private weak var uploader: MinuteSealUploader?
@@ -137,6 +137,30 @@
             } catch {
                 lastErrorDescription = error.localizedDescription
                 Diagnostics.write("Could not reconcile the durable seal tail: \(error)")
+            }
+        }
+
+        /// Starts the sealer with signing suspended (identity unavailable at startup).
+        func suspendSigning(reason: String) {
+            queue.async { [weak self] in
+                guard let self else { return }
+                self.signingSuspended = true
+                self.retryNotBefore = nil
+                self.lastErrorDescription = reason
+                Diagnostics.write("Minute signing suspended for this launch: \(reason)")
+            }
+        }
+
+        /// Resumes sealing with a freshly resolved identity; pending roots are kept.
+        func resumeSigning(with identity: MinuteSealSigningIdentity) {
+            queue.async { [weak self] in
+                guard let self else { return }
+                self.identity = identity
+                self.signingSuspended = false
+                self.retryAttempt = 0
+                self.retryNotBefore = nil
+                self.lastErrorDescription = nil
+                self.scheduleNextWakeup()
             }
         }
 
