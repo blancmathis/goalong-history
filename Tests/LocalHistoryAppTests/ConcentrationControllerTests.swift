@@ -231,6 +231,25 @@ final class ConcentrationControllerTests: XCTestCase {
         XCTAssertEqual(try c.plan(on: d0).items.first?.status, .open)
         XCTAssertTrue(try c.plan(on: d1).items.contains { $0.id == human.id })
     }
+    @MainActor func testSessionsCommitmentProgressCountsOldOpenSessionsAndFollowsNewStops() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        // An open session started three days before the week (2026-W41 starts Monday 5 October).
+        var now = calendar.date(from: .init(year: 2026, month: 10, day: 2, hour: 9))!
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        try c.startSession(intent: "Longue", mode: FocusMode(minutes: nil))
+        now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 9))!; c.refresh()
+        let week = FocusCommitmentPeriod(kind: .week, key: "2026-W41")
+        let value = try c.setCommitment(period: week, kind: .sessions, target: 3)
+        now = now.addingTimeInterval(1800)
+        XCTAssertEqual(try c.commitmentProgress(value).measured, 1)
+        try c.stopSession()
+        try c.startSession(intent: "Courte", mode: FocusMode(minutes: 20))
+        now = now.addingTimeInterval(20 * 60); c.refresh()
+        XCTAssertNil(c.currentSession)
+        // The cached days follow every stop this controller writes.
+        XCTAssertEqual(try c.commitmentProgress(value).measured, 2)
+        XCTAssertEqual(try ConcentrationController(store: s, clock: { now }, calendar: calendar).commitmentProgress(value).measured, 2)
+    }
 }
 private final class AudioSpy: FocusSessionAudio {
     var actions: [String] = []

@@ -78,6 +78,8 @@ struct FocusPanel: Equatable {
     private var definitionAvailable = false
     private var lastMeasureRequest = Date.distantPast
     private var lastCommitmentCardRefresh = Date.distantPast
+    /// Decoded session files for commitment progress. This controller is their only writer: `persist` keeps it current.
+    private var sessionCache: [String: [FocusSession]] = [:]
     var hasTimer: Bool { timer != nil }
     var hasLockedSessionBlock: Bool { hasLockedPhaseBlock }
     var hasLockedBlock: Bool {
@@ -151,6 +153,7 @@ struct FocusPanel: Equatable {
         var values = try store.sessions(day)
         if let i = values.firstIndex(where: { $0.id == value.id }) { values[i] = value } else { values.append(value) }
         try saving { try store.saveSessions(values, day: day) }
+        sessionCache[day] = values
         if day == currentDay { sessions = values }
     }
     func startSession(intent: String, mode: FocusMode, planItemId: UUID? = nil, blockListIds: [UUID] = [],
@@ -602,8 +605,12 @@ extension ConcentrationController {
         if clock() <= bounds.start { return .init(usesActiveTime: value.kind == .work && !definitionAvailable) }
         var values: [FocusSession] = [], plans: [FocusPlan] = []
         if value.kind == .sessions {
-            for day in try store.sessionDays() where FocusCalendar.dayInterval(day, calendar: calendar)!.start < bounds.end {
-                values += try store.sessions(day).filter { ($0.endedAt ?? clock()) > bounds.start }
+            // Any older day can hold an open or long session, so every day is checked, but each file is decoded once.
+            let days = try store.sessionDays(), listed = Set(days)
+            sessionCache = sessionCache.filter { listed.contains($0.key) }
+            for day in days where FocusCalendar.dayInterval(day, calendar: calendar)!.start < bounds.end {
+                let decoded = try sessionCache[day] ?? store.sessions(day); sessionCache[day] = decoded
+                values += decoded.filter { ($0.endedAt ?? clock()) > bounds.start }
             }
         }
         if value.kind == .plan {
