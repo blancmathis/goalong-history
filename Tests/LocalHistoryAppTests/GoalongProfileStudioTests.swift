@@ -21,6 +21,18 @@ import LocalHistoryCore
         XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: nil, requestedDay: b, idle: true, calendar: calendar), .rebuild)
         XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: b, idle: false, calendar: calendar), .keepWork)
     }
+    func testReopeningWithAnotherModeNeverSilentlyKeepsALoadedWindow() {
+        let day = Date(timeIntervalSince1970: 1_791_000_000)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: day, requestedDay: nil, idle: false, shownLocalOnly: true, requestedLocalOnly: false), .modeMismatch)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: day, requestedDay: nil, idle: true, shownLocalOnly: true, requestedLocalOnly: false), .rebuild)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: day, requestedDay: nil, idle: false, shownLocalOnly: true, requestedLocalOnly: true), .front)
+    }
+    func testReceiveAsksForThePresentationOnce() {
+        let host = GoalongProfileStudioHost(currentRevision: { "r" }); var calls = 0
+        host.onNeedsPresentation = { calls += 1 }
+        host.receive(Data("p".utf8))
+        XCTAssertEqual(calls, 1); XCTAssertNotNil(host.pending)
+    }
     func testProfileShareSurvivesTheOpeningPaneAndCapturesTheRevisionAtSendTime() {
         var revision = "r1"
         let host = GoalongProfileStudioHost(currentRevision: { revision })
