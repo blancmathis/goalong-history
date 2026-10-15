@@ -903,21 +903,29 @@
         /// Labels contexts against the user's work definition. The prompt was built from
         /// contexts already filtered by the current exclusions, whose revision must not change
         /// before sending.
-        func generateWorkClassification(prompt: String, privacyRevision: String,
+        func generateWorkClassification(prompt: String, privacyRevision: String, selectionRevision: String? = nil,
                                         workingDirectory: URL) throws -> GoalongWorkClassification.Response {
             try GoalongWorkClassification.parse(generateSelectedAnalysisJSON(prompt: prompt,
                 schema: GoalongWorkClassification.outputSchema, workingDirectory: workingDirectory,
-                maximumResponseBytes: 128 * 1024, filteredForPrivacyRevision: privacyRevision))
+                maximumResponseBytes: 128 * 1024, filteredForPrivacyRevision: privacyRevision,
+                filteredForSelectionRevision: selectionRevision))
         }
 
         private func generateSelectedAnalysisJSON(prompt: String, schema: [String: Any], workingDirectory: URL,
                                                   maximumResponseBytes: Int = 32 * 1024,
-                                                  filteredForPrivacyRevision: String? = nil) throws -> Data {
+                                                  filteredForPrivacyRevision: String? = nil,
+                                                  filteredForSelectionRevision: String? = nil) throws -> Data {
             let pauseTicket = try GoalongGlobalPause.admit()
             let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
             if let filteredForPrivacyRevision, filteredForPrivacyRevision != privacyRevision {
                 throw CodexAppServerError.generationFailed("Les exclusions ont changé. L’analyse a été arrêtée avant l’envoi.")
             }
+            func requireSameSelection() throws {
+                guard let filteredForSelectionRevision,
+                      GoalongAnalysisSelection.load().revision != filteredForSelectionRevision else { return }
+                throw CodexAppServerError.generationFailed("Les choix d’analyse ont changé. Aucun contexte n’a été transmis.")
+            }
+            try requireSameSelection()
             guard filteredForPrivacyRevision != nil || !GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).hasExclusions else {
                 throw CodexAppServerError.generationFailed("Les exclusions bloquent cette analyse de texte. Utilisez le bilan par applications dans Connexions.")
             }
@@ -973,6 +981,7 @@
             guard GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacyRevision else {
                 throw CodexAppServerError.generationFailed("Les exclusions ont changé. L’analyse a été arrêtée avant l’envoi.")
             }
+            try requireSameSelection()
             try GoalongGlobalPause.revalidate(pauseTicket)
             let turnResponse = try request(
                 method: "turn/start",

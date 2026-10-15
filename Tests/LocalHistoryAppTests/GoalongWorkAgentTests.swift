@@ -90,6 +90,11 @@ final class GoalongWorkAgentTests: XCTestCase {
         XCTAssertTrue(source.contains("siteAnalysisOnly: true"), "The strict tool-less, network-less profile")
         XCTAssertTrue(source.contains("filter.label(label)"), "Every label goes through the privacy filter")
         XCTAssertTrue(source.contains("filter.examples(store.corrections)"), "Examples go through the privacy filter")
+        XCTAssertTrue(source.contains("GoalongAnalysisSelection.load(root: root).revision == selectionRevision"),
+                      "A changed « Données pour ChatGPT » choice stops the run before the next batch")
+        XCTAssertTrue(source.contains("selectionRevision: selectionRevision"), "The client rechecks the choice before sending")
+        XCTAssertTrue(source.contains("if !userInitiated { rerunRequested = true }"), "A new definition during a run is classified afterwards")
+        XCTAssertTrue(source.contains("classified += applied.count"), "Only stored verdicts are reported as classified")
         XCTAssertTrue(source.contains("prompt(request, definition: sharedDefinition)"), "The prompt reads the masked definition")
     }
 }

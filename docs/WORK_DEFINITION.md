@@ -66,8 +66,9 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
   n’est envoyé. Les tâches renvoyées par l’agent peuvent donc porter le nom remplacé.
 - Exécution : compte ChatGPT de Goalong (`codex app-server`, `CODEX_HOME` isolé), profil
   `goalong-site-analysis` (aucun outil, aucun réseau, aucun fichier), thread éphémère,
-  `gpt-5.6-luna` / `high`, sortie JSON stricte. La révision des exclusions est revérifiée
-  avant l’envoi.
+  `gpt-5.6-luna` / `high`, sortie JSON stricte. Les révisions des exclusions et des choix « Données pour
+  ChatGPT » sont revérifiées avant chaque lot et juste avant l’envoi ; si l’une a changé,
+  le classement s’arrête sans rien envoyer.
 - Validation : même `request_id`, exactement un élément par contexte envoyé, aucun id
   inconnu ou dupliqué ; sinon rien n’est enregistré. « unknown » devient *indéterminé* et
   peut être reposé sur un autre jour observé, avec au moins 5 minutes et moins de 3 tentatives automatiques. Un verdict de l’utilisateur n’est jamais reposé.

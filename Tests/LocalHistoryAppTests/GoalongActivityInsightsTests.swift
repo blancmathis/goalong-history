@@ -146,11 +146,14 @@ final class GoalongActivityInsightsTests: XCTestCase {
                      video.key: GoalongWorkAssignment(verdict: .other)], revision: store.revision, day: "2026-09-10")
         XCTAssertEqual(store.verdicts.assignment(for: docs.key)?.task, "Goalong")
         XCTAssertEqual(store.knownTasks, ["Goalong"])
-        store.merge([video.key: GoalongWorkAssignment(verdict: .work, task: "X")], revision: "stale", day: "2026-09-10")
+        XCTAssertTrue(store.merge([video.key: GoalongWorkAssignment(verdict: .work, task: "X")], revision: "stale", day: "2026-09-10").isEmpty,
+                      "Nothing is reported as classified for an older definition")
         XCTAssertEqual(store.verdicts.assignment(for: video.key)?.verdict, .other, "An answer for an older definition is ignored")
 
         store.correct(key: video.key, label: video, verdict: .work, task: "Veille", day: "2026-09-10")
-        store.merge([video.key: GoalongWorkAssignment(verdict: .other)], revision: store.revision, day: "2026-09-10")
+        let applied = store.merge([video.key: GoalongWorkAssignment(verdict: .other), docs.key: GoalongWorkAssignment(verdict: .other)],
+                                  revision: store.revision, day: "2026-09-10")
+        XCTAssertEqual(Array(applied.keys), [docs.key], "Only the verdicts actually stored are counted")
         XCTAssertEqual(store.verdicts.assignment(for: video.key)?.task, "Veille", "The user's correction always wins")
         XCTAssertEqual(store.examples.map(\.title), ["Bêtisier"])
         var status = stat()

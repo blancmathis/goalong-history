@@ -118,6 +118,8 @@ extension GoalongWorkSharingFilter {
     @Published private(set) var lastRun: Date?
 
     private var attempts: [Date: (date: Date, failed: Bool)] = [:]
+    /// An automatic request (a new definition) arrived during a run: run again once it ends.
+    private var rerunRequested = false
     private var task: Task<Void, Never>?
     private var session: CodexAppServerSession?
     private var operation = UUID()
@@ -163,7 +165,10 @@ extension GoalongWorkSharingFilter {
     }
 
     func classify(day: Date, userInitiated: Bool = true, dayNote: String? = nil) {
-        guard !isRunning else { return }
+        guard !isRunning else {
+            if !userInitiated { rerunRequested = true }
+            return
+        }
         let state = readiness
         guard state == .ready else {
             if userInitiated { lastError = state.message }
@@ -181,6 +186,7 @@ extension GoalongWorkSharingFilter {
         let definition = store.definition, revision = store.revision, root = self.root
         let policy = GoalongPrivacyPolicy.load(in: root), selection = GoalongAnalysisSelection.load(root: root)
         let filter = GoalongWorkSharingFilter(policy: policy, selection: selection)
+        let selectionRevision = selection.revision
         let note = dayNote ?? Self.sharedDayNote(root: root, day: start, selection: selection, policy: policy)
         let dayName = Self.dayString(start, calendar: calendar)
         task = Task { [weak self] in
@@ -227,7 +233,10 @@ extension GoalongWorkSharingFilter {
                 var maskedTasks: [String: String] = [:]
                 var classified = 0, work = 0
                 for (index, batch) in batches.enumerated() {
-                    guard operation == id, readiness == .ready, store.revision == revision else {
+                    // Every batch leaves with the exclusions and « Données pour ChatGPT » choices it was filtered with.
+                    guard operation == id, readiness == .ready, store.revision == revision,
+                          GoalongPrivacyPolicy.load(in: root).revision == policy.revision,
+                          GoalongAnalysisSelection.load(root: root).revision == selectionRevision else {
                         throw GoalongWorkClassification.Failure.invalid("La définition ou une autorisation a changé : classement arrêté.")
                     }
                     progress = batches.count > 1
@@ -247,13 +256,16 @@ extension GoalongWorkSharingFilter {
                         let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory()
                         defer { try? FileManager.default.removeItem(at: directory) }
                         return try session.generateWorkClassification(prompt: prompt, privacyRevision: privacyRevision,
-                                                                      workingDirectory: directory)
+                                                                      selectionRevision: selectionRevision, workingDirectory: directory)
                     }.value
                     guard operation == id else { return }
                     let assignments = try GoalongWorkClassification.apply(response, to: request)
-                    store.merge(assignments, revision: revision, day: dayName)
-                    classified += assignments.count
-                    work += assignments.values.filter { $0.verdict == .work }.count
+                    guard store.revision == revision else {
+                        throw GoalongWorkClassification.Failure.invalid("La définition ou une autorisation a changé : classement arrêté.")
+                    }
+                    let applied = store.merge(assignments, revision: revision, day: dayName)
+                    classified += applied.count
+                    work += applied.values.filter { $0.verdict == .work }.count
                 }
                 let rest = pending.keys.count - keys.count
                 finish(id, outcome: "\(classified) contexte\(classified > 1 ? "s" : "") classé\(classified > 1 ? "s" : "") le \(GoalongUIFormat.day(start)), dont \(work) de travail."
@@ -264,18 +276,30 @@ extension GoalongWorkSharingFilter {
                 SupportDiagnostics.shared.failure(error, component: .analysis)
                 lastError = (error as? LocalizedError)?.errorDescription ?? "Le classement n’a pas abouti. Réessayez."
                 runningDay = nil; progress = nil
+                if store.revision != revision { attempts[start] = nil }
+                runPendingRerun()
             }
         }
     }
 
     func cancel() {
         operation = UUID(); task?.cancel(); session?.close(); session = nil
-        runningDay = nil; progress = nil
+        runningDay = nil; progress = nil; rerunRequested = false
     }
 
     private func finish(_ id: UUID, outcome: String) {
         guard operation == id else { return }
         lastOutcome = outcome; lastRun = Date(); runningDay = nil; progress = nil
+        runPendingRerun()
+    }
+
+    /// Starts the run asked for while another one was going, through the usual guards.
+    private func runPendingRerun() {
+        guard rerunRequested, !isRunning else { return }
+        rerunRequested = false
+        attempts[Calendar.current.startOfDay(for: Date())] = nil
+        guard store.automatic, !ChatGPTRecapRuntime.shared.isGenerating else { return }
+        classify(day: Date(), userInitiated: false)
     }
 
     static func dayString(_ date: Date, calendar: Calendar = .current) -> String {
