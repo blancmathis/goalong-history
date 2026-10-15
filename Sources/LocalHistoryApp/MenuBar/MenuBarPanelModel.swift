@@ -82,6 +82,7 @@ import LocalHistoryCore
     private let playAmbiance: @MainActor (AmbianceController, AmbianceSource) -> Void
     private let onTogglePause: () -> Void
     private let onOpenSection: (DashboardSection) -> Void
+    private let onOpenSettingsPane: (SettingsPane) -> Void
     private let onOpenDay: () -> Void
     private let onShowClassicMenu: () -> Void
     private var pausedSince: Date?
@@ -100,6 +101,7 @@ import LocalHistoryCore
          loadDay: ((Date) async throws -> GoalongLocalAnalytics.Day)? = nil,
          playAmbiance: @escaping @MainActor (AmbianceController, AmbianceSource) -> Void = { $0.play($1) },
          onTogglePause: @escaping () -> Void, onOpenSection: @escaping (DashboardSection) -> Void,
+         onOpenSettingsPane: ((SettingsPane) -> Void)? = nil,
          onOpenDay: @escaping () -> Void, onShowClassicMenu: @escaping () -> Void) {
         self.state = state; self.modules = modules; self.concentration = concentration
         self.ambianceModule = ambianceModule; self.blocking = blocking
@@ -107,6 +109,7 @@ import LocalHistoryCore
         self.globalPause = globalPause; self.clock = clock; self.calendar = calendar; self.loadDay = loadDay
         self.playAmbiance = playAmbiance
         self.onTogglePause = onTogglePause; self.onOpenSection = onOpenSection
+        self.onOpenSettingsPane = onOpenSettingsPane ?? { _ in onOpenSection(.settings) }
         self.onOpenDay = onOpenDay; self.onShowClassicMenu = onShowClassicMenu
     }
 
@@ -150,13 +153,17 @@ import LocalHistoryCore
 
     private func refreshTracking() {
         let pause = globalPause()
-        if pause.blocksActivity || state.isManuallyPaused {
+        // Same order as the classic menu: global pause, then consent (consent off also sets the manual pause), then manual pause.
+        if pause.blocksActivity {
             if case .paused = tracking {} else { pausedSince = nil }
-            tracking = .paused(since: pause.blocksActivity ? pause.changedAt : pausedSince)
-            trackingDetail = pause.blocksActivity ? "Sources et envois suspendus" : "Enregistrement local en pause"
+            tracking = .paused(since: pause.changedAt); trackingDetail = "Sources et envois suspendus"
         } else if !localHistoryEnabled() {
+            pausedSince = nil
             tracking = .attention("Enregistrement désactivé")
             trackingDetail = "Activez l’enregistrement dans Réglages"
+        } else if state.isManuallyPaused {
+            if case .paused = tracking {} else { pausedSince = nil }
+            tracking = .paused(since: pausedSince); trackingDetail = "Enregistrement local en pause"
         } else if [.storageUnavailable, .permissionRequired, .permissionAppearsEnabledButStaleForBuild,
                    .accessibilityContextUnavailable, .inputTapUnavailable, .awaitingInputEvidence].contains(health()) {
             let health = health()
@@ -210,6 +217,7 @@ import LocalHistoryCore
         let controller = enabled ? concentration() : nil
         focusAvailable = enabled && observing && controller != nil
         focusUnavailableReason = !enabled ? "Activez Concentration dans l’app."
+            : !localHistoryEnabled() ? "Activez l’enregistrement dans Réglages."
             : !observing ? "Reprenez le suivi pour lancer une séance."
             : controller == nil ? "Concentration indisponible. Ouvrez l’app." : nil
         guard let controller else { focusRun = nil; return }
@@ -313,7 +321,12 @@ import LocalHistoryCore
         playAmbiance(controller, source); refreshAmbiance()
     }
 
-    func enableAmbiance() { onOpenSection(.ambiance) }
+    /// Modules are switched on by the member in Réglages › Modules: enabling one can start a runtime or ask for a permission.
+    func openModulesSettings() { onOpenSettingsPane(.modules) }
+
+    func enableAmbiance() {
+        if modules.isEnabled(.ambiance) { onOpenSection(.ambiance) } else { openModulesSettings() }
+    }
 
     private func refreshBlocking() {
         blockingEnabled = modules.isEnabled(.blocking)

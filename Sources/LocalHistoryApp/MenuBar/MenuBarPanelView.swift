@@ -440,7 +440,7 @@
             } content: {
                 if !model.ambianceEnabled {
                     InactiveRow(text: "Musique générative pour travailler ou se reposer.",
-                                action: "Activer l’Ambiance", perform: model.enableAmbiance)
+                                action: "Activer dans Réglages", perform: model.enableAmbiance)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
                         player
@@ -594,7 +594,7 @@
             PanelSection(title: "Blocage") {
                 if !model.blockingEnabled {
                     InactiveRow(text: "Bloquez les sites et apps qui vous distraient.",
-                                action: "Activer le Blocage", perform: model.openSettings)
+                                action: "Activer dans Réglages", perform: model.openModulesSettings)
                 } else if model.blockLists.isEmpty {
                     InactiveRow(text: "Aucune liste pour l’instant.", action: "Créer une liste", perform: model.openApp)
                 } else {

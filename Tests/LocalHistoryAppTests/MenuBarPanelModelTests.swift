@@ -25,6 +25,7 @@ final class MenuBarPanelModelTests: XCTestCase {
         var consent = true
         var pauseAccepted = true
         var opened: [DashboardSection] = []
+        var openedPanes: [SettingsPane] = []
         var played: [AmbianceSource] = []
         var openedDay = false
         var openedClassicMenu = false
@@ -59,6 +60,7 @@ final class MenuBarPanelModelTests: XCTestCase {
                 onTogglePause: { [unowned self] in
                     if self.pauseAccepted { self.state.setManualPaused(!self.state.isManuallyPaused) }
                 }, onOpenSection: { [unowned self] in self.opened.append($0) },
+                onOpenSettingsPane: { [unowned self] in self.openedPanes.append($0) },
                 onOpenDay: { [unowned self] in self.openedDay = true },
                 onShowClassicMenu: { [unowned self] in self.openedClassicMenu = true })
         }
@@ -98,6 +100,31 @@ final class MenuBarPanelModelTests: XCTestCase {
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention(f.health.frenchTitle))
         f.health = .permissionRequired
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention(f.health.frenchTitle))
+    }
+
+    @MainActor func testConsentOffWinsOverTheManualPauseSetByProduction() {
+        let f = fixture(), model = f.model()
+        // applyCapabilityConsents sets the manual pause whenever consent is off.
+        f.consent = false; f.state.setManualPaused(true)
+        model.refreshRuntimeState()
+        XCTAssertEqual(model.tracking, .attention("Enregistrement désactivé"))
+        XCTAssertEqual(model.trackingDetail, "Activez l’enregistrement dans Réglages")
+        f.globallyPaused.paused = true; f.globallyPaused.changedAt = f.now
+        model.refreshRuntimeState()
+        XCTAssertEqual(model.tracking, .paused(since: f.now), "The global pause still wins")
+        f.globallyPaused.paused = false; f.consent = true
+        model.refreshRuntimeState()
+        guard case .paused = model.tracking else { return XCTFail("Manual pause shows once consent is back") }
+    }
+
+    @MainActor func testInactiveModuleCallsToActionOpenTheModulesPane() {
+        let f = fixture(), model = f.model()
+        model.enableAmbiance(); model.openModulesSettings()
+        XCTAssertEqual(f.openedPanes, [.modules, .modules])
+        XCTAssertTrue(f.opened.isEmpty)
+        f.modules.setEnabled(.ambiance, true)
+        model.enableAmbiance()
+        XCTAssertEqual(f.opened, [.ambiance], "An enabled module still opens its own page")
     }
 
     @MainActor func testPomodoroAndFreeSessionsUseControllerAndRealPhaseClock() throws {
