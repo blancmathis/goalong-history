@@ -149,7 +149,7 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         edited.foregroundIdleSeconds = (edited.foregroundIdleSeconds ?? 0) + 17
         edited.captureURLs.toggle()
         try edited.write(to: AppPaths.configFile)
-        XCTAssertTrue(config.reload())
+        XCTAssertNoThrow(try config.reload())
         model.reloadSettings(from: config.config)
         XCTAssertEqual(model.appliedSettings, DashboardSettingsDraft(config: edited))
         var next = model.appliedSettings
@@ -213,12 +213,13 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         let file = dir.appendingPathComponent("config.json")
         var custom = RecorderConfig.default
         custom.captureClicks = !custom.captureClicks
+        try RecorderConfig.default.write(to: file)
+        let manager = ConfigManager(fileURL: file, prepareStorage: {})
         try custom.write(to: file)
-        let manager = ConfigManager(config: .default)
-        XCTAssertTrue(manager.reload(from: file))
+        XCTAssertNoThrow(try manager.reload())
         XCTAssertEqual(manager.config.captureClicks, custom.captureClicks)
         try Data("{\"captureClicks\": true,}".utf8).write(to: file)
-        XCTAssertFalse(manager.reload(from: file))
+        XCTAssertThrowsError(try manager.reload())
         XCTAssertEqual(manager.config.captureClicks, custom.captureClicks)
     }
     func testClassicMenuTellsInputTapFailureApartFromWaiting() {

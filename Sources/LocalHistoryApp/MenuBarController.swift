@@ -171,11 +171,14 @@
         }
 
         static func statusDisplay(
-            health: CaptureHealthState, localEnabled: Bool, globalPaused: Bool, recording: Bool, suppression: SuppressionReason?
+            health: CaptureHealthState, localEnabled: Bool, globalPaused: Bool, recording: Bool, suppression: SuppressionReason?,
+            configUnreadable: Bool = false
         ) -> (title: String, symbol: String, description: String) {
             let display: (title: String, symbol: String, description: String)
             if globalPaused {
                 display = ("Arrêt de confidentialité", "pause.circle.fill", "Sources et envois suspendus")
+            } else if configUnreadable {
+                display = ("Réglages illisibles", "exclamationmark.triangle.fill", ConfigManager.failClosedNotice)
             } else if !localEnabled {
                 display = ("Enregistrement désactivé", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
             } else if health == .storageUnavailable {
@@ -216,7 +219,8 @@
             let localEnabled = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
             let display = Self.statusDisplay(
                 health: health.state, localEnabled: localEnabled,
-                globalPaused: GoalongGlobalPause.isPaused(), recording: recording, suppression: suppression)
+                globalPaused: GoalongGlobalPause.isPaused(), recording: recording, suppression: suppression,
+                configUnreadable: configManager.isFailClosed)
 
             statusMenuItem.title = display.title
             statusMenuItem.image = NSImage(
@@ -439,12 +443,10 @@
 
         @objc private func reloadConfiguration() {
             guard onReloadConfig() else {
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                let alert = NSAlert()
-                alert.alertStyle = .warning
-                alert.messageText = "Configuration non rechargée"
-                alert.informativeText = "config.json n’a pas pu être relu (fichier absent ou format invalide). Les réglages précédents restent actifs."
-                alert.runModal()
+                showInformation(
+                    title: "Configuration non rechargée",
+                    message: configManager.statusNotice ?? ConfigManager.reloadFailedNotice
+                )
                 return
             }
             showInformation(

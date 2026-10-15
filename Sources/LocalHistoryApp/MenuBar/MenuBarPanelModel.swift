@@ -89,6 +89,7 @@ import LocalHistoryCore
     private let health: () -> CaptureHealthState
     private let suppression: () -> SuppressionReason?
     private let localHistoryEnabled: () -> Bool
+    private let configUnreadable: () -> Bool
     private let globalPause: () -> GoalongGlobalPause
     private let clock: () -> Date
     private let calendar: Calendar
@@ -110,6 +111,7 @@ import LocalHistoryCore
          health: @escaping () -> CaptureHealthState = { .ready },
          suppression: @escaping () -> SuppressionReason? = { nil },
          localHistoryEnabled: @escaping () -> Bool = { true },
+         configUnreadable: @escaping () -> Bool = { false },
          globalPause: @escaping () -> GoalongGlobalPause = { GoalongGlobalPause.load() },
          clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
          loadDay: ((Date) async throws -> GoalongLocalAnalytics.Day)? = nil,
@@ -120,6 +122,7 @@ import LocalHistoryCore
         self.state = state; self.modules = modules; self.concentration = concentration
         self.ambianceModule = ambianceModule; self.blocking = blocking
         self.health = health; self.suppression = suppression; self.localHistoryEnabled = localHistoryEnabled
+        self.configUnreadable = configUnreadable
         self.globalPause = globalPause; self.clock = clock; self.calendar = calendar; self.loadDay = loadDay
         self.playAmbiance = playAmbiance
         self.onTogglePause = onTogglePause; self.onOpenSection = onOpenSection
@@ -173,6 +176,10 @@ import LocalHistoryCore
         if pause.blocksActivity {
             if case .paused = tracking {} else { pausedSince = nil }
             tracking = .paused(since: pause.changedAt); trackingDetail = "Sources et envois suspendus"
+        } else if configUnreadable() {
+            pausedSince = nil
+            tracking = .attention("Réglages illisibles")
+            trackingDetail = ConfigManager.failClosedNotice
         } else if !localHistoryEnabled() {
             pausedSince = nil
             tracking = .attention("Enregistrement désactivé")

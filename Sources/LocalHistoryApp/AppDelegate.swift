@@ -134,6 +134,12 @@
         private var quitAlertIsVisible = false
         private let continuityPreferences = BackgroundContinuityPreferences()
 
+        /// Local recording is stopped by the privacy stop or by an unreadable config.json
+        /// (its exclusions are unknown, so nothing may be captured with defaults).
+        private var localRecordingHalted: Bool {
+            GoalongGlobalPause.isPaused() || configManager?.isFailClosed == true
+        }
+
         private var hasEnabledBackgroundSources: Bool {
             guard let capabilityConsents else { return false }
             return [GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations, .developerActivity].contains {
@@ -189,7 +195,7 @@
                 }
                 configManager = ConfigManager()
                 capabilityConsents = GoalongCapabilityConsentStore.shared
-                developerActivityRuntime = GoalongDeveloperRuntime()
+                if !configManager.isFailClosed { developerActivityRuntime = GoalongDeveloperRuntime() }
                 permissions = PermissionManager.shared
                 captureHealthStore = CaptureHealthStore(permissions: permissions)
                 semanticContextStore = SemanticContextStore()
@@ -197,7 +203,10 @@
                 retentionStore = HistoryRetentionStore(
                     legacyRetentionDays: configManager.config.retentionDays
                 )
-                captureState = CaptureState()
+                let launchConfig: ConfigManager = configManager
+                captureState = CaptureState(isGloballyPaused: {
+                    GoalongGlobalPause.isPaused() || launchConfig.isFailClosed
+                })
                 store = try JSONLStore(retentionDays: configManager.config.retentionDays)
                 integrityStateStore = IntegrityStateStore()
                 // An unreadable keychain key never stops the app: it records without sealing.
@@ -255,7 +264,7 @@
                 agentActivityRuntime = try AgentActivityRuntime(
                     rootDirectory: AppPaths.agentActivityDirectory,
                     executableURL: executableURL,
-                    performInitialDiscovery: capabilityConsents.isEnabled(.aiConversations) && !GoalongGlobalPause.isPaused(),
+                    performInitialDiscovery: capabilityConsents.isEnabled(.aiConversations) && !localRecordingHalted,
                     onCaptured: { _ in }
                 )
 
@@ -284,7 +293,9 @@
                     },
                     onDeleteTargetedDetails: { [weak self] request, completion in
                         self?.deleteTargetedDetails(request, completion: completion)
-                    }
+                    },
+                    onReloadConfiguration: { [weak self] in self?.reloadConfiguration() ?? false },
+                    onResetConfiguration: { [weak self] in try self?.resetConfiguration() }
                 )
                 dashboardWindowController = DashboardWindowController(viewModel: dashboardViewModel)
                 // The share sheet lives on the dashboard: bring it back when the member sends with it closed.
@@ -360,6 +371,7 @@
                     health: { [weak self] in self?.captureHealthStore.assessment.state ?? .paused },
                     suppression: { [weak self] in self?.contextMonitor.latestSnapshot?.suppressionReason },
                     localHistoryEnabled: { [weak self] in self?.capabilityConsents.isEnabled(.localComputerHistory) == true },
+                    configUnreadable: { [weak self] in self?.configManager.isFailClosed == true },
                     loadDay: { now in
                         let verdicts = GoalongWorkStore.shared.verdicts
                         return try await GoalongAnalyticsReader.shared.readToday(
@@ -634,7 +646,7 @@
         }
 
         private func toggleManualPause() {
-            guard !GoalongGlobalPause.isPaused() else { dashboardWindowController.show(section: .settings); return }
+            guard !localRecordingHalted else { dashboardWindowController.show(section: .settings); return }
             if !capabilityConsents.isEnabled(.localComputerHistory) {
                 // A menu action must not broaden capture or bypass the guided source choice.
                 dashboardWindowController.show(section: .settings)
@@ -673,14 +685,34 @@
             return applied
         }
 
+        /// Returns false when config.json could not be read; the previous state stays.
         private func reloadConfiguration() -> Bool {
-            let reloaded = configManager.reload()
+            let wasFailClosed = configManager.isFailClosed
+            let succeeded = (try? configManager.reload()) != nil
+            if succeeded { configurationDidRecover(wasFailClosed: wasFailClosed) }
+            menuBarController?.updateStatus()
+            return succeeded
+        }
+
+        /// Keeps the unreadable config.json aside, writes defaults and restarts recording.
+        private func resetConfiguration() throws -> String? {
+            let wasFailClosed = configManager.isFailClosed
+            let backup = try configManager.resetToDefaults()
+            configurationDidRecover(wasFailClosed: wasFailClosed)
+            menuBarController?.updateStatus()
+            return backup
+        }
+
+        private func configurationDidRecover(wasFailClosed: Bool) {
+            if wasFailClosed {
+                // Restore the runtime the user had (consents, manual pause), as at launch.
+                if developerActivityRuntime == nil { developerActivityRuntime = GoalongDeveloperRuntime() }
+                applyCapabilityConsents(recordTransition: false)
+            }
             configureCallPresence()
             contextMonitor.resetAndSample()
             configureUploader(for: configManager.config)
-            if reloaded { dashboardViewModel.reloadSettings(from: configManager.config) }
-            menuBarController.updateStatus()
-            return reloaded
+            dashboardViewModel?.configurationDidChange()
         }
 
         private func configureUploader(for config: RecorderConfig) {
@@ -1127,7 +1159,7 @@
         private var permissionRefreshPending = false
 
         private func checkPermissionsAndStartTap(forceRefresh: Bool = false) {
-            guard capabilityConsents.isEnabled(.localComputerHistory), !GoalongGlobalPause.isPaused() else {
+            guard capabilityConsents.isEnabled(.localComputerHistory), !localRecordingHalted else {
                 permissionTimer?.invalidate()
                 permissionTimer = nil
                 eventTapMonitor.stop()
@@ -1202,7 +1234,7 @@
         }
 
         private func configureCallPresence() {
-            GoalongCallPresenceMonitor.shared.configure(enabled: !clearingCallPresence && capabilityConsents.isEnabled(.localComputerHistory) && !captureState.isManuallyPaused, config: configManager.config)
+            GoalongCallPresenceMonitor.shared.configure(enabled: !clearingCallPresence && capabilityConsents.isEnabled(.localComputerHistory) && !captureState.isManuallyPaused && !configManager.isFailClosed, config: configManager.config)
         }
 
         private func installCapabilityConsentObserver() {
@@ -1225,7 +1257,7 @@
         }
 
         private func applyCapabilityConsents(recordTransition: Bool) {
-            let localCaptureEnabled = capabilityConsents.isEnabled(.localComputerHistory) && !GoalongGlobalPause.isPaused()
+            let localCaptureEnabled = capabilityConsents.isEnabled(.localComputerHistory) && !localRecordingHalted
             if localCaptureEnabled && !localCaptureRuntimeActive {
                 let wasActive = localCaptureRuntimeActive
                 localCaptureRuntimeActive = true
@@ -1292,7 +1324,7 @@
                 }
             }
 
-            if capabilityConsents.isEnabled(.aiConversations) && !GoalongGlobalPause.isPaused() {
+            if capabilityConsents.isEnabled(.aiConversations) && !localRecordingHalted {
                 agentActivityRuntime.start()
             } else {
                 agentActivityRuntime.stop()
@@ -1304,7 +1336,7 @@
             configureReadOnlyQueryServer()
 
             let analysisEnabled = GoalongBuildCapabilities.permitsRemoteAnalysis
-                && capabilityConsents.isEnabled(.chatGPTAnalysis) && !GoalongGlobalPause.isPaused()
+                && capabilityConsents.isEnabled(.chatGPTAnalysis) && !localRecordingHalted
             if analysisEnabled {
                 ChatGPTRecapRuntime.shared.start()
             } else {
@@ -1378,7 +1410,7 @@
             screenTimeArchiveTimer = nil
             screenTimeMidnightTimer?.invalidate()
             screenTimeMidnightTimer = nil
-            guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(), screenTimeRepository != nil else {
+            guard capabilityConsents.isEnabled(.appleScreenTime), !localRecordingHalted, screenTimeRepository != nil else {
                 return
             }
 
@@ -1419,7 +1451,7 @@
 
         /// Sleep and quit can end the day's last refresh window: collect the active day now, bounded to a few seconds.
         private func flushCurrentScreenTimeDay(timeout: TimeInterval = 2.5) {
-            guard capabilityConsents?.isEnabled(.appleScreenTime) == true, !GoalongGlobalPause.isPaused(),
+            guard capabilityConsents?.isEnabled(.appleScreenTime) == true, !localRecordingHalted,
                   let screenTimeRepository else { return }
             let finished = DispatchGroup()
             finished.enter()
@@ -1431,7 +1463,7 @@
         }
 
         private func refreshCurrentScreenTimeDay() {
-            guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(),
+            guard capabilityConsents.isEnabled(.appleScreenTime), !localRecordingHalted,
                   let screenTimeRepository,
                   !screenTimeArchiveRefreshInFlight
             else { return }

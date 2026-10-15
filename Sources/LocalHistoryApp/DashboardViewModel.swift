@@ -141,6 +141,15 @@
         @Published private(set) var deviceProtectionSummary: String
         /// Changed or degraded trust state (rotation, sealing suspended), shown in the integrity section.
         @Published private(set) var trustNotices: [String] = []
+        /// Shown in Settings while config.json is unreadable.
+        @Published private(set) var configNotice: String?
+        /// config.json was unreadable at launch: recording is paused and saves are refused.
+        @Published private(set) var configLocked = false
+        /// Name of the damaged config.json kept aside by the last reset.
+        @Published private(set) var configBackupName: String?
+        private var configObserver: NSObjectProtocol?
+        private let onReloadConfiguration: () -> Bool
+        private let onResetConfiguration: () throws -> String?
         let onRetryKeychain: () -> Void
         private var trustObserver: NSObjectProtocol?
         let agentActivityRuntime: AgentActivityRuntime
@@ -204,6 +213,8 @@
             onSaveConfiguration: @escaping SaveConfiguration,
             onDeleteDetails: @escaping DeleteDetails,
             onDeleteTargetedDetails: @escaping DeleteTargetedDetails,
+            onReloadConfiguration: @escaping () -> Bool = { false },
+            onResetConfiguration: @escaping () throws -> String? = { nil },
             refreshScheduler: DashboardRefreshScheduler = DashboardRefreshScheduler(),
             dataReader: DashboardDataReader = DashboardDataReader()
         ) {
@@ -230,6 +241,8 @@
             self.onSaveConfiguration = onSaveConfiguration
             self.onDeleteDetails = onDeleteDetails
             self.onDeleteTargetedDetails = onDeleteTargetedDetails
+            self.onReloadConfiguration = onReloadConfiguration
+            self.onResetConfiguration = onResetConfiguration
             self.refreshScheduler = refreshScheduler
             self.dataReader = dataReader
 
@@ -245,6 +258,48 @@
                 forName: DeviceTrustState.didChange, object: nil, queue: .main
             ) { [weak self] _ in
                 self?.refreshTrustNotices()
+            }
+            refreshConfigStatus()
+            configObserver = NotificationCenter.default.addObserver(
+                forName: .goalongConfigStatusDidChange, object: configManager, queue: .main
+            ) { [weak self] _ in
+                self?.refreshConfigStatus()
+            }
+        }
+
+        func refreshConfigStatus() {
+            configNotice = configManager.statusNotice
+            configLocked = configManager.isFailClosed
+            configBackupName = configNotice == nil ? configManager.lastDamagedBackupName : nil
+        }
+
+        /// The active config changed outside Settings (reload, reset): show what is applied.
+        func configurationDidChange() {
+            let draft = DashboardSettingsDraft(config: configManager.config)
+            settingsDraft = draft
+            savedSettingsDraft = draft
+            refreshConfigStatus()
+            refreshRuntime()
+        }
+
+        func reloadConfigurationFromSettings() {
+            guard onReloadConfiguration() else {
+                refreshConfigStatus()
+                alert = DashboardAlert(kind: .error, title: "Configuration non rechargée",
+                                       message: configManager.statusNotice ?? ConfigManager.reloadFailedNotice)
+                return
+            }
+            Task { @MainActor in GoalongToastCenter.shared.show("Configuration rechargée") }
+        }
+
+        func resetConfigurationFromSettings() {
+            do {
+                _ = try onResetConfiguration()
+                refreshConfigStatus()
+                Task { @MainActor in GoalongToastCenter.shared.show("Réglages réinitialisés") }
+            } catch {
+                alert = DashboardAlert(kind: .error, title: "Les réglages n’ont pas pu être réinitialisés",
+                                       message: Self.userFacingMessage(error))
             }
         }
 
@@ -275,6 +330,7 @@
 
         deinit {
             if let trustObserver { NotificationCenter.default.removeObserver(trustObserver) }
+            if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
             refreshScheduler.deactivate()
             cancelDataRequest()
             cancelMetadataRequest()
