@@ -265,9 +265,19 @@
                 maximumDays: boundedDays,
                 renderMarkdown: false
             )
+            // Raw presence today tells a stale memory from a real break.
+            // Only the resume answer uses it, so read the journal only then.
+            let answerNow = Date()
+            let presence = ComputerHistorySearchService.isResumeQuery(query)
+                ? HistoryLocalStoreReader(rootDirectory: rootDirectory)
+                    .loadPresenceTimestamps(
+                        start: Calendar.current.startOfDay(for: answerNow),
+                        end: answerNow
+                    )
+                : nil
             let retainedAnswer = ComputerHistorySearchService(
                 memories: recent.memories
-            ).ask(query)
+            ).ask(query, now: answerNow, presence: presence)
             let sourceSearch: ComputerHistorySourceSearchResult?
             if recent.requiresSourceFallback
                 || ComputerHistorySearchService.requiresRawSourceFallback(
@@ -307,7 +317,7 @@
                     ComputerHistorySearchService(
                         memories: recent.memories,
                         sourceSearch: $0
-                    ).ask(query)
+                    ).ask(query, now: answerNow, presence: presence)
                 } ?? retainedAnswer
             guard !recent.isComplete else { return baseAnswer }
             return ComputerHistoryAnswer(
