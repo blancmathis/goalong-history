@@ -1217,11 +1217,18 @@ public enum GoalongQueryCLI {
                 try? FileManager.default.setAttributes(
                     [.posixPermissions: 0o600], ofItemAtPath: destination.path
                 )
-                let persisted = try readStableRegularFile(
-                    destination,
-                    maximumBytes: Int64(GoalongProofArchive.maximumArchiveBytes)
-                )
-                let persistedReport = try GoalongProofPackageVerifier.verify(archive: persisted)
+                let persistedReport: AnalysisProofVerificationReport
+                let persisted: Data
+                do {
+                    persisted = try readStableRegularFile(
+                        destination,
+                        maximumBytes: Int64(GoalongProofArchive.maximumArchiveBytes)
+                    )
+                    persistedReport = try GoalongProofPackageVerifier.verify(archive: persisted)
+                } catch {
+                    try? FileManager.default.removeItem(at: destination)
+                    throw error
+                }
                 guard persistedReport.isLocallyValid else {
                     // This invocation created the file (the exists guard ran before the write).
                     try? FileManager.default.removeItem(at: destination)

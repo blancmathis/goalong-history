@@ -165,7 +165,7 @@
 
         /// How to name the socket in `sockaddr_un`: the absolute path when it fits `sun_path`,
         /// otherwise the leaf name relative to an open handle on the runtime directory
-        /// (`bindat`/`connectat`), so no process-wide `chdir` is needed.
+        /// (resolved with a serialized `fchdir` to the runtime directory, see `inRuntimeDirectory`).
         struct Endpoint {
             let address: sockaddr_un
             let length: socklen_t
