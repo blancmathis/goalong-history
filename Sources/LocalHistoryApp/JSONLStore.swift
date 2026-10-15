@@ -1575,29 +1575,40 @@
             else { throw JSONLStoreError.unsafeEventFile(fileURL) }
             guard info.st_size > 0 else { return nil }
 
-            let byteCount = min(Int64(maximumTailBytes), Int64(info.st_size))
-            let offset = Int64(info.st_size) - byteCount
-            var data = Data(count: Int(byteCount))
-            let bytesRead = data.withUnsafeMutableBytes { buffer -> Int in
-                guard let baseAddress = buffer.baseAddress else { return 0 }
-                return pread(descriptor, baseAddress, Int(byteCount), off_t(offset))
-            }
-            guard bytesRead >= 0 else {
-                throw JSONLStoreError.couldNotInspectEventTail(fileURL)
-            }
-            if bytesRead < data.count { data.removeSubrange(bytesRead..<data.count) }
-
-            let rows = data.split(separator: 0x0A, omittingEmptySubsequences: true)
-            for (index, row) in rows.enumerated().reversed() {
-                // A bounded tail can begin in the middle of a large row. Never accept
-                // that leading fragment as recovery evidence.
-                if offset > 0, index == 0 { continue }
-                if let event = try? decoder.decode(HistoryEvent.self, from: Data(row)) {
-                    return event
+            // Read a small tail first and grow it only when no complete row decodes.
+            // A normal journal ends with a small row, so launch reads kilobytes, not
+            // megabytes; the result is the same as one read of the full cap.
+            let fileSize = Int64(info.st_size)
+            let cap = min(Int64(maximumTailBytes), fileSize)
+            var window = min(Int64(initialTailWindowBytes), cap)
+            while true {
+                let byteCount = window
+                let offset = fileSize - byteCount
+                var data = Data(count: Int(byteCount))
+                let bytesRead = data.withUnsafeMutableBytes { buffer -> Int in
+                    guard let baseAddress = buffer.baseAddress else { return 0 }
+                    return pread(descriptor, baseAddress, Int(byteCount), off_t(offset))
                 }
+                guard bytesRead >= 0 else {
+                    throw JSONLStoreError.couldNotInspectEventTail(fileURL)
+                }
+                if bytesRead < data.count { data.removeSubrange(bytesRead..<data.count) }
+
+                let rows = data.split(separator: 0x0A, omittingEmptySubsequences: true)
+                for (index, row) in rows.enumerated().reversed() {
+                    // A bounded tail can begin in the middle of a large row. Never accept
+                    // that leading fragment as recovery evidence.
+                    if offset > 0, index == 0 { continue }
+                    if let event = try? decoder.decode(HistoryEvent.self, from: Data(row)) {
+                        return event
+                    }
+                }
+                if window >= cap { return nil }
+                window = min(window * 4, cap)
             }
-            return nil
         }
+
+        static let initialTailWindowBytes = 64 * 1_024
 
         private static func isKnownEventFileName(_ name: String) -> Bool {
             guard name.count == 16, name.hasSuffix(".jsonl") else { return false }

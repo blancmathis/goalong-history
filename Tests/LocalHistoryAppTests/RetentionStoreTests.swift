@@ -403,6 +403,41 @@
             }
         }
 
+        func testLatestPersistedEventGrowsTheTailWindowPastLargeRowsAndJunk() throws {
+            let root = try makeTemporaryDirectory()
+            let events = root.appendingPathComponent("events", isDirectory: true)
+            try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+            let store = try JSONLStore(
+                retentionDays: 0, eventsDirectory: events, prepareApplicationStorage: false
+            )
+            let day = Self.date(year: 2026, month: 8, day: 23, hour: 12)
+            func integrity(_ sequence: UInt64) -> EventIntegrity {
+                EventIntegrity(
+                    sequence: sequence,
+                    previousEventHash: String(repeating: "a", count: 64),
+                    eventRoot: String(repeating: "b", count: 64),
+                    eventHash: String(repeating: "c", count: 64),
+                    fieldCommitments: []
+                )
+            }
+            try store.appendAndWait(
+                HistoryEvent(id: "small", sessionID: "tail", timestamp: day, kind: .heartbeat, integrity: integrity(1))
+            )
+            let large = HistoryEvent(
+                id: "large", sessionID: "tail", timestamp: day.addingTimeInterval(1), kind: .heartbeat,
+                message: String(repeating: "m", count: 300 * 1_024), integrity: integrity(2)
+            )
+            try store.appendAndWait(large)
+            // A torn, undecodable tail larger than the first 64 KB window.
+            let file = events.appendingPathComponent("2026-08-23.jsonl")
+            let handle = try FileHandle(forWritingTo: file)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(String(repeating: "x", count: 100 * 1_024).utf8))
+            try handle.close()
+
+            XCTAssertEqual(try store.latestPersistedEvent()?.id, "large")
+        }
+
         func testJSONLAppendFailsClosedBeforeWritingWhenPermissionRepairFails() throws {
             let root = try makeTemporaryDirectory()
             let events = root.appendingPathComponent("events", isDirectory: true)
