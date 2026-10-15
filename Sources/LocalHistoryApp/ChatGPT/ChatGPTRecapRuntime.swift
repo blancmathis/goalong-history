@@ -1049,6 +1049,10 @@
                     guard let account = try session.readAccount(refreshToken: true) else {
                         throw CodexAppServerError.signedOut
                     }
+                    // The passive account read is skipped while a run is active: publish it here.
+                    DispatchQueue.main.async {
+                        if self.isRunActive(runID) { self.publishAccount(account) }
+                    }
                     guard account.isManagedChatGPT else {
                         throw CodexAppServerError.accountNotChatGPT(account.type)
                     }
@@ -1195,6 +1199,10 @@
                         self.isGenerating = false
                         self.generatingDay = nil
                         self.streamedMarkdown = ""
+                        defer {
+                            // A skipped account read must not leave the page on .checking.
+                            if case .checking = self.connectionState, !self.isConnecting { self.refreshAccount() }
+                        }
                         if let codexError = error as? CodexAppServerError {
                             switch codexError {
                             case .accountNotChatGPT(let mode):

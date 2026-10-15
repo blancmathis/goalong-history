@@ -61,7 +61,7 @@ import SwiftUI
             do {
                 guard let executable = CodexExecutableLocator.locate() else { throw CodexAppServerError.executableUnavailable }
                 let active = try CodexAppServerSession(executableURL: executable,
-                    codexHomeURL: AppPaths.chatGPTDirectory.appendingPathComponent("site-analysis-codex-home", isDirectory: true), siteAnalysisOnly: true)
+                    codexHomeURL: AppPaths.chatGPTDirectory.appendingPathComponent("site-analysis-codex-home", isDirectory: true), siteAnalysisOnly: true, homeLeaseWait: 0)
                 session = active
                 defer { active.close(); if operation == id { session = nil } }
                 guard operation == id, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis),

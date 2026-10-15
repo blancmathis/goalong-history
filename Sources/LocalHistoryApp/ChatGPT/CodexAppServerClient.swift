@@ -847,7 +847,7 @@
                 )
                 guard let reportedHome = initialization["codexHome"] as? String else {
                     throw CodexAppServerError.malformedResponse(
-                        "this Codex version does not report codexHome; update the Codex CLI"
+                        "Cette version de Codex n’indique pas son dossier ; mettez à jour Codex (ligne de commande)."
                     )
                 }
                 let expectedHome = codexHomeURL.standardizedFileURL.resolvingSymlinksInPath()
@@ -931,7 +931,7 @@
                 throw CodexAppServerError.loginFailed(params["error"] as? String ?? "")
             }
             guard let account = try readAccount(refreshToken: false), account.isManagedChatGPT else {
-                throw CodexAppServerError.loginFailed("Codex did not report a managed ChatGPT account after login.")
+                throw CodexAppServerError.loginFailed("Codex n’a pas confirmé de compte ChatGPT géré après la connexion.")
             }
             return account
         }
