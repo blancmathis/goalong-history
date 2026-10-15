@@ -238,6 +238,17 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
             XCTAssertEqual(interval(query)?.start, yesterday, query)
             XCTAssertEqual(interval(query)?.end, today, query)
         }
+        let dayBefore = try XCTUnwrap(calendar.date(byAdding: .day, value: -2, to: today))
+        for query in [
+            "Qu'ai-je fait avant-hier ?", "avant hier", "the day before yesterday",
+        ] {
+            XCTAssertEqual(interval(query)?.start, dayBefore, query)
+            XCTAssertEqual(interval(query)?.end, yesterday, query)
+        }
+        let dayBeforeRanged = try XCTUnwrap(interval("avant-hier de 14h à 16h"))
+        XCTAssertEqual(dayBeforeRanged.start, dayBefore.addingTimeInterval(14 * 3600))
+        XCTAssertEqual(dayBeforeRanged.end, dayBefore.addingTimeInterval(16 * 3600))
+        XCTAssertEqual(interval("avant ma pause hier")?.start, yesterday)
         for query in ["fichiers ouverts aujourd'hui", "fichiers ouverts aujourd’hui"] {
             XCTAssertEqual(interval(query)?.start, today, query)
         }

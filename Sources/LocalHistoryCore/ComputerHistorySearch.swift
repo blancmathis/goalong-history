@@ -607,15 +607,25 @@ public struct ComputerHistorySearchService {
             query.normalized,
             ["today", "aujourd hui"]
         )
-        let mentionsYesterday = SearchText.containsPhrase(
+        // "avant-hier" splits into "avant" + "hier": match the contiguous
+        // phrase first so it does not fall through to yesterday.
+        let mentionsDayBeforeYesterday = SearchText.containsPhrase(
             query.normalized,
-            ["yesterday", "hier"]
+            ["day before yesterday", "avant hier"]
         )
+        let mentionsYesterday = !mentionsDayBeforeYesterday
+            && SearchText.containsPhrase(query.normalized, ["yesterday", "hier"])
         let requestedDayStart: Date?
         let requestedDayEnd: Date?
         if mentionsToday {
             requestedDayStart = today
             requestedDayEnd = now.addingTimeInterval(0.001)
+        } else if mentionsDayBeforeYesterday,
+            let start = calendar.date(byAdding: .day, value: -2, to: today),
+            let end = calendar.date(byAdding: .day, value: -1, to: today)
+        {
+            requestedDayStart = start
+            requestedDayEnd = end
         } else if mentionsYesterday,
             let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
         {
@@ -658,10 +668,8 @@ public struct ComputerHistorySearchService {
                 end: max(today.addingTimeInterval(0.001), now.addingTimeInterval(0.001))
             )
         }
-        if mentionsYesterday,
-            let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
-        {
-            return DateInterval(start: yesterday, end: today)
+        if let requestedDayStart, let requestedDayEnd {
+            return DateInterval(start: requestedDayStart, end: requestedDayEnd)
         }
         if SearchText.containsPhrase(
             query.normalized,
