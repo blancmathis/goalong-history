@@ -65,8 +65,8 @@
             let reversedNames = Dictionary(uniqueKeysWithValues: reversed.map { ($0.device.id, $0.device.displayName) })
 
             XCTAssertEqual(forwardNames, reversedNames)
-            XCTAssertEqual(forwardNames["BBBBBBBB-2222"], "iPhone or iPad · BBBBBBBB")
-            XCTAssertEqual(forwardNames["AAAAAAAA-1111"], "Apple device · AAAAAAAA")
+            XCTAssertEqual(forwardNames["BBBBBBBB-2222"], "iPhone ou iPad · BBBBBBBB")
+            XCTAssertEqual(forwardNames["AAAAAAAA-1111"], "Appareil Apple · AAAAAAAA")
             XCTAssertTrue(forward.allSatisfy { $0.device.kind == .unknown })
         }
 
@@ -351,7 +351,7 @@
             )
 
             XCTAssertEqual(device.kind, .unknown)
-            XCTAssertEqual(device.displayName, "Apple device · PEER-123")
+            XCTAssertEqual(device.displayName, "Appareil Apple · PEER-123")
         }
 
         func testKnowledgeStreamReferenceUsesCurrentAndLegacySchemas() throws {

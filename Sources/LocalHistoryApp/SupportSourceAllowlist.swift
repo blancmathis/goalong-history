@@ -169,6 +169,7 @@ enum SupportSourceAllowlist {
         "GoalongSystemSourcesReader.swift",
         "GoalongTheme.swift",
         "GoalongThread.swift",
+        "GoalongUserFacingError.swift",
         "GoalongWebsiteAutoSender.swift",
         "GoalongWebsiteConnectionCard.swift",
         "GoalongWebsitePairingCoordinator.swift",

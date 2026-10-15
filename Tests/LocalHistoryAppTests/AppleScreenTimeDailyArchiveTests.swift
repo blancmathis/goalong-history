@@ -114,6 +114,69 @@
             XCTAssertEqual(record.collection.storageState, .completedDayStored)
         }
 
+        func testCompletedDayIsNotOverwrittenAfterAWestwardTimeZoneChange() throws {
+            let root = temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            var paris = Calendar(identifier: .gregorian)
+            paris.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+            var newYork = Calendar(identifier: .gregorian)
+            newYork.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+            let mac = AppleScreenTimeDevice(id: "mac", name: "Mac", kind: .mac)
+            let day = try date(2026, 9, 4, hour: 12, calendar: paris)
+            var now = day
+            let parisRepository = try AppleSystemScreenTimeRepository(
+                rootDirectory: root, currentMacDevice: mac, calendar: paris,
+                nowProvider: { now },
+                liveCollectionProvider: {
+                    self.collection(day: $0, device: mac, seconds: 600, calendar: paris)
+                }
+            )
+            _ = parisRepository.collect(for: day)
+            now = try date(2026, 9, 5, hour: 3, calendar: paris)
+            XCTAssertEqual(parisRepository.collect(for: day).storageState, .completedDayStored)
+
+            // 03:00 on 2026-09-05 in Paris is still 21:00 on 2026-09-04 in New York.
+            let newYorkRepository = try AppleSystemScreenTimeRepository(
+                rootDirectory: root, currentMacDevice: mac, calendar: newYork,
+                nowProvider: { now },
+                liveCollectionProvider: {
+                    self.collection(day: $0, device: mac, seconds: 900, calendar: newYork)
+                }
+            )
+            let live = newYorkRepository.collect(for: now)
+            XCTAssertEqual(live.storageState, .directAppleRead)
+
+            let file = root.appendingPathComponent("days/2026-09-04.json")
+            let record = try AppleScreenTimeJSON.decode(
+                AppleSystemScreenTimeDailyArchiveRecord.self, from: Data(contentsOf: file))
+            XCTAssertEqual(record.state, .completed)
+            XCTAssertEqual(record.timeZoneIdentifier, "Europe/Paris")
+            XCTAssertEqual(record.dayStart, paris.startOfDay(for: day))
+        }
+
+        func testShareLevelNamesAreFrench() {
+            XCTAssertEqual(
+                AppleScreenTimeShareLevel.allCases.map(\.displayName),
+                ["Totaux seulement", "Totaux par appareil", "Appareils et applications"]
+            )
+        }
+
+        func testAlertMessagesAreFrenchAndNeverDebugDumps() {
+            let cocoa = GoalongUserFacingError.message(CocoaError(.fileWriteNoPermission))
+            XCTAssertFalse(cocoa.contains("Domain"))
+            XCTAssertFalse(cocoa.contains("NSCocoa"))
+            XCTAssertFalse(cocoa.isEmpty)
+            XCTAssertEqual(
+                GoalongUserFacingError.message(AppleScreenTimeStoreError.invalidFile),
+                "Le fichier choisi n’est pas un export de temps d’écran Apple valide."
+            )
+            struct Other: Error { let secret = "x" }
+            XCTAssertEqual(
+                GoalongUserFacingError.message(Other()),
+                GoalongUserFacingError.genericMessage
+            )
+        }
+
         func testActiveDayUpdatesInPlaceAndDoesNotCreateVersions() throws {
             let root = temporaryRoot()
             defer { try? FileManager.default.removeItem(at: root) }
@@ -174,7 +237,7 @@
             XCTAssertEqual(sourceReadCount, 0)
             XCTAssertEqual(missing.storageState, .missingCompletedDay)
             XCTAssertEqual(missing.status.kind, .noAppleData)
-            XCTAssertTrue(missing.status.message.contains("never reopens Apple history"))
+            XCTAssertTrue(missing.status.message.contains("ne relit jamais l’historique d’Apple"))
         }
 
         func testArchiveRejectsSymlinkedStorageDirectory() throws {
