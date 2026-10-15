@@ -598,7 +598,7 @@
 
         func configure(deviceID: String) {
             let clean = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !clean.isEmpty { self.deviceID = clean }
+            if !clean.isEmpty, clean != DeviceIdentityInfo.unavailableDeviceID { self.deviceID = clean }
             recap = ChatGPTRecapPersistence.load(for: selectedDay, from: recapsDirectory)
             refreshProofReport()
         }

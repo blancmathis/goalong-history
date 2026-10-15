@@ -266,6 +266,16 @@
             XCTAssertTrue(runtime.dayOverview != nil || runtime.dayOverviewError != nil)
         }
 
+        func testRuntimeIgnoresThePlaceholderDeviceID() throws {
+            let container = try makeContainer()
+            defer { try? FileManager.default.removeItem(at: container) }
+            let runtime = makeRuntime(container: container)
+            runtime.configure(deviceID: DeviceIdentityInfo.unavailableDeviceID)
+            runtime.selectDay(Calendar.current.startOfDay(for: Date()).addingTimeInterval(-86_400))
+            XCTAssertFalse(runtime.isLoadingDayOverview)
+            XCTAssertEqual(runtime.dayOverviewBuildCountForTesting, 0)
+        }
+
         func testOnlyTheLastChosenDayIsRead() throws {
             let container = try makeContainer()
             defer { try? FileManager.default.removeItem(at: container) }
