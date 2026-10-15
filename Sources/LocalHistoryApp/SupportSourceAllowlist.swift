@@ -95,6 +95,7 @@ enum SupportSourceAllowlist {
         "DayNavigationHeader.swift",
         "DerivedHistoryCleaner.swift",
         "DeviceIdentity.swift",
+        "DurableSync.swift",
         "EventRecorder.swift",
         "EventTapMonitor.swift",
         "FocusDistractions.swift",
