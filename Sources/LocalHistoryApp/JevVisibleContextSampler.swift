@@ -18,9 +18,14 @@ final class JevVisibleContextSampler {
     private let client: AXClient
     private let read: (pid_t, Bool) -> String?
     private let onTerminal: (() -> Void)?
+    private let hostGate: HostCaptureGate
+    private let richContextEnabled: () -> Bool
 
     init(inbox: JevIngress = .shared, client: AXClient = .system,
+         hostGate: HostCaptureGate = .live,
+         richContextEnabled: @escaping () -> Bool = { ActivityAnalysisPreferences.richContextEnabled },
          read: ((pid_t, Bool) -> String?)? = nil, onTerminal: (() -> Void)? = nil) {
+        self.hostGate = hostGate; self.richContextEnabled = richContextEnabled
         self.inbox = inbox; self.client = client
         self.onTerminal = onTerminal
         self.read = read ?? { JevVisibleTextReader.capture(processIdentifier: $0, browser: $1) }
@@ -46,9 +51,9 @@ final class JevVisibleContextSampler {
     func observe(_ context: ContextSnapshot, presence: ForegroundUsageObservation,
                  revalidate: @escaping (@escaping (AXContextEvidence?) -> Void) -> Void) {
         guard Self.eligible(remoteText: inbox.wantsVisibleText,
-                            localText: ActivityAnalysisPreferences.richContextEnabled,
+                            localText: self.richContextEnabled(),
                             context: context, presence: presence),
-              ForegroundSessionAvailability.isAvailable(), !IsSecureEventInputEnabled() else {
+              hostGate.sessionAvailable(), !hostGate.secureInput() else {
             invalidate(); return
         }
         let uptime = ProcessInfo.processInfo.systemUptime
@@ -56,7 +61,7 @@ final class JevVisibleContextSampler {
         nextProbe = uptime + JevIngress.foregroundSampleInterval
         let ownGeneration = generation, ingressGeneration = inbox.generation
         let jobID = UUID(), ownPermit = AXRequestPermit { [inbox] in
-            inbox.generation == ingressGeneration && inbox.wantsVisibleText && ActivityAnalysisPreferences.richContextEnabled
+            inbox.generation == ingressGeneration && inbox.wantsVisibleText && self.richContextEnabled()
         }
         pendingID = jobID; permit = ownPermit
         let capturedAt = Date(), browser = ForegroundActivityProbe.isBrowser(context)
@@ -69,7 +74,7 @@ final class JevVisibleContextSampler {
                   Self.sameBoundary(evidence.snapshot, context) else { finish(); return }
             let evidenceBoundary = evidence.boundary
             self.queue.async {
-                guard ownPermit.isValid, ActivityAnalysisPreferences.richContextEnabled else {
+                guard ownPermit.isValid, self.richContextEnabled() else {
                     DispatchQueue.main.async { finish() }; return
                 }
                 let matchesWindow = AXAccess.withBackgroundClient(self.client, permit: ownPermit) { evidence.boundary?.matchesFocusedWindow() != false }
@@ -88,9 +93,9 @@ final class JevVisibleContextSampler {
                               self.generation == ownGeneration, self.inbox.generation == ingressGeneration,
                               Self.sameBoundary(current, context), evidence?.boundary == evidenceBoundary, let freshPresence = current.foregroundUsage,
                               Self.eligible(remoteText: self.inbox.wantsVisibleText,
-                                            localText: ActivityAnalysisPreferences.richContextEnabled,
+                                            localText: self.richContextEnabled(),
                                             context: current, presence: freshPresence),
-                              ForegroundSessionAvailability.isAvailable(), !IsSecureEventInputEnabled(),
+                              self.hostGate.sessionAvailable(), !self.hostGate.secureInput(),
                               JevIngress.permitsLiveContext(current) else { return }
                         self.inbox.offerVisibleText(text, context: current, at: capturedAt, generation: ingressGeneration)
                     }

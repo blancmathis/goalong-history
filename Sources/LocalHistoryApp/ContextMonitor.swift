@@ -64,6 +64,7 @@
         private var mixedBlockingJobs = Set<UUID>()
         private var consecutiveCaptureFailures = 0
 
+        private let hostGate: HostCaptureGate
         private let snapshotLock = NSLock()
         private var _latestSnapshot: ContextSnapshot?
 
@@ -81,8 +82,10 @@
             permissions: PermissionManager,
             captureHealth: CaptureHealthStore,
             semanticContextStore: SemanticContextStore,
-            memoryStore: LocalActivityMemoryStore
+            memoryStore: LocalActivityMemoryStore,
+            hostGate: HostCaptureGate = .live
         ) {
+            self.hostGate = hostGate
             self.provider = provider
             self.recorder = recorder
             self.state = state
@@ -284,7 +287,7 @@
                 if self.pollingIsActive, !self.scheduledPollInProgress { self.scheduleNextPoll() }
             }
             var focusSample = FocusObservation(at: Date(), observing: false)
-            if blockingObservationEnabled && (!historyRequested || !state.isCapturing || provider.historyPrivacyStopped || !ForegroundSessionAvailability.isAvailable() || IsSecureEventInputEnabled()) {
+            if blockingObservationEnabled && (!historyRequested || !state.isCapturing || provider.historyPrivacyStopped || !hostGate.sessionAvailable() || hostGate.secureInput()) {
                 guard blockingRequestID == nil else { finish(nil); return }
                 let requestID = UUID()
                 blockingRequestID = requestID
@@ -303,11 +306,11 @@
             guard historyRequested, state.isCapturing else {
                 invalidatePresence(); finish(nil); return
             }
-            guard ForegroundSessionAvailability.isAvailable() else {
+            guard hostGate.sessionAvailable() else {
                 focusSample.observing = true; focusSample.available = false
                 markObservationUnavailable(); finish(nil); return
             }
-            if IsSecureEventInputEnabled() {
+            if hostGate.secureInput() {
                 sampleGeneration = UUID(); sampleJobs.removeAll()
                 provider.invalidateHistory(); lastForegroundEvidence = nil
                 let safeContext = latestSnapshot.map { current in
@@ -364,8 +367,8 @@
             guard let presence = captured.foregroundUsage else { return nil }
             let observedAt = presence.observedAt
             let observedIdleSeconds = presence.idleSeconds
-            guard state.isCapturing, ForegroundSessionAvailability.isAvailable(),
-                  !IsSecureEventInputEnabled() else {
+            guard state.isCapturing, hostGate.sessionAvailable(),
+                  !hostGate.secureInput() else {
                 markObservationUnavailable(); return nil
             }
             let current = captured.withForegroundUsage(presence)

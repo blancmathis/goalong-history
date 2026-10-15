@@ -5,7 +5,27 @@ import LocalHistoryCore
 import XCTest
 @testable import LocalHistoryApp
 
+/// Hermetic host for AX capture tests: fixed gate and a throwaway data root, so the
+/// installed app's pause/exclusions and the live screen-lock/Secure Input state cannot change results.
+extension HostCaptureGate {
+    static let testOpen = HostCaptureGate(sessionAvailable: { true }, secureInput: { false })
+}
+final class TestConsentFlag {
+    private let lock = NSLock(); private var flag = false
+    var value: Bool { get { lock.lock(); defer { lock.unlock() }; return flag } set { lock.lock(); flag = newValue; lock.unlock() } }
+}
+extension XCTestCase {
+    func hermeticDataRoot() -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-ax-hermetic-" + UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return root
+    }
+}
+
 final class AXAdversarialReviewTests: XCTestCase {
+    private let consent = TestConsentFlag()
+    private lazy var dataRoot: URL = hermeticDataRoot()
     private final class Identity: MinuteSealSigningIdentity {
         let info = DeviceIdentityInfo(deviceID: "ax-fixture", publicKeyBase64: Data("key".utf8).base64EncodedString(),
                                       trustTier: "test", algorithm: "test-signature")
@@ -30,7 +50,7 @@ final class AXAdversarialReviewTests: XCTestCase {
         let recorder = EventRecorder(store: store,
             integrityJournal: IntegrityJournal(stateStore: integrity, saltBytes: { Data(repeating: 7, count: $0) }),
             minuteSealer: sealer, beforePersist: beforePersist, clock: { date }, sessionID: "fixture-session",
-            eventIdentifier: { ordinal += 1; return "event-\(ordinal)" })
+            eventIdentifier: { ordinal += 1; return "event-\(ordinal)" }, dataRoot: dataRoot)
         let permissions = PermissionManager(statusProbe: { Self.healthy })
         var config = RecorderConfig.default
         config.captureClicks = true; config.captureScroll = true; config.captureKeyboardActivity = true
@@ -46,14 +66,16 @@ final class AXAdversarialReviewTests: XCTestCase {
     private func input() -> ContextReadParameters {
         let app = ForegroundAXApplication(pid: 42, name: "Fixture", bundleIdentifier: "test.native")
         var config = RecorderConfig.default; config.captureElementLabels = true; config.captureWindowTitles = true
-        let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory) // same policy ContextProvider revalidates
+        let root = dataRoot
+        let privacy = GoalongPrivacyPolicyCache.read(in: root)
         return ContextReadParameters(foregroundApplication: app, applications: [42: app], config: config,
             accessibilityAvailable: true, blockingAXTrusted: true, sessionAvailable: true, idleSeconds: 1,
-            privacy: privacy, pauseRevision: try? GoalongGlobalPause.admit())
+            privacy: privacy, pauseRevision: try? GoalongGlobalPause.admit(in: root))
     }
     private func monitor(_ rig: Rig, provider: ContextProvider) -> EventTapMonitor {
         let context = ContextMonitor(provider: provider, recorder: rig.recorder, state: rig.state, configManager: rig.config,
-            permissions: rig.permissions, captureHealth: rig.health, semanticContextStore: rig.semantic, memoryStore: rig.memory)
+            permissions: rig.permissions, captureHealth: rig.health, semanticContextStore: rig.semantic, memoryStore: rig.memory,
+            hostGate: .testOpen)
         var ordinal = 0
         return EventTapMonitor(recorder: rig.recorder, contextMonitor: context, contextProvider: provider,
             state: rig.state, configManager: rig.config, captureHealth: rig.health,
@@ -68,11 +90,7 @@ final class AXAdversarialReviewTests: XCTestCase {
         return try data.split(separator: 10).map { try decoder.decode(HistoryEvent.self, from: Data($0)) }
     }
     private func richConsent(_ enabled: Bool) {
-        let key = ActivityAnalysisPreferences.richContextEnabledKey, previous = UserDefaults.standard.object(forKey: key)
-        UserDefaults.standard.set(enabled, forKey: key)
-        addTeardownBlock {
-            if let previous { UserDefaults.standard.set(previous, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
-        }
+        consent.value = enabled
     }
 
 
@@ -81,10 +99,10 @@ final class AXAdversarialReviewTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { e.fulfill() }
         wait(for: [e], timeout: seconds + 3)
     }
-    private func contextMonitor(_ rig: Rig, _ provider: ContextProvider) -> ContextMonitor {
+    private func contextMonitor(_ rig: Rig, _ provider: ContextProvider, hostGate: HostCaptureGate = .testOpen) -> ContextMonitor {
         ContextMonitor(provider: provider, recorder: rig.recorder, state: rig.state,
             configManager: rig.config, permissions: rig.permissions, captureHealth: rig.health,
-            semanticContextStore: rig.semantic, memoryStore: rig.memory)
+            semanticContextStore: rig.semantic, memoryStore: rig.memory, hostGate: hostGate)
     }
     private func permits(_ provider: ContextProvider) -> Int {
         let field = Mirror(reflecting: provider).children.first { $0.label == "permits" }!
@@ -176,6 +194,63 @@ final class AXAdversarialReviewTests: XCTestCase {
         try rig.recorder.closeAndWait()
     }
 
+    func testInjectedSecureInputGateSuppressesSampleWithoutAXRead() throws {
+        richConsent(false)
+        let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+        let provider = ContextProvider(client: tree.client, parameters: { params })
+        let monitor = contextMonitor(rig, provider, hostGate: HostCaptureGate(sessionAvailable: { true }, secureInput: { true }))
+        monitor.configureForAdversarialReview(blocking: false, polling: false)
+        tree.reads.removeAll()
+        let done = expectation(description: "suppressed sample")
+        monitor.sampleNow { snapshot in
+            XCTAssertNil(snapshot?.window); XCTAssertNil(snapshot?.focusedElement)
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 3)
+        XCTAssertTrue(tree.reads.isEmpty, "A closed Secure Input gate must not read the AX tree")
+        XCTAssertTrue(try events(stream(rig, date: date)).contains { $0.kind == .captureSuppressed })
+        try rig.recorder.closeAndWait()
+    }
+
+    func testInjectedUnavailableSessionGateReturnsNilAndMarksObservationGap() throws {
+        richConsent(false)
+        let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+        let provider = ContextProvider(client: tree.client, parameters: { params })
+        let monitor = contextMonitor(rig, provider, hostGate: HostCaptureGate(sessionAvailable: { false }, secureInput: { false }))
+        monitor.configureForAdversarialReview(blocking: false, polling: false)
+        tree.reads.removeAll()
+        let done = expectation(description: "unavailable sample")
+        monitor.sampleNow { XCTAssertNil($0); done.fulfill() }
+        wait(for: [done], timeout: 3)
+        XCTAssertTrue(tree.reads.isEmpty)
+        let rows = try events(stream(rig, date: date))
+        XCTAssertTrue(rows.contains { $0.kind == .recorderHealth && $0.metadata?["observation_gap"] == "true" })
+        try rig.recorder.closeAndWait()
+    }
+
+    func testInjectedSecureInputGateBlocksSemanticAppend() throws {
+        richConsent(true)
+        let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+        let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: params).snapshot })
+        let evidence = AXContextEvidence(snapshot: snapshot, boundary: AXReadBoundary(window: tree.window, pid: 42))
+        var reads = 0
+        let runtime = ActivityAnalysisRuntime(client: tree.client,
+            hostGate: HostCaptureGate(sessionAvailable: { true }, secureInput: { true }),
+            richContextEnabled: { [consent] in consent.value }, applicationWitness: { _ in { true } },
+            allowsSemantic: { _ in true }, semanticRead: { _, _, _ in
+                reads += 1
+                return AXRichContextCapture(text: "Public fixture", source: "visible", redacted: false, truncated: false, fingerprint: "x")
+            })
+        runtime.start(recorder: rig.recorder, state: rig.state, configManager: rig.config,
+            currentContext: { $0(evidence) }, semanticContextStore: rig.semantic, memoryStore: rig.memory, automaticWork: false)
+        runtime.captureObservedContext(trigger: "focus_changed", context: snapshot)
+        tick(0.5)
+        XCTAssertEqual(reads, 0); XCTAssertEqual(runtime.pendingSemanticJobsForTesting, 0)
+        let payload = rig.root.appendingPathComponent("semantic/" + AppPaths.localDayString(for: date) + ".semantic.jsonl")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: payload.path))
+        runtime.stop(); try rig.recorder.closeAndWait()
+    }
+
     func testReviewOldFailedSampleMustNotRevokeNewForegroundSample() throws {
         richConsent(false)
         let rig = try rig(at: Date()), tree = ScriptedAXTree()
@@ -212,7 +287,7 @@ final class AXAdversarialReviewTests: XCTestCase {
         let rig = try rig(at: date) { row in if row.kind == .heartbeat { held.fulfill(); _ = release.wait(timeout: .now() + 5) } }
         let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: params).snapshot })
         let evidence = AXContextEvidence(snapshot: snapshot, boundary: AXReadBoundary(window: tree.window, pid: 42))
-        let runtime = ActivityAnalysisRuntime(client: tree.client, applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { _, _, _ in
+        let runtime = ActivityAnalysisRuntime(client: tree.client, hostGate: .testOpen, richContextEnabled: { [consent] in consent.value }, applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { _, _, _ in
             AXRichContextCapture(text: "Public fixture text", source: "visible", redacted: false, truncated: false, fingerprint: "unchanged-F")
         })
         var validations = 0
@@ -249,7 +324,7 @@ final class AXAdversarialReviewTests: XCTestCase {
         }
         let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: params).snapshot })
         let evidence = AXContextEvidence(snapshot: snapshot, boundary: AXReadBoundary(window: tree.window, pid: 42))
-        let runtime = ActivityAnalysisRuntime(client: tree.client, applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { _, _, _ in
+        let runtime = ActivityAnalysisRuntime(client: tree.client, hostGate: .testOpen, richContextEnabled: { [consent] in consent.value }, applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { _, _, _ in
             AXRichContextCapture(text: "Public reservation fixture", source: "visible", redacted: false, truncated: false, fingerprint: "owned-F")
         })
         func reserve() {
@@ -276,20 +351,20 @@ final class AXAdversarialReviewTests: XCTestCase {
         let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
         let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: params).snapshot })
         let evidence = AXContextEvidence(snapshot: snapshot, boundary: AXReadBoundary(window: tree.window, pid: 42))
-        let runtime = ActivityAnalysisRuntime(client: tree.client, applicationWitness: { _ in { true } },
-            allowsSemantic: { _ in ActivityAnalysisPreferences.richContextEnabled }, semanticRead: { _, _, _ in
+        let runtime = ActivityAnalysisRuntime(client: tree.client, hostGate: .testOpen, richContextEnabled: { [consent] in consent.value }, applicationWitness: { _ in { true } },
+            allowsSemantic: { [consent] _ in consent.value }, semanticRead: { _, _, _ in
                 AXRichContextCapture(text: "Public payload boundary fixture", source: "visible", redacted: false, truncated: false, fingerprint: "reference-F")
             })
         let appended = expectation(description: "payload appended before consent revocation")
         runtime.afterSemanticAppendForTesting = {
             XCTAssertFalse(Thread.isMainThread)
-            UserDefaults.standard.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+            self.consent.value = false
             appended.fulfill()
         }
         runtime.start(recorder: rig.recorder, state: rig.state, configManager: rig.config,
             currentContext: { $0(evidence) }, semanticContextStore: rig.semantic, memoryStore: rig.memory, automaticWork: false)
         runtime.captureObservedContext(trigger: "focus_changed", context: snapshot)
-        wait(for: [appended], timeout: 3)
+        wait(for: [appended], timeout: 10)
         try rig.recorder.flushAndWait(); tick()
         let payload = try Data(contentsOf: rig.root.appendingPathComponent("semantic/" + AppPaths.localDayString(for: date) + ".semantic.jsonl"))
         XCTAssertEqual(payload.split(separator: 10).count, 1, "The probe must cross a real payload append")
@@ -308,7 +383,7 @@ final class AXAdversarialReviewTests: XCTestCase {
         let rig = try rig(at: date) { row in if row.kind == .heartbeat { held.fulfill(); _ = release.wait(timeout: .now() + 8) } }
         let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: params).snapshot })
         let evidence = AXContextEvidence(snapshot: snapshot, boundary: AXReadBoundary(window: tree.window, pid: 42))
-        let runtime = ActivityAnalysisRuntime(client: tree.client, applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { _, _, _ in
+        let runtime = ActivityAnalysisRuntime(client: tree.client, hostGate: .testOpen, richContextEnabled: { [consent] in consent.value }, applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { _, _, _ in
             AXRichContextCapture(text: "Public timestamp fixture", source: "visible", redacted: false, truncated: false, fingerprint: "timestamp-F")
         })
         let reserved = expectation(description: "semantic reserved before later event")
