@@ -3,6 +3,10 @@
     import Foundation
     import LocalHistoryCore
 
+    struct GoalongScreenTimeDeviceUnknownError: LocalizedError {
+        var errorDescription: String? { "l’identifiant de cet appareil est inaccessible pour le moment (Trousseau)." }
+    }
+
     enum GoalongScreenTimeRepositoryProvider {
         private static let lock = NSLock()
         private static var productionRepository: AppleSystemScreenTimeRepository?
@@ -12,6 +16,10 @@
             rootDirectory: URL,
             deviceID: String
         ) throws -> AppleSystemScreenTimeRepository {
+            // Never create an archive under a placeholder ID: completed days keep their device ID.
+            guard !deviceID.isEmpty, deviceID != DeviceIdentityInfo.unavailableDeviceID else {
+                throw GoalongScreenTimeDeviceUnknownError()
+            }
             let isProductionRoot = rootDirectory.standardizedFileURL
                 == AppPaths.screenTimeDirectory.standardizedFileURL
             guard isProductionRoot else {

@@ -87,6 +87,28 @@
             XCTAssertTrue(sealer.runtimeSnapshot.signingSuspended)
         }
 
+        func testDegradedIdentityWithoutLastIDHasNoKnownDeviceID() throws {
+            let suite = "goalong-identity-test-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let startup = DeviceIdentityStartup.resolve(
+                provider: { throw DeviceIdentityError.cannotLoadKey(errSecInteractionNotAllowed) },
+                defaults: defaults)
+            XCTAssertTrue(startup.isDegraded)
+            XCTAssertNil(startup.info.knownDeviceID)
+            XCTAssertEqual(DeviceIdentityInfo(deviceID: "abc", publicKeyBase64: "", trustTier: "t", algorithm: "a").knownDeviceID, "abc")
+        }
+
+        func testScreenTimeRepositoryRefusesPlaceholderDeviceIDs() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("goalong-placeholder-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            for id in ["", DeviceIdentityInfo.unavailableDeviceID] {
+                XCTAssertThrowsError(try GoalongScreenTimeRepositoryProvider.repository(rootDirectory: root, deviceID: id))
+            }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+        }
+
         func testUnavailableTierDoesNotClaimAKey() {
             let info = UnavailableDeviceIdentity(status: errSecInteractionNotAllowed, deviceID: nil).info
             XCTAssertEqual(info.protectionTitle, "Signature suspendue")

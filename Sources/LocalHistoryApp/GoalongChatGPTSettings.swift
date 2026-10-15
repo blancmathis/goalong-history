@@ -39,9 +39,9 @@ import LocalHistoryCore
                     Button("Voir les données qui partiront") { open(3) }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.large)
                     Spacer()
                     Button("Analyser cette journée") {
-                        runtime.configure(deviceID: model.deviceID); runtime.selectDay(model.selectedDay)
+                        runtime.configure(deviceID: model.knownDeviceID ?? ""); runtime.selectDay(model.selectedDay)
                         runtime.generateRecap(); model.selectSection(.chatGPTRecap)
-                    }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating)
+                    }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating || model.knownDeviceID == nil)
                 }
                 if !runtime.isAccountConnected {
                     Text("Connectez ChatGPT d’abord pour analyser une journée.").font(.system(size: 12)).foregroundStyle(.secondary)
@@ -50,7 +50,7 @@ import LocalHistoryCore
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
-        .onAppear { selection = .load(); runtime.configure(deviceID: model.deviceID) }
+        .onAppear { selection = .load(); runtime.configure(deviceID: model.knownDeviceID ?? "") }
         .sheet(item: $presentation) { request in
             GoalongAnalysisSelectionSheet(model: model, selection: selection, initialTab: request.tab) { selection = $0 }.id(request.id)
                 .goalongControls()

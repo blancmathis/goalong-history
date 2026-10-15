@@ -133,6 +133,8 @@
         @Published private(set) var historyDeletionGeneration = 0
 
         @Published private(set) var deviceID: String
+        /// Nil while the identity is degraded and no earlier device ID is known: Screen Time and ChatGPT stay off.
+        @Published private(set) var knownDeviceID: String?
         @Published private(set) var deviceTrustTier: String
         @Published private(set) var deviceAlgorithm: String
         @Published private(set) var deviceProtectionTitle: String
@@ -214,6 +216,7 @@
             self.defaultSharingVisibility = sharingRulesStore.defaultVisibility
             self.onRetryKeychain = onRetryKeychain
             self.deviceID = deviceInfo.deviceID
+            self.knownDeviceID = deviceInfo.knownDeviceID
             self.deviceTrustTier = deviceInfo.trustTier
             self.deviceAlgorithm = deviceInfo.algorithm
             self.deviceProtectionTitle = deviceInfo.protectionTitle
@@ -254,6 +257,7 @@
 
         func updateDeviceInfo(_ info: DeviceIdentityInfo) {
             deviceID = info.deviceID
+            knownDeviceID = info.knownDeviceID
             deviceTrustTier = info.trustTier
             deviceAlgorithm = info.algorithm
             deviceProtectionTitle = info.protectionTitle

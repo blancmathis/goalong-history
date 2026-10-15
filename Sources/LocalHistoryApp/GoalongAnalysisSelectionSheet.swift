@@ -396,7 +396,7 @@ import AgentActivity
     }
     private func preparePreview() {
         do {
-            let next = try finalized(), date = model.selectedDay, device = model.deviceID
+            let next = try finalized(), date = model.selectedDay, device = model.knownDeviceID ?? ""
             let ticket = UUID(); previewGeneration = ticket; previewBusy = true; error = nil
             previewTask?.cancel()
             previewTask = Task {
