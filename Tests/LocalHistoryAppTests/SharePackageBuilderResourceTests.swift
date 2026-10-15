@@ -461,7 +461,8 @@
             let package = try builder.build(
                 for: fixture.day,
                 sharingRules: [:],
-                defaultVisibility: .identity
+                defaultVisibility: .identity,
+                privacy: GoalongPrivacyPolicy()
             )
             XCTAssertEqual(package.minutes.count, 1)
             XCTAssertEqual(package.boundaryBefore?.anchorSequence, boundary.anchorSequence)
@@ -484,7 +485,8 @@
                 try builder.build(
                     for: fixture.day,
                     sharingRules: [:],
-                    defaultVisibility: .identity
+                    defaultVisibility: .identity,
+                    privacy: GoalongPrivacyPolicy()
                 )
             ) { error in
                 guard let buildError = error as? ShareBuildError,
@@ -505,7 +507,8 @@
             let receiptRejected = try builder.build(
                 for: fixture.day,
                 sharingRules: [:],
-                defaultVisibility: .identity
+                defaultVisibility: .identity,
+                privacy: GoalongPrivacyPolicy()
             )
             XCTAssertEqual(receiptRejected.minutes.first?.trustTier, current.trustTier)
             XCTAssertNil(receiptRejected.minutes.first?.liveReceiptID)
@@ -521,7 +524,8 @@
                 try builder.build(
                     for: fixture.day,
                     sharingRules: [:],
-                    defaultVisibility: .identity
+                    defaultVisibility: .identity,
+                    privacy: GoalongPrivacyPolicy()
                 )
             ) { error in
                 guard let buildError = error as? ShareBuildError,
@@ -535,12 +539,79 @@
             let privateFallback = try builder.build(
                 for: fixture.day,
                 sharingRules: [:],
-                defaultVisibility: .identity
+                defaultVisibility: .identity,
+                privacy: GoalongPrivacyPolicy()
             )
             XCTAssertTrue(privateFallback.verificationReport().isLocallyValid)
             XCTAssertEqual(privateFallback.minutes.first?.shareLevel, .privateOnly)
             XCTAssertNil(privateFallback.minutes.first?.eventRoots)
             XCTAssertNil(privateFallback.minutes.first?.events)
+        }
+
+        func testGlobalExclusionsKeepEventsOutOfSharePackage() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let source = validEvent(application: "Codex", category: "work", sequence: 1)
+            let eventRoot = try XCTUnwrap(source.integrity?.eventRoot)
+            let seal = try validSeal(
+                sequence: 1,
+                eventRoots: [eventRoot],
+                previousAnchorHash: String(repeating: "0", count: 64),
+                day: fixture.day
+            )
+            try writeLines([source], to: fixture.events)
+            try writeLines([seal], to: fixture.seals)
+            let builder = fixture.builder()
+
+            var excluded = GoalongPrivacyPolicy()
+            excluded.applications = ["test.codex": "Codex"]
+            let hidden = try builder.build(
+                for: fixture.day, sharingRules: [:], defaultVisibility: .identity, privacy: excluded
+            )
+            XCTAssertTrue(hidden.verificationReport().isLocallyValid)
+            XCTAssertEqual(hidden.minutes.first?.shareLevel, .privateOnly)
+            XCTAssertNil(hidden.minutes.first?.events)
+
+            var unrelated = GoalongPrivacyPolicy()
+            unrelated.applications = ["test.other": "Other"]
+            let shown = try builder.build(
+                for: fixture.day, sharingRules: [:], defaultVisibility: .identity, privacy: unrelated
+            )
+            XCTAssertNotEqual(shown.minutes.first?.shareLevel, .privateOnly)
+
+            var blocked = GoalongPrivacyPolicy()
+            blocked.blocked = true
+            XCTAssertThrowsError(try builder.build(
+                for: fixture.day, sharingRules: [:], defaultVisibility: .identity, privacy: blocked
+            ))
+        }
+
+        func testGlobalDomainExclusionKeepsUrlEventPrivate() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let source = validEvent(
+                application: "Safari",
+                category: "work",
+                sequence: 1,
+                url: URLSnapshot(value: "https://mail.example.com/inbox", host: "mail.example.com", redactionApplied: false)
+            )
+            let eventRoot = try XCTUnwrap(source.integrity?.eventRoot)
+            let seal = try validSeal(
+                sequence: 1,
+                eventRoots: [eventRoot],
+                previousAnchorHash: String(repeating: "0", count: 64),
+                day: fixture.day
+            )
+            try writeLines([source], to: fixture.events)
+            try writeLines([seal], to: fixture.seals)
+            var excluded = GoalongPrivacyPolicy()
+            excluded.domains = ["example.com"]
+            let hidden = try fixture.builder().build(
+                for: fixture.day, sharingRules: [:], defaultVisibility: .identity, privacy: excluded
+            )
+            XCTAssertTrue(hidden.verificationReport().isLocallyValid)
+            XCTAssertEqual(hidden.minutes.first?.shareLevel, .privateOnly)
+            XCTAssertNil(hidden.minutes.first?.events)
         }
 
         func testUnreconstructibleEventFallsBackToSignedPrivateMinute() throws {
@@ -583,7 +654,8 @@
             let package = try builder.build(
                 for: fixture.day,
                 sharingRules: [:],
-                defaultVisibility: .identity
+                defaultVisibility: .identity,
+                privacy: GoalongPrivacyPolicy()
             )
             XCTAssertTrue(package.verificationReport().isLocallyValid)
             XCTAssertEqual(package.minutes.first?.shareLevel, .privateOnly)
@@ -692,7 +764,8 @@
         private func validEvent(
             application: String,
             category: String,
-            sequence: UInt64
+            sequence: UInt64,
+            url: URLSnapshot? = nil
         ) -> HistoryEvent {
             let schemaVersion = 2
             let base = HistoryEvent(
@@ -706,6 +779,7 @@
                     bundleIdentifier: "test.\(application.lowercased())",
                     processIdentifier: 42
                 ),
+                url: url,
                 classification: LocalClassification(
                     category: category,
                     isWork: true,

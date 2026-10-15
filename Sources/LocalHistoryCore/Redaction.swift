@@ -12,7 +12,9 @@ public enum StringSanitizer {
 
         let filteredScalars = whitespaceNormalized.unicodeScalars.filter { scalar in
             switch scalar.value {
-            case 0x20...0xD7FF, 0xE000...0xFFFD:
+            case 0x7F...0x9F:
+                return false
+            case 0x20...0xD7FF, 0xE000...0xFFFD, 0x10000...0x10FFFF:
                 return true
             default:
                 return false
@@ -56,7 +58,15 @@ public enum URLRedactor {
         "access_token", "auth", "authorization", "code", "credential", "jwt",
         "key", "magic", "nonce", "oauth_token", "password", "refresh_token",
         "secret", "session", "sessionid", "signature", "sso", "state", "ticket", "token",
+        "id_token", "api_key", "apikey", "api-key", "client_secret", "code_verifier", "otp", "sig",
+        "x-amz-signature", "x-amz-credential", "x-amz-security-token", "private_key", "passwd", "pwd",
+        "bearer", "assertion", "samlresponse", "x-goog-signature", "x-goog-credential",
     ]
+    private static let sensitiveNameSuffixes = ["_token", "-token", "_secret", "-secret", "_password", "_apikey", "_api_key", "signature"]
+
+    private static func isSensitiveParameter(_ name: String) -> Bool {
+        sensitiveParameterNames.contains(name) || sensitiveNameSuffixes.contains { name.hasSuffix($0) }
+    }
 
     public static func sanitize(
         _ rawValue: String?,
@@ -90,7 +100,7 @@ public enum URLRedactor {
         if let items = components.queryItems, !items.isEmpty {
             components.queryItems = items.map { item in
                 let normalizedName = item.name.lowercased()
-                if redactAllQueryValues || sensitiveParameterNames.contains(normalizedName) {
+                if redactAllQueryValues || isSensitiveParameter(normalizedName) {
                     if item.value != nil { redactionApplied = true }
                     return URLQueryItem(name: item.name, value: nil)
                 }

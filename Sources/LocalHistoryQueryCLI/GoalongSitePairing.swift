@@ -53,7 +53,7 @@ public struct GoalongSitePairing: Sendable {
 
     /// Older websites can still pair, but cannot use account-bound navigation until re-paired.
     public static func accountID(response: Data) throws -> String? {
-        guard response.count <= 8192, let object = try JSONSerialization.jsonObject(with: response) as? [String: Any] else {
+        guard response.count <= 8192, let object = (try? JSONSerialization.jsonObject(with: response)) as? [String: Any] else {
             throw GoalongSiteExportError.invalid("Réponse de connexion invalide.")
         }
         guard let value = object["accountId"] else { return nil }
@@ -65,7 +65,7 @@ public struct GoalongSitePairing: Sendable {
 
     public func save(response: Data, directory: URL) throws -> URL {
         guard response.count <= 8192,
-              let object = try JSONSerialization.jsonObject(with: response) as? [String: Any],
+              let object = (try? JSONSerialization.jsonObject(with: response)) as? [String: Any],
               object["origin"] as? String == origin,
               object["scope"] as? String == "upload:private",
               let token = object["token"] as? String,
@@ -100,6 +100,29 @@ public struct GoalongSitePairing: Sendable {
             throw GoalongSiteExportError.invalid("L’enregistrement de l’accès n’a pas été confirmé.")
         }
         return directory.appendingPathComponent(name)
+    }
+}
+
+extension GoalongSitePairing {
+    /// Deletes a token file that pairing created itself (`<UUID>.token` directly inside `directory`).
+    /// A file the user picked by hand, a symlink, or anything else is never touched.
+    @discardableResult
+    public static func discardManagedToken(path: String, directory: URL) -> Bool {
+        guard !path.isEmpty else { return false }
+        let file = URL(fileURLWithPath: path)
+        let name = file.lastPathComponent
+        guard name.range(of: "^[0-9A-F-]{36}\\.token$", options: .regularExpression) != nil,
+              file.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL.path
+                == directory.resolvingSymlinksInPath().standardizedFileURL.path else { return false }
+        let dir = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard dir >= 0 else { return false }
+        defer { close(dir) }
+        var metadata = stat()
+        guard fstat(dir, &metadata) == 0, metadata.st_uid == getuid(), metadata.st_mode & 0o777 == 0o700 else { return false }
+        var entry = stat()
+        guard fstatat(dir, name, &entry, AT_SYMLINK_NOFOLLOW) == 0,
+              entry.st_mode & S_IFMT == S_IFREG, entry.st_uid == getuid() else { return false }
+        return unlinkat(dir, name, 0) == 0
     }
 }
 

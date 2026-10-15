@@ -28,6 +28,8 @@
         case brokenEvent(String)
         case cancelled
         case sourceIncomplete(String)
+        case exclusionsUnreadable
+        case exclusionsChanged
 
         var description: String {
             switch self {
@@ -39,6 +41,10 @@
             case .brokenEvent(let root): return "Event \(root.prefix(12))… failed local integrity validation."
             case .cancelled: return "Share loading was cancelled."
             case .sourceIncomplete(let detail): return "Share source is incomplete: \(detail)"
+            case .exclusionsUnreadable:
+                return "Les exclusions sont illisibles. Vérifiez-les dans les réglages avant d’exporter."
+            case .exclusionsChanged:
+                return "Les exclusions ont changé pendant l’export. Relancez l’export."
             }
         }
     }
@@ -300,8 +306,11 @@
             for day: Date = Date(),
             sharingRules: [String: SharingVisibility],
             defaultVisibility: SharingVisibility,
+            privacy: GoalongPrivacyPolicy,
             cancellation: @escaping () -> Bool = { false }
         ) throws -> DaySharePackage {
+            // Fail closed: an unreadable exclusion list cannot prove that anything may be disclosed.
+            guard !privacy.blocked else { throw ShareBuildError.exclusionsUnreadable }
             let seals = try loadSeals(for: day, cancellation: cancellation)
             guard let first = seals.first, let last = seals.last else { throw ShareBuildError.noSeals }
             try validateSealChain(seals, cancellation: cancellation)
@@ -328,6 +337,9 @@
                 cancellation: cancellation
             )
             let eventLevel: (HistoryEvent) -> ShareLevel = { event in
+                // Global exclusions also apply to events recorded before the exclusion existed.
+                // The minute stays in the chain as private, so seals and commitments still verify.
+                guard privacy.permits(event) else { return .privateOnly }
                 guard let subject = SharingSubjectKey.forEvent(event) else { return .privateOnly }
                 let visibility = sharingRules[subject] ?? defaultVisibility
                 if event.url?.host != nil, visibility == .identity, event.schemaVersion < 3 {

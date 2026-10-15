@@ -72,15 +72,18 @@ import Foundation
     @State private var health = false
     @StateObject private var profileWindow = GoalongProfileWindow()
     @State private var prepared: Data?
+    @State private var preparedPrivacyRevision: String?
     var body: some View {
         GoalongSettingsGroup(title: "Actions distinctes des envois quotidiens") {
             Button("Exporter un fichier signé…") { model.selectSection(.share) }.buttonStyle(LHSecondaryButtonStyle())
-            Button("Partager un récap relu…") { prepared = nil; advancedShare = true }.buttonStyle(LHSecondaryButtonStyle())
-            Button("Comprendre mon travail") { profileWindow.show { prepared = $0; advancedShare = true } }.buttonStyle(LHSecondaryButtonStyle())
+            Button("Partager un récap relu…") { prepared = nil; preparedPrivacyRevision = nil; advancedShare = true }.buttonStyle(LHSecondaryButtonStyle())
+            Button("Comprendre mon travail") { profileWindow.show {
+                prepared = $0; preparedPrivacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision; advancedShare = true
+            } }.buttonStyle(LHSecondaryButtonStyle())
             Button("Analyser une demande du site…") { siteAnalysis = true }.buttonStyle(LHSecondaryButtonStyle())
             Button("Importer Apple Santé…") { health = true }.buttonStyle(LHSecondaryButtonStyle())
         }
-        .sheet(isPresented: $advancedShare) { GoalongWebsiteConnectionSheet(preparedAnalysis: prepared).goalongControls() }
+        .sheet(isPresented: $advancedShare) { GoalongWebsiteConnectionSheet(preparedAnalysis: prepared, privacyRevision: preparedPrivacyRevision).goalongControls() }
         .sheet(isPresented: $siteAnalysis) { GoalongSiteAnalysisSheet().goalongControls() }
         .sheet(isPresented: $health) { GoalongHealthImportSheet().goalongControls() }
     }

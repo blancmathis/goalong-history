@@ -659,13 +659,19 @@
             shareQueue.async { [weak self] in
                 guard let self else { return }
                 do {
+                    let privacyRoot = AppPaths.applicationSupportDirectory
+                    let privacy = GoalongPrivacyPolicy.load(in: privacyRoot)
                     let package = try self.shareBuilder.build(
                         for: day,
                         sharingRules: rules,
                         defaultVisibility: defaultVisibility,
+                        privacy: privacy,
                         cancellation: { token.isCancelled }
                     )
                     guard !token.isCancelled else { throw ShareBuildError.cancelled }
+                    guard GoalongPrivacyPolicy.load(in: privacyRoot).revision == privacy.revision else {
+                        throw ShareBuildError.exclusionsChanged
+                    }
                     guard package.verificationReport().isLocallyValid else {
                         throw ShareBuildError.brokenSeal(package.minutes.first?.anchorSequence ?? 0)
                     }

@@ -387,9 +387,10 @@ struct SupportReport: Codable {
         if let free = StorageHealth.availableBytes() { values[.freeSpaceMB] = .count(Int(free / 1_048_576)) }
         values[.monitoringEnabled] = .flag(GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
         values[.websiteAutoSend] = .flag(GoalongWebsiteAutoSender.shared.enabled)
-        let connections = AppPaths.applicationSupportDirectory.appendingPathComponent("website-connections").path
-        values[.websiteLinked] = .flag(((try? FileManager.default.contentsOfDirectory(atPath: connections)) ?? [])
-            .contains { !$0.hasPrefix(".") })
+        let defaults = UserDefaults.standard
+        let tokenPath = defaults.string(forKey: "goalong.website.tokenFilePath") ?? ""
+        values[.websiteLinked] = .flag(!tokenPath.isEmpty && !(defaults.string(forKey: "goalong.website.origin") ?? "").isEmpty
+            && FileManager.default.fileExists(atPath: tokenPath))
         return values
     }
     private func heartbeat() {
