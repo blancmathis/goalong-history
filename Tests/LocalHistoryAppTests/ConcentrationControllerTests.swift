@@ -198,9 +198,12 @@ final class ConcentrationControllerTests: XCTestCase {
         var now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 23, minute: 50))!
         let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
         let item = try c.addPlanItem(title: "Rédiger", day: "2026-10-05")
-        now = now.addingTimeInterval(15 * 60); c.refresh()
-        let tomorrow = try c.dayAfter("2026-10-05"); XCTAssertEqual(tomorrow, "2026-10-06")
-        try c.setReview(FocusReview(day: "2026-10-05", items: [.init(id: item.id, toDay: tomorrow)], tomorrowFirst: "Relire"))
+        now = now.addingTimeInterval(15 * 60); c.refresh()   // 00:05 on 2026-10-06
+        // The sheet path: it used Date() + 1 day, which gave 2026-10-07 here.
+        let review = try ConcentrationReviewSheet.review(of: try c.plan(on: "2026-10-05"), choices: [item.id: .tomorrow],
+                                                         tomorrowFirst: " Relire ", note: "", controller: c)
+        XCTAssertEqual(review.items.first?.toDay, "2026-10-06"); XCTAssertEqual(review.tomorrowFirst, "Relire")
+        try c.setReview(review)
         XCTAssertEqual(try c.plan(on: "2026-10-06").items.map(\.title), ["Relire", "Rédiger"])
         XCTAssertTrue(try c.plan(on: "2026-10-07").items.isEmpty)
     }
@@ -250,6 +253,10 @@ final class ConcentrationControllerTests: XCTestCase {
         // The cached days follow every stop this controller writes.
         XCTAssertEqual(try c.commitmentProgress(value).measured, 2)
         XCTAssertEqual(try ConcentrationController(store: s, clock: { now }, calendar: calendar).commitmentProgress(value).measured, 2)
+        // Decoded once: an outside rewrite of the old day file is not read again by this controller.
+        try s.saveSessions([], day: "2026-10-02")
+        XCTAssertEqual(try c.commitmentProgress(value).measured, 2)
+        XCTAssertEqual(try ConcentrationController(store: s, clock: { now }, calendar: calendar).commitmentProgress(value).measured, 1)
     }
 }
 extension ConcentrationControllerTests {

@@ -407,10 +407,12 @@ struct FocusLimitPanelView: View {
         .background(LHTheme.pageBackground)
     }
 
-    private func save() {
-        // The day after the reviewed plan, as setReview computes it, even when saved after midnight.
-        guard let tomorrow = try? controller.dayAfter(plan.day) else { self.error = FocusUIError.message(FocusFailure.invalidArgument); return }
-        let reviewItems: [FocusReview.Item] = items.compactMap { item in
+    /// Builds the review the sheet saves. « Demain » is the day after the reviewed plan, as setReview computes it,
+    /// even when the sheet is saved after midnight.
+    static func review(of plan: FocusPlan, choices: [UUID: Choice], tomorrowFirst: String, note: String,
+                       controller: ConcentrationController) throws -> FocusReview {
+        let tomorrow = try controller.dayAfter(plan.day)
+        let reviewItems: [FocusReview.Item] = plan.items.filter { $0.status != .dropped }.compactMap { item in
             switch choices[item.id] ?? .unset {
             case .unset: return nil
             case .done: return .init(id: item.id, outcome: .done, toDay: nil)
@@ -423,9 +425,14 @@ struct FocusLimitPanelView: View {
         }
         let first = tomorrowFirst.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        let review = FocusReview(day: plan.day, items: reviewItems,
-                                 tomorrowFirst: first.isEmpty ? nil : String(first.prefix(140)),
-                                 note: text.isEmpty ? nil : String(text.prefix(500)))
+        return FocusReview(day: plan.day, items: reviewItems,
+                           tomorrowFirst: first.isEmpty ? nil : String(first.prefix(140)),
+                           note: text.isEmpty ? nil : String(text.prefix(500)))
+    }
+
+    private func save() {
+        guard let review = try? Self.review(of: plan, choices: choices, tomorrowFirst: tomorrowFirst, note: note, controller: controller)
+        else { self.error = FocusUIError.message(FocusFailure.invalidArgument); return }
         if commitTomorrow, !controller.commitmentCards.contains(where: { $0.commitment.period == tomorrowDraft.period }) {
             guard tomorrowDraft.complete else { self.error = "Donnez le nom de la tâche de demain."; return }
             do {
