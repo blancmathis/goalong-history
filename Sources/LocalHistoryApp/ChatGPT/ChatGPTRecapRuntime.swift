@@ -1505,8 +1505,10 @@
             automaticRetryAttempt += 1
             automaticRetryWorkItem?.cancel()
             let workItem = DispatchWorkItem { [weak self] in
-                guard let self, self.started, self.automaticRecapsEnabled else { return }
+                guard let self else { return }
+                // Clear the pending marker first, so a skipped run cannot block later checks.
                 self.automaticRetryWorkItem = nil
+                guard self.started, self.automaticRecapsEnabled else { return }
                 if let stored = ChatGPTRecapPersistence.load(
                     for: normalizedDay,
                     from: self.recapsDirectory
