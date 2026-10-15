@@ -291,7 +291,7 @@ goalong commitment delete --day DAY|--week WEEK                  # `locked` afte
 goalong commitment joker --day DAY|--week WEEK
 goalong commitment declare --day DAY|--week WEEK                 # « J'ai tenu, hors mesure »
 goalong commitments [--from DAY] [--to DAY]                      # history, series, jokers left
-goalong block-lists                                # id, name, mode, action, locked
+goalong block-lists                                # id, name, mode, action, locked (stricter-only: frozen by a non-free active block or a program lock)
 goalong friction [DAY]                             # « Ralentir » counts per list
 ```
 

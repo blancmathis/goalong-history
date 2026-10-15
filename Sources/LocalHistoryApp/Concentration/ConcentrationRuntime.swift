@@ -174,7 +174,7 @@ import LocalHistoryQueryCLI
             let validated = try request.validated()
             if validated.command == "block-lists" {
                 let lists: [[String: Any]] = b.lists.map { list in ["id": list.id.uuidString, "name": list.name, "mode": list.mode.rawValue,
-                    "action": list.effectiveAction.rawValue, "locked": b.activeBlocks.contains { $0.lock == .locked && $0.listIDs.contains(list.id) } || list.program.isLocked(at: Date())] }
+                    "action": list.effectiveAction.rawValue, "locked": b.isStricterOnly(list.id)] }
                 return try JSONSerialization.data(withJSONObject: ["schema": 1, "lists": lists], options: [.sortedKeys])
             }
             return try FocusJSON.encode(b.frictionCounts(day: resolveDay(validated.options["--day"] ?? "today")))
@@ -329,7 +329,15 @@ import LocalHistoryQueryCLI
             } else {
                 guard let kind = o["--kind"].flatMap(FocusCommitment.Kind.init(rawValue:)),
                       let target = GoalongCommitmentCLI.target(o["--target"] ?? "", kind: kind.rawValue) else { throw FocusFailure.invalidArgument }
-                let stake = o["--stake"].map { FocusStake(listIds: $0.split(separator: ",").compactMap { UUID(uuidString: String($0)) }, until: o["--until"] ?? "12:00") }
+                // A mistyped list ID or an `--until` at midnight (always already past at settle time) is refused, not dropped.
+                let stake: FocusStake? = try o["--stake"].map { raw in
+                    let ids = try raw.split(separator: ",", omittingEmptySubsequences: false).map { part -> UUID in
+                        guard let id = UUID(uuidString: String(part)) else { throw FocusFailure.invalidArgument }; return id
+                    }
+                    let value = FocusStake(listIds: ids, until: o["--until"] ?? "12:00")
+                    guard value.minute.map({ $0 > 0 }) == true else { throw FocusFailure.invalidArgument }
+                    return value
+                }
                 _ = try controller.setCommitment(period: period, kind: kind, target: target, task: o["--task"], stake: stake)
             }
         case "commitment delete":

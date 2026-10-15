@@ -274,6 +274,7 @@ and `usesActiveTime`; daily/end-time warnings are once per day, weekly warnings 
 They warn without refusing a session. Changes are made through the module settings/controller.
 
 `block-lists` returns `{schema:1,lists:[{id,name,mode,action,locked}]}` using only the Blocking module.
+`locked` means the list is stricter-only: frozen by a non-free active block (« Difficile », password, locked) or by a program lock.
 `friction DAY` returns the selected `BlockDayUsage`: `day` and optional per-list `slowDownShown`,
 `renounced`, `continued` counters. UUID-keyed dictionaries use Swift Codable's alternating key/value
 array encoding. Up to 366 historical usage days are retained in Blocking's existing schema-1 store.
@@ -326,7 +327,7 @@ items in the period's plans. Work uses observed work; without a definition it us
 concealed and unclassified time remains in `unmeasuredMinutes`; it is never invented as work.
 
 `--stake LIST_ID` may repeat (1…200 distinct IDs). Adding or changing a stake requires Blocking
-and existing lists. `--until HH:mm` defaults to `12:00`; `23:59` means all day. The list's own
+and existing lists. `--until HH:mm` defaults to `12:00`; `23:59` means all day. `00:00` is refused: it is already past at settle time. The list's own
 block/Ralentir action, quotas and allowed breaks remain in force. No work limit refuses a goal;
 `limitHours` supplies a neutral warning when a work/task target exceeds a chosen limit.
 
