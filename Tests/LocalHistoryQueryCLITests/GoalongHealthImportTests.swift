@@ -1,4 +1,5 @@
 import Foundation
+import LocalHistoryCore
 import XCTest
 @testable import LocalHistoryQueryCLI
 
@@ -150,5 +151,21 @@ final class GoalongHealthImportTests: XCTestCase {
         days[0]["health"] = importedHealth; tampered["days"] = days
         try JSONSerialization.data(withJSONObject: tampered).write(to: path)
         XCTAssertThrowsError(try GoalongHealthArchive.read(day: "2026-09-07", root: root))
+    }
+    func testHealthPayloadIsAllowedWithExclusionsOnlyWithTheReviewedRevision() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-health-privacy-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var policy = GoalongPrivacyPolicy()
+        policy.applications = ["com.example.hidden": "Hidden"]
+        try policy.save(in: root)
+        let loaded = GoalongPrivacyPolicy.load(in: root)
+        let day: [String: Any] = ["date": "2026-09-07", "title": "Santé", "summary": "", "outcomes": [], "activities": [],
+            "health": ["version": 1, "coverage": "partial", "metrics": [], "workouts": []],
+            "telemetry": ["timezone": "Europe/Paris", "receivedAt": "2026-09-08T00:00:00Z", "state": "completed",
+                "devices": [], "websites": NSNull(), "agent": NSNull()]]
+        let payload = try JSONSerialization.data(withJSONObject: ["version": 2, "source": "apple-health", "days": [day]])
+        XCTAssertNoThrow(try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: loaded.revision))
+        XCTAssertThrowsError(try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: nil))
+        XCTAssertThrowsError(try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: "stale"))
     }
 }

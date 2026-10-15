@@ -111,6 +111,8 @@
         /// the page, and Settings pane, it was opened from.
         @Published private(set) var secondaryReturn: DashboardSecondaryReturn?
         @Published var showingWebsiteShare = false
+        /// The profile studio outlives any settings pane or page that opens it.
+        @MainActor lazy var profileStudio = GoalongProfileStudioHost()
         @Published private(set) var runtime: RuntimePresentation = .unavailable
         /// Free space of the history volume, refreshed at most once a minute while visible.
         @Published private(set) var freeDiskBytes: Int64?

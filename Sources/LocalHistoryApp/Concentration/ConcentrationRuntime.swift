@@ -9,7 +9,10 @@ import LocalHistoryQueryCLI
 @MainActor final class ConcentrationRuntime: ObservableObject {
     static let shared = ConcentrationRuntime()
     @Published private(set) var controller: ConcentrationController?
+    /// Why the module could not start. Shown only while the module is on and has no controller.
     @Published private(set) var error: String?
+    /// A failed background measurement. The controller keeps working without measurements.
+    @Published private(set) var measurementError: String?
     lazy var statusHub = GoalongFocusStatusHub()
     var onOpen: (() -> Void)?
     /// The phase and the minutes left, for the menu bar; `nil` when no session runs.
@@ -66,7 +69,7 @@ import LocalHistoryQueryCLI
                     self?.updateMenuBar(phase: phase, session: session)
                 }
                 refreshMeasurements()
-            } catch { self.error = String(describing: error) }
+            } catch { self.error = FocusUIError.message(error) }
         } else if !enabled, let controller {
             controller.refresh()
             if controller.hasLockedBlock { modules?.setEnabled(.concentration, true); error = FocusFailure.locked.rawValue; return }
@@ -75,6 +78,10 @@ import LocalHistoryQueryCLI
             menuBarSubscription = nil; menuBarTimer?.invalidate(); menuBarTimer = nil; onMenuBarText?(nil)
             presenter?.close(); presenter = nil; self.controller = nil
             NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
+            error = nil; measurementError = nil
+        } else if !enabled {
+            // Off with no controller: a start failure no longer applies.
+            error = nil; measurementError = nil
         }
     }
     func noteInput(at: Date, count: Int) { controller?.noteInput(at: at, count: count) }
@@ -161,8 +168,9 @@ import LocalHistoryQueryCLI
                 guard let self, !Task.isCancelled, generation == self.measurementGeneration,
                       canRead == (GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) && !GoalongGlobalPause.isPaused()) else { if self?.measurementGeneration == generation { self?.measurementTask = nil }; return }
                 controller?.applyMeasurements(Array(measured.values), hasDefinition: hasDefinition)
+                self.measurementError = nil
             } catch {
-                if !(error is CancellationError) { self?.error = String(describing: error) }
+                if !(error is CancellationError) { self?.measurementError = FocusUIError.message(error) }
             }
             if self?.measurementGeneration == generation { self?.measurementTask = nil }
         }
