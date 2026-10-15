@@ -61,6 +61,21 @@
             )
         }
 
+        func testWatchdogRelaxesWhenCaptureIsPausedButStillRecoversFast() {
+            XCTAssertEqual(
+                PermissionWatchdogPolicy.interval(status: healthyStatus, eventTapRunning: false, captureIntended: false),
+                60
+            )
+            XCTAssertEqual(
+                PermissionWatchdogPolicy.interval(status: healthyStatus, eventTapRunning: false, captureIntended: true),
+                3
+            )
+            XCTAssertEqual(
+                PermissionWatchdogPolicy.interval(status: missingStatus, eventTapRunning: false, captureIntended: false),
+                3
+            )
+        }
+
         func testFunctionalProbeAcceptsBoundedFrontmostAppFallback() {
             XCTAssertTrue(
                 PermissionManager.functionalProbeIsUsable(

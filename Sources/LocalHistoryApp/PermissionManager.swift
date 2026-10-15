@@ -103,10 +103,11 @@
         static let healthyInterval: TimeInterval = 60
         static let recoveryInterval: TimeInterval = 3
 
-        static func interval(status: PermissionStatus, eventTapRunning: Bool) -> TimeInterval {
+        /// A tap that is stopped on purpose (capture paused) has nothing to recover while permissions are healthy.
+        static func interval(status: PermissionStatus, eventTapRunning: Bool, captureIntended: Bool = true) -> TimeInterval {
             let accessibilityHealthy = status.accessibilityUsable
             let inputPathAvailable = status.canAttemptInputTap
-            return accessibilityHealthy && inputPathAvailable && eventTapRunning
+            return accessibilityHealthy && inputPathAvailable && (eventTapRunning || !captureIntended)
                 ? healthyInterval
                 : recoveryInterval
         }

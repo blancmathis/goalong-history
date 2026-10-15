@@ -129,8 +129,11 @@
 
             runtimeStarted = true
             let buildIdentity = BuildIdentityReader.current()
-            SupportDiagnostics.shared.start(version: buildIdentity.displayVersion, build: buildIdentity.buildNumber)
             LegacyInstallationMigrator.run()
+            // The journal lives under the data root: create it first, or a fresh install's first writes fail
+            // and mark every report incomplete. A failure here is reported again by the prepare below.
+            _ = try? AppPaths.prepare()
+            SupportDiagnostics.shared.start(version: buildIdentity.displayVersion, build: buildIdentity.buildNumber)
             NSApplication.shared.setActivationPolicy(.accessory)
             GoalongWebsiteAutoSender.shared.start()
             SoftwareUpdateManager.shared.start()
@@ -341,8 +344,17 @@
             }
 
             installWorkspaceObservers()
-            showDashboardOnFirstConsentLaunch()
-            if PermissionRecovery.consumeSetupReturn() || CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
+            let resumedSetup = PermissionRecovery.consumeSetupReturn()
+            if !resumedSetup { showDashboardOnFirstConsentLaunch() }
+            if resumedSetup {
+                // The activation toggles live in the Recording pane, not on the Settings home.
+                if let capability = PermissionRecovery.resumedCapability,
+                   PermissionRecovery.resumeDestination(for: capability) != nil {
+                    dashboardViewModel.openRecordingSettings()
+                }
+                dashboardWindowController?.show(section: .settings)
+                PermissionRecovery.expireResumedCapability(after: 30)
+            } else if CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
                 dashboardWindowController?.show(section: .settings)
             } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || UserDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
                 UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
@@ -544,6 +556,8 @@
                 recorder.record(
                     kind: .recordingResumed, message: "Recording resumed from the Goalong History interface")
                 contextMonitor.resetAndSample()
+                // After a launch-restored pause the tap is not running: start it now, not at the next watchdog tick.
+                checkPermissionsAndStartTap()
             } else {
                 recorder.record(kind: .recordingPaused, message: "Recording paused from the Goalong History interface")
                 recorder.flush()
@@ -949,7 +963,8 @@
             permissionTimer?.invalidate()
             let interval = PermissionWatchdogPolicy.interval(
                 status: permissions.snapshot,
-                eventTapRunning: eventTapMonitor.isRunning
+                eventTapRunning: eventTapMonitor.isRunning,
+                captureIntended: captureState.isCapturing
             )
             let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
                 self?.checkPermissionsAndStartTap(forceRefresh: true)
