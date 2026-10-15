@@ -118,10 +118,7 @@
         @Published private(set) var snapshot: DashboardDaySnapshot
         @Published private(set) var snapshotGeneration: UInt64 = 0
         @Published private(set) var isRefreshing = false
-        @Published private(set) var shareSegments: [ShareSegment] = []
-        @Published private(set) var isLoadingShare = false
         @Published private(set) var isExportingShare = false
-        @Published var selectedShareSegmentID: String?
         @Published var selectedSessionID: String?
         @Published var activitySearch = ""
         @Published var activityFilter: ActivityFilter = .all
@@ -180,14 +177,6 @@
             )?
         private var dataRefreshPending = false
         private var activeMetadataRequest: (token: DashboardCancellationToken, workItem: DispatchWorkItem)?
-        private var shareRequestSequence: UInt64 = 0
-        private var activeShareRequest:
-            (
-                day: Date,
-                token: DashboardCancellationToken,
-                workItem: DispatchWorkItem
-            )?
-        private var shareRefreshPending = false
         private var activeShareExportToken: DashboardCancellationToken?
 
         init(
@@ -247,7 +236,6 @@
             refreshScheduler.deactivate()
             cancelDataRequest()
             cancelMetadataRequest()
-            cancelShareRequest()
             cancelShareExport()
         }
 
@@ -279,11 +267,6 @@
             return filteredSessions.first(where: { $0.id == selectedSessionID }) ?? filteredSessions.first
         }
 
-        var selectedShareSegment: ShareSegment? {
-            guard let selectedShareSegmentID else { return shareSegments.first }
-            return shareSegments.first(where: { $0.id == selectedShareSegmentID }) ?? shareSegments.first
-        }
-
         var filteredTrackedUsage: [TrackedUsageItem] {
             let query = usageSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard !query.isEmpty else { return snapshot.trackedUsage }
@@ -301,7 +284,7 @@
                 alert = DashboardAlert(
                     kind: .error,
                     title: "La règle de partage n’a pas pu être enregistrée",
-                    message: String(describing: error)
+                    message: Self.userFacingMessage(error)
                 )
             }
         }
@@ -315,7 +298,7 @@
                 alert = DashboardAlert(
                     kind: .error,
                     title: "La règle de partage par défaut n’a pas pu être enregistrée",
-                    message: String(describing: error)
+                    message: Self.userFacingMessage(error)
                 )
             }
         }
@@ -329,12 +312,8 @@
             guard normalized != selectedDay else { return }
             selectedDay = normalized
             selectedSessionID = nil
-            selectedShareSegmentID = nil
-            cancelShareRequest()
-            shareSegments = []
             updateRefreshSchedule()
             refreshData(force: true)
-            if selectedSection == .share { reloadShareSegments() }
         }
 
         func selectSection(_ section: DashboardSection) {
@@ -355,11 +334,6 @@
             }
             if section == .settings { settingsPane = .home }
             selectedSection = section
-            if section == .share {
-                reloadShareSegments()
-            } else if previousSection == .share, section != .share {
-                cancelShareRequest()
-            }
             if dashboardIsVisible, section == .agentActivity {
                 agentActivityRuntime.scanNow(
                     forceFullDiscovery: false,
@@ -371,6 +345,11 @@
         func openRecordingSettings() {
             selectSection(.settings)
             settingsPane = .recording
+        }
+
+        func openApplicationsSettings() {
+            selectSection(.settings)
+            settingsPane = .applications
         }
 
         /// Back action of every secondary page.
@@ -401,7 +380,6 @@
             refreshRuntime()
             refreshData(force: true)
             refreshMetadataIfNeeded(force: false)
-            if selectedSection == .share { reloadShareSegments() }
             if selectedSection == .agentActivity {
                 agentActivityRuntime.scanNow(analyzeSelectedDay: true)
             }
@@ -414,7 +392,6 @@
             refreshRuntime()
             refreshData(force: true)
             refreshMetadataIfNeeded(force: false)
-            if selectedSection == .share { reloadShareSegments() }
             if selectedSection == .agentActivity {
                 agentActivityRuntime.scanNow(
                     forceFullDiscovery: false,
@@ -435,7 +412,6 @@
             metadataRequestSequence &+= 1
             cancelDataRequest()
             cancelMetadataRequest()
-            cancelShareRequest()
             cancelShareExport()
             discardShareCache()
             dataRefreshPending = false
@@ -451,8 +427,6 @@
         private func discardVisibleSnapshot() {
             snapshot = .empty(day: selectedDay)
             snapshotGeneration &+= 1
-            shareSegments = []
-            selectedShareSegmentID = nil
         }
 
         func togglePause() {
@@ -522,111 +496,6 @@
             selectedSessionID = id
         }
 
-        func setShareLevel(_ level: ShareLevel, for segmentID: String) {
-            guard let index = shareSegments.firstIndex(where: { $0.id == segmentID }) else { return }
-            var updated = shareSegments
-            let segment = updated[index]
-            updated[index].level = segment.canRevealDetails ? level : .privateOnly
-            shareSegments = updated
-            selectedShareSegmentID = segmentID
-        }
-
-        func applySharePreset(_ level: ShareLevel) {
-            var updated = shareSegments
-            for index in updated.indices {
-                updated[index].level = updated[index].canRevealDetails ? level : .privateOnly
-            }
-            shareSegments = updated
-        }
-
-        func reloadShareSegments() {
-            guard dashboardIsVisible, selectedSection == .share else { return }
-            if let activeShareRequest {
-                if activeShareRequest.day == selectedDay {
-                    // Coalesce repeated timer/UI requests into one latest-state pass.
-                    shareRefreshPending = true
-                    return
-                }
-                cancelShareRequest()
-            }
-            isLoadingShare = true
-            shareRequestSequence &+= 1
-            let requestSequence = shareRequestSequence
-            let day = selectedDay
-            let token = DashboardCancellationToken()
-            let previousLevels = Dictionary(
-                uniqueKeysWithValues: shareSegments.flatMap { segment in
-                    segment.anchorSequences.map { ($0, segment.level) }
-                }
-            )
-
-            let workItem = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                let result: Result<[ShareSegment], Error>
-                do {
-                    var rows = try self.shareBuilder.minuteRows(
-                        for: day,
-                        cancellation: { token.isCancelled }
-                    )
-                    for index in rows.indices {
-                        guard !token.isCancelled else { throw ShareBuildError.cancelled }
-                        if let level = previousLevels[rows[index].anchorSequence] {
-                            rows[index].level = rows[index].canRevealDetails ? level : .privateOnly
-                        }
-                    }
-                    guard !token.isCancelled else { throw ShareBuildError.cancelled }
-                    result = .success(Self.makeShareSegments(from: rows))
-                } catch ShareBuildError.noSeals {
-                    result = .success([])
-                } catch {
-                    result = .failure(error)
-                }
-
-                DispatchQueue.main.async {
-                    guard self.shareRequestSequence == requestSequence else { return }
-                    self.activeShareRequest = nil
-                    self.isLoadingShare = false
-                    let shouldCatchUp = self.shareRefreshPending
-                    self.shareRefreshPending = false
-                    guard self.dashboardIsVisible,
-                        self.selectedSection == .share,
-                        !token.isCancelled
-                    else { return }
-                    guard self.selectedDay == day else {
-                        self.reloadShareSegments()
-                        return
-                    }
-
-                    switch result {
-                    case .success(let segments):
-                        self.shareSegments = segments
-                        if let selected = self.selectedShareSegmentID,
-                            !segments.contains(where: { $0.id == selected })
-                        {
-                            self.selectedShareSegmentID = segments.first?.id
-                        } else if self.selectedShareSegmentID == nil {
-                            self.selectedShareSegmentID = segments.first?.id
-                        }
-                    case .failure(let error):
-                        if let buildError = error as? ShareBuildError,
-                            case .cancelled = buildError
-                        {
-                            return
-                        }
-                        self.shareSegments = []
-                        self.alert = DashboardAlert(
-                            kind: .error,
-                            title: "Les données à partager n’ont pas pu être chargées",
-                            message: String(describing: error)
-                        )
-                    }
-                    if shouldCatchUp { self.reloadShareSegments() }
-                }
-            }
-            activeShareRequest = (day, token, workItem)
-            shareQueue.async(execute: workItem)
-        }
-
         func exportSharePackage() {
             guard snapshot.sealedMinutes > 0 else {
                 alert = DashboardAlert(
@@ -694,7 +563,7 @@
                         self.alert = DashboardAlert(
                             kind: .error,
                             title: "Échec de l’export",
-                            message: String(describing: error)
+                            message: Self.userFacingMessage(error)
                         )
                     }
                 }
@@ -734,7 +603,7 @@
                 alert = DashboardAlert(
                     kind: .error,
                     title: "Les réglages n’ont pas pu être enregistrés",
-                    message: String(describing: error)
+                    message: Self.userFacingMessage(error)
                 )
             }
         }
@@ -850,16 +719,15 @@
                             kind: .information,
                             title: "Détails locaux supprimés",
                             message: cutoff == nil
-                                ? "\(count) fichier(s) d’événements supprimé(s). Les sceaux et reçus sont conservés : ces périodes restent visibles comme privées."
+                                ? "\(count) élément(s) local(aux) supprimé(s). Les sceaux et reçus sont conservés : ces périodes restent visibles comme privées."
                                 : "\(count) événement(s) détaillé(s) supprimé(s). Les sceaux et reçus sont conservés."
                         )
                         self.refreshData(force: true)
-                        self.reloadShareSegments()
                     case .failure(let error):
                         self.alert = DashboardAlert(
                             kind: .error,
                             title: "Échec de la suppression",
-                            message: String(describing: error)
+                            message: Self.userFacingMessage(error)
                         )
                     }
                 }
@@ -886,7 +754,7 @@
             snapshot.sessions.first
         }
 
-        private func deleteTargetedDetails(
+        func deleteTargetedDetails(
             _ request: TargetedHistoryDeletionRequest,
             successMessage: String
         ) {
@@ -900,15 +768,14 @@
                         self.alert = DashboardAlert(
                             kind: .information,
                             title: "Élément supprimé",
-                            message: "\(successMessage) Removed \(count) local item(s)."
+                            message: "\(successMessage) \(count) élément(s) local(aux) supprimé(s)."
                         )
                         self.refreshData(force: true)
-                        self.reloadShareSegments()
                     case .failure(let error):
                         self.alert = DashboardAlert(
                             kind: .error,
                             title: "Échec de la suppression",
-                            message: String(describing: error)
+                            message: Self.userFacingMessage(error)
                         )
                     }
                 }
@@ -927,7 +794,6 @@
                     guard let self else { return }
                     self.refreshData(force: false)
                     self.refreshMetadataIfNeeded(force: false)
-                    if self.selectedSection == .share { self.reloadShareSegments() }
                 }
             )
         }
@@ -1071,15 +937,6 @@
             activeMetadataRequest = nil
         }
 
-        private func cancelShareRequest() {
-            shareRequestSequence &+= 1
-            activeShareRequest?.token.cancel()
-            activeShareRequest?.workItem.cancel()
-            activeShareRequest = nil
-            shareRefreshPending = false
-            isLoadingShare = false
-        }
-
         private func cancelShareExport() {
             activeShareExportToken?.cancel()
             activeShareExportToken = nil
@@ -1093,64 +950,9 @@
             }
         }
 
-        private static func makeShareSegments(from rows: [ShareMinuteRow]) -> [ShareSegment] {
-            struct Accumulator {
-                var sequences: [UInt64]
-                var start: Date
-                var end: Date
-                var appSummary: String
-                var categorySummary: String
-                var canRevealDetails: Bool
-                var level: ShareLevel
-            }
-
-            var accumulators: [Accumulator] = []
-            for row in rows.sorted(by: { $0.start < $1.start }) {
-                let canMerge: Bool
-                if let last = accumulators.last {
-                    let contiguous = abs(row.start.timeIntervalSince(last.end)) <= 1.5
-                    canMerge =
-                        contiguous
-                        && last.appSummary == row.appSummary
-                        && last.categorySummary == row.categorySummary
-                        && last.canRevealDetails == row.canRevealDetails
-                        && last.level == row.level
-                } else {
-                    canMerge = false
-                }
-
-                if canMerge {
-                    let index = accumulators.count - 1
-                    accumulators[index].sequences.append(row.anchorSequence)
-                    accumulators[index].end = max(accumulators[index].end, row.end)
-                } else {
-                    accumulators.append(
-                        Accumulator(
-                            sequences: [row.anchorSequence],
-                            start: row.start,
-                            end: row.end,
-                            appSummary: row.appSummary,
-                            categorySummary: row.categorySummary,
-                            canRevealDetails: row.canRevealDetails,
-                            level: row.canRevealDetails ? row.level : .privateOnly
-                        ))
-                }
-            }
-
-            return accumulators.map { item in
-                let first = item.sequences.first ?? 0
-                let last = item.sequences.last ?? first
-                return ShareSegment(
-                    id: "\(first)-\(last)",
-                    anchorSequences: item.sequences,
-                    start: item.start,
-                    end: item.end,
-                    appSummary: item.appSummary,
-                    categorySummary: item.categorySummary,
-                    canRevealDetails: item.canRevealDetails,
-                    level: item.level
-                )
-            }
+        /// A French message for an alert: the error's own description, never a Swift dump.
+        static func userFacingMessage(_ error: Error) -> String {
+            (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
 
         private static func isValidVerificationURL(_ raw: String) -> Bool {

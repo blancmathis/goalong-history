@@ -385,37 +385,18 @@
                     through: "        func refreshEverything()"
                 )
             )
-            let reload = try XCTUnwrap(
-                slice(
-                    source,
-                    from: "        func reloadShareSegments()",
-                    through: "        func exportSharePackage()"
-                )
-            )
-            let cancellation = try XCTUnwrap(
-                slice(
-                    source,
-                    from: "        private func cancelShareRequest()",
-                    through: "        private func cancelShareExport()"
-                )
-            )
             let cacheDiscard = try XCTUnwrap(
                 slice(
                     source,
                     from: "        private func discardShareCache()",
-                    through: "        private static func makeShareSegments"
+                    through: "        /// A French message for an alert"
                 )
             )
 
-            XCTAssertTrue(hidden.contains("cancelShareRequest()"))
+            XCTAssertTrue(hidden.contains("cancelShareExport()"))
             XCTAssertTrue(hidden.contains("discardShareCache()"))
-            XCTAssertTrue(hidden.contains("shareSegments = []"))
-            XCTAssertTrue(sectionSelection.contains("cancelShareRequest()"))
             XCTAssertFalse(sectionSelection.contains("discardShareCache()"))
-            XCTAssertTrue(reload.contains("shareRefreshPending = true"))
-            XCTAssertTrue(reload.contains("cancellation: { token.isCancelled }"))
-            XCTAssertTrue(cancellation.contains("activeShareRequest?.token.cancel()"))
-            XCTAssertFalse(cancellation.contains("discardTransientCaches()"))
+            XCTAssertFalse(source.contains("reloadShareSegments"))
             XCTAssertTrue(cacheDiscard.contains("builder.discardTransientCaches()"))
         }
 
