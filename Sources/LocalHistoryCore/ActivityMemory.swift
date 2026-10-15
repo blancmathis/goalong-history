@@ -601,16 +601,19 @@ enum ActivityMemoryUtilities {
     static func looksLikeRequestOrIntent(_ line: String) -> Bool {
         let normalizedLine = normalized(line)
         if normalizedLine.hasSuffix("?") { return true }
-        let prefixes = [
-            "please ", "can you ", "could you ", "would you ", "help me ",
-            "create ", "build ", "write ", "explain ", "find ", "research ",
-            "compare ", "summarize ", "review ", "fix ", "implement ",
-            "je veux ", "peux-tu ", "pourrais-tu ", "aide-moi ", "crée ",
-            "explique ", "cherche ", "compare ", "résume ", "corrige ",
-            "implémente ",
-        ]
-        return prefixes.contains { normalizedLine.hasPrefix($0) }
+        return requestPrefixes.contains { normalizedLine.hasPrefix($0) }
     }
+
+    /// Folded like `normalized` (no case, no accents), because the line is
+    /// folded before the comparison. "resume " also matches the English
+    /// word (a CV); that is acceptable for an inferred request claim.
+    private static let requestPrefixes = [
+        "please ", "can you ", "could you ", "would you ", "help me ",
+        "create ", "build ", "write ", "explain ", "find ", "research ",
+        "compare ", "summarize ", "review ", "fix ", "implement ",
+        "je veux ", "peux-tu ", "pourrais-tu ", "aide-moi ", "crée ",
+        "explique ", "cherche ", "résume ", "corrige ", "implémente ",
+    ].map { normalized($0) + " " }
     
     static func normalized(_ value: String) -> String {
         value

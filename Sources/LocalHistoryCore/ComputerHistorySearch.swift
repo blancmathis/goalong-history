@@ -601,19 +601,26 @@ public struct ComputerHistorySearchService {
                 end: max(start.addingTimeInterval(0.001), now.addingTimeInterval(0.001))
             )
         }
+        // Day words match whole words only ("hier" must not match "fichier"),
+        // and today wins over yesterday in both blocks below.
+        let mentionsToday = SearchText.containsPhrase(
+            query.normalized,
+            ["today", "aujourd hui"]
+        )
+        let mentionsYesterday = SearchText.containsPhrase(
+            query.normalized,
+            ["yesterday", "hier"]
+        )
         let requestedDayStart: Date?
         let requestedDayEnd: Date?
-        if SearchText.containsAny(query.normalized, ["yesterday", "hier"]),
+        if mentionsToday {
+            requestedDayStart = today
+            requestedDayEnd = now.addingTimeInterval(0.001)
+        } else if mentionsYesterday,
             let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
         {
             requestedDayStart = yesterday
             requestedDayEnd = today
-        } else if SearchText.containsAny(
-            query.normalized,
-            ["today", "aujourd hui", "aujourd'hui"]
-        ) {
-            requestedDayStart = today
-            requestedDayEnd = now.addingTimeInterval(0.001)
         } else {
             requestedDayStart = nil
             requestedDayEnd = nil
@@ -645,21 +652,18 @@ public struct ComputerHistorySearchService {
             return DateInterval(start: start, end: end)
         }
 
-        if SearchText.containsAny(
-            query.normalized,
-            ["today", "aujourd hui", "aujourd'hui"]
-        ) {
+        if mentionsToday {
             return DateInterval(
                 start: today,
                 end: max(today.addingTimeInterval(0.001), now.addingTimeInterval(0.001))
             )
         }
-        if SearchText.containsAny(query.normalized, ["yesterday", "hier"]),
+        if mentionsYesterday,
             let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
         {
             return DateInterval(start: yesterday, end: today)
         }
-        if SearchText.containsAny(
+        if SearchText.containsPhrase(
             query.normalized,
             ["this week", "cette semaine"]
         ), let week = calendar.dateInterval(of: .weekOfYear, for: now) {
@@ -704,17 +708,22 @@ public struct ComputerHistorySearchService {
     }
 
     private static func explicitClockRange(in rawQuery: String) -> ClockRange? {
-        let value = ComputerHistoryNaturalLanguage.canonicalize(rawQuery)
+        // canonicalize turns typographic dashes into spaces; keep them as a
+        // range separator here so "14h–16h" still parses.
+        let dashed = rawQuery
+            .replacingOccurrences(of: "–", with: "-")
+            .replacingOccurrences(of: "—", with: "-")
+        let value = ComputerHistoryNaturalLanguage.canonicalize(dashed)
             .folding(
                 options: [.caseInsensitive, .diacriticInsensitive],
                 locale: Locale(identifier: "en_US_POSIX")
             )
             .lowercased()
         let patterns = [
-            #"(?:between|entre|from|de)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?\s+(?:and|et|to|a)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?"#,
-            #"([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?\s*(?:-|to|a|et)\s*([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?"#,
+            #"\b(?:between|entre|from|de)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?\s+(?:and|et|to|a)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?"#,
+            #"(?<!\d)([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?\s*(?:-|to|a|et)\s*([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?"#,
         ]
-        for pattern in patterns {
+        for (patternIndex, pattern) in patterns.enumerated() {
             guard let expression = try? NSRegularExpression(pattern: pattern) else {
                 continue
             }
@@ -733,6 +742,16 @@ public struct ComputerHistorySearchService {
             guard let rawStartHour = group(1).flatMap(Int.init),
                 let rawEndHour = group(4).flatMap(Int.init)
             else { continue }
+            // Bare numbers ("from 5 to 6", "entre 2 et 3") are not a time:
+            // at least one bound needs minutes, am/pm or an h/: marker.
+            if patternIndex == 0,
+                group(2) == nil, group(3) == nil, group(5) == nil, group(6) == nil
+            {
+                let rest = value[(Range(match.range, in: value)?.upperBound ?? value.endIndex)...]
+                guard let next = rest.first(where: { !$0.isWhitespace }),
+                    next == "h" || next == ":"
+                else { continue }
+            }
             let startMinute = group(2).flatMap(Int.init) ?? 0
             let endMinute = group(5).flatMap(Int.init) ?? 0
             guard let startHour = normalizedClockHour(
@@ -780,6 +799,7 @@ public struct ComputerHistorySearchService {
             return resumeAnswer(
                 query: preparedQuery,
                 now: now,
+                breakReferenceEnd: min(now, interval?.end ?? now),
                 maximumHits: limit,
                 corpus: corpus
             )
@@ -829,7 +849,11 @@ public struct ComputerHistorySearchService {
         case generic
 
         static func detect(_ query: SearchText.PreparedQuery) -> SearchIntent {
-            let value = query.normalized
+            // Markers are written without apostrophes ("ou j en etais"), so
+            // match them against the canonical form of "Où j'en étais ?".
+            let value = SearchText.normalized(
+                ComputerHistoryNaturalLanguage.canonicalize(query.raw)
+            )
             if SearchText.containsAny(
                 value,
                 [
@@ -885,9 +909,13 @@ public struct ComputerHistorySearchService {
         }
     }
 
+    /// Shortest idle time counted as a break by the resume answer.
+    private static let resumeBreakThreshold: TimeInterval = 10 * 60
+
     private func resumeAnswer(
         query: SearchText.PreparedQuery,
         now: Date,
+        breakReferenceEnd: Date,
         maximumHits: Int,
         corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
@@ -895,10 +923,21 @@ public struct ComputerHistorySearchService {
         guard !episodes.isEmpty else { return emptyAnswer(query.raw) }
 
         let candidate: ComputerHistoryEpisode = {
+            // The break the user is coming back from is the idle time after
+            // the latest episode end (episodes are sorted by start, so the
+            // latest end is not always the last episode). An episode still
+            // running at the reference time means there is no trailing break.
+            if !episodes.contains(where: { $0.end > breakReferenceEnd }),
+                let lastEnded = episodes.max(by: { $0.end < $1.end }),
+                breakReferenceEnd.timeIntervalSince(lastEnded.end)
+                    >= Self.resumeBreakThreshold
+            {
+                return lastEnded
+            }
             let gaps = zip(episodes, episodes.dropFirst()).compactMap {
                 left, right -> (ComputerHistoryEpisode, TimeInterval)? in
                 let gap = right.start.timeIntervalSince(left.end)
-                return gap >= 10 * 60 ? (left, gap) : nil
+                return gap >= Self.resumeBreakThreshold ? (left, gap) : nil
             }
             if let beforeLatestGap = gaps.last?.0 { return beforeLatestGap }
             if let unfinished = episodes.last(where: {
@@ -1117,8 +1156,10 @@ public struct ComputerHistorySearchService {
                 latestDateBySuggestionID[suggestion.id] = memory.generatedAt
             }
         }
-        var ranked: [ComputerHistorySearchHit] = []
-        ranked.reserveCapacity(maximumHits)
+        // Suggestion IDs are stable across days: keep one copy per ID before
+        // the bounded ranking, so a workflow seen on many days cannot fill
+        // every slot. On equal score the latest day's copy wins.
+        var bestBySuggestionID: [String: ComputerHistorySearchHit] = [:]
         for memory in memories {
             for suggestion in memory.suggestions {
                 let score =
@@ -1148,13 +1189,23 @@ public struct ComputerHistorySearchService {
                         corpus: corpus
                     )
                 )
-                insertBounded(
-                    hit,
-                    into: &ranked,
-                    limit: maximumHits,
-                    precedes: searchHitPrecedes
-                )
+                if let existing = bestBySuggestionID[suggestion.id],
+                    searchHitPrecedes(existing, hit)
+                {
+                    continue
+                }
+                bestBySuggestionID[suggestion.id] = hit
             }
+        }
+        var ranked: [ComputerHistorySearchHit] = []
+        ranked.reserveCapacity(maximumHits)
+        for hit in bestBySuggestionID.values {
+            insertBounded(
+                hit,
+                into: &ranked,
+                limit: maximumHits,
+                precedes: searchHitPrecedes
+            )
         }
         let compacted = compactSearchHits(ranked, maximumHits: maximumHits)
         let lines = compacted.map { "- **\($0.title)** — \($0.snippet)" }
@@ -2026,38 +2077,33 @@ enum SearchText {
         )
     }
 
+    /// Kind hints match whole words (and simple plurals), so "pr" does not
+    /// fire on "projet" and "doc" does not fire on "docker".
     static func resourceKindHints(
         _ query: String
     ) -> Set<ComputerHistoryResourceKind> {
+        let queryWords = Set(words(query))
+        func mentions(_ markers: [String]) -> Bool {
+            markers.contains { marker in
+                queryWords.contains(marker) || queryWords.contains(marker + "s")
+            }
+        }
         var output = Set<ComputerHistoryResourceKind>()
-        if containsAny(
-            query,
-            ["file", "fichier", "path", "folder", "dossier"]
-        ) {
+        if mentions(["file", "fichier", "path", "folder", "dossier"]) {
             output.insert(.file)
         }
-        if containsAny(
-            query,
-            ["document", "doc", "proposal", "proposition", "brief", "note"]
-        ) {
+        if mentions(["document", "doc", "proposal", "proposition", "brief", "note"]) {
             output.insert(.document)
         }
-        if containsAny(
-            query,
-            ["conversation", "chat", "slack", "thread", "message", "discussion"]
-        ) {
+        if mentions(["conversation", "chat", "slack", "thread", "message", "discussion"]) {
             output.insert(.conversation)
         }
-        if containsAny(
-            query,
-            ["issue", "ticket", "pull request", "pr", "bug"]
-        ) {
+        if mentions(["issue", "ticket", "pr", "bug"])
+            || containsPhrase(query, ["pull request", "pull requests"])
+        {
             output.insert(.issue)
         }
-        if containsAny(
-            query,
-            ["website", "site", "page", "url"]
-        ) {
+        if mentions(["website", "site", "page", "url"]) {
             output.insert(.webPage)
         }
         return output
@@ -2162,6 +2208,24 @@ enum SearchText {
 
     static func containsAny(_ value: String, _ markers: [String]) -> Bool {
         markers.contains { value.contains(normalized($0)) }
+    }
+
+    /// Whole-word variant of `containsAny`: "hier" matches "hier ?" and
+    /// "d'hier" but not "fichier". Apostrophes, hyphens and other
+    /// punctuation separate words, so "aujourd hui" also matches "aujourd'hui".
+    static func containsPhrase(_ value: String, _ markers: [String]) -> Bool {
+        let padded = " " + words(value).joined(separator: " ") + " "
+        return markers.contains { marker in
+            let markerWords = words(normalized(marker))
+            return !markerWords.isEmpty
+                && padded.contains(" " + markerWords.joined(separator: " ") + " ")
+        }
+    }
+
+    static func words(_ normalizedValue: String) -> [String] {
+        normalizedValue
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
     }
 
     private static let stopWords: Set<String> = [

@@ -223,6 +223,95 @@ final class ComputerHistoryInteractionIsolationTests: XCTestCase {
         XCTAssertEqual(memory.coverage.interactionsWithBeforeAndAfterContext, 1)
     }
 
+    func testEpisodeEndCoversAnEarlierInteractionsLaterSettledEvidence() throws {
+        let start = makeDate("2026-08-21T08:47:00Z")
+        let safari = AppSnapshot(
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            processIdentifier: 41
+        )
+        let settled = payload(
+            id: "long-tail-settled-payload",
+            text: "Proposal draft saved and ready for review",
+            at: start.addingTimeInterval(5),
+            app: safari,
+            URL: "https://docs.example.com/proposal"
+        )
+        let quickSettled = payload(
+            id: "quick-settled-payload",
+            text: "Proposal comment posted",
+            at: start.addingTimeInterval(3),
+            app: safari,
+            URL: "https://docs.example.com/proposal"
+        )
+        let events = [
+            event(
+                id: "long-tail-action-event",
+                sequence: 1,
+                at: start,
+                kind: .mouseClick,
+                app: safari,
+                title: "Proposal",
+                URL: "https://docs.example.com/proposal",
+                pointer: PointerSnapshot(button: "left", x: 100, y: 80, clickCount: 1),
+                metadata: [ComputerHistoryMetadata.interactionID: "long-tail-interaction"]
+            ),
+            event(
+                id: "quick-action-event",
+                sequence: 2,
+                at: start.addingTimeInterval(2),
+                kind: .mouseClick,
+                app: safari,
+                title: "Proposal",
+                URL: "https://docs.example.com/proposal",
+                pointer: PointerSnapshot(button: "left", x: 120, y: 80, clickCount: 1),
+                metadata: [ComputerHistoryMetadata.interactionID: "quick-interaction"]
+            ),
+            event(
+                id: "quick-settled-event",
+                sequence: 3,
+                at: start.addingTimeInterval(3),
+                kind: .semanticSnapshot,
+                app: safari,
+                title: "Proposal",
+                URL: "https://docs.example.com/proposal",
+                semanticContext: quickSettled.reference,
+                metadata: [
+                    ComputerHistoryMetadata.interactionID: "quick-interaction",
+                    ComputerHistoryMetadata.interactionPhase: ComputerHistoryMetadata.Phase.settled,
+                ]
+            ),
+            event(
+                id: "long-tail-settled-event",
+                sequence: 4,
+                at: start.addingTimeInterval(5),
+                kind: .semanticSnapshot,
+                app: safari,
+                title: "Proposal",
+                URL: "https://docs.example.com/proposal",
+                semanticContext: settled.reference,
+                metadata: [
+                    ComputerHistoryMetadata.interactionID: "long-tail-interaction",
+                    ComputerHistoryMetadata.interactionPhase: ComputerHistoryMetadata.Phase.settled,
+                ]
+            ),
+        ]
+
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            semanticSnapshots: [settled.id: settled, quickSettled.id: quickSettled],
+            day: start,
+            calendar: utcCalendar
+        )
+
+        let episode = try XCTUnwrap(memory.episodes.first)
+        XCTAssertEqual(memory.episodes.count, 1)
+        XCTAssertEqual(episode.interactions.count, 2)
+        let latestInteractionEnd = try XCTUnwrap(episode.interactions.map(\.end).max())
+        XCTAssertGreaterThan(latestInteractionEnd, episode.interactions.last!.end)
+        XCTAssertEqual(episode.end, latestInteractionEnd)
+    }
+
     func testPriorSettledOutcomeDoesNotCrossBrowserHosts() {
         let start = makeDate("2026-08-21T08:50:00Z")
         let safari = AppSnapshot(
