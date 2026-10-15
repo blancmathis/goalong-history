@@ -28,7 +28,12 @@
             do {
                 let destination = try preferredDestination()
                 attemptedDestination = destination
-                let decision = replacementDecision(source: source, destination: destination)
+                let others = RunningInstances.others()
+                let (decision, existing) = aggregateDecision(
+                    source: source,
+                    candidates: existingCandidates(destination: destination, running: others)
+                )
+                let revealTarget = existing ?? destination
                 if decision == .installedIsNewer {
                     let newer = NSAlert()
                     newer.alertStyle = .informational
@@ -38,7 +43,7 @@
                     newer.addButton(withTitle: "Afficher dans le Finder")
                     newer.addButton(withTitle: "Quitter")
                     if newer.runModal() == .alertFirstButtonReturn {
-                        NSWorkspace.shared.activateFileViewerSelecting([destination])
+                        NSWorkspace.shared.activateFileViewerSelecting([revealTarget])
                     }
                     return true
                 }
@@ -51,11 +56,11 @@
                     installed.addButton(withTitle: "Afficher dans le Finder")
                     installed.addButton(withTitle: "Quitter")
                     if installed.runModal() == .alertFirstButtonReturn {
-                        NSWorkspace.shared.activateFileViewerSelecting([destination])
+                        NSWorkspace.shared.activateFileViewerSelecting([revealTarget])
                     }
                     return true
                 }
-                guard try quitOtherInstances(RunningInstances.others()) else { return true }
+                guard try quitOtherInstances(others) else { return true }
                 try replaceApplication(at: destination, with: source)
                 guard GoalongWorkspaceOpenPolicy.open(destination, purpose: .localFile) else {
                     throw InstallationError.couldNotRelaunch
@@ -104,6 +109,36 @@
             case .orderedSame where source.path.contains("/AppTranslocation/"): return .alreadyInstalled
             default: return .replace
             }
+        }
+
+        /// Every place a Goalong copy may already be installed or running: the chosen destination,
+        /// both Applications folders and the bundles of the other running copies.
+        static func existingCandidates(
+            destination: URL, running: [any RunningInstance],
+            fileManager: FileManager = .default
+        ) -> [URL] {
+            let all = [
+                destination,
+                URL(fileURLWithPath: "/Applications", isDirectory: true).appendingPathComponent(appName, isDirectory: true),
+                fileManager.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Applications", isDirectory: true)
+                    .appendingPathComponent(appName, isDirectory: true),
+            ] + running.compactMap(\.bundleURL)
+            var seen = Set<String>()
+            return all.map(\.standardizedFileURL).filter { seen.insert($0.path).inserted }
+        }
+
+        /// Applies `replacementDecision` to every existing copy. A newer copy anywhere wins, then an
+        /// identical installed copy (translocated source). The URL is the copy to show to the user.
+        static func aggregateDecision(
+            source: URL, candidates: [URL], fileManager: FileManager = .default
+        ) -> (ReplacementDecision, URL?) {
+            let decisions = candidates.map {
+                ($0, replacementDecision(source: source, destination: $0, fileManager: fileManager))
+            }
+            if let newer = decisions.first(where: { $0.1 == .installedIsNewer }) { return (.installedIsNewer, newer.0) }
+            if let same = decisions.first(where: { $0.1 == .alreadyInstalled }) { return (.alreadyInstalled, same.0) }
+            return (.replace, nil)
         }
 
         private static func isTransient(_ bundleURL: URL) -> Bool {
@@ -207,7 +242,12 @@
 
     protocol RunningInstance {
         var isTerminated: Bool { get }
+        var bundleURL: URL? { get }
         func terminate() -> Bool
+    }
+
+    extension RunningInstance {
+        var bundleURL: URL? { nil }
     }
 
     extension NSRunningApplication: RunningInstance {}
