@@ -212,19 +212,19 @@ import LocalHistoryCore
             }
         }
         if (next.quotaMinutesPerDay ?? 0) > (current.quotaMinutesPerDay ?? 0) {
-            return .refused("Pendant un verrou, le temps permis peut seulement baisser.")
+            return .refused(prefix + "le temps permis peut seulement baisser.")
         }
         if let breaks = next.breaks {
             let old = current.breaks ?? BlockBreaks(count: 0, minutes: 0)
             if breaks.count > old.count || breaks.minutes > old.minutes {
-                return .refused("Pendant un verrou, les pauses peuvent seulement diminuer.")
+                return .refused(prefix + "les pauses peuvent seulement diminuer.")
             }
         }
         if current.program.isLocked(at: clock()), (next.program.lockedUntil ?? .distantPast) < (current.program.lockedUntil ?? .distantPast) {
             return .refused("Le verrou du programme ne peut pas être raccourci.")
         }
         let oldMinutes = Self.programCoverage(current.program), newMinutes = Self.programCoverage(next.program)
-        if !oldMinutes.isSubset(of: newMinutes) { return .refused("Pendant un verrou, le programme peut seulement s’allonger.") }
+        if !oldMinutes.isSubset(of: newMinutes) { return .refused(prefix + "le programme peut seulement s’allonger.") }
         for lock in BlockLock.allCases where lock != .free {
             let old = Self.programCoverage(BlockProgram(ranges: current.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
             let new = Self.programCoverage(BlockProgram(ranges: next.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
