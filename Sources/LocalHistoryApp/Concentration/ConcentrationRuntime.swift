@@ -135,7 +135,7 @@ import LocalHistoryQueryCLI
                 }
                 for date in dates where canRead {
                     try Task.checkCancellation()
-                    measured[BlockingController.dayKey(date, calendar: calendar)] = try await GoalongAnalyticsReader.shared.focusDay(date, verdicts: verdicts)
+                    measured[FocusCalendar.dayKey(date, calendar: calendar)] = try await GoalongAnalyticsReader.shared.focusDay(date, verdicts: verdicts)
                 }
                 var valued = 0
                 for day in try store.planDays().reversed() {

@@ -857,7 +857,7 @@ struct FocusThreadModel: Equatable {
     }
 
     private var tomorrow: String {
-        BlockingController.dayKey(Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now)
+        (try? controller.dayAfter(plan.day)) ?? plan.day
     }
 
     private func reviewLine(_ review: FocusReview) -> String {

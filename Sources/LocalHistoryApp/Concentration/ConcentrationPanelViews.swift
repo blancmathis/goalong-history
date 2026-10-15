@@ -408,7 +408,8 @@ struct FocusLimitPanelView: View {
     }
 
     private func save() {
-        let tomorrow = BlockingController.dayKey(Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date())
+        // The day after the reviewed plan, as setReview computes it, even when saved after midnight.
+        guard let tomorrow = try? controller.dayAfter(plan.day) else { self.error = FocusUIError.message(FocusFailure.invalidArgument); return }
         let reviewItems: [FocusReview.Item] = items.compactMap { item in
             switch choices[item.id] ?? .unset {
             case .unset: return nil

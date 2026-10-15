@@ -103,7 +103,7 @@ struct FocusPanel: Equatable {
     init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .current,
          blocking: @escaping () -> BlockingController? = { nil }, audio: FocusSessionAudio = NoOpFocusSessionAudio(), runsTimers: Bool = false) throws {
         self.store = store; self.clock = clock; self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
-        let day = BlockingController.dayKey(clock(), calendar: calendar); currentDay = day
+        let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day
         status = FocusStatus(since: clock()); plan = FocusPlan(day: day); promptState = FocusPromptState(day: day)
         try store.recover(); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
         // Preserve once-per-week warnings made by the pre-ISO implementation.
@@ -147,7 +147,7 @@ struct FocusPanel: Equatable {
         }
     }
     private func persist(_ value: FocusSession) throws {
-        let day = BlockingController.dayKey(value.startedAt, calendar: calendar)
+        let day = FocusCalendar.dayKey(value.startedAt, calendar: calendar)
         var values = try store.sessions(day)
         if let i = values.firstIndex(where: { $0.id == value.id }) { values[i] = value } else { values.append(value) }
         try saving { try store.saveSessions(values, day: day) }
@@ -318,10 +318,10 @@ struct FocusPanel: Equatable {
         let digits = day.replacingOccurrences(of: "-", with: "")
         return UUID(uuidString: "F0C05000-0000-4000-8000-0000" + digits)!
     }
-    private func dayAfter(_ day: String) throws -> String {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = calendar.timeZone
-        guard let date = f.date(from: day), let next = calendar.date(byAdding: .day, value: 1, to: date) else { throw FocusFailure.invalidArgument }
-        return BlockingController.dayKey(next, calendar: calendar)
+    /// The civil day after `day`, in this controller's time zone. The page and the review sheet use it too.
+    func dayAfter(_ day: String) throws -> String {
+        guard let interval = FocusCalendar.dayInterval(day, calendar: calendar) else { throw FocusFailure.invalidArgument }
+        return FocusCalendar.dayKey(interval.end, calendar: calendar)
     }
     func updateSettings(_ value: FocusSettings) throws {
         guard value.valid else { throw FocusFailure.invalidArgument }; try saving { try store.saveSettings(value) }; settings = value
@@ -338,7 +338,7 @@ struct FocusPanel: Equatable {
         if value.observing, value.at.timeIntervalSince(lastMeasureRequest) >= 60 { lastMeasureRequest = value.at; measurementRefresh?() }
     }
     func applyMeasurements(_ days: [GoalongLocalAnalytics.Day], hasDefinition: Bool) {
-        measuredDays = Dictionary(uniqueKeysWithValues: days.map { (BlockingController.dayKey($0.date, calendar: calendar), $0) })
+        measuredDays = Dictionary(uniqueKeysWithValues: days.map { (FocusCalendar.dayKey($0.date, calendar: calendar), $0) })
         definitionAvailable = hasDefinition; updateMeasures(); checkLimits(); settleCommitments()
         if let currentSession { sessionFacts = facts(currentSession) }
     }
@@ -388,7 +388,7 @@ struct FocusPanel: Equatable {
     }
     func refresh() {
         if phaseBlockID != nil || commitments.contains(where: { $0.result?.stake.state == .applied }) { blocking()?.refresh(enforceLast: false) }
-        let now = clock(), day = BlockingController.dayKey(now, calendar: calendar)
+        let now = clock(), day = FocusCalendar.dayKey(now, calendar: calendar)
         if day != currentDay {
             do { try loadDay(day); currentDay = day; promptState = FocusPromptState(day: day); measurementRefresh?() } catch { self.error = String(describing: error); storageFailed = true }
         }

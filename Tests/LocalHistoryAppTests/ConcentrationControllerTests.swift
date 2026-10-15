@@ -180,6 +180,29 @@ final class ConcentrationControllerTests: XCTestCase {
         let saved = try s.sessions("2026-10-05").first { $0.id == reviewed.id }
         XCTAssertEqual(saved?.outcome, .done); XCTAssertEqual(saved?.note, "reste les tests")
     }
+    @MainActor func testDayKeysStayCivilGregorianWithABuddhistSystemCalendar() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .buddhist); calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
+        let now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        let today = FocusCalendar.dayKey(now, calendar: calendar)
+        XCTAssertTrue(today.hasPrefix("2026-")); XCTAssertEqual(c.plan.day, today)
+        _ = try c.setCommitment(period: .init(kind: .day, key: today), kind: .sessions, target: 1)
+        XCTAssertNotNil(c.todayCommitment)
+        XCTAssertEqual(try c.dayAfter("2026-10-31"), "2026-11-01")
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: 5))
+        XCTAssertEqual(try s.sessions(today).count, 1)
+    }
+    @MainActor func testReviewSavedAfterMidnightMovesItemsToTheDayAfterThePlan() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 23, minute: 50))!
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        let item = try c.addPlanItem(title: "Rédiger", day: "2026-10-05")
+        now = now.addingTimeInterval(15 * 60); c.refresh()
+        let tomorrow = try c.dayAfter("2026-10-05"); XCTAssertEqual(tomorrow, "2026-10-06")
+        try c.setReview(FocusReview(day: "2026-10-05", items: [.init(id: item.id, toDay: tomorrow)], tomorrowFirst: "Relire"))
+        XCTAssertEqual(try c.plan(on: "2026-10-06").items.map(\.title), ["Relire", "Rédiger"])
+        XCTAssertTrue(try c.plan(on: "2026-10-07").items.isEmpty)
+    }
 }
 private final class AudioSpy: FocusSessionAudio {
     var actions: [String] = []
