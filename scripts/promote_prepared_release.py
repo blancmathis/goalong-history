@@ -111,11 +111,16 @@ def find_candidate(tree, pr):
     deadline = time.monotonic() + WAIT_FOR_PREPARATION
     while True:
         drafts = [r for r in api('releases?per_page=100') if r['draft'] and r['name'] == draft_name(tree)]
-        if drafts:
+        # The draft exists before its assets finish uploading (2026-10-14, run 38530577256):
+        # take only a draft whose full asset set is uploaded, else keep waiting for the run.
+        complete = [r for r in drafts if {a['name'] for a in r['assets'] if a['state'] == 'uploaded'} == set(ASSETS)]
+        if complete:
             # Newest preparation first; tags are main-<run>-<attempt>.
-            return sorted(drafts, key=lambda r: tuple(map(int, r['tag_name'].split('-')[1:])), reverse=True)[0]
+            return sorted(complete, key=lambda r: tuple(map(int, r['tag_name'].split('-')[1:])), reverse=True)[0]
         runs = api(f"actions/workflows/{PREP_WORKFLOW}/runs?head_sha={pr['head']['sha']}&per_page=20")['workflow_runs']
         if not any(r['status'] != 'completed' for r in runs) or time.monotonic() > deadline:
+            if drafts:
+                return sorted(drafts, key=lambda r: tuple(map(int, r['tag_name'].split('-')[1:])), reverse=True)[0]
             raise Fallback('No prepared candidate for this tree')
         print('Preparation for this tree is still running; waiting for it.', flush=True)
         time.sleep(15)
@@ -248,7 +253,10 @@ def publish():
     require_successor(authenticated_state(WORK / 'current-public'), info)
     run('gh', 'release', 'upload', ROLLING, str(DIST / 'community-appcast.xml'), '--repo', REPO, '--clobber')
     stamp('feed_uploaded')
-    environment = dict(os.environ, LOCALHISTORY_PUBLIC_RECEIPT=str(DIST / 'public-verification.json'))
+    # Read the uploaded feed through the GitHub API: the public download URL can serve the
+    # previous feed from cache for minutes. A later job checks the public URL without blocking.
+    environment = dict(os.environ, LOCALHISTORY_PUBLIC_RECEIPT=str(DIST / 'public-verification.json'),
+                       LOCALHISTORY_FEED_SOURCE='api')
     run('bash', 'scripts/verify_published_update.sh', str(DIST), env=environment)
     stamp('feed_verified')
     run('git', 'tag', '--force', ROLLING, main)
