@@ -75,7 +75,9 @@
                         UserDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
                         controller.show(section: .settings)
                         self.dashboardViewModel.settingsPane = .website
-                        NotificationCenter.default.post(name: .goalongWebsiteConnected, object: nil)
+                        // A share link only reveals the picker: the credential did not change, so a
+                        // plan running in an open sheet must not be paused.
+                        NotificationCenter.default.post(name: url.host == "share" ? .goalongWebsiteShareRequested : .goalongWebsiteConnected, object: nil)
                     }
                 }
             }

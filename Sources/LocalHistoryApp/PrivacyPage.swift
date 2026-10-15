@@ -26,6 +26,9 @@
                                     .frame(width: 28, height: 28)
                             }
                             .buttonStyle(LHSecondaryButtonStyle())
+                            .disabled(model.isRefreshing)
+                            .help("Actualiser")
+                            .accessibilityLabel("Actualiser")
                         }
                     }
 

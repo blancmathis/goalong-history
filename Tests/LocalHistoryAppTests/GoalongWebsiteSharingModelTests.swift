@@ -18,7 +18,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         let token = root.appendingPathComponent("token")
         try Data("synthetic-upload-credential-only".utf8).write(to: token)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: token.path)
-        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: consent)
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: consent, hiddenWebsites: { { _ in false } })
         let bytes = catalogBytes
         let model = GoalongWebsiteSharingModel(autoSender: scheduler, root: root,
             catalogLoader: { _, _, _ in try GoalongSiteSelectionCatalog(payload: bytes) },
@@ -32,7 +32,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
                 XCTAssertFalse(fingerprint.isEmpty)
                 onSend(data)
                 return Data(#"{"imported":1,"updated":0,"skipped":0,"verification":"unverified"}"#.utf8)
-            }, sourceConsent: consent)
+            }, sourceConsent: consent, hiddenWebsites: { { _ in false } })
         return (model, token, defaults, suite)
     }
 
@@ -47,6 +47,33 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         await model.confirm(origin: "", tokenPath: "")
         XCTAssertTrue(model.error?.contains("Reliez") == true)
     }
+    @MainActor func testSitesHiddenInEveryShareAreNotListedPreselectedOrSent() async throws {
+        let suite = "goalong-hidden-sites-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let bytes = Data(#"{"days":[{"telemetry":{"timezone":"Europe/Paris","devices":[{"id":"mac","name":"Mac","kind":"computer","screenSeconds":60,"apps":[{"id":"editor","name":"Editeur","seconds":60}]}],"websites":{"rows":[{"domain":"secret.example","seconds":60},{"domain":"open.example","seconds":30}]}}}]}"#.utf8)
+        let hidden: () -> (String) -> Bool = { { SharingSubjectKey.normalizedHost($0) == "secret.example" } }
+        var exported: [GoalongSiteExportOptions] = []
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: { _ in true }, hiddenWebsites: hidden)
+        let model = GoalongWebsiteSharingModel(autoSender: scheduler, root: root,
+            catalogLoader: { _, _, _ in try GoalongSiteSelectionCatalog(payload: bytes) },
+            exporter: { _, _, options in exported.append(options); return Data(#"{"version":2,"source":"goalong-history","days":[{"date":"2026-09-14","title":"G","summary":"","outcomes":[],"activities":[],"telemetry":{"devices":[{"id":"d","name":"O","screenSeconds":null,"hourly":null,"apps":[{"id":"editor","name":"E","seconds":60}]}],"websites":null,"agent":null}}]}"#.utf8) },
+            sourceConsent: { _ in true }, hiddenWebsites: hidden)
+        model.draft.includeWebsites = true
+        await model.loadCatalog()
+        XCTAssertEqual(model.catalog?.websites.map(\.domain), ["open.example"])
+        XCTAssertEqual(model.draft.websiteDomains, ["open.example"])
+        // A selection restored from an older draft is filtered again before export.
+        model.draft.websiteDomains = ["secret.example", "open.example"]
+        await model.prepare(origin: "", tokenPath: "")
+        XCTAssertEqual(exported.last?.selectedWebsiteDomains, ["open.example"])
+        let daily = GoalongWebsiteAutoSender.removingHiddenWebsites(.init(deviceIDs: ["mac"], includeWebsites: true, selectedWebsiteDomains: ["secret.example", "open.example"]), isHidden: hidden())
+        XCTAssertEqual(daily.selectedWebsiteDomains, ["open.example"])
+    }
+
     @MainActor func testExplicitExclusionsSurviveReloadingTheSuggestedSelection() async throws {
         let (model, token, _, _) = try fixture()
         defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }

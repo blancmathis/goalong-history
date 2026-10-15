@@ -21,6 +21,8 @@
                         }
                         .buttonStyle(LHSecondaryButtonStyle())
                         .disabled(model.isRefreshing)
+                        .help("Actualiser")
+                        .accessibilityLabel("Actualiser")
                     }
                 }
 

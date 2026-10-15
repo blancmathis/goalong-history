@@ -96,6 +96,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     private var userChangedSelection = false
     private var needsWebsiteSuggestion = true
     let autoSender: GoalongWebsiteAutoSender
+    private let hiddenWebsites: () -> (String) -> Bool
     private let root: URL
     private let catalogLoader: (URL, String, Bool) throws -> GoalongSiteSelectionCatalog
     private let exporter: (URL, String, GoalongSiteExportOptions) throws -> Data
@@ -106,7 +107,9 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
          catalogLoader: @escaping (URL, String, Bool) throws -> GoalongSiteSelectionCatalog = { try GoalongQueryCLI.siteSelectionCatalog(rootDirectory: $0, day: $1, includeWebsites: $2) },
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
          sender: ((Data, String, URL, String) throws -> Data)? = nil,
-         sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) }) {
+         sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) },
+         hiddenWebsites: @escaping () -> (String) -> Bool = { SharingRulesStore().hiddenWebsiteFilter() }) {
+        self.hiddenWebsites = hiddenWebsites
         let autoSender = autoSender ?? .shared
         self.autoSender = autoSender; self.root = root; self.catalogLoader = catalogLoader
         self.exporter = exporter; self.sender = sender; self.sourceConsent = sourceConsent
@@ -184,8 +187,10 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         loading = true; error = nil
         // Previously selected IDs are kept, never expanded by newly discovered rows.
         do {
-            let value = try await Task.detached(priority: .userInitiated) { try loader(root, snapshot.day, snapshot.includeWebsites) }.value
+            let loaded = try await Task.detached(priority: .userInitiated) { try loader(root, snapshot.day, snapshot.includeWebsites) }.value
             guard generation == ticket, draft.day == snapshot.day, draft.includeWebsites == snapshot.includeWebsites else { return }
+            // Sites hidden in every share are neither listed nor preselected.
+            let value = loaded.removingWebsites(where: hiddenWebsites())
             catalog = value
             configuringPresentation = true
             defer { configuringPresentation = false }
@@ -233,7 +238,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         }
         let snapshot = draft, target = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let ticket = UUID(); generation = ticket
-        let options = snapshot.options
+        let options = GoalongWebsiteAutoSender.removingHiddenWebsites(snapshot.options, isHidden: hiddenWebsites())
         if snapshot.delivery == .daily && catalog.timezone != snapshot.timezone {
             error = "Le fuseau du planning ne correspond pas à cette journée. Choisissez une journée enregistrée dans le fuseau courant avant d’activer la synchronisation."
             return

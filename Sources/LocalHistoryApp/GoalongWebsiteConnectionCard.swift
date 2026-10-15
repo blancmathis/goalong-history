@@ -5,7 +5,11 @@ import LocalHistoryCore
 import LocalHistoryQueryCLI
 import SwiftUI
 
-extension Notification.Name { static let goalongWebsiteConnected = Notification.Name("goalong.website.connected") }
+extension Notification.Name {
+    static let goalongWebsiteConnected = Notification.Name("goalong.website.connected")
+    /// A site "share" link: reveals the picker without changing the credential.
+    static let goalongWebsiteShareRequested = Notification.Name("goalong.website.shareRequested")
+}
 
 /// Explicit pairing and reviewed export. Credentials stay in private files, outside preferences.
 @MainActor struct GoalongWebsiteConnectionCard: View {
@@ -49,7 +53,8 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
                 UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)
+            .merge(with: NotificationCenter.default.publisher(for: .goalongWebsiteShareRequested))) { _ in
             refreshCredential(); UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
         }
         .onChange(of: tokenPath) { _ in refreshCredential() }
@@ -82,9 +87,19 @@ struct GoalongWebsiteConnectionSheet: View {
     struct ReviewedExport { let payload: Data; let privacyRevision: String }
     /// Builds the export and binds it to the exclusions in force while its bytes were produced.
     nonisolated static func reviewedExport(root: URL, day: String, options: GoalongSiteExportOptions,
+        isHidden: (String) -> Bool = SharingRulesStore().hiddenWebsiteFilter(),
+        websiteCatalog: (URL, String) throws -> GoalongSiteSelectionCatalog = { try GoalongQueryCLI.siteSelectionCatalog(rootDirectory: $0, day: $1, includeWebsites: true) },
         export: (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) }) throws -> ReviewedExport {
         let before = GoalongPrivacyPolicy.load(in: root)
         guard !before.blocked else { throw GoalongSiteExportError.invalid("Les exclusions sont illisibles. Vérifiez-les dans les réglages, puis préparez un nouvel aperçu.") }
+        var options = options
+        if options.includeWebsites {
+            // A nil list means "every domain": resolve it, so sites hidden in every share never leave.
+            if options.selectedWebsiteDomains == nil {
+                options.selectedWebsiteDomains = try websiteCatalog(root, day).websites.map(\.domain)
+            }
+            options = GoalongWebsiteAutoSender.removingHiddenWebsites(options, isHidden: isHidden)
+        }
         let bytes = try export(root, day, options)
         guard GoalongPrivacyPolicy.load(in: root).revision == before.revision else {
             throw GoalongSiteExportError.invalid("Les exclusions ont changé pendant la préparation. Préparez un nouvel aperçu.")
@@ -266,7 +281,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Partage ponctuel avancé").font(.headline)
-                        Text("Les récaps et analyses sont envoyés uniquement après votre relecture. Configurez l’envoi quotidien des données chiffrées dans la fenêtre principale « Partager avec GoLong ».").font(.caption)
+                        Text("Les récaps et analyses sont envoyés uniquement après votre relecture. Configurez l’envoi quotidien dans Réglages › Envoi à Goalong › Configurer les envois.").font(.caption)
                         if autoSender.enabled { Button("Mettre la synchronisation en pause") { autoSender.stop() } }
                     }
                     Divider()
@@ -402,7 +417,10 @@ struct GoalongWebsiteConnectionSheet: View {
     private func selectTokenFile(_ file: URL) {
         do {
             _ = try GoalongSiteSubmission.readToken(file: file)
+            // The paired credential is replaced here; the old managed file would stay valid yet unreachable.
+            let previous = tokenFilePath
             tokenFilePath = file.path
+            if !previous.isEmpty, previous != file.path { GoalongWebsitePairingCoordinator.forgetStoredToken(path: previous) }
             tokenPathInput = ""
             showsTokenPath = false
             error = nil

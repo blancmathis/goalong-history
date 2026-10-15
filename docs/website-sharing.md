@@ -9,7 +9,7 @@ History compares the origin, account UUID and paired credential fingerprint;
 a different account or a manually replaced credential requires re-pairing.
 Opening the picker alone never exports or sends activity.
 
-In History Settings → **Partager avec GoLong**:
+In History **Réglages › Envoi à Goalong › Configurer les envois**:
 
 - **Partager une fois**: select a recorded day and explicitly check devices.
   Application rows, hourly measurements, domains and personal device names are

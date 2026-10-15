@@ -287,12 +287,18 @@ struct GoalongHealthImportSheet: View {
                     alert.addButton(withTitle: "Protéger ce fichier"); alert.addButton(withTitle: "Annuler")
                     alert.beginSheetModal(for: window) { choice in
                         guard choice == .alertFirstButtonReturn else { return }
-                        do { try GoalongSiteSubmission.protectTokenFile(file: url, reviewed: review); tokenFilePath = url.path }
+                        do { try GoalongSiteSubmission.protectTokenFile(file: url, reviewed: review); replaceTokenFile(with: url) }
                         catch { self.error = goalongUserMessage(error) }
                     }
-                } else { _ = try GoalongSiteSubmission.readToken(file: url); tokenFilePath = url.path }
+                } else { _ = try GoalongSiteSubmission.readToken(file: url); replaceTokenFile(with: url) }
             } catch { self.error = goalongUserMessage(error) }
         }
+    }
+    /// Selecting another file replaces the paired credential: drop the old managed token file.
+    private func replaceTokenFile(with url: URL) {
+        let previous = tokenFilePath
+        tokenFilePath = url.path
+        if !previous.isEmpty, previous != url.path { GoalongWebsitePairingCoordinator.forgetStoredToken(path: previous) }
     }
     private func sendReviewedHealth() {
         guard let payload, consent else { return }
