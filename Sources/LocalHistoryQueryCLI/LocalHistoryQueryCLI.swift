@@ -114,6 +114,7 @@ struct GoalongQueryWindow: Encodable, Equatable {
     static func resolve(
         start: Date?,
         end: Date?,
+        endDay: Date? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> GoalongQueryWindow {
@@ -123,8 +124,12 @@ struct GoalongQueryWindow: Encodable, Equatable {
         if let start {
             resolvedStart = start
         } else {
-            let today = calendar.startOfDay(for: resolvedEnd)
+            let today = calendar.startOfDay(for: endDay ?? resolvedEnd)
             resolvedStart = calendar.date(byAdding: .day, value: -(defaultDays - 1), to: today) ?? today
+        }
+        // A bare-day `--end` is the next midnight; compare the start with the day itself.
+        if let endDay, calendar.startOfDay(for: resolvedStart) > endDay {
+            throw CLIError.usage("--start must not be after --end")
         }
         guard resolvedStart <= resolvedEnd else {
             throw CLIError.usage("--start must not be after --end")
@@ -1450,10 +1455,10 @@ public enum GoalongQueryCLI {
 
         case "search", "app", "site":
             let start = try arguments.removeOption("--start").map(parseTimestamp)
-            let end = try arguments.removeOption("--end").map { try parseEndTimestamp($0) }
+            let endBound = try arguments.removeOption("--end").map { try parseEndBound($0) }
             guard !arguments.values.isEmpty else { throw CLIError.usage("\(command) requires a query") }
             let query = arguments.values.joined(separator: " ")
-            let window = try GoalongQueryWindow.resolve(start: start, end: end)
+            let window = try GoalongQueryWindow.resolve(start: start, end: endBound?.end, endDay: endBound?.day)
             let loaded = HistoryLocalStoreReader(rootDirectory: root).load(
                 start: window.start,
                 end: window.end
@@ -1469,11 +1474,11 @@ public enum GoalongQueryCLI {
 
         case "gaps":
             let start = try arguments.removeOption("--start").map(parseTimestamp)
-            let end = try arguments.removeOption("--end").map { try parseEndTimestamp($0) }
+            let endBound = try arguments.removeOption("--end").map { try parseEndBound($0) }
             guard arguments.values.isEmpty else {
                 throw CLIError.usage("gaps accepts only --start ISO_OR_DAY and --end ISO_OR_DAY")
             }
-            let window = try GoalongQueryWindow.resolve(start: start, end: end)
+            let window = try GoalongQueryWindow.resolve(start: start, end: endBound?.end, endDay: endBound?.day)
             let loaded = HistoryLocalStoreReader(rootDirectory: root).load(
                 start: window.start,
                 end: window.end
@@ -4008,10 +4013,15 @@ public enum GoalongQueryCLI {
 
     /// A bare day given to `--end` covers that whole day (up to `now`); ISO timestamps are unchanged.
     static func parseEndTimestamp(_ raw: String, now: Date = Date()) throws -> Date {
-        if let value = fractionalISO.date(from: raw) ?? basicISO.date(from: raw) { return value }
+        try parseEndBound(raw, now: now).end
+    }
+
+    /// Like `parseEndTimestamp`, and also returns the local start of the day for a bare day.
+    static func parseEndBound(_ raw: String, now: Date = Date()) throws -> (end: Date, day: Date?) {
+        if let value = fractionalISO.date(from: raw) ?? basicISO.date(from: raw) { return (value, nil) }
         let start = try day(raw)
         let next = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
-        return max(start, min(next, now))
+        return (max(start, min(next, now)), start)
     }
 
     private static func expandedURL(_ raw: String) -> URL {
