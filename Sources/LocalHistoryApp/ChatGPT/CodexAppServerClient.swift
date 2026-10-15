@@ -1116,6 +1116,11 @@
                         throw CodexAppServerError.protocolLimitExceeded("Le flux de l’analyse dépasse \(maximumResponseBytes * 2 / 1024) Kio.")
                     }
                 case "error":
+                    if params["willRetry"] as? Bool == true {
+                        // Codex reconnects the stream itself and may replay the deltas.
+                        streamedBytes = 0
+                        continue
+                    }
                     throw CodexAppServerError.generationFailed("ChatGPT n’a pas pu terminer l’analyse. Vérifiez la connexion et l’usage du compte, puis réessayez.")
                 case "turn/completed":
                     guard let turn = params["turn"] as? [String: Any],
@@ -1317,6 +1322,7 @@
                         }
                     }
                 case "error":
+                    if params["willRetry"] as? Bool == true { break }
                     if let error = params["error"] as? [String: Any] {
                         failureMessage = (error["message"] as? String).map {
                             CodexAppServerLimits.boundedUTF8(

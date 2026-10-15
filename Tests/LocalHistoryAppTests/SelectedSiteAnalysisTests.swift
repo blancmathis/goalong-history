@@ -280,6 +280,33 @@ final class SelectedSiteAnalysisTests: XCTestCase {
         }
     }
 
+    func testRetryableStreamErrorDoesNotAbortSelectedAnalysis() throws {
+        let retry: [String: Any] = ["method": "error", "params": ["threadId": "thread-1", "turnId": "turn-1",
+            "willRetry": true, "error": ["message": "stream disconnected"]]]
+        let delta: [String: Any] = ["method": "item/agentMessage/delta",
+            "params": ["threadId": "thread-1", "turnId": "turn-1", "delta": "{"]]
+        let fixture = try Fixture(root: directory(), events: [delta, retry] + finalEvents())
+        let session = try fixture.session()
+        defer { session.close() }
+        let draft = try session.generateSiteAnalysis(request: GoalongSiteAnalysisRequest.parse(selectedData()), workingDirectory: fixture.workspace)
+        XCTAssertEqual(draft.title, "Selected observations")
+    }
+
+    func testFinalStreamErrorFailsSelectedAnalysisInFrench() throws {
+        let fatal: [String: Any] = ["method": "error", "params": ["threadId": "thread-1", "turnId": "turn-1",
+            "willRetry": false, "error": ["message": "stream disconnected"]]]
+        let failed: [String: Any] = ["method": "turn/completed", "params": ["threadId": "thread-1",
+            "turn": ["id": "turn-1", "status": "failed", "items": [] as [Any]]]]
+        let fixture = try Fixture(root: directory(), events: [fatal, failed])
+        let session = try fixture.session()
+        defer { session.close() }
+        XCTAssertThrowsError(try session.generateSiteAnalysis(request: GoalongSiteAnalysisRequest.parse(selectedData()), workingDirectory: fixture.workspace)) {
+            guard case CodexAppServerError.generationFailed(let message) = $0 else { return XCTFail("\($0)") }
+            XCTAssertTrue(message.contains("ChatGPT"))
+            XCTAssertFalse(message.contains("stream disconnected"))
+        }
+    }
+
     func testOtherTurnCannotSupplyTheFinalDraft() throws {
         let fixture = try Fixture(root: directory(), events: finalEvents(turnID: "unrelated-turn"))
         let session = try fixture.session()
