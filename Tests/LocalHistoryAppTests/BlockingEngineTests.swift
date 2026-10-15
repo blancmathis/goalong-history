@@ -383,6 +383,68 @@ final class BlockingEngineTests: XCTestCase {
         clockNow = now.addingTimeInterval(3601); c.refresh()
         XCTAssertFalse(c.hasLocks); XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
     }
+    /// R2-019: day keys written under a Buddhist or Japanese calendar are re-keyed to Gregorian once, counters kept.
+    @MainActor func testLegacyCalendarDayKeysAreRekeyedOnLoad() throws {
+        let now = date(15), list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        for (identifier, today, yesterday) in [(Calendar.Identifier.buddhist, "2569-10-15", "2569-10-14"), (.japanese, "0008-10-15", "0008-10-14"), (.indian, "1948-07-23", "1948-07-22")] {
+            var legacy = Calendar(identifier: identifier); legacy.timeZone = calendar.timeZone
+            var usage = BlockDayUsage(day: today); usage.quotaSecondsUsed[list.id] = 120; usage.breaksTaken[list.id] = 1
+            var past = BlockDayUsage(day: yesterday); past.quotaSecondsUsed[list.id] = 300
+            let store = try temporaryStore()
+            try store.save(BlockingDocument(lists: [list], usage: usage, usageHistory: [yesterday: past]))
+            for _ in 0..<2 {  // the second launch changes nothing
+                let c = BlockingController(clock: { now }, store: store, calendarProvider: { legacy }, continuous: { now.timeIntervalSince1970 })
+                XCTAssertEqual(c.frictionCounts(day: "2026-10-15").quotaSecondsUsed[list.id], 120, "\(identifier)")
+                XCTAssertEqual(c.frictionCounts(day: "2026-10-15").breaksTaken[list.id], 1)
+                XCTAssertEqual(c.frictionCounts(day: "2026-10-14").quotaSecondsUsed[list.id], 300, "\(identifier)")
+                let saved = try store.load()
+                XCTAssertEqual(saved.usage?.day, "2026-10-15"); XCTAssertEqual(Set(saved.usageHistory?.keys ?? [:].keys), ["2026-10-14"])
+                XCTAssertEqual(saved.usageHistory?["2026-10-14"]?.day, "2026-10-14")
+            }
+        }
+    }
+    /// R2-076: the « + » button and the drag build their draft the same way, without needing a drag.
+    @MainActor func testNewRangeDraftForADay() throws {
+        let list = UUID()
+        let draft = try XCTUnwrap(BlockingWeekEditor.newDraft(day: 1, start: BlockingWeekEditor.defaultStart,
+                                                              end: BlockingWeekEditor.defaultEnd, firstList: list))
+        XCTAssertNil(draft.existing); XCTAssertEqual(draft.days, [1]); XCTAssertEqual(draft.listIDs, [list])
+        XCTAssertEqual(draft.start, 540); XCTAssertEqual(draft.end, 600)
+        XCTAssertEqual(BlockingWeekEditor.newDraft(day: 2, start: 1_380, end: 1_440, firstList: list)?.end, 1_440)
+        XCTAssertNil(BlockingWeekEditor.newDraft(day: 1, start: 540, end: 600, firstList: nil), "no list, no draft")
+    }
+    /// R2-065: the icon cluster lists each app or host once, so ids stay unique and "+N" counts unique items.
+    func testIconClusterDeduplicatesItems() {
+        let mail = BlockAppRule(bundleIdentifier: "com.apple.mail", name: "Mail")
+        let one = BlockList(name: "A", sites: [.init(pattern: "youtube.com"), .init(pattern: "youtube.com/shorts")], apps: [mail])
+        let two = BlockList(name: "B", sites: [.init(pattern: "youtube.com")], apps: [mail])
+        XCTAssertEqual(BlockingIconCluster.items(for: [one, two]), [.app(mail), .site("youtube.com")])
+    }
+    /// R2-075: a failed marker write is retried on the next refresh, then not repeated.
+    @MainActor func testFailedLockMarkerWriteIsRetried() throws {
+        let store = try temporaryStore(), now = date(), list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        try store.save(BlockingDocument(lists: [list], sessions: [BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(3600), lock: .locked)]))
+        let marker = store.directory.appendingPathComponent("locked-until")
+        try FileManager.default.createDirectory(at: marker, withIntermediateDirectories: false)  // makes the rename fail
+        var clockNow = now
+        let c = BlockingController(clock: { clockNow }, store: store, continuous: { clockNow.timeIntervalSince1970 })
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path, isDirectory: &isDirectory)); XCTAssertTrue(isDirectory.boolValue)
+        try FileManager.default.removeItem(at: marker)
+        c.refresh()
+        let expected = "\(Int(now.timeIntervalSince1970) + 3600)\n"
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), expected)
+        try Data("sentinel".utf8).write(to: marker); c.refresh()
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "sentinel", "a successful write is not repeated")
+        // An unlink failure when the lock ends also retries.
+        try FileManager.default.removeItem(at: marker)
+        try FileManager.default.createDirectory(at: marker, withIntermediateDirectories: false)
+        try Data("x".utf8).write(to: marker.appendingPathComponent("f"))
+        clockNow = now.addingTimeInterval(3601); c.refresh()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        try FileManager.default.removeItem(at: marker); c.refresh()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
     @MainActor func testDamagedStoreIsNeverALockAndAcceptsEdits() throws {
         let store = try temporaryStore(), now = date()
         try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -818,6 +880,19 @@ final class BlockingEngineTests: XCTestCase {
         current = zone("America/New_York")
         NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
         XCTAssertEqual(c.nextProgramStart?.date, date(5, 15))
+    }
+    /// R2-088: a program due during sleep starts on wake without waiting for the next timer tick.
+    @MainActor func testWakeNotificationStartsAProgramDueDuringSleep() {
+        var now = date(5, 8)
+        var list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        list.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 540, endMinute: 720)])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendar: calendar,
+                                   continuous: { now.timeIntervalSince1970 }, runsTimers: true)
+        defer { c.shutdown() }
+        XCTAssertTrue(c.activeBlocks.isEmpty)
+        now = date(5, 9, 30)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertFalse(c.activeBlocks.isEmpty); XCTAssertTrue(c.needsObservation); XCTAssertTrue(c.hasTimer)
     }
 }
 

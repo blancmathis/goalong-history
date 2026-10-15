@@ -42,6 +42,7 @@ import LocalHistoryQueryCLI
     /// Usage day kept across a zone change until its old midnight, so quotas and breaks never reset early.
     private var usageDayCarry: (day: String, start: Date, end: Date)?
     private var systemObservers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
     private let continuous: () -> Double
     private let boot: () -> String
     private let runsTimers: Bool
@@ -108,6 +109,9 @@ import LocalHistoryQueryCLI
                 }
             } catch { failStore() }
         }
+        if migrateLegacyDayKeys(), let store, !storeFailed {
+            do { try store.save(self.document) } catch { failStore() }
+        }
         lastGood = self.document
         lastClock = self.document.clock
         backend?.appStillBlocked = { [weak self] target in
@@ -132,6 +136,12 @@ import LocalHistoryQueryCLI
                     MainActor.assumeIsolated { self?.refresh() }
                 })
             }
+            // Timers do not fire during sleep: refresh on wake so a program or session due meanwhile starts at once.
+            for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+                workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.refresh() }
+                })
+            }
         }
         refresh()
     }
@@ -148,6 +158,7 @@ import LocalHistoryQueryCLI
         }
         timer?.invalidate(); timer = nil
         systemObservers.forEach(NotificationCenter.default.removeObserver); systemObservers.removeAll()
+        workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); workspaceObservers.removeAll()
         onObservationRequirementChanged?(false); onObservationRequirementChanged = nil
         onTimerInputChanged = nil
         clearFriction(); frictionAllowances.removeAll()
@@ -766,7 +777,8 @@ import LocalHistoryQueryCLI
         let needsPassword = blocks.contains { $0.lock == .password }
         if quitRequiresPassword != needsPassword { quitRequiresPassword = needsPassword }
         if let store, !storeFailed, lockMarker != .some(lockedUntil) {
-            lockMarker = .some(lockedUntil); store.writeLockMarker(until: lockedUntil)
+            // Memoize only a durable write: a failure retries on the next refresh, or uninstall.sh would miss the lock.
+            if store.writeLockMarker(until: lockedUntil) { lockMarker = .some(lockedUntil) }
         }
         let next = nextStart(after: now)
         if nextProgramStart?.listID != next?.listID || nextProgramStart?.date != next?.date { nextProgramStart = next }
@@ -1127,6 +1139,31 @@ import LocalHistoryQueryCLI
             }
         }
         if blocks != activeBlocks { activeBlocks = blocks }
+    }
+
+    /// Before R1-231 day keys followed the system calendar (Buddhist « 2569-10-15 », Japanese « 0008-10-15 »).
+    /// Re-keys them to the Gregorian key of the same day, once: Gregorian keys are left alone, so a second pass changes nothing.
+    /// Returns whether the document changed.
+    private func migrateLegacyDayKeys() -> Bool {
+        guard calendar.identifier != .gregorian else { return false }
+        let now = clock()
+        func gregorian(_ key: String) -> String? { GoalongFocusCalendar.gregorianKey(fromLegacy: key, calendar: calendar, now: now) }
+        var changed = false
+        if var usage = document.usage, let key = gregorian(usage.day) {
+            usage.day = key; document.usage = usage; changed = true
+        }
+        if let history = document.usageHistory {
+            var next: [String: BlockDayUsage] = [:]
+            for (key, value) in history where gregorian(key) == nil { next[key] = value }
+            for (key, value) in history.sorted(by: { $0.key < $1.key }) {
+                guard let new = gregorian(key) else { continue }
+                changed = true
+                var usage = value; usage.day = new
+                if next[new] == nil { next[new] = usage }
+            }
+            if changed { document.usageHistory = next }
+        }
+        return changed
     }
 
     /// Every write path reads today's usage here, so a previous day is archived before it can be replaced.

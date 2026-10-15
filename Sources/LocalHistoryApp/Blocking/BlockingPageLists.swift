@@ -309,7 +309,7 @@ import SwiftUI
     }
 
     private var programLine: String {
-        guard let first = list.program.ranges.first else { return "Pas de programme. Glissez sur la semaine pour en créer un." }
+        guard let first = list.program.ranges.first else { return "Pas de programme. Glissez sur la semaine, ou utilisez le bouton + d’un jour, pour en créer un." }
         let more = list.program.ranges.count > 1 ? " et \(list.program.ranges.count - 1) autre\(list.program.ranges.count > 2 ? "s" : "")" : ""
         return "Programme : \(BlockingFormat.weekdays(first.weekdays)) \(BlockingFormat.range(first))\(more)"
     }
@@ -657,8 +657,15 @@ struct BlockingIconCluster: View {
     var size: CGFloat = 22
     var limit = 5
 
+    /// Each app or host once, in list order: several rules can share a host and lists can share an app.
+    static func items(for lists: [BlockList]) -> [BlockingItem] {
+        var seen = Set<BlockingItem>()
+        return lists.flatMap { list in list.apps.map(BlockingItem.app) + list.sites.map { .site($0.host) } }
+            .filter { seen.insert($0).inserted }
+    }
+
     var body: some View {
-        let items = lists.flatMap { list in list.apps.map(BlockingItem.app) + list.sites.map { .site($0.host) } }
+        let items = Self.items(for: lists)
         if items.isEmpty {
             RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
                 .strokeBorder(LHTheme.controlBorder, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
@@ -677,7 +684,7 @@ struct BlockingIconStack: View {
 
     var body: some View {
         HStack(spacing: max(2, size * 0.14)) {
-            ForEach(items, id: \.self) { item in icon(item) }
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in icon(item) }
             if overflow > 0 {
                 Text("+\(overflow)").font(.system(size: max(10, size * 0.5), weight: .medium).monospacedDigit())
                     .foregroundStyle(LHTheme.secondaryText).fixedSize().padding(.leading, 2)

@@ -107,7 +107,7 @@ struct FocusPanel: Equatable {
         self.store = store; self.clock = clock; self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
         let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day
         status = FocusStatus(since: clock()); plan = FocusPlan(day: day); promptState = FocusPromptState(day: day)
-        try store.recover(); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
+        try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
         // Preserve once-per-week warnings made by the pre-ISO implementation.
         for i in limitMarks.indices where limitMarks[i].kind == "weekly" && FocusValidation.day(limitMarks[i].period) {
             limitMarks[i].period = FocusCalendar.weekKey(limitMarks[i].at, calendar: calendar)
