@@ -2405,8 +2405,11 @@
         /// Codex produces ten-minute activity memories. Matching that cadence keeps
         /// the active journal fresh without rereading an ever-growing day once per
         /// minute. Explicit user refreshes bypass this background debounce.
-        private static let minimumBackgroundRefreshInterval =
-            ActivityAnalysisRuntime.backgroundRefreshInterval
+        /// The debounce sits below the timer period: `successfulAt` is stamped after the
+        /// day is read, and the timer has a tolerance, so a tick that fires on schedule would
+        /// otherwise often land just under the threshold and be skipped (a 20 minute cadence).
+        static let minimumBackgroundRefreshInterval =
+            ActivityAnalysisRuntime.backgroundRefreshInterval - 90
 
         private let rootDirectory: URL
         private let computerHistoryStore: ComputerHistoryStore

@@ -146,13 +146,23 @@ import SwiftUI
                 if case .codexUnavailable = runtime.connectionState {
                     Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHSecondaryButtonStyle())
                 } else if case .checking = runtime.connectionState {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button(runtime.isConnecting ? "Connexion…" : "Connecter ChatGPT") {
-                        classifyWhenConnected = true
-                        runtime.connectChatGPT()
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        if runtime.isConnecting {
+                            Button("Annuler") { classifyWhenConnected = false; runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
+                        }
                     }
-                        .buttonStyle(LHPrimaryButtonStyle()).disabled(runtime.isConnecting)
+                } else {
+                    HStack(spacing: 10) {
+                        if runtime.isConnecting {
+                            Button("Annuler") { classifyWhenConnected = false; runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
+                        }
+                        Button(runtime.isConnecting ? "Connexion…" : "Connecter ChatGPT") {
+                            classifyWhenConnected = true
+                            runtime.connectChatGPT()
+                        }
+                            .buttonStyle(LHPrimaryButtonStyle()).disabled(runtime.isConnecting)
+                    }
                 }
             case .historyOff:
                 Button("Ouvrir les réglages") { model.openRecordingSettings() }.buttonStyle(LHSecondaryButtonStyle())

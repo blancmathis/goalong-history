@@ -151,12 +151,16 @@ import AgentActivity
                 }.font(.system(size: 13))
             }
             if selection.computer || selection.screenTime { applicationChoices }
-            if selection.screenTime && catalogLoading { ProgressView("Lecture des appareils…").font(.system(size: 13)) }
-            if selection.screenTime, let catalogError {
+            if needsDevices && catalogLoading { ProgressView("Lecture des appareils…").font(.system(size: 13)) }
+            if needsDevices, let catalogError {
                 Label(catalogError, systemImage: "info.circle").font(.system(size: 13)).foregroundStyle(.secondary)
             }
-            if selection.screenTime, let catalog = localCatalog {
+            if needsDevices, let catalog = localCatalog {
                 GoalongSettingsGroup(title: "Appareils Apple") {
+                    if catalog.devices.isEmpty {
+                        Text("Aucun appareil Apple pour cette date. Désactivez « Autres appareils Apple » ou « Temps d’écran Apple ».")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
                     ForEach(catalog.devices) { device in
                         Toggle(device.name, isOn: Binding(get: { scope.wrappedValue.deviceIDs?.contains(device.id) ?? true }, set: { enabled in
                             var value = scope.wrappedValue
@@ -170,6 +174,7 @@ import AgentActivity
             if selection.conversations { conversationChoices }
         }
     }
+    private var needsDevices: Bool { selection.screenTime || selection.systemSources?.otherDevices == true }
     private var applicationChoices: some View {
         GoalongSettingsGroup(title: "Applications autorisées") {
             HStack {
