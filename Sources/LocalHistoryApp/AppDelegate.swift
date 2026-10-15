@@ -287,6 +287,11 @@
                     }
                 )
                 dashboardWindowController = DashboardWindowController(viewModel: dashboardViewModel)
+                // The share sheet lives on the dashboard: bring it back when the member sends with it closed.
+                dashboardViewModel.profileStudio.onNeedsPresentation = { [weak self] in
+                    guard let controller = self?.dashboardWindowController else { return }
+                    controller.show(section: controller.viewModel.selectedSection)
+                }
 
                 applicationMenuController = ApplicationMenuController(
                     onOpenSettings: { [weak self] in
@@ -568,7 +573,7 @@
                 UserDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
                 UserDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
-            MainActor.assumeIsolated { BraiseRuntime.shared.shutdown() }
+            MainActor.assumeIsolated { ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown() }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
             flushCurrentScreenTimeDay()

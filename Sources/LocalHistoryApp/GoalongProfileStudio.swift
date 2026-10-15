@@ -170,20 +170,22 @@ extension Notification.Name {
     private var studioModel: GoalongProfileStudioModel?
     private var studioDay: Date?
     private var studioLocalOnly = false
-    enum Reopen: Equatable { case front, rebuild, keepWork }
+    enum Reopen: Equatable { case front, rebuild, keepWork, modeMismatch }
     /// A new day replaces the window's content only while nothing is loaded, running or analysed there.
-    static func reopen(shownDay: Date?, requestedDay: Date?, idle: Bool, calendar: Calendar = .current) -> Reopen {
-        guard let requestedDay else { return .front }
-        if let shownDay, calendar.isDate(shownDay, inSameDayAs: requestedDay) { return .front }
-        return idle ? .rebuild : .keepWork
+    /// The same holds for the mode (local-only or with sending): an idle window takes the caller's mode, one with work keeps its own.
+    static func reopen(shownDay: Date?, requestedDay: Date?, idle: Bool, calendar: Calendar = .current,
+                       shownLocalOnly: Bool? = nil, requestedLocalOnly: Bool = false) -> Reopen {
+        let sameMode = shownLocalOnly.map { $0 == requestedLocalOnly } ?? true
+        if let requestedDay, !(shownDay.map { calendar.isDate($0, inSameDayAs: requestedDay) } ?? false) { return idle ? .rebuild : .keepWork }
+        if !sameMode { return idle ? .rebuild : .modeMismatch }
+        return .front
     }
     func show(localOnly: Bool = false, initialDay: Date? = nil, onSend: @escaping (Data) -> Void) {
         if let studioWindow {
             let model = studioModel
             let idle = model.map { !$0.busy && $0.request == nil && $0.result == nil } ?? true
-            var action = Self.reopen(shownDay: studioDay, requestedDay: initialDay, idle: idle)
             // One window serves every entry point: an idle one takes the mode (local-only or with sending) of the caller.
-            if action == .front, idle, studioLocalOnly != localOnly { action = .rebuild }
+            let action = Self.reopen(shownDay: studioDay, requestedDay: initialDay, idle: idle, shownLocalOnly: studioLocalOnly, requestedLocalOnly: localOnly)
             switch action {
             case .front: break
             case .rebuild:
@@ -192,6 +194,10 @@ extension Notification.Name {
                 studioWindow.setFrame(frame, display: true)
             case .keepWork:
                 model?.status = "Une analyse est déjà ouverte pour une autre journée. Fermez-la pour analyser la journée choisie."
+            case .modeMismatch:
+                model?.status = studioLocalOnly
+                    ? "Cette analyse est ouverte en mode local. Fermez-la pour préparer un envoi à votre compte Goalong."
+                    : "Cette analyse est ouverte pour un envoi. Fermez-la pour une analyse locale seule."
             }
             studioWindow.makeKeyAndOrderFront(nil); return
         }
@@ -233,6 +239,8 @@ extension Notification.Name {
 @MainActor final class GoalongProfileStudioHost: ObservableObject {
     struct Share: Equatable { let data: Data; let privacyRevision: String }
     @Published var pending: Share?
+    /// Brings the dashboard back, so the share sheet has a view to appear on. Wired by the app delegate.
+    var onNeedsPresentation: (() -> Void)?
     let window = GoalongProfileWindow()
     private let currentRevision: () -> String
     init(currentRevision: @escaping () -> String = { GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision }) {
@@ -242,7 +250,7 @@ extension Notification.Name {
         window.show(localOnly: localOnly, initialDay: initialDay) { [weak self] in self?.receive($0) }
     }
     /// The privacy revision is captured when the member sends.
-    func receive(_ data: Data) { pending = Share(data: data, privacyRevision: currentRevision()) }
+    func receive(_ data: Data) { pending = Share(data: data, privacyRevision: currentRevision()); onNeedsPresentation?() }
 }
 
 /// Presents the reviewed analysis for sending, from a view that always exists in the dashboard.
