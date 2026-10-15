@@ -1479,6 +1479,13 @@
                 clearAutomaticRetry(for: completedDay)
                 return
             }
+            // A wake or clock change must not bypass the automatic retry cap.
+            if automaticRetryDay == Calendar.current.startOfDay(for: completedDay),
+                automaticRetryWorkItem != nil
+                    || automaticRetryAttempt >= Self.automaticRetryDelays.count
+            {
+                return
+            }
             generateRecap(for: completedDay, automatic: true)
         }
 
@@ -1498,8 +1505,10 @@
             automaticRetryAttempt += 1
             automaticRetryWorkItem?.cancel()
             let workItem = DispatchWorkItem { [weak self] in
-                guard let self, self.started, self.automaticRecapsEnabled else { return }
+                guard let self else { return }
+                // Clear the pending marker first, so a skipped run cannot block later checks.
                 self.automaticRetryWorkItem = nil
+                guard self.started, self.automaticRecapsEnabled else { return }
                 if let stored = ChatGPTRecapPersistence.load(
                     for: normalizedDay,
                     from: self.recapsDirectory

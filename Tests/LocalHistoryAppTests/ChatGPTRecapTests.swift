@@ -2071,6 +2071,115 @@
             XCTAssertFalse(runtime.hasAutomaticBoundaryFallbackForTesting)
         }
 
+        func testWakeDoesNotBypassAutomaticRetryCap() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-wake-cap")
+            defer { try? FileManager.default.removeItem(at: container) }
+            var factoryCalls = 0
+            var delayedItems: [DispatchWorkItem] = []
+            var retryItems: [DispatchWorkItem] = []
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(
+                    rootDirectory: container.appendingPathComponent("history", isDirectory: true)
+                ),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { URL(fileURLWithPath: "/usr/bin/true") },
+                sessionFactory: { _ in factoryCalls += 1; throw CodexAppServerError.malformedResponse("bad") },
+                directoryOpener: { _ in },
+                fileRevealer: { _ in },
+                delayedAutomaticScheduler: { delayedItems.append($0) },
+                automaticRetryScheduler: { _, item in retryItems.append(item) },
+                automaticBoundaryFallbackScheduler: { _, _ in },
+                analysisConsentProvider: { true },
+                analysisSelectionProvider: {
+                    var value = GoalongAnalysisSelection(); value.version = 1; value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                    return value
+                }
+            )
+            runtime.configure(deviceID: "wake-cap-device")
+            runtime.automaticRecapsEnabled = true
+            runtime.start(checkPreviousDayImmediately: false)
+            defer { runtime.stop() }
+            func wake() {
+                runtime.handleWakeOrDayChangeForTesting()
+                let items = delayedItems; delayedItems = []
+                items.forEach { $0.perform() }
+                let deadline = Date().addingTimeInterval(5)
+                while runtime.isGenerating, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            wake()
+            XCTAssertEqual(factoryCalls, 1)
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 1)
+            // A retry is pending: a wake starts no extra run.
+            wake()
+            XCTAssertEqual(factoryCalls, 1)
+            // Exhaust the cap through the retry items.
+            for _ in 0..<3 {
+                let item = retryItems.removeLast()
+                item.perform()
+                let deadline = Date().addingTimeInterval(5)
+                while runtime.isGenerating, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 3)
+            let calls = factoryCalls
+            wake(); wake()
+            XCTAssertEqual(factoryCalls, calls)
+        }
+
+        func testReenablingAfterSkippedRetryRunsAgain() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-reenable")
+            defer { try? FileManager.default.removeItem(at: container) }
+            var factoryCalls = 0
+            var delayedItems: [DispatchWorkItem] = []
+            var retryItems: [DispatchWorkItem] = []
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(
+                    rootDirectory: container.appendingPathComponent("history", isDirectory: true)
+                ),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { URL(fileURLWithPath: "/usr/bin/true") },
+                sessionFactory: { _ in factoryCalls += 1; throw CodexAppServerError.malformedResponse("bad") },
+                directoryOpener: { _ in },
+                fileRevealer: { _ in },
+                delayedAutomaticScheduler: { delayedItems.append($0) },
+                automaticRetryScheduler: { _, item in retryItems.append(item) },
+                automaticBoundaryFallbackScheduler: { _, _ in },
+                analysisConsentProvider: { true },
+                analysisSelectionProvider: {
+                    var value = GoalongAnalysisSelection(); value.version = 1; value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                    return value
+                }
+            )
+            runtime.configure(deviceID: "reenable-device")
+            runtime.automaticRecapsEnabled = true
+            runtime.start(checkPreviousDayImmediately: false)
+            defer { runtime.stop() }
+            func settle() {
+                let deadline = Date().addingTimeInterval(5)
+                while runtime.isGenerating, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            runtime.handleWakeOrDayChangeForTesting()
+            let items = delayedItems; delayedItems = []
+            items.forEach { $0.perform() }
+            settle()
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 1)
+            XCTAssertEqual(retryItems.count, 1)
+            runtime.automaticRecapsEnabled = false
+            retryItems.removeLast().perform()
+            settle()
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 1)
+            // Re-enabling must run the check again: a new attempt is counted.
+            runtime.automaticRecapsEnabled = true
+            let waitUntil = Date().addingTimeInterval(5)
+            while runtime.automaticRetryAttemptForTesting < 2, Date() < waitUntil { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            settle()
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 2)
+        }
+
         func testWakeOrDayChangeReArmsTimersAndChecksYesterday() throws {
             let container = try makeTemporaryDirectory(prefix: "goalong-recap-wake")
             defer { try? FileManager.default.removeItem(at: container) }
