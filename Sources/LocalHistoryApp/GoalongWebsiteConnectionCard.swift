@@ -29,7 +29,7 @@ extension Notification.Name { static let goalongWebsiteConnected = Notification.
                 if credentialAvailable {
                     Button("Déconnecter") { disconnecting = true }.buttonStyle(LHSecondaryButtonStyle())
                 } else {
-                    Button("Relier mon compte") { openWebsite() }.buttonStyle(LHPrimaryButtonStyle())
+                    Button("Relier mon Mac") { openWebsite() }.buttonStyle(LHPrimaryButtonStyle())
                 }
             }
             Divider()

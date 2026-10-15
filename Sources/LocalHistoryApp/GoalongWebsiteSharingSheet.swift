@@ -100,7 +100,7 @@ import LocalHistoryQueryCLI
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(connected ? "Règles du site" : "Relier mon compte") { openSite(fragment: connected ? "privacy" : "settings") }
+                Button(connected ? "Règles du site" : "Relier mon Mac") { openSite(fragment: connected ? "privacy" : "settings") }
                     .buttonStyle(LHSecondaryButtonStyle())
             }
             if connected {
@@ -267,7 +267,7 @@ import LocalHistoryQueryCLI
                     .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("sharing-preview")
                     .disabled(model.busy || model.loading || model.catalog == nil || model.draft.validationMessage != nil )
             } else if !connected || model.preview?.credentialFingerprint.isEmpty == true {
-                Button("Relier mon compte") { openSite(fragment: "settings") }.buttonStyle(LHPrimaryButtonStyle())
+                Button("Relier mon Mac") { openSite(fragment: "settings") }.buttonStyle(LHPrimaryButtonStyle())
             } else {
                 Button(model.draft.delivery == .daily ? "Activer l’envoi quotidien" : "Envoyer cette journée") {
                     if model.draft.delivery == .once { model.reviewed = true }

@@ -30,7 +30,7 @@
 
         private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let permissionMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        private let globalPauseItem = NSMenuItem(title: "Arrêt de confidentialité", action: #selector(toggleGlobalPause), keyEquivalent: "")
+        private let globalPauseItem = NSMenuItem(title: "Confidentialité · tout suspendre…", action: #selector(toggleGlobalPause), keyEquivalent: "")
         private let pauseMenuItem = NSMenuItem(title: "", action: #selector(togglePause), keyEquivalent: "p")
         private let technicalStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let updateMenuItem = NSMenuItem(title: "Rechercher les mises à jour…", action: #selector(checkForUpdates), keyEquivalent: "")
@@ -208,7 +208,7 @@
             permissionMenuItem.title = display.description
             technicalStatusItem.title =
                 "Accessibilité : \(permissionStatus.accessibility ? "oui" : "non") · Surveillance de l’entrée : \(permissionStatus.inputMonitoringStatusLabel) · Interactions : \(eventTapStatus() ? "actives" : "inactives") · Preuve : \(health.captureProven ? "oui" : "non")"
-            globalPauseItem.title = GoalongGlobalPause.isPaused() ? "Reprendre tout le suivi" : "Tout suspendre pour confidentialité…"
+            globalPauseItem.title = GoalongGlobalPause.isPaused() ? "Reprendre tout le suivi" : "Confidentialité · tout suspendre…"
             pauseMenuItem.title = !localEnabled
                 ? "Configurer l’enregistrement…"
                 : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Arrêter l’enregistrement local…")
@@ -272,10 +272,10 @@
 
             globalPauseItem.target = self
             pauseMenuItem.target = self
-            let privacyMenu = NSMenu(title: "Confidentialité · arrêter le suivi")
+            let privacyMenu = NSMenu(title: "Confidentialité")
             privacyMenu.addItem(globalPauseItem)
             privacyMenu.addItem(pauseMenuItem)
-            let privacyItem = NSMenuItem(title: "Confidentialité · arrêter le suivi", action: nil, keyEquivalent: "")
+            let privacyItem = NSMenuItem(title: "Confidentialité", action: nil, keyEquivalent: "")
             privacyItem.submenu = privacyMenu
             menu.addItem(privacyItem)
             Task { @MainActor in JevMenuController.shared.install(in: self.menu, onOpenMonitoring: self.onOpenMonitoring) }
