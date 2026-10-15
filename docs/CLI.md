@@ -1,6 +1,6 @@
 # Goalong CLI
 
-The app bundle includes a bounded local `goalong` command for users and local agents. Original source histories stay read-only. Declared Goalong-side writes are the active-day Screen Time refresh, an explicitly requested proof export and `import-health`, which retains only selected compact Health days. `send-site` is a separate explicit network operation that submits selected saved data to the user's website account. The installer creates the stable link `~/.local/bin/goalong` when that directory is safe and writable. It never replaces an unrelated command already present there.
+The app bundle includes a bounded local `goalong` command for users and local agents. Original source histories stay read-only. Declared Goalong-side writes are the active-day Screen Time refresh, an explicitly requested proof export and `import-health`, which retains only selected compact Health days. `send-site` is a separate explicit network operation that submits selected saved data to the user's website account. The installer creates the stable link `~/.local/bin/goalong` when that directory is safe and writable. It never replaces an unrelated command already present there. `uninstall.sh` removes that link only when it points into a Goalong bundle.
 
 The **Goalong CLI** card in **Settings** opens a short human guide and one complete agent brief that can be copied to the clipboard and pasted as-is into a local agent.
 

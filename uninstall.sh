@@ -10,6 +10,44 @@ DATA_DIR="$HOME/Library/Application Support/LocalHistory"
 LOG_DIR="$HOME/Library/Logs/LocalHistory"
 PURGE_DATA=false
 
+# Ask the running app to quit with SIGTERM: it flushes its history, seals the minute and closes
+# its journal. Wait for it (8 s by default), and only then force it. Names are executable names.
+quit_running_goalong() {
+  local name waited=0 limit="${GOALONG_QUIT_WAIT_TENTHS:-80}" running
+  for name in "$@"; do /usr/bin/pkill -TERM -x "$name" >/dev/null 2>&1 || true; done
+  while (( waited < limit )); do
+    running=0
+    for name in "$@"; do
+      if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then running=1; fi
+    done
+    (( running == 0 )) && return 0
+    /bin/sleep 0.1
+    waited=$((waited + 1))
+  done
+  for name in "$@"; do /usr/bin/pkill -KILL -x "$name" >/dev/null 2>&1 || true; done
+  /bin/sleep 0.4
+}
+
+# Remove ~/.local/bin/goalong only when it is a symlink into a Goalong bundle (the same targets
+# scripts/install_cli_link.sh accepts). A regular file or an unrelated link is never touched.
+remove_goalong_cli_link() {
+  local link_path="${1:-$HOME/.local/bin/goalong}" target
+  [[ -L "$link_path" ]] || return 0
+  target="$(readlink "$link_path")"
+  case "$target" in
+    */Goalong\ History.app/Contents/MacOS/goalong|\
+    */Goalong\ History\ Local.app/Contents/MacOS/goalong|\
+    */Goalong\ History.app/Contents/MacOS/Goalong\ History|\
+    */Goalong\ History\ Local.app/Contents/MacOS/Goalong\ History\ Local|\
+    */GoLong\ History.app/Contents/MacOS/*|\
+    */LocalHistory.app/Contents/MacOS/*)
+      rm -f -- "$link_path"
+      ;;
+  esac
+}
+
+[[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
+
 case "${1:-}" in
   "") ;;
   --purge-data) PURGE_DATA=true ;;
@@ -55,9 +93,7 @@ for app in \
 done
 
 launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true
-pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
-pkill -x "$PREVIOUS_APP_NAME" >/dev/null 2>&1 || true
-pkill -x "$LEGACY_APP_NAME" >/dev/null 2>&1 || true
+quit_running_goalong "$EXECUTABLE_NAME" "$PREVIOUS_APP_NAME" "$LEGACY_APP_NAME"
 rm -f "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
 rm -rf "/Applications/$APP_NAME.app" 2>/dev/null || true
 rm -rf "$HOME/Applications/$APP_NAME.app"
@@ -67,12 +103,18 @@ rm -rf "/Applications/$LEGACY_APP_NAME.app" 2>/dev/null || true
 rm -rf "$HOME/Applications/$LEGACY_APP_NAME.app"
 rm -rf "$LOG_DIR"
 
+remove_goalong_cli_link
+
 tccutil reset Accessibility "$BUNDLE_ID" >/dev/null 2>&1 || true
 tccutil reset ListenEvent "$BUNDLE_ID" >/dev/null 2>&1 || true
 
 if [[ "$PURGE_DATA" == true ]]; then
-  rm -rf "$DATA_DIR"
-  echo "Goalong History, its permissions, and all recorded data were removed."
+  rm -rf "$DATA_DIR" "$DATA_DIR-Dev"
+  rm -rf "$HOME/Library/Caches/$BUNDLE_ID"
+  defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
+  while security delete-generic-password -s "goalong.evidence.v1" >/dev/null 2>&1; do :; done
+  echo "Goalong History, its permissions, its recorded history, logs, preferences and caches were removed."
+  echo "The device identity key in the Keychain is not removed by this script."
 else
   echo "Goalong History and its permissions were removed."
   echo "Your recorded history was kept at:"

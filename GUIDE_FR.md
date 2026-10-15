@@ -168,7 +168,7 @@ Double-cliquez `Uninstall.command` dans le dossier source, ou lancez :
 ./uninstall.sh
 ```
 
-Par défaut, l’application et ses autorisations sont supprimées, mais l’historique reste conservé. Pour supprimer aussi les données :
+Par défaut, l’application, ses autorisations et le lien `~/.local/bin/goalong` (s’il pointe vers Goalong) sont supprimés, mais l’historique reste conservé. Pour supprimer aussi les données, les préférences, les caches et les clés d’analyse du Trousseau (la clé d’identité de l’appareil reste dans le Trousseau) :
 
 ```bash
 ./uninstall.sh --purge-data

@@ -470,6 +470,24 @@ unregister_login_item_if_possible() {
   trim_log_to_limit "$LOG_FILE"
 }
 
+# Ask the running app to quit with SIGTERM: it flushes its history, seals the minute and closes
+# its journal. Wait for it (8 s by default), and only then force it. Names are executable names.
+quit_running_goalong() {
+  local name waited=0 limit="${GOALONG_QUIT_WAIT_TENTHS:-80}" running
+  for name in "$@"; do /usr/bin/pkill -TERM -x "$name" >/dev/null 2>&1 || true; done
+  while (( waited < limit )); do
+    running=0
+    for name in "$@"; do
+      if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then running=1; fi
+    done
+    (( running == 0 )) && return 0
+    /bin/sleep 0.1
+    waited=$((waited + 1))
+  done
+  for name in "$@"; do /usr/bin/pkill -KILL -x "$name" >/dev/null 2>&1 || true; done
+  /bin/sleep 0.4
+}
+
 replace_staged_bundle() {
   local staged_app="$1"
 
@@ -599,11 +617,7 @@ main() {
 
   /bin/launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true
   /bin/rm -f -- "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
-  /usr/bin/pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
-  /usr/bin/pkill -x "$PREVIOUS_APP_NAME" >/dev/null 2>&1 || true
-  /usr/bin/pkill -x "$LEGACY_APP_NAME" >/dev/null 2>&1 || true
-  /usr/bin/pkill -x "$OBSOLETE_LOCAL_APP_NAME" >/dev/null 2>&1 || true
-  /bin/sleep 0.4
+  quit_running_goalong "$EXECUTABLE_NAME" "$PREVIOUS_APP_NAME" "$LEGACY_APP_NAME" "$OBSOLETE_LOCAL_APP_NAME"
 
   run_step "Installing with rollback protection" replace_staged_bundle "$staged_app"
   run_step "Validating the installed bundle" validate_app_bundle "$TARGET_APP"
