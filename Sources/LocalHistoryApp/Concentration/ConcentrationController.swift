@@ -41,6 +41,8 @@ struct FocusPanel: Equatable {
     @Published private(set) var itemMeasures: [FocusItemMeasure] = []
     @Published private(set) var estimateRatio: Double?
     @Published private(set) var sessionFacts = FocusFacts()
+    /// The session the « C’est fait ? » panel asks about; cleared when another panel or none replaces it.
+    @Published private(set) var reviewedSession: FocusSession?
     @Published private(set) var limitMarks: [FocusLimitMark] = []
     @Published private(set) var requestedEditor: FocusPanel.Kind?
     @Published private(set) var panel: FocusPanel?
@@ -193,10 +195,11 @@ struct FocusPanel: Equatable {
         var value = session; value.events.append(.init(kind: .stop, at: end, reason: reason))
         value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
         try persist(value)
-        try blocking()?.creditEarnedTime(for: value)
+        // The stop is on disk: the session ends in memory too, even if the earned-time credit fails.
+        do { try blocking()?.creditEarnedTime(for: value) } catch { self.error = String(describing: error) }
         if let id = phaseBlockID { blocking()?.stop(id) }
         currentSession = nil; phase = nil; phaseBlockID = nil; phaseBlockKey = nil; phaseIdentity = nil; audio.stop()
-        sessionFacts = facts(value)
+        sessionFacts = facts(value); reviewedSession = value
         showPanel(.init(kind: .sessionReview, text: "C’est fait ?", sessionID: value.id))
         refresh()
     }
@@ -475,7 +478,10 @@ struct FocusPanel: Equatable {
     func promptNow() { guard let kind = panel?.kind else { return }; requestedEditor = kind; onOpenRequested?(kind); dismissPanel() }
     func dismissEditor() { requestedEditor = nil }
     func dismissPanel() { showPanel(nil) }
-    private func showPanel(_ value: FocusPanel?) { if panel != value { panel = value; onPanelChange?(value) } }
+    private func showPanel(_ value: FocusPanel?) {
+        if value?.kind != .sessionReview { reviewedSession = nil }
+        if panel != value { panel = value; onPanelChange?(value) }
+    }
     private func scheduleTimer() {
         timer?.invalidate(); timer = nil; guard runsTimers else { return }
         let now = clock()

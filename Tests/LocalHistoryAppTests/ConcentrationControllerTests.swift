@@ -144,7 +144,42 @@ final class ConcentrationControllerTests: XCTestCase {
         XCTAssertTrue(c.hasLockedBlock); XCTAssertEqual(c.phase?.kind, .work)
         XCTAssertThrowsError(try c.stopSession()) { XCTAssertEqual($0 as? FocusFailure, .locked) }
     }
-
+    @MainActor func testEarnedCreditFailureStillEndsTheSessionInMemory() throws {
+        let s = store(); try quiet(s); var now = Date(timeIntervalSince1970: 1791453600)
+        let list = BlockList(name: "Sites", quotaMinutesPerDay: 10, earn: .init())
+        var document = BlockingDocument(lists: [list]), usage = BlockDayUsage(day: BlockingController.dayKey(now))
+        usage.earnedSessionIDs = (0..<4096).map { _ in UUID() }; document.usage = usage
+        let b = BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 })
+        let c = try ConcentrationController(store: s, clock: { now }, blocking: { b })
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: 60), blockListIds: [list.id])
+        now = now.addingTimeInterval(600)
+        XCTAssertNoThrow(try c.stopSession(outcome: .done))
+        XCTAssertNil(c.currentSession); XCTAssertNil(c.phase); XCTAssertTrue(b.activeBlocks.isEmpty); XCTAssertNotNil(c.error)
+        XCTAssertEqual(c.sessions.last?.events.filter { $0.kind == .stop }.count, 1)
+        // A timed session reaching its end through refresh also ends once.
+        try c.startSession(intent: "Lire", mode: FocusMode(minutes: 5))
+        now = now.addingTimeInterval(300); c.refresh(); c.refresh()
+        XCTAssertNil(c.currentSession)
+        XCTAssertEqual(c.sessions.last?.events.filter { $0.kind == .stop }.count, 1)
+        XCTAssertEqual(c.sessions.last?.events.last?.reason, .completed)
+    }
+    @MainActor func testReviewPanelKeepsCLINoteAndSessionAfterMidnight() throws {
+        let s = store(); try quiet(s); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 23, minute: 30))!
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: nil))
+        now = now.addingTimeInterval(50 * 60); c.refresh()
+        try c.stopSession(outcome: .partly, note: "reste les tests")
+        XCTAssertEqual(c.panel?.kind, .sessionReview)
+        XCTAssertFalse(c.sessions.contains { $0.id == c.panel?.sessionID }, "the session is stored under its start day")
+        let reviewed = try XCTUnwrap(c.reviewedSession); XCTAssertEqual(reviewed.id, c.panel?.sessionID)
+        XCTAssertEqual(reviewed.intent, "Écrire"); XCTAssertEqual(reviewed.note, "reste les tests")
+        XCTAssertEqual(FocusPanelMath.workSeconds(reviewed), 50 * 60, accuracy: 1)
+        try c.recordOutcome(sessionID: reviewed.id, outcome: .done, note: reviewed.note)
+        XCTAssertNil(c.reviewedSession)
+        let saved = try s.sessions("2026-10-05").first { $0.id == reviewed.id }
+        XCTAssertEqual(saved?.outcome, .done); XCTAssertEqual(saved?.note, "reste les tests")
+    }
 }
 private final class AudioSpy: FocusSessionAudio {
     var actions: [String] = []

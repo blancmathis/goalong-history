@@ -62,9 +62,11 @@ import SwiftUI
                              intent: controller.currentSession?.intent, endsAt: controller.phase?.endsAt,
                              fallback: content.text)
         case .sessionReview:
-            let session = controller.sessions.first { $0.id == content.sessionID }
+            // The finished session may sit in yesterday's file after midnight: keep the value `finish` saw.
+            let session = controller.reviewedSession.flatMap { $0.id == content.sessionID ? $0 : nil }
+                ?? controller.sessions.first { $0.id == content.sessionID }
             FocusReviewPanelView(intent: session?.intent ?? "", seconds: session.map { FocusPanelMath.workSeconds($0) } ?? 0,
-                                 facts: controller.sessionFacts,
+                                 facts: controller.sessionFacts, initialNote: session?.note,
                                  onAnswer: { outcome, note in
                                      guard let id = content.sessionID else { return }
                                      do { try controller.recordOutcome(sessionID: id, outcome: outcome, note: note) }
@@ -153,7 +155,14 @@ struct FocusReviewPanelView: View {
     let facts: FocusFacts
     var onAnswer: (FocusSession.Outcome?, String?) -> Void
     var onClose: () -> Void
-    @State private var note = ""
+    @State private var note: String
+
+    /// Starts from the note already saved (for example by `goalong session stop --note`), so an answer keeps it.
+    init(intent: String, seconds: TimeInterval, facts: FocusFacts, initialNote: String? = nil,
+         onAnswer: @escaping (FocusSession.Outcome?, String?) -> Void, onClose: @escaping () -> Void) {
+        self.intent = intent; self.seconds = seconds; self.facts = facts; self.onAnswer = onAnswer; self.onClose = onClose
+        _note = State(initialValue: initialNote ?? "")
+    }
 
     var body: some View {
         FocusPanelSurface {
