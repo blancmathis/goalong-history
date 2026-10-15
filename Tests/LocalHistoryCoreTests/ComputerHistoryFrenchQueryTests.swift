@@ -151,6 +151,43 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
         XCTAssertFalse(answer.answer.contains("Most relevant observed history"))
     }
 
+    func testDayWordsMatchWholeWordsOnly() throws {
+        let calendar = utcCalendar
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 30, hour: 18))
+        )
+        let today = calendar.startOfDay(for: now)
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        func interval(_ query: String) -> DateInterval? {
+            ComputerHistorySearchService.explicitTemporalInterval(
+                for: query,
+                now: now,
+                calendar: calendar
+            )
+        }
+
+        for query in [
+            "Où est le fichier de la proposition ?",
+            "mes cahiers",
+            "file hierarchy",
+            "hierarchy diagram",
+        ] {
+            XCTAssertNil(interval(query), query)
+        }
+        for query in ["Qu'ai-je fait hier ?", "fichier ouvert hier", "Hier ?", "le plan d'hier"] {
+            XCTAssertEqual(interval(query)?.start, yesterday, query)
+            XCTAssertEqual(interval(query)?.end, today, query)
+        }
+        for query in ["fichiers ouverts aujourd'hui", "fichiers ouverts aujourd’hui"] {
+            XCTAssertEqual(interval(query)?.start, today, query)
+        }
+        let ranged = try XCTUnwrap(interval("fichier ouvert aujourd'hui de 14h à 16h"))
+        XCTAssertEqual(ranged.start, today.addingTimeInterval(14 * 3600))
+        XCTAssertEqual(ranged.end, today.addingTimeInterval(16 * 3600))
+        let week = try XCTUnwrap(calendar.dateInterval(of: .weekOfYear, for: now))
+        XCTAssertEqual(interval("fichiers de cette semaine")?.start, week.start)
+    }
+
     private var utcCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!

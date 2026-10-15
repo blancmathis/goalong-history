@@ -601,19 +601,26 @@ public struct ComputerHistorySearchService {
                 end: max(start.addingTimeInterval(0.001), now.addingTimeInterval(0.001))
             )
         }
+        // Day words match whole words only ("hier" must not match "fichier"),
+        // and today wins over yesterday in both blocks below.
+        let mentionsToday = SearchText.containsPhrase(
+            query.normalized,
+            ["today", "aujourd hui"]
+        )
+        let mentionsYesterday = SearchText.containsPhrase(
+            query.normalized,
+            ["yesterday", "hier"]
+        )
         let requestedDayStart: Date?
         let requestedDayEnd: Date?
-        if SearchText.containsAny(query.normalized, ["yesterday", "hier"]),
+        if mentionsToday {
+            requestedDayStart = today
+            requestedDayEnd = now.addingTimeInterval(0.001)
+        } else if mentionsYesterday,
             let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
         {
             requestedDayStart = yesterday
             requestedDayEnd = today
-        } else if SearchText.containsAny(
-            query.normalized,
-            ["today", "aujourd hui", "aujourd'hui"]
-        ) {
-            requestedDayStart = today
-            requestedDayEnd = now.addingTimeInterval(0.001)
         } else {
             requestedDayStart = nil
             requestedDayEnd = nil
@@ -645,21 +652,18 @@ public struct ComputerHistorySearchService {
             return DateInterval(start: start, end: end)
         }
 
-        if SearchText.containsAny(
-            query.normalized,
-            ["today", "aujourd hui", "aujourd'hui"]
-        ) {
+        if mentionsToday {
             return DateInterval(
                 start: today,
                 end: max(today.addingTimeInterval(0.001), now.addingTimeInterval(0.001))
             )
         }
-        if SearchText.containsAny(query.normalized, ["yesterday", "hier"]),
+        if mentionsYesterday,
             let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
         {
             return DateInterval(start: yesterday, end: today)
         }
-        if SearchText.containsAny(
+        if SearchText.containsPhrase(
             query.normalized,
             ["this week", "cette semaine"]
         ), let week = calendar.dateInterval(of: .weekOfYear, for: now) {
@@ -2162,6 +2166,24 @@ enum SearchText {
 
     static func containsAny(_ value: String, _ markers: [String]) -> Bool {
         markers.contains { value.contains(normalized($0)) }
+    }
+
+    /// Whole-word variant of `containsAny`: "hier" matches "hier ?" and
+    /// "d'hier" but not "fichier". Apostrophes, hyphens and other
+    /// punctuation separate words, so "aujourd hui" also matches "aujourd'hui".
+    static func containsPhrase(_ value: String, _ markers: [String]) -> Bool {
+        let padded = " " + words(value).joined(separator: " ") + " "
+        return markers.contains { marker in
+            let markerWords = words(normalized(marker))
+            return !markerWords.isEmpty
+                && padded.contains(" " + markerWords.joined(separator: " ") + " ")
+        }
+    }
+
+    static func words(_ normalizedValue: String) -> [String] {
+        normalizedValue
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
     }
 
     private static let stopWords: Set<String> = [
