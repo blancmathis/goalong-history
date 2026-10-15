@@ -774,7 +774,8 @@ import LocalHistoryQueryCLI
         let needsPassword = blocks.contains { $0.lock == .password }
         if quitRequiresPassword != needsPassword { quitRequiresPassword = needsPassword }
         if let store, !storeFailed, lockMarker != .some(lockedUntil) {
-            lockMarker = .some(lockedUntil); store.writeLockMarker(until: lockedUntil)
+            // Memoize only a durable write: a failure retries on the next refresh, or uninstall.sh would miss the lock.
+            if store.writeLockMarker(until: lockedUntil) { lockMarker = .some(lockedUntil) }
         }
         let next = nextStart(after: now)
         if nextProgramStart?.listID != next?.listID || nextProgramStart?.date != next?.date { nextProgramStart = next }

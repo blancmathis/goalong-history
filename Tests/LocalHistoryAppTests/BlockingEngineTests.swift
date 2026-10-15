@@ -383,6 +383,31 @@ final class BlockingEngineTests: XCTestCase {
         clockNow = now.addingTimeInterval(3601); c.refresh()
         XCTAssertFalse(c.hasLocks); XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
     }
+    /// R2-075: a failed marker write is retried on the next refresh, then not repeated.
+    @MainActor func testFailedLockMarkerWriteIsRetried() throws {
+        let store = try temporaryStore(), now = date(), list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        try store.save(BlockingDocument(lists: [list], sessions: [BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(3600), lock: .locked)]))
+        let marker = store.directory.appendingPathComponent("locked-until")
+        try FileManager.default.createDirectory(at: marker, withIntermediateDirectories: false)  // makes the rename fail
+        var clockNow = now
+        let c = BlockingController(clock: { clockNow }, store: store, continuous: { clockNow.timeIntervalSince1970 })
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path, isDirectory: &isDirectory)); XCTAssertTrue(isDirectory.boolValue)
+        try FileManager.default.removeItem(at: marker)
+        c.refresh()
+        let expected = "\(Int(now.timeIntervalSince1970) + 3600)\n"
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), expected)
+        try Data("sentinel".utf8).write(to: marker); c.refresh()
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "sentinel", "a successful write is not repeated")
+        // An unlink failure when the lock ends also retries.
+        try FileManager.default.removeItem(at: marker)
+        try FileManager.default.createDirectory(at: marker, withIntermediateDirectories: false)
+        try Data("x".utf8).write(to: marker.appendingPathComponent("f"))
+        clockNow = now.addingTimeInterval(3601); c.refresh()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        try FileManager.default.removeItem(at: marker); c.refresh()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
     @MainActor func testDamagedStoreIsNeverALockAndAcceptsEdits() throws {
         let store = try temporaryStore(), now = date()
         try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
