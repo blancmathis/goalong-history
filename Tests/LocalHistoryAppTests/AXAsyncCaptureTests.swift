@@ -11,7 +11,7 @@ final class AXAsyncCaptureTests: XCTestCase {
         var config = RecorderConfig.default
         config.captureWindowTitles = true; config.captureElementLabels = true
         configure(&config)
-        let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory) // same policy ContextProvider revalidates
+        let privacy = GoalongPrivacyPolicyCache.read(in: hermeticDataRoot())
         return ContextReadParameters(foregroundApplication: app, applications: [42: app], config: config,
             accessibilityAvailable: true, blockingAXTrusted: true, sessionAvailable: true, idleSeconds: 1,
             privacy: privacy, pauseRevision: "initial")

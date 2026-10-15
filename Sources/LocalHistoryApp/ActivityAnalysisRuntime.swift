@@ -174,12 +174,18 @@
         private let applicationWitness: (pid_t) -> (() -> Bool)?
         private let allowsSemantic: (ContextSnapshot) -> Bool
         private let semanticRead: (pid_t, Int, Int) -> AXRichContextCapture?
+        private let hostGate: HostCaptureGate
+        private let richContextEnabled: () -> Bool
 
         init(client: AXClient = .system,
+             hostGate: HostCaptureGate = .live,
+             richContextEnabled: @escaping () -> Bool = { ActivityAnalysisPreferences.richContextEnabled },
              applicationWitness: ((pid_t) -> (() -> Bool)?)? = nil,
              allowsSemantic: ((ContextSnapshot) -> Bool)? = nil,
              semanticRead: ((pid_t, Int, Int) -> AXRichContextCapture?)? = nil) {
             axClient = client
+            self.hostGate = hostGate
+            self.richContextEnabled = richContextEnabled
             self.applicationWitness = applicationWitness ?? { pid in
                 guard let application = NSRunningApplication(processIdentifier: pid), !application.isTerminated else { return nil }
                 let instance = application.launchDate, bundle = application.bundleIdentifier
@@ -188,7 +194,7 @@
                         && NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == bundle
                 }
             }
-            self.allowsSemantic = allowsSemantic ?? Self.workerAllowsSemantic
+            self.allowsSemantic = allowsSemantic ?? { Self.workerAllowsSemantic($0, hostGate: hostGate, richContextEnabled: richContextEnabled) }
             self.semanticRead = semanticRead ?? { pid, characters, nodes in
                 AXRichContextReader.capture(processIdentifier: pid, maximumCharacters: characters, maximumNodes: nodes)
             }
@@ -467,9 +473,9 @@
             deduplicate: Bool,
             metadata additionalMetadata: [String: String]
         ) {
-            guard ActivityAnalysisPreferences.richContextEnabled, let recorder, let state,
+            guard richContextEnabled(), let recorder, let state,
                   state.isCapturing, snapshot.suppressionReason == nil,
-                  snapshot.focusedElement?.isSecure != true, !IsSecureEventInputEnabled(),
+                  snapshot.focusedElement?.isSecure != true, !hostGate.secureInput(),
                   let requestContext = currentContext,
                   pendingSemanticCaptureCount < Self.maximumPendingSemanticCaptures,
                   let writePermit = derivedWriteBarrier.beginJob() else { return }
@@ -505,7 +511,7 @@
                             guard let self, permit.isValid, captureGeneration == self.interactionCaptureGeneration,
                                   self.started, let post, Self.semanticBoundaryMatches(post.snapshot, expected: validatedSnapshot),
                                   post.boundary == evidence.boundary,
-                                  state.isCapturing, !IsSecureEventInputEnabled() else { finish(); return }
+                                  state.isCapturing, !self.hostGate.secureInput() else { finish(); return }
                             self.commitSemanticContext(capture, snapshot: post.snapshot, deduplicate: deduplicate,
                                 metadata: additionalMetadata, recorder: recorder, permit: permit,
                                 application: application, writePermit: writePermit, completion: finish)
@@ -515,9 +521,10 @@
             }
         }
 
-        private static func workerAllowsSemantic(_ snapshot: ContextSnapshot) -> Bool {
-            guard ActivityAnalysisPreferences.richContextEnabled, !IsSecureEventInputEnabled(),
-                  ForegroundSessionAvailability.isAvailable(),
+        private static func workerAllowsSemantic(_ snapshot: ContextSnapshot, hostGate: HostCaptureGate,
+                                                 richContextEnabled: () -> Bool) -> Bool {
+            guard richContextEnabled(), !hostGate.secureInput(),
+                  hostGate.sessionAvailable(),
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == snapshot.app.processIdentifier else { return false }
             if let revision = snapshot.globalPauseRevision {
                 guard (try? GoalongGlobalPause.revalidate(revision)) != nil else { return false }

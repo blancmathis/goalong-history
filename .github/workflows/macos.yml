@@ -65,8 +65,12 @@ jobs:
 
       - name: Tests
         shell: bash
+        env:
+          GOALONG_TEST_HOME: ${{ runner.temp }}/goalong-test-home
+          CFFIXED_USER_HOME: ${{ runner.temp }}/goalong-test-home
         run: |
           set -euo pipefail
+          mkdir -p "$GOALONG_TEST_HOME"
           LOG="$(mktemp)"
           set +e
           xcrun swift test 2>&1 | tee "$LOG"
