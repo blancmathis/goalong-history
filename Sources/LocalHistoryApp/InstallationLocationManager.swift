@@ -28,7 +28,21 @@
             do {
                 let destination = try preferredDestination()
                 attemptedDestination = destination
-                if replacementDecision(source: source, destination: destination) == .alreadyInstalled {
+                let decision = replacementDecision(source: source, destination: destination)
+                if decision == .installedIsNewer {
+                    let newer = NSAlert()
+                    newer.alertStyle = .informational
+                    newer.messageText = "Une version plus récente est déjà dans Applications"
+                    newer.informativeText =
+                        "Cette copie est plus ancienne que celle installée. Ouvrez Goalong History depuis votre dossier Applications."
+                    newer.addButton(withTitle: "Afficher dans le Finder")
+                    newer.addButton(withTitle: "Quitter")
+                    if newer.runModal() == .alertFirstButtonReturn {
+                        NSWorkspace.shared.activateFileViewerSelecting([destination])
+                    }
+                    return true
+                }
+                if decision == .alreadyInstalled {
                     let installed = NSAlert()
                     installed.alertStyle = .informational
                     installed.messageText = "Goalong History est déjà dans Applications"
@@ -72,20 +86,24 @@
             return URL(fileURLWithPath: "/Applications", isDirectory: true)
         }
 
-        enum ReplacementDecision: Equatable { case replace, alreadyInstalled }
+        enum ReplacementDecision: Equatable { case replace, alreadyInstalled, installedIsNewer }
 
-        /// A translocated copy of the version that is already installed must never delete it.
+        /// A copy of the installed version must never delete it (translocated sources only), and an
+        /// older copy must never replace a newer install. Unreadable versions keep `.replace`.
         static func replacementDecision(
             source: URL, destination: URL, fileManager: FileManager = .default
         ) -> ReplacementDecision {
-            guard source.path.contains("/AppTranslocation/"),
-                  fileManager.fileExists(atPath: destination.path),
+            guard fileManager.fileExists(atPath: destination.path),
                   let installed = Bundle(url: destination), installed.bundleIdentifier == bundleIdentifier,
                   let current = Bundle(url: source), current.bundleIdentifier == bundleIdentifier,
                   let installedVersion = installed.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
-                  installedVersion == current.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+                  let sourceVersion = current.object(forInfoDictionaryKey: "CFBundleVersion") as? String
             else { return .replace }
-            return .alreadyInstalled
+            switch installedVersion.compare(sourceVersion, options: .numeric) {
+            case .orderedDescending: return .installedIsNewer
+            case .orderedSame where source.path.contains("/AppTranslocation/"): return .alreadyInstalled
+            default: return .replace
+            }
         }
 
         private static func isTransient(_ bundleURL: URL) -> Bool {

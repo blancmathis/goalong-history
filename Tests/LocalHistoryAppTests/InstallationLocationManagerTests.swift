@@ -97,6 +97,16 @@ final class InstallationLocationManagerTests: XCTestCase {
         XCTAssertEqual(InstallationLocationManager.replacementDecision(source: downloaded, destination: installed), .replace)
     }
 
+    func testOlderCopyNeverReplacesANewerInstall() throws {
+        let root = try makeRoot()
+        let installed = try makeBundle(in: root.appendingPathComponent("Applications", isDirectory: true), version: "10")
+        let translocatedRoot = root.appendingPathComponent("AppTranslocation/ABC/d", isDirectory: true)
+        let older = try makeBundle(in: translocatedRoot, version: "9")
+        XCTAssertEqual(InstallationLocationManager.replacementDecision(source: older, destination: installed), .installedIsNewer)
+        let volume = try makeBundle(in: root.appendingPathComponent("Volumes"), version: "9")
+        XCTAssertEqual(InstallationLocationManager.replacementDecision(source: volume, destination: installed), .installedIsNewer)
+    }
+
     func testRevealFolderFallsBackToApplications() {
         let system = URL(fileURLWithPath: "/Applications", isDirectory: true)
         let user = URL(fileURLWithPath: "/Users/x/Applications", isDirectory: true)
