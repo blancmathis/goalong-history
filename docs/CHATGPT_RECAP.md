@@ -123,7 +123,11 @@ rewrite, replacement or truncation remains an error.
 The five-line recap is also saved on this Mac as plain JSON and Markdown in
 `chatgpt/recaps` (owner-only file permissions, not encrypted). It has no
 automatic expiry. Clearing the detailed history (all of it, a period or chosen
-days) erases the recaps of the cleared days. Retention rules do not touch it.
+days) erases the recaps of the cleared days, together with their local proof package
+(`chatgpt/proofs/<executionID>/`, which holds the canonical markdown, five lines and
+scores) and the encrypted response capsule with its Keychain key. A full clear also removes
+orphan proof packages, capsules and `chain-head.json`. After a partial clear the chain head may
+point to an erased run; the next proof then starts a new chain. Retention rules do not touch it.
 
 An encrypted copy of the bounded final assistant response is kept for up to 30 days in an
 AES-256-GCM capsule with one random per-run DEK stored as a `ThisDeviceOnly`
