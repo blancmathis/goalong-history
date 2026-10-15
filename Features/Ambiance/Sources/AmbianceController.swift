@@ -19,6 +19,8 @@ import OndeCore
     private var runtime: AmbianceRuntime?
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var downloadTickets: [String: UUID] = [:]
+    private var playTask: Task<Void, Never>?
+    private var playTicket: UUID?
     init(settings: AmbianceSettings, supportDirectory: URL) {
         precondition(settings.isEnabled)
         self.settings = settings; store = AmbiancePackStore(supportDirectory: supportDirectory)
@@ -37,20 +39,45 @@ import OndeCore
             state = .error(AmbianceError.unavailable.localizedDescription); return
         }
         state = .loading
-        do {
-            let prepared: AmbianceRuntime
-            if canonical.profile != nil, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "orchestra" }) {
-                prepared = try AmbianceRuntime(source: canonical, orchestraDirectory: store.directory(pack))
-            } else {
-                let url: URL
-                if canonical.kind == .ownFile, let path = canonical.path { url = URL(fileURLWithPath: path) }
-                else if canonical.kind == .texture, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "textures" }) {
-                    url = store.directory(pack).appendingPathComponent(canonical.id + ".wav")
-                } else { throw AmbianceError.unavailable }
-                prepared = try AmbianceRuntime(fileURL: url, looping: canonical.kind == .texture) { [weak self] in
-                    self?.stop()
+        if canonical.profile != nil, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "orchestra" }) {
+            // Hashing the samples takes a while on a cold disk: keep it off the main actor so the
+            // "Préparation…" state shows and the UI stays responsive. Stop or another Play invalidates the ticket.
+            let ticket = UUID(), directory = store.directory(pack)
+            playTicket = ticket
+            playTask = Task { [weak self] in
+                let worker = Task.detached(priority: .userInitiated) {
+                    try AmbianceRuntime.prepareOrchestra(source: canonical, orchestraDirectory: directory)
                 }
+                let prepared: AmbianceRuntime.PreparedOrchestra
+                do {
+                    prepared = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+                } catch {
+                    guard let self, self.playTicket == ticket else { return }
+                    self.playTask = nil; self.playTicket = nil
+                    self.state = .error("Lecture impossible : \(error.localizedDescription)")
+                    return
+                }
+                guard let self, self.playTicket == ticket, !Task.isCancelled else { prepared.discard(); return }
+                self.playTask = nil; self.playTicket = nil
+                self.begin(AmbianceRuntime(prepared: prepared), canonical)
             }
+            return
+        }
+        do {
+            let url: URL
+            if canonical.kind == .ownFile, let path = canonical.path { url = URL(fileURLWithPath: path) }
+            else if canonical.kind == .texture, let pack = AmbiancePackCatalog.packs.first(where: { $0.id == "textures" }) {
+                url = store.directory(pack).appendingPathComponent(canonical.id + ".wav")
+            } else { throw AmbianceError.unavailable }
+            begin(try AmbianceRuntime(fileURL: url, looping: canonical.kind == .texture) { [weak self] in
+                self?.stop()
+            }, canonical)
+        } catch {
+            stop(); state = .error("Lecture impossible : \(error.localizedDescription)")
+        }
+    }
+    private func begin(_ prepared: AmbianceRuntime, _ canonical: AmbianceSource) {
+        do {
             prepared.volume = volume; runtime = prepared
             prepared.onInterrupted = { [weak self] in self?.outputInterrupted() }
             try prepared.startOutput()
@@ -64,14 +91,17 @@ import OndeCore
         guard case .playing = state else { return }
         stop(); state = .error("Sortie audio modifiée : relancez la lecture.")
     }
-    public func stop() { runtime?.stop(); runtime = nil; state = .idle }
+    public func stop() {
+        playTask?.cancel(); playTask = nil; playTicket = nil
+        runtime?.stop(); runtime = nil; state = .idle
+    }
     public func shutdown() {
         stop()
         for task in downloadTasks.values { task.cancel() }
         downloadTasks.removeAll(); downloadTickets.removeAll()
         sources = []; packs = []
     }
-    deinit { for task in downloadTasks.values { task.cancel() } }
+    deinit { playTask?.cancel(); for task in downloadTasks.values { task.cancel() } }
     /// Explicit diagnostic render. It emits no device audio and always tears
     /// down the runtime, including on validation, decode and render failures.
     public func renderOffline(_ source: AmbianceSource, seconds: Double) throws -> AmbianceRenderMeasure {

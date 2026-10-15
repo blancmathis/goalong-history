@@ -176,6 +176,47 @@ final class AmbianceTests: XCTestCase {
         XCTAssertFalse(store.isInstalled(fixture.pack))
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.root.path))
     }
+    /// An orchestra folder that passes the catalog receipt check but holds an invalid manifest:
+    /// play() reaches the off-main preparation and then fails, with no device audio.
+    @MainActor private func controllerWithBrokenOrchestra() throws -> AmbianceController {
+        let support = try root(), fixture = try fixtureArchive(), store = AmbiancePackStore(supportDirectory: support)
+        try store.install(fixture.pack, archive: fixture.url)
+        let catalog = try XCTUnwrap(AmbiancePackCatalog.packs.first { $0.id == "orchestra" })
+        let receipt: [String: Any] = ["id": catalog.id, "sha256": catalog.sha256, "bytes": catalog.bytes,
+                                      "files": ["LICENSE.txt", "manifest.json"]]
+        try JSONSerialization.data(withJSONObject: receipt).write(to: store.directory(catalog).appendingPathComponent(".installed.json"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let controller = try XCTUnwrap(AmbianceModule(settings: settings) { support }.controller)
+        XCTAssertTrue(controller.sources.contains { $0.kind == .focus && $0.isAvailable })
+        return controller
+    }
+    @MainActor func testOrchestraPlayShowsLoadingThenFailsHonestly() async throws {
+        let controller = try controllerWithBrokenOrchestra()
+        let source = try XCTUnwrap(controller.sources.first { $0.kind == .focus })
+        controller.play(source)
+        XCTAssertEqual(controller.state, .loading, "Preparation runs off the main actor")
+        for _ in 0..<200 where controller.state == .loading { try await Task.sleep(nanoseconds: 10_000_000) }
+        guard case .error = controller.state else { return XCTFail("Invalid bank must end in an error, got \(controller.state)") }
+        XCTAssertFalse(controller.diagnostics.runtimeCreated)
+    }
+    @MainActor func testStopDuringOrchestraLoadingStaysIdle() async throws {
+        let controller = try controllerWithBrokenOrchestra()
+        let source = try XCTUnwrap(controller.sources.first { $0.kind == .focus })
+        controller.play(source); controller.stop()
+        XCTAssertEqual(controller.state, .idle)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(controller.state, .idle, "A stale load must not publish an error or start audio")
+        XCTAssertFalse(controller.diagnostics.runtimeCreated)
+    }
+    @MainActor func testSecondPlayDuringLoadingSupersedesTheFirst() async throws {
+        let controller = try controllerWithBrokenOrchestra()
+        let focus = controller.sources.filter { $0.kind == .focus }
+        controller.play(focus[0]); controller.play(focus[1])
+        XCTAssertEqual(controller.state, .loading)
+        for _ in 0..<200 where controller.state == .loading { try await Task.sleep(nanoseconds: 10_000_000) }
+        guard case .error = controller.state else { return XCTFail("Only the second play reports, got \(controller.state)") }
+        XCTAssertFalse(controller.diagnostics.runtimeCreated)
+    }
     private func installedOrchestra() throws -> (AmbiancePackStore, AmbiancePack) {
         guard let folder = ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_PACK_DIR"] else {
             throw XCTSkip("Provide the locally built dev packs to exercise real acoustic rendering")
