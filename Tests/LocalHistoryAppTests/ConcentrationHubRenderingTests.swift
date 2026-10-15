@@ -28,7 +28,20 @@ final class ConcentrationHubRenderingTests: XCTestCase {
         defer { window.orderOut(nil); window.contentViewController = nil }
         let root = URL(fileURLWithPath: "/private/tmp/focus-hub-render-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        // In-memory runtime only: never the shared runtime, the standard store or the real backend.
+        // The shared runtime is started only under the guarded /tmp/goalong- HOME above, so its store and
+        // backend touch disposable data. Views read it directly (« Nouvelle liste… », add-to-list menus).
+        let suite = "hub-render-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let modules = GoalongModuleStore(defaults: defaults)
+        modules.setEnabled(.blocking, true)
+        let blockingWasOn = GoalongModuleStore.shared.isEnabled(.blocking)
+        GoalongModuleStore.shared.setEnabled(.blocking, true)
+        defer { GoalongModuleStore.shared.setEnabled(.blocking, blockingWasOn) }
+        try FileManager.default.createDirectory(at: AppPaths.applicationSupportDirectory, withIntermediateDirectories: true)
+        BlockingRuntime.shared.start(modules: modules)
+        defer { BlockingRuntime.shared.apply(enabled: false) }
+        // The data shown in lists lives in memory, like the other renders.
         let blocking = BlockingController(document: BlockingDocument(), clock: { Date() }, continuous: { Date().timeIntervalSince1970 })
         let lists = BlockingRuntime(controller: blocking)
 
