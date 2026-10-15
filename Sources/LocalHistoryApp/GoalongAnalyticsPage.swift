@@ -10,7 +10,6 @@ struct GoalongAnalyticsPage: View {
     @ObservedObject var model: DashboardViewModel
     @Binding var navigation: GoalongActivityNavigation
     @ObservedObject var analytics: GoalongAnalyticsModel
-    @StateObject private var studio = GoalongProfileWindow()
     @ObservedObject private var work = GoalongWorkStore.shared
     @ObservedObject private var agent = GoalongWorkAgent.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
@@ -158,7 +157,7 @@ struct GoalongAnalyticsPage: View {
             Button("Bilan quotidien et sources…") { openRecap(navigation.day) }
             Button("Projets et avancées…") {
                 guard !previewActive else { return }
-                studio.show(localOnly: true, initialDay: navigation.day, onSend: { _ in })
+                model.profileStudio.show(localOnly: true, initialDay: navigation.day)
             }
             Button("Annuler", role: .cancel) {}
         } message: {

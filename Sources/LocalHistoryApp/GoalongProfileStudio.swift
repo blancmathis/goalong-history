@@ -129,6 +129,7 @@ extension Notification.Name {
     private var studioWindow: NSWindow?
     private var studioModel: GoalongProfileStudioModel?
     private var studioDay: Date?
+    private var studioLocalOnly = false
     enum Reopen: Equatable { case front, rebuild, keepWork }
     /// A new day replaces the window's content only while nothing is loaded, running or analysed there.
     static func reopen(shownDay: Date?, requestedDay: Date?, idle: Bool, calendar: Calendar = .current) -> Reopen {
@@ -140,7 +141,10 @@ extension Notification.Name {
         if let studioWindow {
             let model = studioModel
             let idle = model.map { !$0.busy && $0.request == nil && $0.result == nil } ?? true
-            switch Self.reopen(shownDay: studioDay, requestedDay: initialDay, idle: idle) {
+            var action = Self.reopen(shownDay: studioDay, requestedDay: initialDay, idle: idle)
+            // One window serves every entry point: an idle one takes the mode (local-only or with sending) of the caller.
+            if action == .front, idle, studioLocalOnly != localOnly { action = .rebuild }
+            switch action {
             case .front: break
             case .rebuild:
                 let frame = studioWindow.frame
@@ -166,7 +170,7 @@ extension Notification.Name {
     }
     private func content(localOnly: Bool, initialDay: Date?, onSend: @escaping (Data) -> Void) -> NSViewController {
         let model = GoalongProfileStudioModel()
-        studioModel = model; studioDay = initialDay.map { Calendar.current.startOfDay(for: $0) }
+        studioModel = model; studioLocalOnly = localOnly; studioDay = initialDay.map { Calendar.current.startOfDay(for: $0) }
         let view = GoalongProfileStudio(onSend: { [weak self] data in
             self?.studioWindow?.close()
             onSend(data)
@@ -181,6 +185,35 @@ extension Notification.Name {
     func windowWillClose(_ notification: Notification) {
         studioWindow?.contentViewController = nil
         studioWindow = nil; studioModel = nil; studioDay = nil
+    }
+}
+
+/// Owns the profile studio window and the analysis it hands off, for the life of the dashboard.
+/// A pane that opens the studio can disappear before the member sends; the hand-off must survive that.
+@MainActor final class GoalongProfileStudioHost: ObservableObject {
+    struct Share: Equatable { let data: Data; let privacyRevision: String }
+    @Published var pending: Share?
+    let window = GoalongProfileWindow()
+    private let currentRevision: () -> String
+    init(currentRevision: @escaping () -> String = { GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision }) {
+        self.currentRevision = currentRevision
+    }
+    func show(localOnly: Bool = false, initialDay: Date? = nil) {
+        window.show(localOnly: localOnly, initialDay: initialDay) { [weak self] in self?.receive($0) }
+    }
+    /// The privacy revision is captured when the member sends.
+    func receive(_ data: Data) { pending = Share(data: data, privacyRevision: currentRevision()) }
+}
+
+/// Presents the reviewed analysis for sending, from a view that always exists in the dashboard.
+struct GoalongProfileShareHost: View {
+    @ObservedObject var host: GoalongProfileStudioHost
+    var body: some View {
+        Color.clear.sheet(isPresented: Binding(get: { host.pending != nil }, set: { if !$0 { host.pending = nil } })) {
+            if let share = host.pending {
+                GoalongWebsiteConnectionSheet(preparedAnalysis: share.data, privacyRevision: share.privacyRevision).goalongControls()
+            }
+        }
     }
 }
 

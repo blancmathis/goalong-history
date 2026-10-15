@@ -55,6 +55,7 @@
             .overlay { GoalongToastHost() }
             .environment(\.goalongRecordingModel, model)
             .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay).goalongControls() }
+            .background(GoalongProfileShareHost(host: model.profileStudio))
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)
             .tint(LHTheme.accent)
