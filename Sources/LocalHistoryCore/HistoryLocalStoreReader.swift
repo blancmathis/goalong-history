@@ -56,6 +56,9 @@ public struct DailyWebsiteUsageLoadResult {
     public let peakStreamBufferBytes: Int
     public let peakEstimatedRetainedBytes: Int64
     public let issues: [HistoryLoadIssue]
+    /// Rows that could not be decoded and were left out of the totals. A few
+    /// torn rows keep the day usable; many mean the source is unavailable.
+    public let skippedMalformedRowCount: Int
 
     public init(
         day: Date,
@@ -66,8 +69,10 @@ public struct DailyWebsiteUsageLoadResult {
         sourceEventCount: Int,
         peakStreamBufferBytes: Int,
         peakEstimatedRetainedBytes: Int64,
-        issues: [HistoryLoadIssue]
+        issues: [HistoryLoadIssue],
+        skippedMalformedRowCount: Int = 0
     ) {
+        self.skippedMalformedRowCount = max(0, skippedMalformedRowCount)
         self.day = day
         self.state = state
         self.websites = websites
@@ -1185,6 +1190,7 @@ public struct HistoryLocalStoreReader {
     /// JSON files are reported as load issues instead of being read whole.
     private static let maximumJSONFileBytes = 16 * 1_024 * 1_024
     private static let maximumComputerHistoryIssues = 256
+    private static let maximumSkippedMalformedRows = 16
     private static let maximumSourceSearchDirectoryEntries = 8_192
     private static let maximumSourceSearchFiles = 4_096
 
@@ -1271,6 +1277,7 @@ public struct HistoryLocalStoreReader {
         var sourceBoundExceeded = false
         var sourceChanged = false
         var sourceUnavailable = false
+        var skippedMalformedRowCount = 0
         var eventFiles: [HistoryPinnedSourceFile] = []
         var pinnedRoot: HistoryPinnedSourceDirectory?
         var pinnedEvents: HistoryPinnedSourceDirectory?
@@ -1371,12 +1378,17 @@ public struct HistoryLocalStoreReader {
                                 onObservedEvent?(event)
                                 accumulator.ingest(event)
                             } catch {
-                                sourceUnavailable = true
+                                // A torn row (for example after a crash during an append) must
+                                // not hide the other rows. Heavy corruption still fails closed.
+                                skippedMalformedRowCount += 1
                                 appendIssue(
                                     path: sourceFile.url.path,
                                     line: lineNumber,
-                                    message: "Could not decode daily website source row: \(error)"
+                                    message: "Skipped an undecodable daily website source row."
                                 )
+                                if skippedMalformedRowCount > Self.maximumSkippedMalformedRows {
+                                    sourceUnavailable = true
+                                }
                             }
                         }
                     },
@@ -1477,7 +1489,8 @@ public struct HistoryLocalStoreReader {
             sourceEventCount: accumulator.sourceEventCount,
             peakStreamBufferBytes: peakStreamBufferBytes,
             peakEstimatedRetainedBytes: accumulator.peakEstimatedRetainedBytes,
-            issues: issues
+            issues: issues,
+            skippedMalformedRowCount: skippedMalformedRowCount
         )
     }
 

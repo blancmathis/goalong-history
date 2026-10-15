@@ -2647,6 +2647,9 @@ public enum GoalongQueryCLI {
         let statusMessage: String = {
             switch loaded.state {
             case .ready:
+                if loaded.skippedMalformedRowCount > 0 {
+                    return "Website usage loaded from the original local day journal, without \(loaded.skippedMalformedRowCount) undecodable row(s); totals may be slightly low."
+                }
                 return total == 0
                     ? "No public website was observed in the local journal for this day."
                     : "Complete ranked website usage loaded from the original local day journal."
