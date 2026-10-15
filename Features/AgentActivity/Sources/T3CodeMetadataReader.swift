@@ -103,6 +103,9 @@ public enum T3CodeMetadataReader {
             struct Busy { let request: String; let thread: String; let project: String; let start: Date; let end: Date }
             var requests: [Request] = [], busy: [Busy] = []
             let lower = dateString(dayInterval.start.addingTimeInterval(-7200)), upper = dateString(dayInterval.end.addingTimeInterval(7200))
+            // An open turn is capped at six hours, so one that started earlier than this cannot touch the day.
+            let openFloorDate = dayInterval.start.addingTimeInterval(-maximumOpenTurn)
+            let openFloor = dateString(openFloorDate.addingTimeInterval(-7200))
             func thread(_ raw: String) -> String { raw.hasPrefix("mcp:") ? String(raw.dropFirst(4)) : raw }
             func interval(start: String?, end: String?, status: String?) -> (Date, Date)? {
                 guard let s = parseDate(start) else { partial = true; return nil }
@@ -110,13 +113,18 @@ public enum T3CodeMetadataReader {
                 let ongoing = ["running", "started", "in_progress", "active"].contains(status ?? "")
                 // A turn left « running » by a crash must not fill the day: an open turn counts six hours at most.
                 var open = min(now, dayInterval.end)
+                // An orphaned open turn that ended up outside the day must not mark this day as partial.
+                if terminal == nil && s.addingTimeInterval(maximumOpenTurn) <= dayInterval.start { return nil }
                 if ongoing && terminal == nil && open.timeIntervalSince(s) > maximumOpenTurn { open = s.addingTimeInterval(maximumOpenTurn); partial = true }
-                guard let e = terminal ?? (ongoing ? open : nil), e >= s else { partial = true; return nil }
+                guard let e = terminal ?? (ongoing ? open : nil), e >= s else {
+                    if s >= openFloorDate && s < dayInterval.end { partial = true }
+                    return nil
+                }
                 return (s, e)
             }
             let cap = max(1, min(20_000, limits.maximumRows))
             if v1 {
-                let rows = try db.rows("SELECT t.turn_id,t.thread_id,h.project_id,t.requested_at,t.started_at,t.completed_at,t.state FROM projection_turns t JOIN projection_threads h ON h.thread_id=t.thread_id WHERE t.requested_at < ?2 AND (t.completed_at >= ?1 OR t.completed_at IS NULL OR t.requested_at >= ?1) LIMIT \(cap + 1)", binds: [lower, upper])
+                let rows = try db.rows("SELECT t.turn_id,t.thread_id,h.project_id,t.requested_at,t.started_at,t.completed_at,t.state FROM projection_turns t JOIN projection_threads h ON h.thread_id=t.thread_id WHERE t.requested_at < ?2 AND (t.completed_at >= ?1 OR (t.completed_at IS NULL AND t.requested_at >= ?3) OR t.requested_at >= ?1) LIMIT \(cap + 1)", binds: [lower, upper, openFloor])
                 if rows.count > cap { partial = true }
                 for r in rows.prefix(cap) {
                     guard let id = r[0], let th = r[1], let p = r[2], let requested = parseDate(r[3]) else { partial = true; continue }
@@ -125,9 +133,9 @@ public enum T3CodeMetadataReader {
                 }
             }
             if v2 {
-                let rows = try db.rows("SELECT r.run_id,r.thread_id,h.project_id,r.requested_at,r.completed_at,r.status FROM orchestration_v2_projection_runs r JOIN orchestration_v2_projection_threads h ON h.thread_id=r.thread_id WHERE r.requested_at < ?2 AND (r.completed_at >= ?1 OR r.completed_at IS NULL OR r.requested_at >= ?1) LIMIT \(cap + 1)", binds: [lower, upper])
+                let rows = try db.rows("SELECT r.run_id,r.thread_id,h.project_id,r.requested_at,r.completed_at,r.status FROM orchestration_v2_projection_runs r JOIN orchestration_v2_projection_threads h ON h.thread_id=r.thread_id WHERE r.requested_at < ?2 AND (r.completed_at >= ?1 OR (r.completed_at IS NULL AND r.requested_at >= ?3) OR r.requested_at >= ?1) LIMIT \(cap + 1)", binds: [lower, upper, openFloor])
                 if rows.count > cap { partial = true }
-                let providerRows = try db.rows("SELECT a.run_id,t.thread_id,h.project_id,t.started_at,t.completed_at,t.status FROM orchestration_v2_projection_provider_turns t JOIN orchestration_v2_projection_threads h ON h.thread_id=t.thread_id JOIN orchestration_v2_projection_run_attempts a ON a.attempt_id=t.run_attempt_id WHERE t.started_at < ?2 AND (t.completed_at >= ?1 OR t.completed_at IS NULL) LIMIT \(cap + 1)", binds: [lower, upper])
+                let providerRows = try db.rows("SELECT a.run_id,t.thread_id,h.project_id,t.started_at,t.completed_at,t.status FROM orchestration_v2_projection_provider_turns t JOIN orchestration_v2_projection_threads h ON h.thread_id=t.thread_id JOIN orchestration_v2_projection_run_attempts a ON a.attempt_id=t.run_attempt_id WHERE t.started_at < ?2 AND (t.completed_at >= ?1 OR (t.completed_at IS NULL AND t.started_at >= ?3)) LIMIT \(cap + 1)", binds: [lower, upper, openFloor])
                 if providerRows.count > cap { partial = true }
                 var withTurn = Set<String>()
                 for r in providerRows.prefix(cap) {
@@ -139,7 +147,7 @@ public enum T3CodeMetadataReader {
                     guard let id = r[0], let th = r[1], let p = r[2], let requested = parseDate(r[3]) else { partial = true; continue }
                     requests.append(.init(id: id, thread: thread(th), project: p, requested: requested, completed: parseDate(r[4])))
                     // A run request is not a start timestamp. Missing provider turns cannot prove busy time.
-                    if !withTurn.contains(id), r[5] == "running" { partial = true }
+                    if !withTurn.contains(id), r[5] == "running", requested >= openFloorDate { partial = true }
                 }
             }
             var seenRequests = Set<String>(), seenBusy = Set<String>()

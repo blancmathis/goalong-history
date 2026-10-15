@@ -15,13 +15,13 @@ public enum AgentSourceReadError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .missing(let source):
-            return "The original agent source is no longer present: \(source)"
+            return "La source d’origine de l’agent n’est plus présente : \(source)"
         case .inaccessible(let source):
-            return "The original agent source is not readable: \(source)"
+            return "La source d’origine de l’agent n’est pas lisible : \(source)"
         case .fileTooLarge(let path, let bytes, let maximum):
-            return "The source \(path) is \(bytes) bytes; the configured maximum is \(maximum)."
+            return "La source \(path) fait \(bytes) octets ; le maximum configuré est \(maximum)."
         case .changedDuringRead(let source):
-            return "The original agent source changed while it was being read; it will be retried: \(source)"
+            return "La source d’origine de l’agent a changé pendant la lecture ; nouvelle tentative plus tard : \(source)"
         case .unsupported(let detail):
             return detail
         }
@@ -1380,7 +1380,7 @@ final class AgentDirectSourceScanSession {
         if let candidate = resolution.candidate { return candidate }
         if let error = resolution.error { throw error }
         throw AgentSourceReadError.unsupported(
-            "The provider catalog read was bounded before this source could be resolved; retry later."
+            "La lecture du catalogue du fournisseur a été limitée avant de pouvoir résoudre cette source. Réessayez plus tard."
         )
     }
 
@@ -1421,6 +1421,12 @@ final class AgentDirectSourceScanSession {
             record.summary.title = codexConversationTitle(
                 for: record,
                 sourceConversationID: sourceConversationID
+            )
+        } else if folder.provider == .claudeCode {
+            record.summary.title = claudeConversationTitle(
+                for: record,
+                fileStem: URL(fileURLWithPath: candidate.reference.path)
+                    .deletingPathExtension().lastPathComponent
             )
         }
         return record
@@ -1495,6 +1501,26 @@ final class AgentDirectSourceScanSession {
                 $0.role == .user
             })?.text ?? record.summary.excerpt
         return Self.compactConversationTitle(firstUserRequest)
+    }
+
+    /// Claude Code has no title catalog. Keep an explicit title from the transcript (summary or
+    /// custom title); when the parser only found the file name (the session UUID), use the first
+    /// visible user request. Like the Codex title, this value is not persisted in the source index.
+    private func claudeConversationTitle(
+        for record: AgentCaptureRecord,
+        fileStem: String
+    ) -> String? {
+        let parsedTitle = record.summary.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let parsedTitle, !parsedTitle.isEmpty, parsedTitle != fileStem,
+            UUID(uuidString: parsedTitle) == nil
+        {
+            return parsedTitle
+        }
+        let firstUserRequest =
+            record.summary.visibleMessages.first(where: {
+                $0.role == .user
+            })?.text ?? record.summary.excerpt
+        return Self.compactConversationTitle(firstUserRequest) ?? record.summary.title
     }
 
     private func codexThreadTitleConnection() -> CodexThreadTitleConnection? {
@@ -2564,7 +2590,7 @@ enum AgentDirectSourceReader {
             initial.byteCount > maximumBufferedJSONBytes
         {
             throw AgentSourceReadError.unsupported(
-                "JSON transcript analysis is bounded to 8 MiB; the source was left unanalyzed."
+                "L’analyse des transcriptions JSON est limitée à 8 Mio. Cette source n’a pas été analysée."
             )
         }
         guard bodyReadBudget.canReadKnownLength(initial.byteCount) else {
@@ -3411,12 +3437,12 @@ private final class SQLiteReadConnection {
         }
         if let wal = snapshots[path + "-wal"], wal.exists, wal.byteCount > 0 {
             throw AgentSourceReadError.unsupported(
-                "OpenCode analysis is deferred while its live WAL contains uncheckpointed data: \(path)-wal"
+                "L’analyse d’OpenCode est reportée tant que son journal WAL contient des données non enregistrées : \(path)-wal"
             )
         }
         if let journal = snapshots[path + "-journal"], journal.exists, journal.byteCount > 0 {
             throw AgentSourceReadError.unsupported(
-                "OpenCode analysis is deferred while its rollback journal is active: \(path)-journal"
+                "L’analyse d’OpenCode est reportée tant que son journal de reprise est actif : \(path)-journal"
             )
         }
         initialSnapshots = snapshots
@@ -3519,7 +3545,7 @@ private final class SQLiteReadConnection {
                 nil
             ) == SQLITE_OK
         else {
-            throw AgentSourceReadError.unsupported("OpenCode's session page could not be read.")
+            throw AgentSourceReadError.unsupported("La page de sessions d’OpenCode n’a pas pu être lue.")
         }
         defer {
             AgentSQLiteReadMetrics.recordStatementResources(path: path, statement: statement)
@@ -4102,7 +4128,7 @@ private final class SQLiteReadConnection {
     ) throws {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
-            throw AgentSourceReadError.unsupported("OpenCode's session table could not be read.")
+            throw AgentSourceReadError.unsupported("La table de sessions d’OpenCode n’a pas pu être lue.")
         }
         defer { sqlite3_finalize(statement) }
         guard sqlite3_stmt_readonly(statement) == 1 else {

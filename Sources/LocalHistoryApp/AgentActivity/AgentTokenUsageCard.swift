@@ -27,16 +27,16 @@ struct AgentTokenUsageCard: View {
                     Text("Couverture partielle : les compteurs manquants et sources indisponibles restent inconnus. Les copies de conversations rejouées peuvent être exclues.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
-                ForEach(Array(Set(usage.rows.map { $0.provider.rawValue })).sorted(), id: \.self) { provider in
-                    let totals = usage.rows.filter { $0.provider.rawValue == provider }.flatMap(\.events).compactMap(\.total)
-                    Text("\(provider) : \(totals.isEmpty ? "inconnu" : totals.reduce(0, +).formatted(.number.locale(Self.locale)) + " tokens observés")")
+                ForEach(Array(Set(usage.rows.map(\.provider))).sorted { $0.frenchName.localizedStandardCompare($1.frenchName) == .orderedAscending }) { provider in
+                    let totals = usage.rows.filter { $0.provider == provider }.flatMap(\.events).compactMap(\.total)
+                    Text("\(provider.frenchName) : \(totals.isEmpty ? "inconnu" : totals.reduce(0, +).formatted(.number.locale(Self.locale)) + " tokens observés")")
                         .font(.system(size: 12, weight: .medium))
                 }
                 GoalongDisclosureGroup("Détails par outil, modèle et conversation") {
                     VStack(alignment: .leading, spacing: 14) {
                         ForEach(usage.rows) { row in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("\(row.provider.rawValue) · \(row.model)").fontWeight(.semibold)
+                                Text("\(row.provider.frenchName) · \(row.model)").fontWeight(.semibold)
                                 Text(row.session).lineLimit(1)
                                 Text("Entrée \(number(row.sum(\.input))) · Sortie \(number(row.sum(\.output))) · Total \(number(row.sum(\.total)))")
                                 Text("Cache lu \(number(row.sum(\.cacheRead))) · Cache écrit \(number(row.sum(\.cacheWrite))) · Raisonnement \(number(row.sum(\.reasoning)))")

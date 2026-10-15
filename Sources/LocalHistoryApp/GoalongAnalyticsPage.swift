@@ -312,7 +312,7 @@ struct GoalongAnalyticsPage: View {
                 case .ready, .partial:
                     detail = GoalongCodeDay.count(requests, "demande", "demandes") + " ce jour-là, dans "
                         + GoalongCodeDay.count(t3.projects.count, "projet", "projets") + "."
-                        + (t3.status == .partial ? " Lecture partielle : la base dépasse les limites de lecture." : "")
+                        + (t3.status == .partial ? " Lecture partielle : certaines activités T3 n’ont pas pu être lues en entier." : "")
                 case .noData: detail = "Aucune demande ce jour-là."
                 case .unsupported: detail = "Cette version de T3 Code n’est pas encore prise en charge."
                 case .failed(let reason): detail = reason

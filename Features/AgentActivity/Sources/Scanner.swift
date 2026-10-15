@@ -426,7 +426,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             }
         } catch {
             pendingDiscoveryByFolderID.removeAll(keepingCapacity: true)
-            appendFailure("Could not save the Agent Activity scan: \(error.localizedDescription)", result: &result)
+            appendFailure("Impossible d’enregistrer l’analyse de l’activité des agents : \(error.localizedDescription)", result: &result)
         }
         if analyzeContent, analysisPassIsActive {
             let hasDiscoveryWork =
@@ -1239,7 +1239,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             } catch {
                 analysisSliceWasInterrupted = true
                 appendFailure(
-                    "\(projection.sourcePath): the selected-day projection could not be retained: \(error.localizedDescription)",
+                    "\(projection.sourcePath): la projection du jour sélectionné n’a pas pu être conservée : \(error.localizedDescription)",
                     result: &result
                 )
             }

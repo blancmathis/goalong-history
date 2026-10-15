@@ -71,6 +71,35 @@ final class T3CodeMetadataTests: XCTestCase {
         let value = T3CodeMetadataReader.read(at: file, day: day, enabled: true, now: day.addingTimeInterval(12 * 3600), calendar: calendar)
         XCTAssertEqual(value.status, .partial); XCTAssertEqual(value.projects.first?.busySeconds, T3CodeMetadataReader.maximumOpenTurn)
     }
+    func testOrphanedOpenTurnFromEarlierDayDoesNotMakeLaterDaysPartial() throws {
+        let (file, db) = try fixture()
+        try sql(db, """
+        INSERT INTO projection_turns VALUES('stale','one','2026-10-01T01:00:00.000Z','2026-10-01T01:00:00.000Z',NULL,'running');
+        INSERT INTO projection_turns VALUES('stale2','one','2026-10-01T02:00:00.000Z',NULL,NULL,'cancelled');
+        INSERT INTO projection_turns VALUES('today','one','2026-10-03T01:00:00.000Z','2026-10-03T01:00:00.000Z','2026-10-03T01:30:00.000Z','completed');
+        INSERT INTO orchestration_v2_projection_runs VALUES('r1','one','2026-10-01T01:00:00.000Z',NULL,'running','x');
+        INSERT INTO orchestration_v2_projection_run_attempts VALUES('a1','r1','x');
+        INSERT INTO orchestration_v2_projection_provider_turns VALUES('p1','one','a1','2026-10-01T01:00:00.000Z',NULL,'running','x');
+        INSERT INTO orchestration_v2_projection_provider_turns VALUES('p2','one','a1','2026-10-01T02:00:00.000Z',NULL,'interrupted','x');
+        """)
+        let value = T3CodeMetadataReader.read(at: file, day: day, enabled: true, now: day.addingTimeInterval(12 * 3600), calendar: calendar)
+        XCTAssertEqual(value.status, .ready); XCTAssertEqual(value.projects.first?.busySeconds, 1800)
+    }
+    func testOrphanedOpenTurnAloneGivesNoDataOnLaterDay() throws {
+        let (file, db) = try fixture()
+        try sql(db, """
+        INSERT INTO projection_turns VALUES('stale','one','2026-10-01T01:00:00.000Z','2026-10-01T01:00:00.000Z',NULL,'running');
+        INSERT INTO orchestration_v2_projection_runs VALUES('r1','one','2026-10-01T01:00:00.000Z',NULL,'running','x');
+        """)
+        let value = T3CodeMetadataReader.read(at: file, day: day, enabled: true, now: day.addingTimeInterval(12 * 3600), calendar: calendar)
+        XCTAssertEqual(value.status, .noData)
+    }
+    func testRunningTurnFromPreviousEveningIsClippedAndPartial() throws {
+        let (file, db) = try fixture(v2: false)
+        try sql(db, "INSERT INTO projection_turns VALUES('late','one','2026-10-02T22:00:00.000Z','2026-10-02T22:00:00.000Z',NULL,'running');")
+        let value = T3CodeMetadataReader.read(at: file, day: day, enabled: true, now: day.addingTimeInterval(12 * 3600), calendar: calendar)
+        XCTAssertEqual(value.status, .partial); XCTAssertEqual(value.projects.first?.busySeconds, 4 * 3600)
+    }
     func testLiveWALUsesCommittedRowsWithoutWritingDatabaseOrWAL() throws {
         let (file, db) = try fixture(v2: false, wal: true)
         try sql(db, "INSERT INTO projection_turns VALUES('a','one','2026-10-03T00:01:00.000Z','2026-10-03T00:01:00.000Z','2026-10-03T00:02:00.000Z','completed');")

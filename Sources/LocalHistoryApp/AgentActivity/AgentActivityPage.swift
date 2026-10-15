@@ -21,6 +21,17 @@
                 ?? record.capturedAt
         }
 
+        /// The picker is hidden with fewer than two providers, and a filter outside the
+        /// available providers must never show another provider's rows.
+        static func effectiveProviderFilter(
+            _ filter: AgentProvider?,
+            availableProviders: [AgentProvider]
+        ) -> AgentProvider? {
+            guard let filter, availableProviders.count > 1, availableProviders.contains(filter)
+            else { return nil }
+            return filter
+        }
+
         static func newestFirst(_ records: [AgentCaptureRecord]) -> [AgentCaptureRecord] {
             records.sorted { left, right in
                 let leftDate = date(for: left)
@@ -113,6 +124,16 @@
                         forceFullDiscovery: false,
                         analyzeSelectedDay: true
                     )
+                }
+            }
+            .onChange(of: availableProviders) { providers in
+                // Drop a stale provider filter (for example after a day change) so the picker,
+                // the list and the empty state agree.
+                if providerFilter != nil,
+                    AgentConversationListPresentation.effectiveProviderFilter(
+                        providerFilter, availableProviders: providers) == nil
+                {
+                    providerFilter = nil
                 }
             }
             .onChange(of: consents.document) { _ in
@@ -568,10 +589,25 @@
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    if let otherPath = status.otherExecutablePath {
+                        Text(
+                            status.otherExecutableExists
+                                ? "Installé pour une autre copie : \(otherPath)"
+                                : "Cassé : copie introuvable (\(otherPath))"
+                        )
+                        .font(.system(size: 11))
+                        .foregroundStyle(status.otherExecutableExists ? Color.secondary : Color.orange)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                    }
                 }
                 Spacer()
                 StatusPill(
-                    title: status.isInstalled ? "Signal de relance installé" : "Détection périodique",
+                    title: status.isInstalled
+                        ? "Signal de relance installé"
+                        : (status.otherExecutablePath != nil
+                            ? (status.otherExecutableExists ? "Installé pour une autre copie" : "Intégration cassée")
+                            : "Détection périodique"),
                     symbol: status.isInstalled ? "bolt.shield.fill" : "bolt.slash",
                     tint: status.isInstalled ? LHTheme.success : Color.secondary
                 )
@@ -580,6 +616,15 @@
                         agents.uninstallIntegration(kind)
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
+                } else if status.otherExecutablePath != nil {
+                    Button("Retirer") {
+                        agents.uninstallIntegration(kind)
+                    }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    Button("Réinstaller pour cette copie") {
+                        agents.installIntegration(kind)
+                    }
+                    .buttonStyle(LHPrimaryButtonStyle())
                 } else {
                     Button("Installer") {
                         agents.installIntegration(kind)
@@ -703,13 +748,15 @@
                                 "Une entrée d’index par conversation. L’ouvrir ou l’analyser lit directement la source d’origine."
                         )
                         Spacer()
-                        Picker("Outil", selection: $providerFilter) {
-                            Text("Tous les outils").tag(nil as AgentProvider?)
-                            ForEach(AgentProvider.allCases) { provider in
-                                Text(provider.frenchName).tag(provider as AgentProvider?)
+                        if availableProviders.count > 1 {
+                            Picker("Outil", selection: $providerFilter) {
+                                Text("Tous les outils").tag(nil as AgentProvider?)
+                                ForEach(availableProviders) { provider in
+                                    Text(provider.frenchName).tag(provider as AgentProvider?)
+                                }
                             }
+                            .frame(width: 165)
                         }
-                        .frame(width: 165)
                         GoalongSearchField("Rechercher sessions, fichiers, modèles ou outils", text: $search)
                             .frame(width: 285)
                     }
@@ -797,7 +844,7 @@
                         )
                         detailLine("Espace total utilisé", value: formatBytes(agents.storageBytes))
                         detailLine("Fichier d’index", value: formatBytes(agents.overview.indexBytes))
-                        detailLine("Octets d’origine lus aujourd’hui", value: formatBytes(agents.overview.sourceBytes))
+                        detailLine("Taille des sources de la journée", value: formatBytes(agents.overview.sourceBytes))
                         detailLine("Structure de l’index", value: agents.indexIsValid ? "Valide" : "Invalide")
                         Button("Ouvrir le dossier de l’index") {
                             agents.openRootFolder()
@@ -831,7 +878,10 @@
 
         private var filteredCaptures: [AgentCaptureRecord] {
             let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let effectiveProviderFilter = availableProviders.count > 1 ? providerFilter : nil
+            let effectiveProviderFilter = AgentConversationListPresentation.effectiveProviderFilter(
+                providerFilter,
+                availableProviders: availableProviders
+            )
             return AgentConversationListPresentation.newestFirst(
                 agents.overview.captures.filter { record in
                     let providerMatches = effectiveProviderFilter == nil || record.provider == effectiveProviderFilter
