@@ -69,7 +69,30 @@
             XCTAssertTrue(recent.isComplete)
             XCTAssertTrue(recent.requiresSourceFallback)
             XCTAssertTrue(recent.issues.contains { $0.contains("older analysis contract") })
+            XCTAssertTrue(recent.issues.contains { $0.contains("ignored 2026-08-20:") })
+            XCTAssertFalse(recent.issues.contains { $0.contains("(candidate.key)") })
             XCTAssertEqual(try Data(contentsOf: URL), outdatedData)
+        }
+
+        func testIsolatedDevCopyKeepsTheCodexMirrorInsideItsOwnDataRoot() {
+            let root = URL(fileURLWithPath: "/tmp/LocalHistory-Dev", isDirectory: true)
+            let environment = ["CODEX_HOME": "/tmp/codex-home"]
+            let isolated = GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev"])
+            let isolatedMirror = ComputerHistoryStore.codexMemoryDirectoryURL(
+                channel: isolated, dataRoot: root, environment: environment)
+            XCTAssertEqual(isolatedMirror.path, "/tmp/LocalHistory-Dev/codex-memory-mirror")
+            XCTAssertEqual(
+                ComputerHistoryStore.retentionDirectories(rootDirectory: root, channel: isolated).last?.path,
+                isolatedMirror.path)
+
+            for channel in [
+                GoalongBuildChannel(info: nil),
+                GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev", GoalongBuildChannel.dataModeKey: "real"]),
+            ] {
+                XCTAssertEqual(
+                    ComputerHistoryStore.codexMemoryDirectoryURL(channel: channel, dataRoot: root, environment: environment).path,
+                    "/tmp/codex-home/memories/extensions/goalong")
+            }
         }
 
         func testLegacyTripleMarkdownIsCompactedWithoutLosingReadableMemory() throws {
@@ -1533,6 +1556,27 @@
                         && $0.contains("absence is not exhaustive")
                 }
             )
+            // The page warning must detect the store's own limitation text.
+            XCTAssertNotNil(ComputerHistoryPageCopy.retainedGapMessage(for: answer))
+            let complete = ComputerHistoryAnswer(
+                schemaVersion: answer.schemaVersion,
+                query: answer.query,
+                generatedAt: answer.generatedAt,
+                answer: answer.answer,
+                hits: answer.hits,
+                limitations: answer.limitations.filter {
+                    !$0.hasPrefix(ComputerHistoryStore.retainedLoadIncompletePrefix)
+                }
+            )
+            XCTAssertNil(ComputerHistoryPageCopy.retainedGapMessage(for: complete))
+        }
+
+        func testFrenchCountLabelsUseSingularAndNoEnglish() {
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 0, total: 0, searching: false), "0 période")
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 1, total: 1, searching: false), "1 période")
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 3, total: 12, searching: true), "3 sur 12 périodes")
+            XCTAssertEqual(DashboardViewModel.removedItemsLabel(1), "1 élément local supprimé.")
+            XCTAssertEqual(DashboardViewModel.removedItemsLabel(4), "4 éléments locaux supprimés.")
         }
 
         func testAnswerSkipsRawJournalPassWhenRetainedEvidenceAlreadyMatches() throws {

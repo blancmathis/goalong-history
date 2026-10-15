@@ -117,7 +117,7 @@
         ) {
             self.rootDirectory = rootDirectory
             memoryDirectory = rootDirectory.appendingPathComponent("computer-history", isDirectory: true)
-            self.codexMemoryDirectory = codexMemoryDirectory ?? Self.codexMemoryDirectoryURL()
+            self.codexMemoryDirectory = codexMemoryDirectory ?? Self.codexMemoryDirectoryURL(dataRoot: rootDirectory)
             self.recentLoadLimits = recentLoadLimits.validated()
             self.diagnosticSink = diagnosticSink
             self.persistedDataReadObserver = persistedDataReadObserver
@@ -134,10 +134,16 @@
         /// HistoryRetentionStore treats both the authoritative Goalong copy and the
         /// optional Codex mirror as the same `.memories` data class so they expire
         /// together instead of leaving an orphaned mirror after local cleanup.
-        static func retentionDirectories(rootDirectory: URL) -> [URL] {
+        /// Machine-matched start of the limitation added when retained memories failed to load.
+        static let retainedLoadIncompletePrefix = "Retained Computer History loading was incomplete"
+
+        static func retentionDirectories(
+            rootDirectory: URL,
+            channel: GoalongBuildChannel = .current
+        ) -> [URL] {
             [
                 rootDirectory.appendingPathComponent("computer-history", isDirectory: true),
-                codexMemoryDirectoryURL(),
+                codexMemoryDirectoryURL(channel: channel, dataRoot: rootDirectory),
             ]
         }
 
@@ -270,7 +276,7 @@
                 answer: baseAnswer.answer,
                 hits: baseAnswer.hits,
                 limitations: baseAnswer.limitations + [
-                    "Retained Computer History loading was incomplete ("
+                    Self.retainedLoadIncompletePrefix + " ("
                         + "\(max(1, recent.issues.count)) bounded issue(s)); results use only "
                         + "readable last-known-good memories and absence is not exhaustive."
                 ]
@@ -643,7 +649,7 @@
                 if decoded.isOutdated {
                     requiresSourceFallback = true
                     diagnostics.report(
-                        "Computer History ignored (candidate.key): its disposable projection "
+                        "Computer History ignored \(candidate.key): its disposable projection "
                             + "uses an older analysis contract; the original journal remains "
                             + "available for direct source search or regeneration."
                     )
@@ -1729,9 +1735,18 @@
             )
         }
 
-        private static func codexMemoryDirectoryURL() -> URL {
+        /// The Codex mirror. An isolated `make dev` copy keeps it inside its own data root so
+        /// its writes, retention and deletions never reach the real `~/.codex` mirror.
+        static func codexMemoryDirectoryURL(
+            channel: GoalongBuildChannel = .current,
+            dataRoot: URL,
+            environment: [String: String] = ProcessInfo.processInfo.environment
+        ) -> URL {
+            if channel.dataMode == .isolated {
+                return dataRoot.appendingPathComponent("codex-memory-mirror", isDirectory: true)
+            }
             let fileManager = FileManager.default
-            let configuredCodexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
+            let configuredCodexHome = environment["CODEX_HOME"]
                 .map { URL(fileURLWithPath: NSString(string: $0).expandingTildeInPath, isDirectory: true) }
                 ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
             return configuredCodexHome

@@ -383,6 +383,8 @@ $CODEX_HOME/memories/extensions/goalong/
 ```
 
 or to `~/.codex/memories/extensions/goalong/` when `CODEX_HOME` is not configured.
+An isolated `make dev` copy writes this mirror to `LocalHistory-Dev/codex-memory-mirror/`
+instead, so its retention and deletions never touch the real Codex mirror.
 The compact Goalong JSON remains authoritative and deliberately omits its regenerable
 Markdown body. The Markdown is regenerated from that structure and rewritten only when
 its bytes change; it is not another authoritative history store.
@@ -402,6 +404,9 @@ cleanup. Explicit deletion preflights exact owned filenames across all derived c
 before unlinking. It does not target seals, receipts, Screen Time, Agent Activity, or
 unrelated files.
 
+The Computer History page no longer shows episode cards, so it offers no per-item delete
+action; targeted deletion is reached from the last application session (Activity explorer
+and Privacy page). The single-item path below stays in code without a UI entry point.
 For a single Computer History item, Goalong reconstructs the complete episode provenance
 from the original bounded day source because compact memory may retain only 16
 representative event references. A read-only preflight must find every selected event ID
