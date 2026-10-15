@@ -169,7 +169,13 @@ final class SupportDiagnostics {
         let level: SupportLevel
         let source: String?
         let line: UInt
+        /// Error identity of the first admitted record, so the summary keeps the original error's key.
+        let identity: [SupportKey: SupportValue]
     }
+
+    private static let identityKeys: Set<SupportKey> = [
+        .errorType, .errorCase, .errorCode, .errorKind, .rootErrorCode, .rootErrorKind,
+    ]
 
     private let root: URL
     private let queue = DispatchQueue(label: "ai.goalong.support-diagnostics", qos: .utility)
@@ -403,7 +409,8 @@ final class SupportDiagnostics {
             if repeatWindows.count >= 512 { repeatWindows = repeatWindows.filter { $0.value.suppressed > 0 } }
             if repeatWindows.count >= 512 { repeatWindows.removeAll() }
             repeatWindows[key] = RepeatWindow(startedAt: now, passed: 1, suppressed: 0, component: component,
-                                              event: event, level: level, source: source, line: line)
+                                              event: event, level: level, source: source, line: line,
+                                              identity: values.filter { Self.identityKeys.contains($0.key) })
         }
         lock.unlock()
         if let closed { appendSummary(closed) }
@@ -430,8 +437,10 @@ final class SupportDiagnostics {
     }
 
     private func appendSummary(_ window: RepeatWindow) {
-        append(.repeatSummary, component: window.component, level: window.level,
-               values: [.repeatedEvent: .symbol(window.event.rawValue), .suppressedCount: .count(window.suppressed)],
+        var values = window.identity
+        values[.repeatedEvent] = .symbol(window.event.rawValue)
+        values[.suppressedCount] = .count(window.suppressed)
+        append(.repeatSummary, component: window.component, level: window.level, values: values,
                source: window.source, line: window.line)
     }
 

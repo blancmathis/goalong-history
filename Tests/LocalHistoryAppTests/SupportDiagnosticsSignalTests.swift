@@ -88,6 +88,75 @@ final class SupportDiagnosticsSignalTests: XCTestCase {
         XCTAssertEqual(summary.values["suppressedCount"], .count(500 - SupportDiagnostics.repeatAllowance))
         XCTAssertEqual(summary.values["repeatedEvent"], .symbol("operationFailed"))
         XCTAssertEqual(summary.level, .error)
+        XCTAssertEqual(summary.values["errorType"], .symbol("LocalHistoryAppTests.SupportDiagnosticsSignalTests.PlainFailure"))
+        XCTAssertEqual(summary.values["errorCase"], .symbol("writeOutcomeRequiresRecovery"))
+    }
+
+    func testCoalescedSummaryCountsUnderTheOriginalErrorInFindings() throws {
+        let clock = Clock()
+        let (journal, _) = try journal(clock: clock)
+        journal.start()
+        for _ in 0..<30 { journal.failure(PlainFailure.writeOutcomeRequiresRecovery, component: .capture) }
+        for _ in 0..<2 { journal.failure(PlainFailure.http(500), component: .capture) }
+        journal.flushRepeatSummaries(force: true)
+        let timeline = journal.snapshot().records
+        let findings = SupportFindings.detect(live: [:], timeline: timeline, storage: nil, crashes: [], diagnosticsEnabled: true)
+        let repeated = findings.filter { $0.code == .repeatedError }
+        XCTAssertEqual(repeated.count, 1, "The summary and the originals form one finding")
+        XCTAssertEqual(repeated.first?.title, "Erreur répétée 30 fois")
+        XCTAssertTrue(repeated.first?.detail.contains("PlainFailure.writeOutcomeRequiresRecovery") == true)
+        XCTAssertFalse(repeated.first?.detail.contains("repeatSummary") == true)
+    }
+
+    func testDisabledJournalDoesNotClaimToHoldOnlyTheCurrentState() {
+        let old = SupportRecord(schema: 1, revision: nil, timestamp: Date(), session: UUID(), sequence: 1, component: .app,
+                                event: .appStarted, level: .info, source: nil, line: nil, values: [:])
+        let withHistory = SupportFindings.detect(live: [:], timeline: [old], storage: nil, crashes: [], diagnosticsEnabled: false)
+        let detail = withHistory.first { $0.code == .diagnosticsDisabled }?.detail ?? ""
+        XCTAssertFalse(detail.contains("état actuel"))
+        XCTAssertTrue(detail.contains("déjà conservés"))
+        let empty = SupportFindings.detect(live: [:], timeline: [], storage: nil, crashes: [], diagnosticsEnabled: false)
+        XCTAssertTrue(empty.first { $0.code == .diagnosticsDisabled }?.detail.contains("état actuel") == true)
+    }
+
+    @MainActor func testMarkingAnIssueWithTheJournalOffRecordsNothingAndSaysSo() throws {
+        let (journal, _) = try journal(clock: Clock())
+        journal.start()
+        journal.setEnabled(false)
+        let controller = SupportRequestController()
+        controller.markIssue(journal: journal)
+        XCTAssertFalse(controller.feedback?.contains("Repère ajouté") ?? true)
+        XCTAssertNotNil(controller.feedback)
+        XCTAssertFalse(journal.snapshot().records.contains { $0.event == .userMarkedIssue })
+        journal.setEnabled(true)
+        controller.markIssue(journal: journal)
+        XCTAssertTrue(controller.feedback?.contains("Repère ajouté") == true)
+        XCTAssertTrue(journal.snapshot().records.contains { $0.event == .userMarkedIssue })
+    }
+
+    func testCopyingAMissingReportThrowsAndLeavesNoFile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-copy-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appendingPathComponent("copy.json")
+        XCTAssertThrowsError(try SupportRequestController.copyReport(from: directory.appendingPathComponent("missing.json"), to: destination))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+    }
+
+    func testDifferentErrorsOfOneComponentDoNotMerge() {
+        func record(_ event: SupportEvent, _ values: [String: SupportValue]) -> SupportRecord {
+            SupportRecord(schema: 1, revision: nil, timestamp: Date(), session: UUID(), sequence: 1, component: .capture,
+                          event: event, level: .error, source: nil, line: nil, values: values)
+        }
+        var timeline = (0..<6).map { _ in record(.operationFailed, ["errorType": .symbol("A.Failure"), "errorCase": .symbol("one")]) }
+        timeline += (0..<6).map { _ in record(.operationFailed, ["errorType": .symbol("A.Failure"), "errorCase": .symbol("two")]) }
+        timeline.append(record(.repeatSummary, ["errorType": .symbol("A.Failure"), "errorCase": .symbol("one"),
+                                                "repeatedEvent": .symbol("operationFailed"), "suppressedCount": .count(4)]))
+        let findings = SupportFindings.detect(live: [:], timeline: timeline, storage: nil, crashes: [], diagnosticsEnabled: true)
+        let repeated = findings.filter { $0.code == .repeatedError }
+        XCTAssertEqual(repeated.count, 1)
+        XCTAssertEqual(repeated.first?.title, "Erreur répétée 10 fois")
+        XCTAssertTrue(repeated.first?.detail.contains("Failure.one") == true)
     }
 
     func testPeriodicRecordsAreWrittenOnlyWhenADiscreteValueChanges() throws {
