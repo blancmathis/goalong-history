@@ -661,6 +661,36 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertTrue(lane.contains("provider.requestBlocking")); XCTAssertTrue(lane.contains("finish(nil)"))
         for forbidden in ["recorder.record", "JevIngress.", "ActivityAnalysisRuntime.", "setLatest("] { XCTAssertFalse(lane.contains(forbidden)) }
     }
+
+    @MainActor func testLoginItemNoticeDoesNotTurnSavedEditsIntoRefusals() throws {
+        let now = date()
+        var list = BlockList(name: "Programme", sites: [.init(pattern: "youtube.com")])
+        list.program.ranges = [.init(weekdays: [2], startMinute: 600, endMinute: 900)]
+        for component in [BlockingProtectionState.Component.awaitingApproval, .failed("Démarrage à la connexion indisponible.")] {
+            let backend = FakeBlockingBackend(); backend.protectionComponent = component
+            let c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar)
+            XCTAssertNotNil(c.error, "the login-item notice stays visible")
+            XCTAssertEqual(c.addKeyword("match", to: list.id), .allowed)
+            XCTAssertEqual(c.addException("youtube.com/@cours", to: list.id), .allowed)
+            XCTAssertEqual(c.lists.first?.keywords, ["match"])
+            XCTAssertEqual(c.lists.first?.exceptions, [.init(pattern: "youtube.com/@cours")])
+            XCTAssertNoThrow(try c.addDistraction(XCTUnwrap(JevDistractionTarget.site(host: "reddit.com")), to: list.id))
+            XCTAssertTrue(c.lists.first?.sites.contains(.init(pattern: "reddit.com")) == true)
+            XCTAssertNotNil(c.error, "the login-item notice stays visible")
+            // A genuine refusal is still reported.
+            XCTAssertNotEqual(c.addKeyword("x", to: list.id), .allowed)
+        }
+    }
+
+    @MainActor func testLockedListStillRefusesLooserEditsWithLoginItemNotice() throws {
+        let now = date(); var list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")]); list.keywords = ["match"]
+        let backend = FakeBlockingBackend(); backend.protectionComponent = .awaitingApproval
+        let c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar)
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(3600), lock: .locked)
+        XCTAssertFalse(c.activeBlocks.isEmpty)
+        guard case .refused = c.removeKeyword("match", from: list.id) else { return XCTFail("a looser edit must be refused") }
+        XCTAssertEqual(c.addKeyword("direct", to: list.id), .allowed)
+    }
 }
 
 private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
@@ -680,10 +710,12 @@ private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
     var appBlocks = 0
     var lastReason: BlockingVeilPresentation.Reason?
     var protectionRequired = false
+    var protectionComponent: BlockingProtectionState.Component?
     func updateProtection(locked: Bool) -> BlockingProtectionState {
         protectionRequired = locked
         var result = BlockingProtectionState()
         if locked && loginFailure { result.component = .failed("Démarrage à la connexion indisponible.") }
+        if locked, let protectionComponent { result.component = protectionComponent }
         return result
     }
     func blockApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) { appBlocks += 1 }

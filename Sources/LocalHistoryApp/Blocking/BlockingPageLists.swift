@@ -434,7 +434,7 @@ import SwiftUI
 
     private func message(_ check: BlockingEditCheck, input: String? = nil, kind: String = "") -> String? {
         guard case .refused(let reason) = check else { return nil }
-        if let input, controller.error == nil, !reason.hasPrefix("Liste") { return "« \(input) » n’est pas \(kind)." }
+        if let input, controller.error != reason, !reason.hasPrefix("Liste") { return "« \(input) » n’est pas \(kind)." }
         return reason
     }
 

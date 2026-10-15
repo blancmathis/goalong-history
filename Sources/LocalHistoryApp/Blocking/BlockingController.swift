@@ -233,36 +233,37 @@ import LocalHistoryCore
         return .allowed
     }
 
-    func save(_ value: BlockList) {
-        guard admitEdit() else { return }
+    /// Returns this save's own refusal, never an unrelated banner such as the login-item notice.
+    @discardableResult func save(_ value: BlockList) -> String? {
+        guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
         var next = value
         if let reason = next.reason {
             let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.isEmpty || BlockingRules.normalizeReason(trimmed) != nil else {
-                error = "La raison doit contenir de 1 à 140 caractères."; return
+                error = "La raison doit contenir de 1 à 140 caractères."; return error
             }
             next.reason = trimmed.isEmpty ? nil : trimmed
         }
-        if case .refused(let reason) = editCheck(next) { error = reason; return }
+        if case .refused(let reason) = editCheck(next) { error = reason; return reason }
         guard !next.program.ranges.contains(where: { $0.effectiveLock == .password }) || hasPassword
             || document.lists.first(where: { $0.id == next.id })?.program.ranges == next.program.ranges else {
-            error = "Définissez d’abord le mot de passe de blocage."; return
+            error = "Définissez d’abord le mot de passe de blocage."; return error
         }
-        guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse de site invalide."; return }
+        guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse de site invalide."; return error }
         next.sites = Array(Set(next.sites.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
         if let exceptions = next.exceptions {
-            guard exceptions.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse d’exception invalide."; return }
+            guard exceptions.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse d’exception invalide."; return error }
             next.exceptions = Array(Set(exceptions.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
         }
         if let keywords = next.keywords {
-            guard keywords.allSatisfy({ BlockingRules.normalizeKeyword($0) != nil }) else { error = "Chaque mot-clé doit contenir de 2 à 40 caractères."; return }
+            guard keywords.allSatisfy({ BlockingRules.normalizeKeyword($0) != nil }) else { error = "Chaque mot-clé doit contenir de 2 à 40 caractères."; return error }
             var seen = Set<String>()
             next.keywords = keywords.compactMap(BlockingRules.normalizeKeyword).filter { seen.insert(BlockingRules.foldKeyword($0)).inserted }.sorted()
         }
         var candidate = document
         candidate.lists.removeAll { $0.id == next.id }; candidate.lists.append(next)
-        guard BlockingRules.validate(candidate) else { error = "Vérifiez la liste, les horaires, le quota et les pauses."; return }
-        if case .refused(let reason) = editCheck(next) { error = reason; return }
+        guard BlockingRules.validate(candidate) else { error = "Vérifiez la liste, les horaires, le quota et les pauses."; return error }
+        if case .refused(let reason) = editCheck(next) { error = reason; return reason }
         if let index = document.lists.firstIndex(where: { $0.id == next.id }) {
             let old = document.lists[index]
             if old.effectiveAction != next.effectiveAction || old.delaySeconds != next.delaySeconds || old.allowanceMinutes != next.allowanceMinutes {
@@ -274,6 +275,7 @@ import LocalHistoryCore
             document.lists.append(next)
         }
         commit()
+        return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
     }
 
     @discardableResult func addException(_ input: String, to listID: UUID) -> BlockingEditCheck {
@@ -360,8 +362,7 @@ import LocalHistoryCore
         edit(&next)
         let check = editCheck(next)
         guard check == .allowed else { return check }
-        save(next)
-        return error.map(BlockingEditCheck.refused) ?? .allowed
+        return save(next).map(BlockingEditCheck.refused) ?? .allowed
     }
     nonisolated static func explain(url: String?, title: String? = nil, list: BlockList) -> BlockingMatchExplanation {
         BlockingRules.explain(url: url, title: title, list: list)
@@ -383,9 +384,9 @@ import LocalHistoryCore
             }
         }
         if case .refused(let reason) = editCheck(next) { throw BlockingListAdditionFailure.refused(reason) }
-        save(next)
+        let refusal = save(next)
         guard !storeFailed else { throw BlockingListAdditionFailure.storageFailed }
-        guard error == nil else { throw BlockingListAdditionFailure.refused(error!) }
+        if let refusal { throw BlockingListAdditionFailure.refused(refusal) }
     }
 
     func delete(_ id: UUID) {
