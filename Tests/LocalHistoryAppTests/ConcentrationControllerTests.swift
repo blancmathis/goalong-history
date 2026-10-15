@@ -271,6 +271,17 @@ extension ConcentrationControllerTests {
         XCTAssertNil(AmbianceFocusSessionAudio.focusSource(in: Array(sources.prefix(2)), last: nil))
     }
 
+    @MainActor func testAmbianceAdapterOwnsAnAsyncLoadingSource() {
+        let deep = AmbianceSource(id: "deep", title: "Profond", kind: .focus, isAvailable: true)
+        let other = AmbianceSource(id: "rain", title: "Pluie", kind: .texture, isAvailable: true)
+        // Focus sources start in .loading: stop() must still reach them (R2-018).
+        XCTAssertTrue(AmbianceFocusSessionAudio.isOurs(.loading, deep))
+        XCTAssertTrue(AmbianceFocusSessionAudio.isOurs(.playing(deep), deep))
+        XCTAssertFalse(AmbianceFocusSessionAudio.isOurs(.playing(other), deep))
+        XCTAssertFalse(AmbianceFocusSessionAudio.isOurs(.idle, deep))
+        XCTAssertFalse(AmbianceFocusSessionAudio.isOurs(.loading, nil))
+    }
+
     @MainActor func testAmbianceAdapterIsSilentWhileTheModuleIsOff() {
         var asked = 0
         let audio = AmbianceFocusSessionAudio(controller: { asked += 1; return nil }, lastSource: { nil })
