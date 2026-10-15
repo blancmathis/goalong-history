@@ -453,7 +453,7 @@ struct FocusPlanChip: View {
     var live = true
 
     private var phase: FocusPhase { controller.phase ?? FocusPhases.phase(session, at: now) }
-    private var locked: Bool { controller.hasLockedBlock }
+    private var locked: Bool { controller.hasLockedSessionBlock }
     private var lists: [BlockList] { session.blockListIds.compactMap { id in controller.blockLists.first { $0.id == id } } }
 
     var body: some View {
