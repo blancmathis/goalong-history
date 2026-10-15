@@ -21,8 +21,9 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 - `UserDefaults` key `goalong.module.blocking.enabled`, default `false`. Read through
   `GoalongModuleStore` (`Sources/LocalHistoryApp/GoalongModules.swift`), cheap, never starts anything.
 - Off: no `BlockingController`, no timer, no observer, no window, no file under `Blocking/`, no
-  permission request, no system component. The sidebar entry is hidden.
-- On: the sidebar shows « Blocage » after « Surveillance temps réel ». Turning the module on creates
+  permission request, no system component. There is no sidebar entry: Concentration › Programme
+  stays visible.
+- On: Concentration › Programme can start blocks and programs. Turning the module on creates
   the controller and reads the store; nothing is blocked until the member starts a block or a
   program.
 - Off is refused while anything is locked (locked session, locked program, freeze). Off with nothing
