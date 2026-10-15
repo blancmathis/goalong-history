@@ -89,6 +89,7 @@ for app in \
   fi
   if [[ -x "$executable" ]]; then
     "$executable" --unregister-login-item >/dev/null 2>&1 || true
+    "$executable" --uninstall-agent-integrations >/dev/null 2>&1 || true
   fi
 done
 
@@ -107,6 +108,9 @@ remove_goalong_cli_link
 
 tccutil reset Accessibility "$BUNDLE_ID" >/dev/null 2>&1 || true
 tccutil reset ListenEvent "$BUNDLE_ID" >/dev/null 2>&1 || true
+tccutil reset SystemPolicyAllFiles "$BUNDLE_ID" >/dev/null 2>&1 || true
+tccutil reset Calendar "$BUNDLE_ID" >/dev/null 2>&1 || true
+tccutil reset Reminders "$BUNDLE_ID" >/dev/null 2>&1 || true
 
 if [[ "$PURGE_DATA" == true ]]; then
   rm -rf "$DATA_DIR" "$DATA_DIR-Dev"

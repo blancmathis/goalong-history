@@ -65,6 +65,18 @@
         exit(0)
     }
 
+    // Called by uninstall.sh before it deletes the bundles: removes Goalong's hooks from the
+    // agents' configuration files. Best effort; only entries with Goalong's marker are touched.
+    if CommandLine.arguments.contains("--uninstall-agent-integrations") {
+        let installer = AgentIntegrationInstaller(
+            executableURL: URL(fileURLWithPath: CommandLine.arguments[0])
+        )
+        for kind in AgentIntegrationKind.allCases {
+            try? installer.uninstall(kind)
+        }
+        exit(0)
+    }
+
     if CommandLine.arguments.contains("--reset-onboarding") {
         UserDefaults.standard.removeObject(forKey: "didShowLocalHistoryConsentOnboardingV5")
         exit(0)

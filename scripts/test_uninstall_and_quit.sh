@@ -52,4 +52,7 @@ GOALONG_QUIT_WAIT_TENTHS=5 quit_running_goalong "$POLITE_NAME" "$STUBBORN_NAME"
 /usr/bin/pgrep -x "$POLITE_NAME" >/dev/null && fail "Polite process survived."
 /usr/bin/pgrep -x "$STUBBORN_NAME" >/dev/null && fail "Stubborn process was not forced after the wait."
 (( SECONDS - start < 10 )) || fail "Quit wait was not bounded."
+for needle in '--uninstall-agent-integrations' 'reset SystemPolicyAllFiles' 'reset Calendar' 'reset Reminders'; do
+  grep -qF -- "$needle" "$SCRIPT_DIR/../uninstall.sh" || fail "uninstall.sh does not run: $needle"
+done
 echo "Uninstall and quit tests passed."
