@@ -186,6 +186,7 @@
                     .buttonStyle(LHSecondaryButtonStyle())
                     .disabled(analysesLoading)
                     .help(refreshHelp)
+                    .accessibilityLabel("Actualiser")
                 }
             }
         }

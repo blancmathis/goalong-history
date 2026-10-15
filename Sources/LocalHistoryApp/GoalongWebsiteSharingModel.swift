@@ -187,10 +187,10 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         loading = true; error = nil
         // Previously selected IDs are kept, never expanded by newly discovered rows.
         do {
-            let value = try await Task.detached(priority: .userInitiated) { try loader(root, snapshot.day, snapshot.includeWebsites) }.value
+            let loaded = try await Task.detached(priority: .userInitiated) { try loader(root, snapshot.day, snapshot.includeWebsites) }.value
             guard generation == ticket, draft.day == snapshot.day, draft.includeWebsites == snapshot.includeWebsites else { return }
             // Sites hidden in every share are neither listed nor preselected.
-            let value = value.removingWebsites(where: hiddenWebsites())
+            let value = loaded.removingWebsites(where: hiddenWebsites())
             catalog = value
             configuringPresentation = true
             defer { configuringPresentation = false }
