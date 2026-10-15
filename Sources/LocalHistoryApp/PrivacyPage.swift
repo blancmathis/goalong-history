@@ -650,7 +650,8 @@
         }
 
         var message: String {
-            "Les événements détaillés de la période, leur contexte et toutes les analyses qui en dérivent seront définitivement supprimés de ce Mac, ainsi que les appels et l’activité de développement des jours concernés (journée entière). La note du jour n’est effacée qu’avec toute l’activité. L’index des conversations IA, le Temps d’écran, les sceaux cryptographiques et les reçus sont conservés."
+            (self == .all ? "Les verdicts et corrections de « Mon travail » sont aussi effacés. " : "")
+                + "Les événements détaillés de la période, leur contexte et toutes les analyses qui en dérivent seront définitivement supprimés de ce Mac, ainsi que les appels et l’activité de développement des jours concernés (journée entière). La note du jour n’est effacée qu’avec toute l’activité. L’index des conversations IA, le Temps d’écran, les sceaux cryptographiques et les reçus sont conservés."
         }
     }
 #endif
