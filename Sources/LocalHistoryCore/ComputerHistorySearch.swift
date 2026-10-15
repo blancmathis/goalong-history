@@ -799,6 +799,7 @@ public struct ComputerHistorySearchService {
             return resumeAnswer(
                 query: preparedQuery,
                 now: now,
+                breakReferenceEnd: min(now, interval?.end ?? now),
                 maximumHits: limit,
                 corpus: corpus
             )
@@ -908,9 +909,13 @@ public struct ComputerHistorySearchService {
         }
     }
 
+    /// Shortest idle time counted as a break by the resume answer.
+    private static let resumeBreakThreshold: TimeInterval = 10 * 60
+
     private func resumeAnswer(
         query: SearchText.PreparedQuery,
         now: Date,
+        breakReferenceEnd: Date,
         maximumHits: Int,
         corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
@@ -918,10 +923,21 @@ public struct ComputerHistorySearchService {
         guard !episodes.isEmpty else { return emptyAnswer(query.raw) }
 
         let candidate: ComputerHistoryEpisode = {
+            // The break the user is coming back from is the idle time after
+            // the latest episode end (episodes are sorted by start, so the
+            // latest end is not always the last episode). An episode still
+            // running at the reference time means there is no trailing break.
+            if !episodes.contains(where: { $0.end > breakReferenceEnd }),
+                let lastEnded = episodes.max(by: { $0.end < $1.end }),
+                breakReferenceEnd.timeIntervalSince(lastEnded.end)
+                    >= Self.resumeBreakThreshold
+            {
+                return lastEnded
+            }
             let gaps = zip(episodes, episodes.dropFirst()).compactMap {
                 left, right -> (ComputerHistoryEpisode, TimeInterval)? in
                 let gap = right.start.timeIntervalSince(left.end)
-                return gap >= 10 * 60 ? (left, gap) : nil
+                return gap >= Self.resumeBreakThreshold ? (left, gap) : nil
             }
             if let beforeLatestGap = gaps.last?.0 { return beforeLatestGap }
             if let unfinished = episodes.last(where: {

@@ -58,6 +58,51 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
         }
     }
 
+    func testResumeQuestionAfterALongIdlePeriodNamesTheLatestWork() {
+        let textEdit = fixtureApp("TextEdit")
+        let typing = KeyboardSnapshot(
+            category: "text_activity",
+            key: nil,
+            modifiers: [],
+            isRepeat: false
+        )
+        let events = [
+            fixtureEvent(
+                id: "morning-work",
+                sequence: 1,
+                offset: 0,
+                kind: .typingBurst,
+                app: textEdit,
+                windowTitle: "Proposition commerciale.md",
+                host: nil,
+                keyboard: typing
+            ),
+            fixtureEvent(
+                id: "afternoon-work",
+                sequence: 2,
+                offset: 60 * 60,
+                kind: .typingBurst,
+                app: textEdit,
+                windowTitle: "Rapport Q3.md",
+                host: nil,
+                keyboard: typing
+            ),
+        ]
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        let answer = ComputerHistorySearchService(memories: [memory]).ask(
+            "Où en étais-je avant ma pause ?",
+            now: fixtureStart.addingTimeInterval(4 * 60 * 60)
+        )
+
+        XCTAssertTrue(answer.answer.contains("Rapport Q3"), answer.answer)
+        XCTAssertFalse(answer.answer.contains("Proposition commerciale"))
+    }
+
     func testFrenchResourceQuestionFindsTheProposalDocument() {
         let safari = fixtureApp("Safari")
         let event = fixtureEvent(
