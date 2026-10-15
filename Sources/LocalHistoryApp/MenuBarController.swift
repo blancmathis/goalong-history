@@ -208,7 +208,7 @@
             permissionMenuItem.title = display.description
             technicalStatusItem.title =
                 "Accessibilité : \(permissionStatus.accessibility ? "oui" : "non") · Surveillance de l’entrée : \(permissionStatus.inputMonitoringStatusLabel) · Interactions : \(eventTapStatus() ? "actives" : "inactives") · Preuve : \(health.captureProven ? "oui" : "non")"
-            globalPauseItem.title = GoalongGlobalPause.isPaused() ? "Reprendre tout le suivi" : "Confidentialité · tout suspendre…"
+            globalPauseItem.title = GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité · tout suspendre…"
             pauseMenuItem.title = !localEnabled
                 ? "Configurer l’enregistrement…"
                 : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Arrêter l’enregistrement local…")
@@ -347,7 +347,7 @@
                 try GoalongGlobalPause.setPaused(!GoalongGlobalPause.isPaused(), recordingWasPaused: state.isManuallyPaused)
                 updateStatus()
             } catch {
-                let alert = NSAlert(); alert.messageText = "Pause non modifiée"; alert.informativeText = error.localizedDescription
+                let alert = NSAlert(); alert.messageText = GoalongGlobalPauseText.failureTitle; alert.informativeText = error.localizedDescription
                 alert.runModal()
             }
         }
