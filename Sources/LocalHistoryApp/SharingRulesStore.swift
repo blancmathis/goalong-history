@@ -109,6 +109,15 @@
             return { host in (rules[SharingSubjectKey.website(host: host)] ?? fallback) == .hidden }
         }
 
+        /// True for an application the user hid in every share (explicit rule, or a hidden default).
+        /// Arguments are the bundle identifier (or Screen Time id) and the display name.
+        func hiddenApplicationFilter() -> (String?, String) -> Bool {
+            let (rules, fallback) = lock.withValue { (document.rules, document.defaultVisibility) }
+            return { identifier, name in
+                (rules[SharingSubjectKey.application(bundleIdentifier: identifier, name: name)] ?? fallback) == .hidden
+            }
+        }
+
         func visibility(for key: String) -> SharingVisibility {
             lock.withValue { document.rules[key] ?? document.defaultVisibility }
         }

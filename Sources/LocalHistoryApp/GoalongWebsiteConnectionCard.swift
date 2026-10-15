@@ -39,12 +39,16 @@ extension Notification.Name {
             Divider()
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(sender.enabled ? "Envoi quotidien activé" : "Envois automatiques désactivés").font(.system(size: 13, weight: .medium))
+                    Text(sender.enabled ? "Envoi quotidien activé"
+                         : sender.pauseReason != nil ? "En pause après un échec"
+                         : sender.savedConfiguration != nil ? "Envoi quotidien en pause" : "Envois automatiques désactivés")
+                        .font(.system(size: 13, weight: .medium))
+                    if !sender.enabled, let reason = sender.pauseReason { Text(reason).font(.system(size: 12)).foregroundStyle(.secondary) }
                     if let day = sender.lastSuccess { Text("Dernière journée reçue : \(day)").font(.system(size: 12)).foregroundStyle(.secondary) }
                 }
                 Spacer()
                 if sender.enabled { Button("Mettre en pause") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
-                Button("Choisir les données…") { showsConnection = true }.buttonStyle(LHSecondaryButtonStyle()).disabled(!credentialAvailable)
+                Button(!sender.enabled && sender.savedConfiguration != nil ? "Relire et reprendre…" : "Choisir les données…") { showsConnection = true }.buttonStyle(LHSecondaryButtonStyle()).disabled(!credentialAvailable)
             }
         }
         .onAppear {
@@ -88,6 +92,8 @@ struct GoalongWebsiteConnectionSheet: View {
     /// Builds the export and binds it to the exclusions in force while its bytes were produced.
     nonisolated static func reviewedExport(root: URL, day: String, options: GoalongSiteExportOptions,
         isHidden: (String) -> Bool = SharingRulesStore().hiddenWebsiteFilter(),
+        isApplicationHidden: ((String?, String) -> Bool)? = nil,
+        applicationCatalog: (URL, String) throws -> GoalongSiteSelectionCatalog = { try GoalongQueryCLI.siteSelectionCatalog(rootDirectory: $0, day: $1, includeWebsites: false) },
         websiteCatalog: (URL, String) throws -> GoalongSiteSelectionCatalog = { try GoalongQueryCLI.siteSelectionCatalog(rootDirectory: $0, day: $1, includeWebsites: true) },
         export: (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) }) throws -> ReviewedExport {
         let before = GoalongPrivacyPolicy.load(in: root)
@@ -99,6 +105,15 @@ struct GoalongWebsiteConnectionSheet: View {
                 options.selectedWebsiteDomains = try websiteCatalog(root, day).websites.map(\.domain)
             }
             options = GoalongWebsiteAutoSender.removingHiddenWebsites(options, isHidden: isHidden)
+        }
+        if let isApplicationHidden, options.includeApplications {
+            // A nil list means "every application": resolve it, so hidden applications never leave.
+            if options.selectedApplicationIDs == nil {
+                let wanted = Set(options.deviceIDs)
+                let devices = try applicationCatalog(root, day).devices.filter { wanted.isEmpty || wanted.contains($0.id) }
+                options.selectedApplicationIDs = devices.flatMap { $0.applications }.filter { !isApplicationHidden($0.id, $0.name) }.map(\.id)
+            }
+            options = GoalongWebsiteAutoSender.removingHiddenWebsites(options, isHidden: { _ in false }, isApplicationHidden: isApplicationHidden)
         }
         let bytes = try export(root, day, options)
         guard GoalongPrivacyPolicy.load(in: root).revision == before.revision else {
@@ -501,7 +516,8 @@ struct GoalongWebsiteConnectionSheet: View {
         Task { @MainActor in
             do {
                 let reviewed = try await Task.detached(priority: .userInitiated) {
-                    try Self.reviewedExport(root: root, day: day, options: options)
+                    try Self.reviewedExport(root: root, day: day, options: options,
+                        isApplicationHidden: SharingRulesStore().hiddenApplicationFilter())
                 }.value
                 let result = reviewed.payload
                 let object = try JSONSerialization.jsonObject(with: result) as? [String: Any]

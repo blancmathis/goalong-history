@@ -79,7 +79,7 @@ import LocalHistoryQueryCLI
         .interactiveDismissDisabled(model.busy)
         .task { if model.catalog == nil { await model.loadCatalog() } }
         .onChange(of: model.draft.date) { _ in Task { await model.loadCatalog() } }
-        .onChange(of: model.draft.includeWebsites) { _ in Task { await model.loadCatalog() } }
+        .onChange(of: model.draft.includeWebsites) { _ in Task { await model.includeWebsitesChanged() } }
         .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in model.connectionChanged() }
         .onChange(of: origin) { _ in model.connectionChanged() }
         .onChange(of: tokenPath) { _ in model.connectionChanged() }
