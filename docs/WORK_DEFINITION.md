@@ -59,6 +59,11 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
 - Filtre de confidentialité (`GoalongWorkSharingFilter`) : exclusions globales, puis
   sélection « Données pour ChatGPT » si elle est confirmée (apps autorisées, sites exclus,
   titres et sites autorisés, remplacements de noms). Un contexte filtré reste à classer.
+  Les corrections envoyées comme exemples passent par le même filtre au moment de
+  l’envoi : une correction sur un contexte exclu depuis n’est plus envoyée. Les
+  remplacements de noms s’appliquent aussi à la définition, à la note du jour, aux tâches
+  connues et aux tâches de la chronologie ; s’ils ne peuvent pas être appliqués, rien
+  n’est envoyé. Les tâches renvoyées par l’agent peuvent donc porter le nom remplacé.
 - Exécution : compte ChatGPT de Goalong (`codex app-server`, `CODEX_HOME` isolé), profil
   `goalong-site-analysis` (aucun outil, aucun réseau, aucun fichier), thread éphémère,
   `gpt-5.6-luna` / `high`, sortie JSON stricte. La révision des exclusions est revérifiée
