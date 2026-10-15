@@ -1621,6 +1621,22 @@ public struct HistoryLocalStoreReader {
         )
     }
 
+    /// Presence times of the raw journal in the range (see
+    /// `ComputerHistorySearchService.presenceTimes(in:)`), sorted.
+    package func loadPresenceTimestamps(start: Date, end: Date) -> [Date] {
+        var issues: [HistoryLoadIssue] = []
+        return ComputerHistorySearchService.presenceTimes(
+            in: loadJSONLines(
+                HistoryEvent.self,
+                from: files(in: eventsDirectory, extensions: ["jsonl"], intersecting: start, end: end),
+                start: start,
+                end: end,
+                timestamp: { $0.timestamp },
+                issues: &issues
+            )
+        )
+    }
+
     /// Streams a half-open source interval and retains only events that can
     /// influence Computer History. Callers reconstructing multiple days should
     /// invoke this once per day so peak memory is bounded by one day's useful

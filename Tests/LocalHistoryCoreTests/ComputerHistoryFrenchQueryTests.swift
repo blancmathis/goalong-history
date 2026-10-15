@@ -103,6 +103,97 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
         XCTAssertFalse(answer.answer.contains("Proposition commerciale"))
     }
 
+    func testResumeBreakNeedsRawJournalIdleNotOnlyAStaleMemory() throws {
+        let textEdit = fixtureApp("TextEdit")
+        let typing = KeyboardSnapshot(
+            category: "text_activity",
+            key: nil,
+            modifiers: [],
+            isRepeat: false
+        )
+        let memory = ComputerHistoryEngine.analyze(
+            events: [
+                fixtureEvent(
+                    id: "before-lunch", sequence: 1, offset: 0, kind: .typingBurst,
+                    app: textEdit, windowTitle: "Proposition commerciale.md", host: nil,
+                    keyboard: typing
+                ),
+                fixtureEvent(
+                    id: "after-lunch", sequence: 2, offset: 60 * 60, kind: .typingBurst,
+                    app: textEdit, windowTitle: "Rapport Q3.md", host: nil,
+                    keyboard: typing
+                ),
+            ],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+        let lastEnd = try XCTUnwrap(memory.episodes.map(\.end).max())
+        var sequence: UInt64 = 10
+        // Default capture settings: only heartbeats (with idle_seconds) and
+        // lock events, no click or keyboard events.
+        func heartbeat(at time: Date, idle: TimeInterval) -> HistoryEvent {
+            sequence += 1
+            return fixtureEvent(
+                id: "hb-\(sequence)", sequence: sequence,
+                offset: time.timeIntervalSince(fixtureStart), kind: .heartbeat,
+                app: textEdit, windowTitle: "Rapport Q3.md", host: nil,
+                metadata: ForegroundUsageObservation(
+                    observedAt: time, idleSeconds: idle, isForegroundVisible: true
+                ).metadata(at: time)
+            )
+        }
+        func heartbeats(from: TimeInterval, to: TimeInterval, idle: (Date) -> TimeInterval)
+            -> [HistoryEvent]
+        {
+            stride(from: from, through: to, by: 30).map {
+                let time = lastEnd.addingTimeInterval($0)
+                return heartbeat(at: time, idle: idle(time))
+            }
+        }
+        func ask(_ journal: [HistoryEvent]?, now: TimeInterval) -> String {
+            ComputerHistorySearchService(memories: [memory]).ask(
+                "je faisais quoi avant ma pause ?",
+                now: lastEnd.addingTimeInterval(now),
+                presence: journal.map { ComputerHistorySearchService.presenceTimes(in: $0) }
+            ).answer
+        }
+
+        // Stale memory 12 min old while the user keeps working: no break.
+        let working = ask(heartbeats(from: 30, to: 12 * 60) { _ in 2 }, now: 12 * 60)
+        XCTAssertTrue(working.contains("Proposition commerciale"), working)
+        // 15 min of idle heartbeats on an unlocked screen: the break is real.
+        let idle = ask(
+            heartbeats(from: 30, to: 15 * 60) { $0.timeIntervalSince(lastEnd) },
+            now: 15 * 60
+        )
+        XCTAssertTrue(idle.contains("Rapport Q3"), idle)
+        // Locked for 15 min, then back and active (heartbeats resume).
+        let locked =
+            [
+                fixtureEvent(
+                    id: "lock", sequence: 2, offset: lastEnd.timeIntervalSince(fixtureStart) + 60,
+                    kind: .sessionLocked, app: nil, windowTitle: nil, host: nil
+                ),
+                fixtureEvent(
+                    id: "unlock", sequence: 3,
+                    offset: lastEnd.timeIntervalSince(fixtureStart) + 16 * 60,
+                    kind: .sessionUnlocked, app: nil, windowTitle: nil, host: nil
+                ),
+            ] + heartbeats(from: 30, to: 60) { _ in 1 }
+            + heartbeats(from: 16 * 60, to: 17 * 60) { _ in 1 }
+        let afterLock = ask(locked, now: 17 * 60)
+        XCTAssertTrue(afterLock.contains("Rapport Q3"), afterLock)
+        // Mac off: no events at all after the last episode.
+        let off = ask([], now: 15 * 60)
+        XCTAssertTrue(off.contains("Rapport Q3"), off)
+        // No journal available (nil): the elapsed time alone decides.
+        let noJournal = ask(nil, now: 15 * 60)
+        XCTAssertTrue(noJournal.contains("Rapport Q3"), noJournal)
+
+        XCTAssertTrue(ComputerHistorySearchService.isResumeQuery("Où en étais-je avant ma pause ?"))
+        XCTAssertFalse(ComputerHistorySearchService.isResumeQuery("Où est le rapport Q3 ?"))
+    }
+
     func testFrenchResourceQuestionFindsTheProposalDocument() {
         let safari = fixtureApp("Safari")
         let event = fixtureEvent(

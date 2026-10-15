@@ -794,7 +794,8 @@ public struct ComputerHistorySearchService {
     public func ask(
         _ rawQuery: String,
         now: Date = Date(),
-        maximumHits: Int = 12
+        maximumHits: Int = 12,
+        presence: [Date]? = nil
     ) -> ComputerHistoryAnswer {
         let preparedQuery = SearchText.PreparedQuery(rawQuery)
         let interval = Self.explicitTemporalInterval(for: rawQuery, now: now)
@@ -808,6 +809,7 @@ public struct ComputerHistorySearchService {
                 query: preparedQuery,
                 now: now,
                 breakReferenceEnd: min(now, interval?.end ?? now),
+                presence: presence,
                 maximumHits: limit,
                 corpus: corpus
             )
@@ -920,10 +922,58 @@ public struct ComputerHistorySearchService {
     /// Shortest idle time counted as a break by the resume answer.
     private static let resumeBreakThreshold: TimeInterval = 10 * 60
 
+    /// True when `ask` answers the query with the resume ("before my break")
+    /// intent, the only one that uses `presence`.
+    public static func isResumeQuery(_ rawQuery: String) -> Bool {
+        if case .resume = SearchIntent.detect(SearchText.PreparedQuery(rawQuery)) { return true }
+        return false
+    }
+
+    /// Times the user was last seen at the Mac, from raw journal events: input
+    /// events, foreground evidence (call, video) and `idle_seconds`
+    /// (timestamp minus idle time, written by every heartbeat). Lock, sleep and
+    /// Mac-off periods write none of these, so they read as gaps.
+    package static func presenceTimes(in events: [HistoryEvent]) -> [Date] {
+        let inputKinds: Set<EventKind> = [
+            .mouseClick, .keyboardShortcut, .keyPressed, .typingBurst, .scrollBurst,
+        ]
+        return events.compactMap { event -> Date? in
+            if inputKinds.contains(event.kind)
+                || ForegroundActivityEvidence.evidence(in: event) != nil
+            {
+                return event.timestamp
+            }
+            guard let raw = event.metadata?["idle_seconds"], let idle = Double(raw),
+                idle.isFinite, idle >= 0
+            else { return nil }
+            return event.timestamp.addingTimeInterval(-idle)
+        }
+        .sorted()
+    }
+
+    /// Whether the user stayed away for a full break between `start` and `end`.
+    /// Without presence data, only the elapsed time can tell.
+    private static func hasIdleGap(
+        after start: Date,
+        until end: Date,
+        presence: [Date]?
+    ) -> Bool {
+        guard let presence else {
+            return end.timeIntervalSince(start) >= resumeBreakThreshold
+        }
+        var previous = start
+        for time in presence where time > start && time <= end {
+            if time.timeIntervalSince(previous) >= resumeBreakThreshold { return true }
+            previous = max(previous, time)
+        }
+        return end.timeIntervalSince(previous) >= resumeBreakThreshold
+    }
+
     private func resumeAnswer(
         query: SearchText.PreparedQuery,
         now: Date,
         breakReferenceEnd: Date,
+        presence: [Date]?,
         maximumHits: Int,
         corpus: SearchCorpus
     ) -> ComputerHistoryAnswer {
@@ -935,10 +985,16 @@ public struct ComputerHistorySearchService {
             // the latest episode end (episodes are sorted by start, so the
             // latest end is not always the last episode). An episode still
             // running at the reference time means there is no trailing break.
+            // Memories refresh only every few minutes, so the time since the
+            // last episode is not a break by itself: the raw journal must show
+            // 10+ minutes without the user (idle, lock, sleep or Mac off).
             if !episodes.contains(where: { $0.end > breakReferenceEnd }),
                 let lastEnded = episodes.max(by: { $0.end < $1.end }),
-                breakReferenceEnd.timeIntervalSince(lastEnded.end)
-                    >= Self.resumeBreakThreshold
+                Self.hasIdleGap(
+                    after: lastEnded.end,
+                    until: breakReferenceEnd,
+                    presence: presence
+                )
             {
                 return lastEnded
             }
