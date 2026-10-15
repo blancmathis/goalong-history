@@ -356,6 +356,32 @@
             XCTAssertEqual(try Data(contentsOf: moved), original)
         }
 
+        func testJSONLAppendFailureKeepsErrnoForTheStorageBanner() throws {
+            for (code, kind) in [(ENOSPC, CaptureStorageFailureKind.diskFull), (EACCES, .permissionDenied)] {
+                let root = try makeTemporaryDirectory()
+                let events = root.appendingPathComponent("events", isDirectory: true)
+                try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+                let store = try JSONLStore(
+                    retentionDays: 0,
+                    eventsDirectory: events,
+                    prepareApplicationStorage: false,
+                    eventFilePermissionSetter: { _, _ in errno = code; return -1 }
+                )
+                XCTAssertThrowsError(
+                    try store.appendAndWait(
+                        HistoryEvent(
+                            sessionID: "errno",
+                            timestamp: Self.date(year: 2026, month: 8, day: 23, hour: 12),
+                            kind: .heartbeat
+                        )
+                    )
+                ) { error in
+                    XCTAssertEqual(StorageHealth.failureKind(for: error), kind)
+                    XCTAssertFalse(error.localizedDescription.isEmpty)
+                }
+            }
+        }
+
         func testJSONLAppendFailsClosedBeforeWritingWhenPermissionRepairFails() throws {
             let root = try makeTemporaryDirectory()
             let events = root.appendingPathComponent("events", isDirectory: true)
