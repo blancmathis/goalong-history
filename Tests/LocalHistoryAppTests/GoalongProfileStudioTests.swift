@@ -12,6 +12,15 @@ import LocalHistoryCore
         model.result = try GoalongProfileAnalysis.apply(GoalongProfileAnalysis.parseResult(JSONSerialization.data(withJSONObject: output)), to: request)
         return model
     }
+    func testReopeningWithAnotherDayRebuildsOnlyAnIdleStudio() {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
+        let a = Date(timeIntervalSince1970: 1_791_000_000), b = a.addingTimeInterval(86_400)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: nil, idle: true, calendar: calendar), .front)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: a.addingTimeInterval(60), idle: false, calendar: calendar), .front)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: b, idle: true, calendar: calendar), .rebuild)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: nil, requestedDay: b, idle: true, calendar: calendar), .rebuild)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: b, idle: false, calendar: calendar), .keepWork)
+    }
     func testLocalResultDoesNotImplicitlySelectAnyCardOrAuthorizeSend() throws {
         let model = try populated()
         XCTAssertTrue(model.selectedItems.isEmpty)
