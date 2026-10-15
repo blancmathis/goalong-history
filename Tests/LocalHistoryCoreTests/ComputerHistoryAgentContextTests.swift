@@ -39,6 +39,21 @@ final class ComputerHistoryAgentContextTests: XCTestCase {
         XCTAssertEqual(times, times.sorted())
     }
 
+    func testRepresentativeProjectionDoesNotClaimEveryEpisodeIsCovered() {
+        let memory = makeMemory(episodeCount: 48, analyzedEpisodeCount: 300)
+        XCTAssertTrue(memory.coverage.usesRepresentativeProjection)
+
+        let projection = ComputerHistoryAgentContextRenderer.render(
+            memory,
+            tokenBudget: 800
+        )
+
+        XCTAssertTrue(projection.markdown.contains("Skeleton coverage: 48/300 episodes"))
+        XCTAssertTrue(projection.markdown.contains("the complete skeleton covers 48/300"))
+        XCTAssertFalse(projection.markdown.contains("every episode is represented"))
+        XCTAssertTrue(projection.markdown.contains("Persisted projection: episodes=48/300"))
+    }
+
     func testEvidencePackIsDeterministicAndUsesExtraBudgetForMoreFacts() {
         let memory = makeMemory(episodeCount: 64)
         let compact = ComputerHistoryAgentContextRenderer.render(memory, tokenBudget: 800)
@@ -90,7 +105,10 @@ final class ComputerHistoryAgentContextTests: XCTestCase {
         )
     }
 
-    private func makeMemory(episodeCount: Int) -> ComputerHistoryDayMemory {
+    private func makeMemory(
+        episodeCount: Int,
+        analyzedEpisodeCount: Int? = nil
+    ) -> ComputerHistoryDayMemory {
         let resources = (0..<episodeCount).map { index in
             ComputerHistoryResourceReference(
                 id: "resource-\(index)",
@@ -154,11 +172,12 @@ final class ComputerHistoryAgentContextTests: XCTestCase {
             linkedInteractionCount: episodeCount,
             interactionsWithBeforeAndAfterContext: 240,
             resourceCount: episodeCount,
-            episodeCount: episodeCount,
+            episodeCount: analyzedEpisodeCount ?? episodeCount,
             suppressedEventCount: 12,
             firstSourceSequence: 1,
             lastSourceSequence: 960,
-            lastSourceEventHash: String(repeating: "a", count: 64)
+            lastSourceEventHash: String(repeating: "a", count: 64),
+            retainedEpisodeCount: analyzedEpisodeCount.map { _ in episodeCount }
         )
         return ComputerHistoryDayMemory(
             dayStart: fixtureStart,
