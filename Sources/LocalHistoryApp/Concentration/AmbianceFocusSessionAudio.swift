@@ -16,20 +16,32 @@ import Foundation
 
     func startWork() {
         guard let controller = controller() else { playing = nil; return }
-        if let playing, controller.state == .playing(playing) { return }
-        if case .playing = controller.state { playing = nil; return }
+        if playing != nil, Self.isOurs(controller.state, playing) { return }
+        switch controller.state {
+        case .playing, .loading: playing = nil; return
+        default: break
+        }
         controller.refresh()
         guard let source = Self.focusSource(in: controller.sources, last: lastSource()) else { playing = nil; return }
         controller.play(source)
-        playing = controller.state == .playing(source) ? source : nil
+        // Focus sources prepare in a task: the state is `.loading` now and `.playing` later.
+        switch controller.state {
+        case .loading, .playing(source): playing = source
+        default: playing = nil
+        }
     }
 
     func startBreak() { stop() }
 
     func stop() {
         defer { playing = nil }
-        guard let playing, let controller = controller(), controller.state == .playing(playing) else { return }
+        guard let playing, let controller = controller(), Self.isOurs(controller.state, playing) else { return }
         controller.stop()
+    }
+
+    static func isOurs(_ state: AmbianceController.State, _ source: AmbianceSource?) -> Bool {
+        guard let source else { return false }
+        return state == .loading || state == .playing(source)
     }
 
     /// The last Focus source the user played when it is still installed, else the first installed one.

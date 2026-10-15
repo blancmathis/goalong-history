@@ -226,7 +226,7 @@ struct GoalongWebsiteConnectionSheet: View {
                         Toggle("Rapport structuré de productivité", isOn: $structuredReport)
                         Toggle("Calculer le rythme à partir de Computer History", isOn: $includeRhythm)
                         if includeRhythm {
-                            Button(contextualRhythm == nil ? "Analyser le contexte d'une session…" : "Choisir une autre session…") { showsRhythmStudio = true }
+                            Button(contextualRhythm == nil ? "Analyser le contexte d’une session…" : "Choisir une autre session…") { showsRhythmStudio = true }
                             if let rhythm = contextualRhythm {
                                 Text("\(rhythm.project) · \(rhythm.episodes?.count ?? 0) épisodes relus").font(.subheadline)
                                 if let interpretation = rhythm.interpretation { Text(interpretation).font(.caption) }
@@ -239,8 +239,8 @@ struct GoalongWebsiteConnectionSheet: View {
                             }
                             Toggle("Inclure les épisodes simplifiés", isOn: $rhythmTimeline)
                             if contextualRhythm != nil && rhythmTimeline { Toggle("Inclure les sujets, explications et éléments de contexte relus", isOn: $rhythmContext) }
-                            Toggle("Inclure l'heure de début précise", isOn: $rhythmTimes)
-                            Text("Agrégats, épisodes, contexte et horaires sont des choix distincts. Relisez l'aperçu final avant de transmettre.").font(.caption)
+                            Toggle("Inclure l’heure de début précise", isOn: $rhythmTimes)
+                            Text("Agrégats, épisodes, contexte et horaires sont des choix distincts. Relisez l’aperçu final avant de transmettre.").font(.caption)
                         }
                         if structuredReport {
                             Text("Les mêmes durées deviennent un rapport modifiable. Une application n’est pas considérée productive d’office : précisez son contexte sur le site, ou laissez votre agent préparer le rapport avant l’import. Les événements bruts et les conversations restent hors de cet export.")
@@ -431,7 +431,7 @@ struct GoalongWebsiteConnectionSheet: View {
                 Button("Produire ou actualiser avec mon agent") { recapRuntime.selectDay(date); recapRuntime.generateRecap() }
                     .disabled(recapRuntime.isGenerating || !GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis))
             }
-            if recapRuntime.isGenerating { ProgressView("L'agent prépare le récap dans Goalong History…") }
+            if recapRuntime.isGenerating { ProgressView("L’agent prépare le récap dans Goalong History…") }
             if case .connected = recapRuntime.connectionState {} else { ChatGPTAccountConnectionCard(runtime: recapRuntime) }
             ForEach(recapSections.indices, id: \.self) { index in
                 Toggle(isOn: Binding(get: { selectedRecapSections.contains(index) }, set: { include in
@@ -442,18 +442,18 @@ struct GoalongWebsiteConnectionSheet: View {
             GoalongDisclosureGroup("Ajouter un commentaire personnel") {
                 GoalongTextArea(text: $recapExcerpt, minHeight: 70).accessibilityLabel("Commentaire personnel du récap")
             }
-            Text("L'analyse utilise les sources autorisées dans l'app. La génération et l'envoi au site sont deux actions distinctes.").font(.caption).foregroundStyle(.secondary)
+            Text("L’analyse utilise les sources autorisées dans l’app. La génération et l’envoi au site sont deux actions distinctes.").font(.caption).foregroundStyle(.secondary)
         }
     }
     private func loadSavedRecap() {
-        guard GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { recapNotice = "Activez l'accès aux analyses dans les réglages."; return }
+        guard GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { recapNotice = "Activez l’accès aux analyses dans les réglages."; return }
         let selectedDay = date
         Task { @MainActor in
             let saved = await Task.detached { ChatGPTRecapPersistence.load(for: selectedDay, from: AppPaths.chatGPTRecapsDirectory) }.value
             guard Calendar.current.isDate(selectedDay, inSameDayAs: date), GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { return }
             recapSections = saved.map { $0.summaryLines ?? $0.markdown.components(separatedBy: "\n\n").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } } ?? []
             selectedRecapSections = []
-            recapNotice = saved == nil ? "Aucun récap enregistré pour cette journée. Produisez-le avec votre agent, puis choisissez ses éléments." : "Récap chargé. Aucune partie n'est sélectionnée par défaut."
+            recapNotice = saved == nil ? "Aucun récap enregistré pour cette journée. Produisez-le avec votre agent, puis choisissez ses éléments." : "Récap chargé. Aucune partie n’est sélectionnée par défaut."
             invalidatePreview()
         }
     }

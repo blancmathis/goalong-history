@@ -228,5 +228,30 @@ final class ConcentrationCommitmentControllerTests: XCTestCase {
         XCTAssertEqual((try JSONSerialization.jsonObject(with: history) as! [String: Any])["commitments"].map { ($0 as! [Any]).count }, 2)
         XCTAssertThrowsError(try runtime.handle(.init(command: "commitment show", options: ["--from": "2026-10-04"]))) { XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument) }
     }
+    @MainActor func testCLIStakeRefusesMalformedIDsAndMidnightAndBlockListsReportsFrozenLists() throws {
+        let s = try store(); let now = date("2026-10-04")
+        let a = BlockList(name: "A", sites: [.init(pattern: "a.org")]), bList = BlockList(name: "B", sites: [.init(pattern: "b.org")])
+        let cList = BlockList(name: "C", sites: [.init(pattern: "c.org")])
+        let b = BlockingController(document: .init(lists: [a, bList, cList]), clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 }, boot: { "test" })
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar, blocking: { b })
+        let m = modules(); m.setEnabled(.concentration, true); m.setEnabled(.blocking, true)
+        let runtime = ConcentrationRuntime(storeFactory: { s }, factory: { _ in c }, blockingProvider: { b }, presentsPanels: false, clock: { now }, calendar: calendar)
+        runtime.start(modules: m)
+        func set(_ stake: String, until: String? = nil) throws -> Data {
+            var o = ["--day": "2026-10-04", "--kind": "work", "--target": "6h", "--stake": stake]; o["--until"] = until
+            return try runtime.handle(.init(command: "commitment set", options: o))
+        }
+        XCTAssertThrowsError(try set("\(a.id.uuidString),typo")) { XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument) }
+        XCTAssertThrowsError(try set(a.id.uuidString, until: "00:00")) { XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument) }
+        XCTAssertTrue(c.commitments.isEmpty)
+        func locked() throws -> [String: Bool] {
+            let json = try JSONSerialization.jsonObject(with: runtime.handle(.init(command: "block-lists"))) as! [String: Any]
+            return Dictionary(uniqueKeysWithValues: (json["lists"] as! [[String: Any]]).map { ($0["name"] as! String, $0["locked"] as! Bool) })
+        }
+        XCTAssertEqual(try locked(), ["A": false, "B": false, "C": false])
+        try b.startFocusBlock(id: UUID(), listIDs: [a.id], until: now.addingTimeInterval(600), lock: .typing)
+        try b.startFocusBlock(id: UUID(), listIDs: [bList.id], until: now.addingTimeInterval(600), lock: .free)
+        XCTAssertEqual(try locked(), ["A": true, "B": false, "C": false])
+    }
 }
 #endif

@@ -279,6 +279,66 @@ final class ConcentrationControllerTests: XCTestCase {
     }
 }
 extension ConcentrationControllerTests {
+    @MainActor func testFailedStopWriteEndsTheSessionInMemoryAndRetryRecovers() throws {
+        let s = store(); try quiet(s)
+        var now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now })
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: 5))
+        let dir = s.directory.appendingPathComponent("sessions").path
+        // A read-only folder makes the write fail while reads still work.
+        chmod(dir, 0o500); defer { chmod(dir, 0o700) }
+        now = now.addingTimeInterval(400)
+        c.refresh()
+        XCTAssertNil(c.currentSession); XCTAssertNil(c.phase); XCTAssertNotEqual(c.status.state, "focus")
+        XCTAssertNotNil(c.error)
+        c.error = nil; c.refresh()
+        XCTAssertNil(c.error, "a dismissed note must not come back on each refresh")
+        XCTAssertThrowsError(try c.startSession(intent: "Encore", mode: FocusMode(minutes: 5))) { XCTAssertEqual($0 as? FocusFailure, .storageFailed) }
+        // The disk still has the open session: the next launch closes it.
+        chmod(dir, 0o700)
+        let relaunched = try ConcentrationController(store: s, clock: { now })
+        XCTAssertNil(relaunched.currentSession)
+        XCTAssertEqual(try s.sessions(BlockingController.dayKey(now)).last?.events.last?.reason, .appClosed)
+        // The healthy store lets the retry clear the latch.
+        XCTAssertTrue(c.retryStorage())
+        XCTAssertNil(c.error)
+        try c.startSession(intent: "Encore", mode: FocusMode(minutes: 5))
+        XCTAssertNotNil(c.currentSession)
+    }
+    @MainActor func testRetrySavesTheStopOfAFreeSessionEndedInMemory() throws {
+        let s = store(); try quiet(s)
+        let now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now })
+        try c.startSession(intent: "Libre", mode: FocusMode(minutes: nil))
+        let first = try XCTUnwrap(c.currentSession).id
+        let dir = s.directory.appendingPathComponent("sessions").path
+        chmod(dir, 0o500); defer { chmod(dir, 0o700) }
+        XCTAssertThrowsError(try c.stopSession())
+        XCTAssertThrowsError(try c.stopSession())
+        XCTAssertNil(c.currentSession)
+        chmod(dir, 0o700)
+        XCTAssertTrue(c.retryStorage())
+        try c.startSession(intent: "Suite", mode: FocusMode(minutes: nil))
+        let relaunched = try ConcentrationController(store: s, clock: { now })
+        XCTAssertNotNil(relaunched.currentSession)
+        let saved = try s.sessions(BlockingController.dayKey(now)).first { $0.id == first }
+        XCTAssertEqual(saved?.events.last?.kind, .stop)
+    }
+    @MainActor func testStopWhileTheWriteLatchIsSetClearsTheSessionInMemory() throws {
+        let s = store(); try quiet(s)
+        let now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now })
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: 5))
+        let dir = s.directory.appendingPathComponent("sessions").path
+        chmod(dir, 0o500); defer { chmod(dir, 0o700) }
+        // The first stop fails to write and sets the latch. The second ends the session in memory.
+        XCTAssertThrowsError(try c.stopSession()) { XCTAssertEqual($0 as? FocusFailure, .storageFailed) }
+        XCTAssertNotNil(c.currentSession)
+        XCTAssertThrowsError(try c.stopSession()) { XCTAssertEqual($0 as? FocusFailure, .storageFailed) }
+        XCTAssertNil(c.currentSession)
+    }
+}
+extension ConcentrationControllerTests {
     @MainActor func testAmbianceAdapterPicksAnInstalledFocusSourceAndNothingElse() {
         let sources = [AmbianceSource(id: "calm", title: "Calme", kind: .focus, isAvailable: false),
                        AmbianceSource(id: "rain", title: "Pluie", kind: .texture, isAvailable: true),
@@ -288,6 +348,17 @@ extension ConcentrationControllerTests {
         XCTAssertEqual(AmbianceFocusSessionAudio.focusSource(in: sources, last: "rain")?.id, "deep")
         XCTAssertEqual(AmbianceFocusSessionAudio.focusSource(in: sources, last: "calm")?.id, "deep")
         XCTAssertNil(AmbianceFocusSessionAudio.focusSource(in: Array(sources.prefix(2)), last: nil))
+    }
+
+    @MainActor func testAmbianceAdapterOwnsAnAsyncLoadingSource() {
+        let deep = AmbianceSource(id: "deep", title: "Profond", kind: .focus, isAvailable: true)
+        let other = AmbianceSource(id: "rain", title: "Pluie", kind: .texture, isAvailable: true)
+        // Focus sources start in .loading: stop() must still reach them (R2-018).
+        XCTAssertTrue(AmbianceFocusSessionAudio.isOurs(.loading, deep))
+        XCTAssertTrue(AmbianceFocusSessionAudio.isOurs(.playing(deep), deep))
+        XCTAssertFalse(AmbianceFocusSessionAudio.isOurs(.playing(other), deep))
+        XCTAssertFalse(AmbianceFocusSessionAudio.isOurs(.idle, deep))
+        XCTAssertFalse(AmbianceFocusSessionAudio.isOurs(.loading, nil))
     }
 
     @MainActor func testAmbianceAdapterIsSilentWhileTheModuleIsOff() {

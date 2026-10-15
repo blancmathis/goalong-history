@@ -71,6 +71,9 @@ struct FocusPanel: Equatable {
     private var phaseBlockID: UUID?
     private var phaseBlockKey: String?
     private var storageFailed = false
+    /// A stop that could not be saved. `retryStorage` writes it before it clears the latch.
+    private var pendingStop: (session: FocusSession, end: Date, reason: FocusSession.Event.Reason)?
+    private var lastStorageRetry = Date.distantPast
     private var promptState: FocusPromptState
     private var phaseIdentity: String?
     private var currentDay: String
@@ -141,6 +144,36 @@ struct FocusPanel: Equatable {
         sessions = try store.sessions(day); plan = try store.plan(day) ?? FocusPlan(day: day); review = try store.review(day)
     }
     private func admit() throws { if storageFailed { throw FocusFailure.storageFailed } }
+    /// Clears the write latch only after the files read back cleanly. No write happens here.
+    @discardableResult func retryStorage() -> Bool {
+        guard storageFailed else { return true }
+        let now = clock(), day = FocusCalendar.dayKey(now, calendar: calendar)
+        lastStorageRetry = now
+        do {
+            try store.recover(); try loadDay(day)
+            sessionCache.removeAll()
+            if day != currentDay { currentDay = day; promptState = FocusPromptState(day: day); measurementRefresh?() }
+        } catch { return false }
+        if let pending = pendingStop {
+            // Save the stop first, so the disk never holds two open sessions. A failure re-sets the latch.
+            storageFailed = false
+            var value = pending.session
+            value.events.append(.init(kind: .stop, at: pending.end, reason: pending.reason))
+            value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
+            let shown = error
+            do { try persist(value) } catch { storageFailed = true; self.error = shown; return false }
+            pendingStop = nil
+            do { try blocking()?.creditEarnedTime(for: value) } catch { self.error = String(describing: error); return true }
+        }
+        storageFailed = false; error = nil
+        return true
+    }
+    /// The disk keeps the open session until `retryStorage` saves the pending stop (or the next launch closes a timed one).
+    private func endInMemory(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) {
+        if pendingStop == nil { pendingStop = (session, end, reason) }
+        if let id = phaseBlockID, !hasLockedPhaseBlock { blocking()?.stop(id); phaseBlockID = nil; phaseBlockKey = nil }
+        currentSession = nil; phase = nil; phaseIdentity = nil; audio.stop()
+    }
     private func saving(_ action: () throws -> Void) throws {
         try admit()
         do { try action() } catch {
@@ -187,6 +220,11 @@ struct FocusPanel: Equatable {
         try persist(value); currentSession = value; refresh()
     }
     func stopSession(outcome: FocusSession.Outcome? = nil, note: String? = nil) throws {
+        if storageFailed, currentSession != nil {
+            // Nothing can be written: end the session in memory only. The next launch closes it on disk.
+            if hasLockedPhaseBlock { throw FocusFailure.locked }
+            endInMemory(currentSession!, at: clock(), reason: .member); publishStatus(); scheduleTimer(); throw FocusFailure.storageFailed
+        }
         try admit(); refresh()
         guard var value = currentSession else { throw FocusFailure.notFound }
         if hasLockedPhaseBlock { throw FocusFailure.locked }
@@ -418,6 +456,7 @@ struct FocusPanel: Equatable {
         showPanel(.init(kind: .limit, text: mark.kind == "endOfDay" ? "Fin de journée — votre limite." : "\(mark.kind == "weekly" ? settings.limits.weeklyHours ?? 0 : settings.limits.dailyHours ?? 0) h \(mark.usesActiveTime ? "d’activité (sans définition du travail)" : "de travail") — votre limite."))
     }
     func refresh() {
+        if storageFailed, clock().timeIntervalSince(lastStorageRetry) >= 60 { retryStorage() }
         if phaseBlockID != nil || commitments.contains(where: { $0.result?.stake.state == .applied }) { blocking()?.refresh(enforceLast: false) }
         let now = clock(), day = FocusCalendar.dayKey(now, calendar: calendar)
         if day != currentDay {
@@ -430,7 +469,11 @@ struct FocusPanel: Equatable {
                 p = phase ?? p; p.endsAt = block.end
             }
             if p.kind == .ended {
-                do { try finish(value, at: p.startedAt, reason: .completed) } catch { self.error = String(describing: error) }
+                do { try finish(value, at: p.startedAt, reason: .completed) } catch {
+                    // The stop cannot be saved: end the session in memory so it does not run on and re-raise the error.
+                    if self.error == nil { self.error = String(describing: error) }
+                    endInMemory(value, at: p.startedAt, reason: .completed)
+                }
             } else {
                 let key = phaseKey(p)
                 do { try syncBlock(value, phase: p) } catch { self.error = String(describing: error) }

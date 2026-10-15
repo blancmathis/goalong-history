@@ -45,7 +45,7 @@ import SwiftUI
                 guard operation == id else { return }
                 guard consents.isEnabled(.localComputerHistory), !rich || ActivityAnalysisPreferences.richContextEnabled else { throw GoalongContextualRhythm.Failure.invalid("Une source a été désactivée pendant la lecture.") }
                 request = value; selectedEvidence = Set(value.rhythm.episodes?.flatMap { ($0.evidence ?? []).map(\.id) } ?? [])
-                status = "Sélection locale prête. Choisissez les éléments à confier à l'agent."; busy = false
+                status = "Sélection locale prête. Choisissez les éléments à confier à l’agent."; busy = false
             } catch { guard operation == id else { return }; self.error = error.localizedDescription; status = ""; busy = false }
         }
     }
@@ -55,7 +55,7 @@ import SwiftUI
               GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis),
               GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory),
               !usedRichContext || ActivityAnalysisPreferences.richContextEnabled else { error = "Relisez la sélection et autorisez son analyse."; return }
-        busy = true; error = nil; result = nil; status = "L'agent examine les épisodes sélectionnés…"
+        busy = true; error = nil; result = nil; status = "L’agent examine les épisodes sélectionnés…"
         let id = UUID(); operation = id
         task = Task {
             do {
@@ -79,7 +79,7 @@ import SwiftUI
                 else { throw GoalongContextualRhythm.Failure.invalid("Autorisation retirée pendant l’analyse.") }
                 result = try GoalongContextualRhythm.apply(annotation, to: selected)
                 interpretation = result?.interpretation ?? ""; consentToAnalyze = false; busy = false
-                status = "Interprétation prête. Relisez les associations avant de préparer l'envoi au site."
+                status = "Interprétation prête. Relisez les associations avant de préparer l’envoi au site."
             } catch { guard operation == id else { return }; self.error = error.localizedDescription; status = ""; busy = false; consentToAnalyze = false }
         }
     }
@@ -88,7 +88,7 @@ import SwiftUI
         do {
             let data = try GoalongSiteAnalysisRequest.readSelectedBytes(url)
             result = try GoalongContextualRhythm.apply(GoalongContextualRhythm.parseAnnotation(data), to: selected)
-            interpretation = result?.interpretation ?? ""; status = "Réponse de votre agent importée. Relisez-la avant l'envoi."
+            interpretation = result?.interpretation ?? ""; status = "Réponse de votre agent importée. Relisez-la avant l’envoi."
         } catch { self.error = error.localizedDescription }
     }
     func correct(id: String, relation: String) {
@@ -133,7 +133,7 @@ struct GoalongRhythmStudio: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Choisissez un projet et une plage de la journée. Les durées viennent des observations ; l'agent explique leur contexte.").foregroundStyle(.secondary)
+                    Text("Choisissez un projet et une plage de la journée. Les durées viennent des observations ; l’agent explique leur contexte.").foregroundStyle(.secondary)
                     HStack { DatePicker("Début", selection: $start, displayedComponents: .hourAndMinute); DatePicker("Fin", selection: $end, displayedComponents: .hourAndMinute) }
                     TextField("Projet", text: $project).textFieldStyle(GoalongFieldStyle())
                     TextField("Ce que vous souhaitiez faire pendant cette session", text: $intent).textFieldStyle(GoalongFieldStyle())
@@ -154,19 +154,19 @@ struct GoalongRhythmStudio: View {
                                 if row.evidence?.isEmpty != false { Text("Contexte non fourni").font(.caption).foregroundStyle(.secondary) }
                             }
                         }
-                        GoalongDisclosureGroup("Voir la sélection exacte pour l'agent") { Text(String(decoding: (try? selected.encoded()) ?? Data(), as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+                        GoalongDisclosureGroup("Voir la sélection exacte pour l’agent") { Text(String(decoding: (try? selected.encoded()) ?? Data(), as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                         HStack {
                             Text(connection.accountLabel).font(.caption)
                             Spacer()
                             Button(connection.connected ? "Déconnecter ChatGPT" : "Connecter ChatGPT") { if connection.connected { connection.disconnect() } else { connection.connect() } }.disabled(connection.busy || model.busy)
                         }
-                        Toggle("J'autorise l'envoi de cette sélection à l'agent connecté", isOn: $model.consentToAnalyze)
+                        Toggle("J’autorise l’envoi de cette sélection à l’agent connecté", isOn: $model.consentToAnalyze)
                         Button("Analyser le contexte de cette session") { model.analyze() }.disabled(!connection.connected || !model.consentToAnalyze || model.busy)
                         HStack {
                             Button("Préparer pour mon autre agent…") { exportRequest(selected) }.disabled(model.busy)
                             Button("Importer sa réponse…") { importResponse() }.disabled(model.busy)
                         }
-                        Text("L'autre agent reçoit seulement le fichier que vous lui fournissez et suit ses propres conditions. Aucune analyse n'envoie de données au site.").font(.caption).foregroundStyle(.secondary)
+                        Text("L’autre agent reçoit seulement le fichier que vous lui fournissez et suit ses propres conditions. Aucune analyse n’envoie de données au site.").font(.caption).foregroundStyle(.secondary)
                     }
                     if let value = model.result {
                         Divider(); Text("Relire et corriger").font(.headline)
@@ -184,9 +184,9 @@ struct GoalongRhythmStudio: View {
                                 ForEach(row.evidence ?? [], id: \.id) { Text("Élément choisi : \($0.text)").font(.caption).textSelection(.enabled) }
                             }
                         }
-                        Toggle("Inclure l'interprétation relue", isOn: $model.includeInterpretation)
+                        Toggle("Inclure l’interprétation relue", isOn: $model.includeInterpretation)
                         GoalongTextArea(text: $model.interpretation, minHeight: 100).accessibilityLabel("Interprétation de la session")
-                        Text("L'association et le texte restent des interprétations. Les trous de collecte ne sont jamais changés en pauses.").font(.caption)
+                        Text("L’association et le texte restent des interprétations. Les trous de collecte ne sont jamais changés en pauses.").font(.caption)
                     }
                     if model.busy { HStack { ProgressView(); Text(model.status); Button("Annuler") { model.cancel() } } }
                     if let error = model.error ?? connection.error { Text(error).foregroundStyle(.red) }
