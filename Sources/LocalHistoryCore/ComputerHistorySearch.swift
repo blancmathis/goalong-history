@@ -2049,38 +2049,33 @@ enum SearchText {
         )
     }
 
+    /// Kind hints match whole words (and simple plurals), so "pr" does not
+    /// fire on "projet" and "doc" does not fire on "docker".
     static func resourceKindHints(
         _ query: String
     ) -> Set<ComputerHistoryResourceKind> {
+        let queryWords = Set(words(query))
+        func mentions(_ markers: [String]) -> Bool {
+            markers.contains { marker in
+                queryWords.contains(marker) || queryWords.contains(marker + "s")
+            }
+        }
         var output = Set<ComputerHistoryResourceKind>()
-        if containsAny(
-            query,
-            ["file", "fichier", "path", "folder", "dossier"]
-        ) {
+        if mentions(["file", "fichier", "path", "folder", "dossier"]) {
             output.insert(.file)
         }
-        if containsAny(
-            query,
-            ["document", "doc", "proposal", "proposition", "brief", "note"]
-        ) {
+        if mentions(["document", "doc", "proposal", "proposition", "brief", "note"]) {
             output.insert(.document)
         }
-        if containsAny(
-            query,
-            ["conversation", "chat", "slack", "thread", "message", "discussion"]
-        ) {
+        if mentions(["conversation", "chat", "slack", "thread", "message", "discussion"]) {
             output.insert(.conversation)
         }
-        if containsAny(
-            query,
-            ["issue", "ticket", "pull request", "pr", "bug"]
-        ) {
+        if mentions(["issue", "ticket", "pr", "bug"])
+            || containsPhrase(query, ["pull request", "pull requests"])
+        {
             output.insert(.issue)
         }
-        if containsAny(
-            query,
-            ["website", "site", "page", "url"]
-        ) {
+        if mentions(["website", "site", "page", "url"]) {
             output.insert(.webPage)
         }
         return output

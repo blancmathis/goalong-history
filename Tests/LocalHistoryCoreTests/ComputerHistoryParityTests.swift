@@ -144,6 +144,49 @@ final class ComputerHistoryParityTests: XCTestCase {
         XCTAssertTrue(memory.resources.contains { $0.localPath == "/Users/mathis/Documents/Launch Plan.pdf" })
     }
 
+    func testResourceKindHintsMatchWholeWords() {
+        for query in [
+            "qu'ai-je fait sur le projet atlas", "proposition atlas", "prepare april print",
+            "debug docker notebook",
+        ] {
+            XCTAssertFalse(SearchText.resourceKindHints(SearchText.normalized(query)).contains(.issue), query)
+        }
+        XCTAssertFalse(SearchText.resourceKindHints("debug docker notebook").contains(.document))
+        for query in ["ma pr atlas", "my prs", "pull request atlas", "bug atlas", "pr #42"] {
+            XCTAssertTrue(SearchText.resourceKindHints(query).contains(.issue), query)
+        }
+        XCTAssertTrue(SearchText.resourceKindHints("le doc atlas").contains(.document))
+        XCTAssertTrue(SearchText.resourceKindHints("mes fichiers").contains(.file))
+    }
+
+    func testUnrelatedIssueDoesNotAnswerAProjectQuestion() {
+        let start = makeDate("2026-08-20T11:00:00Z")
+        let memory = ComputerHistoryEngine.analyze(
+            events: [
+                event(
+                    id: "unrelated-pull",
+                    sequence: 1,
+                    at: start,
+                    kind: .urlChanged,
+                    app: app("Safari", "com.apple.Safari"),
+                    title: "Fix onboarding crash · Pull Request #7",
+                    URL: "https://github.com/example/project/pull/7"
+                )
+            ],
+            day: start,
+            calendar: utcCalendar
+        )
+        XCTAssertTrue(memory.resources.contains { $0.kind == .issue })
+
+        for query in ["Qu'ai-je fait sur le projet Atlas ?", "Retrouve la proposition Atlas"] {
+            let answer = ComputerHistorySearchService(memories: [memory]).ask(
+                query,
+                now: start.addingTimeInterval(60)
+            )
+            XCTAssertFalse(answer.hits.contains { $0.resource?.kind == .issue }, query)
+        }
+    }
+
     func testNaturalQuestionFindsTheReopenableProposalSource() {
         let start = makeDate("2026-08-20T11:00:00Z")
         let safari = app("Safari", "com.apple.Safari")
