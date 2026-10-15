@@ -87,9 +87,19 @@ struct GoalongWebsiteConnectionSheet: View {
     struct ReviewedExport { let payload: Data; let privacyRevision: String }
     /// Builds the export and binds it to the exclusions in force while its bytes were produced.
     nonisolated static func reviewedExport(root: URL, day: String, options: GoalongSiteExportOptions,
+        isHidden: (String) -> Bool = SharingRulesStore().hiddenWebsiteFilter(),
+        websiteCatalog: (URL, String) throws -> GoalongSiteSelectionCatalog = { try GoalongQueryCLI.siteSelectionCatalog(rootDirectory: $0, day: $1, includeWebsites: true) },
         export: (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) }) throws -> ReviewedExport {
         let before = GoalongPrivacyPolicy.load(in: root)
         guard !before.blocked else { throw GoalongSiteExportError.invalid("Les exclusions sont illisibles. Vérifiez-les dans les réglages, puis préparez un nouvel aperçu.") }
+        var options = options
+        if options.includeWebsites {
+            // A nil list means "every domain": resolve it, so sites hidden in every share never leave.
+            if options.selectedWebsiteDomains == nil {
+                options.selectedWebsiteDomains = try websiteCatalog(root, day).websites.map(\.domain)
+            }
+            options = GoalongWebsiteAutoSender.removingHiddenWebsites(options, isHidden: isHidden)
+        }
         let bytes = try export(root, day, options)
         guard GoalongPrivacyPolicy.load(in: root).revision == before.revision else {
             throw GoalongSiteExportError.invalid("Les exclusions ont changé pendant la préparation. Préparez un nouvel aperçu.")

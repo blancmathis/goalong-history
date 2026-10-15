@@ -35,6 +35,20 @@ final class GoalongWebsiteFixRound2Tests: XCTestCase {
             export: { _, _, _ in XCTFail("A blocked policy must not export"); return Data() }))
     }
 
+    func testAdvancedSheetExportNeverListsHiddenSites() throws {
+        let root = try tempRoot()
+        var seen: [String]??
+        var all = GoalongSiteExportOptions(); all.includeWebsites = true
+        _ = try GoalongWebsiteConnectionSheet.reviewedExport(root: root, day: "2026-09-14", options: all,
+            isHidden: { $0 == "hidden.example" },
+            websiteCatalog: { _, _ in
+                try GoalongSiteSelectionCatalog(payload: Data("""
+                {"days":[{"telemetry":{"timezone":"UTC","devices":[],"websites":{"rows":[{"domain":"hidden.example","seconds":5},{"domain":"ok.example","seconds":5}]}}}]}
+                """.utf8)) },
+            export: { _, _, o in seen = .some(o.selectedWebsiteDomains); return Data() })
+        XCTAssertEqual(seen, .some(["ok.example"]))
+    }
+
     @MainActor func testPauseEndRestoresActiveStatusEvenWhenNothingIsDue() async throws {
         let suite = "goalong-r2-pause-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

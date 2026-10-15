@@ -18,7 +18,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         let token = root.appendingPathComponent("token")
         try Data("synthetic-upload-credential-only".utf8).write(to: token)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: token.path)
-        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: consent)
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: consent, hiddenWebsites: { { _ in false } })
         let bytes = catalogBytes
         let model = GoalongWebsiteSharingModel(autoSender: scheduler, root: root,
             catalogLoader: { _, _, _ in try GoalongSiteSelectionCatalog(payload: bytes) },
@@ -32,7 +32,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
                 XCTAssertFalse(fingerprint.isEmpty)
                 onSend(data)
                 return Data(#"{"imported":1,"updated":0,"skipped":0,"verification":"unverified"}"#.utf8)
-            }, sourceConsent: consent)
+            }, sourceConsent: consent, hiddenWebsites: { { _ in false } })
         return (model, token, defaults, suite)
     }
 

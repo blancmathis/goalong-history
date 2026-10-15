@@ -74,7 +74,7 @@ import LocalHistoryCore
     }
     private let hiddenWebsites: () -> (String) -> Bool
     /// Sites hidden in every share never leave, even when an older plan still lists them.
-    static func removingHiddenWebsites(_ options: GoalongSiteExportOptions, isHidden: (String) -> Bool) -> GoalongSiteExportOptions {
+    nonisolated static func removingHiddenWebsites(_ options: GoalongSiteExportOptions, isHidden: (String) -> Bool) -> GoalongSiteExportOptions {
         var value = options
         value.selectedWebsiteDomains = options.selectedWebsiteDomains?.filter { !isHidden($0) }
         return value
