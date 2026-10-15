@@ -144,6 +144,30 @@ final class ComputerHistoryParityTests: XCTestCase {
         XCTAssertTrue(memory.resources.contains { $0.localPath == "/Users/mathis/Documents/Launch Plan.pdf" })
     }
 
+    func testLocalPathExtractionStopsAtTheFollowingProse() {
+        let home = NSString(string: "~").expandingTildeInPath
+        let cases: [(String, String)] = [
+            ("Open /Users/me/notes.md, and review it", "/Users/me/notes.md"),
+            ("Saved to /Users/me/Projects/app, then ran tests", "/Users/me/Projects/app"),
+            (
+                "/Users/me/Library/Application Support/Foo/config.json",
+                "/Users/me/Library/Application Support/Foo/config.json"
+            ),
+            ("/Users/me/My Notes.md is open", "/Users/me/My Notes.md"),
+            ("file:///Users/me/a.pdf).", "/Users/me/a.pdf"),
+            ("/Users/x/Documents/Launch Plan.pdf", "/Users/x/Documents/Launch Plan.pdf"),
+            ("/Users/me/Report, final.pdf", "/Users/me/Report, final.pdf"),
+            ("~/Projects/app — -zsh — 80×24", home + "/Projects/app"),
+        ]
+        for (text, expected) in cases {
+            XCTAssertEqual(
+                ComputerHistoryResourceResolver.extractLocalPaths(from: text).first,
+                expected,
+                text
+            )
+        }
+    }
+
     func testResourceKindHintsMatchWholeWords() {
         for query in [
             "qu'ai-je fait sur le projet atlas", "proposition atlas", "prepare april print",
