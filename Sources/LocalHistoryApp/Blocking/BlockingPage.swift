@@ -82,7 +82,7 @@ import SwiftUI
                     }
                     if !controller.lists.isEmpty {
                         GoalongSection(title: "Semaine",
-                                       subtitle: "Glissez sur un jour pour programmer un blocage. Cliquez une plage pour la changer.") {
+                                       subtitle: "Glissez sur un jour, ou utilisez son bouton +, pour programmer un blocage. Cliquez une plage pour la changer.") {
                             BlockingWeekEditor(controller: controller, now: now)
                         }
                     }

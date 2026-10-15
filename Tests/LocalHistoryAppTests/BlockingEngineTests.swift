@@ -403,6 +403,16 @@ final class BlockingEngineTests: XCTestCase {
             }
         }
     }
+    /// R2-076: the « + » button and the drag build their draft the same way, without needing a drag.
+    @MainActor func testNewRangeDraftForADay() throws {
+        let list = UUID()
+        let draft = try XCTUnwrap(BlockingWeekEditor.newDraft(day: 1, start: BlockingWeekEditor.defaultStart,
+                                                              end: BlockingWeekEditor.defaultEnd, firstList: list))
+        XCTAssertNil(draft.existing); XCTAssertEqual(draft.days, [1]); XCTAssertEqual(draft.listIDs, [list])
+        XCTAssertEqual(draft.start, 540); XCTAssertEqual(draft.end, 600)
+        XCTAssertEqual(BlockingWeekEditor.newDraft(day: 2, start: 1_380, end: 1_440, firstList: list)?.end, 1_440)
+        XCTAssertNil(BlockingWeekEditor.newDraft(day: 1, start: 540, end: 600, firstList: nil), "no list, no draft")
+    }
     /// R2-065: the icon cluster lists each app or host once, so ids stay unique and "+N" counts unique items.
     func testIconClusterDeduplicatesItems() {
         let mail = BlockAppRule(bundleIdentifier: "com.apple.mail", name: "Mail")

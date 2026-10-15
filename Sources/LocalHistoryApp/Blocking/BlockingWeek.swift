@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// The week as seven threads, Monday to Sunday on one 0–24 h scale, like Activité's weave, and the
-/// one place where programs are edited: drag on a day to draw a range, click a range to change it.
+/// one place where programs are edited: drag on a day to draw a range, or use its « + » button; click a range to change it.
 /// A range is solid when its program is locked, quieter when free, outlined when it slows down.
 /// The present is the lime point on today's thread.
 @MainActor struct BlockingWeekEditor: View {
@@ -13,7 +13,7 @@ import SwiftUI
 
     private static let rowHeight: CGFloat = 26
     private static let laneHeight: CGFloat = 18
-    private static let label: CGFloat = 34
+    private static let label: CGFloat = 52
     private static let gap: CGFloat = 10
     private static let spacing: CGFloat = 4
 
@@ -28,6 +28,30 @@ import SwiftUI
         var name: String
         var lane = 0
     }
+
+    /// One hour from 9:00 is the default of the « + » button; the drag draws its own range.
+    static let defaultStart = 540, defaultEnd = 600
+
+    /// A new range on one day, shared by the drag, the « + » button and the accessibility action.
+    /// Nil when there is no list to program yet. The end is kept at 24:00 rather than wrapped to 0.
+    static func newDraft(day: Int, start: Int, end: Int, firstList: UUID?, anchor: CGRect = .zero) -> BlockingRangeDraft? {
+        guard let firstList else { return nil }
+        return BlockingRangeDraft(existing: nil, listIDs: [firstList], days: [day], start: start,
+                                  end: end >= 1_440 ? 1_440 : end, anchor: anchor)
+    }
+
+    private func newDraft(day: Int, start: Int, end: Int, anchor: CGRect) -> BlockingRangeDraft? {
+        Self.newDraft(day: day, start: start, end: end, firstList: controller.lists.first?.id, anchor: anchor)
+    }
+
+    private func editDraft(_ span: Span, anchor: CGRect) -> BlockingRangeDraft? {
+        guard let list = controller.list(span.listID),
+              let range = list.program.ranges.first(where: { $0.id == span.rangeID }) else { return nil }
+        return BlockingRangeDraft(existing: span.rangeID, listIDs: [list.id], days: range.weekdays,
+                                  start: range.startMinute, end: range.endMinute, lock: range.effectiveLock, anchor: anchor)
+    }
+
+    private static let weekdayNames = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 
     private var today: Int { BlockingSchedule.isoWeekday(now) }
     private var nowMinute: Int {
@@ -80,10 +104,26 @@ import SwiftUI
         VStack(alignment: .leading, spacing: Self.spacing) {
             ForEach(1...7, id: \.self) { day in
                 HStack(spacing: Self.gap) {
-                    Text(BlockingFormat.weekdayShort[day - 1])
-                        .font(.system(size: 12, weight: day == today ? .semibold : .regular))
-                        .foregroundStyle(day == today ? LHTheme.text : LHTheme.secondaryText)
-                        .frame(width: Self.label, alignment: .leading)
+                    HStack(spacing: 2) {
+                        Text(BlockingFormat.weekdayShort[day - 1])
+                            .font(.system(size: 12, weight: day == today ? .semibold : .regular))
+                            .foregroundStyle(day == today ? LHTheme.text : LHTheme.secondaryText)
+                        Spacer(minLength: 0)
+                        // The keyboard and VoiceOver way to program a day, without a drag.
+                        Button {
+                            let top = heights.prefix(day - 1).reduce(0, +) + CGFloat(day - 1) * Self.spacing
+                            editing = newDraft(day: day, start: Self.defaultStart, end: Self.defaultEnd,
+                                               anchor: CGRect(x: 0, y: top, width: Self.label, height: Self.rowHeight))
+                        } label: {
+                            Image(systemName: "plus").font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(LHTheme.secondaryText).frame(width: 16, height: 16).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(controller.lists.isEmpty)
+                        .help(controller.lists.isEmpty ? "Créez d’abord une liste" : "Ajouter une plage")
+                        .accessibilityLabel("Ajouter une plage, \(Self.weekdayNames[day - 1])")
+                    }
+                    .frame(width: Self.label, alignment: .leading)
                     GeometryReader { proxy in
                         dayRow(day, spans: spans[day] ?? [], width: proxy.size.width, height: heights[day - 1],
                                top: heights.prefix(day - 1).reduce(0, +) + CGFloat(day - 1) * Self.spacing)
@@ -131,15 +171,13 @@ import SwiftUI
             Rectangle().fill(LHTheme.tertiaryText.opacity(0.45)).frame(height: 1)
                 .offset(y: Self.laneHeight / 2 + (Self.rowHeight - Self.laneHeight) / 2)
             ForEach(spans, id: \.self) { span in
-                spanView(span, width: max(Self.laneHeight, x(span.end) - x(span.start)))
-                    .offset(x: x(span.start), y: (Self.rowHeight - Self.laneHeight) / 2 + CGFloat(span.lane) * Self.laneHeight)
-                    .onTapGesture {
-                        guard let list = controller.list(span.listID),
-                              let range = list.program.ranges.first(where: { $0.id == span.rangeID }) else { return }
-                        editing = BlockingRangeDraft(existing: span.rangeID, listIDs: [list.id], days: range.weekdays,
-                                                     start: range.startMinute, end: range.endMinute, lock: range.effectiveLock,
-                                                     anchor: CGRect(x: origin + x(span.start), y: top, width: x(span.end) - x(span.start), height: Self.rowHeight))
-                    }
+                Button {
+                    editing = editDraft(span, anchor: CGRect(x: origin + x(span.start), y: top, width: x(span.end) - x(span.start), height: Self.rowHeight))
+                } label: {
+                    spanView(span, width: max(Self.laneHeight, x(span.end) - x(span.start)))
+                }
+                .buttonStyle(.plain)
+                .offset(x: x(span.start), y: (Self.rowHeight - Self.laneHeight) / 2 + CGFloat(span.lane) * Self.laneHeight)
             }
             if let dragging, dragging.day == day {
                 let low = min(dragging.start, dragging.end), high = max(dragging.start, dragging.end)
@@ -175,13 +213,11 @@ import SwiftUI
                     // A click without a drag draws one hour from there.
                     if end - start < 15 { start = min(start, 1_380); end = start + 60 }
                     dragging = nil
-                    guard !controller.lists.isEmpty else { return }
-                    editing = BlockingRangeDraft(existing: nil, listIDs: [controller.lists[0].id], days: [day],
-                                                 start: start, end: end == 1_440 ? 1_440 : end,
-                                                 anchor: CGRect(x: origin + x(start), y: top, width: x(end) - x(start), height: Self.rowHeight))
+                    editing = newDraft(day: day, start: start, end: end,
+                                       anchor: CGRect(x: origin + x(start), y: top, width: x(end) - x(start), height: Self.rowHeight))
                 }
         )
-        .help("Glissez pour programmer un blocage")
+        .help("Glissez pour programmer un blocage, ou utilisez le bouton +")
     }
 
     private func spanView(_ span: Span, width: CGFloat) -> some View {

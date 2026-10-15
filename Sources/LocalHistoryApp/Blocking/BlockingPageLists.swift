@@ -309,7 +309,7 @@ import SwiftUI
     }
 
     private var programLine: String {
-        guard let first = list.program.ranges.first else { return "Pas de programme. Glissez sur la semaine pour en créer un." }
+        guard let first = list.program.ranges.first else { return "Pas de programme. Glissez sur la semaine, ou utilisez le bouton + d’un jour, pour en créer un." }
         let more = list.program.ranges.count > 1 ? " et \(list.program.ranges.count - 1) autre\(list.program.ranges.count > 2 ? "s" : "")" : ""
         return "Programme : \(BlockingFormat.weekdays(first.weekdays)) \(BlockingFormat.range(first))\(more)"
     }
