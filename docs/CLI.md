@@ -154,7 +154,7 @@ The native connection sheet exposes these choices and the exact resulting JSON b
 
 **Charger le récap de cette journée** offers saved recap sections with none selected by default; a separate button starts the existing recap-generation flow. Selected parts and an optional personal comment appear in the exact preview. Any active mask removes recap text, domains and session context before serialization.
 
-The optional reviewed schedule retains selected devices, fields, masks and a chosen hour. It can reuse selected numbered sections of an already saved recap on later days; missing sections cause refusal and require review. It never repeats a one-off comment or an old contextual session. Masks exclude recaps and domains. It sends yesterday only while the app is running, persists the attempt before networking, rechecks source consent, and stops on any failure. Disabling does not retract an in-flight request or copies already received. No new model call is scheduled by the connector.
+The optional reviewed schedule retains selected devices, fields, masks and a chosen hour. Scheduled sends never include recap text or recap sections, only devices, fields and domains. It never repeats a one-off comment or an old contextual session. An active mask excludes domains. It sends yesterday only while the app is running, persists the attempt before networking, rechecks source consent, and stops on any failure. Disabling does not retract an in-flight request or copies already received. No new model call is scheduled by the connector.
 
 ## Private profile analyses
 

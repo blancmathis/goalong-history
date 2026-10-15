@@ -30,7 +30,7 @@ JSON request. Contextual session analysis uses the same confined transport with 
 required; the exported draft is never automatically sent to the website.
 
 The optional website connector is a separate first-party HTTP path. Explicit `goalong send-site`, reviewed native send buttons, and the separately enabled schedule send selected saved data. `export-site` and the native preview stay offline; enabling a source or
-remembering a website does not enable scheduling. The opt-in schedule sends the previous day after the chosen hour only while the app runs, using the reviewed device/field/mask selection and one destination. Selected numbered parts of saved recaps and domains are eligible; an active mask excludes both. One-off comments and past contextual-session analyses are never repeated. A failed or uncertain attempt stops scheduling and is never retried automatically. Source consent is checked again immediately before sending. The exact command contract is in
+remembering a website does not enable scheduling. The opt-in schedule sends the previous day after the chosen hour only while the app runs, using the reviewed device/field/mask selection and one destination. Selected devices, fields and domains are eligible; an active mask excludes domains. Scheduled sends never include recap text or recap sections. One-off comments and past contextual-session analyses are never repeated. A failed or uncertain attempt stops scheduling and is never retried automatically. Source consent is checked again immediately before sending. The exact command contract is in
 [`CLI.md`](CLI.md#website-export-and-account-submission); the field and audience boundary is in
 [`PRIVACY.md`](PRIVACY.md#website-disclosure).
 
