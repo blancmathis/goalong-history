@@ -255,9 +255,8 @@ struct BlockingRangeDraft: Identifiable {
         self.now = now
         self.onClose = onClose
         _draft = State(initialValue: draft)
-        let midnight = Calendar.current.startOfDay(for: now)
-        _start = State(initialValue: midnight.addingTimeInterval(TimeInterval(draft.start * 60)))
-        _end = State(initialValue: midnight.addingTimeInterval(TimeInterval(draft.end % 1_440 * 60)))
+        _start = State(initialValue: BlockingWallClock.wallTime(draft.start, on: now))
+        _end = State(initialValue: BlockingWallClock.wallTime(draft.end % 1_440, on: now))
     }
 
     private var list: BlockList? { draft.existing == nil ? nil : draft.listIDs.first.flatMap(controller.list) }
@@ -342,10 +341,7 @@ struct BlockingRangeDraft: Identifiable {
         .goalongControls()
     }
 
-    private func minutes(_ date: Date) -> Int {
-        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
-        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
-    }
+    private func minutes(_ date: Date) -> Int { BlockingWallClock.minuteOfDay(date) }
 
     private func range(id: UUID = UUID()) -> BlockProgramRange {
         BlockProgramRange(id: id, weekdays: draft.days, startMinute: minutes(start),

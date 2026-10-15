@@ -79,11 +79,18 @@ import ServiceManagement
     func pause() { update { $0.pauseUntil = clock().addingTimeInterval(15 * 60) } }
     func resume() { update { $0.pauseUntil = nil } }
     func refreshLoginStatus() {
-        loginEnabled = SMAppService.mainApp.status == .enabled
-        loginApprovalRequired = SMAppService.mainApp.status == .requiresApproval
+        let status = SMAppService.mainApp.status
+        loginEnabled = status == .enabled
+        loginApprovalRequired = status == .requiresApproval
     }
     func setLogin(_ enabled: Bool) throws {
         do {
+            if !enabled, BackgroundContinuityPreferences.keepsLoginItem(
+                enabled: enabled, registered: loginEnabled || loginApprovalRequired,
+                lockActive: BlockingRuntime.shared.controller?.hasLocks == true) {
+                errorMessage = LaunchAtLoginManager.heldMessage
+                return
+            }
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             refreshLoginStatus()
         } catch {

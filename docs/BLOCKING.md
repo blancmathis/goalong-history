@@ -205,15 +205,16 @@ the delay, lowering `continueMinutes` are allowed (stricter).
 - The sink receives `BlockingObservation`: bundle id, pid, window frame (AX, screen coordinates),
   browser flag, URL (host + path only) when readable, private-window flag, at, and a set of
   configured, folded keywords matched in this sample's title. It never contains a raw title.
-- Private windows are never read: the provider only reports the flag. The private check runs for
-  every app that may show a page (known browser, configured browser or web content) before any
-  address read. An unknown app with a private window counts as a browser only when it shows an
-  address field, found without reading its value. Exclusions of Computer History
+- Private windows follow the same site, exception, keyword and quota rules as any window. The
+  blocking reader reads their address (host + path) and, while keywords are active, their title,
+  in memory only, for one sample. The private flag stays on the observation, so the recorder, Jev,
+  analytics and diagnostics never keep them, and `blocking.json` keeps only `[list UUID: count]`.
+  Unknown apps go through the normal address read in every window. Exclusions of Computer History
   do not hide URLs from the blocking sink (they are privacy choices for history), but the URL never
   reaches the recorder.
-- Keyword title reading happens only in the blocking reader, after the private-window check,
-  while at least one currently active list has keywords. Upcoming lists alone do not enable it.
-  No keyword title read happens in private windows or without active keywords. The raw title is
+- Keyword title reading happens only in the blocking reader, while at least one currently active
+  list has keywords. Upcoming lists alone do not enable it. No keyword title read happens without
+  active keywords; private windows are read like other windows. The raw title is
   consumed within one read, never cached, compared in `BlockingObservation`, recorded, logged,
   or sent to Jev, analytics or diagnostics. Matching evidence contains configured rules only and
   is recomputed each sample. A pending tab action rechecks its matching keywords before closing.
@@ -221,8 +222,8 @@ the delay, lowering `continueMinutes` are allowed (stricter).
   descriptions and chrome labels to detect private markers, even without keywords and in private
   windows. These labels are discarded. Without keywords its 30-second flag cache is unchanged;
   with keywords the flag is recomputed before every sample. Thus the literal prohibition of
-  **all** `AXTitle` reads without keywords or in private windows is not met by this existing
-  classifier; the new keyword path adds no title read in either case.
+  **all** `AXTitle` reads without keywords is not met by this existing classifier; the keyword
+  path adds no title read without active keywords.
 
 App launches and activations also arrive through the existing `NSWorkspace` notification path in
 `AccessibilityEventMonitor`; reuse it, do not add another one.
@@ -237,8 +238,8 @@ App launches and activations also arrive through the existing `NSWorkspace` noti
   the window (level `.floating`). Then stop the page: press the browser's « Fermer l'onglet » menu
   item through AX (fallback: `⌘W` posted to that pid). The veil stays 1.5 s after the tab changes,
   then fades.
-- **Private window during a site block**: covered with the site veil (« Navigation privée »), tab
-  closed the same way.
+- **Private window during a site block**: the same site, exception, keyword and quota rules apply.
+  A private window whose address stays unreadable falls under the unsupported-browser rule below.
 - **Unsupported browser**: a known browser (the configured browser list plus
   `BlockingRules.otherBrowsers`) whose URL stays unreadable for 3 s while a site block is active is
   treated as blocked (« Navigateur non pris en charge »). An app that only shows web content
@@ -248,7 +249,11 @@ App launches and activations also arrive through the existing `NSWorkspace` noti
   (`siteBlockingAvailable == false`) and every known browser is treated as unsupported.
 - **Persistence**: on launch, the controller restores sessions, usage and freeze before the first
   window appears. Launch at login is required while anything is locked: the controller registers
-  `SMAppService.mainApp` if needed and shows its state.
+  `SMAppService.mainApp` if needed and shows its state. While a locked block runs, turning launch
+  at login off (Settings, onboarding, Braise) records the choice but keeps the item. When nothing
+  needs it any more, Blocage removes an item it registered or kept itself if the member's choice
+  is off (`blockingForcedLoginItem`). It never removes an item the member turned on, and it never
+  re-registers, during the same lock, an item removed in System Settings.
 - **Quit**: while anything is locked, « Quitter Goalong » explains it cannot quit and offers to
   close the window. (A forced quit is covered by the Strict level.)
 
@@ -309,7 +314,7 @@ before Developer ID and recovery tests on a dedicated Mac.
   `BlockingEditCheck`. Additions normalize and deduplicate; refusals preserve the list.
 - Pure explanation: `BlockingController.explain(url:title:list:) -> BlockingMatchExplanation`
   with `blocked`, a typed `reason` and a French `message`. It evaluates one list's matching rules,
-  without sessions, quota, breaks or the private/unreadable-browser fallback. It consumes an
+  without sessions, quota, breaks or the unreadable-browser fallback. It consumes an
   optional title for that call only. Runtime `activeKeywords` enables the sink's title reads.
 - Sessions: `start(listIDs:until:lock:)`, `stop(_:typed:)`, `typingChallenge(for:)`,
   `takeBreak(listID:)`, `endBreak(listID:)`.
@@ -379,8 +384,8 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
 - Locked allowlists can only shrink by set inclusion (replacing one allowed rule with another is
   refused); quotas can decrease or be removed (no quota means immediate blocking). Removing a
   program lock is refused. A freeze cannot be replaced or shortened while it runs.
-- Breaks end at local midnight; usage and break counters reset then. Private/unreadable browser
-  URLs fail closed during an eligible site block, including while a quota remains, because no
+- Breaks end at local midnight; usage and break counters reset then. Unreadable browser
+  URLs (private or not) fail closed during an eligible site block, including while a quota remains, because no
   address can establish eligible quota accounting. Explicit browser internal pages stay allowed.
 - Program times use civil calendar times: a missing DST time advances to the next valid time;
   a repeated time uses its first occurrence. Touching/overlapping windows are merged.
@@ -420,8 +425,9 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
    window, offscreen tabs, very quick app/window switches and page execution before tab closure
    can escape. Quota gaps after missed/stale samples are not invented; eligible accounting is
    capped at 15 seconds per interval and can undercount when the process is stalled.
-4. Browser identity/private-mode detection and AX URL/menu exposure are best effort. Undetected
-   wrappers, spoofed AX metadata, unreadable private markers, disabled Accessibility, a rejected
+4. Browser identity and AX URL/menu exposure are best effort (private-mode detection only
+   decides what history drops). Undetected
+   wrappers, spoofed AX metadata, disabled Accessibility, a rejected
    AX/Command-W operation, remapped shortcuts, full-screen Spaces/window ordering and an unknown
    browser without a usable window frame can defeat site enforcement. Missing Accessibility is
    shown and known browsers are covered; it does not grant the app power to stop network traffic.
@@ -512,8 +518,9 @@ Only a confirmed backend presentation records an attempt. A continuous veil or r
 reenforcement is one event. Leaving and returning to a blocked target (or a fresh app activation)
 can record another event; the same list + normalized host/app bundle identifier within 10 seconds
 is deduplicated, even across day boundaries. A path change on the same continuously blocked host
-does not create another target. Private/unreadable addresses use the browser bundle identifier
-for in-memory deduplication, without reading or retaining a private address. Slow-down presentations
+does not create another target. Unreadable addresses use the browser bundle identifier
+for in-memory deduplication. A readable private address is deduplicated by host like any other,
+in memory only, and never retained. Slow-down presentations
 keep their existing counters; a firm quota-exhaustion block can count as a blocked attempt.
 
 Only `[list UUID: count]` is persisted as `BlockDayUsage.blocked`, alongside the existing local

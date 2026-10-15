@@ -3,6 +3,7 @@ import AppKit
 import Combine
 import Foundation
 import LocalHistoryCore
+import LocalHistoryQueryCLI
 
 /// Owns the module while it is on. Created by `BlockingRuntime` only when
 /// `goalong.module.blocking.enabled` is true; destroyed when it is turned off.
@@ -212,19 +213,19 @@ import LocalHistoryCore
             }
         }
         if (next.quotaMinutesPerDay ?? 0) > (current.quotaMinutesPerDay ?? 0) {
-            return .refused("Pendant un verrou, le temps permis peut seulement baisser.")
+            return .refused(prefix + "le temps permis peut seulement baisser.")
         }
         if let breaks = next.breaks {
             let old = current.breaks ?? BlockBreaks(count: 0, minutes: 0)
             if breaks.count > old.count || breaks.minutes > old.minutes {
-                return .refused("Pendant un verrou, les pauses peuvent seulement diminuer.")
+                return .refused(prefix + "les pauses peuvent seulement diminuer.")
             }
         }
         if current.program.isLocked(at: clock()), (next.program.lockedUntil ?? .distantPast) < (current.program.lockedUntil ?? .distantPast) {
             return .refused("Le verrou du programme ne peut pas être raccourci.")
         }
         let oldMinutes = Self.programCoverage(current.program), newMinutes = Self.programCoverage(next.program)
-        if !oldMinutes.isSubset(of: newMinutes) { return .refused("Pendant un verrou, le programme peut seulement s’allonger.") }
+        if !oldMinutes.isSubset(of: newMinutes) { return .refused(prefix + "le programme peut seulement s’allonger.") }
         for lock in BlockLock.allCases where lock != .free {
             let old = Self.programCoverage(BlockProgram(ranges: current.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
             let new = Self.programCoverage(BlockProgram(ranges: next.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
@@ -233,36 +234,37 @@ import LocalHistoryCore
         return .allowed
     }
 
-    func save(_ value: BlockList) {
-        guard admitEdit() else { return }
+    /// Returns this save's own refusal, never an unrelated banner such as the login-item notice.
+    @discardableResult func save(_ value: BlockList) -> String? {
+        guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
         var next = value
         if let reason = next.reason {
             let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.isEmpty || BlockingRules.normalizeReason(trimmed) != nil else {
-                error = "La raison doit contenir de 1 à 140 caractères."; return
+                error = "La raison doit contenir de 1 à 140 caractères."; return error
             }
             next.reason = trimmed.isEmpty ? nil : trimmed
         }
-        if case .refused(let reason) = editCheck(next) { error = reason; return }
+        if case .refused(let reason) = editCheck(next) { error = reason; return reason }
         guard !next.program.ranges.contains(where: { $0.effectiveLock == .password }) || hasPassword
             || document.lists.first(where: { $0.id == next.id })?.program.ranges == next.program.ranges else {
-            error = "Définissez d’abord le mot de passe de blocage."; return
+            error = "Définissez d’abord le mot de passe de blocage."; return error
         }
-        guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse de site invalide."; return }
+        guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse de site invalide."; return error }
         next.sites = Array(Set(next.sites.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
         if let exceptions = next.exceptions {
-            guard exceptions.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse d’exception invalide."; return }
+            guard exceptions.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse d’exception invalide."; return error }
             next.exceptions = Array(Set(exceptions.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
         }
         if let keywords = next.keywords {
-            guard keywords.allSatisfy({ BlockingRules.normalizeKeyword($0) != nil }) else { error = "Chaque mot-clé doit contenir de 2 à 40 caractères."; return }
+            guard keywords.allSatisfy({ BlockingRules.normalizeKeyword($0) != nil }) else { error = "Chaque mot-clé doit contenir de 2 à 40 caractères."; return error }
             var seen = Set<String>()
             next.keywords = keywords.compactMap(BlockingRules.normalizeKeyword).filter { seen.insert(BlockingRules.foldKeyword($0)).inserted }.sorted()
         }
         var candidate = document
         candidate.lists.removeAll { $0.id == next.id }; candidate.lists.append(next)
-        guard BlockingRules.validate(candidate) else { error = "Vérifiez la liste, les horaires, le quota et les pauses."; return }
-        if case .refused(let reason) = editCheck(next) { error = reason; return }
+        guard BlockingRules.validate(candidate) else { error = "Vérifiez la liste, les horaires, le quota et les pauses."; return error }
+        if case .refused(let reason) = editCheck(next) { error = reason; return reason }
         if let index = document.lists.firstIndex(where: { $0.id == next.id }) {
             let old = document.lists[index]
             if old.effectiveAction != next.effectiveAction || old.delaySeconds != next.delaySeconds || old.allowanceMinutes != next.allowanceMinutes {
@@ -274,6 +276,7 @@ import LocalHistoryCore
             document.lists.append(next)
         }
         commit()
+        return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
     }
 
     @discardableResult func addException(_ input: String, to listID: UUID) -> BlockingEditCheck {
@@ -360,8 +363,7 @@ import LocalHistoryCore
         edit(&next)
         let check = editCheck(next)
         guard check == .allowed else { return check }
-        save(next)
-        return error.map(BlockingEditCheck.refused) ?? .allowed
+        return save(next).map(BlockingEditCheck.refused) ?? .allowed
     }
     nonisolated static func explain(url: String?, title: String? = nil, list: BlockList) -> BlockingMatchExplanation {
         BlockingRules.explain(url: url, title: title, list: list)
@@ -383,9 +385,9 @@ import LocalHistoryCore
             }
         }
         if case .refused(let reason) = editCheck(next) { throw BlockingListAdditionFailure.refused(reason) }
-        save(next)
+        let refusal = save(next)
         guard !storeFailed else { throw BlockingListAdditionFailure.storageFailed }
-        guard error == nil else { throw BlockingListAdditionFailure.refused(error!) }
+        if let refusal { throw BlockingListAdditionFailure.refused(refusal) }
     }
 
     func delete(_ id: UUID) {
@@ -667,7 +669,7 @@ import LocalHistoryCore
         guard freeze == nil else { error = "Le gel en cours ne peut pas être remplacé."; return }
         if mode == .lockScreen, backend?.canLockScreen == false { error = "Le verrouillage de session nécessite l’accessibilité. Choisissez le bouclier."; return }
         let now = clock()
-        let bounded = min(max(end, now.addingTimeInterval(5 * 60)), now.addingTimeInterval(24 * 3_600))
+        let bounded = BlockingWallClock.freezeEnd(end, now: now)
         document.freeze = BlockFreeze(start: now, end: bounded, mode: mode, allowedApps: allowedApps)
         commit()
     }
@@ -719,11 +721,6 @@ import LocalHistoryCore
         // Publish only real changes: the page must not redraw on every sample.
         if lists != document.lists { lists = document.lists }
         if freeze != document.freeze { freeze = document.freeze }
-        if let previous = document.usage, previous.day != Self.dayKey(now, calendar: calendar) {
-            document.usageHistory = document.usageHistory ?? [:]
-            document.usageHistory?[previous.day] = previous
-            for day in (document.usageHistory?.keys.sorted().dropLast(366)) ?? [] { document.usageHistory?[day] = nil }
-        }
         let usage = todayUsage()
         if frictionUsage != usage { frictionUsage = usage }
         if attemptsToday != usage.blocked ?? [:] { attemptsToday = usage.blocked ?? [:] }
@@ -1081,9 +1078,16 @@ import LocalHistoryCore
         if blocks != activeBlocks { activeBlocks = blocks }
     }
 
+    /// Every write path reads today's usage here, so a previous day is archived before it can be replaced.
     private func todayUsage() -> BlockDayUsage {
         let day = Self.dayKey(clock(), calendar: calendar)
         if let usage = document.usage, usage.day == day { return usage }
+        if let previous = document.usage {
+            document.usageHistory = document.usageHistory ?? [:]
+            document.usageHistory?[previous.day] = previous
+            for key in (document.usageHistory?.keys.sorted().dropLast(366)) ?? [] { document.usageHistory?[key] = nil }
+            document.usage = nil
+        }
         return document.usageHistory?[day] ?? BlockDayUsage(day: day)
     }
 
@@ -1135,9 +1139,10 @@ import LocalHistoryCore
         return minutes
     }
 
+    /// Gregorian `yyyy-MM-dd` in the calendar's time zone, the same key as commitments and limits,
+    /// whatever calendar the member chose in System Settings.
     nonisolated static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+        GoalongFocusCalendar.dayKey(date, calendar: calendar)
     }
 }
 /// Holds the controller only while the module is on.

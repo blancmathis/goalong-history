@@ -61,6 +61,19 @@ struct ContextReadParameters {
     }
 }
 
+extension ContextReadParameters {
+    /// A private window seen by the blocking lane becomes a suppressed history entry, with no history read,
+    /// unless the member opted in to private windows: then history reads it through its own path.
+    func blockingPrivateApp(for observation: BlockingObservation?) -> AppSnapshot? {
+        guard let observation, observation.privateWindow,
+              privacy.applying(to: config).suppressesPrivateWindow(detected: true) else { return nil }
+        let known = applications[observation.pid]
+            ?? (foregroundApplication?.processIdentifier == observation.pid ? foregroundApplication : nil)
+        let name = known?.localizedName.flatMap { StringSanitizer.clean($0, maxLength: 256) } ?? observation.bundleIdentifier
+        return AppSnapshot(name: name, bundleIdentifier: observation.bundleIdentifier, processIdentifier: observation.pid)
+    }
+}
+
 /// All effects of a context read are values applied by the facade continuation.
 struct ContextReadResult {
     let snapshot: ContextSnapshot?

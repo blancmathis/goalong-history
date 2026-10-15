@@ -316,8 +316,7 @@ struct FocusPanel: Equatable {
         return UUID(uuidString: "F0C05000-0000-4000-8000-0000" + digits)!
     }
     private func dayAfter(_ day: String) throws -> String {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = calendar.timeZone
-        guard let date = f.date(from: day), let next = calendar.date(byAdding: .day, value: 1, to: date) else { throw FocusFailure.invalidArgument }
+        guard let next = GoalongFocusCalendar.dayInterval(day, calendar: calendar)?.end else { throw FocusFailure.invalidArgument }
         return BlockingController.dayKey(next, calendar: calendar)
     }
     func updateSettings(_ value: FocusSettings) throws {

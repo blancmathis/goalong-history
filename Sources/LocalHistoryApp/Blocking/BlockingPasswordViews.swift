@@ -193,11 +193,13 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
             controller.error = nil
             clear(); onClose()
         case .wrong(let remaining):
+            controller.error = nil
             old = ""
             message = remaining > 0
                 ? "Mot de passe incorrect. Encore \(remaining) essai\(remaining > 1 ? "s" : "") avant une attente."
                 : "Mot de passe incorrect."
         case .wait(let until):
+            controller.error = nil
             old = ""
             message = "Trop d’essais. Réessayez \(BlockingFormat.moment(until))."
         case .refused(let reason):

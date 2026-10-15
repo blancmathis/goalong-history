@@ -27,7 +27,7 @@
                             set: { _ = login.setUserPreference($0, surface: .settings) }
                         )).toggleStyle(.goalongSwitch).disabled(login.isChanging || blockingHoldsLogin)
                         Text(blockingHoldsLogin
-                             ? "Un blocage verrouillé est en cours : Goalong reste ouvert à la connexion jusqu’à la fin."
+                             ? LaunchAtLoginManager.heldMessage
                              : login.statusDetail)
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         if consents.isEnabled(.launchAtLogin) && !login.isEnabled {

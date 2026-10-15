@@ -210,13 +210,18 @@ struct BlockingStopRequest: Identifiable {
 
     /// « Xcode ouvert » for a block started by a trigger app; nil for a block with an end.
     private func triggerApps(_ block: BlockingActiveBlock) -> String? {
+        guard let shown = triggerNames(block) else { return nil }
+        guard !shown.isEmpty else { return "App de travail ouverte" }
+        return shown.prefix(2).joined(separator: ", ") + (shown.count > 1 ? " ouverts" : " ouvert")
+    }
+
+    /// The trigger apps that hold the block (running ones first); nil for a block with an end.
+    private func triggerNames(_ block: BlockingActiveBlock) -> [String]? {
         guard case .trigger(let id) = block.origin else { return nil }
         let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
         let apps = controller.list(id)?.triggers?.apps ?? []
         let names = apps.filter { running.contains($0.bundleIdentifier) }.map(\.name)
-        let shown = names.isEmpty ? apps.map(\.name) : names
-        guard !shown.isEmpty else { return "App de travail ouverte" }
-        return shown.prefix(2).joined(separator: ", ") + (shown.count > 1 ? " ouverts" : " ouvert")
+        return names.isEmpty ? apps.map(\.name) : names
     }
 
     @ViewBuilder private var attemptsLine: some View {
@@ -265,7 +270,7 @@ struct BlockingStopRequest: Identifiable {
             }
             switch block.lock {
             case .free:
-                if case .manual = block.origin {
+                if block.origin.stopsFromPage {
                     Button("Arrêter") { controller.stop(block.id) }.accessibilityIdentifier("blocking-stop")
                 }
             case .typing:
@@ -306,8 +311,8 @@ struct BlockingStopRequest: Identifiable {
             BlockingIconCluster(lists: lists, size: 18, limit: 5)
             VStack(alignment: .leading, spacing: 2) {
                 Text(lists.map(\.name).joined(separator: ", ")).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text(triggerApps(block).map { "Bloqué tant que \($0)" }
-                     ?? "\(block.lock == .free ? "Bloqué" : block.lock.title) jusqu’à \(BlockingFormat.endTime(block.end))")
+                Text(triggerNames(block).map { "\(BlockingFormat.verb(lists)) \(BlockingFormat.triggerPhrase($0))" }
+                     ?? "\(block.lock == .free ? BlockingFormat.verb(lists) : block.lock.title) jusqu’à \(BlockingFormat.endTime(block.end))")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 12)
@@ -427,13 +432,15 @@ struct BlockingMeter: View {
         case .until:
             // A time earlier than the start means the next day.
             let parts = Calendar.current.dateComponents([.hour, .minute], from: until)
-            let day = Calendar.current.date(bySettingHour: parts.hour ?? 0, minute: parts.minute ?? 0, second: 0, of: begin) ?? begin
-            return day > begin ? day : day.addingTimeInterval(86_400)
+            return BlockingWallClock.next(hour: parts.hour ?? 0, minute: parts.minute ?? 0, after: begin)
         }
     }
 
+    /// The end the engine will store: the alert must promise this one.
+    private var freezeEnd: Date { BlockingWallClock.freezeEnd(end, now: now) }
+
     private var actionTitle: String {
-        if wholeMac { return "Geler jusqu’à \(BlockingFormat.endTime(end))…" }
+        if wholeMac { return "Geler jusqu’à \(BlockingFormat.endTime(freezeEnd))…" }
         if scheduling { return "Programmer \(BlockingFormat.moment(begin, now: now))" }
         return "Bloquer jusqu’à \(BlockingFormat.endTime(end))"
     }
@@ -537,14 +544,14 @@ struct BlockingMeter: View {
                      ? "Sans le mot de passe, ce blocage va jusqu’à \(BlockingFormat.endTime(end)). Ses listes peuvent seulement devenir plus strictes, et quitter Goalong demande le mot de passe."
                      : "Personne ne pourra arrêter ce blocage avant \(BlockingFormat.endTime(end)), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas.")
             }
-            .alert("Geler le Mac jusqu’à \(BlockingFormat.endTime(end)) ?", isPresented: $confirmingFreeze) {
+            .alert("Geler le Mac jusqu’à \(BlockingFormat.endTime(freezeEnd)) ?", isPresented: $confirmingFreeze) {
                 Button("Annuler", role: .cancel) {}
                 Button("Geler") {
-                    controller.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
+                    controller.startFreeze(until: freezeEnd, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
                     wholeMac = false
                 }
             } message: {
-                Text("Jusqu’à \(BlockingFormat.endTime(end)), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
+                Text("Jusqu’à \(BlockingFormat.endTime(freezeEnd)), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
             }
         }
     }

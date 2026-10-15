@@ -41,6 +41,17 @@ final class ConcentrationCommitmentControllerTests: XCTestCase {
         _ = try c.setCommitment(period: future, kind: .sessions, target: 1); try c.deleteCommitment(period: future)
         XCTAssertEqual(try s.commitments().count, 1)
     }
+    @MainActor func testNonGregorianSystemCalendarStillFindsTodayCommitment() throws {
+        for identifier in [Calendar.Identifier.buddhist, .japanese] {
+            var system = Calendar(identifier: identifier); system.timeZone = TimeZone(identifier: "Europe/Paris")!
+            let now = date("2026-10-04")
+            XCTAssertEqual(BlockingController.dayKey(now, calendar: system), "2026-10-04")
+            XCTAssertEqual(BlockingController.dayKey(date("2026-12-31", 23), calendar: system), "2026-12-31")
+            let c = try ConcentrationController(store: try store(), clock: { now }, calendar: system)
+            _ = try c.setCommitment(period: .init(kind: .day, key: FocusCalendar.dayKey(now, calendar: system)), kind: .work, target: 60)
+            XCTAssertNotNil(c.todayCommitment, "\(identifier)")
+        }
+    }
     @MainActor func testDayAndWeekSettleOnlyAtRefreshTogetherOnceAndNoStakeJoker() throws {
         let s = try store(); var now = date("2026-10-04")
         let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
