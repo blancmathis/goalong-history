@@ -339,6 +339,79 @@ extension ConcentrationControllerTests {
     }
 }
 extension ConcentrationControllerTests {
+    /// R3-016: a stop that could not be saved is written at shutdown once the store works again.
+    @MainActor func testShutdownSavesAPendingStopSoTheSessionDoesNotComeBack() throws {
+        let s = store(); try quiet(s)
+        let now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now })
+        try c.startSession(intent: "Libre", mode: FocusMode(minutes: nil))
+        let id = try XCTUnwrap(c.currentSession).id
+        let dir = s.directory.appendingPathComponent("sessions").path
+        chmod(dir, 0o500); defer { chmod(dir, 0o700) }
+        XCTAssertThrowsError(try c.stopSession()); XCTAssertThrowsError(try c.stopSession())
+        XCTAssertNil(c.currentSession)
+        chmod(dir, 0o700)
+        c.shutdown()
+        let relaunched = try ConcentrationController(store: s, clock: { now })
+        XCTAssertNil(relaunched.currentSession)
+        XCTAssertEqual(try s.sessions(BlockingController.dayKey(now)).first { $0.id == id }?.events.last?.kind, .stop)
+        XCTAssertNil(try s.pendingStopTombstone())
+    }
+    /// R3-016: the store still fails at shutdown, so a tombstone keeps the stop for the next launch.
+    @MainActor func testShutdownLeavesATombstoneWhenTheStoreStillFails() throws {
+        let s = store(); try quiet(s)
+        let now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now })
+        try c.startSession(intent: "Libre", mode: FocusMode(minutes: nil))
+        let id = try XCTUnwrap(c.currentSession).id
+        let dir = s.directory.appendingPathComponent("sessions").path
+        chmod(dir, 0o500); defer { chmod(dir, 0o700) }
+        XCTAssertThrowsError(try c.stopSession()); XCTAssertThrowsError(try c.stopSession())
+        c.shutdown()
+        XCTAssertEqual(try s.pendingStopTombstone()?.sessionID, id)
+        chmod(dir, 0o700)
+        let relaunched = try ConcentrationController(store: s, clock: { now })
+        XCTAssertNil(relaunched.currentSession)
+        XCTAssertEqual(try s.sessions(BlockingController.dayKey(now)).first { $0.id == id }?.events.last?.kind, .stop)
+        XCTAssertNil(try s.pendingStopTombstone())
+    }
+    /// R3-017: the retry runs from its own timer, without observe() or a user action.
+    @MainActor func testStorageRetryIsScheduledWhileTheLatchIsSet() throws {
+        let s = store(); try quiet(s)
+        var now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now }, runsTimers: true)
+        defer { c.shutdown() }
+        try c.startSession(intent: "Libre", mode: FocusMode(minutes: nil))
+        let dir = s.directory.appendingPathComponent("sessions").path
+        chmod(dir, 0o500); defer { chmod(dir, 0o700) }
+        XCTAssertThrowsError(try c.stopSession()); XCTAssertThrowsError(try c.stopSession())
+        chmod(dir, 0o700); now = now.addingTimeInterval(61)
+        let done = expectation(description: "retry"); 
+        Timer.scheduledTimer(withTimeInterval: 1.6, repeats: false) { _ in done.fulfill() }
+        wait(for: [done], timeout: 5)
+        XCTAssertNil(c.error)
+        XCTAssertNoThrow(try c.startSession(intent: "Suite", mode: FocusMode(minutes: nil)))
+    }
+    /// R3-018: `toDay` follows the day files to their Gregorian key, so reopening withdraws the copy.
+    @MainActor func testLegacyToDayIsRekeyedAndReopenWithdrawsTheCopy() throws {
+        let now = Date(timeIntervalSince1970: 1792065600)  // 2026-10-15 12:00 UTC
+        var legacy = Calendar(identifier: .buddhist); legacy.timeZone = TimeZone(identifier: "UTC")!
+        let s = store(); try quiet(s)
+        var moved = FocusPlanItem(title: "Lire"); moved.status = .moved; moved.toDay = "2569-10-16"
+        var copy = FocusPlanItem(title: "Lire"); copy.id = moved.id
+        var old = FocusPlan(day: "2569-10-15"); old.items = [moved]
+        var next = FocusPlan(day: "2569-10-16"); next.items = [copy]
+        try s.savePlans([old, next], review: nil)
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: legacy)
+        XCTAssertEqual(try s.plan("2026-10-15")?.items.first?.toDay, "2026-10-16")
+        XCTAssertEqual(try s.plan("2026-10-16")?.items.count, 1)
+        try c.reopenPlanItem(moved.id, day: "2026-10-15")
+        XCTAssertEqual(try s.plan("2026-10-16")?.items.count, 0)
+        XCTAssertEqual(try s.planDays(), ["2026-10-15", "2026-10-16"])
+        _ = try ConcentrationController(store: s, clock: { now }, calendar: legacy)  // idempotent
+    }
+}
+extension ConcentrationControllerTests {
     @MainActor func testAmbianceAdapterPicksAnInstalledFocusSourceAndNothingElse() {
         let sources = [AmbianceSource(id: "calm", title: "Calme", kind: .focus, isAvailable: false),
                        AmbianceSource(id: "rain", title: "Pluie", kind: .texture, isAvailable: true),

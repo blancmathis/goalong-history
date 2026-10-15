@@ -84,6 +84,8 @@ import LocalHistoryQueryCLI
             error = nil; measurementError = nil
         }
     }
+    /// App quit: save a pending stop (or leave its tombstone). A running session is not ended.
+    func flushForTermination() { controller?.flushPendingStop() }
     func noteInput(at: Date, count: Int) { controller?.noteInput(at: at, count: count) }
     /// Minutes, not seconds: one wake per minute while a session runs, none otherwise.
     private func updateMenuBar(phase: FocusPhase?, session: FocusSession?) {

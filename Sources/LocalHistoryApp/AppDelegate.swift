@@ -568,7 +568,7 @@
                 UserDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
                 UserDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
-            MainActor.assumeIsolated { BraiseRuntime.shared.shutdown() }
+            MainActor.assumeIsolated { ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown() }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
             flushCurrentScreenTimeDay()

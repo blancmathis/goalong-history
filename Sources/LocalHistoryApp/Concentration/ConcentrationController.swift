@@ -118,6 +118,17 @@ struct FocusPanel: Equatable {
         promptState = try store.prompts() ?? promptState
         if promptState.day != day { promptState = FocusPromptState(day: day) }
         try loadDay(day)
+        // A stop that quit or module-off could not save: close it before any open session is restored.
+        if let tomb = try store.pendingStopTombstone() {
+            let tombDay = tomb.day
+            if var value = try store.sessions(tombDay).first(where: { $0.id == tomb.sessionID && $0.endedAt == nil }) {
+                value.events.append(.init(kind: .stop, at: tomb.end, reason: tomb.reason))
+                value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
+                try persist(value)
+                try? blocking()?.creditEarnedTime(for: value)
+            }
+            try store.clearPendingStopTombstone()
+        }
         // A free open session may have started on any retained day, not only yesterday.
         var running: [FocusSession] = []
         for date in try store.sessionDays() {
@@ -147,6 +158,7 @@ struct FocusPanel: Equatable {
     /// Clears the write latch only after the files read back cleanly. No write happens here.
     @discardableResult func retryStorage() -> Bool {
         guard storageFailed else { return true }
+        defer { scheduleTimer() }
         let now = clock(), day = FocusCalendar.dayKey(now, calendar: calendar)
         lastStorageRetry = now
         do {
@@ -168,7 +180,8 @@ struct FocusPanel: Equatable {
         storageFailed = false; error = nil
         return true
     }
-    /// The disk keeps the open session until `retryStorage` saves the pending stop (or the next launch closes a timed one).
+    /// The disk keeps the open session until `retryStorage` saves the pending stop. If the app quits first, `flushPendingStop`
+    /// leaves a tombstone that the next launch applies. Without it, only a timed session that has ended is closed on launch.
     private func endInMemory(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) {
         if pendingStop == nil { pendingStop = (session, end, reason) }
         if let id = phaseBlockID, !hasLockedPhaseBlock { blocking()?.stop(id); phaseBlockID = nil; phaseBlockKey = nil }
@@ -177,7 +190,7 @@ struct FocusPanel: Equatable {
     private func saving(_ action: () throws -> Void) throws {
         try admit()
         do { try action() } catch {
-            if (error as? FocusFailure) != .invalidArgument { storageFailed = true }
+            if (error as? FocusFailure) != .invalidArgument { storageFailed = true; scheduleTimer() }
             self.error = String(describing: error); throw error
         }
     }
@@ -221,7 +234,7 @@ struct FocusPanel: Equatable {
     }
     func stopSession(outcome: FocusSession.Outcome? = nil, note: String? = nil) throws {
         if storageFailed, currentSession != nil {
-            // Nothing can be written: end the session in memory only. The next launch closes it on disk.
+            // Nothing can be written: end the session in memory only. A retry, or the stop tombstone at quit, closes it on disk.
             if hasLockedPhaseBlock { throw FocusFailure.locked }
             endInMemory(currentSession!, at: clock(), reason: .member); publishStatus(); scheduleTimer(); throw FocusFailure.storageFailed
         }
@@ -563,6 +576,7 @@ struct FocusPanel: Equatable {
                           promptState.eveningReminded ? nil : promptState.eveningReminderAt].compactMap { $0 }
         boundaries += commitmentCards.compactMap(\.exitUntil)
         boundaries += commitmentCards.filter { $0.editMode == "free" }.map(\.editUntil)
+        if storageFailed { boundaries.append(max(now.addingTimeInterval(1), lastStorageRetry.addingTimeInterval(60))) }
         if currentSession?.mode.kind == .free, currentSession?.mode.minutes == nil, phaseBlockID != nil { boundaries.append(now.addingTimeInterval(45)) }
         if settings.eveningPrompt || settings.limits.endMinute != nil {
             let minute = settings.limits.endMinute ?? settings.eveningMinute
@@ -574,7 +588,18 @@ struct FocusPanel: Equatable {
         let t = Timer(timeInterval: max(0.05, next.timeIntervalSince(now)), repeats: false) { [weak self] _ in Task { @MainActor in self?.refresh() } }
         RunLoop.main.add(t, forMode: .common); timer = t
     }
+    /// Saves a stop that could not be written (one forced retry). If the store still fails, a small tombstone outside the
+    /// sessions folder keeps the stop for the next launch. Called at quit and on module-off.
+    func flushPendingStop() {
+        guard let pending = pendingStop else { return }
+        lastStorageRetry = .distantPast
+        if retryStorage(), pendingStop == nil { try? store.clearPendingStopTombstone(); return }
+        guard pendingStop != nil else { return }
+        try? store.savePendingStopTombstone(.init(sessionID: pending.session.id, day: FocusCalendar.dayKey(pending.session.startedAt, calendar: calendar),
+                                                  end: pending.end, reason: pending.reason))
+    }
     func shutdown() {
+        flushPendingStop()
         if let value = currentSession, !hasLockedPhaseBlock { try? finish(value, at: clock(), reason: .moduleDisabled) }
         timer?.invalidate(); timer = nil; audio.stop(); showPanel(nil); observation = nil; detection.reset()
     }
