@@ -22,7 +22,7 @@
                 Alert(
                     title: Text("Supprimer cette session d’application ?"),
                     message: Text(
-                        "Seuls les événements locaux de cette session et les instantanés liés seront supprimés. Les vues de la journée seront reconstruites ; sceaux, reçus, Temps d’écran et conversations IA sont conservés."
+                        "Goalong supprimera les événements locaux de cette session et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés ; les vues de la journée seront reconstruites. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
                     ),
                     primaryButton: .destructive(Text("Supprimer la session")) {
                         model.deleteActivitySession(session)

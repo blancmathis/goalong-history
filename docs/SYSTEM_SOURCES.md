@@ -36,8 +36,11 @@ Les imports restent des instantanés partiels des sources choisies, même quand 
 
 Les notes sont incluses uniquement si le nouveau choix de bilan est activé. Le flux F peut lire
 `GoalongDayNoteStore.get(root:day:)` pour son paramètre de note du classificateur ; ce branchement
-est laissé à l’intégration, car F modifie le même agent. Notes et appels sont supprimés par le
-plan durci de suppression des jours et de l’historique (le moniteur est arrêté pendant la suppression pour ne pas recréer les intervalles) ; les appels ont la rétention des événements.
+est laissé à l’intégration, car F modifie le même agent. Les appels (et l’activité de développement) sont supprimés
+par le plan durci de suppression : une suppression partielle (période, session, élément) efface le fichier du jour entier,
+faute de réécriture par intervalle (le moniteur est arrêté pendant la suppression pour ne pas recréer les intervalles) ;
+les appels ont la rétention des événements. La note du jour, contenu écrit par l’utilisateur, n’est supprimée que par
+l’effacement de tout l’historique.
 
 ## Permissions et limites
 

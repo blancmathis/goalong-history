@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import LocalHistoryCore
 import Foundation
 
 @MainActor struct GoalongStorageSettings: View {
@@ -54,11 +55,13 @@ import Foundation
         }
         .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls() }
         .onAppear(perform: refresh)
-        .sheet(isPresented: $retention, onDismiss: refresh) { GoalongRetentionSheet().goalongControls() }
+        .sheet(isPresented: $retention, onDismiss: refresh) {
+            HistoryRetentionSettingsSheet(legacyRetentionDays: model.appliedSettings.retentionDays).goalongControls()
+        }
     }
     private func refresh() {
         let store = HistoryRetentionStore(legacyRetentionDays: model.appliedSettings.retentionDays)
-        retentionSummary = store.isAutomaticCleanupEnabled ? "Nettoyage automatique activé" : "Jusqu’à suppression manuelle"
+        retentionSummary = HistoryRetentionPolicy.automaticCleanupSummary(enabled: store.isAutomaticCleanupEnabled)
     }
 }
 

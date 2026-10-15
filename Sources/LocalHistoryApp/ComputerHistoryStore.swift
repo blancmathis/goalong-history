@@ -8,6 +8,14 @@
         let isComplete: Bool
         let requiresSourceFallback: Bool
         let issues: [String]
+        /// Days that were skipped one by one (corrupt, oversized, not a regular file,
+        /// or over the byte budget) inside a listing whose directory and file
+        /// identities were all revalidated. Empty when the snapshot itself failed.
+        var skippedCandidateKeys: [String] = []
+        /// True when the listing finished and the directory and every examined file
+        /// kept their identity. Write paths require this; per-day skips alone do not
+        /// make the snapshot unstable.
+        var hasStableSnapshot: Bool = false
     }
 
     /// Persists the structured causal memory separately from regenerable minute-level
@@ -117,7 +125,7 @@
         ) {
             self.rootDirectory = rootDirectory
             memoryDirectory = rootDirectory.appendingPathComponent("computer-history", isDirectory: true)
-            self.codexMemoryDirectory = codexMemoryDirectory ?? Self.codexMemoryDirectoryURL()
+            self.codexMemoryDirectory = codexMemoryDirectory ?? Self.codexMemoryDirectoryURL(dataRoot: rootDirectory)
             self.recentLoadLimits = recentLoadLimits.validated()
             self.diagnosticSink = diagnosticSink
             self.persistedDataReadObserver = persistedDataReadObserver
@@ -134,10 +142,16 @@
         /// HistoryRetentionStore treats both the authoritative Goalong copy and the
         /// optional Codex mirror as the same `.memories` data class so they expire
         /// together instead of leaving an orphaned mirror after local cleanup.
-        static func retentionDirectories(rootDirectory: URL) -> [URL] {
+        /// Machine-matched start of the limitation added when retained memories failed to load.
+        static let retainedLoadIncompletePrefix = "Retained Computer History loading was incomplete"
+
+        static func retentionDirectories(
+            rootDirectory: URL,
+            channel: GoalongBuildChannel = .current
+        ) -> [URL] {
             [
                 rootDirectory.appendingPathComponent("computer-history", isDirectory: true),
-                codexMemoryDirectoryURL(),
+                codexMemoryDirectoryURL(channel: channel, dataRoot: rootDirectory),
             ]
         }
 
@@ -180,9 +194,10 @@
             }
 
             let prior = loadRecent(before: start, maximumDays: 30, renderMarkdown: false)
-            guard prior.isComplete else {
+            guard prior.hasStableSnapshot else {
                 throw StorageError.incompleteRecentMemoryListing
             }
+            Self.reportPartialPriorContext(prior, day: start)
             let memory = ComputerHistoryEngine.analyze(
                 events: loaded.events,
                 semanticSnapshots: loaded.semanticSnapshots,
@@ -193,9 +208,41 @@
             return try write(memory, for: start)
         }
 
+        static let partialPriorContextPrefix = "Computer History prior context is partial"
+
+        /// One unreadable prior day must not block every later analysis: the window
+        /// would never move past it. The write continues with the readable days and
+        /// records which days were missing from the prior context.
+        static func reportPartialPriorContext(
+            _ prior: ComputerHistoryRecentLoadResult,
+            day: Date,
+            write: (String) -> Void = { Diagnostics.write($0) }
+        ) {
+            guard !prior.skippedCandidateKeys.isEmpty else { return }
+            write(
+                "\(partialPriorContextPrefix) for \(AppPaths.localDayString(for: day)): skipped "
+                    + prior.skippedCandidateKeys.sorted().joined(separator: ", ")
+            )
+        }
+
+        /// The file name is the day key. A memory written in another time zone has a
+        /// `dayStart` a few hours away from local midnight; accept it instead of
+        /// treating every retained day as corrupt after the Mac changes time zone.
+        static func storedDayMatches(
+            storedDayStart: Date,
+            candidateDay: Date,
+            sameLocalDay: Bool
+        ) -> Bool {
+            sameLocalDay || abs(storedDayStart.timeIntervalSince(candidateDay)) < 15 * 3_600
+        }
+
         func loadStored(for day: Date, renderMarkdown: Bool = true) -> ComputerHistoryDayMemory? {
             guard let loaded = loadPersistedMemory(at: JSONFile(for: day)),
-                dayString(loaded.stored.dayStart) == dayString(day),
+                Self.storedDayMatches(
+                    storedDayStart: loaded.stored.dayStart,
+                    candidateDay: Calendar.current.startOfDay(for: day),
+                    sameLocalDay: dayString(loaded.stored.dayStart) == dayString(day)
+                ),
                 loaded.stored.analysisRevision
                     == ComputerHistoryAnalysisContract.currentRevision
             else { return nil }
@@ -270,7 +317,7 @@
                 answer: baseAnswer.answer,
                 hits: baseAnswer.hits,
                 limitations: baseAnswer.limitations + [
-                    "Retained Computer History loading was incomplete ("
+                    Self.retainedLoadIncompletePrefix + " ("
                         + "\(max(1, recent.issues.count)) bounded issue(s)); results use only "
                         + "readable last-known-good memories and absence is not exhaustive."
                 ]
@@ -372,14 +419,18 @@
 
             func result(
                 _ memories: [ComputerHistoryDayMemory],
-                isComplete: Bool
+                isComplete: Bool,
+                skippedCandidateKeys: [String] = [],
+                hasStableSnapshot: Bool? = nil
             ) -> ComputerHistoryRecentLoadResult {
                 diagnostics.finish()
                 return ComputerHistoryRecentLoadResult(
                     memories: memories,
                     isComplete: isComplete,
                     requiresSourceFallback: requiresSourceFallback,
-                    issues: collectedIssues
+                    issues: collectedIssues,
+                    skippedCandidateKeys: skippedCandidateKeys,
+                    hasStableSnapshot: hasStableSnapshot ?? isComplete
                 )
             }
 
@@ -436,6 +487,7 @@
             var exhaustedBudgetMessage: String?
             var listingErrorCode: Int32?
             var listingHadCandidateGap = false
+            var skippedCandidateKeys: [String] = []
 
             // `readdir` advances lazily on a duplicate of the pinned directory descriptor.
             // Candidate inspection and later reads remain relative to the original capability.
@@ -487,6 +539,7 @@
                     byteCount >= 0
                 else {
                     listingHadCandidateGap = true
+                    skippedCandidateKeys.append(key)
                     diagnostics.report(
                         "Computer History skipped \(key): the owned memory path was "
                             + "unreadable or not a regular file."
@@ -562,6 +615,7 @@
                 examinedCandidates.append(candidate)
                 guard candidate.byteCount <= recentLoadLimits.maximumSingleFileBytes else {
                     hadCandidateGap = true
+                    skippedCandidateKeys.append(candidate.key)
                     diagnostics.report(
                         "Computer History skipped \(candidate.key): encoded memory is "
                             + "\(candidate.byteCount) bytes; daily limit is "
@@ -571,6 +625,7 @@
                 }
                 guard candidate.byteCount <= cumulativeByteBudget - consumedEncodedBytes else {
                     hadCandidateGap = true
+                    skippedCandidateKeys.append(candidate.key)
                     diagnostics.report(
                         "Computer History skipped \(candidate.key): cumulative encoded-memory "
                             + "budget of \(cumulativeByteBudget) bytes is exhausted."
@@ -596,7 +651,11 @@
                         expectedIdentity: candidate.identity
                     ),
                         loaded.stored.dayStart < date,
-                        dayString(loaded.stored.dayStart) == dayString(candidate.day)
+                        Self.storedDayMatches(
+                            storedDayStart: loaded.stored.dayStart,
+                            candidateDay: candidate.day,
+                            sameLocalDay: dayString(loaded.stored.dayStart) == dayString(candidate.day)
+                        )
                     else { return nil }
                     guard loaded.stored.analysisRevision
                         == ComputerHistoryAnalysisContract.currentRevision
@@ -634,6 +693,7 @@
                 }
                 guard let decoded else {
                     hadCandidateGap = true
+                    skippedCandidateKeys.append(candidate.key)
                     diagnostics.report(
                         "Computer History skipped \(candidate.key): encoded memory is corrupt, "
                             + "unreadable, or changed during loading."
@@ -643,7 +703,7 @@
                 if decoded.isOutdated {
                     requiresSourceFallback = true
                     diagnostics.report(
-                        "Computer History ignored (candidate.key): its disposable projection "
+                        "Computer History ignored \(candidate.key): its disposable projection "
                             + "uses an older analysis contract; the original journal remains "
                             + "available for direct source search or regeneration."
                     )
@@ -707,7 +767,9 @@
             }
             return result(
                 Array(memories.reversed()),
-                isComplete: !hadCandidateGap && !listingHadCandidateGap
+                isComplete: !hadCandidateGap && !listingHadCandidateGap,
+                skippedCandidateKeys: skippedCandidateKeys,
+                hasStableSnapshot: true
             )
         }
 
@@ -1729,9 +1791,18 @@
             )
         }
 
-        private static func codexMemoryDirectoryURL() -> URL {
+        /// The Codex mirror. An isolated `make dev` copy keeps it inside its own data root so
+        /// its writes, retention and deletions never reach the real `~/.codex` mirror.
+        static func codexMemoryDirectoryURL(
+            channel: GoalongBuildChannel = .current,
+            dataRoot: URL,
+            environment: [String: String] = ProcessInfo.processInfo.environment
+        ) -> URL {
+            if channel.dataMode == .isolated {
+                return dataRoot.appendingPathComponent("codex-memory-mirror", isDirectory: true)
+            }
             let fileManager = FileManager.default
-            let configuredCodexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
+            let configuredCodexHome = environment["CODEX_HOME"]
                 .map { URL(fileURLWithPath: NSString(string: $0).expandingTildeInPath, isDirectory: true) }
                 ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
             return configuredCodexHome

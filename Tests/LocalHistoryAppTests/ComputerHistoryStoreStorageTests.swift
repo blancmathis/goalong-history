@@ -69,7 +69,30 @@
             XCTAssertTrue(recent.isComplete)
             XCTAssertTrue(recent.requiresSourceFallback)
             XCTAssertTrue(recent.issues.contains { $0.contains("older analysis contract") })
+            XCTAssertTrue(recent.issues.contains { $0.contains("ignored 2026-08-20:") })
+            XCTAssertFalse(recent.issues.contains { $0.contains("(candidate.key)") })
             XCTAssertEqual(try Data(contentsOf: URL), outdatedData)
+        }
+
+        func testIsolatedDevCopyKeepsTheCodexMirrorInsideItsOwnDataRoot() {
+            let root = URL(fileURLWithPath: "/tmp/LocalHistory-Dev", isDirectory: true)
+            let environment = ["CODEX_HOME": "/tmp/codex-home"]
+            let isolated = GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev"])
+            let isolatedMirror = ComputerHistoryStore.codexMemoryDirectoryURL(
+                channel: isolated, dataRoot: root, environment: environment)
+            XCTAssertEqual(isolatedMirror.path, "/tmp/LocalHistory-Dev/codex-memory-mirror")
+            XCTAssertEqual(
+                ComputerHistoryStore.retentionDirectories(rootDirectory: root, channel: isolated).last?.path,
+                isolatedMirror.path)
+
+            for channel in [
+                GoalongBuildChannel(info: nil),
+                GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev", GoalongBuildChannel.dataModeKey: "real"]),
+            ] {
+                XCTAssertEqual(
+                    ComputerHistoryStore.codexMemoryDirectoryURL(channel: channel, dataRoot: root, environment: environment).path,
+                    "/tmp/codex-home/memories/extensions/goalong")
+            }
         }
 
         func testLegacyTripleMarkdownIsCompactedWithoutLosingReadableMemory() throws {
@@ -666,6 +689,84 @@
             let recent = store.loadRecent(maximumDays: 2)
             XCTAssertEqual(recent.memories.map(\.title), ["First", "Second"])
             XCTAssertFalse(recent.isComplete)
+            // The listing itself was stable: only one day was skipped.
+            XCTAssertTrue(recent.hasStableSnapshot)
+            XCTAssertEqual(recent.skippedCandidateKeys, ["2026-08-20"])
+            var reported: [String] = []
+            ComputerHistoryStore.reportPartialPriorContext(recent, day: secondDay) { reported.append($0) }
+            XCTAssertEqual(reported.count, 1)
+            XCTAssertTrue(reported[0].hasPrefix(ComputerHistoryStore.partialPriorContextPrefix))
+            XCTAssertTrue(reported[0].hasSuffix("skipped 2026-08-20"))
+        }
+
+        func testStoredDayMatchesAcceptsAMemoryWrittenInAnotherTimeZone() {
+            let localMidnight = makeDay(year: 2026, month: 8, day: 19)
+            // Paris midnight seen from New York is six hours earlier.
+            XCTAssertTrue(ComputerHistoryStore.storedDayMatches(
+                storedDayStart: localMidnight.addingTimeInterval(-6 * 3_600),
+                candidateDay: localMidnight,
+                sameLocalDay: false
+            ))
+            XCTAssertFalse(ComputerHistoryStore.storedDayMatches(
+                storedDayStart: localMidnight.addingTimeInterval(-24 * 3_600),
+                candidateDay: localMidnight,
+                sameLocalDay: false
+            ))
+        }
+
+        func testLoadRecentAndLoadStoredAcceptAMemoryWrittenInAnotherTimeZone() throws {
+            // Swapping NSTimeZone.default in-process changes Calendar.current but not
+            // TimeZone.current, which a real Mac time-zone change moves together. So
+            // simulate the stored file instead: a memory written six hours further east
+            // (Paris seen from New York) has a dayStart six hours before local midnight.
+            let fixtureRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let codexRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer {
+                try? FileManager.default.removeItem(at: fixtureRoot)
+                try? FileManager.default.removeItem(at: codexRoot)
+            }
+
+            let store = ComputerHistoryStore(
+                rootDirectory: fixtureRoot,
+                codexMemoryDirectory: codexRoot,
+                diagnosticSink: { _ in }
+            )
+            let day = makeDay(year: 2026, month: 8, day: 19)
+            _ = try store.write(
+                makeMemory(day: day, title: "Elsewhere", summary: "Written in another time zone."),
+                for: day
+            )
+            let JSONURL = fixtureRoot
+                .appendingPathComponent("computer-history", isDirectory: true)
+                .appendingPathComponent("\(dayKey(day)).computer-history.json")
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(contentsOf: JSONURL)) as? [String: Any]
+            )
+            let shiftedStart = Calendar.current.startOfDay(for: day).addingTimeInterval(-6 * 3_600)
+            object["dayStart"] = "b:" + String(
+                shiftedStart.timeIntervalSinceReferenceDate.bitPattern,
+                radix: 16
+            )
+            try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+                .write(to: JSONURL, options: [.atomic])
+
+            let recent = store.loadRecent(maximumDays: 5)
+            XCTAssertEqual(recent.memories.map(\.title), ["Elsewhere"])
+            XCTAssertTrue(recent.skippedCandidateKeys.isEmpty)
+            XCTAssertEqual(recent.memories.first?.dayStart, shiftedStart)
+            XCTAssertEqual(store.loadStored(for: day)?.title, "Elsewhere")
+
+            // A dayStart a full day away still does not match the file key.
+            object["dayStart"] = "b:" + String(
+                shiftedStart.addingTimeInterval(-18 * 3_600).timeIntervalSinceReferenceDate.bitPattern,
+                radix: 16
+            )
+            try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+                .write(to: JSONURL, options: [.atomic])
+            XCTAssertTrue(store.loadRecent(maximumDays: 5).memories.isEmpty)
+            XCTAssertNil(store.loadStored(for: day))
         }
 
         func testLoadRecentMarksOwnedSymlinkIncompleteAndReturnsSafeSubset() throws {
@@ -1533,6 +1634,27 @@
                         && $0.contains("absence is not exhaustive")
                 }
             )
+            // The page warning must detect the store's own limitation text.
+            XCTAssertNotNil(ComputerHistoryPageCopy.retainedGapMessage(for: answer))
+            let complete = ComputerHistoryAnswer(
+                schemaVersion: answer.schemaVersion,
+                query: answer.query,
+                generatedAt: answer.generatedAt,
+                answer: answer.answer,
+                hits: answer.hits,
+                limitations: answer.limitations.filter {
+                    !$0.hasPrefix(ComputerHistoryStore.retainedLoadIncompletePrefix)
+                }
+            )
+            XCTAssertNil(ComputerHistoryPageCopy.retainedGapMessage(for: complete))
+        }
+
+        func testFrenchCountLabelsUseSingularAndNoEnglish() {
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 0, total: 0, searching: false), "0 période")
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 1, total: 1, searching: false), "1 période")
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 3, total: 12, searching: true), "3 sur 12 périodes")
+            XCTAssertEqual(DashboardViewModel.removedItemsLabel(1), "1 élément local supprimé.")
+            XCTAssertEqual(DashboardViewModel.removedItemsLabel(4), "4 éléments locaux supprimés.")
         }
 
         func testAnswerSkipsRawJournalPassWhenRetainedEvidenceAlreadyMatches() throws {
@@ -1763,7 +1885,7 @@
             XCTAssertEqual(store.loadStored(for: day)?.title, "Temporary")
         }
 
-        func testBuildAndWriteRejectsCorruptPriorAndKeepsLastKnownGood() throws {
+        func testBuildAndWriteSkipsACorruptPriorDayInsteadOfBlockingEveryLaterDay() throws {
             let fixtureRoot = FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
             let codexRoot = FileManager.default.temporaryDirectory
@@ -1849,14 +1971,12 @@
                 evidenceLoader: { _, _ in evidence }
             )
 
-            XCTAssertThrowsError(try rebuildingStore.buildAndWrite(for: day)) { error in
-                XCTAssertTrue(
-                    error.localizedDescription.contains("incomplete recent-memory listing")
-                )
-            }
-            XCTAssertEqual(try Data(contentsOf: jsonURL), baselineJSON)
-            XCTAssertEqual(try Data(contentsOf: markdownURL), baselineMarkdown)
-            XCTAssertEqual(rebuildingStore.loadStored(for: day)?.title, "Last known good")
+            // A corrupt prior day must not block the window forever: the stable
+            // listing lets the build continue with the readable prior days.
+            XCTAssertNotNil(try rebuildingStore.buildAndWrite(for: day))
+            XCTAssertNotEqual(try Data(contentsOf: jsonURL), baselineJSON)
+            XCTAssertNotEqual(try Data(contentsOf: markdownURL), baselineMarkdown)
+            XCTAssertNotEqual(rebuildingStore.loadStored(for: day)?.title, "Last known good")
         }
 
         func testBuildAndWriteRejectsIncompleteBoundedEvidenceAndKeepsLastKnownGood() throws {

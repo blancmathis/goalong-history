@@ -13,7 +13,7 @@
 ## `make dev`
 - Compile en debug pour l’architecture du Mac (sans clean, tests ni audit), ferme normalement Goalong, lance `.build/dev/Goalong History.app`. Log : `.build/dev/build.log`. Signature vérifiée avant chaque basculement ; même bundle id et certificat que la release (identité TCC conservée, permissions existantes).
 - Données (mode écrit dans l’Info.plist du bundle dev, `GoalongBuildChannel=dev` + `GoalongDevDataMode` ; une relance le garde) :
-  - `make dev` : données isolées dans `~/Library/Application Support/LocalHistory-Dev/`, re-semé à chaque lancement par clone APFS de `LocalHistory/` (instantané, sans coût disque).
+  - `make dev` : données isolées dans `~/Library/Application Support/LocalHistory-Dev/`, re-semé à chaque lancement par clone APFS de `LocalHistory/` (instantané, sans coût disque). Le miroir Codex de l’historique va dans `LocalHistory-Dev/codex-memory-mirror/`, pas dans `~/.codex`.
   - `make dev DATA=keep` : garde l’état dev, sans re-semer.
   - `make dev DATA=real` : ancien comportement, lit et écrit les vraies données (avertissement affiché).
 - Exception : le blocage reste le vrai. `LocalHistory/Blocking/` (listes, quotas, verrou, garant) et `LocalHistory/Focus/` (engagements, jokers) sont lus et écrits en vrai, sinon `make dev` contournerait un blocage.

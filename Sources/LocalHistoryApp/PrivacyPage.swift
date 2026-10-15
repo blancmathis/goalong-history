@@ -480,7 +480,7 @@
                         Text("Supprimer l’activité locale et les souvenirs dérivés")
                             .font(.system(size: 14, weight: .semibold))
                         Text(
-                            "Supprimer l’activité retire aussi son contexte, ses analyses et ses vues dérivées. L’index des conversations IA, le Temps d’écran, les engagements et les reçus sont conservés."
+                            "Supprimer l’activité retire aussi son contexte, ses analyses et ses vues dérivées, ainsi que les appels et l’activité de développement des jours concernés (journée entière). La note du jour n’est effacée qu’avec toute l’activité. L’index des conversations IA, le Temps d’écran, les engagements et les reçus sont conservés."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -515,7 +515,7 @@
                 Alert(
                     title: Text("Supprimer la dernière session d’application ?"),
                     message: Text(
-                        "Goalong supprimera uniquement les événements locaux de \(session.appName) entre \(DashboardFormatters.shortTime.string(from: session.start)) et \(DashboardFormatters.shortTime.string(from: session.end)), ainsi que les instantanés liés. Sceaux, reçus, Temps d’écran et conversations IA sont conservés."
+                        "Goalong supprimera les événements locaux de \(session.appName) entre \(DashboardFormatters.shortTime.string(from: session.start)) et \(DashboardFormatters.shortTime.string(from: session.end)) et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
                     ),
                     primaryButton: .destructive(Text("Supprimer la session")) {
                         model.deleteActivitySession(session)
@@ -650,7 +650,7 @@
         }
 
         var message: String {
-            "Les événements détaillés de la période, leur contexte et toutes les analyses qui en dérivent seront définitivement supprimés de ce Mac. L’index des conversations IA, le Temps d’écran, les sceaux cryptographiques et les reçus sont conservés."
+            "Les événements détaillés de la période, leur contexte et toutes les analyses qui en dérivent seront définitivement supprimés de ce Mac, ainsi que les appels et l’activité de développement des jours concernés (journée entière). La note du jour n’est effacée qu’avec toute l’activité. L’index des conversations IA, le Temps d’écran, les sceaux cryptographiques et les reçus sont conservés."
         }
     }
 #endif

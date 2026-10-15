@@ -578,6 +578,23 @@
         }
     }
 
+    /// Pure display strings of the Computer History page, kept testable.
+    enum ComputerHistoryPageCopy {
+        /// French warning shown when the store could not read every retained memory.
+        static func retainedGapMessage(for answer: ComputerHistoryAnswer) -> String? {
+            guard answer.limitations.contains(where: {
+                $0.hasPrefix(ComputerHistoryStore.retainedLoadIncompletePrefix)
+            }) else { return nil }
+            return "Une partie de l’historique local conservé est illisible : seules les mémoires lisibles sont utilisées, une absence de résultat n’est donc pas exhaustive."
+        }
+
+        /// "12 périodes", or "3 sur 12 périodes" while a search filters the timeline.
+        static func periodCountLabel(visible: Int, total: Int, searching: Bool) -> String {
+            let totalLabel = total <= 1 ? "\(total) période" : "\(total) périodes"
+            return searching ? "\(visible) sur \(totalLabel)" : totalLabel
+        }
+    }
+
     struct ComputerHistoryPage: View {
         @ObservedObject var model: ComputerHistoryPageModel
         @StateObject private var timelineModel = ComputerHistoryTimelineModel()
@@ -609,7 +626,7 @@
                 Alert(
                     title: Text("Supprimer cet élément de l’historique ?"),
                     message: Text(
-                        "Goalong retrouve cet élément dans le journal local d’origine, supprime uniquement ses événements exacts et les instantanés liés, puis reconstruit la journée concernée. Les sceaux, reçus, le Temps d’écran et les conversations IA sont conservés."
+                        "Goalong retrouve cet élément dans le journal local d’origine et supprime ses événements exacts et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés ; la journée sera reconstruite. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
                     ),
                     primaryButton: .destructive(Text("Supprimer")) {
                         deleteEpisode(episode)
@@ -853,7 +870,11 @@
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     } else {
-                        Text(timelineSearch.isEmpty ? "\(tenMinuteGroups.count) périodes" : "\(visibleTimelineGroups.count) of \(tenMinuteGroups.count) périodes")
+                        Text(ComputerHistoryPageCopy.periodCountLabel(
+                            visible: visibleTimelineGroups.count,
+                            total: tenMinuteGroups.count,
+                            searching: !timelineSearch.isEmpty
+                        ))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -1127,7 +1148,7 @@
                             if model.isAnswering {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Label("Ask", systemImage: "arrow.right.circle.fill")
+                                Label("Demander", systemImage: "arrow.right.circle.fill")
                             }
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
@@ -1151,7 +1172,7 @@
                 LHCard(padding: 17) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Label("Answer", systemImage: "sparkles")
+                            Label("Réponse", systemImage: "sparkles")
                                 .font(.system(size: 13, weight: .semibold))
                             Spacer()
                             Button(action: model.clearAnswer) {
@@ -1164,9 +1185,7 @@
                             .font(.system(size: 11))
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let retainedGap = answer.limitations.first(where: {
-                            $0.hasPrefix("Historique local conservé loading was incomplete")
-                        }) {
+                        if let retainedGap = ComputerHistoryPageCopy.retainedGapMessage(for: answer) {
                             Label(retainedGap, systemImage: "exclamationmark.triangle.fill")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.orange)

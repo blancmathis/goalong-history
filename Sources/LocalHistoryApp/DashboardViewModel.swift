@@ -887,6 +887,10 @@
             )
         }
 
+        static func removedItemsLabel(_ count: Int) -> String {
+            count <= 1 ? "\(count) élément local supprimé." : "\(count) éléments locaux supprimés."
+        }
+
         var mostRecentActivitySession: ActivitySession? {
             snapshot.sessions.first
         }
@@ -905,7 +909,7 @@
                         self.alert = DashboardAlert(
                             kind: .information,
                             title: "Élément supprimé",
-                            message: "\(successMessage) Removed \(count) local item(s)."
+                            message: "\(successMessage) \(Self.removedItemsLabel(count))"
                         )
                         self.refreshData(force: true)
                         self.reloadShareSegments()

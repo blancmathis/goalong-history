@@ -416,7 +416,7 @@
             (status.st_mode & S_IFMT) == S_IFREG
         }
 
-        private static func posixError(
+        fileprivate static func posixError(
             operation: String,
             URL: URL,
             code: Int32 = errno
@@ -475,6 +475,9 @@
         fileprivate let memoryPlans: [OwnedFileDeletionPlan]
         fileprivate let computerHistoryPlans: [OwnedFileDeletionPlan]
         fileprivate var activitySummaryPlans: [OwnedFileDeletionPlan] = []
+        /// Orphan `.activity-<UUID>` temporaries left by an interrupted summary write.
+        /// Only planned on a full clear and never counted as user-visible deletions.
+        fileprivate var activityTemporaryPlans: [OwnedFileDeletionPlan] = []
         fileprivate var clearSummaryDirectory = false
 
         var expectedResult: DerivedHistoryDeletionResult {
@@ -488,6 +491,7 @@
 
         fileprivate var allPlans: [OwnedFileDeletionPlan] {
             analysisPlans + memoryPlans + computerHistoryPlans + activitySummaryPlans
+                + activityTemporaryPlans
         }
 
         fileprivate func validate() throws {
@@ -496,11 +500,22 @@
 
         func execute() throws -> DerivedHistoryDeletionResult {
             _ = try OwnedFileDeletionPlan.execute(allPlans)
-            if clearSummaryDirectory, let plan = activitySummaryPlans.first {
+            if clearSummaryDirectory, let plan = activitySummaryPlans.first ?? activityTemporaryPlans.first {
                 var status = stat()
-                guard lstat(plan.directory.path, &status) == 0,
-                    OwnedFileDeletionPlan.DirectoryIdentity(status) == plan.directoryIdentity,
-                    rmdir(plan.directory.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+                guard lstat(plan.directory.path, &status) == 0 else {
+                    throw OwnedFileDeletionPlan.posixError(operation: "lstat", URL: plan.directory)
+                }
+                guard OwnedFileDeletionPlan.DirectoryIdentity(status) == plan.directoryIdentity else {
+                    throw OwnedFileDeletionPlan.SafetyError.directoryChanged(plan.directory)
+                }
+                if rmdir(plan.directory.path) != 0 {
+                    let code = errno
+                    // Every planned file is already gone. A foreign entry (for example
+                    // .DS_Store) only keeps the empty folder; it never fails the clear.
+                    guard code == ENOTEMPTY || code == EEXIST else {
+                        throw OwnedFileDeletionPlan.posixError(operation: "rmdir", URL: plan.directory, code: code)
+                    }
+                }
             }
             return expectedResult
         }
@@ -571,10 +586,20 @@
                 cutoffKey: cutoffKey,
                 matchingDayKeys: matchingDayKeys
             )
+            let isFullClear = cutoffKey == nil && matchingDayKeys == nil
+            let summaryDirectory = rootDirectory.appendingPathComponent("activity-days")
             let summaryPlan = try deletionPlan(
-                in: rootDirectory.appendingPathComponent("activity-days"),
+                in: summaryDirectory,
                 trustedAncestor: trustedAncestor, suffixes: [".json", GoalongActivityCheckpointStore.suffix],
                 cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
+            // A targeted clear must not touch temporaries: a concurrent writer may own them.
+            let summaryTemporaryPlan = isFullClear
+                ? try OwnedFileDeletionPlan.prepare(
+                    directory: summaryDirectory,
+                    trustedAncestor: trustedAncestor,
+                    cutoffKey: nil,
+                    dayKey: { URL in Self.isActivityTemporaryName(URL.lastPathComponent) ? URL.lastPathComponent : nil })
+                : nil
             let computerHistoryPlans = try computerHistoryStore.deletionPlans(
                 cutoffKey: cutoffKey,
                 matchingDayKeys: matchingDayKeys,
@@ -584,8 +609,13 @@
             let developerPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("developer"),
                 trustedAncestor: trustedAncestor, suffixes: [".jsonl"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
             let analysisPlans = [analysisPlan, developerPlan].compactMap { $0 }
-            let notesPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("notes"), trustedAncestor: trustedAncestor,
-                suffixes: [".json"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
+            // The day note is user-written content for a whole day, not activity of a
+            // period: only a full history clear removes it. Calls and developer counts
+            // have no per-record rewrite, so a partial clear erases their whole day file.
+            let notesPlan = isFullClear
+                ? try deletionPlan(in: rootDirectory.appendingPathComponent("notes"), trustedAncestor: trustedAncestor,
+                    suffixes: [".json"], cutoffKey: nil, matchingDayKeys: nil)
+                : nil
             let callsPlan = try deletionPlan(in: rootDirectory.appendingPathComponent("calls"), trustedAncestor: trustedAncestor,
                 suffixes: [".jsonl"], cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
             let memoryPlans = [memoryPlan, notesPlan, callsPlan].compactMap { $0 }
@@ -594,12 +624,21 @@
                 memoryPlans: memoryPlans,
                 computerHistoryPlans: computerHistoryPlans,
                 activitySummaryPlans: [summaryPlan].compactMap { $0 },
-                clearSummaryDirectory: cutoffKey == nil && matchingDayKeys == nil
+                activityTemporaryPlans: [summaryTemporaryPlan].compactMap { $0 },
+                clearSummaryDirectory: isFullClear
             )
             // Sequential category discovery is followed by one whole-plan validation,
             // immediately before the caller is permitted to begin deleting raw stores.
             try plan.validate()
             return plan
+        }
+
+        /// Exactly `GoalongActivityDayStore.temporaryPrefix` + an uppercase UUID.
+        static func isActivityTemporaryName(_ name: String) -> Bool {
+            let prefix = GoalongActivityDayStore.temporaryPrefix
+            guard name.hasPrefix(prefix) else { return false }
+            let rest = name.dropFirst(prefix.count)
+            return rest.count == 36 && UUID(uuidString: String(rest))?.uuidString == String(rest)
         }
 
         private func deletionPlan(

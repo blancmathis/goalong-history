@@ -2621,12 +2621,15 @@
                     maximumDays: Self.maximumPriorComputerHistoryDays + 2,
                     renderMarkdown: false
                 )
-                guard priorLoad.isComplete else {
+                // Only an unstable listing fails closed. A single unreadable prior
+                // day is skipped and recorded, so it cannot block every later cycle.
+                guard priorLoad.hasStableSnapshot else {
                     throw ActivityAnalysisCycleError.sourceInaccessible(
                         "Computer History kept the last-known-good view because prior "
-                            + "retained memories could not be loaded completely"
+                            + "retained memories could not be listed reliably"
                     )
                 }
+                ComputerHistoryStore.reportPartialPriorContext(priorLoad, day: start)
                 priorComputerHistory = Array(
                     priorLoad.memories.filter { $0.dayStart < start }
                         .suffix(Self.maximumPriorComputerHistoryDays)

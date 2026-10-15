@@ -82,7 +82,9 @@ import LocalHistoryCore
         .onAppear { refreshRetention() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongRetentionPolicyDidChange)) { _ in refreshRetention() }
         .sheet(isPresented: $showingSharing) { GoalongWebsiteSharingSheet().goalongControls() }
-        .sheet(isPresented: $showingRetention, onDismiss: refreshRetention) { HistoryRetentionSettingsSheet().goalongControls() }
+        .sheet(isPresented: $showingRetention, onDismiss: refreshRetention) {
+            HistoryRetentionSettingsSheet(legacyRetentionDays: model.appliedSettings.retentionDays).goalongControls()
+        }
     }
     private func refreshRetention() {
         let store = HistoryRetentionStore(legacyRetentionDays: model.appliedSettings.retentionDays)
