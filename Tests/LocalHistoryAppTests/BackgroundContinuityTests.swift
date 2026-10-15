@@ -105,7 +105,7 @@
         }
 
         func testOrderlyQuitAndUpdateDoNotReportAnInterruption() {
-            for reason in ["user_quit", "update", "permission_restart", "system_or_application_exit"] {
+            for reason in ["user_quit", "update", "permission_restart", "system_or_application_exit", "signal_terminate"] {
                 let defaults = isolatedDefaults()
                 let journal = BackgroundSessionJournal(defaults: defaults)
                 journal.begin()
@@ -146,6 +146,27 @@
             // No fabricated user Quit event, no modal dialog and no restart.
             let delegate = AppDelegate()
             XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
+        }
+
+        func testExternalSigtermSkipsTheBlockingQuitConfirmationOnly() {
+            func confirms(system: Bool = false, restarting: Bool = false, update: Bool = false, signal: Bool = false) -> Bool {
+                AppDelegate.shouldConfirmBlockingQuit(systemQuit: system, restarting: restarting,
+                                                      relaunchingForUpdate: update, externalSignal: signal)
+            }
+            XCTAssertTrue(confirms(), "The user's own quit is still protected")
+            XCTAssertFalse(confirms(signal: true))
+            XCTAssertFalse(confirms(system: true))
+            XCTAssertFalse(confirms(restarting: true))
+            XCTAssertFalse(confirms(update: true))
+        }
+
+        func testSigtermShutdownIsReportedAsAnOrderlyExit() {
+            XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: false, restarting: false, externalSignal: true, userQuit: false),
+                           "signal_terminate")
+            XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: true, restarting: false, externalSignal: true, userQuit: false),
+                           "update")
+            XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: false, restarting: false, externalSignal: false, userQuit: true),
+                           "user_quit")
         }
     }
 #endif
