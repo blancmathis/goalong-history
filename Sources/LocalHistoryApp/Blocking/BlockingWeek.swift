@@ -45,9 +45,14 @@ import SwiftUI
     }
 
     private func editDraft(_ span: Span, anchor: CGRect) -> BlockingRangeDraft? {
-        guard let list = controller.list(span.listID),
-              let range = list.program.ranges.first(where: { $0.id == span.rangeID }) else { return nil }
-        return BlockingRangeDraft(existing: span.rangeID, listIDs: [list.id], days: range.weekdays,
+        Self.editDraft(listID: span.listID, rangeID: span.rangeID, controller: controller, anchor: anchor)
+    }
+
+    /// The editor of an existing range, opened by one click on its block: its own hours, days and lock.
+    static func editDraft(listID: UUID, rangeID: UUID, controller: BlockingController, anchor: CGRect = .zero) -> BlockingRangeDraft? {
+        guard let list = controller.list(listID),
+              let range = list.program.ranges.first(where: { $0.id == rangeID }) else { return nil }
+        return BlockingRangeDraft(existing: rangeID, listIDs: [list.id], days: range.weekdays,
                                   start: range.startMinute, end: range.endMinute, lock: range.effectiveLock, anchor: anchor)
     }
 
@@ -168,7 +173,29 @@ import SwiftUI
         func x(_ minute: Int) -> CGFloat { width * CGFloat(minute) / 1_440 }
         func minute(_ x: CGFloat) -> Int { min(1_440, max(0, Int((x / max(1, width) * 1_440 / 15).rounded()) * 15)) }
         return ZStack(alignment: .topLeading) {
+            // The drag lives on its own layer under the blocks: a block is never inside this gesture,
+            // so a click on it can only open its editor, and the drag only ever draws on empty space.
+            Color.clear
+                .frame(width: width, height: height)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            dragging = (day, minute(value.startLocation.x), minute(value.location.x))
+                        }
+                        .onEnded { value in
+                            var start = minute(value.startLocation.x), end = minute(value.location.x)
+                            if end < start { swap(&start, &end) }
+                            // A click without a drag draws one hour from there.
+                            if end - start < 15 { start = min(start, 1_380); end = start + 60 }
+                            dragging = nil
+                            editing = newDraft(day: day, start: start, end: end,
+                                               anchor: CGRect(x: origin + x(start), y: top, width: x(end) - x(start), height: Self.rowHeight))
+                        }
+                )
+                .help("Glissez pour programmer un blocage, ou utilisez le bouton +")
             Rectangle().fill(LHTheme.tertiaryText.opacity(0.45)).frame(height: 1)
+                .allowsHitTesting(false)
                 .offset(y: Self.laneHeight / 2 + (Self.rowHeight - Self.laneHeight) / 2)
             ForEach(spans, id: \.self) { span in
                 Button {
@@ -201,23 +228,6 @@ import SwiftUI
             }
         }
         .frame(width: width, height: height, alignment: .topLeading)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    dragging = (day, minute(value.startLocation.x), minute(value.location.x))
-                }
-                .onEnded { value in
-                    var start = minute(value.startLocation.x), end = minute(value.location.x)
-                    if end < start { swap(&start, &end) }
-                    // A click without a drag draws one hour from there.
-                    if end - start < 15 { start = min(start, 1_380); end = start + 60 }
-                    dragging = nil
-                    editing = newDraft(day: day, start: start, end: end,
-                                       anchor: CGRect(x: origin + x(start), y: top, width: x(end) - x(start), height: Self.rowHeight))
-                }
-        )
-        .help("Glissez pour programmer un blocage, ou utilisez le bouton +")
     }
 
     private func spanView(_ span: Span, width: CGFloat) -> some View {
@@ -360,7 +370,8 @@ struct BlockingRangeDraft: Identifiable {
             }
             HStack {
                 if draft.existing != nil, !locked {
-                    Button("Retirer", role: .destructive) { remove() }.buttonStyle(LHQuietButtonStyle())
+                    Button("Supprimer", role: .destructive) { remove() }.buttonStyle(LHQuietButtonStyle())
+                        .accessibilityIdentifier("blocking-range-delete")
                 }
                 Spacer()
                 Button("Annuler", action: onClose).keyboardShortcut(.cancelAction)

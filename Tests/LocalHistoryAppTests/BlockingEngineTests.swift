@@ -445,6 +445,28 @@ final class BlockingEngineTests: XCTestCase {
         try FileManager.default.removeItem(at: marker); c.refresh()
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
     }
+    /// A click on a block opens the editor of that block, with its own hours; while a free, all-day range is
+    /// blocking right now, the hours can still be changed and the range deleted (a free block freezes nothing).
+    @MainActor func testClickingABlockEditsItsHoursAndCanDeleteIt() throws {
+        let now = date()
+        let weekdays = Set(1...7)
+        let range = BlockProgramRange(weekdays: weekdays, startMinute: 0, endMinute: 1_440)
+        var list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        list.program = BlockProgram(ranges: [range])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        XCTAssertFalse(c.activeBlocks.isEmpty, "the all-day free range blocks right now, as in the report")
+        XCTAssertFalse(c.isStricterOnly(list.id), "a free block must not freeze its list")
+        let draft = try XCTUnwrap(BlockingWeekEditor.editDraft(listID: list.id, rangeID: range.id, controller: c))
+        XCTAssertEqual(draft.existing, range.id, "a click on a block edits it, it does not draw a new range")
+        XCTAssertEqual([draft.start, draft.end], [0, 1_440]); XCTAssertEqual(draft.days, weekdays)
+        var changed = try XCTUnwrap(c.list(list.id))
+        changed.program.ranges[0].startMinute = 540; changed.program.ranges[0].endMinute = 1_020
+        c.save(changed); XCTAssertNil(c.error); XCTAssertEqual(c.list(list.id)?.program.ranges.first?.startMinute, 540)
+        XCTAssertEqual(c.list(list.id)?.program.ranges.first?.endMinute, 1_020)
+        var removed = try XCTUnwrap(c.list(list.id)); removed.program.ranges.removeAll()
+        c.save(removed); XCTAssertNil(c.error); XCTAssertEqual(c.list(list.id)?.program.ranges.count, 0)
+        XCTAssertNil(BlockingWeekEditor.editDraft(listID: list.id, rangeID: range.id, controller: c), "a deleted range has no editor")
+    }
     @MainActor func testDamagedStoreIsNeverALockAndAcceptsEdits() throws {
         let store = try temporaryStore(), now = date()
         try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
