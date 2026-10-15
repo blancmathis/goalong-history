@@ -708,17 +708,22 @@ public struct ComputerHistorySearchService {
     }
 
     private static func explicitClockRange(in rawQuery: String) -> ClockRange? {
-        let value = ComputerHistoryNaturalLanguage.canonicalize(rawQuery)
+        // canonicalize turns typographic dashes into spaces; keep them as a
+        // range separator here so "14h–16h" still parses.
+        let dashed = rawQuery
+            .replacingOccurrences(of: "–", with: "-")
+            .replacingOccurrences(of: "—", with: "-")
+        let value = ComputerHistoryNaturalLanguage.canonicalize(dashed)
             .folding(
                 options: [.caseInsensitive, .diacriticInsensitive],
                 locale: Locale(identifier: "en_US_POSIX")
             )
             .lowercased()
         let patterns = [
-            #"(?:between|entre|from|de)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?\s+(?:and|et|to|a)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?"#,
-            #"([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?\s*(?:-|to|a|et)\s*([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?"#,
+            #"\b(?:between|entre|from|de)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?\s+(?:and|et|to|a)\s+([0-2]?\d)(?:\s*(?:h|:)\s*([0-5]?\d))?\s*(am|pm)?"#,
+            #"(?<!\d)([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?\s*(?:-|to|a|et)\s*([0-2]?\d)\s*(?:h|:)\s*([0-5]?\d)?\s*(am|pm)?"#,
         ]
-        for pattern in patterns {
+        for (patternIndex, pattern) in patterns.enumerated() {
             guard let expression = try? NSRegularExpression(pattern: pattern) else {
                 continue
             }
@@ -737,6 +742,16 @@ public struct ComputerHistorySearchService {
             guard let rawStartHour = group(1).flatMap(Int.init),
                 let rawEndHour = group(4).flatMap(Int.init)
             else { continue }
+            // Bare numbers ("from 5 to 6", "entre 2 et 3") are not a time:
+            // at least one bound needs minutes, am/pm or an h/: marker.
+            if patternIndex == 0,
+                group(2) == nil, group(3) == nil, group(5) == nil, group(6) == nil
+            {
+                let rest = value[(Range(match.range, in: value)?.upperBound ?? value.endIndex)...]
+                guard let next = rest.first(where: { !$0.isWhitespace }),
+                    next == "h" || next == ":"
+                else { continue }
+            }
             let startMinute = group(2).flatMap(Int.init) ?? 0
             let endMinute = group(5).flatMap(Int.init) ?? 0
             guard let startHour = normalizedClockHour(

@@ -188,6 +188,45 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
         XCTAssertEqual(interval("fichiers de cette semaine")?.start, week.start)
     }
 
+    func testClockRangesNeedATimeMarkerAndAcceptTypographicDashes() throws {
+        let calendar = utcCalendar
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 30, hour: 18))
+        )
+        let today = calendar.startOfDay(for: now)
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        func interval(_ query: String) -> DateInterval? {
+            ComputerHistorySearchService.explicitTemporalInterval(
+                for: query,
+                now: now,
+                calendar: calendar
+            )
+        }
+
+        for query in [
+            "comparaison méthode 1 et 2",
+            "mode 3 a 4",
+            "upgrade from 5 to 6",
+            "entre 2 et 3 fichiers",
+        ] {
+            XCTAssertNil(interval(query), query)
+        }
+        XCTAssertEqual(interval("hier, entre 2 et 3 fichiers")?.start, yesterday)
+        XCTAssertEqual(interval("hier, entre 2 et 3 fichiers")?.end, today)
+
+        for query in ["Qu'ai-je fait hier 14h–16h ?", "hier 14h—16h", "hier de 14h à 16h"] {
+            let ranged = try XCTUnwrap(interval(query), query)
+            XCTAssertEqual(ranged.start, yesterday.addingTimeInterval(14 * 3600), query)
+            XCTAssertEqual(ranged.end, yesterday.addingTimeInterval(16 * 3600), query)
+        }
+        let morning = try XCTUnwrap(interval("from 9 to 11am"))
+        XCTAssertEqual(morning.start, today.addingTimeInterval(9 * 3600))
+        XCTAssertEqual(morning.end, today.addingTimeInterval(11 * 3600))
+        let french = try XCTUnwrap(interval("de 9 à 11h"))
+        XCTAssertEqual(french.start, today.addingTimeInterval(9 * 3600))
+        XCTAssertEqual(french.end, today.addingTimeInterval(11 * 3600))
+    }
+
     private var utcCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
