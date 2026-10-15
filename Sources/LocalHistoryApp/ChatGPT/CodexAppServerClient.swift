@@ -15,6 +15,8 @@
         case server(String)
         case loginFailed(String)
         case accountNotChatGPT(String)
+        case signedOut
+        case homeBusy
         case generationFailed(String)
 
         var errorDescription: String? {
@@ -42,6 +44,10 @@
             case .accountNotChatGPT(let mode):
                 return
                     "Goalong n’utilise pas les identifiants \(Self.boundedDetail(mode)) actifs, car ils peuvent être facturés comme un usage de l’API. Connectez-vous plutôt avec ChatGPT."
+            case .signedOut:
+                return "Vous n’êtes pas connecté à ChatGPT. Connectez-vous pour générer le rapport."
+            case .homeBusy:
+                return "Une autre analyse utilise déjà la connexion Codex de Goalong. Réessayez dans un instant."
             case .generationFailed(let message):
                 return message.isEmpty
                     ? "L’analyse n’a pas abouti."
@@ -54,6 +60,59 @@
                 ActivitySemanticTextSanitizer.redact(value) ?? "",
                 maximumBytes: 4_096
             )
+        }
+    }
+
+    /// One process-wide lease per Codex home. Two Codex processes on the same directory would
+    /// rewrite each other's `config.toml` (different permission profiles) and prune each other's
+    /// live state, so a session holds the lease from `prepareCodexHome` until its process has
+    /// exited and the exit prune has run.
+    final class CodexHomeLease {
+        private static let condition = NSCondition()
+        private static var held = Set<String>()
+
+        private let key: String
+        private let lock = NSLock()
+        private var released = false
+
+        private init(key: String) { self.key = key }
+
+        static func acquire(for directory: URL, waiting timeout: TimeInterval) throws -> CodexHomeLease {
+            let key = canonicalKey(for: directory)
+            let deadline = Date().addingTimeInterval(max(0, timeout))
+            condition.lock()
+            defer { condition.unlock() }
+            while held.contains(key) {
+                guard condition.wait(until: deadline) else { throw CodexAppServerError.homeBusy }
+            }
+            held.insert(key)
+            return CodexHomeLease(key: key)
+        }
+
+        /// Resolves symlinks of the nearest existing ancestor, so the key is the same before and
+        /// after the directory is created (`/var` versus `/private/var`).
+        private static func canonicalKey(for directory: URL) -> String {
+            var existing = directory.standardizedFileURL
+            var suffix: [String] = []
+            while !FileManager.default.fileExists(atPath: existing.path), existing.pathComponents.count > 1 {
+                suffix.insert(existing.lastPathComponent, at: 0)
+                existing.deleteLastPathComponent()
+            }
+            var resolved = existing.resolvingSymlinksInPath()
+            for component in suffix { resolved.appendPathComponent(component) }
+            return resolved.path
+        }
+
+        func release() {
+            lock.lock()
+            let alreadyReleased = released
+            released = true
+            lock.unlock()
+            guard !alreadyReleased else { return }
+            Self.condition.lock()
+            Self.held.remove(key)
+            Self.condition.broadcast()
+            Self.condition.unlock()
         }
     }
 
@@ -703,7 +762,8 @@
             executableURL: URL,
             codexHomeURL: URL = AppPaths.chatGPTCodexHomeDirectory,
             limits: CodexAppServerLimits = .production,
-            siteAnalysisOnly: Bool = false
+            siteAnalysisOnly: Bool = false,
+            homeLeaseWait: TimeInterval = 5
         ) throws {
             let pauseAdmission = try GoalongGlobalPause.admit()
             self.limits = limits
@@ -713,16 +773,27 @@
             guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
                 throw CodexAppServerError.executableUnavailable
             }
-            try Self.prepareCodexHome(at: codexHomeURL, siteAnalysisOnly: siteAnalysisOnly)
+            let lease = try CodexHomeLease.acquire(for: codexHomeURL, waiting: homeLeaseWait)
+            do {
+                try Self.prepareCodexHome(at: codexHomeURL, siteAnalysisOnly: siteAnalysisOnly)
+            } catch {
+                lease.release()
+                throw error
+            }
 
             process.executableURL = executableURL
             process.arguments = ["app-server"]
             process.standardInput = inputPipe
             process.standardOutput = outputPipe
             process.standardError = errorPipe
-            try CodexAppServerTimedWriter.prepareNonBlocking(
-                inputPipe.fileHandleForWriting.fileDescriptor
-            )
+            do {
+                try CodexAppServerTimedWriter.prepareNonBlocking(
+                    inputPipe.fileHandleForWriting.fileDescriptor
+                )
+            } catch {
+                lease.release()
+                throw error
+            }
 
             process.environment = Self.codexEnvironment(
                 inheriting: ProcessInfo.processInfo.environment,
@@ -730,6 +801,7 @@
             )
             process.terminationHandler = { _ in
                 try? Self.pruneEphemeralCodexArtifacts(at: codexHomeURL)
+                lease.release()
             }
 
             errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -747,6 +819,7 @@
                 try process.run()
             } catch {
                 errorPipe.fileHandleForReading.readabilityHandler = nil
+                lease.release()
                 throw CodexAppServerError.launchFailed(error.localizedDescription)
             }
 
@@ -1100,7 +1173,7 @@
             let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
             let selectionRevision = GoalongAnalysisSelection.load().revision
             guard let account = try readAccount(refreshToken: true) else {
-                throw CodexAppServerError.accountNotChatGPT("signed-out")
+                throw CodexAppServerError.signedOut
             }
             guard account.isManagedChatGPT else {
                 throw CodexAppServerError.accountNotChatGPT(account.type)
@@ -1409,16 +1482,19 @@
 
                 let remaining = deadline.timeIntervalSinceNow
                 guard remaining > 0 else { throw CodexAppServerError.timeout(operation) }
-                let timeoutMilliseconds = Int32(min(remaining * 1_000, Double(Int32.max)))
+                // Short slices: closing the pipe from another thread does not wake a blocked poll.
+                let timeoutMilliseconds = Int32(min(remaining * 1_000, 200))
+                closeLock.lock()
+                let isClosed = closed
+                closeLock.unlock()
+                if isClosed { throw CodexAppServerError.processExited(stderrText()) }
                 var descriptor = pollfd(
                     fd: outputPipe.fileHandleForReading.fileDescriptor,
                     events: Int16(POLLIN | POLLHUP | POLLERR),
                     revents: 0
                 )
                 let pollResult = Darwin.poll(&descriptor, 1, timeoutMilliseconds)
-                if pollResult == 0 {
-                    throw CodexAppServerError.timeout(operation)
-                }
+                if pollResult == 0 { continue }
                 if pollResult < 0 {
                     if errno == EINTR { continue }
                     throw CodexAppServerError.processExited(stderrText())

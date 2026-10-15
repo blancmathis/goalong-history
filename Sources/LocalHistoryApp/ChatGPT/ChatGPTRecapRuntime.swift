@@ -424,6 +424,8 @@
         @Published private(set) var isCheckingAccount = false
         @Published private(set) var isConnecting = false
         @Published private(set) var isGenerating = false
+        /// The day the active recap run is analysing. `nil` when no run is active.
+        @Published private(set) var generatingDay: Date?
         @Published private(set) var isLoadingDayOverview = false
         @Published private(set) var dayOverviewError: String?
         @Published private(set) var streamedMarkdown = ""
@@ -437,6 +439,26 @@
             }
         }
         @Published var alert: ChatGPTRecapAlert?
+
+        var isAccountConnected: Bool {
+            if case .connected = connectionState { return true }
+            return false
+        }
+
+        /// True when a recap run is active and it analyses the day on screen.
+        var isGeneratingSelectedDay: Bool {
+            guard isGenerating, let generatingDay else { return false }
+            return Calendar.current.isDate(generatingDay, inSameDayAs: selectedDay)
+        }
+
+        /// True while any Codex process owned by the recap runtime may be running.
+        var isBusyWithCodex: Bool { isGenerating || isCheckingAccount || isConnecting }
+
+        private enum SessionRole {
+            case recap
+            case login
+            case account
+        }
 
         private let workQueue = DispatchQueue(
             label: "ai.goalong.localhistory.chatgpt-recap",
@@ -459,8 +481,16 @@
         private let derivedWriteBarrier = DerivedHistoryWriteBarrier.shared
         private let sessionLock = NSLock()
         private let runStateLock = NSLock()
+        private let loginQueue = DispatchQueue(
+            label: "ai.goalong.localhistory.chatgpt-login",
+            qos: .userInitiated
+        )
         private var activeSession: CodexAppServerSession?
+        private var loginSession: CodexAppServerSession?
         private var activeRecapRunID: UUID?
+        private var activeRecapRunIsAutomatic = false
+        private var connectAttemptID: UUID?
+        private var cancelledConnectAttemptID: UUID?  // guarded by sessionLock
         private var deviceID = ""
         private var timer: Timer?
         private var delayedAutomaticWorkItem: DispatchWorkItem?
@@ -611,7 +641,9 @@
         func selectDay(_ date: Date) {
             let normalized = Calendar.current.startOfDay(for: date)
             guard normalized != selectedDay else { return }
-            invalidateActiveRun(closeSession: true)
+            // An automatic run analyses its own day and persists by day: the day on screen must
+            // not cancel it. A manual run belongs to the day on screen and still stops here.
+            if !isAutomaticRunActive { invalidateActiveRun(closeSession: true) }
             selectedDay = normalized
             streamedMarkdown = ""
             recap = ChatGPTRecapPersistence.load(for: normalized, from: recapsDirectory)
@@ -700,7 +732,9 @@
                 connectionState = .codexUnavailable
                 return
             }
-            guard !isCheckingAccount, !isConnecting else { return }
+            guard !isCheckingAccount, !isConnecting, !isGenerating else { return }
+            // The work agent shares this Codex home; keep the last known state until it is done.
+            guard !(Thread.isMainThread && MainActor.assumeIsolated { GoalongWorkAgent.shared.isRunning }) else { return }
             guard let executable = executableLocator() else {
                 connectionState = .codexUnavailable
                 return
@@ -709,7 +743,7 @@
             workQueue.async { [weak self] in
                 guard let self else { return }
                 do {
-                    let session = try self.makeSession(executableURL: executable)
+                    let session = try self.makeSession(executableURL: executable, role: .account)
                     defer { self.closeSession(session) }
                     let account = try session.readAccount(refreshToken: false)
                     DispatchQueue.main.async {
@@ -719,6 +753,7 @@
                 } catch {
                     DispatchQueue.main.async {
                         self.isCheckingAccount = false
+                        if case CodexAppServerError.homeBusy = error { return }
                         self.connectionState = .failed(error.localizedDescription)
                     }
                 }
@@ -742,12 +777,18 @@
             }
             isConnecting = true
             connectionState = .checking
+            let attemptID = UUID()
+            connectAttemptID = attemptID
+            setCancelledConnectAttempt(nil)
 
-            workQueue.async { [weak self] in
+            // The sign-in can wait for the browser for minutes: it has its own queue so day
+            // overviews, proof checks and account reads are not stuck behind it.
+            loginQueue.async { [weak self] in
                 guard let self else { return }
                 do {
-                    let session = try self.makeSession(executableURL: executable)
+                    let session = try self.makeSession(executableURL: executable, role: .login)
                     defer { self.closeSession(session) }
+                    if self.isConnectAttemptCancelled(attemptID) { throw CodexAppServerError.loginFailed("") }
                     let login = try session.beginChatGPTLogin()
                     DispatchQueue.main.async {
                         _ = GoalongWorkspaceOpenPolicy.open(
@@ -758,6 +799,7 @@
                     let account = try session.waitForChatGPTLogin(loginID: login.loginID)
                     DispatchQueue.main.async {
                         self.isConnecting = false
+                        self.connectAttemptID = nil
                         self.publishAccount(account)
                         self.alert = ChatGPTRecapAlert(
                             title: "ChatGPT connecté",
@@ -768,6 +810,12 @@
                 } catch {
                     DispatchQueue.main.async {
                         self.isConnecting = false
+                        self.connectAttemptID = nil
+                        if self.isConnectAttemptCancelled(attemptID) {
+                            self.setCancelledConnectAttempt(nil)
+                            self.connectionState = .signedOut
+                            return
+                        }
                         self.connectionState = .failed(error.localizedDescription)
                         self.alert = ChatGPTRecapAlert(
                             title: "ChatGPT n’a pas pu être connecté",
@@ -778,7 +826,27 @@
             }
         }
 
+        /// Abandons a sign-in that waits for the browser. No error alert is shown.
+        func cancelChatGPTConnection() {
+            guard isConnecting, let attemptID = connectAttemptID else { return }
+            setCancelledConnectAttempt(attemptID)
+            closeLoginSession()
+        }
+
+        private func setCancelledConnectAttempt(_ id: UUID?) {
+            sessionLock.lock()
+            cancelledConnectAttemptID = id
+            sessionLock.unlock()
+        }
+
+        private func isConnectAttemptCancelled(_ id: UUID) -> Bool {
+            sessionLock.lock()
+            defer { sessionLock.unlock() }
+            return cancelledConnectAttemptID == id
+        }
+
         func disconnectChatGPT() {
+            cancelChatGPTConnection()
             stop()
             automaticRecapsEnabled = false
             guard let executable = executableLocator() else {
@@ -788,7 +856,7 @@
             workQueue.async { [weak self] in
                 guard let self else { return }
                 do {
-                    let session = try self.makeSession(executableURL: executable)
+                    let session = try self.makeSession(executableURL: executable, role: .account)
                     defer { self.closeSession(session) }
                     try session.logout()
                     DispatchQueue.main.async {
@@ -934,8 +1002,9 @@
             let includeScreenTime = GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)
             let includeAgentActivity = GoalongCapabilityConsentStore.shared.isEnabled(.aiConversations)
             let workDefinition = JevWorkContextStore.savedContext().map(GoalongWorkDefinition.init)
-            activateRun(runID)
+            activateRun(runID, automatic: automatic)
             isGenerating = true
+            generatingDay = normalizedDay
             streamedMarkdown = ""
 
             workQueue.async { [weak self] in
@@ -945,6 +1014,7 @@
                     DispatchQueue.main.async {
                         guard self.finishRun(runID) else { return }
                         self.isGenerating = false
+                        self.generatingDay = nil
                         self.streamedMarkdown = ""
                     }
                     return
@@ -971,13 +1041,13 @@
 
                     let directory = try Self.makeRunDirectory()
                     runDirectory = directory
-                    let session = try self.makeSession(executableURL: executable)
+                    let session = try self.makeSession(executableURL: executable, role: .recap)
                     defer { self.closeSession(session) }
                     guard self.derivedWriteBarrier.isCurrent(permit), self.isRunActive(runID) else {
                         throw RecapGenerationInterruption.historyCleared
                     }
                     guard let account = try session.readAccount(refreshToken: true) else {
-                        throw CodexAppServerError.accountNotChatGPT("signed-out")
+                        throw CodexAppServerError.signedOut
                     }
                     guard account.isManagedChatGPT else {
                         throw CodexAppServerError.accountNotChatGPT(account.type)
@@ -1092,6 +1162,7 @@
                             self.finishRun(runID)
                         else { return }
                         self.isGenerating = false
+                        self.generatingDay = nil
                         self.streamedMarkdown = ""
                         self.clearAutomaticRetry(for: normalizedDay)
                         self.publishAccount(account)
@@ -1122,14 +1193,14 @@
                     DispatchQueue.main.async {
                         guard self.finishRun(runID) else { return }
                         self.isGenerating = false
+                        self.generatingDay = nil
                         self.streamedMarkdown = ""
                         if let codexError = error as? CodexAppServerError {
                             switch codexError {
                             case .accountNotChatGPT(let mode):
-                                self.connectionState =
-                                    mode == "signed-out"
-                                    ? .signedOut
-                                    : .unsupportedCredentialMode(mode)
+                                self.connectionState = .unsupportedCredentialMode(mode)
+                            case .signedOut:
+                                self.connectionState = .signedOut
                             case .executableUnavailable:
                                 self.connectionState = .codexUnavailable
                             default:
@@ -1149,10 +1220,17 @@
             }
         }
 
-        private func makeSession(executableURL: URL) throws -> CodexAppServerSession {
+        /// Only recap generations and sign-ins are tracked, each in its own slot: a day change
+        /// cancels a generation, never a sign-in, and an account read cannot replace the slot
+        /// of a running generation.
+        private func makeSession(executableURL: URL, role: SessionRole) throws -> CodexAppServerSession {
             let session = try sessionFactory(executableURL)
             sessionLock.lock()
-            activeSession = session
+            switch role {
+            case .recap: activeSession = session
+            case .login: loginSession = session
+            case .account: break
+            }
             sessionLock.unlock()
             return session
         }
@@ -1163,7 +1241,18 @@
             if activeSession === session {
                 activeSession = nil
             }
+            if loginSession === session {
+                loginSession = nil
+            }
             sessionLock.unlock()
+        }
+
+        private func closeLoginSession() {
+            sessionLock.lock()
+            let session = loginSession
+            loginSession = nil
+            sessionLock.unlock()
+            session?.close()
         }
 
         private func closeActiveSession() {
@@ -1174,10 +1263,17 @@
             session?.close()
         }
 
-        private func activateRun(_ runID: UUID) {
+        private func activateRun(_ runID: UUID, automatic: Bool = false) {
             runStateLock.lock()
             activeRecapRunID = runID
+            activeRecapRunIsAutomatic = automatic
             runStateLock.unlock()
+        }
+
+        private var isAutomaticRunActive: Bool {
+            runStateLock.lock()
+            defer { runStateLock.unlock() }
+            return activeRecapRunID != nil && activeRecapRunIsAutomatic
         }
 
         private func isRunActive(_ runID: UUID) -> Bool {
@@ -1195,6 +1291,7 @@
                 return false
             }
             activeRecapRunID = nil
+            activeRecapRunIsAutomatic = false
             runStateLock.unlock()
             return true
         }
@@ -1202,16 +1299,19 @@
         private func invalidateActiveRun(closeSession: Bool) {
             runStateLock.lock()
             activeRecapRunID = nil
+            activeRecapRunIsAutomatic = false
             runStateLock.unlock()
             isGenerating = false
+            generatingDay = nil
             streamedMarkdown = ""
             if closeSession { closeActiveSession() }
         }
 
         #if DEBUG
-            func beginRunForTesting(streamed: String = "preview") {
-                activateRun(UUID())
+            func beginRunForTesting(streamed: String = "preview", automatic: Bool = false, day: Date? = nil) {
+                activateRun(UUID(), automatic: automatic)
                 isGenerating = true
+                generatingDay = day.map { Calendar.current.startOfDay(for: $0) }
                 streamedMarkdown = streamed
             }
 
@@ -1293,9 +1393,9 @@
             guard let codexError = error as? CodexAppServerError else { return false }
             switch codexError {
             case .launchFailed, .processExited, .timeout, .malformedResponse, .server,
-                .generationFailed:
+                .generationFailed, .homeBusy:
                 return true
-            case .executableUnavailable, .protocolLimitExceeded, .loginFailed, .accountNotChatGPT:
+            case .executableUnavailable, .protocolLimitExceeded, .loginFailed, .accountNotChatGPT, .signedOut:
                 return false
             }
         }

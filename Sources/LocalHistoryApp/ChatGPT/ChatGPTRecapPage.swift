@@ -29,6 +29,14 @@
                         ChatGPTAccountConnectionCard(runtime: recapRuntime)
                     }
 
+                    if recapRuntime.isGenerating, !recapRuntime.isGeneratingSelectedDay,
+                        let generatingDay = recapRuntime.generatingDay
+                    {
+                        Text("Analyse du \(GoalongUIFormat.day(generatingDay)) en cours")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+
                     reportCard
 
                     if let proof = recapRuntime.recap?.proof {
@@ -225,7 +233,7 @@
                         recapRuntime.generateRecap()
                     } label: {
                         Label(
-                            recapRuntime.isGenerating ? "Analyzing…" : generationButtonTitle,
+                            recapRuntime.isGeneratingSelectedDay ? "Analyse en cours…" : generationButtonTitle,
                             systemImage: "sparkles"
                         )
                     }
@@ -237,7 +245,7 @@
 
         private var reportCard: some View {
             LHCard {
-                if recapRuntime.isGenerating {
+                if recapRuntime.isGeneratingSelectedDay {
                     HStack(spacing: 16) {
                         ProgressView()
                             .controlSize(.regular)
@@ -570,10 +578,7 @@
             isConnected && recapRuntime.dayOverview?.hasMeaningfulData != false
         }
 
-        private var isConnected: Bool {
-            if case .connected = recapRuntime.connectionState { return true }
-            return false
-        }
+        private var isConnected: Bool { recapRuntime.isAccountConnected }
 
         private var generationButtonTitle: String {
             recapRuntime.recap == nil ? "Analyser la journée" : "Analyser à nouveau"

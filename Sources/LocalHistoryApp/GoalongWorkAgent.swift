@@ -101,7 +101,7 @@ extension GoalongWorkSharingFilter {
     /// Called by Activité with the days on screen, never on a timer: today at most every
     /// 15 minutes, another day once per launch, and nothing while a daily report runs.
     func classifyIfNeeded(_ days: [GoalongLocalAnalytics.Day], now: Date = Date()) {
-        guard store.automatic, !isRunning, readiness == .ready, !ChatGPTRecapRuntime.shared.isGenerating else { return }
+        guard store.automatic, !isRunning, readiness == .ready, !ChatGPTRecapRuntime.shared.isBusyWithCodex else { return }
         let calendar = Calendar.current
         for day in days.reversed() where day.state == .ready && day.seconds(.unclassified) >= 120 {
             let today = calendar.isDate(day.date, inSameDayAs: now)
@@ -127,8 +127,10 @@ extension GoalongWorkSharingFilter {
             if userInitiated { lastError = state.message }
             return
         }
-        if userInitiated, ChatGPTRecapRuntime.shared.isGenerating {
-            lastError = "Un bilan quotidien est en cours. Réessayez dans quelques minutes."
+        if userInitiated, ChatGPTRecapRuntime.shared.isBusyWithCodex {
+            lastError = ChatGPTRecapRuntime.shared.isGenerating
+                ? "Un bilan quotidien est en cours. Réessayez dans quelques minutes."
+                : "La connexion ChatGPT est en cours d’utilisation. Réessayez dans un instant."
             return
         }
         let calendar = Calendar.current
@@ -176,7 +178,7 @@ extension GoalongWorkSharingFilter {
                 try ChatGPTSecureStorage.prepareDirectory(AppPaths.chatGPTDirectory)
                 // The connected ChatGPT account, under the strict tool-less, network-less profile.
                 let session = try CodexAppServerSession(executableURL: executable,
-                    codexHomeURL: AppPaths.chatGPTCodexHomeDirectory, siteAnalysisOnly: true)
+                    codexHomeURL: AppPaths.chatGPTCodexHomeDirectory, siteAnalysisOnly: true, homeLeaseWait: 0)
                 self.session = session
                 defer { session.close(); if operation == id { self.session = nil } }
                 var classified = 0, work = 0

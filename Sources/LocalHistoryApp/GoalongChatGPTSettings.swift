@@ -41,7 +41,10 @@ import LocalHistoryCore
                     Button("Analyser cette journée") {
                         runtime.configure(deviceID: model.deviceID); runtime.selectDay(model.selectedDay)
                         runtime.generateRecap(); model.selectSection(.chatGPTRecap)
-                    }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis))
+                    }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating)
+                }
+                if !runtime.isAccountConnected {
+                    Text("Connectez ChatGPT d’abord pour analyser une journée.").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Text("ChatGPT reçoit uniquement votre sélection. Le bilan n’est pas envoyé au site automatiquement.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)

@@ -12,6 +12,8 @@
         case server(String)
         case loginFailed(String)
         case accountNotChatGPT(String)
+        case signedOut
+        case homeBusy
         case generationFailed(String)
 
         var errorDescription: String? {
@@ -29,6 +31,10 @@
                 return "The remote-analysis response was invalid: \(value)."
             case .accountNotChatGPT(let value):
                 return "No supported ChatGPT account is available: \(value)."
+            case .signedOut:
+                return "No supported ChatGPT account is available."
+            case .homeBusy:
+                return "The unavailable remote-analysis operation is busy."
             }
         }
     }
