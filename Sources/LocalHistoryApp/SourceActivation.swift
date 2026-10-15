@@ -84,8 +84,9 @@ import LocalHistoryCore
                         return
                     }
                     if result == .ready {
-                        if capability == .localComputerHistory { PermissionRecoveryLedger.clear(.accessibility) }
-                        if capability == .appleScreenTime { PermissionRecoveryLedger.clear(.fullDiskAccess) }
+                        for permission in PermissionRecoveryLedger.permissionsProvenWorking(by: capability) {
+                            PermissionRecoveryLedger.clear(permission)
+                        }
                     }
                     completion(result)
                 }
@@ -331,7 +332,11 @@ import LocalHistoryCore
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 validateExistingConsent()
             }
-            .onChange(of: consents.isEnabled(capability)) { _ in validation = UUID() }
+            .onChange(of: consents.isEnabled(capability)) { _ in
+                // Dropping the token also drops the in-flight check result, which is what clears `checking`.
+                validation = UUID()
+                if checking { checking = false; onCheckingChanged(false) }
+            }
             .onDisappear { validation = UUID(); checking = false; onCheckingChanged(false) }
             .alert("Accès à vérifier", isPresented: Binding(
                 get: { accessIssue != nil }, set: { if !$0 { accessIssue = nil } }
