@@ -854,14 +854,14 @@
             XCTAssertThrowsError(
                 try oversized.append(Data((String(repeating: "x", count: 33) + "\n").utf8))
             ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("JSON line exceeded 32 bytes"))
+                XCTAssertTrue(error.localizedDescription.contains("ligne JSON dépasse 32 octets"))
             }
 
             var unterminated = CodexAppServerMessageDecoder(limits: limits)
             try unterminated.append(Data(String(repeating: "x", count: 32).utf8))
             XCTAssertEqual(unterminated.outputBuffer.count, 32)
             XCTAssertThrowsError(try unterminated.append(Data("x".utf8))) { error in
-                XCTAssertTrue(error.localizedDescription.contains("without a newline"))
+                XCTAssertTrue(error.localizedDescription.contains("sans fin de ligne"))
             }
 
             var validAtEOF = CodexAppServerMessageDecoder(limits: limits)
@@ -876,7 +876,7 @@
             var blankFlood = CodexAppServerMessageDecoder(limits: blankLimits)
             try blankFlood.append(Data("\n\n\n".utf8))
             XCTAssertThrowsError(try blankFlood.popMessage()) { error in
-                XCTAssertTrue(error.localizedDescription.contains("blank JSONL records"))
+                XCTAssertTrue(error.localizedDescription.contains("trop de lignes vides"))
             }
             XCTAssertEqual(blankFlood.blankLineCount, 2)
             XCTAssertEqual(blankFlood.blankLineBytes, 2)
@@ -893,7 +893,7 @@
             XCTAssertNotNil(try decoder.popMessage())
             XCTAssertNotNil(try decoder.popMessage())
             XCTAssertThrowsError(try decoder.popMessage()) { error in
-                XCTAssertTrue(error.localizedDescription.contains("more than 2 JSON messages"))
+                XCTAssertTrue(error.localizedDescription.contains("plus de 2 messages JSON"))
             }
 
             var queue = CodexAppServerDeferredMessageQueue(limits: limits)
@@ -919,7 +919,7 @@
             XCTAssertThrowsError(
                 try CodexAppServerMessageRouter.notificationMethod(in: ["id": 2])
             ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("unmatched JSON-RPC response"))
+                XCTAssertTrue(error.localizedDescription.contains("ne correspond à aucune demande"))
             }
             XCTAssertEqual(
                 try CodexAppServerMessageRouter.notificationMethod(in: ["method": "turn/completed"]),
@@ -2402,7 +2402,7 @@
                     rootDirectory: container
                 )
             ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("could not be read safely"))
+                XCTAssertTrue(error.localizedDescription.contains("n’a pas pu être lue de façon sûre"))
             }
 
             let oversizedDay = symlinkDay.addingTimeInterval(86_400)
@@ -2421,7 +2421,7 @@
                     rootDirectory: container
                 )
             ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("could not be read safely"))
+                XCTAssertTrue(error.localizedDescription.contains("n’a pas pu être lue de façon sûre"))
             }
         }
 

@@ -104,6 +104,26 @@
             }
         }
 
+        func testGoalongWrittenErrorDetailsAreFrench() throws {
+            var messages: [String] = []
+            func capture(_ body: () throws -> Void) {
+                do { try body(); XCTFail("expected an error") } catch { messages.append(error.localizedDescription) }
+            }
+            capture { _ = try ChatGPTDailyAssessment(productivityScore: 50, confidenceScore: 50, summaryLines: ["a", "b", "c", "d"]) }
+            capture { _ = try ChatGPTDailyAssessment(productivityScore: 101, confidenceScore: 50, summaryLines: ["a", "b", "c", "d", "e"]) }
+            capture { _ = try ChatGPTDailyAssessment(productivityScore: 50, confidenceScore: 50, summaryLines: ["a", "b", "c", "d", " "]) }
+            capture { _ = try ChatGPTDailyAssessment.decode("{}") }
+            capture { _ = try CodexAppServerMessageRouter.notificationMethod(in: ["id": 2]) }
+            var decoder = CodexAppServerMessageDecoder(limits: .production)
+            capture { try decoder.append(Data("[1]\n".utf8)); _ = try decoder.popMessage() }
+            XCTAssertEqual(messages.count, 6)
+            for text in messages {
+                for token in ["is missing", "must", "did not", "was not", "Unknown", "exceeded", "is not"] {
+                    XCTAssertFalse(text.contains(token), "\(token) in \(text)")
+                }
+            }
+        }
+
         func testCodexHomeLeaseSerializesSessionsOnTheSameHome() throws {
             let container = try makeContainer()
             defer { try? FileManager.default.removeItem(at: container) }

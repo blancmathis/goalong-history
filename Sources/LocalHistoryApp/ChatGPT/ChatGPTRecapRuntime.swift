@@ -33,7 +33,7 @@
         ) throws -> AnalysisRunAttestation {
             guard let response = recap.signedResultCanonicalData() else {
                 throw CodexAppServerError.malformedResponse(
-                    "the saved analysis result could not be canonicalized"
+                    "le résultat enregistré n’a pas pu être mis en forme pour la preuve."
                 )
             }
             let sourceCounts = try recap.sourceCounts.canonicalData()
@@ -80,7 +80,7 @@
                 signerDeviceID: values.signerDeviceID
             ) else {
                 throw CodexAppServerError.malformedResponse(
-                    "the local analysis attestation fields were invalid"
+                    "les champs de l’attestation locale sont invalides."
                 )
             }
             let signature = try identity.sign(message)
@@ -280,7 +280,7 @@
                 markdownData.count <= maximumMarkdownBytes
             else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "daily assessment failed its bounded five-line persistence contract"
+                    "le bilan ne respecte pas le format en cinq lignes à enregistrer."
                 )
             }
 
@@ -290,7 +290,7 @@
             let jsonData = try encoder.encode(persistedRecap)
             guard jsonData.count <= maximumJSONBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "recap JSON exceeded \(maximumJSONBytes) bytes before persistence"
+                    "le bilan dépasse \(maximumJSONBytes) octets avant l’enregistrement."
                 )
             }
 
