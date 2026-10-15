@@ -8,9 +8,14 @@ context_room:
 ## Default state
 
 On a new install, Computer History, Apple Screen Time, AI conversations, ChatGPT analysis,
-external verification, automatic updates and launch at login are all off. The canonical state is
+external verification and launch at login are all off. The canonical state is
 `~/Library/Application Support/LocalHistory/capability-consent.json`, written atomically with
 mode `0600`. A missing, unreadable or future-version file fails closed to everything off.
+
+Automatic update checks are the exception: they do not depend on this file. Community builds check the
+signed Sparkle feed on GitHub once at launch and then hourly by default. The check sends no history
+data or system profile. GitHub receives ordinary connection metadata such as IP address and user
+agent. Users can turn off background checks in Réglages › Avancé and still check manually.
 
 ## Data Goalong may keep after consent
 
