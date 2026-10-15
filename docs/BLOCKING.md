@@ -387,8 +387,8 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
 - The page API and design-owned views are preserved. Schema 1 gains optional `clock`,
   `heldPrograms` (locked program windows extended after a clock jump), and `programSkips`
   (a free program stopped for its current window); old schema-1 files remain readable.
-- An unreadable/invalid store preserves the last good in-process state and refuses all edits,
-  module-off and ordinary quit. Scheduled deadlines still end normally; an initially unreadable
+- An unreadable/invalid store preserves the last good in-process state and refuses edits only.
+  It is never a lock: module-off and « Quitter » stay available. Scheduled deadlines still end normally; an initially unreadable
   store reports an error because missing rules cannot be reconstructed. No store is created while
   the module is off or an enabled module is completely empty.
 - Locked allowlists can only shrink by set inclusion (replacing one allowed rule with another is
