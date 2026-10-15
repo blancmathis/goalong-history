@@ -401,7 +401,7 @@
         }
 
         /// `foundVersion` is the version Sparkle just found; it wins over a stale ready version.
-        static func checkResultValues(result: SupportState, foundVersion: String?, availableVersion: String?,
+        nonisolated static func checkResultValues(result: SupportState, foundVersion: String?, availableVersion: String?,
                                       error: (any Error)? = nil) -> [SupportKey: SupportValue] {
             var values: [SupportKey: SupportValue] = [.updateResult: .state(result)]
             if let version = foundVersion ?? availableVersion, SupportSymbol.isSafe(version, for: .availableVersion) {

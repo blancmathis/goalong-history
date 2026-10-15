@@ -142,11 +142,11 @@ enum SupportReportStore {
         }
     }
 
-    private static let maximumReportBytes = 16 * 1_024 * 1_024
+    private nonisolated static let maximumReportBytes = 16 * 1_024 * 1_024
 
     /// Copies the stored private report to `destination`. Throws, and writes nothing,
     /// when the stored report cannot be read any more.
-    static func copyReport(from source: URL, to destination: URL) throws {
+    nonisolated static func copyReport(from source: URL, to destination: URL) throws {
         let data = try SupportDiagnostics.readPrivateFile(source, maximum: maximumReportBytes)
         try SupportReportWriter.write(data, to: destination)
     }
