@@ -9,6 +9,8 @@ import LocalHistoryCore
     enum Tracking: Equatable { case active, paused(since: Date?), attention(String) }
     @Published var tracking: Tracking = .attention("Chargement")
     @Published var trackingDetail = "Chargement de l’état du suivi…"
+    /// Title shown above the detail when the tracking needs attention, so the cause is never lost to truncation.
+    var attentionTitle: String? { if case .attention(let title) = tracking { return title }; return nil }
     /// Consent is off: the header action opens Réglages instead of pausing.
     @Published var consentOff = false
     /// Global pause is on: the header action opens Réglages, where the pause is lifted.

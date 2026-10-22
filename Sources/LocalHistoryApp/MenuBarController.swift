@@ -387,17 +387,19 @@
                 try GoalongGlobalPause.setPaused(!GoalongGlobalPause.isPaused(), recordingWasPaused: state.isManuallyPaused)
                 updateStatus()
             } catch {
-                let alert = NSAlert(); alert.messageText = GoalongGlobalPauseText.failureTitle; alert.informativeText = error.localizedDescription
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                let alert = NSAlert(); alert.messageText = GoalongGlobalPauseText.failureTitle; alert.informativeText = GoalongUserFacingError.message(error)
                 alert.runModal()
             }
         }
 
         private func confirmRecordingStop(allSources: Bool) -> Bool {
+            NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Arrêter l’enregistrement local ?"
             alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour suspendre seulement les rappels de surveillance, utilisez plutôt « Faire une pause » : l’historique continue."
             alert.addButton(withTitle: "Annuler")
-            alert.addButton(withTitle: "Suspendre le suivi")
+            alert.addButton(withTitle: allSources ? "Suspendre le suivi" : "Arrêter l’enregistrement")
             return alert.runModal() == .alertSecondButtonReturn
         }
         @objc private func retryKeychain() { onRetryKeychain() }
@@ -540,7 +542,12 @@
 
         private func showError(_ error: Error) {
             NSApplication.shared.activate(ignoringOtherApps: true)
-            NSAlert(error: error).runModal()
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Échec de la suppression"
+            alert.informativeText = GoalongUserFacingError.message(error)
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
 #endif
