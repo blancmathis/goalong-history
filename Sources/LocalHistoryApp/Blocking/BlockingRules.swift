@@ -50,7 +50,7 @@ struct BlockingMatchExplanation: Equatable {
 
 enum BlockingRules {
     static let neverBlocked: Set<String> = [
-        "ai.goalong.localhistory", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow",
+        "ai.goalong.localhistory", "ai.goalong.localhistory.dev", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow",
         "com.apple.systemuiserver", "com.apple.controlcenter", "com.apple.notificationcenterui",
         "com.apple.Spotlight", "com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.ScreenSaver.Engine",
     ]

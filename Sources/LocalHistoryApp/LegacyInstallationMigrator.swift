@@ -1,10 +1,11 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import LocalHistoryCore
     import ServiceManagement
 
     enum LegacyInstallationMigrator {
-        private static let bundleIdentifier = "ai.goalong.localhistory"
+        private static let bundleIdentifier = GoalongBundleIdentity.release
 
         static func run() {
             // Local iteration shares the production identity/data, never installation cleanup.

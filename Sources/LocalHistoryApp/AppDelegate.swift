@@ -154,7 +154,7 @@
         @MainActor private func startApplication() {
             guard !anotherInstanceIsRunning() else {
                 // Single-instance rule: this copy never opens the stores. Bring the running one forward.
-                NSRunningApplication.runningApplications(withBundleIdentifier: "ai.goalong.localhistory")
+                NSRunningApplication.runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier)
                     .first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }?
                     .activate()
                 NSApplication.shared.terminate(nil)
@@ -170,7 +170,8 @@
             _ = try? AppPaths.prepare()
             SupportDiagnostics.shared.start(version: buildIdentity.displayVersion, build: buildIdentity.buildNumber)
             NSApplication.shared.setActivationPolicy(.accessory)
-            GoalongWebsiteAutoSender.shared.start()
+            // Goalong Dev: no daily send unless make dev SERVER=on.
+            if GoalongBuildChannel.current.allowsServerTraffic { GoalongWebsiteAutoSender.shared.start() }
             SoftwareUpdateManager.shared.start()
 
             do {
@@ -1608,7 +1609,7 @@
             let currentPID = ProcessInfo.processInfo.processIdentifier
             return
                 NSRunningApplication
-                .runningApplications(withBundleIdentifier: "ai.goalong.localhistory")
+                .runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier)
                 .contains { $0.processIdentifier != currentPID && !$0.isTerminated }
         }
 

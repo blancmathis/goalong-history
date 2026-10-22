@@ -202,7 +202,7 @@ enum GoalongKnownApplications {
                                 if exclusions.policy.excludes(appID: app.id) { Text("Exclue").font(.system(size: 12)).foregroundStyle(.secondary) }
                                 Toggle("Autoriser \(app.name)", isOn: Binding(get: { !isExcluded(app) }, set: { setApp(app, enabled: $0) }))
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly).controlSize(.small)
-                                    .disabled(app.id == ProductIdentity.bundleIdentifier)
+                                    .disabled(ProductIdentity.isGoalong(app.id))
                             }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
                             if app.id != apps.last?.id { GoalongRowDivider(inset: LHTheme.cardInset + 36) }
                         }

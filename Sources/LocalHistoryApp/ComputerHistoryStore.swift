@@ -1801,14 +1801,14 @@
             )
         }
 
-        /// The Codex mirror. An isolated `make dev` copy keeps it inside its own data root so
+        /// The Codex mirror. Goalong Dev (`make dev`) keeps it inside its own data root so
         /// its writes, retention and deletions never reach the real `~/.codex` mirror.
         static func codexMemoryDirectoryURL(
             channel: GoalongBuildChannel = .current,
             dataRoot: URL,
             environment: [String: String] = ProcessInfo.processInfo.environment
         ) -> URL {
-            if channel.dataMode == .isolated {
+            if channel.isDevelopment {
                 return dataRoot.appendingPathComponent("codex-memory-mirror", isDirectory: true)
             }
             let fileManager = FileManager.default

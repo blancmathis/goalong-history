@@ -76,11 +76,9 @@
             ownedRemovalTestHookLock.unlock()
         }
 
-        /// `LocalHistory`, or `LocalHistory-Dev` in an isolated `make dev` copy (see GoalongBuildChannel).
+        /// `LocalHistory`, or `LocalHistory-Dev` in Goalong Dev (see GoalongBuildChannel). Blocking and
+        /// Focus live here too: Goalong Dev never reads or writes the installed Goalong's real stakes.
         static let applicationSupportDirectory: URL = GoalongBuildChannel.dataRoot
-
-        /// Always the real `LocalHistory`: Blocking and Concentration stakes are shared with the dev copy.
-        static let realApplicationSupportDirectory: URL = GoalongBuildChannel.realDataRoot
 
         static let eventsDirectory = applicationSupportDirectory.appendingPathComponent("events", isDirectory: true)
         static let sealsDirectory = applicationSupportDirectory.appendingPathComponent("seals", isDirectory: true)

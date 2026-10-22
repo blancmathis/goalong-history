@@ -6,7 +6,10 @@
         static let canonicalDisplayName = "Goalong History"
         static let fallbackDisplayName = canonicalDisplayName
         static let internalBundleName = "LocalHistory"
-        static let bundleIdentifier = "ai.goalong.localhistory"
+        /// This copy's own bundle ID: the release, or `ai.goalong.localhistory.dev` in Goalong Dev.
+        static let bundleIdentifier = GoalongBundleIdentity.current
+        /// True for any Goalong copy (release or Dev): never blocked, recorded or offered as a rule target.
+        static func isGoalong(_ identifier: String) -> Bool { GoalongBundleIdentity.isGoalong(identifier) }
 
         private static let legacyOrTechnicalNames: Set<String> = [
             internalBundleName,

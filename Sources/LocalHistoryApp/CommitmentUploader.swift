@@ -344,7 +344,8 @@
         private var latestSnapshot = CommitmentUploaderSnapshot()
 
         init?(config: RecorderConfig, identity _: DeviceIdentity) {
-            guard config.verificationEnabled == true,
+            // Goalong Dev sends nothing to the verification server unless built with SERVER=on.
+            guard GoalongBuildChannel.current.allowsServerTraffic, config.verificationEnabled == true,
                 let raw = config.verificationServerURL,
                 let url = URL(string: raw)
             else { return nil }

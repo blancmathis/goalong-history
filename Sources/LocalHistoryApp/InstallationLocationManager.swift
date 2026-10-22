@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import LocalHistoryCore
 
     enum InstallationLocationManager {
         private static let appName = "Goalong History.app"
@@ -10,7 +11,8 @@
         /// or a relocated copy was launched.
         static func handleTransientLaunchIfNeeded() -> Bool {
             let source = Bundle.main.bundleURL.standardizedFileURL
-            guard isTransient(source) else { return false }
+            // Goalong Dev is installed by make dev and never moves itself into Applications.
+            guard !GoalongBuildChannel.current.isDevelopment, isTransient(source) else { return false }
 
             NSApplication.shared.activate(ignoringOtherApps: true)
 
@@ -254,7 +256,7 @@
 
     enum RunningInstances {
         static func others() -> [any RunningInstance] {
-            NSRunningApplication.runningApplications(withBundleIdentifier: "ai.goalong.localhistory")
+            NSRunningApplication.runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier)
                 .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
         }
     }

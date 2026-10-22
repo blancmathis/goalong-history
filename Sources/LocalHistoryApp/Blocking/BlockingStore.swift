@@ -5,7 +5,7 @@ import Foundation
 /// All path components are opened without following links; operations remain relative to the held fd.
 struct BlockingStore {
     var directory: URL
-    static var standard: BlockingStore { BlockingStore(directory: AppPaths.realApplicationSupportDirectory.appendingPathComponent("Blocking", isDirectory: true)) }
+    static var standard: BlockingStore { BlockingStore(directory: AppPaths.applicationSupportDirectory.appendingPathComponent("Blocking", isDirectory: true)) }
     enum Failure: Error { case unsafePath, unreadable, invalidDocument }
     /// How `loadRecovering` obtained its document.
     enum Recovery: Equatable { case none, previous, reset }

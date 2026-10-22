@@ -207,7 +207,7 @@
                         help: "This app has no stable bundle identifier, so Goalong cannot save a persistent app rule."
                     )
                 }
-                if bundleIdentifier.caseInsensitiveCompare(ProductIdentity.bundleIdentifier) == .orderedSame {
+                if ProductIdentity.isGoalong(bundleIdentifier) {
                     return MonitoringState(
                         enabled: false,
                         editable: false,

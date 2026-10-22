@@ -153,6 +153,7 @@ public enum GoalongSiteSubmission {
 
     public static func send(payload: Data, origin: String, tokenFile: URL, expectedTokenFingerprint: String? = nil,
                             privacyRoot: URL = GoalongOutgoingPrivacy.defaultRoot, expectedPrivacyRevision: String? = nil) throws -> Data {
+        try GoalongDevServerDisabledError.check()
         let pauseTicket = try GoalongGlobalPause.admit(in: privacyRoot)
         guard !payload.isEmpty, payload.count <= 2 * 1024 * 1024 else {
             throw GoalongSiteExportError.localized("The website import must be nonempty and at most 2 MiB.", french: "L’envoi au site ne doit pas être vide et doit faire 2 Mio au plus.")

@@ -22,6 +22,7 @@ final class JevTransport: NSObject, URLSessionDataDelegate, @unchecked Sendable 
 
     func classify(body: Data, key: String) async throws -> JevDecision {
         startedAt = ProcessInfo.processInfo.systemUptime
+        try GoalongDevServerDisabledError.check()
         guard body.count <= JevPayload.maximumRequestBytes else { throw JevError.budget }
         let data: Data = try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in

@@ -85,14 +85,14 @@
                 ComputerHistoryStore.retentionDirectories(rootDirectory: root, channel: isolated).last?.path,
                 isolatedMirror.path)
 
-            for channel in [
-                GoalongBuildChannel(info: nil),
-                GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev", GoalongBuildChannel.dataModeKey: "real"]),
-            ] {
-                XCTAssertEqual(
-                    ComputerHistoryStore.codexMemoryDirectoryURL(channel: channel, dataRoot: root, environment: environment).path,
-                    "/tmp/codex-home/memories/extensions/goalong")
-            }
+            // The removed DATA=real mode stays isolated too.
+            let legacyReal = GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev", GoalongBuildChannel.dataModeKey: "real"])
+            XCTAssertEqual(
+                ComputerHistoryStore.codexMemoryDirectoryURL(channel: legacyReal, dataRoot: root, environment: environment).path,
+                "/tmp/LocalHistory-Dev/codex-memory-mirror")
+            XCTAssertEqual(
+                ComputerHistoryStore.codexMemoryDirectoryURL(channel: GoalongBuildChannel(info: nil), dataRoot: root, environment: environment).path,
+                "/tmp/codex-home/memories/extensions/goalong")
         }
 
         func testLegacyTripleMarkdownIsCompactedWithoutLosingReadableMemory() throws {

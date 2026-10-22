@@ -47,7 +47,7 @@ final class GoalongDeveloperFileMonitor {
                 since = replayHistory && cursor?.projectSignature == signature ? cursor!.lastEventID : FSEventsGetCurrentEventId()
                 replaying = replayHistory && cursor?.projectSignature == signature
                 lastEvent = since; savedEvent = nil
-                ownRoots = Self.ownDataRoots([store.root, AppPaths.applicationSupportDirectory, AppPaths.realApplicationSupportDirectory])
+                ownRoots = Self.ownDataRoots([store.root, AppPaths.applicationSupportDirectory, GoalongBuildChannel.realDataRoot])
                 var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
                 let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
                 let callback: FSEventStreamCallback = { _, info, count, paths, flags, ids in

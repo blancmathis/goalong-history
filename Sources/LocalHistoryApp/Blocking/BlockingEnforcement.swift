@@ -126,6 +126,8 @@ private final class BlockingFreezePanel: NSPanel {
     }
 
     func updateProtection(locked: Bool) -> BlockingProtectionState {
+        // Goalong Dev: no login item, and no status read. The installed Goalong keeps the real protection.
+        guard GoalongLoginItemGate.isAllowed else { return BlockingProtectionState() }
         let preferences = BackgroundContinuityPreferences()
         let before = currentLoginStatus()
         let forced = preferences.blockingForcedLogin
@@ -134,12 +136,12 @@ private final class BlockingFreezePanel: NSPanel {
             forced: forced, consentEnabled: forced && GoalongCapabilityConsentStore.shared.isEnabled(.launchAtLogin)) {
         case .register:
             requestedLogin = true
-            do { try SMAppService.mainApp.register(); preferences.blockingForcedLogin = true }
+            do { try GoalongLoginItemGate.perform { try SMAppService.mainApp.register() }; preferences.blockingForcedLogin = true }
             catch { loginError = "Démarrage à la connexion indisponible : \(error.localizedDescription)" }
             loginStatus = nil
         case .release:
             // The lock is over: give the member back the choice they made (off).
-            try? SMAppService.mainApp.unregister()
+            try? GoalongLoginItemGate.perform { try SMAppService.mainApp.unregister() }
             preferences.blockingForcedLogin = false
             loginStatus = nil
         case .none:

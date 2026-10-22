@@ -134,7 +134,7 @@
         func start(completion: @escaping (String?) -> Void) {
             let bundle = Bundle.main
             let helper = bundle.bundleURL.resolvingSymlinksInPath().appendingPathComponent("Contents/MacOS/goalong-relauncher")
-            guard bundle.bundleURL.pathExtension == "app", bundle.bundleIdentifier == "ai.goalong.localhistory",
+            guard bundle.bundleURL.pathExtension == "app", bundle.bundleIdentifier == ProductIdentity.bundleIdentifier,
                   helper.resolvingSymlinksInPath() == helper.standardizedFileURL,
                   FileManager.default.isExecutableFile(atPath: helper.path),
                   let launched = NSRunningApplication.current.launchDate else {

@@ -54,6 +54,8 @@
     }
 
     if CommandLine.arguments.contains("--unregister-login-item") {
+        // Goalong Dev owns no login item: never touch the installed Goalong's one.
+        guard GoalongLoginItemGate.isAllowed else { exit(0) }
         switch SMAppService.mainApp.status {
         case .enabled, .requiresApproval:
             try? SMAppService.mainApp.unregister()

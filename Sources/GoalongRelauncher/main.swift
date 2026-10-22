@@ -19,7 +19,7 @@ let appURL = executable.deletingLastPathComponent().deletingLastPathComponent().
 guard executable.lastPathComponent == "goalong-relauncher",
       executable.deletingLastPathComponent().lastPathComponent == "MacOS",
       appURL.pathExtension == "app",
-      Bundle(url: appURL)?.bundleIdentifier == "ai.goalong.localhistory",
+      ["ai.goalong.localhistory", "ai.goalong.localhistory.dev"].contains(Bundle(url: appURL)?.bundleIdentifier ?? ""),
       let parent = NSRunningApplication(processIdentifier: parentPID), !parent.isTerminated,
       parent.bundleURL?.resolvingSymlinksInPath() == appURL,
       let launchDate = parent.launchDate,

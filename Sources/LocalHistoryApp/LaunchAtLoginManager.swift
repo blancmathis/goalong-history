@@ -101,6 +101,10 @@
 
         @discardableResult
         func setEnabled(_ enabled: Bool) -> Bool {
+            guard GoalongLoginItemGate.isAllowed else {
+                message = "Goalong Dev ne gère pas l’ouverture à la connexion : c’est le rôle de Goalong installé."
+                return false
+            }
             isChanging = true
             message = nil
             defer {

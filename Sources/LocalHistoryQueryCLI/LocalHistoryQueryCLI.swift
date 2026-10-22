@@ -930,7 +930,7 @@ public enum GoalongQueryCLI {
                 throw CLIError.usage("analysis-evidence --start-utc ISO-8601Z --end-utc ISO-8601Z [--include-rich-context] [--include-conversations --conversations-from YYYY-MM-DD] [--conversations-only]")
             }
             guard (!onlyConversations || !rich), (conversations || onlyConversations || from == nil) else { throw CLIError.usage("--conversations-from requires --include-conversations or --conversations-only; rich context requires Computer History.") }
-            guard onlyConversations || (capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory") && (!rich || UserDefaults(suiteName: "ai.goalong.localhistory")?.bool(forKey: "activityAnalysis.richContextEnabled") == true)) else {
+            guard onlyConversations || (capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory") && (!rich || UserDefaults(suiteName: GoalongBundleIdentity.current)?.bool(forKey: "activityAnalysis.richContextEnabled") == true)) else {
                 throw CLIError.unsafeSource("Enable the explicitly selected Computer History sources before reading their evidence.")
             }
             let start = try parseTimestamp(rawStart), end = try parseTimestamp(rawEnd)

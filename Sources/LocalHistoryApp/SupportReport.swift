@@ -44,7 +44,7 @@ struct SupportBuild: Codable {
             signatureKind: identity.signatureKind,
             codeHash: validated(identity.codeDirectoryHash, pattern: #"^[0-9a-f]{40,64}$"#),
             signatureValidation: validity, installation: installation(path: Bundle.main.bundleURL.path),
-            runningCopies: NSRunningApplication.runningApplications(withBundleIdentifier: "ai.goalong.localhistory").count,
+            runningCopies: NSRunningApplication.runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier).count,
             designatedRequirementSHA256: identity.designatedRequirement.map { text in
                 SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
             },
@@ -91,12 +91,12 @@ struct SupportCrash: Codable {
             ?? newline.flatMap { (try? JSONSerialization.jsonObject(with: Data(data.suffix(from: data.index(after: $0))))) as? [String: Any] }
         guard let body,
               let bundle = body["bundleInfo"] as? [String: Any],
-              bundle["CFBundleIdentifier"] as? String == "ai.goalong.localhistory",
-              ["Goalong History", "LocalHistory"].contains(body["procName"] as? String ?? "") else { return nil }
+              bundle["CFBundleIdentifier"] as? String == ProductIdentity.bundleIdentifier,
+              ["Goalong History", "Goalong History Dev", "LocalHistory"].contains(body["procName"] as? String ?? "") else { return nil }
         let exception = body["exception"] as? [String: Any]
         let type = (exception?["type"] as? String).flatMap(CrashType.init(rawValue:)) ?? .unknown
         let images = body["usedImages"] as? [[String: Any]] ?? []
-        let index = images.firstIndex { ["Goalong History", "LocalHistory"].contains($0["name"] as? String ?? "") }
+        let index = images.firstIndex { ["Goalong History", "Goalong History Dev", "LocalHistory"].contains($0["name"] as? String ?? "") }
         let uuid = index.flatMap { (images[$0]["uuid"] as? String).flatMap(UUID.init(uuidString:)) }
         let thread = body["faultingThread"] as? Int
         let threads = body["threads"] as? [[String: Any]] ?? []

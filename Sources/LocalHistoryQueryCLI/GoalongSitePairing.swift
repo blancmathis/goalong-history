@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import LocalHistoryCore
 
 public struct GoalongSitePairing: Sendable {
     public let origin: String
@@ -35,6 +36,7 @@ public struct GoalongSitePairing: Sendable {
     }
 
     public func exchange() throws -> Data {
+        try GoalongDevServerDisabledError.check()
         let delegate = PairingResponse()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false

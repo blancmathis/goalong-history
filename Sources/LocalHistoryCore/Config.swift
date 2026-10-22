@@ -306,6 +306,8 @@ public struct RecorderConfig: Codable, Equatable {
         guard let bundleIdentifier else {
             return includedBundleIdentifiers?.isEmpty != false
         }
+        // Goalong never records itself, nor its other copy (installed Goalong vs Goalong Dev).
+        guard !GoalongBundleIdentity.isGoalong(bundleIdentifier) else { return false }
         let excluded = excludedBundleIdentifiers.contains {
             $0.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
         }

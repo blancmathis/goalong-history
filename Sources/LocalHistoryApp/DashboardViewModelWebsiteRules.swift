@@ -26,7 +26,7 @@
         func isApplicationExcludedFromCapture(_ bundleIdentifier: String) -> Bool {
             let normalized = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalized.isEmpty else { return false }
-            if normalized.caseInsensitiveCompare(ProductIdentity.bundleIdentifier) == .orderedSame {
+            if ProductIdentity.isGoalong(normalized) {
                 return true
             }
             return configuredExcludedApplications.contains {
@@ -93,7 +93,7 @@
             guard let bundleIdentifier else { return }
             let normalized = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalized.isEmpty else { return }
-            guard normalized.caseInsensitiveCompare(ProductIdentity.bundleIdentifier) != .orderedSame else {
+            guard !ProductIdentity.isGoalong(normalized) else {
                 return
             }
             guard canEditMonitoringRules() else { return }
