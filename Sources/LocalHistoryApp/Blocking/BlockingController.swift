@@ -64,6 +64,8 @@ import LocalHistoryQueryCLI
     var onObservationRequirementChanged: ((Bool) -> Void)?
     /// Called after each refresh, sample or allowance: the timer capsule re-reads `timerInput`.
     var onTimerInputChanged: (() -> Void)?
+    /// True while the running Concentration session blocks this list, breaks included.
+    var focusSessionUsesList: (UUID) -> Bool = { _ in false }
     private var observing = false
     private var quitAuthorization: (blocks: Set<BlockingActiveBlock>, expires: Date)?
     var hasTimer: Bool { timer != nil }
@@ -421,6 +423,7 @@ import LocalHistoryQueryCLI
     func delete(_ id: UUID) {
         guard admitEdit() else { return }
         if isStricterOnly(id) { error = "Une liste verrouillée ne peut pas être supprimée."; return }
+        if focusSessionUsesList(id) { error = "La séance de concentration en cours bloque cette liste. Arrêtez la séance pour la supprimer."; return }
         if document.sessions.contains(where: { $0.start > clock() && $0.lock != .free && $0.listIDs.contains(id) }) {
             error = "Annulez d’abord le blocage programmé avec son défi ou son mot de passe."; return
         }
@@ -1271,6 +1274,7 @@ import LocalHistoryQueryCLI
             hud.update()
             monitor?.blockingSink = { [weak value] target in value?.observe(target) }
             monitor?.blockingKeywords = { [weak value] in value?.activeKeywords ?? [] }
+            value.focusSessionUsesList = { id in ConcentrationRuntime.shared.controller?.currentSession?.blockListIds.contains(id) == true }
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
             controller.refresh(enforceLast: false)

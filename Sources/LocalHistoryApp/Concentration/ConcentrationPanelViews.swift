@@ -70,7 +70,7 @@ import SwiftUI
                                  onAnswer: { outcome, note in
                                      guard let id = content.sessionID else { return }
                                      do { try controller.recordOutcome(sessionID: id, outcome: outcome, note: note) }
-                                     catch { controller.error = FocusUIError.message(error) }
+                                     catch { controller.reportPanelError(FocusUIError.message(error)) }
                                  },
                                  onClose: { controller.dismissPanel() })
         case .morning, .evening:
@@ -89,7 +89,7 @@ import SwiftUI
 
 extension ConcentrationPanelView {
     private func exit(_ action: () throws -> Void) {
-        do { try action() } catch { controller.error = FocusCommitmentFormat.exitError(error) }
+        do { try action() } catch { controller.reportPanelError(FocusCommitmentFormat.exitError(error)) }
     }
 }
 
@@ -440,7 +440,9 @@ struct FocusLimitPanelView: View {
                                              task: tomorrowDraft.trimmedTask, stake: tomorrowDraft.stake)
             } catch { self.error = FocusCommitmentFormat.error(error); return }
         }
-        do { try controller.setReview(review); onClose() } catch { self.error = FocusUIError.message(error) }
+        do { try controller.setReview(review); onClose() }
+        catch FocusFailure.planFull { self.error = "Le plan de demain compte déjà dix tâches." }
+        catch { self.error = FocusUIError.message(error) }
     }
 }
 

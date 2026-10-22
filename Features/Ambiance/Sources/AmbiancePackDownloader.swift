@@ -42,6 +42,16 @@ enum AmbiancePackDownloader {
 
     /// Checks the HTTP status before the size, so an error body (404 with a short
     /// Content-Length) is never reported as a corrupt pack.
+    /// No byte for 60 s fails fast; a whole pack (77-83 MB) may take up to an hour on a slow link (~200 kbit/s).
+    static let requestTimeout: TimeInterval = 60
+    static let resourceTimeout: TimeInterval = 3_600
+
+    /// A timeout means the link is too slow, not absent. Other transport errors are never exposed:
+    /// they may contain the signed failing URL.
+    static func transportFailure(_ error: Error) -> AmbianceError {
+        (error as? URLError)?.code == .timedOut ? .tooSlow : .network
+    }
+
     static func progressFailure(status: Int?, written: Int64, expected: Int64, packBytes: Int64) -> AmbianceError? {
         if let status, status != 200 { return .serverUnavailable }
         guard written <= packBytes, expected < 0 || expected == packBytes else {
@@ -86,8 +96,8 @@ enum AmbiancePackDownloader {
             configuration.urlCache = nil
             configuration.httpAdditionalHeaders = nil
             configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-            configuration.timeoutIntervalForRequest = 60
-            configuration.timeoutIntervalForResource = 600
+            configuration.timeoutIntervalForRequest = AmbiancePackDownloader.requestTimeout
+            configuration.timeoutIntervalForResource = AmbiancePackDownloader.resourceTimeout
             configuration.waitsForConnectivity = false
             let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
@@ -151,8 +161,8 @@ enum AmbiancePackDownloader {
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
             // Foundation transport errors may contain the signed failing URL.
             // Never retain or expose them through the controller's public error.
-            if error != nil {
-                finish(.failure(failure ?? AmbianceError.network))
+            if let error {
+                finish(.failure(failure ?? AmbiancePackDownloader.transportFailure(error)))
             }
         }
     }

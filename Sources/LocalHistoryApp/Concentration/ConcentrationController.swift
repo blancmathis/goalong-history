@@ -202,6 +202,12 @@ struct FocusPanel: Equatable {
         sessionCache[day] = values
         if day == currentDay { sessions = values }
     }
+    /// The plan link a draft may still pass: the item can be done, moved or removed since it was chosen,
+    /// or today's plan replaced at midnight. A stale link is dropped, the session keeps its intention.
+    func openPlanItemID(_ id: UUID?) -> UUID? {
+        guard let id, plan.items.contains(where: { $0.id == id && $0.status == .open }) else { return nil }
+        return id
+    }
     func startSession(intent: String, mode: FocusMode, planItemId: UUID? = nil, blockListIds: [UUID] = [],
                       blockDuringBreaks: Bool = false, lock: Bool = false, ambiance: Bool = false) throws {
         try admit(); refresh()
@@ -318,6 +324,7 @@ struct FocusPanel: Equatable {
     func plan(on day: String) throws -> FocusPlan { try store.plan(day) ?? FocusPlan(day: day) }
     func review(on day: String) throws -> FocusReview { try store.review(day) ?? FocusReview(day: day) }
     func setPlan(_ value: FocusPlan) throws {
+        guard value.items.count <= FocusPlan.maximumItems else { throw FocusFailure.planFull }
         guard value.valid, !value.items.isEmpty else { throw FocusFailure.invalidArgument }
         try saving { try store.savePlans([value]) }; if value.day == currentDay { plan = value }; updateMeasures()
     }
@@ -363,6 +370,8 @@ struct FocusPanel: Equatable {
         value.items.remove(at: j); changed[day] = value
     }
     private func savePlanChanges(_ changed: [String: FocusPlan], review value: FocusReview? = nil) throws {
+        // A move or a review carry can target a plan that is already full.
+        guard changed.values.allSatisfy({ $0.items.count <= FocusPlan.maximumItems }) else { throw FocusFailure.planFull }
         try saving { try store.savePlans(Array(changed.values), review: value) }
         if let today = changed[currentDay] { plan = today }; if let value, value.day == currentDay { review = value }; updateMeasures()
     }
@@ -489,7 +498,11 @@ struct FocusPanel: Equatable {
                 }
             } else {
                 let key = phaseKey(p)
-                do { try syncBlock(value, phase: p) } catch { self.error = String(describing: error) }
+                do { try syncBlock(value, phase: p) } catch {
+                    // Refresh runs every few seconds: publish a failure once, not on each tick.
+                    let message = String(describing: error)
+                    if self.error != message { self.error = message }
+                }
                 if phaseIdentity != key {
                     if phaseIdentity != nil { showPanel(.init(kind: .phase, text: p.isWork ? "On reprend : \(value.intent)" : "Pause — \(Int((p.endsAt?.timeIntervalSince(p.startedAt) ?? 0) / 60)) min", expiresAt: now.addingTimeInterval(6))); if settings.phaseSound { onPhaseSound?() } }
                     if value.ambiance { if p.isWork { audio.startWork() } else { audio.startBreak() } }
@@ -524,7 +537,11 @@ struct FocusPanel: Equatable {
         // Open free sessions renew one short free lease on the existing Blocking clock.
         let end = p.endsAt ?? clock().addingTimeInterval(60)
         let id = blockID(value.id, phase: p)
-        try b.startFocusBlock(id: id, listIDs: value.blockListIds, until: end, lock: value.lock && p.isWork ? .locked : .free)
+        // A list deleted since the start (by an older build or by hand) must not release the others.
+        let existing = Set(b.lists.map(\.id))
+        let listIDs = value.blockListIds.filter(existing.contains)
+        guard !listIDs.isEmpty else { throw FocusFailure.notFound }
+        try b.startFocusBlock(id: id, listIDs: listIDs, until: end, lock: value.lock && p.isWork ? .locked : .free)
         phaseBlockID = id; phaseBlockKey = key
     }
     private func publishStatus() {
@@ -565,6 +582,12 @@ struct FocusPanel: Equatable {
     func promptNow() { guard let kind = panel?.kind else { return }; requestedEditor = kind; onOpenRequested?(kind); dismissPanel() }
     func dismissEditor() { requestedEditor = nil }
     func dismissPanel() { showPanel(nil) }
+    /// A floating panel has no room for an error, and `error` shows on the Concentration page only:
+    /// open that page so the click does not look lost.
+    func reportPanelError(_ message: String) {
+        error = message
+        onOpenRequested?(panel?.kind ?? .sessionReview)
+    }
     private func showPanel(_ value: FocusPanel?) {
         if value?.kind != .sessionReview { reviewedSession = nil }
         if panel != value { panel = value; onPanelChange?(value) }
