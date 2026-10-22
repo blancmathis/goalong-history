@@ -1,16 +1,27 @@
-.PHONY: test build app dmg audit install install-source uninstall clean dev dev-stop dev-status
+.PHONY: check test test-ui build app dmg audit install install-source uninstall clean dev dev-stop dev-status
 
 VERSION ?= 0.6.0
 ARCHS ?= $(shell uname -m)
 
-# Tests run with a throwaway home so no test can read or write the real LocalHistory folder.
+# All three test commands run in a throwaway home (scripts/run_swift_tests.sh), so no test can read
+# or write the real LocalHistory folder or leave preference files behind.
+# make check [FILTER=Regex]: fast loop, incremental build, slow tests left out, duration shown.
+check:
+	./scripts/run_swift_tests.sh check "$(FILTER)"
+
+# make test: the whole suite, then the skipped-test report. A skip that is not an expected opt-in
+# (scripts/expected_skips.txt) fails the run.
 test:
-	@home=$$(mktemp -d /tmp/goalong-test-XXXXXX); \
-	GOALONG_TEST_HOME="$$home" CFFIXED_USER_HOME="$$home" xcrun swift test; status=$$?; \
-	rm -rf "$$home"; exit $$status
+	./scripts/run_swift_tests.sh full
 	./scripts/test_isolated_home.sh
 	bash scripts/test_dev_app.sh
 	bash scripts/test_stable_release_identity.sh
+	bash scripts/test_skip_report.sh
+	bash scripts/test_clean_leaked_test_prefs.sh
+
+# make test-ui: the render and AX opt-in tests that run on this Mac, with no visible window.
+test-ui:
+	./scripts/run_swift_tests.sh ui
 
 build:
 	xcrun swift build -c release --product LocalHistory

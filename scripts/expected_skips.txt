@@ -1,0 +1,65 @@
+# Tests allowed to skip in a full `make test` run (patterns `Module.Class/test`, fnmatch wildcards).
+# Every entry is an opt-in on purpose (an environment variable, a real Codex or history folder, a
+# device) or a host condition (volume, WindowServer, Keychain under the isolated HOME).
+# `make test-ui` runs the render and AX opt-ins. A skip not listed here fails `make test`.
+# Regenerate the lines from a log: python3 scripts/skip_report.py LOG --emit-allowlist
+AgentActivityTests.AgentActivityScannerLoadTests/testOptInRealCodexRootUsesBoundedStreamingAndMetadataOnlyIndex  # GOALONG_TEST_REAL_CODEX_SOURCE_ROOT
+AgentActivityTests.AgentActivityTests/testOptInRealCodexCatalogReadsCurrentOriginalTitle  # other: Set the real Codex catalog path and thread ID for a read-only integration check.
+AgentActivityTests.AgentTokenUsageTests/testOptInRealCodexNumericEvidence  # other: Opt-in local numeric verification
+AgentActivityTests.T3CodeMetadataTests/testRealSourcesAggregateProbe  # other: Explicit aggregate-only local probe.
+AmbianceTests.AmbianceAudioNetworkTests/testExplicitHTTPDownloadInstallsAndRejectsBadResponses  # other: Explicit loopback pack-server test required
+AmbianceTests.AmbianceAudioTests/testOutputConfigurationChangeNotifiesOnlyWhilePlaying  # other: Explicit device playback required
+AmbianceTests.AmbianceAudioTests/testPersonalPlaybackStopAndDisableReleaseOutput  # other: Explicit device playback and selected local audio file required
+AmbianceTests.AmbianceTests/testFiveMinuteFocusMeasures  # other: Explicit five-minute measurement
+AmbianceTests.AmbianceTests/testFocusAndRelaxRenderNonSilentAndStopUnmaps  # other: Provide the locally built dev packs to exercise real acoustic rendering
+AmbianceTests.AmbianceTests/testLocalDownloadAndRemovePublishCorrectPackState  # other: Local dev archives required
+AmbianceTests.AmbianceTests/testMappedPCM16MatchesOriginalDecodedSampler  # other: Provide the locally built dev packs to exercise real acoustic rendering
+LocalHistoryAppTests.ActivityAnalysisRuntimeIncrementalTests/testOptInRealActivityDayLoaderHandlesCompactIntegrityReadOnly  # GOALONG_TEST_REAL_ACTIVITY_ROOT + GOALONG_TEST_REAL_ACTIVITY_DAY
+LocalHistoryAppTests.AgentActivityDiscoveryConsentTests/testCaseDistinctTombstoneDoesNotSuppressAnotherSource  # other: The fixture volume is case-insensitive
+LocalHistoryAppTests.AmbiancePageRenderingTests/testRenderAmbiancePage  # other: Opt-in native rendering with fixed data only
+LocalHistoryAppTests.BlockingActivationRegressionTests/testNativePanelSwitchStartsAndStopsBlocking  # other: Opt-in native blocking activation with an in-memory list
+LocalHistoryAppTests.BlockingPageRenderingTests/testRenderBlockingSurfaces  # other: Opt-in native rendering with fixed data only
+LocalHistoryAppTests.BlockingRuntimeCostTests/testSampleCost  # other: Opt-in measurement on this Mac
+LocalHistoryAppTests.BlockingTimerTests/testRenderCapsules  # other: Opt-in native rendering with fixed data only
+LocalHistoryAppTests.BraisePageRenderingTests/testRenderPanelAndEditor  # other: Opt-in Braise render
+LocalHistoryAppTests.ChatGPTRecapTests/testOptInRealDailyAgentAnalysisCompletesFromOriginalCodexSources  # GOALONG_TEST_REAL_CODEX_SOURCE_ROOT + GOALONG_TEST_REAL_AGENT_DAY
+LocalHistoryAppTests.ConcentrationHubRenderingTests/testRenderConcentrationTabs  # other: Opt-in native rendering with fixed data only
+LocalHistoryAppTests.ConcentrationRenderingTests/testRenderConcentrationSurfaces  # other: Opt-in native rendering with fixed data only
+LocalHistoryAppTests.ConcentrationRuntimeCostTests/testDetectionCPUCost  # other: Opt-in local CPU measurement
+LocalHistoryAppTests.DashboardDataReaderIncrementalTests/testOptInRealDashboardRootLoadsExistingDayWithoutEmptyReplacement  # GOALONG_TEST_REAL_DASHBOARD_ROOT + GOALONG_TEST_REAL_DASHBOARD_DAY
+LocalHistoryAppTests.ForegroundPresenceRuntimeTests/testLiveForegroundReadingProbeWithoutControlLabels  # other: Opt-in native foreground probe
+LocalHistoryAppTests.GoalongAnalyticsRenderingTests/testRenderActivityDrillDownsWithSyntheticData  # other: Opt-in native rendering with synthetic data only
+LocalHistoryAppTests.GoalongAnalyticsRenderingTests/testRenderAnalyticsWithSyntheticData  # other: Opt-in native rendering with synthetic data only
+LocalHistoryAppTests.GoalongBrandRenderingTests/testIsolatedSparkleWindowsStayAboveDashboard  # other: Isolated native Sparkle UI audit only
+LocalHistoryAppTests.GoalongBrandRenderingTests/testRenderAndExerciseIsolatedMonitoring  # other: Opt-in native UI audit; use scripts/verify_brand_ui.sh
+LocalHistoryAppTests.GoalongBrandRenderingTests/testRenderIsolatedScreens  # other: Opt-in native UI audit; use scripts/verify_brand_ui.sh
+LocalHistoryAppTests.GoalongControlsInteractionTests/testClicksFocusFieldsAndTypingReachesBindings  # other: Opt-in: needs a real window server session; use scripts/verify_design_audit.sh
+LocalHistoryAppTests.GoalongDesignAuditRenderingTests/testRenderEveryPage  # other: Opt-in design audit; use scripts/verify_design_audit.sh
+LocalHistoryAppTests.GoalongDisclosureInteractionTests/testWholeRowTitleAccessibilityNestedControlsAndRefresh  # other: Opt-in native interaction test; synthetic window only
+LocalHistoryAppTests.GoalongIntegrationSmokeTests/testBundledCodexStartsWithAnEmptyIsolatedAccount  # other: Opt-in bundled runtime integration
+LocalHistoryAppTests.GoalongIntegrationSmokeTests/testLoopbackRequestsReceiptsAndFailureBoundaries  # other: Opt-in local-only transport fixture
+LocalHistoryAppTests.GoalongLiveProfileAnalysisTests/testRealConnectedProfileAnalysisWhenExplicitlyEnabled  # other: Enable only for an explicitly authorized real-agent acceptance run with syntheti
+LocalHistoryAppTests.GoalongTrustRenderingTests/testRenderTrustSurfaces  # other: Opt-in native UI audit; use scripts/verify_brand_ui.sh
+LocalHistoryAppTests.GoalongWebsiteSharingRenderingTests/testRenderSharingWindow  # other: Opt-in synthetic UI rendering
+LocalHistoryAppTests.JevEffectsRenderingTests/testDurationBoundaryAndStrongPresetInAnIsolatedNativeWindow  # other: Opt-in synthetic window; no production settings or screen effects
+LocalHistoryAppTests.JevObservationSemanticTests/testSyntheticObservationSemantics  # other: Opt-in API evaluation with synthetic observations only
+LocalHistoryAppTests.JevProcrastinationRenderingTests/testRenderIsolatedCriteriaWithSyntheticData  # other: Opt-in native rendering with synthetic criteria only
+LocalHistoryAppTests.JevSemanticEvaluationTests/testExplicitSyntheticSemanticEvaluation  # other: Opt-in paid API evaluation with synthetic data only
+LocalHistoryAppTests.MenuBarPanelRenderingTests/testRenderPanelStates  # other: Opt-in native rendering with fixed data only
+LocalHistoryAppTests.PerformanceProbeTests/testActivityCachedDaysMatchFullRead  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testActivityDayRead  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testActivityMemory  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testActivityPage  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testActivityTodayGrowingJournal  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testActivityTodayRelaunch  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testAnalysisCycle  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testAnalysisFullCycleOnly  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testAnalysisFullDay  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testAnalysisPhaseMemory  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.PerformanceProbeTests/testHistoryPage  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryAppTests.SelectedSiteAnalysisTests/testOptInInstalledCodexSandboxConfinesSelectedAnalysisWithoutAnAccount  # GOALONG_SITE_SANDBOX_CODEX
+LocalHistoryCoreTests.GoalongLocalAnalyticsFoldPerformanceTests/testPerformanceFoldStateAndRefresh  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryCoreTests.GoalongLocalAnalyticsTests/testOptInReadOnlyLocalAnalyticsProbe  # other: Opt-in read-only local analytics probe; logs aggregate counts only
+LocalHistoryCoreTests.GoalongSiteAnalysisTests/testSelectedBrowserExportFixtureWhenExplicitlyProvided  # GOALONG_SITE_ANALYSIS_FIXTURE
+LocalHistoryCoreTests.HistoryLocalAnalyticsResumeTests/testPerformanceResumeAfterOneMiBAppend  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
+LocalHistoryCoreTests.HistoryLocalStoreReaderStreamingTests/testOptInRealComputerHistoryMemoryFastPathIsCurrent  # GOALONG_TEST_REAL_HISTORY_ROOT + GOALONG_TEST_REAL_HISTORY_DAY

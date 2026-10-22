@@ -1,5 +1,9 @@
 # Changelog
 
+## À publier — tests plus fiables et plus rapides
+
+- **Développement (sans effet pour les membres) : trois commandes de test.** `make check` donne vite le verdict des tests utiles au changement en cours (build incrémental, tests lents exclus), `make test` lance toute la suite puis affiche un rapport des tests ignorés et échoue si un test saute sans être un choix prévu (`scripts/expected_skips.txt`), et `make test-ui` lance les rendus et tests d’accessibilité sans fenêtre visible, en disant si l’écran est verrouillé. Un `swift test` nu ne laisse plus de fichiers dans `~/Library/Preferences` (hook de test qui les supprime à la sortie) ; `scripts/clean_leaked_test_prefs.sh` liste puis supprime les anciennes fuites. La CI ne lance plus la suite deux fois par envoi et publie le rapport des tests ignorés. Un test de blocage n’attend plus 5 s réelles.
+
 ## À publier — icône de barre des menus et Goalong Dev
 
 - **L’icône de Goalong ne disparaît plus de la barre des menus.** macOS gardait un ancien réglage « masqué » pour l’icône : Goalong et Braise ont maintenant chacun leur propre emplacement mémorisé.
