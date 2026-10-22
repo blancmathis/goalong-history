@@ -156,13 +156,13 @@ final class BlockingPlusTests: XCTestCase {
     @MainActor func testTriggerQuitIsDetectedByExistingControllerTimer() async {
         var running: Set<String> = [editor.bundleIdentifier]
         let list = BlockList(name: "Sites", triggers: .init(apps: [editor]))
-        let c = BlockingController(document: .init(lists: [list]), runsTimers: true, runningApps: { running })
+        let c = BlockingController(document: .init(lists: [list]), runsTimers: true, appTriggerPollSeconds: 0.05, runningApps: { running })
         defer { c.shutdown() }
         XCTAssertTrue(c.hasTimer); XCTAssertEqual(c.activeBlocks.count, 1)
         let ended = expectation(description: "last triggering app quit")
         let subscription = c.$activeBlocks.dropFirst().filter(\.isEmpty).prefix(1).sink { _ in ended.fulfill() }
         running.removeAll()
-        await fulfillment(of: [ended], timeout: 5.5)
+        await fulfillment(of: [ended], timeout: 3)
         withExtendedLifetime(subscription) {}
         XCTAssertTrue(c.activeBlocks.isEmpty)
     }

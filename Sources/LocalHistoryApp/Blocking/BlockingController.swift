@@ -46,6 +46,8 @@ import LocalHistoryQueryCLI
     private let continuous: () -> Double
     private let boot: () -> String
     private let runsTimers: Bool
+    /// How often the timer re-reads the running apps while an app trigger exists. Tests shorten it.
+    private let appTriggerPollSeconds: TimeInterval
     private let runningApps: () -> Set<String>
     private var suppressedTriggers: Set<UUID> = []
     private var lastAttemptAt: [String: Date] = [:]
@@ -89,6 +91,7 @@ import LocalHistoryQueryCLI
          store: BlockingStore? = nil, backend: BlockingEnforcementBackend? = nil,
          calendar: Calendar = .autoupdatingCurrent, calendarProvider: (() -> Calendar)? = nil, continuous: @escaping () -> Double = BlockingClock.continuous,
          boot: @escaping () -> String = BlockingClock.bootID, runsTimers: Bool = false,
+         appTriggerPollSeconds: TimeInterval = 5,
          runningApps: @escaping () -> Set<String> = {
              Set(NSWorkspace.shared.runningApplications.filter { !$0.isTerminated }.compactMap(\.bundleIdentifier))
          }) {
@@ -96,7 +99,7 @@ import LocalHistoryQueryCLI
         self.clock = clock; self.store = store; self.backend = backend
         let provider = calendarProvider ?? { calendar }
         self.calendarProvider = provider; self.calendar = Self.frozen(provider())
-        self.continuous = continuous; self.boot = boot; self.runsTimers = runsTimers
+        self.continuous = continuous; self.boot = boot; self.runsTimers = runsTimers; self.appTriggerPollSeconds = appTriggerPollSeconds
         self.runningApps = runningApps
         if let store {
             do {
@@ -879,7 +882,7 @@ import LocalHistoryQueryCLI
         if let end = freeze?.end { boundaries.append(end) }
         if let start = nextProgramStart?.date { boundaries += [start, start.addingTimeInterval(-60)] }
         if !activeBlocks.isEmpty || freeze != nil || needsObservation || hasLocks { boundaries.append(now.addingTimeInterval(15)) }
-        if hasAppTriggers { boundaries.append(now.addingTimeInterval(5)) }
+        if hasAppTriggers { boundaries.append(now.addingTimeInterval(appTriggerPollSeconds)) }
         guard let next = boundaries.filter({ $0 > now }).min() else { return }
         let value = Timer(timeInterval: max(0.05, next.timeIntervalSince(now)), repeats: false) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
