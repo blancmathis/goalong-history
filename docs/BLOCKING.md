@@ -48,7 +48,7 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 | Mode block / allowlist | « Bloquer ces éléments » / « Tout bloquer sauf ces éléments » |
 | Manual session | Blocage (« Bloquer maintenant ») |
 | Weekly windows | Programme |
-| Lock kinds | Libre / Difficile / Verrouillé |
+| Lock kinds | Libre / Difficile / Mot de passe / Verrouillé |
 | Program lock | « Programme verrouillé jusqu'au … » |
 | Quota | « X min par jour » |
 | Breaks | « Pauses » |
@@ -84,9 +84,9 @@ and rewritten. A store error refuses edits; it is never a lock and never stops �
   boundary (`/shorts`, `/shorts/x`, not `/shortsx`).
 - `BlockAppRule`: `bundleIdentifier`, `name`.
 - `BlockProgram`: `ranges: [BlockProgramRange]` (`id`, `weekdays: Set<Int>` ISO 1 = Monday … 7,
-  `startMinute`, `endMinute` in 0…1440; `end <= start` means it ends the next day), `lockedUntil:
-  Date?`.
-- `BlockSession`: `id`, `listIDs`, `start`, `end`, `lock` (`free` | `typing` | `locked`),
+  `startMinute`, `endMinute` in 0…1440; `end <= start` means it ends the next day, `lock:
+  BlockLock?` — absent = `free`, read through `effectiveLock`), `lockedUntil: Date?`.
+- `BlockSession`: `id`, `listIDs`, `start`, `end`, `lock` (`free` | `typing` | `password` | `locked`),
   `origin` (`manual` | `program(rangeID)`).
 - `BlockDayUsage`: per local day, per list: quota seconds used, breaks taken, current break end.
 - `BlockFreeze`: `start`, `end`, `mode` (`shield` | `lockScreen`), `allowedApps: [BlockAppRule]`.
@@ -139,9 +139,21 @@ before the lock. A break cannot start inside a freeze.
 **Program lock.** While `program.lockedUntil > now`, the list can only get stricter: adding sites or
 apps, adding or lengthening ranges, lowering the quota, removing breaks are allowed; removing,
 shortening, raising the quota, adding breaks, changing the mode, deleting the list are refused.
-Program sessions of a locked program are `locked`; of an unlocked program, `free`.
 
-A locked manual session also makes its lists stricter-only until its end.
+**Range lock.** Each program range carries its own lock (`BlockProgramRange.lock`, chosen in the
+range popover under « Arrêt »). A window of the range blocks with that lock: `free` stops with
+« Arrêter » for today, `typing` asks for the typed text, `password` for the blocking password, and
+`locked` cannot be stopped before the window ends. A `password` range without a valid password
+counts as `locked`. While `program.lockedUntil > now`, every window of the program is `locked`,
+whatever its range lock. Choosing `password` needs a blocking password set first.
+
+**Range lock can only rise.** While the list is stricter-only, saving a program is refused if any
+minute covered at a given lock strength (`typing` < `password` < `locked`) would lose that coverage:
+a range keeps or raises its lock, never lowers it (« le verrou d’une plage peut seulement monter »).
+Lengthening a range or adding a range at any lock stays allowed.
+
+Any block in progress whose lock is not `free` (manual session or program window, `typing`,
+`password` or `locked`) also makes its lists stricter-only until its end.
 During either lock, adding keywords and removing exceptions are allowed; removing keywords or
 adding/widening exceptions is refused in French. Replacing an exception is removal plus addition
 and is refused even when the replacement narrows its scope. The same protection applies to

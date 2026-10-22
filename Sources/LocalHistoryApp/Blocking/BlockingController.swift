@@ -309,6 +309,24 @@ import LocalHistoryQueryCLI
         return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
     }
 
+    /// Saves several lists all or none: every list, then the whole document, is checked before the
+    /// first write. With several lists, a refusal names its list.
+    @discardableResult func saveAll(_ values: [BlockList]) -> String? {
+        guard values.count > 1 else { return values.first.flatMap { save($0) } }
+        guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
+        func named(_ value: BlockList, _ reason: String) -> String { "« \(value.name) » : \(reason)" }
+        var candidate = document
+        for value in values {
+            if case .refused(let reason) = editCheck(value) { error = named(value, reason); return error }
+            candidate.lists.removeAll { $0.id == value.id }; candidate.lists.append(value)
+        }
+        guard BlockingRules.validate(candidate) else { error = "Vérifiez les listes, les horaires, le quota et les pauses."; return error }
+        for value in values {
+            if let reason = save(value) { error = named(value, reason); return error }
+        }
+        return nil
+    }
+
     @discardableResult func addException(_ input: String, to listID: UUID) -> BlockingEditCheck {
         guard let pattern = BlockingRules.normalize(input) else { return .refused("Adresse d’exception invalide.") }
         return editRules(listID) { list in

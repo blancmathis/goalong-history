@@ -33,8 +33,10 @@ enum BlockingFormat {
         if minutes < 60 { return "\(minutes) min" }
         let hours = minutes / 60, rest = minutes % 60
         if hours >= 24 {
-            let days = hours / 24
-            return days == 1 ? "1 jour \(hours % 24) h" : "\(days) jours \(hours % 24) h"
+            // « 1 jour », « 1 jour 3 h », « 1 jour 3 h 40 », « 2 jours 40 min »: never « 0 h », never a lost minute.
+            let days = hours / 24, left = minutes - days * 1_440
+            let head = days == 1 ? "1 jour" : "\(days) jours"
+            return left == 0 ? head : "\(head) \(duration(minutes: left))"
         }
         return rest == 0 ? "\(hours) h" : String(format: "%d h %02d", hours, rest)
     }
@@ -47,16 +49,57 @@ enum BlockingFormat {
 
     /// « aujourd’hui à 14:00 », « demain à 9:00 », « lundi à 9:00 », « 31 oct. à 9:00 ».
     static func moment(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let at = "à \(time(date))"
-        if calendar.isDate(date, inSameDayAs: now) { return "aujourd’hui \(at)" }
+        "\(dayWord(date, now: now, calendar: calendar)) à \(time(date))"
+    }
+
+    /// The end of a block, with its day when it is not today: « 12:00 », « minuit », « demain à 2:00 »,
+    /// « samedi à 12:00 », « vendredi à minuit ». A 0:00 end belongs to the day before.
+    static func deadline(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let midnight = calendar.startOfDay(for: date) == date
+        let day = midnight ? date.addingTimeInterval(-1) : date
+        let value = midnight ? "minuit" : time(date)
+        if calendar.isDate(day, inSameDayAs: now) { return value }
+        return "\(dayWord(day, now: now, calendar: calendar)) à \(value)"
+    }
+
+    /// A block that starts later: « samedi de 10:00 à 12:00 », « de demain à 22:00 à samedi à 2:00 ».
+    static func period(from start: Date, to end: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let midnight = calendar.startOfDay(for: end) == end
+        if calendar.isDate(start, inSameDayAs: midnight ? end.addingTimeInterval(-1) : end) {
+            return "\(dayWord(start, now: now, calendar: calendar)) de \(time(start)) à \(endTime(end))"
+        }
+        return "de \(moment(start, now: now, calendar: calendar)) à \(deadline(end, now: now, calendar: calendar))"
+    }
+
+    /// « aujourd’hui », « demain », « lundi » within a week, else « 31 oct. ».
+    private static func dayWord(_ date: Date, now: Date, calendar: Calendar) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "aujourd’hui" }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
-            return "demain \(at)"
+            return "demain"
         }
         let formatter = DateFormatter()
         formatter.locale = locale
+        formatter.timeZone = calendar.timeZone
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
         formatter.dateFormat = days < 7 ? "EEEE" : "d MMM"
-        return "\(formatter.string(from: date)) \(at)"
+        return formatter.string(from: date)
+    }
+
+    /// The end of a week range: 1 440 reads « 24:00 », as in the range's tooltip.
+    static func rangeEnd(_ minute: Int) -> String { minute == 1_440 ? "24:00" : minuteOfDay(minute) }
+
+    /// VoiceOver label of a range in the week: « Vidéo, lundi, 22:00 à 24:00, verrouillé ».
+    static func rangeLabel(name: String, weekday: Int, start: Int, end: Int, lock: BlockLock) -> String {
+        let days = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+        let day = (1...7).contains(weekday) ? "\(days[weekday - 1]), " : ""
+        let protection: String
+        switch lock {
+        case .free: protection = ""
+        case .typing: protection = ", difficile à arrêter"
+        case .password: protection = ", protégé par mot de passe"
+        case .locked: protection = ", verrouillé"
+        }
+        return "\(name), \(day)\(minuteOfDay(start)) à \(rangeEnd(end))\(protection)"
     }
 
     static func day(_ date: Date) -> String {
@@ -85,8 +128,7 @@ enum BlockingFormat {
 
     static func range(_ range: BlockProgramRange) -> String {
         if range.startMinute == 0 && range.endMinute == 1_440 { return "toute la journée" }
-        let end = range.endMinute == 1_440 ? "24:00" : minuteOfDay(range.endMinute)
-        return "\(minuteOfDay(range.startMinute)) → \(end)\(range.crossesMidnight && range.endMinute != 0 ? " le lendemain" : "")"
+        return "\(minuteOfDay(range.startMinute)) → \(rangeEnd(range.endMinute))\(range.crossesMidnight && range.endMinute != 0 ? " le lendemain" : "")"
     }
 
     /// One line for a list row: what it holds, when, how much.

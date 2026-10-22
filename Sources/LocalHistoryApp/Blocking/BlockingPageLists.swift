@@ -144,7 +144,7 @@ import SwiftUI
                 GoalongNote(lockNote, symbol: "lock.fill", tone: .neutral)
             }
             if let error = controller.error {
-                GoalongNote(error, tone: .warning).onTapGesture { controller.error = nil }
+                BlockingNoteButton(note: GoalongNote(error, tone: .warning), hint: "Fermer l’erreur") { controller.error = nil }
             }
             part(list.mode == .block ? "Sites" : "Sites permis") {
                 VStack(alignment: .leading, spacing: 10) {
