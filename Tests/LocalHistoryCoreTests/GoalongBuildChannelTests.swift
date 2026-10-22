@@ -98,10 +98,15 @@ final class GoalongBuildChannelTests: XCTestCase {
     }
 
     func testRecorderNeverCapturesAnyGoalongCopy() {
+        // The default exclusion of the installed Goalong also covers Goalong Dev.
         var config = RecorderConfig.default
-        config.excludedBundleIdentifiers = []
+        XCTAssertTrue(config.excludedBundleIdentifiers.contains("ai.goalong.localhistory"))
         XCTAssertFalse(config.allowsApplication(bundleIdentifier: "ai.goalong.localhistory"))
         XCTAssertFalse(config.allowsApplication(bundleIdentifier: "ai.goalong.localhistory.dev"))
         XCTAssertTrue(config.allowsApplication(bundleIdentifier: "com.apple.Safari"))
+        // Release unchanged: without any Goalong exclusion, nothing changes.
+        config.excludedBundleIdentifiers = ["com.apple.Safari"]
+        XCTAssertTrue(config.allowsApplication(bundleIdentifier: "ai.goalong.localhistory"))
+        XCTAssertFalse(config.allowsApplication(bundleIdentifier: "com.apple.Safari"))
     }
 }

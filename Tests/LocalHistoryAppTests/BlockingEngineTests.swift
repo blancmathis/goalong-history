@@ -35,7 +35,7 @@ final class BlockingEngineTests: XCTestCase {
         for value in ["youtube.com/shortsx", "notyoutube.com/shorts", "youtube.com.evil.org/shorts"] { XCTAssertFalse(BlockingRules.matches(rule, url: value), value) }
     }
     func testNeverBlockedInventoryAndNonRegular() {
-        XCTAssertEqual(BlockingRules.neverBlocked, Set(["ai.goalong.localhistory", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow", "com.apple.systemuiserver", "com.apple.controlcenter", "com.apple.notificationcenterui", "com.apple.Spotlight", "com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.ScreenSaver.Engine"]))
+        XCTAssertEqual(BlockingRules.neverBlocked, Set(["ai.goalong.localhistory", "ai.goalong.localhistory.dev", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow", "com.apple.systemuiserver", "com.apple.controlcenter", "com.apple.notificationcenterui", "com.apple.Spotlight", "com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.ScreenSaver.Engine"]))
         for id in BlockingRules.neverBlocked { var t = target(date()); t.bundleIdentifier = id; XCTAssertTrue(BlockingRules.exempt(t)) }
         var t = target(date()); t.regular = false; XCTAssertTrue(BlockingRules.exempt(t))
     }
