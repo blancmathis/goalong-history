@@ -44,6 +44,13 @@ expect_refusal() { # message, then verify_release_identity.sh arguments
 codesign --force --timestamp=none --options runtime --sign "$IDENTITY" \
   --requirements '=designated => identifier "ai.goalong.localhistory"' "$WORK/2/Goalong History.app" 2>/dev/null
 expect_refusal 'Designated requirement changed' "$WORK/2/Goalong History.app"
+# The reviewed requirement with an identifier that only matches the pinned one as a regex ('.' as a joker):
+# a release is checked as signed, never rewritten.
+codesign --force --timestamp=none --options runtime --sign "$IDENTITY" --identifier ai.goalong.localhistory \
+  --requirements "=designated => ${REQ/identifier \"ai.goalong.localhistory\"/identifier \"ai-goalong-localhistory\"}" \
+  "$WORK/2/Goalong History.app" 2>/dev/null
+codesign -d -r- "$WORK/2/Goalong History.app" 2>&1 | grep -qF 'identifier "ai-goalong-localhistory" and' || { echo 'joker fixture not signed' >&2; exit 1; }
+expect_refusal 'Designated requirement changed' "$WORK/2/Goalong History.app"
 codesign --force --sign - "$WORK/2/Goalong History.app" 2>/dev/null
 expect_refusal 'Refusing public release: an ad-hoc identity' "$WORK/2/Goalong History.app"
 # Goalong Dev (make dev): same certificate, .dev identifiers, GoalongBuildChannel=dev.

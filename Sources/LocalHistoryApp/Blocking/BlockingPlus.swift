@@ -77,7 +77,7 @@ extension BlockingRules {
         return triggers.apps.allSatisfy { app in
             let id = app.bundleIdentifier
             guard !id.isEmpty, id == id.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !neverBlocked.contains(id), !app.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+                  !isNeverBlocked(id), !app.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
             let appMatch = list.apps.contains { $0.bundleIdentifier == id }
             return list.mode == .block ? !appMatch : appMatch
         }

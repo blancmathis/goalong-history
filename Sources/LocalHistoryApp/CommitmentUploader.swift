@@ -334,6 +334,10 @@
         private let maximumRetryDelay: TimeInterval
         private let retryJitter: (TimeInterval) -> TimeInterval
         private let uploadAttemptOverride: UploadAttempt?
+        /// Goalong Dev: only seals of its own device are sent. A seal signed by another device (the installed
+        /// Goalong's chain copied by an older make dev) is never registered or anchored. nil in a release.
+        private let onlyDeviceID: String?
+        private var skippedForeignSeals = 0
         private var pending: [CommitmentPendingSeal] = []
         private var pendingBytes = 0
         private var inFlight = false
@@ -343,7 +347,17 @@
         private var consecutiveNetworkFailures = 0
         private var latestSnapshot = CommitmentUploaderSnapshot()
 
-        init?(config: RecorderConfig, identity _: DeviceIdentity) {
+        /// nil in a release; in Goalong Dev, the current device ID ("" when unknown: then nothing is sent).
+        static func onlyDeviceID(channel: GoalongBuildChannel, currentDeviceID: String?) -> String? {
+            channel.isDevelopment ? (currentDeviceID ?? "") : nil
+        }
+
+        static func isUploadable(_ seal: LocalMinuteSeal, onlyDeviceID: String?) -> Bool {
+            guard let onlyDeviceID else { return true }
+            return !onlyDeviceID.isEmpty && seal.deviceID == onlyDeviceID
+        }
+
+        init?(config: RecorderConfig, identity: DeviceIdentity) {
             // Goalong Dev sends nothing to the verification server unless built with SERVER=on.
             guard GoalongBuildChannel.current.allowsServerTraffic, config.verificationEnabled == true,
                 let raw = config.verificationServerURL,
@@ -369,6 +383,7 @@
                 delay * Double.random(in: 0.9...1.1)
             }
             self.uploadAttemptOverride = nil
+            self.onlyDeviceID = Self.onlyDeviceID(channel: .current, currentDeviceID: identity.info.knownDeviceID)
             self.replayScanner = CommitmentReplayScanner(
                 sealsDirectory: AppPaths.sealsDirectory,
                 receiptsDirectory: AppPaths.receiptsDirectory,
@@ -386,6 +401,7 @@
             retryJitter: @escaping (TimeInterval) -> TimeInterval = { $0 },
             testingSession: URLSession? = nil,
             testingDefaults: UserDefaults = .standard,
+            onlyDeviceID: String? = nil,
             uploadAttempt: UploadAttempt? = nil
         ) {
             precondition(retryDelay > 0 && maximumRetryDelay >= retryDelay)
@@ -410,6 +426,7 @@
             self.maximumRetryDelay = maximumRetryDelay
             self.retryJitter = retryJitter
             uploadAttemptOverride = uploadAttempt
+            self.onlyDeviceID = onlyDeviceID
             replayScanner = CommitmentReplayScanner(
                 sealsDirectory: sealsDirectory,
                 receiptsDirectory: receiptsDirectory,
@@ -474,7 +491,14 @@
             )
             if !batch.seals.isEmpty {
                 let existingSequences = Set(pending.map(\.seal.anchorSequence))
-                let additions = batch.seals.filter {
+                let own = batch.seals.filter { Self.isUploadable($0.seal, onlyDeviceID: onlyDeviceID) }
+                if own.count < batch.seals.count {
+                    if skippedForeignSeals == 0 {
+                        Diagnostics.write("Goalong Dev: seals of another device are never sent")
+                    }
+                    skippedForeignSeals += batch.seals.count - own.count
+                }
+                let additions = own.filter {
                     !existingSequences.contains($0.seal.anchorSequence)
                 }
                 pending.append(contentsOf: additions)

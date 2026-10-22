@@ -62,10 +62,14 @@ func checkedDataPaths(_ realPath: String, _ devPath: String) -> (real: URL, dev:
 
 /// Never cloned into Goalong Dev: the real stakes (Blocking, Focus and their backups), sockets,
 /// backups, and every device or account identity (the dev copy creates its own device key).
-let skippedTopLevel: Set<String> = [
-    "Blocking", "Focus", "app-backups", "setup-backups", "runtime",
-    "device-signing-key-v2.bin", "website-connections",
+/// seals/, receipts/ and integrity-state.json are the installed Goalong's signed anchor chain: they carry
+/// its device ID and public key. Goalong Dev starts its own chain (the event cursor is rebuilt from events/).
+let identityTopLevel: Set<String> = [
+    "device-signing-key-v2.bin", "website-connections", "seals", "receipts", "integrity-state.json",
 ]
+let skippedTopLevel: Set<String> = identityTopLevel.union([
+    "Blocking", "Focus", "app-backups", "setup-backups", "runtime",
+])
 let skippedPrefixes = ["blocking-backup-"]
 /// Account credentials inside cloned folders, removed from the clone right after. The proof capsules are
 /// sealed with keys of the installed Goalong (login keychain): Goalong Dev must never read or destroy them.
@@ -75,14 +79,12 @@ let skippedNested = ["jev/api-key", "chatgpt/codex-home", "chatgpt/site-analysis
 /// Goalong's live gamma state: Goalong Dev would apply it to the real screens at Braise start.
 let skippedNestedPrefixes = [(folder: "Braise", prefix: "display-recovery")]
 /// Written by every clone or fresh seed. A LocalHistory-Dev without it predates these exclusions
-/// (the #85 make dev cloned the real device key and tokens): DATA=keep cleans it first, and Goalong Dev
+/// (the #85 make dev cloned the real device key and tokens; v2 still cloned the real anchor chain): DATA=keep cleans it first, and Goalong Dev
 /// refuses to start on it (GoalongDevDataGuard in LocalHistoryCore, same marker name).
-let seedMarker = ".goalong-dev-seed-v2"
+let seedMarker = ".goalong-dev-seed-v3"
 /// What a pre-marker folder may hold from the real data. Blocking, Focus and runtime are left:
 /// in Goalong Dev they have always been its own.
-let legacyPurgedTopLevel: Set<String> = [
-    "device-signing-key-v2.bin", "website-connections", "app-backups", "setup-backups",
-]
+let legacyPurgedTopLevel: Set<String> = identityTopLevel.union(["app-backups", "setup-backups"])
 
 func removeIfPresent(_ url: URL, _ label: String) {
     var info = stat()
@@ -125,7 +127,7 @@ func cleanKeptData(real: URL, dev: URL) {
     }
     dropNested(in: dev)
     writeMarker(in: dev)
-    print("Dev data from an older make dev cleaned (device key, accounts, backups, Braise screen state removed).")
+    print("Dev data from an older make dev cleaned (device key, anchor chain, accounts, backups, Braise screen state removed).")
 }
 
 /// clone: re-seeds LocalHistory-Dev from LocalHistory with APFS clones (instant, no extra disk).
@@ -160,7 +162,7 @@ func seedData(_ mode: String, _ realPath: String, _ devPath: String) -> Never {
     }
     dropNested(in: dev)
     writeMarker(in: dev)
-    print("Dev data cloned by APFS (no device key, account, Blocking, Focus or Braise screen state): \(dev.path)")
+    print("Dev data cloned by APFS (no device key, anchor chain, account, Blocking, Focus or Braise screen state): \(dev.path)")
     exit(0)
 }
 

@@ -127,17 +127,22 @@ public struct GoalongDevServerDisabledError: LocalizedError, Equatable {
     }
 }
 
-/// Goalong Dev refuses a `LocalHistory-Dev` written by the old make dev (#85): it cloned the real device key
-/// and account tokens and has no seed marker. Every seed by make dev writes the marker (scripts/dev_app.swift);
-/// a folder without it is marked here the first time it is found clean, so the dev copy's own later files are trusted.
+/// Goalong Dev refuses a `LocalHistory-Dev` written by an older make dev: #85 cloned the real device key
+/// and account tokens, v2 still cloned the real anchor chain (seals, receipts, integrity state). Every seed by
+/// make dev writes the current marker (scripts/dev_app.swift); a folder without it is marked here the first
+/// time it is found clean, so the dev copy's own later files are trusted.
 public enum GoalongDevDataGuard {
-    public static let seedMarker = ".goalong-dev-seed-v2"
-    /// What the old clone copied from the real data. Same list as `legacyPurgedTopLevel` and `skippedNested`.
+    public static let seedMarker = ".goalong-dev-seed-v3"
+    /// What an older clone copied from the real data. Same list as `legacyPurgedTopLevel`, `skippedNested`
+    /// and `skippedNestedPrefixes` in scripts/dev_app.swift.
     public static let legacyItems = [
-        "device-signing-key-v2.bin", "website-connections", "app-backups", "setup-backups",
+        "device-signing-key-v2.bin", "website-connections", "seals", "receipts", "integrity-state.json",
+        "app-backups", "setup-backups",
         "jev/api-key", "chatgpt/codex-home", "chatgpt/site-analysis-codex-home", "chatgpt/proofs/private-evidence",
     ]
     public static let legacyPrefixes = ["blocking-backup-"]
+    /// Prefixes inside a folder: the installed Goalong's live Braise gamma state.
+    public static let legacyNestedPrefixes = [(folder: "Braise", prefix: "display-recovery")]
 
     public enum Verdict: Equatable { case trusted, legacy([String]) }
 
@@ -149,8 +154,12 @@ public enum GoalongDevDataGuard {
         var info = stat()
         if lstat(marker.path, &info) == 0 { return .trusted }
         let names = (try? fileManager.contentsOfDirectory(atPath: root.path)) ?? []
-        let found = legacyItems.filter { lstat(root.appendingPathComponent($0).path, &info) == 0 }
-            + names.filter { name in legacyPrefixes.contains(where: name.hasPrefix) }.sorted()
+        var found: [String] = legacyItems.filter { lstat(root.appendingPathComponent($0).path, &info) == 0 }
+        found += names.filter { name in legacyPrefixes.contains(where: name.hasPrefix) }.sorted()
+        for (folder, prefix) in legacyNestedPrefixes {
+            let inner: [String] = (try? fileManager.contentsOfDirectory(atPath: root.appendingPathComponent(folder).path)) ?? []
+            found += inner.filter { $0.hasPrefix(prefix) }.sorted().map { folder + "/" + $0 }
+        }
         guard found.isEmpty else { return .legacy(found) }
         try? fileManager.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         _ = fileManager.createFile(atPath: marker.path, contents: Data("marked by Goalong Dev\n".utf8),

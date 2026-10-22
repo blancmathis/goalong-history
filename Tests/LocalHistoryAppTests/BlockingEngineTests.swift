@@ -39,6 +39,17 @@ final class BlockingEngineTests: XCTestCase {
         for id in BlockingRules.neverBlocked { var t = target(date()); t.bundleIdentifier = id; XCTAssertTrue(BlockingRules.exempt(t)) }
         var t = target(date()); t.regular = false; XCTAssertTrue(BlockingRules.exempt(t))
     }
+    /// Bundle IDs are case-insensitive: another case must not make Goalong, Goalong Dev or Finder blockable.
+    func testNeverBlockedIgnoresCase() {
+        for id in ["AI.Goalong.LocalHistory.DEV", "ai.goalong.LOCALHISTORY", "COM.APPLE.FINDER", "com.apple.spotlight"] {
+            XCTAssertTrue(BlockingRules.isNeverBlocked(id), id)
+            var t = target(date()); t.bundleIdentifier = id; XCTAssertTrue(BlockingRules.exempt(t), id)
+        }
+        XCTAssertFalse(BlockingRules.isNeverBlocked("com.apple.Safari"))
+        XCTAssertFalse(BlockingRules.isNeverBlocked(nil))
+        let list = BlockList(name: "L")
+        XCTAssertFalse(BlockingRules.validTriggers(.init(apps: [.init(bundleIdentifier: "AI.GOALONG.LOCALHISTORY.DEV", name: "Dev")]), list: list))
+    }
     func testWebContentAppsAreAppsNotBrowsers() {
         XCTAssertTrue(BlockingRules.isKnownBrowser("org.mozilla.firefox", configured: []))
         XCTAssertTrue(BlockingRules.isKnownBrowser("com.apple.Safari", configured: ["com.apple.Safari"]))

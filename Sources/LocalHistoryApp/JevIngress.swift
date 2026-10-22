@@ -175,7 +175,7 @@ final class JevIngress: @unchecked Sendable {
     }
     private static func distractionTarget(host: String, bundleIdentifier: String?, name: String) -> JevDistractionTarget? {
         if !host.isEmpty { return .site(host: host) }
-        guard let id = bundleIdentifier, !BlockingRules.neverBlocked.contains(id),
+        guard let id = bundleIdentifier, !BlockingRules.isNeverBlocked(id),
               !BlockingRules.isKnownBrowser(id, configured: RecorderConfig.default.browserBundleIdentifiers) else { return nil }
         return .app(bundleIdentifier: id, name: name)
     }

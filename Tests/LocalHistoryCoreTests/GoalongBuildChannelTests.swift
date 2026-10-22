@@ -145,6 +145,22 @@ final class GoalongBuildChannelTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "a refused folder is never marked")
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("jev/api-key").path))
 
+        // A v2 clone (marker v2) still holds the real anchor chain and Braise gamma state: refused too.
+        let v2 = base.appendingPathComponent("v2/LocalHistory-Dev", isDirectory: true)
+        for folder in ["seals", "receipts", "Braise"] {
+            try FileManager.default.createDirectory(at: v2.appendingPathComponent(folder), withIntermediateDirectories: true)
+        }
+        for file in [".goalong-dev-seed-v2", "integrity-state.json", "Braise/display-recovery-ABC.json", "Braise/preferences.json"] {
+            try Data("{}".utf8).write(to: v2.appendingPathComponent(file))
+        }
+        XCTAssertEqual(GoalongDevDataGuard.check(channel: dev, root: v2),
+                       .legacy(["seals", "receipts", "integrity-state.json", "Braise/display-recovery-ABC.json"]))
+        try FileManager.default.removeItem(at: v2.appendingPathComponent("seals"))
+        try FileManager.default.removeItem(at: v2.appendingPathComponent("receipts"))
+        try FileManager.default.removeItem(at: v2.appendingPathComponent("integrity-state.json"))
+        XCTAssertEqual(GoalongDevDataGuard.check(channel: dev, root: v2), .legacy(["Braise/display-recovery-ABC.json"]),
+                       "the Braise gamma state alone is enough")
+
         let releaseRoot = base.appendingPathComponent("LocalHistory", isDirectory: true)
         XCTAssertEqual(GoalongDevDataGuard.check(channel: GoalongBuildChannel(info: nil), root: releaseRoot), .trusted)
         XCTAssertFalse(FileManager.default.fileExists(atPath: releaseRoot.path), "a release never writes here")

@@ -407,7 +407,7 @@ import LocalHistoryQueryCLI
         case .site:
             if !next.sites.contains(where: { $0.pattern == target.value }) { next.sites.append(.init(pattern: target.value)) }
         case .app:
-            guard !BlockingRules.neverBlocked.contains(target.value) else { throw BlockingListAdditionFailure.invalidTarget }
+            guard !BlockingRules.isNeverBlocked(target.value) else { throw BlockingListAdditionFailure.invalidTarget }
             if !next.apps.contains(where: { $0.bundleIdentifier == target.value }) {
                 next.apps.append(.init(bundleIdentifier: target.value, name: target.name))
             }
@@ -712,7 +712,7 @@ import LocalHistoryQueryCLI
             let children = (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
             for url in children where url.pathExtension == "app" {
                 guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier,
-                      !BlockingRules.neverBlocked.contains(id), seen.insert(id).inserted else { continue }
+                      !BlockingRules.isNeverBlocked(id), seen.insert(id).inserted else { continue }
                 let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
                     ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
                     ?? url.deletingPathExtension().lastPathComponent

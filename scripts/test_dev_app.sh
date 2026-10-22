@@ -56,9 +56,16 @@ rm "$WORK/apps/Goalong Dev.app"
 ln -s /Applications "$WORK/to-applications"
 expect_refusal 'never goes into /Applications' GOALONG_DEV_NO_LAUNCH=1 "GOALONG_DEV_APP_DIR=$WORK/to-applications/Sub"
 # Marker name shared by make dev and the app's guard.
-grep -qF 'let seedMarker = ".goalong-dev-seed-v2"' "$ROOT/scripts/dev_app.swift" \
-  && grep -qF 'public static let seedMarker = ".goalong-dev-seed-v2"' "$ROOT/Sources/LocalHistoryCore/GoalongBuildChannel.swift" \
+grep -qF 'let seedMarker = ".goalong-dev-seed-v3"' "$ROOT/scripts/dev_app.swift" \
+  && grep -qF 'public static let seedMarker = ".goalong-dev-seed-v3"' "$ROOT/Sources/LocalHistoryCore/GoalongBuildChannel.swift" \
   || fail 'make dev and GoalongDevDataGuard use different seed markers'
+# Every identity or credential the clone skips is also refused by the app's guard.
+for item in device-signing-key-v2.bin website-connections seals receipts integrity-state.json app-backups setup-backups \
+            jev/api-key chatgpt/codex-home chatgpt/site-analysis-codex-home chatgpt/proofs/private-evidence \
+            blocking-backup- display-recovery; do
+  grep -qF "\"$item\"" "$ROOT/scripts/dev_app.swift" && grep -qF "\"$item\"" "$ROOT/Sources/LocalHistoryCore/GoalongBuildChannel.swift" \
+    || fail "make dev and GoalongDevDataGuard disagree on $item"
+done
 # make reads the settings from its command line only: a shell-wide DATA never reaches the script.
 DATA=bogus SERVER=on make -s -n -C "$ROOT" dev-status >"$WORK/out"
 grep -qF 'GOALONG_DEV_DATA="" ' "$WORK/out" && grep -qF 'GOALONG_DEV_SERVER="" ' "$WORK/out" || fail "environment leaked into make dev: $(cat "$WORK/out")"
@@ -72,6 +79,17 @@ grep -qF 'the installed Goalong predates Goalong Dev' "$WORK/out" || fail 'old r
 echo 'ai.goalong.localhistory ai.goalong.localhistory.dev' >"$OLD_RELEASE/Contents/MacOS/Goalong History"
 GOALONG_DEV_RELEASE_APP="$OLD_RELEASE" "$ROOT/scripts/dev_app.sh" dev >"$WORK/out" 2>&1
 ! grep -qF 'predates' "$WORK/out" || fail 'a family-aware release was reported'
+# dev-stop never waits on this worktree's build lock (a make dev may compile for minutes); it waits on the
+# global lock only. Validation-only stop quits nothing. The control tool is renamed in place, never left half built.
+WORKTREE_LOCK="$ROOT/.build/goalong-dev/lock"; mkdir -p "$ROOT/.build/goalong-dev"
+if mkdir "$WORKTREE_LOCK" 2>/dev/null; then
+  status=0; "$ROOT/scripts/dev_app.sh" stop >"$WORK/out" 2>&1 || status=$?
+  rmdir "$WORKTREE_LOCK"
+  [[ "$status" == 0 ]] && grep -qF 'Stop accepted (validation only' "$WORK/out" || fail "dev-stop blocked by the worktree lock: $(cat "$WORK/out")"
+else
+  echo 'NOTE: a make dev holds this worktree lock; dev-stop lock check skipped.'
+fi
+ls "$ROOT/.build/goalong-dev" | grep -q '^dev-app-control\.build-' && fail 'a half-built control tool was left behind'
 unset GOALONG_DEV_VALIDATE_ONLY
 
 # Global install lock (flock): a holder blocks the others; when it dies, even killed, exactly one
@@ -113,6 +131,8 @@ echo auth >"$REAL/chatgpt/codex-home/auth.json"; echo h >"$REAL/chatgpt/history/
 mkdir -p "$REAL/chatgpt/proofs/private-evidence"; echo sealed >"$REAL/chatgpt/proofs/private-evidence/x.capsule"
 echo '{}' >"$REAL/chatgpt/proofs/p.json"
 echo '{}' >"$REAL/blocking-backup-1.json"; echo '{}' >"$REAL/Focus/prompts.json"
+mkdir -p "$REAL/seals" "$REAL/receipts"; echo '{"deviceID":"REAL"}' >"$REAL/seals/2026-10-01.seals.jsonl"
+echo '{"deviceID":"REAL"}' >"$REAL/receipts/2026-10-01.receipts.jsonl"; echo '{}' >"$REAL/integrity-state.json"
 cat >"$REAL/Blocking/blocking.json" <<'JSON'
 {"version":1,"lists":[{"id":"L","name":"n","mode":"block","sites":[],"apps":[],
  "program":{"lockedUntil":"2030-01-01T00:00:00Z","ranges":[{"id":"R","weekdays":[1],"startMinute":0,"endMinute":60,"lock":{"kind":"strict"}}]}}],
@@ -128,10 +148,10 @@ if "$CONTROL" seed-data clone "$DEV" "$REAL" >/dev/null 2>&1; then fail 'swapped
 [[ -f "$DEV/events/a.jsonl" && -f "$DEV/jev/work-context.json" && -f "$DEV/chatgpt/history/h.json" && -f "$DEV/chatgpt/proofs/p.json" ]] || fail 'clone missed data'
 for absent in Blocking Focus runtime app-backups website-connections device-signing-key-v2.bin \
               blocking-backup-1.json jev/api-key chatgpt/codex-home Braise/display-recovery-ABC.json \
-              chatgpt/proofs/private-evidence; do
+              chatgpt/proofs/private-evidence seals receipts integrity-state.json; do
   [[ ! -e "$DEV/$absent" ]] || fail "clone copied $absent"
 done
-[[ -f "$DEV/Braise/preferences.json" && -f "$DEV/.goalong-dev-seed-v2" ]] || fail 'clone missed Braise preferences or its marker'
+[[ -f "$DEV/Braise/preferences.json" && -f "$DEV/.goalong-dev-seed-v3" ]] || fail 'clone missed Braise preferences or its marker'
 [[ -f "$REAL/Braise/display-recovery-ABC.json" ]] || fail 'the real Braise state was removed'
 [[ "$(stat -f %Lp "$DEV")" == 700 ]] || fail 'dev folder mode'
 
@@ -139,7 +159,7 @@ echo dev-only >"$DEV/dev-state"
 "$CONTROL" seed-data keep "$REAL" "$DEV" >/dev/null
 [[ -f "$DEV/dev-state" ]] || fail 'keep lost the dev state'
 "$CONTROL" seed-data fresh "$REAL" "$DEV" >/dev/null
-[[ "$(ls -A "$DEV")" == .goalong-dev-seed-v2 ]] || fail "fresh is not empty: $(ls -A "$DEV")"
+[[ "$(ls -A "$DEV")" == .goalong-dev-seed-v3 ]] || fail "fresh is not empty: $(ls -A "$DEV")"
 rm -rf "$DEV"; "$CONTROL" seed-data keep "$REAL" "$DEV" >/dev/null
 [[ -f "$DEV/events/a.jsonl" ]] || fail 'keep without dev data must clone'
 
@@ -148,10 +168,18 @@ rm -rf "$DEV"; mkdir -m 700 "$DEV"; cp -R "$REAL/." "$DEV/"; rm -rf "$DEV/Blocki
 mkdir -p "$DEV/Blocking"; echo dev-lists >"$DEV/Blocking/blocking.json"; echo dev-only >"$DEV/dev-state"
 "$CONTROL" seed-data keep "$REAL" "$DEV" >/dev/null
 for absent in device-signing-key-v2.bin website-connections app-backups blocking-backup-1.json jev/api-key \
-              chatgpt/codex-home Braise/display-recovery-ABC.json chatgpt/proofs/private-evidence; do
+              chatgpt/codex-home Braise/display-recovery-ABC.json chatgpt/proofs/private-evidence \
+              seals receipts integrity-state.json; do
   [[ ! -e "$DEV/$absent" ]] || fail "keep kept the old clone's $absent"
 done
-[[ -f "$DEV/dev-state" && -f "$DEV/Blocking/blocking.json" && -f "$DEV/jev/work-context.json" && -f "$DEV/.goalong-dev-seed-v2" ]] || fail 'keep lost dev state'
+[[ -f "$DEV/dev-state" && -f "$DEV/Blocking/blocking.json" && -f "$DEV/jev/work-context.json" && -f "$DEV/.goalong-dev-seed-v3" ]] || fail 'keep lost dev state'
+# A v2 clone (marker v2, real anchor chain) is cleaned by keep too.
+rm -rf "$DEV"; mkdir -m 700 "$DEV"; cp -R "$REAL/seals" "$REAL/receipts" "$REAL/integrity-state.json" "$DEV/"
+echo v2 >"$DEV/.goalong-dev-seed-v2"; echo dev-only >"$DEV/dev-state"
+"$CONTROL" seed-data keep "$REAL" "$DEV" >/dev/null
+for absent in seals receipts integrity-state.json; do [[ ! -e "$DEV/$absent" ]] || fail "keep kept the v2 clone's $absent"; done
+[[ -f "$DEV/dev-state" && -f "$DEV/.goalong-dev-seed-v3" ]] || fail 'keep lost the v2 dev state'
+mkdir -p "$DEV/Braise"
 # With the marker, the dev copy's own key and Braise state stay; a key equal to the real one never does.
 echo own-key >"$DEV/device-signing-key-v2.bin"; echo '{}' >"$DEV/Braise/display-recovery-DEV.json"
 "$CONTROL" seed-data keep "$REAL" "$DEV" >/dev/null

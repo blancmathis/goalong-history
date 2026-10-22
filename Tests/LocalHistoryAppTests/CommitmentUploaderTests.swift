@@ -284,6 +284,43 @@
             XCTAssertEqual(uploader.runtimeSnapshot.status, .exhausted)
         }
 
+        /// Goalong Dev never registers or anchors a seal signed by another device (the installed Goalong's
+        /// chain copied by an older make dev). A release keeps sending every seal, as before.
+        func testGoalongDevSendsOnlyItsOwnDeviceSeals() throws {
+            let dev = GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev"])
+            XCTAssertNil(CommitmentUploader.onlyDeviceID(channel: GoalongBuildChannel(info: nil), currentDeviceID: "own"))
+            XCTAssertEqual(CommitmentUploader.onlyDeviceID(channel: dev, currentDeviceID: "own"), "own")
+            XCTAssertEqual(CommitmentUploader.onlyDeviceID(channel: dev, currentDeviceID: nil), "")
+            XCTAssertFalse(CommitmentUploader.isUploadable(seal(1, deviceID: "own"), onlyDeviceID: ""))
+
+            for (onlyDeviceID, expected) in [("own", [2, 4, 6]), (nil, [1, 2, 3, 4, 5, 6])] as [(String?, [Int])] {
+                let fixture = try makeFixture()
+                defer { fixture.remove() }
+                var rows = Data()
+                for sequence in 1...6 {
+                    rows.append(try line(seal(UInt64(sequence), deviceID: sequence.isMultiple(of: 2) ? "own" : "real")))
+                }
+                try rows.write(to: fixture.seals.appendingPathComponent("0001.seals.jsonl"))
+                let lock = NSLock()
+                var attempted: [String] = []
+                let uploader = CommitmentUploader(
+                    testingBaseURL: try XCTUnwrap(URL(string: "https://example.invalid")),
+                    sealsDirectory: fixture.seals,
+                    receiptsDirectory: fixture.receipts,
+                    limits: testLimits(),
+                    onlyDeviceID: onlyDeviceID,
+                    uploadAttempt: { seal, completion in
+                        lock.lock(); attempted.append("\(seal.anchorSequence)-\(seal.deviceID)"); lock.unlock()
+                        completion(true)
+                    }
+                )
+                uploader.replayPending()
+                XCTAssertTrue(uploader.waitUntilSettledForTesting(timeout: 10))
+                lock.lock(); let observed = attempted; lock.unlock()
+                XCTAssertEqual(observed, expected.map { "\($0)-\($0.isMultiple(of: 2) ? "own" : "real")" })
+            }
+        }
+
         func testStreamingReplayKeepsBatchesBoundedOrderedAndDeduplicated() throws {
             let fixture = try makeFixture()
             defer { fixture.remove() }
@@ -721,7 +758,7 @@
             return ReplayFixture(root: root, seals: seals, receipts: receipts)
         }
 
-        private func seal(_ sequence: UInt64) -> LocalMinuteSeal {
+        private func seal(_ sequence: UInt64, deviceID: String = "device") -> LocalMinuteSeal {
             let minuteStart = Date(timeIntervalSince1970: TimeInterval(sequence * 60))
             return LocalMinuteSeal(
                 anchorSequence: sequence,
@@ -732,7 +769,7 @@
                 minuteRoot: "minute-root-\(sequence)",
                 previousAnchorHash: "previous-\(sequence)",
                 anchorHash: "anchor-\(sequence)",
-                deviceID: "device",
+                deviceID: deviceID,
                 publicKeyBase64: "public-key",
                 trustTier: "software",
                 signatureBase64: "signature-\(sequence)",

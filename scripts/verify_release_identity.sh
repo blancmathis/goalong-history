@@ -39,15 +39,20 @@ codesign --verify --all-architectures --strict "-R=$REQUIREMENT" "$APP/Contents/
 HELPER_REQUIREMENT="identifier \"$BUNDLE.relauncher\" and anchor apple generic and certificate leaf = H\"$IDENTITY\" and certificate leaf[subject.OU] = \"$TEAM\""
 codesign --verify --all-architectures --strict "-R=$HELPER_REQUIREMENT" "$APP/Contents/MacOS/goalong-relauncher"
 for component in app cli relauncher; do
+  suffix=''
   case "$component" in
     app) target="$APP"; executable="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")" ;;
     cli) target="$APP/Contents/MacOS/goalong"; executable="$target" ;;
-    relauncher) target="$APP/Contents/MacOS/goalong-relauncher"; executable="$target" ;;
+    relauncher) target="$APP/Contents/MacOS/goalong-relauncher"; executable="$target"; suffix=.relauncher ;;
   esac
   for architecture in $(/usr/bin/lipo -archs "$executable"); do
-    # The dev requirement must be the reviewed release requirement with only the identifier changed.
+    # A release requirement is checked as signed. A dev requirement must be the reviewed release requirement
+    # with only its exact identifier changed: a literal, quoted match (no regex), applied in dev only.
     codesign -d --arch "$architecture" -r- "$target" 2>&1 \
-      | sed "s/identifier \"$BUNDLE/identifier \"$RELEASE_BUNDLE/" \
+      | if [[ "$CHANNEL" == dev ]]; then
+          python3 -c 'import sys; print(sys.stdin.read().replace(sys.argv[1], sys.argv[2]), end="")' \
+            "identifier \"$BUNDLE$suffix\"" "identifier \"$RELEASE_BUNDLE$suffix\""
+        else cat; fi \
       | python3 "$ROOT/scripts/permission_requirement_policy.py" \
       --pins "$ROOT/Distribution/permission-requirements.json" --component "$component"
   done

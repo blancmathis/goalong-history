@@ -9,7 +9,7 @@
 #   GOALONG_DEV_SERVER=off|on           Goalong Dev talks to Goalong's servers only with on
 #   GOALONG_DEV_NO_LAUNCH=1             build, sign and install only: no data step, no quit, no launch (agents)
 #   GOALONG_DEV_APP_DIR=DIR             install folder (default ~/Applications)
-#   GOALONG_DEV_VALIDATE_ONLY=1         stop after the settings checks (scripts/test_dev_app.sh)
+#   GOALONG_DEV_VALIDATE_ONLY=1         stop after the settings checks; dev-stop quits nothing (scripts/test_dev_app.sh)
 #   GOALONG_DEV_RELEASE_APP=APP         installed release to compare with (default /Applications/Goalong History.app)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -104,11 +104,14 @@ step_done() {
   STEP_STARTED="$end"
 }
 
-# The control tool is rebuilt only when its source changes.
+# The control tool is rebuilt only when its source changes. make dev, dev-stop and dev-status may run it
+# at the same time: each compiles to its own file, then renames it in place (atomic), never a half binary.
 build_control() {
   mkdir -p "$DEV_ROOT"
   if [[ ! -x "$CONTROL" || "$ROOT/scripts/dev_app.swift" -nt "$CONTROL" ]]; then
-    xcrun swiftc "$ROOT/scripts/dev_app.swift" -o "$CONTROL"
+    local built="$CONTROL.build-$$"
+    if ! xcrun swiftc "$ROOT/scripts/dev_app.swift" -o "$built"; then rm -f -- "$built"; exit 1; fi
+    mv -f -- "$built" "$CONTROL"
   fi
 }
 
@@ -135,21 +138,25 @@ cleanup() {
   [[ "$HAVE_WORKTREE_LOCK" == 0 ]] || rmdir "$DEV_ROOT/lock" 2>/dev/null || true
 }
 trap cleanup EXIT
-mkdir -p "$DEV_ROOT"
-if ! mkdir "$DEV_ROOT/lock" 2>/dev/null; then
-  echo "Another make dev/dev-stop is running in this worktree. If interrupted, remove $DEV_ROOT/lock after checking it." >&2
-  exit 1
-fi
-HAVE_WORKTREE_LOCK=1
-
 source "$ROOT/scripts/dev_app_lock.sh"
 
+# dev-stop only quits Goalong Dev: it never builds the app or touches .build, so it does not take the
+# worktree lock (a make dev compiling here for minutes does not block it). It waits for the global lock,
+# which make dev holds only for its quit/data/install steps.
 if [[ "$MODE" == stop ]]; then
   build_control
   acquire_global_lock
+  if [[ "${GOALONG_DEV_VALIDATE_ONLY:-0}" == 1 ]]; then echo 'Stop accepted (validation only: nothing quit).'; exit 0; fi
   "$CONTROL" quit-dev
   exit 0
 fi
+
+mkdir -p "$DEV_ROOT"
+if ! mkdir "$DEV_ROOT/lock" 2>/dev/null; then
+  echo "Another make dev is running in this worktree. If interrupted, remove $DEV_ROOT/lock after checking it." >&2
+  exit 1
+fi
+HAVE_WORKTREE_LOCK=1
 
 echo "Goalong Dev (data $DATA, blocking $BLOCKING, server $SERVER$([[ "$NO_LAUNCH" == 1 ]] && echo ', no launch, no data step'))"
 mkdir -p "$DEV_APP_DIR"
