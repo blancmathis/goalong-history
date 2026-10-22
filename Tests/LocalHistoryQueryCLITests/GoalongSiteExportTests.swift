@@ -345,7 +345,10 @@ final class GoalongSiteExportTests: XCTestCase {
         let file = archiveRoot.appendingPathComponent("2026-09-02.json")
         let original = try AppleScreenTimeJSON.encode(record)
         try original.write(to: file)
-        XCTAssertThrowsError(try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02"))
+        XCTAssertThrowsError(try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02")) {
+            // The app shows this text: French, never the generic "opération n'a pas pu être achevée".
+            XCTAssertEqual(goalongUserMessage($0), "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer.")
+        }
         let consent = Data(#"{"schemaVersion":1,"policyVersion":1,"capabilities":{"appleScreenTime":{"enabled":true}}}"#.utf8)
         try consent.write(to: root.appendingPathComponent("capability-consent.json"))
         _ = try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02")
@@ -508,6 +511,13 @@ final class GoalongSiteExportTests: XCTestCase {
             deviceSourceLabels: [:], latestAppleUpdate: end, knowledgeIntervalCount: 0, biomeIntervalCount: 0)
         return .init(dayStart: start, dayEnd: end, timeZoneIdentifier: calendar.timeZone.identifier,
                      state: .completed, storedAt: end, collection: collection)
+    }
+
+    func testExportErrorsShownInTheAppAreFrenchAndKeepEnglishForTheCLI() {
+        let error = GoalongSiteExportError.localized("This day exceeds 200 domains; export without website details.", french: "Cette journée compte plus de 200 sites. Décochez Détails des sites ou choisissez-en moins.")
+        XCTAssertEqual(goalongUserMessage(error), "Cette journée compte plus de 200 sites. Décochez Détails des sites ou choisissez-en moins.")
+        XCTAssertTrue(String(describing: error).hasPrefix("This day exceeds"))
+        XCTAssertFalse(goalongUserMessage(GoalongCanonicalJSONError.trailingData).contains("Canonical"))
     }
 }
 #endif

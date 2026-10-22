@@ -291,6 +291,8 @@ struct GoalongSharingSelector: View {
     let symbol: String
     let items: [Item]
     @Binding var selection: Set<String>
+    /// An export carries at most 200 applications or domains.
+    static let selectionCap = 200
     @State private var search = ""
     private var absent: [String] { selection.subtracting(Set(items.map(\.id))).sorted() }
     private var visible: [Item] { items.filter { search.isEmpty || $0.title.localizedStandardContains(search) } }
@@ -305,7 +307,10 @@ struct GoalongSharingSelector: View {
                 GoalongSearchField("Rechercher…", text: $search, accessibilityLabel: "Rechercher dans \(title)")
             }
             HStack(spacing: 12) {
-                Button("Sélectionner les résultats") { selection.formUnion(visible.map(\.id)) }.disabled(visible.isEmpty)
+                Button("Sélectionner les résultats") {
+                    let room = max(0, Self.selectionCap - selection.count)
+                    selection.formUnion(visible.map(\.id).filter { !selection.contains($0) }.prefix(room))
+                }.disabled(visible.isEmpty)
                 Button("Tout décocher") { selection.removeAll() }.disabled(selection.isEmpty)
             }.buttonStyle(LHQuietButtonStyle()).font(.caption)
             if !absent.isEmpty {

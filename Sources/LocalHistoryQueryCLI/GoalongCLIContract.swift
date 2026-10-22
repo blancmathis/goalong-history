@@ -91,7 +91,7 @@ public enum GoalongCLIContract {
         .init(name: "status", syntax: "status", summary: "Diagnose every Goalong data source without reading conversation bodies."),
         .init(
             name: "recent",
-            syntax: "recent [--minutes N (1-525600)] [--actions-only] [--gaps-only] [--semantic-only]",
+            syntax: "recent [--minutes N (1-10080)] [--actions-only] [--gaps-only] [--semantic-only]",
             summary: "Read recent Computer History evidence."
         ),
         .init(name: "day", syntax: "day [today|yesterday|YYYY-MM-DD]", summary: "Return the combined daily view."),

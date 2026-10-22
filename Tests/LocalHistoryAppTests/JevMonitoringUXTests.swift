@@ -48,7 +48,7 @@ final class JevMonitoringUXTests: XCTestCase {
         let connection = try source("JevConnectionSheet.swift")
         XCTAssertTrue(connection.contains("SecureField("))
         XCTAssertFalse(connection.contains("monitor.setEnabled(true)"))
-        XCTAssertTrue(connection.contains("if monitor.error == nil { key = \"\"; dismiss() }"))
+        XCTAssertTrue(connection.contains("if keyError == nil { key = \"\"; dismiss() }"))
         XCTAssertTrue(connection.contains("isPresented: $confirmingRemoval"))
     }
 

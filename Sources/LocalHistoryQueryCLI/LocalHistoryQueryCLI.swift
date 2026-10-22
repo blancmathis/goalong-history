@@ -533,7 +533,7 @@ private struct ComputerHistoryReconstruction {
     let limitations: [String]
 }
 
-private enum CLIError: Error, CustomStringConvertible {
+private enum CLIError: Error, CustomStringConvertible, LocalizedError {
     case usage(String)
     case invalidDate(String)
     case invalidInteger(String)
@@ -547,6 +547,20 @@ private enum CLIError: Error, CustomStringConvertible {
         case .invalidInteger(let value): return "Invalid integer: \(value)"
         case .missingHealth: return "capture-health.json is not available"
         case .unsafeSource(let value): return value
+        }
+    }
+
+    /// French text for the app, which shows these errors to people. The CLI keeps `description`.
+    var errorDescription: String? {
+        switch self {
+        case .unsafeSource(let value):
+            if value.hasPrefix("Apple Screen Time is off") { return "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer." }
+            if value.hasPrefix("No saved Screen Time") { return "Aucune donnée Apple enregistrée pour cette journée. Choisissez une autre date ou actualisez l’historique." }
+            if value.hasPrefix("Computer History is off") { return "Activez l’historique de ce Mac pour inclure les sites, ou désactivez Sites web." }
+            if value.hasPrefix("Website details are unavailable") { return "Les sites ne sont pas disponibles pour cette date. Les applications restent utilisables sans les sites." }
+            return "Une source nécessaire n’est pas activée. Vérifiez les réglages d’Enregistrement."
+        case .missingHealth: return "Les données de santé ne sont pas disponibles."
+        case .invalidDate, .invalidInteger, .usage: return "Une valeur n’est pas valide. Vérifiez la sélection, puis réessayez."
         }
     }
 }
@@ -658,8 +672,8 @@ public enum GoalongQueryCLI {
 
         case "recent":
             let minutes = try integer(arguments.removeOption("--minutes") ?? "60")
-            guard (1...525_600).contains(minutes) else {
-                throw CLIError.usage("--minutes must be between 1 and 525600")
+            guard (1...10_080).contains(minutes) else {
+                throw CLIError.usage("--minutes must be between 1 and 10080")
             }
             let actionsOnly = arguments.removeFlag("--actions-only")
             let gapsOnly = arguments.removeFlag("--gaps-only")

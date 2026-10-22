@@ -60,6 +60,11 @@ import LocalHistoryCore
             value.contentMinSize = target.size; value.contentMaxSize = target.size
             value.setFrame(target, display: false)
             panel = value
+            // The panel never takes focus, so announce it for VoiceOver.
+            if ordersWindows {
+                NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                    userInfo: [.announcement: "Arrête de procrastiner.", .priority: NSAccessibilityPriorityLevel.high.rawValue])
+            }
         }
         content.seconds = seconds
         updateEffects(settings.stage(at: seconds))

@@ -18,16 +18,16 @@ public enum GoalongCanonicalJSONError: Error, Equatable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .tooLarge: return "Canonical JSON exceeded its byte limit."
-        case .tooDeep: return "Canonical JSON exceeded its nesting limit."
-        case .unexpectedEnd: return "Canonical JSON ended unexpectedly."
-        case .unexpectedByte(let byte): return "Canonical JSON contained an unexpected byte (\(byte))."
-        case .duplicateKey(let key): return "Canonical JSON contained the duplicate key \(key)."
-        case .invalidString: return "Canonical JSON contained an invalid UTF-8 string."
-        case .invalidEscape: return "Canonical JSON contained an invalid string escape."
-        case .invalidInteger: return "Canonical JSON contained a non-canonical or out-of-range integer."
-        case .trailingData: return "Canonical JSON contained trailing data."
-        case .unsupportedValue: return "Canonical JSON supports only null, booleans, signed integers, strings, arrays and objects."
+        case .tooLarge: return "Les données à signer sont trop volumineuses."
+        case .tooDeep: return "Les données à signer sont trop imbriquées."
+        case .unexpectedEnd: return "Les données à signer se terminent trop tôt."
+        case .unexpectedByte: return "Les données à signer contiennent un caractère inattendu."
+        case .duplicateKey: return "Les données à signer répètent une clé."
+        case .invalidString: return "Les données à signer contiennent un texte invalide."
+        case .invalidEscape: return "Les données à signer contiennent une séquence de texte invalide."
+        case .invalidInteger: return "Les données à signer contiennent un nombre non valide."
+        case .trailingData: return "Les données à signer contiennent des données en trop."
+        case .unsupportedValue: return "Les données à signer contiennent une valeur non prise en charge."
         }
     }
 }
