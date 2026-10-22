@@ -56,5 +56,30 @@
             XCTAssertTrue(card.contains("provider.frenchName"))
             XCTAssertEqual(AgentProvider.claudeCode.frenchName, "Claude Code")
         }
+
+        func testTokenCardSeparatesLoadingEmptyDayAndPartialCoverage() {
+            let day = Date(timeIntervalSince1970: 1_792_000_000)
+            let loading = AgentTokenUsageCard.summary(usage: nil, scanning: true)
+            XCTAssertEqual(loading.headline, "Analyse du jour en cours…")
+            XCTAssertFalse(loading.showsPartialCoverage)
+
+            let notAnalyzed = AgentTokenUsageCard.summary(usage: nil, scanning: false)
+            XCTAssertEqual(notAnalyzed.headline, "Usage indisponible")
+            XCTAssertNotNil(notAnalyzed.detail)
+            XCTAssertFalse(notAnalyzed.showsPartialCoverage)
+
+            let empty = AgentTokenUsageCard.summary(usage: AgentDailyTokenUsage(records: [], day: day), scanning: false)
+            XCTAssertEqual(empty.headline, "Aucune conversation IA ce jour")
+            XCTAssertFalse(empty.showsPartialCoverage)
+
+            let partial = AgentTokenUsageCard.summary(
+                usage: AgentDailyTokenUsage(records: [], day: day, sourceCoverageIncomplete: true), scanning: false)
+            XCTAssertEqual(partial.headline, "Usage indisponible")
+            XCTAssertTrue(partial.showsPartialCoverage)
+
+            let paris = TimeZone(identifier: "Europe/Paris")!
+            XCTAssertNotEqual(AgentTokenUsageCard.zoneName(paris), "Europe/Paris")
+            XCTAssertFalse(AgentTokenUsageCard.zoneName(paris).isEmpty)
+        }
     }
 #endif

@@ -96,4 +96,38 @@ final class HistoryLocalStoreReaderTests: XCTestCase {
         XCTAssertEqual(loaded.issues.count, 1)
         XCTAssertEqual(loaded.issues.first?.line, 2)
     }
+
+    func testDayReadFromAnotherTimeZoneIncludesTheWritersNeighbourJournal() throws {
+        // R4-donnees-03: a journal named after the Paris day, read from Tokyo the next day.
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("goalong-reader-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let events = root.appendingPathComponent("events", isDirectory: true)
+        try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+        let originalZone = NSTimeZone.default
+        defer { NSTimeZone.default = originalZone }
+        let paris = TimeZone(identifier: "Europe/Paris")!, tokyo = TimeZone(identifier: "Asia/Tokyo")!
+
+        // fixtureStart is 2027-01-15 08:00Z: 22:30Z is 23:30 in Paris (still 15 January there)
+        // and 07:30 on 16 January in Tokyo.
+        let event = fixtureEvent(id: "late-paris", sequence: 1, offset: 14.5 * 3600, kind: .heartbeat)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var data = try encoder.encode(event); data.append(0x0A)
+        let file = events.appendingPathComponent("2027-01-15.jsonl")
+        try data.write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: event.timestamp], ofItemAtPath: file.path)
+
+        NSTimeZone.default = tokyo
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = tokyo
+        let start = calendar.date(from: DateComponents(year: 2027, month: 1, day: 16))!
+        let end = calendar.date(byAdding: .day, value: 1, to: start)!.addingTimeInterval(-0.001)
+        XCTAssertEqual(HistoryLocalStoreReader(rootDirectory: root).load(start: start, end: end).events.map(\.id), ["late-paris"])
+
+        // Same-zone neighbour: its last write stops at the day boundary, so it stays skipped.
+        NSTimeZone.default = paris
+        var parisCalendar = Calendar(identifier: .gregorian); parisCalendar.timeZone = paris
+        let next = parisCalendar.date(from: DateComponents(year: 2027, month: 1, day: 16))!
+        XCTAssertEqual(HistoryLocalStoreReader(rootDirectory: root).load(
+            start: next, end: next.addingTimeInterval(86400 - 0.001)).events.map(\.id), [])
+    }
 }

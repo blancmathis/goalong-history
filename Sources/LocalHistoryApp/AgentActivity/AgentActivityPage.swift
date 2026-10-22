@@ -98,7 +98,7 @@
                         disabledSourceExplanation
                         if presentation == .management { watchedFoldersCard }
                     } else if presentation == .history {
-                        AgentTokenUsageCard(usage: agents.tokenUsageSnapshot ?? AgentDailyTokenUsage(records: [], day: agents.selectedDay), scanning: agents.isScanning, analyzedAt: agents.tokenUsageAnalyzedAt)
+                        AgentTokenUsageCard(usage: agents.tokenUsageSnapshot, scanning: agents.isScanning, analyzedAt: agents.tokenUsageAnalyzedAt)
                         conversationHistoryList
                         GoalongDisclosureGroup("Source et confidentialité") {
                             sourceConsentCard.padding(.top, 12)
