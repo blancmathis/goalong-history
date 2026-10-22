@@ -632,6 +632,8 @@
                     .buttonStyle(LHPrimaryButtonStyle())
                 }
             }
+            // Goalong Dev: the hooks are shared with the installed Goalong (read-only here).
+            .disabled(!agents.allowsHookChanges)
         }
 
         private var watchedFoldersCard: some View {

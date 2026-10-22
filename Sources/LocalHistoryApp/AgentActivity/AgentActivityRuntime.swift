@@ -50,6 +50,8 @@
         private let store: AgentActivityStore
         private let scanner: AgentActivityScanner
         private let installer: AgentIntegrationInstaller
+        /// Goalong Dev never installs or removes agent hooks: they are shared with the installed Goalong.
+        let allowsHookChanges: Bool
         private let sourceDiscovery: () -> [AgentWatchedFolder]
         private let workQueue = DispatchQueue(
             label: "ai.goalong.localhistory.agent-activity",
@@ -90,9 +92,11 @@
             sourceDiscovery: @escaping () -> [AgentWatchedFolder] = {
                 AgentDefaultSourceDiscovery.discover()
             },
+            channel: GoalongBuildChannel = .current,
             onCaptured: @escaping ([AgentCaptureRecord]) -> Void
         ) throws {
             self.rootDirectory = rootDirectory
+            allowsHookChanges = channel.allowsAgentHookChanges
             self.onCaptured = onCaptured
             self.sourceDiscovery = sourceDiscovery
             store = try AgentActivityStore(rootDirectory: rootDirectory)
@@ -376,7 +380,21 @@
             save(next, successMessage: nil)
         }
 
+        /// Shown instead of changing the agents' shared hook files from Goalong Dev.
+        static let devHookChangeRefused = (
+            title: "Hooks gérés par Goalong installé",
+            message: "Goalong Dev ne modifie pas les hooks des agents : ils sont partagés avec Goalong installé. Installez-les ou retirez-les depuis Goalong installé."
+        )
+
+        /// False (and an alert) in Goalong Dev: the hooks belong to the installed Goalong.
+        private func hookChangeAllowed() -> Bool {
+            guard !allowsHookChanges else { return true }
+            alert = AgentActivityAlert(title: Self.devHookChangeRefused.title, message: Self.devHookChangeRefused.message)
+            return false
+        }
+
         func installIntegration(_ kind: AgentIntegrationKind) {
+            guard hookChangeAllowed() else { return }
             workQueue.async { [weak self] in
                 guard let self else { return }
                 do {
@@ -398,6 +416,7 @@
         }
 
         func uninstallIntegration(_ kind: AgentIntegrationKind) {
+            guard hookChangeAllowed() else { return }
             workQueue.async { [weak self] in
                 guard let self else { return }
                 do {

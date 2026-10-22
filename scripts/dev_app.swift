@@ -69,6 +69,61 @@ let skippedTopLevel: Set<String> = [
 let skippedPrefixes = ["blocking-backup-"]
 /// Account credentials inside cloned folders, removed from the clone right after.
 let skippedNested = ["jev/api-key", "chatgpt/codex-home", "chatgpt/site-analysis-codex-home"]
+/// Files removed by prefix inside a cloned folder. Braise/display-recovery-*.json is the installed
+/// Goalong's live gamma state: Goalong Dev would apply it to the real screens at Braise start.
+let skippedNestedPrefixes = [(folder: "Braise", prefix: "display-recovery")]
+/// Written by every clone or fresh seed. A LocalHistory-Dev without it predates these exclusions
+/// (the #85 make dev cloned the real device key and tokens): DATA=keep cleans it first.
+let seedMarker = ".goalong-dev-seed-v2"
+/// What a pre-marker folder may hold from the real data. Blocking, Focus and runtime are left:
+/// in Goalong Dev they have always been its own.
+let legacyPurgedTopLevel: Set<String> = [
+    "device-signing-key-v2.bin", "website-connections", "app-backups", "setup-backups",
+]
+
+func removeIfPresent(_ url: URL, _ label: String) {
+    var info = stat()
+    guard lstat(url.path, &info) == 0 else { return }
+    do { try FileManager.default.removeItem(at: url) } catch { fail("Cannot drop \(label) from the dev data.") }
+}
+
+/// Removes nested credentials and the real Braise gamma state from a dev folder.
+func dropNested(in dev: URL) {
+    for relative in skippedNested { removeIfPresent(dev.appendingPathComponent(relative), relative) }
+    for (folder, prefix) in skippedNestedPrefixes {
+        let directory = dev.appendingPathComponent(folder, isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name.hasPrefix(prefix) {
+            removeIfPresent(directory.appendingPathComponent(name), folder + "/" + name)
+        }
+    }
+}
+
+func writeMarker(in dev: URL) {
+    guard FileManager.default.createFile(atPath: dev.appendingPathComponent(seedMarker).path,
+                                         contents: Data("seeded by make dev\n".utf8),
+                                         attributes: [.posixPermissions: 0o600]) else { fail("Cannot write \(seedMarker).") }
+}
+
+/// DATA=keep on an existing folder: keep the dev state, but never the real identity. A folder seeded
+/// before the exclusions loses everything the clone now skips; any folder loses a device key equal to the real one.
+func cleanKeptData(real: URL, dev: URL) {
+    var info = stat()
+    let realKey = real.appendingPathComponent("device-signing-key-v2.bin")
+    let devKey = dev.appendingPathComponent("device-signing-key-v2.bin")
+    if let a = FileManager.default.contents(atPath: realKey.path), let b = FileManager.default.contents(atPath: devKey.path), a == b {
+        removeIfPresent(devKey, "the real device key")
+        print("Removed the real device key from the dev data.")
+    }
+    guard lstat(dev.appendingPathComponent(seedMarker).path, &info) != 0 else { return }
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: dev.path)) ?? []
+    for name in names where legacyPurgedTopLevel.contains(name) || skippedPrefixes.contains(where: name.hasPrefix) {
+        removeIfPresent(dev.appendingPathComponent(name), name)
+    }
+    dropNested(in: dev)
+    writeMarker(in: dev)
+    print("Dev data from an older make dev cleaned (device key, accounts, backups, Braise screen state removed).")
+}
 
 /// clone: re-seeds LocalHistory-Dev from LocalHistory with APFS clones (instant, no extra disk).
 /// keep: keeps the dev state (clones once if it does not exist). fresh: empty, like a new user.
@@ -77,32 +132,32 @@ func seedData(_ mode: String, _ realPath: String, _ devPath: String) -> Never {
     let fileManager = FileManager.default
     let (real, dev) = checkedDataPaths(realPath, devPath)
     var info = stat()
-    let devExists = lstat(dev.path, &info) == 0
-    if mode == "keep", devExists { print("Dev data kept: \(dev.path)"); exit(0) }
     guard ["clone", "keep", "fresh"].contains(mode) else { fail(usage) }
+    let devExists = lstat(dev.path, &info) == 0
+    if mode == "keep", devExists {
+        cleanKeptData(real: real, dev: dev)
+        print("Dev data kept: \(dev.path)"); exit(0)
+    }
     if devExists {
         do { try fileManager.removeItem(at: dev) } catch { fail("Cannot remove the previous dev data: \(error.localizedDescription)") }
     }
     guard mkdir(dev.path, 0o700) == 0 else { fail("Cannot create \(dev.path): \(String(cString: strerror(errno)))") }
-    if mode == "fresh" { print("Dev data emptied (fresh): \(dev.path)"); exit(0) }
+    if mode == "fresh" { writeMarker(in: dev); print("Dev data emptied (fresh): \(dev.path)"); exit(0) }
     guard lstat(real.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else {
+        writeMarker(in: dev)
         print("No real data to clone (\(real.path)): dev data starts empty."); exit(0)
     }
     let names: [String]
     do { names = try fileManager.contentsOfDirectory(atPath: real.path) } catch { fail("Cannot list \(real.path)") }
-    for name in names.sorted() where !skippedTopLevel.contains(name) && !skippedPrefixes.contains(where: name.hasPrefix) {
+    for name in names.sorted() where !skippedTopLevel.contains(name) && !skippedPrefixes.contains(where: name.hasPrefix) && name != seedMarker {
         let source = real.appendingPathComponent(name).path, target = dev.appendingPathComponent(name).path
         guard clonefile(source, target, UInt32(CLONE_NOFOLLOW)) == 0 else {
             fail("APFS clone failed for \(name): \(String(cString: strerror(errno))). No full copy was attempted.")
         }
     }
-    for relative in skippedNested {
-        let target = dev.appendingPathComponent(relative)
-        if lstat(target.path, &info) == 0 {
-            do { try fileManager.removeItem(at: target) } catch { fail("Cannot drop \(relative) from the dev clone.") }
-        }
-    }
-    print("Dev data cloned by APFS (no device key, account, Blocking or Focus): \(dev.path)")
+    dropNested(in: dev)
+    writeMarker(in: dev)
+    print("Dev data cloned by APFS (no device key, account, Blocking, Focus or Braise screen state): \(dev.path)")
     exit(0)
 }
 

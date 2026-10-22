@@ -87,6 +87,9 @@ jobs:
       - name: Isolated-HOME recording and navigation tests
         run: ./scripts/test_isolated_home.sh --skip-build
 
+      - name: Goalong Dev control tests (no build, no launch)
+        run: bash scripts/test_dev_app.sh
+
       - name: Exercise full-row disclosure interactions
         timeout-minutes: 2
         run: |

@@ -55,8 +55,8 @@ DEV_SOURCE_COMMIT="${LOCALHISTORY_DEV_SOURCE_COMMIT:-}"
 SCRATCH_PATH="${LOCALHISTORY_SCRATCH_PATH:-}"
 if [[ "$DEVELOPMENT_BUILD" == 1 ]]; then
   case "$DEV_DATA_MODE" in
-    clone|keep|fresh) ;;
-    *) echo "Development bundles require LOCALHISTORY_DEV_DATA_MODE=clone, keep or fresh." >&2; exit 1 ;;
+    clone|keep|fresh|none) ;;  # none: make dev NO_LAUNCH=1 prepared no data
+    *) echo "Development bundles require LOCALHISTORY_DEV_DATA_MODE=clone, keep, fresh or none." >&2; exit 1 ;;
   esac
   case "$DEV_SERVER" in
     ''|off|on) ;;

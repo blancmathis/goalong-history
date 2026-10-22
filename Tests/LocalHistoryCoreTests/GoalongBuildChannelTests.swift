@@ -24,6 +24,7 @@ final class GoalongBuildChannelTests: XCTestCase {
             XCTAssertEqual(channel.menuBarAutosaveName("goalong-menu"), "goalong-menu")
             XCTAssertTrue(channel.allowsServerTraffic)
             XCTAssertTrue(channel.allowsLoginItems)
+            XCTAssertTrue(channel.allowsAgentHookChanges)
             XCTAssertNoThrow(try GoalongDevServerDisabledError.check(channel))
         }
         // The test runner has no channel key, like every release.
@@ -56,6 +57,17 @@ final class GoalongBuildChannelTests: XCTestCase {
         XCTAssertEqual(channel.windowTitle("Goalong History"), "Goalong History — Dev")
         XCTAssertEqual(channel.menuBarAutosaveName("goalong-menu"), "goalong-menu-dev")
         XCTAssertEqual(channel.menuBarAutosaveName("goalong-braise"), "goalong-braise-dev")
+        XCTAssertFalse(channel.allowsAgentHookChanges)
+    }
+
+    /// make dev NO_LAUNCH=1 prepares no data: the banner must not claim clone/keep/fresh.
+    func testUnseededDevCopySaysSo() {
+        var info = dev
+        info[GoalongBuildChannel.dataModeKey] = GoalongBuildChannel.unseededDataMode
+        XCTAssertEqual(GoalongBuildChannel(info: info).developmentLabel,
+                       "Goalong Dev · feat/x · 4cb75dc+dirty · données non préparées")
+        info[GoalongBuildChannel.dataModeKey] = nil
+        XCTAssertEqual(GoalongBuildChannel(info: info).developmentLabel, "Goalong Dev · feat/x · 4cb75dc+dirty · données isolées")
     }
 
     func testGoalongDevHasNoServerTrafficOrLoginItemByDefault() {

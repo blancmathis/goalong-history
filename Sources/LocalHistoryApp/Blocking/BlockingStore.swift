@@ -1,11 +1,16 @@
 #if os(macOS)
 import Darwin
 import Foundation
+import LocalHistoryCore
 
 /// All path components are opened without following links; operations remain relative to the held fd.
 struct BlockingStore {
     var directory: URL
-    static var standard: BlockingStore { BlockingStore(directory: AppPaths.applicationSupportDirectory.appendingPathComponent("Blocking", isDirectory: true)) }
+    static var standard: BlockingStore { standard(channel: .current, base: GoalongBuildChannel.applicationSupportBase) }
+    /// The channel's own Blocking folder: `LocalHistory-Dev/Blocking` in Goalong Dev, never the real stakes.
+    static func standard(channel: GoalongBuildChannel, base: URL) -> BlockingStore {
+        BlockingStore(directory: channel.dataRoot(base: base).appendingPathComponent("Blocking", isDirectory: true))
+    }
     enum Failure: Error { case unsafePath, unreadable, invalidDocument }
     /// How `loadRecovering` obtained its document.
     enum Recovery: Equatable { case none, previous, reset }

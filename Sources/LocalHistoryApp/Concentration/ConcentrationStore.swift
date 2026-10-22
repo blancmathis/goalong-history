@@ -1,12 +1,17 @@
 #if os(macOS)
 import Darwin
 import Foundation
+import LocalHistoryCore
 import LocalHistoryQueryCLI
 
 /// Owner-only, no-follow traversal and fd-relative atomic writes, like BlockingStore.
 struct FocusStore {
     var directory: URL
-    static var standard: Self { Self(directory: AppPaths.applicationSupportDirectory.appendingPathComponent("Focus")) }
+    static var standard: Self { standard(channel: .current, base: GoalongBuildChannel.applicationSupportBase) }
+    /// The channel's own Focus folder: `LocalHistory-Dev/Focus` in Goalong Dev, never the real stakes.
+    static func standard(channel: GoalongBuildChannel, base: URL) -> Self {
+        Self(directory: channel.dataRoot(base: base).appendingPathComponent("Focus"))
+    }
     static let maximumBytes = 2 * 1024 * 1024
     private func openDirectory(_ area: String?, create: Bool) throws -> Int32? {
         let path = area.map { directory.appendingPathComponent($0) } ?? directory

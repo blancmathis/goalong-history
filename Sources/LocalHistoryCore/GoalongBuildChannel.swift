@@ -71,13 +71,24 @@ public struct GoalongBuildChannel: Equatable {
     /// Goalong Dev never registers or removes a login item: that belongs to the installed Goalong.
     public var allowsLoginItems: Bool { !isDevelopment }
 
+    /// Agent hooks live in the agents' shared configuration files with one Goalong marker: installing or
+    /// removing them from Goalong Dev would repoint or remove the installed Goalong's hooks.
+    public var allowsAgentHookChanges: Bool { !isDevelopment }
+
+    /// `make dev NO_LAUNCH=1` installs without preparing any data: the banner must not claim a mode.
+    public static let unseededDataMode = "none"
+
     /// "Goalong Dev · main · 4cb75dc · données clone", or nil in a release.
     public var developmentLabel: String? {
         guard isDevelopment else { return nil }
         var parts = ["Goalong Dev"]
         if let sourceBranch { parts.append(sourceBranch) }
         if let sourceCommit { parts.append(sourceCommit) }
-        parts.append("données " + (devDataMode ?? "isolées"))
+        switch devDataMode {
+        case nil: parts.append("données isolées")
+        case Self.unseededDataMode?: parts.append("données non préparées")
+        case let mode?: parts.append("données " + mode)
+        }
         if devServerEnabled { parts.append("serveur actif") }
         return parts.joined(separator: " · ")
     }
@@ -87,7 +98,8 @@ public struct GoalongBuildChannel: Equatable {
     /// Distinct menu bar autosave names, so Control Centre keeps one placement per copy.
     public func menuBarAutosaveName(_ base: String) -> String { isDevelopment ? base + "-dev" : base }
 
-    static var applicationSupportBase: URL {
+    /// `~/Library/Application Support`, the parent of both data roots.
+    public static var applicationSupportBase: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     }
 
