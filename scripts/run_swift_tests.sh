@@ -109,27 +109,47 @@ case "$mode" in
     out="$(mktemp -d /tmp/goalong-test-ui-XXXXXX)"
     report_screen
     state="$(screen_state)"
-    classes='BraisePageRenderingTests|AmbiancePageRenderingTests|SoftwareUpdateWindowRenderingTests|GoalongWebsiteSharingRenderingTests|ConcentrationHubRenderingTests|BlockingPageRenderingTests|GoalongAnalyticsRenderingTests|GoalongDesignAuditRenderingTests|GoalongBrandRenderingTests|JevProcrastinationRenderingTests|JevEffectsRenderingTests|GoalongDisclosureInteractionTests|MenuBarPanelRenderingTests|BlockingActivationRegressionTests|GoalongTrustRenderingTests|GoalongControlsInteractionTests|ConcentrationRenderingTests|BlockingTimerTests'
-    for name in BRAISE AMBIANCE BRAND SHARING CONCENTRATION_HUB BLOCKING ANALYTICS DESIGN_AUDIT JEV_CONTEXT JEV_EFFECTS MENUBAR CONCENTRATION TIMER; do
-      case "$name" in DESIGN_AUDIT) var=GOALONG_DESIGN_AUDIT ;; *) var="GOALONG_${name}_SNAPSHOTS" ;; esac
-      mkdir -p "$out/$name"; export "$var=$out/$name"
-    done
-    mkdir -p "$out/FOCUS_UI"
-    export GOALONG_FOCUS_UI_TESTS=1 GOALONG_FOCUS_UI_SNAPSHOT="$out/FOCUS_UI/disclosures-expanded.png" GOALONG_BLOCKING_UI_TESTS=1
-    export GOALONG_BRAND_TEST_HOME="$home" GOALONG_SHARING_TEST_HOME="$home"
-    swift_test --filter "$classes"; status=$?
+    status=0
+    # Three groups, each in its own throwaway home: the brand and design-audit renders refuse any
+    # home that is not /tmp/goalong-brand-*, and the sharing render wants /tmp/goalong-sharing-home-*.
+    run_group() { # name home-prefix classes
+      local name="$1" prefix="$2" classes="$3" group_home
+      group_home="$(mktemp -d "/tmp/$prefix-XXXXXX")"
+      echo "---- make test-ui group $name"
+      (
+        export GOALONG_TEST_HOME="$group_home" CFFIXED_USER_HOME="$group_home" HOME="$group_home"
+        export GOALONG_BRAND_TEST_HOME="$group_home" GOALONG_SHARING_TEST_HOME="$group_home"
+        export GOALONG_BRAND_SNAPSHOTS="$out/brand" GOALONG_DESIGN_AUDIT="$out/design-audit"
+        export GOALONG_SHARING_SNAPSHOTS="$out/sharing"
+        for pair in BRAISE:braise AMBIANCE:ambiance CONCENTRATION_HUB:concentration-hub BLOCKING:blocking \
+          ANALYTICS:analytics JEV_CONTEXT:jev-context JEV_EFFECTS:jev-effects MENUBAR:menubar \
+          CONCENTRATION:concentration TIMER:timer; do
+          mkdir -p "$out/${pair#*:}"; export "GOALONG_${pair%%:*}_SNAPSHOTS=$out/${pair#*:}"
+        done
+        mkdir -p "$out/brand" "$out/design-audit" "$out/sharing" "$out/focus-ui"
+        export GOALONG_FOCUS_UI_TESTS=1 GOALONG_FOCUS_UI_SNAPSHOT="$out/focus-ui/disclosures-expanded.png" GOALONG_BLOCKING_UI_TESTS=1
+        xcrun swift test --filter "$classes" 2>&1 | tee -a "$log"; exit "${PIPESTATUS[0]}"
+      ) || status=$?
+      rm -rf "$group_home"
+    }
+    run_group brand goalong-brand 'GoalongBrandRenderingTests|GoalongTrustRenderingTests|GoalongDesignAuditRenderingTests|GoalongControlsInteractionTests'
+    run_group sharing goalong-sharing-home 'GoalongWebsiteSharingRenderingTests'
+    run_group other goalong-test 'BraisePageRenderingTests|AmbiancePageRenderingTests|ConcentrationHubRenderingTests|BlockingPageRenderingTests|GoalongAnalyticsRenderingTests|JevProcrastinationRenderingTests|JevEffectsRenderingTests|GoalongDisclosureInteractionTests|MenuBarPanelRenderingTests|BlockingActivationRegressionTests|ConcentrationRenderingTests|BlockingTimerTests'
     echo "----"
     skips="$(grep -c "' skipped (" "$log" || true)"
     echo "Render output: $out"
     echo "Skipped inside make test-ui: $skips"
-    [[ "$skips" -gt 0 ]] && grep "Test skipped" "$log" | sed 's/^.*-\[/  -[/'
+    if [[ "$skips" -gt 0 ]]; then grep "Test skipped" "$log" | sed 's/^.*-\[/  -[/'; fi
     elapsed
     [[ $status -ne 0 ]] && exit "$status"
-    if [[ "$skips" -gt 0 && "$state" != locked ]]; then
-      echo "error: opt-in UI tests skipped although their variables are set" >&2
-      exit 1
+    if [[ "$skips" -gt 0 ]]; then
+      if [[ "$state" == locked ]]; then
+        echo "Screen was locked: the skips above are expected; unlock and run again for the full proof."
+      else
+        echo "error: opt-in UI tests skipped although their variables are set" >&2
+        exit 1
+      fi
     fi
-    [[ "$state" == locked && "$skips" -gt 0 ]] && echo "Screen was locked: the skips above are expected; unlock and run again for the full proof."
     exit 0
     ;;
   *) echo "usage: $0 check [FILTER] | full | ui" >&2; exit 2 ;;
