@@ -1,5 +1,10 @@
 # Changelog
 
+## À publier — icône de barre des menus et Goalong Dev
+
+- **L’icône de Goalong ne disparaît plus de la barre des menus.** macOS gardait un ancien réglage « masqué » pour l’icône : Goalong et Braise ont maintenant chacun leur propre emplacement mémorisé.
+- **Développement (sans effet pour les membres) : Goalong Dev tourne à côté de Goalong.** `make dev` construit le worktree en une app séparée, `Goalong Dev` (`ai.goalong.localhistory.dev`, dans `~/Applications`), sans jamais fermer l’app installée : l’enregistrement et le blocage réels continuent. Goalong Dev a ses propres données (`LocalHistory-Dev`, clone APFS sans clé d’appareil, jetons de compte, Blocage ni Concentration), ses propres préférences, n’envoie rien aux serveurs sauf `SERVER=on` et ne touche jamais à l’ouverture à la connexion. Aucune des deux apps ne bloque ni n’enregistre l’autre. Nouveaux réglages : `DATA=clone|keep|fresh`, `BLOCKING=copy`, `SERVER=on`, `NO_LAUNCH=1`, et `make dev-status`. `DATA=real` est supprimé.
+
 ## À publier — corrections de l’audit qualité
 
 - **Blocage plus fiable** : un blocage verrouillé survit au changement de fuseau horaire, à l’arrêt du démarrage à l’ouverture de session et aux jours de changement d’heure ; le quota du jour n’est plus remis à zéro trop tôt et les compteurs de la veille sont gardés, y compris avec un calendrier non grégorien. Un programme prévu démarre dès la sortie de veille. Les fenêtres privées suivent le réglage « inclure les fenêtres privées ». La page affiche les vraies fins de gel et de verrou, montre chaque app ou site bloqué une seule fois, et les plages horaires s’ajoutent au clavier ou avec VoiceOver. Un engagement qui finit à 00:00 ou vise une liste inconnue est refusé.

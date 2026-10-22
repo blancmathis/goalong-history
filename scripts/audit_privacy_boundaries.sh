@@ -187,7 +187,7 @@ if [[ -f "$PERMISSION_REPAIR" ]]; then
   for fragment in \
     'process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")' \
     'return ["reset", service, bundleIdentifier]' \
-    'static let bundleIdentifier = "ai.goalong.localhistory"' \
+    'static let bundleIdentifier = ProductIdentity.bundleIdentifier' \
     'guard bundleID == bundleIdentifier' \
     '.confirmationDialog(' \
     'process.standardOutput = FileHandle.nullDevice' \
@@ -201,6 +201,12 @@ if [[ -f "$PERMISSION_REPAIR" ]]; then
   if grep -nE 'return "All"|TCC.db|ProcessInfo.processInfo.environment|process.arguments.*CommandLine' "$PERMISSION_REPAIR"; then
     echo "Permission reset boundary was broadened." >&2; failed=true
   fi
+fi
+# "Me" is this copy's own Goalong bundle ID (release or Goalong Dev), never another app's.
+if ! grep -Fq 'static let bundleIdentifier = GoalongBundleIdentity.current' "$ROOT_DIR/Sources/LocalHistoryApp/ProductIdentity.swift" ||
+   ! grep -Fq 'guard let identifier, let own = family.first(where: { $0 == identifier }) else { return release }' "$ROOT_DIR/Sources/LocalHistoryCore/GoalongBuildChannel.swift" ||
+   ! grep -Fq 'public static let family: [String] = [release, development]' "$ROOT_DIR/Sources/LocalHistoryCore/GoalongBuildChannel.swift"; then
+  echo "Goalong self bundle identity is no longer limited to the Goalong family." >&2; failed=true
 fi
 
 if [[ -f "$CODEX_BRIDGE" ]]; then
@@ -367,7 +373,7 @@ if [[ -f "$BLOCKING_ENFORCEMENT" ]]; then
 fi
 
 for required_fragment in \
-  'bundle.bundleIdentifier == "ai.goalong.localhistory"' \
+  'bundle.bundleIdentifier == ProductIdentity.bundleIdentifier' \
   'child.executableURL = helper' \
   'Contents/MacOS/goalong-relauncher' \
   'helper.resolvingSymlinksInPath() == helper.standardizedFileURL' \

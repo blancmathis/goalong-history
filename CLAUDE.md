@@ -6,34 +6,29 @@
 - Contexte projet (état, décisions, pièges) : `CONTEXT.md` du checkout principal (non versionné).
 
 ## Deux voies seulement
-1. Itération locale : `make dev` / `make dev-stop` (ci-dessous). Ne publie rien.
-2. Release : PR → merge sur `main` → la CI signe, vérifie et publie via Sparkle. **Merge = publication publique** : seulement avec l’accord du propriétaire.
-- Aucun autre déploiement local. Les agents launchd `ai.goalong.local-*` sont désactivés : ne pas les recharger.
+1. **Goalong Dev** (itération locale) : `make dev` construit le worktree en une app séparée qui tourne **à côté** de Goalong installé. Ne publie rien.
+2. **Release** : PR → CI → merge sur `main` → Sparkle. **Merge = publication publique** : seulement quand le propriétaire dit « déploie ».
+- Aucun autre déploiement local. Ne jamais installer une build locale dans `/Applications` : Sparkle la remplace (build `YYYYMMDD.HHMMSS` < `30000000.x`). Les agents launchd `ai.goalong.local-*` sont désactivés : ne pas les recharger.
 
-## `make dev`
-- Compile en debug pour l’architecture du Mac (sans clean, tests ni audit), ferme normalement Goalong, lance `.build/dev/Goalong History.app`. Log : `.build/dev/build.log`. Signature vérifiée avant chaque basculement ; même bundle id et certificat que la release (identité TCC conservée, permissions existantes).
-- Données (mode écrit dans l’Info.plist du bundle dev, `GoalongBuildChannel=dev` + `GoalongDevDataMode` ; une relance le garde) :
-  - `make dev` : données isolées dans `~/Library/Application Support/LocalHistory-Dev/`, re-semé à chaque lancement par clone APFS de `LocalHistory/` (instantané, sans coût disque). Le miroir Codex de l’historique va dans `LocalHistory-Dev/codex-memory-mirror/`, pas dans `~/.codex`.
-  - `make dev DATA=keep` : garde l’état dev, sans re-semer.
-  - `make dev DATA=real` : ancien comportement, lit et écrit les vraies données (avertissement affiché).
-- Exception : le blocage reste le vrai. `LocalHistory/Blocking/` (listes, quotas, verrou, garant) et `LocalHistory/Focus/` (engagements, jokers) sont lus et écrits en vrai, sinon `make dev` contournerait un blocage.
-- Avant chaque basculement (`make dev`, `make dev-stop`), copie horodatée de `Blocking/` et `Focus/` dans `LocalHistory/app-backups/dev-switch/<date>-dev|stop/` (20 dernières gardées). Restaurer : app fermée normalement, recopier le dossier voulu à la place de `LocalHistory/Blocking` (ou `Focus`), puis relancer.
-- Distinction visuelle (copie dev seulement) : point orange sur les icônes de barre de menu (Goalong, Braise), icône du bundle avec bandeau « DEV », nom affiché `Goalong History Dev`, titres de fenêtres « — Dev », bande « Copie de développement · données isolées » (orange plein si vraies données) en haut du panneau et de la fenêtre principale. Le nom du processus reste « Goalong History » : le démon `fr.lifeos.goalong-guard` le cherche par `pgrep -x`.
-- Sparkle et les migrations d’installation sont désactivés dans la copie dev.
-- **Toujours finir une session d’agent par `make dev-stop`** : ferme la copie dev et relance `/Applications/Goalong History.app`.
-- Les deux commandes sont exclusives. Après une interruption, vérifier qu’aucune ne tourne avant de supprimer `.build/dev/lock`. `make clean` supprime aussi le cache dev : quitter la copie dev avant.
-
-## Non isolé en dev
-- Préférences `UserDefaults` (même bundle id ; dont l’activation des modules Blocage/Concentration), trousseau, compte et serveur Supabase réels, identité de l’appareil, App Attest, enregistrement à l’ouverture de session, caches système du bundle id.
-- La CLI `goalong` installée parle à l’app installée (`LocalHistory/runtime`), pas à la copie dev isolée.
+## Goalong Dev (`make dev`)
+- App `~/Applications/Goalong Dev.app` : bundle id `ai.goalong.localhistory.dev`, processus `Goalong History Dev`, même certificat que la release (exigence désignée sans empreinte : les permissions accordées restent d’un build à l’autre). Icône DEV, point orange en barre des menus, titres « — Dev », bandeau branche · commit · données.
+- Build debug incrémental dans le `.build` du worktree (le même que `make test`), signe, installe, ferme **seulement** une Goalong Dev en cours, lance via `open`. Durée de chaque étape affichée ; log `.build/goalong-dev/build.log`. Goalong installé n’est jamais fermé : enregistrement et blocage réels continuent.
+- Une seule Goalong Dev à la fois : le dernier `make dev` gagne (le bandeau dit quelle branche). `make dev-stop` ferme Goalong Dev seulement ; `make dev-status` donne branche, commit, date, mode de données et état.
+- Données : `~/Library/Application Support/LocalHistory-Dev/`, jamais `LocalHistory/`. `DATA=clone` (défaut : clone APFS des vraies données, sans clé d’appareil, jetons de compte, `Blocking/`, `Focus/`, sauvegardes ni sockets), `DATA=keep` (garde l’état dev), `DATA=fresh` (vide, nouvel utilisateur). `DATA=real` n’existe plus.
+- Blocage et Concentration de Goalong Dev sont à elle, vides par défaut. `BLOCKING=copy` copie les listes réelles sans verrou, mot de passe ni session. Le vrai blocage reste appliqué par Goalong installé.
+- Coupé dans Goalong Dev : envois serveur (site, envoi quotidien, partage, Jev, vérification) sauf `SERVER=on` (bandeau orange), élément de connexion, Sparkle, migrations d’installation, lien `goalong-history://`. Préférences : domaine propre (`ai.goalong.localhistory.dev`). Socket CLI dans `LocalHistory-Dev/runtime`.
+- Première utilisation : le propriétaire accorde une fois les permissions à Goalong Dev (Accessibilité, Surveillance de l’entrée, etc.).
+- **Agents** : ne lancent pas Goalong Dev sans demande du propriétaire (fenêtres, demandes de permission). Utiliser `make dev NO_LAUNCH=1` (build, signe, installe ; ni données, ni fermeture, ni lancement), avec `DEV_APP_DIR=/private/tmp/…` pour une vérification.
+- Non isolé ou non vérifié : trousseau (sans groupe partagé, séparation par bundle id non vérifiée), hooks d’agents installés à la main depuis Goalong Dev (ils pointeraient vers Goalong Dev).
 
 ## Interdits
-- Jamais une 2e instance à côté de l’app installée (passer par `make dev` / `make dev-stop`).
 - Jamais forcer la fermeture : un blocage actif peut refuser de quitter ; le résoudre dans l’app.
-- Ne pas modifier `/Applications/Goalong History.app`, ni le trousseau, ni `blocking.json` à la main app ouverte. Le démon guard relance l’app ~5 s après un kill ; l’arrêter demande le mot de passe admin.
+- Ne pas modifier `/Applications/Goalong History.app`, ni le trousseau, ni `blocking.json` à la main app ouverte.
+- Démon garde `fr.lifeos.goalong-guard`, s’il est actif (inactif depuis le 2026-10-15) : il relance l’app installée ~5 s après un kill (`pgrep -x "Goalong History"`, Goalong Dev n’est pas concernée) ; l’arrêter demande le mot de passe admin.
 
 ## Vérifications
-- Tests ciblés (`swift test --filter …`), puis `make audit`.
+- Jamais `swift test` nu (fuites dans `~/Library/Preferences`). Tests ciblés avec un HOME jetable : `home=$(mktemp -d /tmp/goalong-test-XXXXXX); GOALONG_TEST_HOME="$home" CFFIXED_USER_HOME="$home" xcrun swift test --filter X; rm -rf "$home"`. Puis `make audit` et `make test`.
+- Scripts Goalong Dev : `bash scripts/test_dev_app.sh` (sans build ni lancement).
 - Les tests restent invisibles (`Tests/GoalongHeadlessTestSupport` : fenêtres à alpha 0, ni activation ni ouverture d’URL/app). Pour les voir : `GOALONG_TESTS_VISIBLE=1`.
 - Après ajout d’un fichier Swift dans l’app : `python3 scripts/generate_support_source_allowlist.py`.
 - Toute nouvelle sortie réseau : `docs/NETWORK.md` et `scripts/generate_security_artifacts.py`.

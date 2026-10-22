@@ -383,7 +383,7 @@ $CODEX_HOME/memories/extensions/goalong/
 ```
 
 or to `~/.codex/memories/extensions/goalong/` when `CODEX_HOME` is not configured.
-An isolated `make dev` copy writes this mirror to `LocalHistory-Dev/codex-memory-mirror/`
+Goalong Dev (`make dev`) writes this mirror to `LocalHistory-Dev/codex-memory-mirror/`
 instead, so its retention and deletions never touch the real Codex mirror.
 The compact Goalong JSON remains authoritative and deliberately omits its regenerable
 Markdown body. The Markdown is regenerated from that structure and rewritten only when
