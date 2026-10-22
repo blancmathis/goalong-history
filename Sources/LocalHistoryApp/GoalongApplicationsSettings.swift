@@ -281,32 +281,72 @@ enum GoalongKnownApplications {
 }
 #endif
 #if os(macOS)
+/// Pure list edits for the onboarding exclusions (unit-tested).
+enum GoalongOnboardingExclusionEdit {
+    static func lines(_ text: String) -> [String] { text.components(separatedBy: .newlines).filter { !$0.isEmpty } }
+    static func merged(_ text: String, adding values: [String]) -> String {
+        Array(Set(lines(text) + values.filter { !$0.isEmpty })).sorted().joined(separator: "\n")
+    }
+    static func removing(_ value: String, from text: String) -> String {
+        lines(text).filter { $0 != value }.joined(separator: "\n")
+    }
+    /// Adds the typed site(s) to the draft. Throws when the text is not a valid site.
+    static func addDomains(_ input: String, to settings: inout DashboardSettingsDraft) throws {
+        let domains = try PrivacyScopeInput.domains(input)
+        settings.excludedDomainsText = merged(settings.excludedDomainsText, adding: domains)
+    }
+}
+
 @MainActor struct GoalongOnboardingExclusions: View {
     @ObservedObject var model: DashboardViewModel
+    /// Owned by the onboarding so a site typed but not yet added is not lost when « Valider mes choix » is pressed.
+    @Binding var website: String
     @State private var appText = ""
-    @State private var website = ""
     @State private var message: String?
+    private var domains: [String] { GoalongOnboardingExclusionEdit.lines(model.settingsDraft.excludedDomainsText) }
+    private var applications: [String] { GoalongOnboardingExclusionEdit.lines(model.settingsDraft.excludedApplicationsText) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ApplicationScopePickerButton(text: $appText)
                 .onChange(of: appText) { value in
-                    let existing = model.settingsDraft.excludedApplicationsText.components(separatedBy: .newlines)
-                    model.settingsDraft.excludedApplicationsText = Array(Set(existing + value.components(separatedBy: .newlines))).filter { !$0.isEmpty }.sorted().joined(separator: "\n")
-                    message = "Applications exclues de l’enregistrement détaillé."
+                    model.settingsDraft.excludedApplicationsText = GoalongOnboardingExclusionEdit.merged(
+                        model.settingsDraft.excludedApplicationsText, adding: value.components(separatedBy: .newlines))
+                    announce("Application ajoutée à la liste d’exclusion.")
                 }
             HStack {
                 TextField("Site à exclure · exemple.fr", text: $website).textFieldStyle(GoalongFieldStyle())
-                Button("Ajouter") {
-                    do {
-                        let domains = try PrivacyScopeInput.domains(website)
-                        let existing = model.settingsDraft.excludedDomainsText.components(separatedBy: .newlines)
-                        model.settingsDraft.excludedDomainsText = Array(Set(existing + domains)).filter { !$0.isEmpty }.sorted().joined(separator: "\n")
-                        website = ""; message = "Site exclu. Sans lecture des adresses, le navigateur entier est exclu."
-                    } catch { message = "Saisissez un site valide." }
-                }.disabled(website.isEmpty)
+                    .onSubmit { add() }
+                Button("Ajouter") { add() }.disabled(website.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            ForEach(applications + domains, id: \.self) { item in
+                HStack {
+                    Text(item).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button("Retirer") { remove(item) }.buttonStyle(.plain).foregroundStyle(LHTheme.secondaryText)
+                        .accessibilityLabel("Retirer \(item) des exclusions")
+                }
             }
             if let message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
         }
+    }
+    private func announce(_ text: String) {
+        message = text
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: text])
+    }
+    private func remove(_ item: String) {
+        model.settingsDraft.excludedApplicationsText = GoalongOnboardingExclusionEdit.removing(item, from: model.settingsDraft.excludedApplicationsText)
+        model.settingsDraft.excludedDomainsText = GoalongOnboardingExclusionEdit.removing(item, from: model.settingsDraft.excludedDomainsText)
+        announce("Exclusion retirée.")
+    }
+    private func add() {
+        guard !website.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        do {
+            try GoalongOnboardingExclusionEdit.addDomains(website, to: &model.settingsDraft)
+            website = ""
+            announce(model.settingsDraft.captureURLs
+                ? "Site ajouté. Il sera exclu une fois vos choix validés."
+                : "Site ajouté. La lecture des adresses est désactivée : le navigateur entier sera exclu une fois vos choix validés.")
+        } catch { announce("Saisissez un site comme exemple.fr, sans espace ni chemin.") }
     }
 }
 #endif

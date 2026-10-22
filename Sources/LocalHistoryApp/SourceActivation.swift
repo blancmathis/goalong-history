@@ -408,6 +408,7 @@ import LocalHistoryCore
         @State private var restarting = false
         @State private var restartError: String?
         @State private var manualChecks = 0
+        @State private var globalPause = GoalongGlobalPause.load()
         @State private var watchUntil = Date.distantPast
         private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -451,6 +452,13 @@ import LocalHistoryCore
                                     .fixedSize(horizontal: false, vertical: true)
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         } else {
+                            if globalPause.blocksActivity, let recordingModel {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Tout le suivi est suspendu : l’accès ne peut pas être vérifié.")
+                                        .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.warning)
+                                    GoalongGlobalPauseControl(model: recordingModel)
+                                }
+                            }
                             PermissionSetupSteps(copy: copy, openedSettings: openedSettings, ready: ready)
                             if case .unavailable(let message) = access {
                                 Label(message, systemImage: "exclamationmark.circle")
@@ -521,6 +529,12 @@ import LocalHistoryCore
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 if openedSettings && !flow.checking && !restarting { check() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in
+                let wasPaused = globalPause.blocksActivity
+                globalPause = .load()
+                // Resumed from this sheet: check again at once instead of leaving the old pause message.
+                if wasPaused && !globalPause.blocksActivity && !flow.checking && !ready && !restarting { check() }
             }
             .onReceive(refreshTimer) { now in
                 if openedSettings && now < watchUntil && NSApplication.shared.isActive && !flow.checking && !ready && !restarting { check() }

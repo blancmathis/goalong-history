@@ -261,6 +261,19 @@
                             Button("Ouvrir la configuration guidée") { model.requestPermissions() }
                                 .buttonStyle(LHPrimaryButtonStyle())
                         }
+                    } else if let health = model.runtime.captureHealth, health.state == .inputTapUnavailable {
+                        HStack {
+                            Label(health.state.frenchDetail, systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(LHTheme.warning)
+                            Spacer()
+                            Button("Ouvrir la Surveillance de l’entrée") { model.openInputMonitoringSettings() }
+                                .buttonStyle(LHPrimaryButtonStyle())
+                        }
+                    } else if let health = model.runtime.captureHealth, [.paused, .storageUnavailable].contains(health.state) {
+                        Label(health.state.frenchDetail, systemImage: health.state == .paused ? "pause.circle" : "externaldrive.badge.exclamationmark")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LHTheme.warning)
                     } else if model.runtime.captureHealth?.captureProven != true {
                         HStack {
                             Label(
@@ -320,19 +333,19 @@
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "AX : \(snapshot.lastAXContextSuccessAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.rawValue ?? "aucun") à \(snapshot.lastSuppressionAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
+                        "Accessibilité : \(snapshot.lastAXContextSuccessAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.frenchLabel ?? "aucun") à \(snapshot.lastSuppressionAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
                     )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "Autorisations : interrupteur AX \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé") · test AX \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué") · Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée") · capture \(snapshot.eventTapLifecycle.rawValue)"
+                        "Autorisations : interrupteur Accessibilité \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé") · test Accessibilité \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué") · Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée") · capture \(snapshot.eventTapLifecycle.frenchLabel)"
                     )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "Version : \(snapshot.build.signatureKind.rawValue) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans CDHash") · saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
+                        "Version : \(snapshot.build.signatureKind.frenchLabel) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans empreinte de code") · saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
                     )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
