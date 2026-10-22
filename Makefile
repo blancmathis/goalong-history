@@ -1,4 +1,4 @@
-.PHONY: test build app dmg audit install install-source uninstall clean dev dev-stop
+.PHONY: test build app dmg audit install install-source uninstall clean dev dev-stop dev-status
 
 VERSION ?= 0.6.0
 ARCHS ?= $(shell uname -m)
@@ -16,11 +16,18 @@ build:
 app:
 	LOCALHISTORY_VERSION="$(VERSION)" LOCALHISTORY_ARCHS="$(ARCHS)" ./scripts/build_app.sh
 
+# Goalong Dev runs beside the installed Goalong (see CLAUDE.md). Settings:
+# DATA=clone|keep|fresh BLOCKING=empty|copy SERVER=off|on NO_LAUNCH=1 DEV_APP_DIR=/abs/dir
+GOALONG_DEV_ENV = DATA="$(DATA)" BLOCKING="$(BLOCKING)" SERVER="$(SERVER)" NO_LAUNCH="$(NO_LAUNCH)" DEV_APP_DIR="$(DEV_APP_DIR)"
+
 dev:
-	./scripts/dev_app.sh dev $(or $(DATA),isolated)
+	$(GOALONG_DEV_ENV) ./scripts/dev_app.sh dev
 
 dev-stop:
-	./scripts/dev_app.sh stop
+	$(GOALONG_DEV_ENV) ./scripts/dev_app.sh stop
+
+dev-status:
+	$(GOALONG_DEV_ENV) ./scripts/dev_app.sh status
 
 dmg: app
 	./scripts/package_release.sh

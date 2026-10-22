@@ -3,12 +3,26 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${1:-$ROOT/dist/Goalong History.app}"
+# Channel: release (default) requires the pinned release bundle ID; "dev" (make dev) requires
+# ai.goalong.localhistory.dev with the same certificate and the same reviewed requirement shape.
+CHANNEL="${2:-release}"
+[[ "$CHANNEL" == release || "$CHANNEL" == dev ]] || { echo "Unknown channel: $CHANNEL" >&2; exit 2; }
 PIN="$ROOT/Distribution/release-signing.json"
 test -d "$APP" && test ! -L "$APP"
 IDENTITY="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["certificateSHA1"])' "$PIN")"
 TEAM="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["teamIdentifier"])' "$PIN")"
 BUNDLE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["bundleIdentifier"])' "$PIN")"
 [[ "$IDENTITY" =~ ^[0-9A-F]{40}$ && "$TEAM" =~ ^[A-Z0-9]{10}$ ]]
+RELEASE_BUNDLE="$BUNDLE"
+INFO_CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :GoalongBuildChannel' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+INFO_BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")"
+if [[ "$CHANNEL" == dev ]]; then
+  BUNDLE="$RELEASE_BUNDLE.dev"
+  [[ "$INFO_CHANNEL" == dev ]] || { echo 'Refusing a dev identity on a bundle without GoalongBuildChannel=dev.' >&2; exit 1; }
+else
+  [[ -z "$INFO_CHANNEL" ]] || { echo 'Refusing a development bundle as a release.' >&2; exit 1; }
+fi
+[[ "$INFO_BUNDLE" == "$BUNDLE" ]] || { echo "Unexpected bundle ID $INFO_BUNDLE (expected $BUNDLE)." >&2; exit 1; }
 DETAILS="$(codesign -dv --verbose=4 "$APP" 2>&1)"
 if grep -Fxq 'Signature=adhoc' <<<"$DETAILS"; then
   echo 'Refusing public release: an ad-hoc identity breaks permission continuity.' >&2; exit 1
@@ -31,8 +45,11 @@ for component in app cli relauncher; do
     relauncher) target="$APP/Contents/MacOS/goalong-relauncher"; executable="$target" ;;
   esac
   for architecture in $(/usr/bin/lipo -archs "$executable"); do
-    codesign -d --arch "$architecture" -r- "$target" 2>&1 | python3 "$ROOT/scripts/permission_requirement_policy.py" \
+    # The dev requirement must be the reviewed release requirement with only the identifier changed.
+    codesign -d --arch "$architecture" -r- "$target" 2>&1 \
+      | sed "s/identifier \"$BUNDLE/identifier \"$RELEASE_BUNDLE/" \
+      | python3 "$ROOT/scripts/permission_requirement_policy.py" \
       --pins "$ROOT/Distribution/permission-requirements.json" --component "$component"
   done
 done
-echo 'Release identity verified: pinned certificate and unchanged app/CLI/relauncher requirements on every architecture.'
+echo "Identity verified ($CHANNEL, $BUNDLE): pinned certificate and unchanged app/CLI/relauncher requirements on every architecture."

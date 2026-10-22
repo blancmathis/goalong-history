@@ -44,16 +44,26 @@ case "$DEVELOPMENT_BUILD" in
     ;;
   *) echo "LOCALHISTORY_DEVELOPMENT_BUILD must be 0 or 1." >&2; exit 1 ;;
 esac
-# The make dev channel (data mode, DEV icon) exists only in development bundles; releases carry no key.
+# The make dev channel (Goalong Dev: data mode, source, DEV icon) exists only in development
+# bundles; releases carry no key.
 DEV_DATA_MODE="${LOCALHISTORY_DEV_DATA_MODE:-}"
 DEV_ICON_SOURCE="${LOCALHISTORY_DEV_ICON_SOURCE:-}"
+DEV_SERVER="${LOCALHISTORY_DEV_SERVER:-}"
+DEV_SOURCE_BRANCH="${LOCALHISTORY_DEV_SOURCE_BRANCH:-}"
+DEV_SOURCE_COMMIT="${LOCALHISTORY_DEV_SOURCE_COMMIT:-}"
+# One exact SwiftPM scratch path (make dev reuses the worktree's .build); single architecture only.
+SCRATCH_PATH="${LOCALHISTORY_SCRATCH_PATH:-}"
 if [[ "$DEVELOPMENT_BUILD" == 1 ]]; then
   case "$DEV_DATA_MODE" in
-    isolated|real) ;;
-    *) echo "Development bundles require LOCALHISTORY_DEV_DATA_MODE=isolated or real." >&2; exit 1 ;;
+    clone|keep|fresh) ;;
+    *) echo "Development bundles require LOCALHISTORY_DEV_DATA_MODE=clone, keep or fresh." >&2; exit 1 ;;
   esac
-elif [[ -n "$DEV_DATA_MODE" || -n "$DEV_ICON_SOURCE" ]]; then
-  echo "LOCALHISTORY_DEV_DATA_MODE and LOCALHISTORY_DEV_ICON_SOURCE are reserved for development bundles." >&2
+  case "$DEV_SERVER" in
+    ''|off|on) ;;
+    *) echo "LOCALHISTORY_DEV_SERVER must be on or off." >&2; exit 1 ;;
+  esac
+elif [[ -n "$DEV_DATA_MODE$DEV_ICON_SOURCE$DEV_SERVER$DEV_SOURCE_BRANCH$DEV_SOURCE_COMMIT$SCRATCH_PATH" ]]; then
+  echo "LOCALHISTORY_DEV_* and LOCALHISTORY_SCRATCH_PATH are reserved for development bundles." >&2
   exit 1
 fi
 
@@ -130,10 +140,19 @@ if [[ "$RUN_TESTS" == "1" ]]; then
   /usr/bin/python3 "$ROOT_DIR/scripts/test_site_submission_policy.py"
 fi
 
+scratch_for_arch() {
+  if [[ -n "$SCRATCH_PATH" ]]; then echo "$SCRATCH_PATH"; else echo "${SCRATCH_ROOT:-$WORK_DIR}/build-$1"; fi
+}
+if [[ -n "$SCRATCH_PATH" && "$ARCHS" == *" "* ]]; then
+  echo "LOCALHISTORY_SCRATCH_PATH supports a single architecture." >&2
+  exit 1
+fi
+
 build_arch() {
   local arch="$1"
   local started="$(date +%s)"
-  local scratch="${SCRATCH_ROOT:-$WORK_DIR}/build-$arch"
+  local scratch
+  scratch="$(scratch_for_arch "$arch")"
   local logs="${SCRATCH_ROOT:-$WORK_DIR}/logs"
   mkdir -p "$logs"
   local log="$logs/build-$arch.log"
@@ -228,7 +247,7 @@ chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 chmod 755 "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
 # Embed the exact SwiftPM artifact. No replacement framework or unpinned download is used.
-SPARKLE_FRAMEWORK="$(find "${SCRATCH_ROOT:-$WORK_DIR}/build-${ARCHS%% *}/artifacts" -type d -name Sparkle.framework -path '*/artifacts/sparkle/Sparkle/*' -print -quit)"
+SPARKLE_FRAMEWORK="$(find "$(scratch_for_arch "${ARCHS%% *}")/artifacts" -type d -name Sparkle.framework -path '*/artifacts/sparkle/Sparkle/*' -print -quit)"
 if [[ -z "$SPARKLE_FRAMEWORK" ]]; then
   echo "The pinned Sparkle.framework artifact is missing." >&2
   exit 1
@@ -340,6 +359,12 @@ if [[ "$DEVELOPMENT_BUILD" == 1 ]]; then
   /usr/bin/plutil -insert GoalongDevelopmentBuild -bool YES "$CONTENTS/Info.plist"
   /usr/bin/plutil -insert GoalongBuildChannel -string dev "$CONTENTS/Info.plist"
   /usr/bin/plutil -insert GoalongDevDataMode -string "$DEV_DATA_MODE" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongDevSourceBranch -string "${DEV_SOURCE_BRANCH:-unknown}" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongDevSourceCommit -string "${DEV_SOURCE_COMMIT:-unknown}" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongDevBuiltAt -string "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongDevServer -bool "$([[ "$DEV_SERVER" == on ]] && echo YES || echo NO)" "$CONTENTS/Info.plist"
+  # Goalong Dev never claims goalong-history:// links: they always open the installed Goalong.
+  /usr/bin/plutil -remove CFBundleURLTypes "$CONTENTS/Info.plist"
 fi
 /usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --configure-info "$CONTENTS/Info.plist"
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
