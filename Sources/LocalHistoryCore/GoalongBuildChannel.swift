@@ -126,3 +126,41 @@ public struct GoalongDevServerDisabledError: LocalizedError, Equatable {
         guard channel.allowsServerTraffic else { throw GoalongDevServerDisabledError() }
     }
 }
+
+/// Goalong Dev refuses a `LocalHistory-Dev` written by the old make dev (#85): it cloned the real device key
+/// and account tokens and has no seed marker. Every seed by make dev writes the marker (scripts/dev_app.swift);
+/// a folder without it is marked here the first time it is found clean, so the dev copy's own later files are trusted.
+public enum GoalongDevDataGuard {
+    public static let seedMarker = ".goalong-dev-seed-v2"
+    /// What the old clone copied from the real data. Same list as `legacyPurgedTopLevel` and `skippedNested`.
+    public static let legacyItems = [
+        "device-signing-key-v2.bin", "website-connections", "app-backups", "setup-backups",
+        "jev/api-key", "chatgpt/codex-home", "chatgpt/site-analysis-codex-home", "chatgpt/proofs/private-evidence",
+    ]
+    public static let legacyPrefixes = ["blocking-backup-"]
+
+    public enum Verdict: Equatable { case trusted, legacy([String]) }
+
+    /// Read-only in a release. In Goalong Dev: creates the root (0700) with the marker when absent,
+    /// marks a clean unmarked root, and reports the legacy items of an unmarked one without touching them.
+    public static func check(channel: GoalongBuildChannel, root: URL, fileManager: FileManager = .default) -> Verdict {
+        guard channel.isDevelopment else { return .trusted }
+        let marker = root.appendingPathComponent(seedMarker)
+        var info = stat()
+        if lstat(marker.path, &info) == 0 { return .trusted }
+        let names = (try? fileManager.contentsOfDirectory(atPath: root.path)) ?? []
+        let found = legacyItems.filter { lstat(root.appendingPathComponent($0).path, &info) == 0 }
+            + names.filter { name in legacyPrefixes.contains(where: name.hasPrefix) }.sorted()
+        guard found.isEmpty else { return .legacy(found) }
+        try? fileManager.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        _ = fileManager.createFile(atPath: marker.path, contents: Data("marked by Goalong Dev\n".utf8),
+                                   attributes: [.posixPermissions: 0o600])
+        return .trusted
+    }
+
+    public static let refusalTitle = "Données Goalong Dev d’un ancien make dev"
+    public static func refusalMessage(_ found: [String]) -> String {
+        "LocalHistory-Dev contient des éléments copiés depuis vos vraies données (\(found.joined(separator: ", "))). "
+            + "Goalong Dev ne démarre pas avec. Lancez make dev DATA=keep (nettoyage) ou make dev (nouvelle copie)."
+    }
+}

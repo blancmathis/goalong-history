@@ -299,13 +299,19 @@ private final class BlockingFreezePanel: NSPanel {
             panel.setFrame(screen.frame, display: true); panel.orderFrontRegardless(); shields.append(panel)
         }
     }
+    /// The Goalong family is never blocked: a freeze in one Goalong never hides the other one.
+    nonisolated static func hidesBehindKeptApps(_ bundleIdentifier: String?, kept: Set<String>) -> Bool {
+        guard let bundleIdentifier else { return true }
+        return !kept.contains(bundleIdentifier) && !ProductIdentity.isGoalong(bundleIdentifier)
+    }
     private func openAllowed(_ app: BlockAppRule) {
         guard freeze?.allowedApps.contains(where: { $0.bundleIdentifier == app.bundleIdentifier }) == true,
               let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) else { return }
         // Kept apps come forward alone: every other app is hidden, so nothing else shows above the shield.
         let kept = Set(freeze?.allowedApps.map(\.bundleIdentifier) ?? [])
         for other in NSWorkspace.shared.runningApplications where other.activationPolicy == .regular
-            && other.processIdentifier != ProcessInfo.processInfo.processIdentifier && !kept.contains(other.bundleIdentifier ?? "") {
+            && other.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            && Self.hidesBehindKeptApps(other.bundleIdentifier, kept: kept) {
             other.hide()
         }
         let config = NSWorkspace.OpenConfiguration(); config.activates = true

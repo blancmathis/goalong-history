@@ -121,4 +121,32 @@ final class GoalongBuildChannelTests: XCTestCase {
         XCTAssertTrue(config.allowsApplication(bundleIdentifier: "ai.goalong.localhistory"))
         XCTAssertFalse(config.allowsApplication(bundleIdentifier: "com.apple.Safari"))
     }
+
+    /// A LocalHistory-Dev cloned by the old make dev (no marker, real device key and tokens) is refused, untouched.
+    /// A clean unmarked or missing folder is marked once, so the dev copy's own later key and tokens are trusted.
+    func testGoalongDevRefusesTheOldMakeDevClone() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("GoalongDevGuard-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let dev = GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev"])
+        let root = base.appendingPathComponent("LocalHistory-Dev", isDirectory: true)
+        let marker = root.appendingPathComponent(GoalongDevDataGuard.seedMarker)
+
+        XCTAssertEqual(GoalongDevDataGuard.check(channel: dev, root: root), .trusted)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "a new dev root is marked")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("website-connections"), withIntermediateDirectories: true)
+        XCTAssertEqual(GoalongDevDataGuard.check(channel: dev, root: root), .trusted, "own tokens after the marker")
+
+        try FileManager.default.removeItem(at: marker)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("jev"), withIntermediateDirectories: true)
+        try Data("secret".utf8).write(to: root.appendingPathComponent("jev/api-key"))
+        try Data("{}".utf8).write(to: root.appendingPathComponent("blocking-backup-1.json"))
+        XCTAssertEqual(GoalongDevDataGuard.check(channel: dev, root: root),
+                       .legacy(["website-connections", "jev/api-key", "blocking-backup-1.json"]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "a refused folder is never marked")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("jev/api-key").path))
+
+        let releaseRoot = base.appendingPathComponent("LocalHistory", isDirectory: true)
+        XCTAssertEqual(GoalongDevDataGuard.check(channel: GoalongBuildChannel(info: nil), root: releaseRoot), .trusted)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: releaseRoot.path), "a release never writes here")
+    }
 }

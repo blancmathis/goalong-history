@@ -90,6 +90,9 @@ jobs:
       - name: Goalong Dev control tests (no build, no launch)
         run: bash scripts/test_dev_app.sh
 
+      - name: Release and Goalong Dev identity refusals (skips without the signing key)
+        run: bash scripts/test_stable_release_identity.sh
+
       - name: Exercise full-row disclosure interactions
         timeout-minutes: 2
         run: |

@@ -66,6 +66,34 @@ final class GoalongDevIsolationPathTests: XCTestCase {
         XCTAssertEqual(runtime.integrationStatuses.map(\.isInstalled), before.map(\.isInstalled))
     }
 
+    /// `--uninstall-agent-integrations` from Goalong Dev removes nothing (the hooks belong to the installed Goalong).
+    func testGoalongDevCommandLineNeverRemovesAgentHooks() {
+        var removed: [AgentIntegrationKind] = []
+        XCTAssertFalse(AgentHookCommandLine.uninstallAll(
+            channel: GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev"])) { removed.append($0) })
+        XCTAssertEqual(removed, [])
+        XCTAssertTrue(AgentHookCommandLine.uninstallAll(channel: GoalongBuildChannel(info: nil)) { removed.append($0) })
+        XCTAssertEqual(removed, AgentIntegrationKind.allCases)
+    }
+
+    /// Proof capsule keys sit in the shared login keychain: Goalong Dev never reads or deletes the release's.
+    func testGoalongDevUsesItsOwnEvidenceKeychainService() {
+        XCTAssertEqual(AnalysisEvidenceCapsuleStore.keychainService(for: GoalongBuildChannel(info: nil)), "goalong.evidence.v1")
+        XCTAssertEqual(AnalysisEvidenceCapsuleStore.keychainService(
+            for: GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev"])), "goalong.evidence.v1.dev")
+        XCTAssertEqual(AnalysisEvidenceCapsuleStore.service, "goalong.evidence.v1")
+    }
+
+    /// A freeze in one Goalong hides every other regular app except kept apps and the Goalong family.
+    func testFreezeNeverHidesTheOtherGoalong() {
+        let kept: Set<String> = ["com.apple.TextEdit"]
+        XCTAssertFalse(StandardBlockingBackend.hidesBehindKeptApps("ai.goalong.localhistory.dev", kept: kept))
+        XCTAssertFalse(StandardBlockingBackend.hidesBehindKeptApps("ai.goalong.localhistory", kept: kept))
+        XCTAssertFalse(StandardBlockingBackend.hidesBehindKeptApps("com.apple.TextEdit", kept: kept))
+        XCTAssertTrue(StandardBlockingBackend.hidesBehindKeptApps("com.apple.Safari", kept: kept))
+        XCTAssertTrue(StandardBlockingBackend.hidesBehindKeptApps(nil, kept: kept))
+    }
+
     func testGoalongDevSkipsLoginItemChanges() {
         let dev = GoalongBuildChannel(info: [GoalongBuildChannel.channelKey: "dev"])
         var calls = 0

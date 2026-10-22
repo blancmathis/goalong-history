@@ -161,6 +161,16 @@
                 return
             }
 
+            // Goalong Dev never runs on a LocalHistory-Dev cloned by the old make dev (real device key and tokens).
+            if case .legacy(let found) = GoalongDevDataGuard.check(channel: .current, root: AppPaths.applicationSupportDirectory) {
+                let alert = NSAlert()
+                alert.messageText = GoalongDevDataGuard.refusalTitle
+                alert.informativeText = GoalongDevDataGuard.refusalMessage(found)
+                alert.runModal()
+                NSApplication.shared.terminate(nil)
+                return
+            }
+
             runtimeStarted = true
             installTerminationSignalHandler()
             let buildIdentity = BuildIdentityReader.current()

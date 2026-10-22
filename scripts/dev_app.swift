@@ -67,13 +67,16 @@ let skippedTopLevel: Set<String> = [
     "device-signing-key-v2.bin", "website-connections",
 ]
 let skippedPrefixes = ["blocking-backup-"]
-/// Account credentials inside cloned folders, removed from the clone right after.
-let skippedNested = ["jev/api-key", "chatgpt/codex-home", "chatgpt/site-analysis-codex-home"]
+/// Account credentials inside cloned folders, removed from the clone right after. The proof capsules are
+/// sealed with keys of the installed Goalong (login keychain): Goalong Dev must never read or destroy them.
+let skippedNested = ["jev/api-key", "chatgpt/codex-home", "chatgpt/site-analysis-codex-home",
+                     "chatgpt/proofs/private-evidence"]
 /// Files removed by prefix inside a cloned folder. Braise/display-recovery-*.json is the installed
 /// Goalong's live gamma state: Goalong Dev would apply it to the real screens at Braise start.
 let skippedNestedPrefixes = [(folder: "Braise", prefix: "display-recovery")]
 /// Written by every clone or fresh seed. A LocalHistory-Dev without it predates these exclusions
-/// (the #85 make dev cloned the real device key and tokens): DATA=keep cleans it first.
+/// (the #85 make dev cloned the real device key and tokens): DATA=keep cleans it first, and Goalong Dev
+/// refuses to start on it (GoalongDevDataGuard in LocalHistoryCore, same marker name).
 let seedMarker = ".goalong-dev-seed-v2"
 /// What a pre-marker folder may hold from the real data. Blocking, Focus and runtime are left:
 /// in Goalong Dev they have always been its own.

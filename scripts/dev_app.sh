@@ -30,7 +30,7 @@ DEV_DATA="$HOME/Library/Application Support/LocalHistory-Dev"
 RELEASE_APP="${GOALONG_DEV_RELEASE_APP:-/Applications/Goalong History.app}"
 # The install folder and LocalHistory-Dev are global: one install/data/quit step at a time across
 # every worktree. The per-worktree lock below only protects this worktree's .build.
-GLOBAL_LOCK="$HOME/Library/Caches/goalong-dev-install.lock"
+GLOBAL_LOCK="$HOME/Library/Caches/goalong-dev-install.flock"
 
 # Releases built before Goalong Dev do not know ai.goalong.localhistory.dev: they record Goalong Dev's
 # windows and text, and an allow-only block list blocks it. Read-only check of the installed binary.
@@ -74,9 +74,12 @@ root, app_dir = Path(sys.argv[1]), Path(sys.argv[2])
 def fail(message):
     print(message, file=sys.stderr)
     raise SystemExit(2)
+# Only a link on the final component redirects the install or the build output. A link higher up
+# (/tmp -> /private/tmp, a linked ~/Applications) is followed: the protected-folder check below uses
+# both the literal and the resolved path, so the same DEV_APP_DIR gives the same answer on every run.
 for path in [root / '.build', root / '.build/goalong-dev', root / '.build/goalong-dev/staging',
              root / '.build/goalong-dev/staging/Goalong Dev.app', app_dir, app_dir / 'Goalong Dev.app']:
-    if path.is_symlink() or (path.exists() and path.resolve() != path.absolute()):
+    if path.is_symlink():
         fail(f'Refusing redirected Goalong Dev path: {path}')
 for candidate in (app_dir.absolute(), app_dir.resolve()):
     for protected in (Path('/Applications'), Path('/System'), Path('/Library')):
@@ -127,7 +130,8 @@ fi
 HAVE_WORKTREE_LOCK=0 HAVE_GLOBAL_LOCK=0 NEW_APP='' OLD_APP=''
 cleanup() {
   [[ -z "$NEW_APP" ]] || rm -rf -- "$NEW_APP" || true
-  [[ "$HAVE_GLOBAL_LOCK" == 0 ]] || rm -rf -- "$GLOBAL_LOCK" || true
+  # The lock itself is released by the kernel when this shell exits; only the PID note is removed.
+  [[ "$HAVE_GLOBAL_LOCK" == 0 ]] || rm -f -- "$GLOBAL_LOCK.pid" || true
   [[ "$HAVE_WORKTREE_LOCK" == 0 ]] || rmdir "$DEV_ROOT/lock" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -138,25 +142,7 @@ if ! mkdir "$DEV_ROOT/lock" 2>/dev/null; then
 fi
 HAVE_WORKTREE_LOCK=1
 
-# Waits for a make dev from another worktree; a lock whose process is gone is taken over.
-acquire_global_lock() {
-  local waited=0 holder
-  mkdir -p "$(dirname "$GLOBAL_LOCK")"
-  until mkdir "$GLOBAL_LOCK" 2>/dev/null; do
-    holder="$(cat "$GLOBAL_LOCK/pid" 2>/dev/null || true)"
-    if [[ "$holder" =~ ^[0-9]+$ ]] && ! kill -0 "$holder" 2>/dev/null; then
-      echo "Removing a stale Goalong Dev install lock (PID $holder is gone)."
-      rm -rf -- "$GLOBAL_LOCK"; continue
-    fi
-    if (( waited == 0 )); then echo "Waiting for another make dev (PID ${holder:-?}) to finish its install step..."; fi
-    if (( waited >= 600 )); then
-      echo "Still locked after 10 min: $GLOBAL_LOCK (PID ${holder:-?}). Remove it after checking." >&2; exit 1
-    fi
-    sleep 1; waited=$((waited + 1))
-  done
-  HAVE_GLOBAL_LOCK=1
-  echo "$$" >"$GLOBAL_LOCK/pid"
-}
+source "$ROOT/scripts/dev_app_lock.sh"
 
 if [[ "$MODE" == stop ]]; then
   build_control
@@ -253,7 +239,7 @@ if [[ "$NO_LAUNCH" == 1 ]]; then
   echo "Installed (not launched, dev data not prepared): $DEV_APP"
 else
   # open(1) launches through Launch Services, so the menu bar item belongs to Goalong Dev itself.
-  /usr/bin/open "$DEV_APP"
+  /usr/bin/open "$DEV_APP" 9>&-
   "$CONTROL" wait-running "$DEV_APP"
   step_done 'launch'
   echo "Dev data: $DEV_DATA. The installed Goalong keeps recording and blocking."

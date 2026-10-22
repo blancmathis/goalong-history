@@ -10,6 +10,7 @@ test:
 	rm -rf "$$home"; exit $$status
 	./scripts/test_isolated_home.sh
 	bash scripts/test_dev_app.sh
+	bash scripts/test_stable_release_identity.sh
 
 build:
 	xcrun swift build -c release --product LocalHistory

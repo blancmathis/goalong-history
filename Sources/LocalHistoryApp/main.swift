@@ -73,8 +73,8 @@
         let installer = AgentIntegrationInstaller(
             executableURL: URL(fileURLWithPath: CommandLine.arguments[0])
         )
-        for kind in AgentIntegrationKind.allCases {
-            try? installer.uninstall(kind)
+        if !AgentHookCommandLine.uninstallAll(channel: .current, uninstall: { try installer.uninstall($0) }) {
+            FileHandle.standardError.write(Data((AgentHookCommandLine.devRefusal + "\n").utf8))
         }
         exit(0)
     }

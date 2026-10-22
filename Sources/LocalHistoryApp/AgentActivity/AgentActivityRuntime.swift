@@ -12,6 +12,19 @@
         let message: String
     }
 
+    /// `--uninstall-agent-integrations` (uninstall.sh). The hooks carry one Goalong marker shared by every
+    /// copy: Goalong Dev removing them would remove the installed Goalong's hooks. Returns false when refused.
+    enum AgentHookCommandLine {
+        static let devRefusal = "Goalong Dev leaves the agent hooks to the installed Goalong: nothing was removed."
+
+        @discardableResult
+        static func uninstallAll(channel: GoalongBuildChannel, uninstall: (AgentIntegrationKind) throws -> Void) -> Bool {
+            guard channel.allowsAgentHookChanges else { return false }
+            for kind in AgentIntegrationKind.allCases { try? uninstall(kind) }
+            return true
+        }
+    }
+
     enum AgentActivityRuntimeAccessError: LocalizedError {
         case unauthorizedSource(String)
 
