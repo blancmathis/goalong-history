@@ -55,7 +55,7 @@ let package = Package(
         .target(name: "OndeCore", dependencies: ["OndeDSP"], path: "Features/Ambiance/Engine/OndeCore",
                 exclude: ["GenerativeRenderer.swift", "TransitionRenderer.swift", "PlaybackSelection.swift"]),
         .target(name: "Ambiance", dependencies: ["OndeCore", "OndeDSP"], path: "Features/Ambiance/Sources"),
-        .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore"], path: "Features/Ambiance/Tests"),
+        .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore", "GoalongHeadlessTestSupport"], path: "Features/Ambiance/Tests"),
         .executableTarget(name: "GoalongRelauncher", path: "Sources/GoalongRelauncher"),
         .target(
             name: "AppleScreenTime",

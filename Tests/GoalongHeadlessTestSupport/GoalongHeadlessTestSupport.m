@@ -178,14 +178,58 @@ static void blockLaunchServices(void) {
     });
 }
 
+// Test suites: every `UserDefaults(suiteName:)` made while the tests run is remembered when its
+// plist did not exist yet. At exit (and on demand) the plist is deleted again, so a bare
+// `swift test` leaves no `<suite>.plist` in ~/Library/Preferences. A plist that already existed
+// (the owner's real suites) is never recorded and never touched.
+static NSMutableSet<NSString *> *createdSuites;
+static NSLock *suiteLock;
+
+static NSString *suitePlistPath(NSString *name) {
+    if ([name containsString:@"/"] || name.length == 0) return nil;
+    return [[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences"]
+        stringByAppendingPathComponent:[name stringByAppendingString:@".plist"]];
+}
+
+static void trackSuites(void) {
+    createdSuites = [NSMutableSet set];
+    suiteLock = [[NSLock alloc] init];
+    static id (*initSuite)(id, SEL, NSString *);
+    initSuite = (void *)replace(NSUserDefaults.class, @selector(initWithSuiteName:), ^id(NSUserDefaults *d, NSString *name) {
+        NSString *path = name ? suitePlistPath(name) : nil;
+        if (path && ![NSFileManager.defaultManager fileExistsAtPath:path]) {
+            [suiteLock lock];
+            [createdSuites addObject:name];
+            [suiteLock unlock];
+        }
+        return initSuite(d, @selector(initWithSuiteName:), name);
+    });
+}
+
+void GoalongHeadlessCleanLeakedDefaultSuites(void) {
+    [suiteLock lock];
+    NSArray<NSString *> *names = createdSuites.allObjects;
+    [createdSuites removeAllObjects];
+    [suiteLock unlock];
+    for (NSString *name in names) {
+        NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:name];
+        [defaults removePersistentDomainForName:name];
+        [defaults synchronize];
+        NSString *path = suitePlistPath(name);
+        if (path) [NSFileManager.defaultManager removeItemAtPath:path error:nil];
+    }
+}
+
 @interface GoalongHeadlessTestSupport : NSObject
 @end
 
 @implementation GoalongHeadlessTestSupport
 + (void)load {
     NSDictionary *environment = NSProcessInfo.processInfo.environment;
-    if ([environment[@"GOALONG_TESTS_VISIBLE"] isEqualToString:@"1"]) return;
     if (!NSClassFromString(@"XCTestCase") && !environment[@"XCTestConfigurationFilePath"]) return;
+    trackSuites();
+    atexit(GoalongHeadlessCleanLeakedDefaultSuites);
+    if ([environment[@"GOALONG_TESTS_VISIBLE"] isEqualToString:@"1"]) return;
     hideWindows();
     blockActivation();
     blockLaunchServices();
