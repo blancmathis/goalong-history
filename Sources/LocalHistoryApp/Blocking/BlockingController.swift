@@ -2,6 +2,7 @@
 import AppKit
 import Combine
 import Foundation
+import GoalongGuardCore
 import LocalHistoryCore
 import LocalHistoryQueryCLI
 
@@ -58,6 +59,9 @@ import LocalHistoryQueryCLI
     private var storeFailed = false
     /// Last end written for uninstall.sh; `.none` until the first refresh writes it.
     private var lockMarker: Date?? = .none
+    /// Last end written to `guard-until` (spec K); a deleted file is rewritten while a severe block runs.
+    private var guardMarker: Date?? = .none
+    private let guardClient: GoalongGuardClienting?
     private var lastGood: BlockingDocument?
     private var lastObservation: BlockingObservation?
     private var unreadableSince: [Int32: Date] = [:]
@@ -89,6 +93,7 @@ import LocalHistoryQueryCLI
          store: BlockingStore? = nil, backend: BlockingEnforcementBackend? = nil,
          calendar: Calendar = .autoupdatingCurrent, calendarProvider: (() -> Calendar)? = nil, continuous: @escaping () -> Double = BlockingClock.continuous,
          boot: @escaping () -> String = BlockingClock.bootID, runsTimers: Bool = false,
+         guardClient: GoalongGuardClienting? = nil,
          runningApps: @escaping () -> Set<String> = {
              Set(NSWorkspace.shared.runningApplications.filter { !$0.isTerminated }.compactMap(\.bundleIdentifier))
          }) {
@@ -98,6 +103,7 @@ import LocalHistoryQueryCLI
         self.calendarProvider = provider; self.calendar = Self.frozen(provider())
         self.continuous = continuous; self.boot = boot; self.runsTimers = runsTimers
         self.runningApps = runningApps
+        self.guardClient = guardClient
         if let store {
             do {
                 let loaded = try store.loadRecovering()
@@ -126,6 +132,7 @@ import LocalHistoryQueryCLI
                     && BlockingRules.wouldBlock(target, list: list)
             }
         }
+        guardClient?.onChange = { [weak self] in self?.refresh(enforceLast: false) }
         backend?.siteActionStillRequired = { [weak self] in self?.siteActionStillRequired($0) == true }
         backend?.siteActionDeadline = { [weak self] in self?.siteActionDeadline($0) }
         backend?.onBlockPresented = { [weak self] target, id in self?.recordBlockedPresentation(target, listID: id) }
@@ -175,6 +182,26 @@ import LocalHistoryQueryCLI
             + document.sessions.filter { effectiveLock($0.lock).protectsLists }.map(\.end)
             + lists.compactMap { $0.program.lockedUntil } + [freeze?.end].compactMap { $0 }
         return ends.filter { $0 > now }.max()
+    }
+
+    /// End of the latest severe block already running: a locked or password block, a started locked
+    /// session, a locked program or a freeze. Only then does the guard reopen a killed Goalong (spec K §2).
+    /// Unlike `lockedUntil`, a locked session that has not started yet arms nothing.
+    var severeUntil: Date? {
+        let now = clock()
+        let ends = activeBlocks.filter { $0.lock.protectsLists && $0.start <= now }.map(\.end)
+            + document.sessions.filter { $0.start <= now && effectiveLock($0.lock).protectsLists }.map(\.end)
+            + lists.compactMap { $0.program.lockedUntil } + [freeze?.end].compactMap { $0 }
+        return ends.filter { $0 > now }.max()
+    }
+    /// Confirmations that can arm the guard first add `GuardConsent.text`.
+    var guardNeedsConsent: Bool { guardClient?.needsConsent ?? false }
+    /// « Retirer le service de protection »: hidden during a severe block.
+    var canRemoveGuard: Bool { guardClient?.canRemove == true && severeUntil == nil }
+    func removeGuardService() {
+        refresh(enforceLast: false)
+        guard canRemoveGuard else { return }
+        guardClient?.removeService()
     }
 
     /// A password cannot override an overlapping hard lock or a freeze.
@@ -780,15 +807,28 @@ import LocalHistoryQueryCLI
             // Memoize only a durable write: a failure retries on the next refresh, or uninstall.sh would miss the lock.
             if store.writeLockMarker(until: lockedUntil) { lockMarker = .some(lockedUntil) }
         }
+        let severe = severeUntil
+        if let store, !storeFailed {
+            let files = GoalongGuardFiles.files(for: store.directory)
+            // The memo alone is not enough: a deleted marker is rewritten while the block runs (stat only).
+            if guardMarker != .some(severe) || (severe != nil && !files.markerExists()) {
+                if files.writeMarker(until: severe) { guardMarker = .some(severe) }
+            }
+        }
         let next = nextStart(after: now)
         if nextProgramStart?.listID != next?.listID || nextProgramStart?.date != next?.date { nextProgramStart = next }
         let available = backend?.accessibilityAvailable ?? true
         if siteBlockingAvailable != available { siteBlockingAvailable = available }
         let support = backend?.browsers ?? []
         if browsers != support { browsers = support }
+        var state = backend?.updateProtection(locked: requiresLaunchAtLogin) ?? protection
+        if let guardClient {
+            // After the marker: the guard reads it when pinged. Never an error message for the guard.
+            state.guardian = storeFailed ? .notInstalled : guardClient.update(severeUntil: severe)
+        }
+        state.level = state.guardian == .running ? .strict : .standard
+        if protection != state { protection = state }
         if let backend {
-            let state = backend.updateProtection(locked: requiresLaunchAtLogin)
-            if protection != state { protection = state }
             if !storeFailed {
                 let message: String?
                 switch protection.component {
@@ -1262,7 +1302,11 @@ import LocalHistoryQueryCLI
     }
     func apply(enabled: Bool) {
         if enabled, controller == nil {
-            let value = BlockingController(store: .standard, backend: StandardBlockingBackend(), runsTimers: true)
+            let guardClient = GoalongGuardClient.standard()
+            let value = BlockingController(store: .standard, backend: StandardBlockingBackend(), runsTimers: true,
+                                           guardClient: guardClient)
+            // From now on this process may lower or remove `guard-until` (an installed copy only).
+            if guardClient != nil { GoalongGuardFiles.reportHealth() }
             controller = value
             value.onObservationRequirementChanged = { [weak self] needed in self?.monitor?.setBlockingObservationEnabled(needed) }
             let hud = BlockingTimerHUD { [weak value] in value?.timerInput }

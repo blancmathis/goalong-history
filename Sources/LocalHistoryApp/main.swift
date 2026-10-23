@@ -67,6 +67,10 @@
         exit(0)
     }
 
+    if CommandLine.arguments.contains(GuardUnregisterCommand.argument) {
+        GuardUnregisterCommand.run()
+    }
+
     // Called by uninstall.sh before it deletes the bundles: removes Goalong's hooks from the
     // agents' configuration files. Best effort; only entries with Goalong's marker are touched.
     if CommandLine.arguments.contains("--uninstall-agent-integrations") {

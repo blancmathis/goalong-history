@@ -206,6 +206,29 @@
                            "update")
             XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: false, restarting: false, externalSignal: false, userQuit: true),
                            "user_quit")
+            XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: false, restarting: false, externalSignal: true, userQuit: false,
+                                                  sessionEnd: true), "session_end")
+        }
+
+        func testSigtermIsIgnoredOnlyDuringASevereBlockOutsideASessionEnd() {
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: false, sessionEnding: false))
+            XCTAssertFalse(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: false))
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: true))
+        }
+
+        func testGuardReleaseTokenNamesOnlyAConfirmedQuitOrALoginwindowEnd() {
+            XCTAssertNil(AppDelegate.guardReleaseReason(sessionEnd: false, userQuit: false, blockingQuitApproved: false),
+                         "a kill, a signal or a System Settings quit leaves no token: the guard reopens Goalong")
+            XCTAssertEqual(AppDelegate.guardReleaseReason(sessionEnd: false, userQuit: true, blockingQuitApproved: false), "user_quit")
+            XCTAssertEqual(AppDelegate.guardReleaseReason(sessionEnd: false, userQuit: false, blockingQuitApproved: true), "user_quit",
+                           "a password-approved external quit is the member's own")
+            XCTAssertEqual(AppDelegate.guardReleaseReason(sessionEnd: true, userQuit: true, blockingQuitApproved: false), "session_end")
+        }
+
+        @MainActor func testAGuardRelaunchShowsNoPreviousSessionBanner() {
+            XCTAssertNil(BackgroundContinuityController.interruptionNotice(quietRelaunch: true))
+            XCTAssertEqual(BackgroundContinuityController.interruptionNotice(quietRelaunch: false),
+                           BackgroundContinuityController.interruptionNoticeText)
         }
     }
 #endif

@@ -17,12 +17,18 @@
         private var hasEnabledSources = false
         private var started = false
 
-        func start(hasEnabledSources: Bool) {
+        /// The banner after an unclean end; none when the blocking guard reopened Goalong.
+        static func interruptionNotice(quietRelaunch: Bool) -> String? { quietRelaunch ? nil : interruptionNoticeText }
+
+        /// `quietRelaunch`: the blocking guard reopened Goalong after a kill; the member chose the block,
+        /// so no "previous session" banner, only a diagnostics line (spec K §6).
+        func start(hasEnabledSources: Bool, quietRelaunch: Bool = GoalongGuardFiles.isGuardRelaunch) {
             guard !started else { update(hasEnabledSources: hasEnabledSources); return }
             started = true
             if journal.begin() {
-                interruptionNotice = Self.interruptionNoticeText
-                Diagnostics.write("Previous Goalong session ended without a clean shutdown; cause unknown")
+                interruptionNotice = Self.interruptionNotice(quietRelaunch: quietRelaunch)
+                Diagnostics.write(quietRelaunch ? "Previous Goalong session was killed during a severe block; reopened by the guard"
+                                                : "Previous Goalong session ended without a clean shutdown; cause unknown")
             }
             Diagnostics.write("Goalong runtime started")
             preferenceObserver = NotificationCenter.default.addObserver(

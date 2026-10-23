@@ -2,6 +2,7 @@
     import AppKit
     import Combine
     import Foundation
+    import GoalongGuardCore
     import Sparkle
 
     enum SoftwareUpdatePresentationAction: Equatable {
@@ -492,10 +493,12 @@
             }
             SupportDiagnostics.shared.record(.updateChanged, component: .updates, values: values)
             isRelaunchingForUpdate = true
+            GoalongGuardFiles.writeLease(GuardLease.update, seconds: GuardLease.maximumDuration)
         }
 
         func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
             isRelaunchingForUpdate = false
+            GoalongGuardFiles.standard.removeLease()
             if !Self.isNoUpdateResult(error) {
                 SupportDiagnostics.shared.failure(error, component: .updates)
             }
