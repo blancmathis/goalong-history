@@ -168,6 +168,15 @@ extension Notification.Name {
         publish(); persist()
     }
 
+    #if DEBUG
+    /// Test gallery: back to the file on disk (gone with the gallery HOME data) between two images.
+    func resetForTesting() {
+        document = Self.load(from: fileURL)
+        automatic = document.automatic
+        reconcileDefinition()
+    }
+    #endif
+
     func removeAll() {
         document.entries = [:]; document.corrections = []
         publish(); persist()

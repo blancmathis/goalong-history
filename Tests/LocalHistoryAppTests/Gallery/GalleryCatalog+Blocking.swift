@@ -29,7 +29,7 @@ extension GalleryCatalog {
             panel("programme/feuille-liste-verrouillee", width: 600, height: 900, clock: .injected) { _ in
                 AnyView(BlockListSheet(controller: F.blockingActive(), listID: F.videoID, now: F.blockingNow, onDone: {}))
             },
-            panel("programme/selecteur-de-plage", width: 400, clock: .injected) { _ in
+            panel("programme/selecteur-de-plage", width: 440, clock: .injected) { _ in
                 AnyView(BlockingRangePopover(controller: F.blockingIdle(),
                     draft: BlockingRangeDraft(existing: nil, listIDs: [F.socialID], days: weekdays, start: 540, end: 720),
                     now: F.sunday, onClose: {}))

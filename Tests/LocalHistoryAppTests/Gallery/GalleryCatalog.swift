@@ -28,6 +28,7 @@ import SwiftUI
         return GalleryEntry(id, sizes: sizes, themes: themes, clock: .injected, dashboardWindow: true, note: note,
                             section: section == .settings ? nil : section, pane: section == .settings ? pane : nil,
                             ready: { ctx in model.map { GalleryFixtures.dashboardReady($0)(ctx) } ?? false }, file: file) { ctx in
+            ctx.environment.usedBytes = GalleryFixtureHome.usedBytes(fixture)
             if let environment { environment(&ctx.environment) }
             try GalleryFixtureHome.install(fixture)
             var options = GalleryFixtures.DashboardOptions()

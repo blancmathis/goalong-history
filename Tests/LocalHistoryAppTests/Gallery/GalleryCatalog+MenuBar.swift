@@ -65,7 +65,32 @@ extension GalleryCatalog {
                 GoalongToastCenter.shared.setForTesting("Choix d’analyse enregistrés")
                 return AnyView(GoalongToastHost())
             },
+        ] + supportEntries
+    }
+
+    /// « Signaler un problème », in its window's size: the report being prepared (idle looks the same), the report
+    /// ready with what was found, a failure. Texts are the app's own (SupportReport.swift, SupportRequest.swift).
+    static var supportEntries: [GalleryEntry] {
+        let findings = [
+            SupportFinding(severity: .warning, code: .recordingWasInterrupted, title: "Enregistrement interrompu 2 fois",
+                           detail: "Au moins une coupure venait d’un disque plein. 14 observation(s) n’ont pas pu être "
+                               + "enregistrées ; chaque coupure est marquée dans l’historique."),
+            SupportFinding(severity: .info, code: .noProblemDetected, title: "Aucun problème détecté automatiquement",
+                           detail: "Décrivez ce que vous avez fait et ce que vous attendiez dans votre message."),
         ]
+        let phases: [(String, SupportRequestController.Phase)] = [
+            ("preparation", .preparing),
+            ("rapport-pret", .ready(URL(fileURLWithPath: "/private/tmp/goalong-gallery-rapport.zip"), findings,
+                                    byteCount: 182_400, eventCount: 1_284)),
+            ("echec", .failed("Le rapport n’a pas pu être préparé (erreur d’écriture). Rien n’a été envoyé.")),
+        ]
+        return phases.map { name, phase in
+            panel("support/\(name)", width: 580, height: 660) { ctx in
+                let controller = ctx.keep(SupportRequestController())
+                controller.phase = phase
+                return AnyView(SupportRequestView(controller: controller))
+            }
+        }
     }
 
     /// The panel model with fixed data: an ordinary Friday morning, nothing read from the Mac.

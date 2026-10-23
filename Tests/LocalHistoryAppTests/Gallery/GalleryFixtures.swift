@@ -17,6 +17,14 @@ import SwiftUI
     }
 
     /// The design audit's dashboard model, with the gallery's seams, made visible so its data loads.
+    /// Réglages › Applications and the analysis sheet list these instead of the host Mac's apps (C1-couverture-03).
+    static let installedApplications: [GoalongApplicationChoice] = [
+        ("com.apple.dt.Xcode", "Xcode"), ("com.apple.Safari", "Safari"), ("com.apple.Terminal", "Terminal"),
+        ("com.apple.Notes", "Notes"), ("com.apple.mail", "Mail"), ("com.apple.MobileSMS", "Messages"),
+        ("com.apple.iCal", "Calendrier"), ("com.apple.Music", "Musique"), ("com.apple.Preview", "Aperçu"),
+        ("com.exemple.atlas", "Atlas"), ("org.keepassxc.keepassxc", "KeePassXC"),
+    ].map { GoalongApplicationChoice(id: $0.0, name: $0.1) }
+
     static func dashboardModel(_ ctx: GalleryContext, _ options: DashboardOptions = DashboardOptions()) throws -> DashboardViewModel {
         let config = ConfigManager()
         let status = ctx.environment.permissions
@@ -29,6 +37,9 @@ import SwiftUI
             health.markInputCallback(at: seen)
             health.markRecordedEvent(.heartbeat, at: seen)
             health.markAXSuccess(urlAvailable: true, at: seen)
+        }
+        if let kind = ctx.environment.storageFailure {
+            health.markStorageInterrupted(kind, at: GalleryClock.now.addingTimeInterval(-60))
         }
         let agents = try AgentActivityRuntime(rootDirectory: AppPaths.agentActivityDirectory,
             executableURL: URL(fileURLWithPath: "/nonexistent/goalong-gallery"),
@@ -215,6 +226,7 @@ import SwiftUI
         guard resetData else { return }
         try resetHome(home)
         JevWorkContextStore.shared.resetForTesting()
+        GoalongWorkStore.shared.resetForTesting()
         // The consent file left with the HOME: every capability is off again.
         GoalongCapabilityConsentStore.shared.reload()
     }

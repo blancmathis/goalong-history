@@ -5,14 +5,29 @@ import SwiftUI
 
 /// Main window pages (spec C §6: shell, Activité, Mon travail, Historique, Temps d'écran, Conversations IA, Bilan…).
 extension GalleryCatalog {
+    /// The day's contexts by task with the member's verdicts (Mon travail › Vérifier et corriger, and the sheet
+    /// Activité opens with « Corriger »), loaded from the classified fixture.
+    static var workReviewEntry: GalleryEntry {
+        var review: GoalongWorkReviewModel?
+        return GalleryEntry("mon-travail/correction-du-classement", sizes: [.fitWidth(720)], clock: .injected,
+                            ready: { _ in review.map { $0.loadedDay != nil && !$0.loading } ?? false }) { ctx in
+            try GalleryFixtureHome.install(.classified)
+            let model = ctx.keep(GoalongWorkReviewModel())
+            review = model
+            return AnyView(GoalongWorkReviewCard(review: model, day: GalleryClock.today, focusTask: "Atlas",
+                                                 loadsOnAppear: true).padding(24))
+        }
+    }
+
     static var dashboardEntries: [GalleryEntry] {
-        [
-            // Activité, the home page: a realistic day at the real, minimum and large window sizes, whole page,
-            // high contrast; then the week, the month and the sparse states.
+        [workReviewEntry] + [
+            // Activité, the home page: a realistic, classified day at the real, minimum and large window sizes, whole
+            // page, high contrast; then the week, the month, the same day before any verdict and the sparse states.
             dashboard("activite/jour-realiste", section: .overview, sizes: [.window, .minimum, .large, .full(1240)],
-                      themes: GalleryTheme.withContrast, fixture: .realistic),
-            dashboard("activite/7-jours", section: .overview, sizes: [.window, .full(1240)], fixture: .realistic, period: 7),
-            dashboard("activite/28-jours", section: .overview, sizes: [.window, .full(1240)], fixture: .realistic, period: 28),
+                      themes: GalleryTheme.withContrast, fixture: .classified),
+            dashboard("activite/7-jours", section: .overview, sizes: [.window, .full(1240)], fixture: .classified, period: 7),
+            dashboard("activite/28-jours", section: .overview, sizes: [.window, .full(1240)], fixture: .classified, period: 28),
+            dashboard("activite/non-classe", section: .overview, sizes: [.window, .full(1240)], fixture: .realistic),
             dashboard("activite/journee-vide", section: .overview, sizes: [.window, .full(1240)], fixture: .recordingOn),
             dashboard("activite/traces-isolees", section: .overview, fixture: .sparse),
             dashboard("activite/enregistrement-desactive", section: .overview),
@@ -24,6 +39,10 @@ extension GalleryCatalog {
             dashboard("fenetre/interactions-indisponibles", section: .overview,
                       environment: { $0.inputTapWorks = false }, fixture: .recordingOn),
             dashboard("fenetre/pause-globale", section: .overview, paused: true),
+            dashboard("fenetre/stockage-plein", section: .overview, environment: { $0.storageFailure = .diskFull },
+                      fixture: .recordingOn),
+            dashboard("fenetre/stockage-refuse", section: .history, environment: { $0.storageFailure = .permissionDenied },
+                      fixture: .recordingOn),
             dashboard("fenetre/espace-faible", section: .overview, environment: { $0.freeBytes = 900_000_000 },
                       fixture: .recordingOn),
             dashboard("mon-travail/vide", section: .work, sizes: [.window, .full(1240)]),
@@ -33,7 +52,9 @@ extension GalleryCatalog {
                     content: "Documentation Swift, e-mails clients, rédaction de posts Goalong.",
                     procrastination: "jeux, x.com, youtube.com")
             }),
-            dashboard("mon-travail/avec-donnees", section: .work, fixture: .realistic),
+            // Definition and the member's verdicts: the review lists the contexts by task, below the form.
+            dashboard("mon-travail/classement-avec-donnees", section: .work, sizes: [.window, .full(1240)],
+                      fixture: .classified),
             dashboard("mon-travail/definition-et-donnees", section: .work, fixture: .realistic, configure: { _, _ in
                 try JevWorkContextStore.shared.save("Atlas : préparer le lancement de l’app mobile.",
                     applications: "Xcode, Terminal et GitHub pour Atlas.",

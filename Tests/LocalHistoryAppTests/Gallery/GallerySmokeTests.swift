@@ -3,8 +3,10 @@ import AppKit
 import CoreGraphics
 import Foundation
 import GoalongHeadlessTestSupport
+import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
+import LocalHistoryCore
 
 /// In `make test`: four key gallery entries render in memory, in light and dark, with real content, no window on
 /// screen and silent guards (spec C §10). Plus the catalog's coverage guard, which renders nothing.
@@ -15,7 +17,68 @@ final class GallerySmokeTests: XCTestCase {
     @MainActor func testKeyEntriesRenderRealContentInvisibly() throws {
         try Self.requireWindowServer()
         let started = Date()
-        GalleryRenderer.prepareApplication()
+        var elapsed: TimeInterval = 0
+        try GalleryRenderer.withPreparedApplication {
+            try renderKeyEntries()
+            elapsed = Date().timeIntervalSince(started)  // the spec's budget covers the four key entries
+            try renderProbes()
+        }
+        XCTAssertFalse(NSApp.windows.contains { $0.isVisible }, "a window became visible")
+        XCTAssertLessThan(elapsed, 5, "smoke budget is 5 s")
+    }
+
+    /// The smoke test runs inside `make test`: the time zone, identity, toasts and analysis clock it sets for the
+    /// gallery are back as they were for the test classes that follow (C1-outil-04).
+    @MainActor func testPreparedApplicationLeavesNoProcessGlobals() {
+        let zone = NSTimeZone.default
+        let toasts = GoalongToastCenter.suppressedForTesting
+        let identity = ProductIdentity.galleryOverride
+        let preferences = ActivityAnalysisRuntime.shared.preferences
+        let version = SoftwareUpdateManager.shared.currentVersion
+        let applications = GoalongApplicationCatalog.galleryApplications
+        GalleryRenderer.withPreparedApplication {
+            XCTAssertEqual(NSTimeZone.default.identifier, "Europe/Paris")
+            XCTAssertEqual(ActivityAnalysisRuntime.shared.clock(), GalleryClock.now)
+            // Settings › home and the "updated" banner show the gallery's version, not xctest's (C1-couverture-04).
+            XCTAssertEqual(SoftwareUpdateManager.shared.currentVersion, ProductIdentity.GalleryIdentity().version)
+            // Réglages › Applications lists the invented apps, never this Mac's (C1-couverture-03).
+            let catalog = GoalongApplicationCatalog()
+            catalog.load()
+            XCTAssertEqual(Set(catalog.apps.map(\.id)), Set(GalleryFixtures.installedApplications.map(\.id)))
+        }
+        XCTAssertEqual(GoalongApplicationCatalog.galleryApplications, applications)
+        XCTAssertEqual(NSTimeZone.default, zone)
+        XCTAssertEqual(GoalongToastCenter.suppressedForTesting, toasts)
+        XCTAssertEqual(ProductIdentity.galleryOverride, identity)
+        XCTAssertTrue(ActivityAnalysisRuntime.shared.preferences === preferences)
+        XCTAssertNotEqual(ActivityAnalysisRuntime.shared.clock(), GalleryClock.now)
+        XCTAssertEqual(SoftwareUpdateManager.shared.currentVersion, version)
+    }
+
+    /// The realistic morning (08:12-09:40) reads as about 88 active minutes through the duration rule that
+    /// Historique, Activité and Partager share, and the classified fixture has a verdict for every context of the
+    /// 28 days (C1-couverture-05, C1-couverture-06). Reads no file.
+    @MainActor func testRealisticFixtureReadsAsOneDurationAndIsFullyClassified() {
+        let morning = GalleryFixtureHome.workDay(GalleryClock.today, offset: 0)
+        var seconds: TimeInterval = 0
+        for (index, event) in morning.enumerated() {
+            let next = index + 1 < morning.count ? morning[index + 1] : nil
+            seconds += ForegroundUsageObservation.activeDuration(after: event, until: next?.timestamp ?? event.timestamp,
+                                                                 nextEvent: next, isTail: next == nil)
+        }
+        XCTAssertEqual(seconds / 60, 88, accuracy: 1, "active minutes of the realistic morning")
+        var keys = Set<String>()
+        for offset in 0..<28 {
+            let day = GalleryClock.calendar.date(byAdding: .day, value: -offset, to: GalleryClock.today)!
+            var tracker = GoalongWorkContext.Tracker()
+            for event in GalleryFixtureHome.workDay(day, offset: offset) {
+                if let key = tracker.context(for: event)?.key { keys.insert(key) }
+            }
+        }
+        XCTAssertEqual(keys, Set(GalleryFixtureHome.verdicts.map(\.label.key)), "contexts without a verdict")
+    }
+
+    @MainActor private func renderKeyEntries() throws {
         let all = GalleryCatalog.all
         for id in Self.smokeIDs {
             let entry = try XCTUnwrap(all.first { $0.id == id }, "missing gallery entry \(id)")
@@ -47,8 +110,29 @@ final class GallerySmokeTests: XCTestCase {
             }
             XCTAssertNotEqual(hashes[.light], hashes[.dark], "\(id): light and dark are identical")
         }
-        XCTAssertFalse(NSApp.windows.contains { $0.isVisible }, "a window became visible")
-        XCTAssertLessThan(Date().timeIntervalSince(started), 5, "smoke budget is 5 s")
+    }
+
+    @MainActor private func renderProbes() throws {
+        // A fixed panel larger than its content: the margins carry the page colour, not transparency (C1-couverture-11).
+        let panel = try renderProbe(GalleryEntry("essai/panneau", sizes: [.fixed(300, 200)]) { _ in
+            AnyView(Text("Panneau").padding())
+        })
+        XCTAssertEqual(panel.bitmap.colorAt(x: 0, y: 0)?.alphaComponent, 1, "transparent margin around a fixed panel")
+        // A short page rendered whole keeps the window height, without an empty band down to 1500 pt (C1-couverture-09).
+        let page = try renderProbe(GalleryEntry("essai/page-courte", sizes: [.full(600)]) { _ in
+            AnyView(ScrollView { Text("Page courte").padding() })
+        })
+        XCTAssertEqual(page.pointSize.height, GalleryRenderer.fullStartHeight, "short --full page height")
+    }
+
+    @MainActor private func renderProbe(_ entry: GalleryEntry) throws -> GalleryImage {
+        let ctx = GalleryContext()
+        defer { ctx.finish() }
+        GalleryGuardReport.begin()
+        defer { _ = GalleryGuardReport.take() }
+        let image = try GalleryRenderer.render(entry, theme: .light, size: entry.sizes[0], ctx: ctx)
+        XCTAssertEqual(image.status, .ok, "\(entry.id): \(image.detail ?? "")")
+        return image
     }
 
     /// Coverage guard: every dashboard destination and Settings pane has an entry; ids are unique and well formed.

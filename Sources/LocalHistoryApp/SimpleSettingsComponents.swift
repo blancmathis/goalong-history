@@ -142,6 +142,8 @@ struct GoalongSettingsList<Content: View>: View {
     let capability: GoalongCapability
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @StateObject private var validation = SourceAccessValidation()
+    /// The real probe by default; the test gallery answers with simulated permissions.
+    @Environment(\.sourceAccessCheck) private var checkAccess
     @State private var showing = false
     var body: some View {
         HStack(spacing: 12) {
@@ -166,7 +168,7 @@ struct GoalongSettingsList<Content: View>: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in check() }
         .onDisappear { validation.cancel() }
         .sheet(isPresented: $showing, onDismiss: check) {
-            SourceActivationSheet(capability: capability, surface: .settings, prepare: {}, check: SourceAccessService.check)
+            SourceActivationSheet(capability: capability, surface: .settings, prepare: {}, check: checkAccess)
                 .goalongControls()
         }
     }
@@ -182,6 +184,6 @@ struct GoalongSettingsList<Content: View>: View {
         case .unavailable: return "Source indisponible"
         }
     }
-    private func check() { validation.validate(capability, check: SourceAccessService.check) }
+    private func check() { validation.validate(capability, check: checkAccess) }
 }
 #endif

@@ -68,8 +68,18 @@ enum GoalongKnownApplications {
 @MainActor final class GoalongApplicationCatalog: ObservableObject {
     @Published var apps: [GoalongApplicationChoice] = []
     @Published var loading = false
+    #if DEBUG
+    /// Test gallery only: a fixed, invented list instead of this Mac's installed apps.
+    static var galleryApplications: [GoalongApplicationChoice]?
+    #endif
     func load() {
         guard !loading else { return }
+        #if DEBUG
+        if let fixed = Self.galleryApplications {
+            apps = fixed.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            return
+        }
+        #endif
         loading = true
         let locations = [URL(fileURLWithPath: "/Applications"), URL(fileURLWithPath: "/System/Applications"),
                          FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]

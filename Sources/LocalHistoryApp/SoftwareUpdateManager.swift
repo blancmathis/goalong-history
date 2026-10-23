@@ -126,8 +126,8 @@
         }
 
         var currentVersion: String {
-            (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
-                ?? "development"
+            // Through ProductIdentity: the test gallery shows a fixed version, not xctest's.
+            ProductIdentity.shortVersion ?? "development"
         }
 
         var canCheckForUpdates: Bool {

@@ -78,6 +78,8 @@ struct GalleryEnvironment {
     var identity = ProductIdentity.GalleryIdentity()
     /// The recorder's input tap is created and has seen input; false shows « Interactions indisponibles ».
     var inputTapWorks = true
+    /// The recorder could not write its journal a minute ago (storage banner); nil = writes fine.
+    var storageFailure: CaptureStorageFailureKind?
     /// Answer of every source access check (`\.sourceAccessCheck`): no real probe, no recovery ledger write.
     /// Nil follows the simulated permissions.
     var sourceAccess: SourceAccessStatus?

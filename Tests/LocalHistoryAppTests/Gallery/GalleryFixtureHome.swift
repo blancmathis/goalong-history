@@ -10,12 +10,24 @@ import Foundation
     enum Kind: Equatable {
         /// Nothing written: recording off, no day.
         case empty
-        /// Recording on, 28 days of work ending on the gallery morning (08:12-09:40).
+        /// Recording on, 28 days of work ending on the gallery morning (08:12-09:40), not classified yet.
         case realistic
+        /// `realistic`, plus a saved work definition and the member's own verdict for every context: Activité
+        /// shows work and non-work time.
+        case classified
         /// Recording on, three isolated traces this morning.
         case sparse
         /// Recording on, no event yet.
         case recordingOn
+    }
+
+    /// Space the store reports for each fixture: an empty store and a filled one never show the same figure.
+    static func usedBytes(_ kind: Kind) -> Int64 {
+        switch kind {
+        case .empty: return 0
+        case .recordingOn, .sparse: return 184_000
+        case .realistic, .classified: return 48_300_000
+        }
     }
 
     static func install(_ kind: Kind) throws {
@@ -28,12 +40,40 @@ import Foundation
         switch kind {
         case .empty, .recordingOn: return
         case .sparse: try write(sparseDay(), day: GalleryClock.today)
-        case .realistic:
+        case .realistic, .classified:
             for offset in 0..<28 {
                 let day = GalleryClock.calendar.date(byAdding: .day, value: -offset, to: GalleryClock.today)!
                 let events = workDay(day, offset: offset)
                 if !events.isEmpty { try write(events, day: day) }
             }
+            if kind == .classified { try classify() }
+        }
+    }
+
+    /// The definition the member saved and their verdict for each context, through the app's own stores.
+    static func classify() throws {
+        try JevWorkContextStore.shared.save("Atlas : préparer le lancement de l’app mobile.",
+            applications: "Xcode, Terminal et GitHub pour Atlas. Notes et Mail pour le lancement.",
+            content: "Documentation Swift, plan de lancement, e-mails de l’équipe.",
+            procrastination: "youtube.com, Messages")
+        let store = GoalongWorkStore.shared
+        store.reconcileDefinition()
+        let day = key(GalleryClock.today)
+        for (label, verdict, task) in verdicts {
+            store.correct(key: label.key, label: label, verdict: verdict, task: task, day: day)
+        }
+        guard verdicts.allSatisfy({ store.verdicts.assignment(for: $0.label.key)?.verdict == $0.verdict }) else {
+            throw GalleryError.fixture("work verdicts not read back")
+        }
+    }
+
+    /// One verdict per context of the realistic days: work under two tasks, breaks outside work.
+    static var verdicts: [(label: GoalongWorkContext.Label, verdict: GoalongWorkVerdict, task: String?)] {
+        (work + breaks).map { activity in
+            let label = GoalongWorkContext.Label(application: activity.app, bundleIdentifier: activity.bundle,
+                                                 host: activity.host, title: GoalongWorkContext.displayTitle(activity.title))
+            guard activity.isWork == true else { return (label, .other, nil) }
+            return (label, .work, ["Notes", "Mail"].contains(activity.app) ? "Lancement" : "Atlas")
         }
     }
 
@@ -86,7 +126,7 @@ import Foundation
     ]
 
     /// Minutes of the day with activity: two work blocks, shorter on weekends, this morning up to 09:40.
-    private static func blocks(_ day: Date, offset: Int) -> [(Int, Int)] {
+    static func blocks(_ day: Date, offset: Int) -> [(Int, Int)] {
         if offset == 0 { return [(8 * 60 + 12, 9 * 60 + 40)] }
         let weekday = GalleryClock.calendar.component(.weekday, from: day)
         if weekday == 1 { return offset % 2 == 0 ? [] : [(16 * 60, 16 * 60 + 35)] }
@@ -95,7 +135,7 @@ import Foundation
         return [(8 * 60 + 40 + shift, 12 * 60 + 15 + shift / 2), (13 * 60 + 50, 17 * 60 + 30 + (offset * 11) % 70)]
     }
 
-    private static func workDay(_ day: Date, offset: Int) -> [HistoryEvent] {
+    static func workDay(_ day: Date, offset: Int) -> [HistoryEvent] {
         var events: [HistoryEvent] = []
         for (start, end) in blocks(day, offset: offset) {
             var previous: String?
@@ -114,15 +154,32 @@ import Foundation
                 let classification = activity.category.map {
                     LocalClassification(category: $0, isWork: activity.isWork, confidence: 0.9, classifierVersion: "galerie")
                 }
+                // The recorder's presence policy on every row (visible window, input a few seconds ago): Historique,
+                // Activité and Partager then read the same durations (C1-couverture-05).
+                func presence(_ date: Date) -> [String: String] {
+                    ForegroundUsageObservation(observedAt: date, idleSeconds: 4, isForegroundVisible: true).metadata(at: date)
+                }
                 if key != previous {
                     events.append(HistoryEvent(id: id + "-a", sessionID: "galerie", timestamp: timestamp,
                                                kind: .applicationActivated, app: app, window: window, url: url,
-                                               classification: classification))
+                                               classification: classification, metadata: presence(timestamp)))
                     previous = key
                 }
-                events.append(HistoryEvent(id: id, sessionID: "galerie", timestamp: timestamp.addingTimeInterval(30),
+                // Typing every minute, like the input tap's bursts (no content): Historique builds its sessions,
+                // and the per-app durations of each ten-minute period, from these rows, not from heartbeats.
+                let typed = timestamp.addingTimeInterval(15)
+                var typing = presence(typed)
+                typing["keystroke_count"] = "24"
+                typing["content_recorded"] = "false"
+                events.append(HistoryEvent(id: id + "-t", sessionID: "galerie", timestamp: typed, kind: .typingBurst,
+                                           app: app, window: window, url: url,
+                                           keyboard: KeyboardSnapshot(category: "text_activity", key: nil, modifiers: [],
+                                                                      isRepeat: false),
+                                           classification: classification, metadata: typing))
+                let beat = timestamp.addingTimeInterval(30)
+                events.append(HistoryEvent(id: id, sessionID: "galerie", timestamp: beat,
                                            kind: .heartbeat, app: app, window: window, url: url,
-                                           classification: classification))
+                                           classification: classification, metadata: presence(beat)))
             }
         }
         return events

@@ -25,6 +25,9 @@ struct GalleryImage {
 @MainActor enum GalleryRenderer {
     static let maximumFullHeight: CGFloat = 6_000
     static let fallbackFullHeight: CGFloat = 1_500
+    /// A whole page is measured in a window of the dashboard's height: a shorter page keeps that height instead of
+    /// an empty band down to the fallback height.
+    static let fullStartHeight: CGFloat = 790
 
     /// Preferences of the process-wide services the pages reach (one throwaway suite per process).
     static let processDefaults = UserDefaults(suiteName: "goalong-gallery-" + UUID().uuidString)!
@@ -35,10 +38,47 @@ struct GalleryImage {
         NSTimeZone.default = GalleryClock.timeZone
         GoalongToastCenter.suppressedForTesting = true
         ProductIdentity.galleryOverride = ProductIdentity.GalleryIdentity()
+        GoalongApplicationCatalog.galleryApplications = GalleryFixtures.installedApplications
         // History's analysis passes: a throwaway suite (the hook deletes it) and the frozen clock.
         ActivityAnalysisRuntime.shared.preferences = processDefaults
         ActivityAnalysisRuntime.shared.clock = { GalleryClock.now }
         warmSingletons()
+    }
+
+    /// The process-wide values `prepareApplication` changes. The gallery's own process never restores them; a test
+    /// inside `make test` must, since every later test class runs in the same process (C1-outil-04).
+    struct ProcessGlobals {
+        let timeZone: TimeZone
+        let toastsSuppressed: Bool
+        let identity: ProductIdentity.GalleryIdentity?
+        let analysisPreferences: UserDefaults
+        let analysisClock: () -> Date
+        let applications: [GoalongApplicationChoice]?
+    }
+
+    static func saveGlobals() -> ProcessGlobals {
+        ProcessGlobals(timeZone: NSTimeZone.default, toastsSuppressed: GoalongToastCenter.suppressedForTesting,
+                       identity: ProductIdentity.galleryOverride,
+                       analysisPreferences: ActivityAnalysisRuntime.shared.preferences,
+                       analysisClock: ActivityAnalysisRuntime.shared.clock,
+                       applications: GoalongApplicationCatalog.galleryApplications)
+    }
+
+    static func restoreGlobals(_ saved: ProcessGlobals) {
+        NSTimeZone.default = saved.timeZone
+        GoalongToastCenter.suppressedForTesting = saved.toastsSuppressed
+        ProductIdentity.galleryOverride = saved.identity
+        ActivityAnalysisRuntime.shared.preferences = saved.analysisPreferences
+        ActivityAnalysisRuntime.shared.clock = saved.analysisClock
+        GoalongApplicationCatalog.galleryApplications = saved.applications
+    }
+
+    /// `prepareApplication`, `body`, then the process globals as they were, even when `body` throws.
+    static func withPreparedApplication<T>(_ body: () throws -> T) rethrows -> T {
+        let saved = saveGlobals()
+        defer { restoreGlobals(saved) }
+        prepareApplication()
+        return try body()
     }
 
     /// Singletons that read `UserDefaults.standard` once, in their initializer, and that the catalog's views touch.
@@ -59,14 +99,16 @@ struct GalleryImage {
     /// The root modifiers every entry gets: its preferences, French dates, no animation, active controls.
     static func root(_ entry: GalleryEntry, _ ctx: GalleryContext, size: GallerySize) throws -> AnyView {
         var content = try entry.view(ctx)
-        if entry.pageBackground && !entry.dashboardWindow {
-            content = AnyView(content.background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
-                .tint(LHTheme.accent).accentColor(LHTheme.accent).goalongControls())
-        }
         switch size {
         case let .fixed(width, height): content = AnyView(content.frame(width: width, height: height))
         case let .fitWidth(width): content = AnyView(content.frame(width: width).fixedSize(horizontal: false, vertical: true))
         case let .full(width): content = AnyView(content.frame(width: width).frame(maxHeight: .infinity))
+        }
+        if entry.pageBackground && !entry.dashboardWindow {
+            // After the size frame: a panel smaller than its fixed size sits on the page colour, not on
+            // transparent margins (spec C §4.5).
+            content = AnyView(content.background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
+                .tint(LHTheme.accent).accentColor(LHTheme.accent).goalongControls())
         }
         return AnyView(content
             .defaultAppStorage(ctx.defaults)
@@ -91,7 +133,7 @@ struct GalleryImage {
         switch size {
         case let .fixed(width, height): start = NSSize(width: width, height: height)
         case let .fitWidth(width): start = NSSize(width: width, height: 900)
-        case let .full(width): start = NSSize(width: width, height: fallbackFullHeight)
+        case let .full(width): start = NSSize(width: width, height: fullStartHeight)
         }
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: start),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)
@@ -130,7 +172,7 @@ struct GalleryImage {
             let height = ceil(host.fittingSize.height)
             window.setContentSize(NSSize(width: width, height: max(60, min(height, maximumFullHeight))))
         case .full(let width):
-            let height = fullHeight(host) ?? fallbackFullHeight
+            let height = fullHeight(host) ?? fallbackFullHeight  // floor: start.height, the window's
             window.setContentSize(NSSize(width: width, height: min(maximumFullHeight, max(start.height, height))))
         case .fixed: break
         }

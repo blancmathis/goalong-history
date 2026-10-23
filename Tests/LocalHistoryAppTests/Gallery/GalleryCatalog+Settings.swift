@@ -23,8 +23,9 @@ extension GalleryCatalog {
             }),
             dashboard("settings/enregistrement-actif", section: .settings, pane: .recording, fixture: .realistic),
             dashboard("settings/stockage-avec-donnees", section: .settings, pane: .storage, fixture: .realistic),
+            // Recording on, so the history row asks for the missing access instead of « Fonction désactivée ».
             dashboard("settings/permission-manquante", section: .settings, pane: .permissions,
-                      environment: { $0.permissions = .galleryMissing }),
+                      environment: { $0.permissions = .galleryMissing }, fixture: .recordingOn),
             panel("settings-sheets/connexion-jev", width: 560) { _ in AnyView(JevConnectionSheet()) },
             panel("settings-sheets/conservation", width: 700, height: 670) { _ in AnyView(HistoryRetentionSettingsSheet()) },
             panel("settings-sheets/partage-site", width: 740, clock: .injected) { _ in AnyView(GoalongWebsiteSharingSheet()) },
@@ -41,6 +42,13 @@ extension GalleryCatalog {
             ("historique-pret", .localComputerHistory, .ready),
             ("temps-ecran-acces-complet", .appleScreenTime, .fullDiskAccess),
             ("temps-ecran-pret", .appleScreenTime, .ready),
+            ("historique-surveillance-entree", .localComputerHistory, .inputMonitoring),
+            ("temps-ecran-a-configurer", .appleScreenTime, .screenTimeSetup),
+            // The app's own messages (SourceActivation.swift).
+            ("temps-ecran-indisponible", .appleScreenTime, .unavailable(
+                "La source Apple n’a pas pu être ouverte. Vérifiez Temps d’écran dans Réglages Système, puis réessayez.")),
+            ("historique-reparation-en-cours", .localComputerHistory,
+             .unavailable("Une réparation d’autorisation est en cours. Aucun nouvel accès n’est confirmé.")),
         ]
         entries += activations.map { name, capability, status in
             panel("permissions/\(name)", width: 620, height: 690) { _ in
