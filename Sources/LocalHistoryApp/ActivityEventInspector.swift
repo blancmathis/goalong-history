@@ -137,10 +137,10 @@
 
         var title: String {
             switch self {
-            case .all: return "All"
+            case .all: return "Tout"
             case .actions: return "Actions"
-            case .gaps: return "Gaps"
-            case .semantic: return "Semantic"
+            case .gaps: return "Lacunes"
+            case .semantic: return "Texte"
             }
         }
     }

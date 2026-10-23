@@ -207,6 +207,17 @@ final class GoalongActivityPersistenceTests: XCTestCase {
             ], prepare: {}))
     }
 
+    func testLiveRetentionStorageExpiresPurgeMarkersWithSummaries() {
+        // B05-R2-01: the helper above declares its own suffixes; this guards the production list.
+        let markerName = "2026-08-10" + GoalongActivityDayStore.purgeMarkerSuffix
+        let activityDays = HistoryRetentionStorage.live.artifactDirectories.filter {
+            $0.directory.lastPathComponent == GoalongActivityDayStore.directoryName
+        }
+        XCTAssertTrue(activityDays.contains { $0.dataClass == .activitySummaries && $0.recognizes(markerName) })
+        XCTAssertTrue(activityDays.contains { $0.dataClass == .activitySummaries && $0.recognizes("2026-08-10.json") })
+        XCTAssertFalse(activityDays.contains { $0.dataClass == .detailedEvents && $0.recognizes(markerName) })
+    }
+
     func testPurgeMarkerExpiresWithTheDaySummaries() throws {
         // B05-R1-02: « Détail effacé » used to outlive the chosen summary duration forever.
         let calendar = Calendar.current

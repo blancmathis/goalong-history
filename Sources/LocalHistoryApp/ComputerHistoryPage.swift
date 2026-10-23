@@ -126,7 +126,9 @@
         }
 
         static func displayMessage(for error: Error) -> String {
-            (error as? ActivityAnalysisCycleError)?.frenchDescription ?? error.localizedDescription
+            if let cycleError = error as? ActivityAnalysisCycleError { return cycleError.frenchDescription }
+            if let refreshError = error as? ActivityAnalysisRefreshError { return refreshError.frenchDescription }
+            return error.localizedDescription
         }
 
         private static func sourceStatus(for error: Error) -> ComputerHistorySourceStatus {
@@ -136,7 +138,8 @@
             switch cycleError {
             case .sourceInaccessible, .sourceChangedDuringRead, .oversizedJSONLine,
                 .reentrantCycle:
-                return .inaccessible(cycleError.frenchDescription)
+                // « Détails techniques » shows the real cause; errorMessage carries the French sentence.
+                return .inaccessible(cycleError.errorDescription ?? cycleError.frenchDescription)
             case .retainedEvidenceBudgetExceeded:
                 return .available
             }

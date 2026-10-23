@@ -599,6 +599,15 @@
             XCTAssertTrue(error.localizedDescription.hasPrefix("The source journal changed"))
             XCTAssertEqual(
                 ComputerHistoryPageModel.displayMessage(for: error), error.frenchDescription)
+            for refreshError in [ActivityAnalysisRefreshError.temporarilySuspended, .invalidatedByHistoryClear, .runtimeUnavailable] {
+                XCTAssertEqual(ComputerHistoryPageModel.displayMessage(for: refreshError), refreshError.frenchDescription)
+                XCTAssertTrue(refreshError.localizedDescription.first?.isASCII == true)
+            }
+        }
+
+        func testInspectorFilterTitlesAreFrench() {
+            // B06-R2-03
+            XCTAssertEqual(ActivityEventInspectorFilter.allCases.map(\.title), ["Tout", "Actions", "Lacunes", "Texte"])
         }
 
         func testComputerHistorySortsAppsByUsageThenName() throws {

@@ -296,7 +296,14 @@ struct GoalongSharingSelector: View {
     @State private var search = ""
     private var absent: [String] { selection.subtracting(Set(items.map(\.id))).sorted() }
     private var present: Set<String> { selection.intersection(Set(items.map(\.id))) }
-    private var roomLeft: Int { max(0, Self.selectionCap - present.count) }
+    private var roomLeft: Int { Self.roomLeft(selection: selection, itemIDs: items.map(\.id)) }
+    /// Same cap for the bulk button and for each checkbox: the export refuses more.
+    static func roomLeft(selection: Set<String>, itemIDs: [String]) -> Int {
+        max(0, selectionCap - selection.intersection(itemIDs).count)
+    }
+    static func canCheck(_ id: String, selection: Set<String>, itemIDs: [String]) -> Bool {
+        selection.contains(id) || roomLeft(selection: selection, itemIDs: itemIDs) > 0
+    }
     private var uncheckedResults: [Item] { visible.filter { !selection.contains($0.id) } }
     private var visible: [Item] { items.filter { search.isEmpty || $0.title.localizedStandardContains(search) } }
     var body: some View {
@@ -344,7 +351,7 @@ struct GoalongSharingSelector: View {
                     LazyVStack(spacing: 0) {
                         ForEach(visible) { item in
                             Toggle(isOn: Binding(get: { selection.contains(item.id) }, set: {
-                                if $0 { selection.insert(item.id) } else { selection.remove(item.id) }
+                                if !$0 { selection.remove(item.id) } else if roomLeft > 0 { selection.insert(item.id) }
                             })) {
                                 HStack(spacing: 10) {
                                     Image(systemName: item.symbol ?? symbol).foregroundStyle(.secondary).frame(width: 20)
@@ -354,7 +361,9 @@ struct GoalongSharingSelector: View {
                                     }
                                     Spacer(minLength: 0)
                                 }
-                            }.toggleStyle(.goalongCheckbox).padding(.vertical, 8).padding(.horizontal, 9)
+                            }.toggleStyle(.goalongCheckbox)
+                                .disabled(!Self.canCheck(item.id, selection: selection, itemIDs: items.map(\.id)))
+                                .padding(.vertical, 8).padding(.horizontal, 9)
                                 .background(selection.contains(item.id) ? LHTheme.accent.opacity(0.07) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                                 .accessibilityLabel("\(title) : \(item.title)")
                         }

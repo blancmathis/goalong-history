@@ -812,6 +812,18 @@
                 return "The activity-analysis runtime is no longer available"
             }
         }
+
+        /// French text for the interface; `errorDescription` stays English for logs.
+        var frenchDescription: String {
+            switch self {
+            case .temporarilySuspended:
+                return "Actualisation en pause pendant l’effacement de l’historique local."
+            case .invalidatedByHistoryClear:
+                return "Actualisation annulée : l’historique local a été effacé."
+            case .runtimeUnavailable:
+                return "L’analyse d’activité n’est plus disponible."
+            }
+        }
     }
 
     /// Coalesces equal UI/background requests onto one serial coordinator execution.

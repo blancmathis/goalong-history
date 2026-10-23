@@ -115,6 +115,19 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         XCTAssertFalse(model.autoSender.enabled)
     }
 
+    func testSelectorCapAppliesToEachCheckboxToo() {
+        // B07-R2-01: a site could still be checked by hand past the 200-item export cap.
+        let ids = (0..<250).map { "site-\($0)" }
+        var selection = Set(ids.prefix(GoalongSharingSelector.selectionCap))
+        XCTAssertEqual(GoalongSharingSelector.roomLeft(selection: selection, itemIDs: ids), 0)
+        XCTAssertFalse(GoalongSharingSelector.canCheck("site-210", selection: selection, itemIDs: ids))
+        XCTAssertTrue(GoalongSharingSelector.canCheck("site-10", selection: selection, itemIDs: ids))
+        selection.insert("absent-from-this-day")
+        XCTAssertFalse(GoalongSharingSelector.canCheck("site-210", selection: selection, itemIDs: ids))
+        selection.remove("site-10")
+        XCTAssertTrue(GoalongSharingSelector.canCheck("site-210", selection: selection, itemIDs: ids))
+    }
+
     func testPreviewDayUsesTheSavedTimezoneInsteadOfAnImplicitUTCDay() {
         var draft = GoalongWebsiteShareDraft()
         draft.date = ISO8601DateFormatter().date(from: "2026-09-14T02:00:00Z")!
