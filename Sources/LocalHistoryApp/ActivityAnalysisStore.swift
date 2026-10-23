@@ -19,8 +19,10 @@
             return TimeInterval(raw == 0 ? 15 : min(max(raw, 8), 120))
         }
 
-        static var agentTokenBudget: Int {
-            let raw = UserDefaults.standard.integer(forKey: agentTokenBudgetKey)
+        static var agentTokenBudget: Int { agentTokenBudget(in: .standard) }
+
+        static func agentTokenBudget(in defaults: UserDefaults) -> Int {
+            let raw = defaults.integer(forKey: agentTokenBudgetKey)
             return raw == 0 ? 1_600 : min(max(raw, 400), 12_000)
         }
     }

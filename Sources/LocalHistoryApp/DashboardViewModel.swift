@@ -940,7 +940,7 @@
             let status = permissions.snapshot
             let tap = eventTapStatus()
             let healthSnapshot = captureHealthSnapshot()
-            let health = CaptureHealthEvaluator.assess(healthSnapshot)
+            let health = CaptureHealthEvaluator.assess(healthSnapshot, now: now())
             let runtimeState: RuntimeStateKind
             switch health.state {
             case .paused:

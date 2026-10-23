@@ -49,6 +49,9 @@
             qos: .userInitiated
         )
         private var refreshRequestID = UUID()
+        /// Refreshes asked and not yet published, all pages together (main thread). The gallery waits for 0 before
+        /// it captures the page, so « Vérification de la journée » never lands in an image by chance.
+        private(set) static var refreshesInFlight = 0
 
         init(
             store: ComputerHistoryStore = ComputerHistoryStore(),
@@ -65,6 +68,7 @@
             let normalized = Calendar.current.startOfDay(for: day)
             let requestID = UUID()
             refreshRequestID = requestID
+            Self.refreshesInFlight += 1
             errorMessage = nil
             isLoading = true
             sourceStatus = .checking
@@ -102,6 +106,7 @@
                         memory = invalidated ? nil : load(normalized) ?? retained.value
                     }
                     DispatchQueue.main.async { [weak self] in
+                        Self.refreshesInFlight -= 1
                         guard let self, self.refreshRequestID == requestID else { return }
                         self.memory = memory
                         self.isAnalysisPartial = Self.exceededAnalysisCeiling(result)
