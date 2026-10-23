@@ -833,7 +833,7 @@
         }
 
         private var showsRecordingSummary: Bool {
-            isPreparingTimeline || !tenMinuteGroups.isEmpty
+            isPreparingTimeline || !tenMinuteGroups.isEmpty || model.isAnalysisPartial
                 || !ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
         }
 

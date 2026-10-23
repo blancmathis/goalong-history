@@ -9,7 +9,7 @@
                 PageHeader(
                     title: "Exporter un fichier signé",
                     subtitle:
-                        "Choisissez ce que le fichier montre de chaque app et site. Goalong vérifie les signatures de l’historique avant de le créer."
+                        "Choisissez ce que le fichier montre de chaque app et site. Goalong vérifie les signatures de l’historique avant de créer le fichier."
                 ) {
                     HStack(spacing: 10) {
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
@@ -34,7 +34,7 @@
 
                 exportBar
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, LHTheme.pageInset)
             .padding(.top, 28)
             .padding(.bottom, 20)
             .background(LHTheme.pageBackground)

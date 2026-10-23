@@ -259,7 +259,6 @@
                 withAnimation(reduceMotion ? nil : LHTheme.press) { isOn.toggle() }
             } label: { EmptyView() }
                 .buttonStyle(GoalongSwitchButtonStyle(isOn: isOn, small: controlSize == .small || controlSize == .mini))
-                .opacity(isEnabled ? 1 : 0.6)
         }
     }
 
@@ -281,7 +280,8 @@
             let stretch: CGFloat = configuration.isPressed && !reduceMotion ? 4 : 0
             ZStack(alignment: isOn ? .trailing : .leading) {
                 track.fill(isOn ? (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground)
-                           : (hovered && isEnabled ? LHTheme.pressedBackground : LHTheme.switchTrack))
+                           : (hovered && isEnabled ? LHTheme.switchTrackHover : LHTheme.switchTrack))
+                    .opacity(isOn && !isEnabled ? 0.6 : 1)
                 if !isOn || contrast == .increased {
                     track.strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.controlBorder)
                 }
@@ -289,6 +289,7 @@
                     .fill(isOn ? LHTheme.onAccent : LHTheme.switchKnob)
                     .frame(width: knob + stretch, height: knob)
                     .padding(.horizontal, 3)
+                    .opacity(isEnabled ? 1 : 0.6)
             }
             .frame(width: width, height: height)
             .overlay { RoundedRectangle(cornerRadius: radius + 3, style: .continuous)

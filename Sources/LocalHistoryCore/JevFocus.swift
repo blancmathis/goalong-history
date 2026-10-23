@@ -211,7 +211,7 @@ public enum JevError: Error, LocalizedError, Equatable {
         case .budget: return "Budget de surveillance dépassé : analyse suspendue, aucune alerte."
         case .invalidResponse: return "Réponse de surveillance non exploitable : aucune alerte."
         case .authentication: return "Clé API Jev refusée. Corrigez-la dans Réglages › Jev → Gérer la connexion."
-        case .paymentRequired: return "Crédit Jev épuisé : surveillance suspendue, aucune alerte. Rechargez votre compte puis cliquez sur Réessayer."
+        case .paymentRequired: return "Crédit TypeSafe épuisé (fournisseur de Jev) : surveillance suspendue, aucune alerte. Rechargez le compte TypeSafe puis cliquez sur Réessayer."
         case .http(let code): return "Service de surveillance momentanément indisponible (HTTP \(code)). Nouvel essai automatique."
         case .rateLimited(let seconds): return "Limite du service : nouvel essai dans \(seconds) s."
         }
