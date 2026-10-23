@@ -230,6 +230,39 @@ final class GoalongActivityInsightsTests: XCTestCase {
         blocked.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
         XCTAssertNotNil(blocked.lastError)
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "{tronqué")
+
+        // Once the file can be moved aside, the next change is saved without a relaunch.
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        let other = GoalongWorkContext.Label(application: "Mail", bundleIdentifier: "fixture.Mail", host: nil, title: "Boîte")
+        blocked.correct(key: other.key, label: other, verdict: .other, task: nil, day: "2026-09-10")
+        XCTAssertNil(blocked.lastError)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix("work-classification.damaged-") }.count, 1)
+        XCTAssertEqual(Set(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).corrections.map(\.key)),
+                       [label.key, other.key])
+        for name in try fm.contentsOfDirectory(atPath: folder.path) { try fm.removeItem(at: folder.appendingPathComponent(name)) }
+
+        // Deleted by the user, as the notice says: writing resumes.
+        try Data("{tronqué".utf8).write(to: file)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let deleted = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        try fm.removeItem(at: file)
+        deleted.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+        XCTAssertNil(deleted.lastError); XCTAssertNil(deleted.storageNotice)
+        XCTAssertEqual(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).corrections.map(\.key), [label.key])
+
+        // Repaired by the user: its corrections stay, the new one is added.
+        try Data("{tronqué".utf8).write(to: file)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let repaired = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        try fm.removeItem(at: file)
+        let source = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        source.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+        repaired.correct(key: other.key, label: other, verdict: .other, task: nil, day: "2026-09-11")
+        XCTAssertNil(repaired.lastError); XCTAssertNil(repaired.storageNotice)
+        XCTAssertEqual(Set(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).corrections.map(\.key)),
+                       [label.key, other.key])
     }
 
     @MainActor func testFullHistoryClearErasesWorkCorrectionsAndTheirTitles() throws {
@@ -247,6 +280,33 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertTrue(reloaded.corrections.isEmpty)
         XCTAssertEqual(reloaded.revision, revision); XCTAssertFalse(reloaded.automatic)
         XCTAssertFalse(try String(contentsOf: file, encoding: .utf8).contains("Relevé"), "No title stays on disk")
+
+        // Unreadable copies hold the same titles: the full clear erases them too.
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("work-clear-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path); try? fm.removeItem(at: folder) }
+        let saved = folder.appendingPathComponent("work-classification.json")
+        let titled = Data("{\"corrections\":[{\"label\":{\"title\":\"Relevé de compte\",\"host\":\"bank.example.org\"".utf8)
+        try titled.write(to: saved)
+        let asideStore = GoalongWorkStore(fileURL: saved, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        XCTAssertNotNil(asideStore.storageNotice)
+        asideStore.removeAll()
+        XCTAssertNil(asideStore.lastError); XCTAssertNil(asideStore.storageNotice)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: folder.path), ["work-classification.json"])
+        XCTAssertFalse(try String(contentsOf: saved, encoding: .utf8).contains("Relevé"))
+
+        // Left in place (folder read-only at launch), then deletable: the full clear removes it.
+        try titled.write(to: saved)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let blocked = GoalongWorkStore(fileURL: saved, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        blocked.removeAll()
+        XCTAssertNotNil(blocked.lastError, "A file that cannot be erased is reported")
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        blocked.removeAll()
+        XCTAssertNil(blocked.lastError); XCTAssertNil(blocked.storageNotice)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: folder.path), ["work-classification.json"])
+        XCTAssertFalse(try String(contentsOf: saved, encoding: .utf8).contains("Relevé"))
 
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/AppDelegate.swift"), encoding: .utf8)

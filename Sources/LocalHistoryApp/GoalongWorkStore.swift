@@ -185,9 +185,14 @@ extension Notification.Name {
         publish(); persist()
     }
 
+    /// Full clear: the saved file is rewritten without any title, and the unreadable copies
+    /// (kept aside or left in place) go too, since they hold the same titles.
     func removeAll() {
         document.entries = [:]; document.corrections = []
+        if writesBlocked { try? FileManager.default.removeItem(at: fileURL) }
+        liftWriteBlock(keepingSavedCorrections: false)
         publish(); persist()
+        removeDamagedCopies()
     }
 
     /// Re-reads the definition. A changed meaning invalidates the agent's verdicts.
@@ -222,7 +227,56 @@ extension Notification.Name {
         }
     }
 
+    /// The unreadable file was left in place. Once it is deleted, repaired or can be moved
+    /// aside, writing resumes. A repaired file keeps its corrections unless the user changed
+    /// the same context meanwhile, or asked for a full clear.
+    private func liftWriteBlock(keepingSavedCorrections: Bool) {
+        guard writesBlocked else { return }
+        switch Self.load(from: fileURL) {
+        case .missing:
+            storageNotice = nil
+        case .loaded(let saved):
+            if keepingSavedCorrections { adopt(saved) }
+            storageNotice = nil
+        case .unreadable:
+            guard let name = try? Self.moveDamagedFileAside(fileURL) else { return }
+            storageNotice = "Le classement enregistré était illisible. Il a été mis de côté (\(name)) et vos corrections Travail / Hors travail repartent de zéro."
+        }
+        writesBlocked = false
+    }
+
+    /// Merges a repaired file under the changes made while it was unreadable.
+    private func adopt(_ saved: Document) {
+        var entries = saved.revision == document.revision ? saved.entries : saved.entries.filter { $0.value.byOwner }
+        entries.merge(document.entries) { _, current in current }
+        let changed = Set(document.entries.keys)
+        var corrections = saved.corrections.filter { !changed.contains($0.key) }
+        corrections.append(contentsOf: document.corrections)
+        let limit = GoalongWorkClassification.maximumExamples * 4
+        if corrections.count > limit { corrections.removeFirst(corrections.count - limit) }
+        document.entries = entries; document.corrections = corrections
+        prune(); publish()
+    }
+
+    /// Deletes the `work-classification.damaged-*` copies next to the saved file.
+    private func removeDamagedCopies() {
+        let fm = FileManager.default
+        let folder = fileURL.deletingLastPathComponent()
+        let prefix = fileURL.deletingPathExtension().lastPathComponent + ".damaged-", suffix = "." + fileURL.pathExtension
+        guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
+        var failed = false
+        for name in names where name.hasPrefix(prefix) && name.hasSuffix(suffix) {
+            do { try fm.removeItem(at: folder.appendingPathComponent(name, isDirectory: false)) } catch { failed = true }
+        }
+        if failed {
+            if lastError == nil { lastError = "Une copie illisible du classement n’a pas pu être effacée. Supprimez-la dans le dossier de Goalong." }
+        } else if !writesBlocked {
+            storageNotice = nil
+        }
+    }
+
     private func persist() {
+        liftWriteBlock(keepingSavedCorrections: true)
         guard !writesBlocked else {
             lastError = "Le classement n’a pas été enregistré : le fichier existant est illisible."
             return
