@@ -17,9 +17,12 @@ extension GalleryCatalog {
         ]
         entries += panes.map { name, pane in dashboard("settings/\(name)", section: .settings, pane: pane) }
         entries += [
-            dashboard("settings/non-enregistre", section: .settings, pane: .recording, configure: { model, _ in
+            // The unsaved-changes banner shows once the member leaves Réglages.
+            dashboard("settings/non-enregistre", section: .overview, configure: { model, _ in
                 model.settingsDraft.captureClicks.toggle()
             }),
+            dashboard("settings/enregistrement-actif", section: .settings, pane: .recording, fixture: .realistic),
+            dashboard("settings/stockage-avec-donnees", section: .settings, pane: .storage, fixture: .realistic),
             dashboard("settings/permission-manquante", section: .settings, pane: .permissions,
                       environment: { $0.permissions = .galleryMissing }),
             panel("settings-sheets/connexion-jev", width: 560) { _ in AnyView(JevConnectionSheet()) },

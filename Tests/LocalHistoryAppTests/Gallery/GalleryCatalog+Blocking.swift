@@ -98,8 +98,9 @@ extension GalleryCatalog {
             ("minuteur-pause", .init(kind: .breakTime, listID: F.socialID, listName: "Échecs", remaining: 268)),
         ]
         entries += timers.map { name, timer in
-            GalleryEntry("blocking-surfaces/\(name)", sizes: [.fixed(320, 64)], themes: GalleryTheme.standard, clock: .none,
-                         pageBackground: false) { _ in
+            // The capsule keeps its own colours over any desktop: one theme is enough.
+            GalleryEntry("blocking-surfaces/\(name)", sizes: [.fixed(320, 64)], themes: [.light], clock: .none,
+                         pageBackground: false, note: "Même rendu en clair et en sombre (couleurs propres)") { _ in
                 AnyView(ZStack {
                     LinearGradient(colors: [Color(white: 0.85), Color(red: 0.35, green: 0.45, blue: 0.6)],
                                    startPoint: .topLeading, endPoint: .bottomTrailing)

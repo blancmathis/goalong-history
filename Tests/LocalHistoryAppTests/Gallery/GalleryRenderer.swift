@@ -26,12 +26,18 @@ struct GalleryImage {
     static let maximumFullHeight: CGFloat = 6_000
     static let fallbackFullHeight: CGFloat = 1_500
 
+    /// Preferences of the process-wide services the pages reach (one throwaway suite per process).
+    static let processDefaults = UserDefaults(suiteName: "goalong-gallery-" + UUID().uuidString)!
+
     static func prepareApplication() {
         let app = NSApplication.shared
         if app.activationPolicy() != .accessory { app.setActivationPolicy(.accessory) }
         NSTimeZone.default = GalleryClock.timeZone
         GoalongToastCenter.suppressedForTesting = true
         ProductIdentity.galleryOverride = ProductIdentity.GalleryIdentity()
+        // History's analysis passes: a throwaway suite (the hook deletes it) and the frozen clock.
+        ActivityAnalysisRuntime.shared.preferences = processDefaults
+        ActivityAnalysisRuntime.shared.clock = { GalleryClock.now }
         warmSingletons()
     }
 
@@ -65,7 +71,12 @@ struct GalleryImage {
         return AnyView(content
             .defaultAppStorage(ctx.defaults)
             .environment(\.goalongDefaults, ctx.defaults)
+            .environment(\.sourceAccessCheck, { [environment = ctx.environment] capability, done in
+                DispatchQueue.main.async { done(environment.sourceAccess(for: capability)) }
+            })
             .environment(\.goalongReduceMotion, true)
+            // The window's high-contrast appearance alone leaves SwiftUI's contrast at the Mac's setting.
+            .environment(\._colorSchemeContrast, ctx.theme.isContrast ? .increased : .standard)
             .environment(\.controlActiveState, .key)
             .environment(\.locale, GalleryClock.locale)
             .environment(\.timeZone, GalleryClock.timeZone)
@@ -125,12 +136,21 @@ struct GalleryImage {
         }
         // A screen at rest: no field keeps the focus (its placeholder and caret change with it, at random times).
         window.makeFirstResponder(nil)
-        // Stability: two identical captures in a row, at most 10.
+        // Stability: two identical captures in a row, confirmed by a third 150 ms later (a late AppKit redraw under a
+        // loaded Mac once slipped between two captures 50 ms apart), at most 10 rounds.
         var previous = try capture(host, window: window)
         for _ in 0..<10 {
             pump(0.05)
             let next = try capture(host, window: window)
-            if next.bitmapData == previous.bitmapData { return image(next, host: host, window: window, status: .ok) }
+            if next.bitmapData == previous.bitmapData {
+                pump(0.15)
+                let confirmation = try capture(host, window: window)
+                if confirmation.bitmapData == next.bitmapData {
+                    return image(confirmation, host: host, window: window, status: .ok)
+                }
+                previous = confirmation
+                continue
+            }
             previous = next
         }
         return image(previous, host: host, window: window, status: .unstable, detail: "no two identical captures in 10 tries")
@@ -159,9 +179,16 @@ struct GalleryImage {
 
     static func scrollToTop(_ view: NSView) {
         func visit(_ view: NSView) {
-            if let scroll = view as? NSScrollView {
-                scroll.contentView.scroll(to: .zero)
-                scroll.reflectScrolledClipView(scroll.contentView)
+            if let scroll = view as? NSScrollView, let document = scroll.documentView {
+                // The top is under the content inset (SwiftUI's safe-area bars), not at y = 0: scrolling to .zero
+                // pushed Settings panes under their back bar and left them blank.
+                let insets = scroll.contentInsets
+                let y = document.isFlipped ? -insets.top
+                    : document.frame.maxY - scroll.contentView.bounds.height + insets.top
+                if scroll.contentView.bounds.origin != NSPoint(x: -insets.left, y: y) {
+                    scroll.contentView.scroll(to: NSPoint(x: -insets.left, y: y))
+                    scroll.reflectScrolledClipView(scroll.contentView)
+                }
             }
             view.subviews.forEach(visit)
         }
@@ -174,7 +201,19 @@ struct GalleryImage {
 
     private struct Capture { let rep: NSBitmapImageRep; let bitmapData: Data }
 
+    /// macOS 26 puts a « scroll pocket » (edge blur over a backdrop) under a scroll view's top bar. A backdrop
+    /// samples the screen behind the window; in a never-ordered window `cacheDisplay` then draws the whole scroll
+    /// view blank. The pocket is hidden: the bar shows on the page background, without the blur.
+    static func hideScrollPockets(_ view: NSView) {
+        if String(describing: type(of: view)).contains("ScrollPocket") {
+            if !view.isHidden { view.isHidden = true }
+            return
+        }
+        view.subviews.forEach(hideScrollPockets)
+    }
+
     private static func capture(_ host: NSView, window: NSWindow) throws -> Capture {
+        hideScrollPockets(host)
         scrollToTop(host)
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()

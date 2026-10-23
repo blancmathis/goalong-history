@@ -21,19 +21,21 @@ import SwiftUI
     static func dashboard(_ id: String, section: DashboardSection, pane: SettingsPane = .home,
                           sizes: [GallerySize] = [.window], themes: [GalleryTheme] = GalleryTheme.standard,
                           environment: ((inout GalleryEnvironment) -> Void)? = nil,
-                          paused: Bool = false, note: String? = nil, file: String = #fileID,
+                          paused: Bool = false, fixture: GalleryFixtureHome.Kind = .empty, period: Int = 1,
+                          note: String? = nil, file: String = #fileID,
                           configure: (@MainActor (DashboardViewModel, GalleryContext) throws -> Void)? = nil) -> GalleryEntry {
         var model: DashboardViewModel?
         return GalleryEntry(id, sizes: sizes, themes: themes, clock: .injected, dashboardWindow: true, note: note,
                             section: section == .settings ? nil : section, pane: section == .settings ? pane : nil,
                             ready: { ctx in model.map { GalleryFixtures.dashboardReady($0)(ctx) } ?? false }, file: file) { ctx in
             if let environment { environment(&ctx.environment) }
+            try GalleryFixtureHome.install(fixture)
             var options = GalleryFixtures.DashboardOptions()
             options.section = section; options.settingsPane = pane; options.globallyPaused = paused
             let built = try GalleryFixtures.dashboardModel(ctx, options)
             try configure?(built, ctx)
             model = built
-            return AnyView(LocalHistoryDashboardView(model: built))
+            return AnyView(LocalHistoryDashboardView(model: built, activityPeriod: period))
         }
     }
 

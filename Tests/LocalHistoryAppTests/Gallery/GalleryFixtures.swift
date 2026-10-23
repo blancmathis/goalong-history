@@ -22,10 +22,19 @@ import SwiftUI
         let status = ctx.environment.permissions
         let permissions = PermissionManager(statusProbe: { status }, probeOnBackground: false, clock: { GalleryClock.now })
         let health = CaptureHealthStore(permissions: permissions)
+        if ctx.environment.inputTapWorks {
+            // A recorder that started and saw input a moment ago (the sidebar says « suivi actif »).
+            let seen = GalleryClock.now.addingTimeInterval(-20)
+            health.markTapEnabled()
+            health.markInputCallback(at: seen)
+            health.markRecordedEvent(.heartbeat, at: seen)
+            health.markAXSuccess(urlAvailable: true, at: seen)
+        }
         let agents = try AgentActivityRuntime(rootDirectory: AppPaths.agentActivityDirectory,
             executableURL: URL(fileURLWithPath: "/nonexistent/goalong-gallery"),
             performInitialDiscovery: false, sourceDiscovery: { [] }, onCaptured: { _ in })
         let paused = options.globallyPaused
+        if paused { try GalleryFixtureHome.writeGlobalPause() }
         let freeBytes = ctx.environment.freeBytes
         let model = DashboardViewModel(state: CaptureState(isGloballyPaused: { paused }), permissions: permissions,
             configManager: config, sharingRulesStore: SharingRulesStore(), agentActivityRuntime: agents,
@@ -38,8 +47,13 @@ import SwiftUI
             now: { GalleryClock.now }, defaults: ctx.defaults, availableBytes: { freeBytes },
             analyticsReader: GoalongAnalyticsReader(root: AppPaths.applicationSupportDirectory, now: { GalleryClock.now }))
         model.showWelcome = options.showWelcome
-        model.selectedSection = options.section
-        model.settingsPane = options.settingsPane
+        if options.section == .monitoring {
+            // Jev has no page of its own: the app routes it to Réglages › Jev.
+            model.selectSection(.monitoring)
+        } else {
+            model.selectedSection = options.section
+            model.settingsPane = options.settingsPane
+        }
         model.dashboardDidBecomeVisible()
         ctx.keep(model)
         ctx.keep(agents)
@@ -50,7 +64,9 @@ import SwiftUI
     /// Default predicate of a page with data: a snapshot arrived, no refresh runs, the queues are empty.
     static func dashboardReady(_ model: DashboardViewModel) -> (GalleryContext) -> Bool {
         { _ in
-            guard model.snapshotGeneration > 0, !model.isRefreshing else { return false }
+            guard model.snapshotGeneration > 0, !model.isRefreshing,
+                  ComputerHistoryPageModel.refreshesInFlight == 0,
+                  GoalongAnalyticsModel.loadsInFlight == 0 else { return false }
             model.waitForPendingWorkForTesting()
             return model.snapshotGeneration > 0 && !model.isRefreshing
         }
@@ -198,6 +214,8 @@ import SwiftUI
         guard resetData else { return }
         try resetHome(home)
         JevWorkContextStore.shared.resetForTesting()
+        // The consent file left with the HOME: every capability is off again.
+        GoalongCapabilityConsentStore.shared.reload()
     }
 
     /// Removes the entry's data under the shard HOME. `Library/Preferences` stays: the hook deletes the suites' plists.
@@ -210,6 +228,21 @@ import SwiftUI
         guard support.path.hasPrefix(home.path + "/") || support.path.hasPrefix(home.resolvingSymlinksInPath().path + "/") else {
             throw GalleryError.guardRefused("data root \(support.path) is outside HOME")
         }
+        // The previous entry's background reads and analysis passes may still run: wait for the history page's
+        // refreshes, then close the derived-write barrier like a history clear does, so no late summary or
+        // checkpoint of the previous data lands in this entry's HOME.
+        let deadline = Date().addingTimeInterval(5)
+        while (ComputerHistoryPageModel.refreshesInFlight > 0 || GoalongAnalyticsModel.loadsInFlight > 0)
+                && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        let barrier = DerivedHistoryWriteBarrier.shared
+        let suspension = barrier.suspend()
+        defer { barrier.resume(suspension) }
+        var drained = false
+        barrier.notifyWhenDrained(suspension) { drained = true }
+        while !drained && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+        guard drained else { throw GalleryError.render("background history work did not finish in 5 s") }
         if manager.fileExists(atPath: support.path) { try manager.removeItem(at: support) }
         try manager.createDirectory(at: support, withIntermediateDirectories: true)
     }

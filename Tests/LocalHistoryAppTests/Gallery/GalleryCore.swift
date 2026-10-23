@@ -40,6 +40,7 @@ enum GalleryTheme: String, CaseIterable {
         }
     }
     var isDark: Bool { self == .dark || self == .darkContrast }
+    var isContrast: Bool { self == .lightContrast || self == .darkContrast }
     static let standard: [GalleryTheme] = [.light, .dark]
     static let withContrast: [GalleryTheme] = [.light, .dark, .lightContrast, .darkContrast]
 }
@@ -73,6 +74,17 @@ struct GalleryEnvironment {
     var permissions = PermissionStatus.galleryAllGranted
     var freeBytes: Int64? = 120_000_000_000
     var identity = ProductIdentity.GalleryIdentity()
+    /// The recorder's input tap is created and has seen input; false shows « Interactions indisponibles ».
+    var inputTapWorks = true
+    /// Answer of every source access check (`\.sourceAccessCheck`): no real probe, no recovery ledger write.
+    /// Nil follows the simulated permissions.
+    var sourceAccess: SourceAccessStatus?
+
+    func sourceAccess(for capability: GoalongCapability) -> SourceAccessStatus {
+        if let sourceAccess { return sourceAccess }
+        guard capability == .localComputerHistory else { return .ready }
+        return permissions.accessibility && permissions.inputMonitoring ? .ready : .accessibility
+    }
 }
 
 extension PermissionStatus {
@@ -159,6 +171,37 @@ struct GalleryEntry {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in id.utf8 { hash ^= UInt64(byte); hash = hash &* 0x0000_0100_0000_01b3 }
         return Int(hash % UInt64(max(1, count)))
+    }
+}
+#endif
+
+#if os(macOS)
+/// Witness of the frozen clock and French dates (spec C §11.9): the entry `temoin/date-et-heure` shows these texts.
+enum GalleryWitness {
+    static func formatter(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = GalleryClock.locale
+        formatter.timeZone = GalleryClock.timeZone
+        formatter.calendar = GalleryClock.calendar
+        formatter.dateFormat = format
+        return formatter
+    }
+    static func dateText(_ date: Date) -> String { formatter("EEEE d MMMM y").string(from: date) }
+    static func timeText(_ date: Date) -> String { formatter("HH:mm").string(from: date) }
+
+    struct View: SwiftUI.View {
+        let now: Date
+        var body: some SwiftUI.View {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(GalleryWitness.dateText(now)).font(.system(size: 22, weight: .semibold))
+                Text(GalleryWitness.timeText(now)).font(.system(size: 40, weight: .bold)).monospacedDigit()
+                // The same moment through SwiftUI's own formatting and the root's locale.
+                Text(now, format: .dateTime.weekday(.wide).day().month(.wide).hour().minute())
+                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 #endif

@@ -60,6 +60,7 @@ extension GalleryCatalog {
 
     static var systemEntries: [GalleryEntry] {
         [
+            panel("temoin/date-et-heure", width: 420, clock: .injected) { ctx in AnyView(GalleryWitness.View(now: ctx.now)) },
             GalleryEntry("toast/exemple", sizes: [.fixed(460, 120)], clock: .none) { _ in
                 GoalongToastCenter.shared.setForTesting("Choix d’analyse enregistrés")
                 return AnyView(GoalongToastHost())
