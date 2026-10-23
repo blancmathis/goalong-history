@@ -8,6 +8,8 @@ dist/
 # Isolated user-journey QA outputs; never personal app data.
 qa/journey/
 qa/journey-ci/
+# Gallery runs (make gallery); the base lives in ~/Library/Caches/goalong-gallery.
+qa/gallery/
 
 # Python validation caches are not source modifications in release inventories.
 __pycache__/

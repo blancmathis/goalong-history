@@ -1,4 +1,5 @@
-.PHONY: check test test-ui build app dmg audit install install-source uninstall clean dev dev-stop dev-status
+.PHONY: check test test-ui build app dmg audit install install-source uninstall clean dev dev-stop dev-status \
+	gallery gallery-diff gallery-accept gallery-clean
 
 VERSION ?= 0.6.0
 ARCHS ?= $(shell uname -m)
@@ -20,10 +21,29 @@ test:
 	bash scripts/test_clean_leaked_test_prefs.sh
 	bash scripts/test_run_swift_tests.sh
 	bash scripts/test_headless_signal_cleanup.sh
+	bash scripts/test_gallery_script.sh
 
 # make test-ui: the render and AX opt-in tests that run on this Mac, with no visible window.
 test-ui:
 	./scripts/run_swift_tests.sh ui
+
+# make gallery [ONLY=prefixes] [SHARDS=4]: every screen and state, light and dark, as PNGs in qa/gallery/latest,
+# an index.html and a diff against the shared base. Never opens a window, a browser, or the app (spec C).
+SHARDS ?= 4
+gallery:
+	python3 scripts/gallery.py run --shards "$(SHARDS)" --only "$(ONLY)"
+
+# make gallery-diff [RUN=latest] [BASE_ENV=key] [TOL=0] [MAXPX=0]: exit 1 on any difference.
+gallery-diff:
+	python3 scripts/gallery.py diff --run "$(or $(RUN),latest)" --base-env "$(BASE_ENV)" --tol "$(or $(TOL),0)" --maxpx "$(or $(MAXPX),0)"
+
+# make gallery-accept [ONLY=prefixes] [RUN=latest] [FORCE=1]: the run's PNGs become the base of its env key.
+gallery-accept:
+	python3 scripts/gallery.py accept --run "$(or $(RUN),latest)" --only "$(ONLY)" $(if $(filter 1,$(FORCE)),--force,)
+
+# make gallery-clean: this checkout's runs only; the shared base stays.
+gallery-clean:
+	python3 scripts/gallery.py clean
 
 build:
 	xcrun swift build -c release --product LocalHistory
