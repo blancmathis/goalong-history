@@ -96,9 +96,12 @@
             {
                 document = decoded
             } else {
-                document = SharingRulesDocument()
+                var fallback = SharingRulesDocument()
                 // attributesOfItem does not follow a final symlink: a dangling link or an unreadable file counts as present.
                 damaged = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)) != nil
+                // A damaged file hides everything by default: the screen, signed shares and the next rewrite stay private.
+                if damaged { fallback.defaultVisibility = .hidden }
+                document = fallback
             }
         }
 

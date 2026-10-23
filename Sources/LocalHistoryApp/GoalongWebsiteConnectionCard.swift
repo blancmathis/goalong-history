@@ -36,9 +36,11 @@ extension Notification.Name {
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
-                if credentialAvailable {
+                // A refused access can still be disconnected, so the user can stop Goalong on this Mac.
+                if credentialAvailable || accessRefused {
                     Button("Déconnecter") { disconnecting = true }.buttonStyle(LHSecondaryButtonStyle())
-                } else {
+                }
+                if !credentialAvailable {
                     Button("Relier mon Mac") { openWebsite() }.buttonStyle(LHPrimaryButtonStyle())
                 }
             }

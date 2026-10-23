@@ -235,7 +235,10 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
             throw GoalongSiteSubmissionError.accessRefused
         }, sourceConsent: { _ in true }, sharingRulesReadable: { true })
         XCTAssertFalse(GoalongWebsiteAutoSender.accessWasRefused(tokenPath: token.path, defaults: defaults))
+        // The account card listens for this notice to show « Accès refusé par le site » at once.
+        let notice = expectation(forNotification: .goalongWebsiteAccessRefused, object: nil)
         await sender.tick(now: Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 10))!)
+        await fulfillment(of: [notice], timeout: 1)
         XCTAssertFalse(sender.enabled)
         XCTAssertEqual(sender.pauseReason, GoalongWebsiteAutoSender.accessRefusedReason)
         XCTAssertTrue(GoalongWebsiteAutoSender.accessWasRefused(tokenPath: token.path, defaults: defaults))
@@ -304,12 +307,19 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         XCTAssertTrue(damaged.isDamaged)
         XCTAssertTrue(damaged.hiddenWebsiteFilter()("example.org"))
         XCTAssertTrue(damaged.hiddenApplicationFilter()("com.example.app", "Example"))
+        // Signed shares and the screen read `rules` and `defaultVisibility` directly: they must stay private too.
+        XCTAssertEqual(damaged.defaultVisibility, .hidden)
+        XCTAssertEqual(damaged.rules, [:])
+        XCTAssertEqual(damaged.visibility(for: "app:com.example.app"), .hidden)
         try damaged.set(.identity, for: "site:allowed.example")
         XCTAssertFalse(damaged.isDamaged)
         let kept = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix("sharing-rules.damaged-") }
         XCTAssertEqual(kept.count, 1)
         XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(kept[0])), damagedBytes)
-        XCTAssertEqual(SharingRulesStore(fileURL: file).rules, ["site:allowed.example": .identity])
+        let rewritten = SharingRulesStore(fileURL: file)
+        XCTAssertEqual(rewritten.rules, ["site:allowed.example": .identity])
+        // The rewrite starts from a hidden default, so former hidden rules do not turn into « Catégorie seulement ».
+        XCTAssertEqual(rewritten.defaultVisibility, .hidden)
     }
 
     @MainActor func testOverviewNeverShowsAPausedPlanAsOnDemand() {

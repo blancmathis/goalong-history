@@ -35,6 +35,19 @@ final class GoalongWebsitePairingPresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testConfirmationPromisesToKeepThePlanOnlyWhenItCanBeKept() {
+        typealias C = GoalongWebsitePairingCoordinator
+        let site = "https://a.example"
+        XCTAssertEqual(C.scheduleNotice(planOrigin: nil, savedOrigin: site, savedAccountID: "acc", newOrigin: site), "")
+        XCTAssertTrue(C.scheduleNotice(planOrigin: site, savedOrigin: site, savedAccountID: "acc", newOrigin: site).contains("reste programmé"))
+        // A plan made with a hand-picked token file has no recorded account: it will be deleted.
+        let noAccount = C.scheduleNotice(planOrigin: site, savedOrigin: site, savedAccountID: "", newOrigin: site)
+        XCTAssertFalse(noAccount.contains("reste programmé")); XCTAssertTrue(noAccount.contains("sera supprimé"))
+        XCTAssertFalse(C.scheduleNotice(planOrigin: "https://b.example", savedOrigin: site, savedAccountID: "acc", newOrigin: site).contains("reste programmé"))
+        XCTAssertFalse(C.scheduleNotice(planOrigin: site, savedOrigin: "", savedAccountID: "acc", newOrigin: site).contains("reste programmé"))
+    }
+
+    @MainActor
     func testDisconnectPromisesDeletionOnlyForAFileCreatedByPairing() {
         let directory = URL(fileURLWithPath: "/tmp/goalong-connections-\(UUID().uuidString)")
         let managed = directory.appendingPathComponent(UUID().uuidString + ".token").path

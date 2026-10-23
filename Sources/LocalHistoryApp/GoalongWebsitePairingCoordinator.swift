@@ -35,6 +35,16 @@ final class GoalongWebsitePairingCoordinator {
     static func keepsSchedule(savedOrigin: String, savedAccountID: String, newOrigin: String, newAccountID: String) -> Bool {
         !savedAccountID.isEmpty && savedAccountID == newAccountID && !savedOrigin.isEmpty && savedOrigin == newOrigin
     }
+    /// What the confirmation says about an existing daily plan. It promises to keep the plan only
+    /// when `connect` can keep it: account and site recorded, and the plan bound to the same site.
+    static func scheduleNotice(planOrigin: String?, savedOrigin: String, savedAccountID: String, newOrigin: String) -> String {
+        guard let planOrigin else { return "" }
+        let keepable = keepsSchedule(savedOrigin: savedOrigin, savedAccountID: savedAccountID, newOrigin: newOrigin, newAccountID: savedAccountID)
+            && planOrigin == newOrigin
+        return keepable
+            ? " Avec le même compte, l’envoi quotidien reste programmé, en pause jusqu’à votre relecture. Avec un autre compte, il sera supprimé."
+            : " L’envoi quotidien programmé sera supprimé."
+    }
     private var pendingPrompt: (alert: NSAlert, parent: NSWindow)?
 
     func cancelPendingPrompt() {
@@ -80,7 +90,11 @@ final class GoalongWebsitePairingCoordinator {
             NSApp.activate(ignoringOtherApps: true)
             let confirmation = NSAlert()
             confirmation.messageText = "Relier ce Mac à votre compte Goalong ?"
-            confirmation.informativeText = "Site : \(pairing.origin)\n\nL’accès sera enregistré automatiquement sur ce Mac. Il permet uniquement l’envoi des journées que vous choisirez. Cette liaison ne transmet aucune activité et ne change pas vos permissions.\n\nSi un compte est déjà configuré, cette liaison le remplacera dans l’app." + (GoalongWebsiteAutoSender.shared.savedConfiguration == nil ? "" : " Avec le même compte, l’envoi quotidien reste programmé, en pause jusqu’à votre relecture. Avec un autre compte, il sera supprimé.")
+            let notice = Self.scheduleNotice(planOrigin: GoalongWebsiteAutoSender.shared.savedConfiguration?.origin,
+                savedOrigin: UserDefaults.standard.string(forKey: "goalong.website.origin") ?? "",
+                savedAccountID: UserDefaults.standard.string(forKey: "goalong.website.accountID") ?? "",
+                newOrigin: pairing.origin)
+            confirmation.informativeText = "Site : \(pairing.origin)\n\nL’accès sera enregistré automatiquement sur ce Mac. Il permet uniquement l’envoi des journées que vous choisirez. Cette liaison ne transmet aucune activité et ne change pas vos permissions.\n\nSi un compte est déjà configuré, cette liaison le remplacera dans l’app." + notice
             confirmation.addButton(withTitle: "Relier mon Mac")
             confirmation.addButton(withTitle: "Annuler")
             guard await present(confirmation, on: window) == .alertFirstButtonReturn else { return false }

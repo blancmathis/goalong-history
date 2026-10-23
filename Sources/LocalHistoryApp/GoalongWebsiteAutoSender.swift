@@ -295,6 +295,7 @@ import LocalHistoryCore
             SupportDiagnostics.shared.failure(GoalongSiteSubmissionError.accessRefused, component: .sharing)
             markAccessRefused(fingerprint: current.credentialFingerprint)
             stopAutomatically(Self.accessRefusedReason)
+            NotificationCenter.default.post(name: .goalongWebsiteAccessRefused, object: nil)
         } catch {
             SupportDiagnostics.shared.failure(error, component: .sharing)
             stopAutomatically("Synchronisation en pause : \(goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre.")
