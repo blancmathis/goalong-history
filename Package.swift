@@ -16,6 +16,7 @@ var appDependencies: [Target.Dependency] = [
     "AppleSystemScreenTime",
     "AgentActivity",
     "LocalHistoryQueryCLI",
+    "GoalongGuardCore",
     .product(name: "Sparkle", package: "Sparkle"),
 ]
 let appExcludes: [String] = [
@@ -38,6 +39,8 @@ let package = Package(
         .library(name: "BraiseCore", targets: ["BraiseCore"]),
         .library(name: "Ambiance", targets: ["Ambiance"]),
         .executable(name: "goalong-relauncher", targets: ["GoalongRelauncher"]),
+        .executable(name: "goalong-blocking-guard", targets: ["GoalongGuard"]),
+        .executable(name: "goalong-guard-test-host", targets: ["GoalongGuardTestHost"]),
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
         .library(name: "AppleSystemScreenTime", targets: ["AppleSystemScreenTime"]),
         .library(name: "AgentActivity", targets: ["AgentActivity"]),
@@ -57,6 +60,24 @@ let package = Package(
         .target(name: "Ambiance", dependencies: ["OndeCore", "OndeDSP"], path: "Features/Ambiance/Sources"),
         .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore"], path: "Features/Ambiance/Tests"),
         .executableTarget(name: "GoalongRelauncher", path: "Sources/GoalongRelauncher"),
+        // Kill protection during a severe block (spec K): pure logic shared by the guard and the app.
+        .target(name: "GoalongGuardCore", path: "Sources/GoalongGuardCore"),
+        .executableTarget(
+            name: "GoalongGuard",
+            dependencies: ["GoalongGuardCore"],
+            path: "Sources/GoalongGuard",
+            linkerSettings: [
+                .linkedFramework("AppKit", .when(platforms: [.macOS])),
+                .linkedFramework("Security", .when(platforms: [.macOS])),
+            ]
+        ),
+        // Only for scripts/test_guard_launchd.sh (opt-in); never embedded in Goalong.
+        .executableTarget(name: "GoalongGuardTestHost", path: "Sources/GoalongGuardTestHost"),
+        .testTarget(
+            name: "GoalongGuardCoreTests",
+            dependencies: ["GoalongGuardCore", "LocalHistoryCore"],
+            path: "Tests/GoalongGuardCoreTests"
+        ),
         .target(
             name: "AppleScreenTime",
             path: "Features/AppleScreenTime/Sources"
