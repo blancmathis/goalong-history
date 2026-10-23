@@ -486,12 +486,16 @@
                 case .success(let itemCount):
                     self?.showInformation(
                         title: "Historique détaillé effacé",
-                        message: "\(itemCount) élément(s) détaillé(s) supprimé(s). Les sceaux existants sont conservés."
+                        message: "\(Self.deletedItemsMessage(itemCount)) Les sceaux existants sont conservés."
                     )
                 case .failure(let error):
                     self?.showError(error)
                 }
             }
+        }
+
+        static func deletedItemsMessage(_ count: Int) -> String {
+            count > 1 ? "\(count) éléments détaillés supprimés." : "\(count) élément détaillé supprimé."
         }
 
         @objc private func quit() {
@@ -512,7 +516,7 @@
                 case .success(let count):
                     self?.showInformation(
                         title: "Historique détaillé effacé",
-                        message: "\(count) élément(s) détaillé(s) supprimé(s). Les sceaux existants sont conservés."
+                        message: "\(Self.deletedItemsMessage(count)) Les sceaux existants sont conservés."
                     )
                 case .failure(let error):
                     self?.showError(error)

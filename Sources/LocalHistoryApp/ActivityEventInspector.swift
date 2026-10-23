@@ -3,6 +3,106 @@
     import LocalHistoryCore
     import SwiftUI
 
+    /// French display labels of the event inspector. `rawValue` stays for search only.
+    enum ActivityEventLabels {
+        static func kind(_ kind: EventKind) -> String {
+            switch kind {
+            case .recorderStarted: return "Enregistrement démarré"
+            case .recorderStopped: return "Enregistrement arrêté"
+            case .recordingPaused: return "Enregistrement en pause"
+            case .recordingResumed: return "Enregistrement repris"
+            case .permissionStatus: return "État des autorisations"
+            case .recorderHealth: return "État de l’enregistrement"
+            case .applicationActivated: return "App activée"
+            case .windowChanged: return "Fenêtre changée"
+            case .focusChanged: return "Focus changé"
+            case .semanticSnapshot: return "Texte d’accessibilité"
+            case .urlChanged: return "Adresse changée"
+            case .mouseClick: return "Clic"
+            case .keyboardShortcut: return "Raccourci clavier"
+            case .keyPressed: return "Touche"
+            case .typingBurst: return "Frappe"
+            case .scrollBurst: return "Défilement"
+            case .heartbeat: return "Signal de présence"
+            case .captureSuppressed: return "Capture suspendue"
+            case .captureResumed: return "Capture reprise"
+            case .secureInputSuppressed: return "Saisie protégée : capture suspendue"
+            case .secureInputResumed: return "Saisie protégée terminée"
+            case .sessionLocked: return "Session verrouillée"
+            case .sessionUnlocked: return "Session déverrouillée"
+            case .systemSleep: return "Mise en veille"
+            case .systemWake: return "Sortie de veille"
+            case .historyCleared: return "Historique effacé"
+            case .agentArtifactCaptured: return "Élément d’agent enregistré"
+            case .diagnostic: return "Diagnostic"
+            }
+        }
+
+        static func reason(_ reason: SuppressionReason) -> String {
+            switch reason {
+            case .privateBrowserWindow: return "Fenêtre privée"
+            case .excludedApplication: return "App exclue"
+            case .excludedDomain: return "Site exclu"
+            case .secureInput: return "Saisie protégée"
+            case .sessionUnavailable: return "Session indisponible"
+            case .manualPause: return "Pause manuelle"
+            case .accessibilityUnavailable: return "Accessibilité indisponible"
+            }
+        }
+
+        static func loadIssueWarning(count: Int) -> String {
+            count == 1
+                ? "1 ligne locale n’a pas pu être lue. Ces lacunes restent signalées, jamais ignorées en silence."
+                : "\(count) lignes locales n’ont pas pu être lues. Ces lacunes restent signalées, jamais ignorées en silence."
+        }
+
+        /// French plural: 0 and 1 are singular.
+        private static func frCount(_ n: Int, _ singular: String, _ plural: String) -> String {
+            "\(n) \(n > 1 ? plural : singular)"
+        }
+
+        static func button(_ raw: String) -> String {
+            switch raw.lowercased() {
+            case "left": return "gauche"
+            case "right": return "droit"
+            case "middle", "center", "other": return "central"
+            default: return raw
+            }
+        }
+
+        static func detail(_ event: HistoryEvent) -> String? {
+            switch event.kind {
+            case .mouseClick:
+                let pointer = event.pointer
+                let target = event.element?.label ?? event.element?.title ?? event.element?.role
+                let position = pointer.map { "(\(Int($0.x)), \(Int($0.y)))" }
+                return [
+                    pointer.map { "Clic \(button($0.button)) ×\($0.clickCount)" },
+                    target.map { "cible : \($0)" },
+                    position,
+                ].compactMap { $0 }.joined(separator: " · ")
+            case .typingBurst:
+                let count = event.metadata?["keystroke_count"].flatMap { Int($0) }
+                let duration = event.metadata?["duration_ms"] ?? "inconnue"
+                let keys = count.map { frCount($0, "touche", "touches") } ?? "touches : inconnu"
+                return "Frappe : \(keys), \(duration) ms ; contenu non reconstitué"
+            case .scrollBurst:
+                guard let scroll = event.scroll else { return nil }
+                let events = frCount(scroll.eventCount, "événement", "événements")
+                return "Défilement : Δx \(Int(scroll.deltaX)), Δy \(Int(scroll.deltaY)), \(events)"
+            case .keyboardShortcut, .keyPressed:
+                guard let keyboard = event.keyboard else { return nil }
+                let keys = (keyboard.modifiers + [keyboard.key].compactMap { $0 }).joined(separator: "+")
+                return "\(keyboard.category) : \(keys.isEmpty ? "touche sans nom" : keys)"
+            case .focusChanged:
+                return [event.element?.role, event.element?.label ?? event.element?.title]
+                    .compactMap { $0 }.joined(separator: " · ")
+            default:
+                return event.message
+            }
+        }
+    }
+
     enum ActivityEventInspectorFilter: String, CaseIterable, Identifiable {
         case all
         case actions
@@ -145,7 +245,7 @@
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(LHTheme.warning)
-                        Text("\(inspector.loadIssues.count) local row(s) could not be decoded. These remain explicit load gaps rather than being silently ignored.")
+                        Text(ActivityEventLabels.loadIssueWarning(count: inspector.loadIssues.count))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -185,18 +285,18 @@
                     Text(DashboardFormatters.shortTime.string(from: event.timestamp))
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.secondary)
-                    Text(pretty(event.kind.rawValue))
+                    Text(ActivityEventLabels.kind(event.kind))
                         .font(.system(size: 11, weight: .semibold))
                     if let reason = event.suppressionReason {
                         StatusPill(
-                            title: reason.rawValue,
+                            title: ActivityEventLabels.reason(reason),
                             symbol: "eye.slash",
                             tint: LHTheme.privateTint
                         )
                     }
                     Spacer()
                     if let sequence = event.integrity?.sequence {
-                        Text("seq \(sequence)")
+                        Text("n° \(sequence)")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(.tertiary)
                     }
@@ -258,33 +358,7 @@
         }
 
         private func eventDetail(_ event: HistoryEvent) -> String? {
-            switch event.kind {
-            case .mouseClick:
-                let pointer = event.pointer
-                let target = event.element?.label ?? event.element?.title ?? event.element?.role
-                let position = pointer.map { "(\(Int($0.x)), \(Int($0.y)))" }
-                return [
-                    pointer.map { "\($0.button) click ×\($0.clickCount)" },
-                    target.map { "target: \($0)" },
-                    position,
-                ].compactMap { $0 }.joined(separator: " · ")
-            case .typingBurst:
-                let count = event.metadata?["keystroke_count"] ?? "unknown"
-                let duration = event.metadata?["duration_ms"] ?? "unknown"
-                return "Frappe : \(count) touche(s), \(duration) ms ; contenu non reconstitué"
-            case .scrollBurst:
-                guard let scroll = event.scroll else { return nil }
-                return "Scroll: Δx \(Int(scroll.deltaX)), Δy \(Int(scroll.deltaY)), \(scroll.eventCount) event(s)"
-            case .keyboardShortcut, .keyPressed:
-                guard let keyboard = event.keyboard else { return nil }
-                let keys = (keyboard.modifiers + [keyboard.key].compactMap { $0 }).joined(separator: "+")
-                return "\(keyboard.category): \(keys.isEmpty ? "unnamed key" : keys)"
-            case .focusChanged:
-                return [event.element?.role, event.element?.label ?? event.element?.title]
-                    .compactMap { $0 }.joined(separator: " · ")
-            default:
-                return event.message
-            }
+            ActivityEventLabels.detail(event)
         }
 
         private func searchableText(_ event: HistoryEvent) -> String {
@@ -351,15 +425,6 @@
             if event.suppressionReason != nil { return LHTheme.privateTint }
             if event.kind == .semanticSnapshot { return LHTheme.warning }
             return LHTheme.accent
-        }
-
-        private func pretty(_ raw: String) -> String {
-            var result = ""
-            for character in raw {
-                if character.isUppercase, !result.isEmpty { result.append(" ") }
-                result.append(character)
-            }
-            return result.prefix(1).uppercased() + String(result.dropFirst())
         }
     }
 #endif

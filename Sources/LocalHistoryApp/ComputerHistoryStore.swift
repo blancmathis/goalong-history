@@ -328,7 +328,7 @@
                 hits: baseAnswer.hits,
                 limitations: baseAnswer.limitations + [
                     Self.retainedLoadIncompletePrefix + " ("
-                        + "\(max(1, recent.issues.count)) bounded issue(s)); results use only "
+                        + "\(max(1, recent.issues.count)) bounded issue\(recent.issues.count > 1 ? "s" : "")); results use only "
                         + "readable last-known-good memories and absence is not exhaustive."
                 ]
             )

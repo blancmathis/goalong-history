@@ -112,7 +112,7 @@
                             self.sourceStatus = .available
                         case .failure(let error):
                             self.sourceStatus = invalidated ? .unverified : Self.sourceStatus(for: error)
-                            self.errorMessage = error.localizedDescription
+                            self.errorMessage = Self.displayMessage(for: error)
                         }
                         self.isLoading = false
                     }
@@ -125,6 +125,10 @@
             var value: ComputerHistoryDayMemory?
         }
 
+        static func displayMessage(for error: Error) -> String {
+            (error as? ActivityAnalysisCycleError)?.frenchDescription ?? error.localizedDescription
+        }
+
         private static func sourceStatus(for error: Error) -> ComputerHistorySourceStatus {
             guard let cycleError = error as? ActivityAnalysisCycleError else {
                 return .unverified
@@ -132,7 +136,7 @@
             switch cycleError {
             case .sourceInaccessible, .sourceChangedDuringRead, .oversizedJSONLine,
                 .reentrantCycle:
-                return .inaccessible(error.localizedDescription)
+                return .inaccessible(cycleError.frenchDescription)
             case .retainedEvidenceBudgetExceeded:
                 return .available
             }
@@ -239,7 +243,8 @@
         static func build(
             sessions: [ActivitySession],
             day: Date,
-            calendar: Calendar = .current
+            calendar: Calendar = .current,
+            now: Date = Date()
         ) -> [ComputerHistoryTenMinuteGroup] {
             let dayStart = calendar.startOfDay(for: day)
             guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
@@ -249,7 +254,7 @@
             var segmentsByWindow: [Date: [Segment]] = [:]
             for session in sessions {
                 let clippedStart = max(session.start, dayStart)
-                let clippedEnd = min(session.end.addingTimeInterval(30), dayEnd)
+                let clippedEnd = min(session.end.addingTimeInterval(30), dayEnd, max(now, session.end))
                 guard clippedEnd > clippedStart else { continue }
 
                 var windowStart = tenMinuteStart(for: clippedStart, calendar: calendar)

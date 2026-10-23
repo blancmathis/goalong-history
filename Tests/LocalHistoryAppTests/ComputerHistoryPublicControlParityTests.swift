@@ -529,6 +529,52 @@
             XCTAssertEqual(groups[1].inputEventCount, 7)
         }
 
+        func testTenMinuteGroupDoesNotExtendPastNow() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+            let day = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 27))
+            )
+            let end = calendar.date(bySettingHour: 14, minute: 9, second: 50, of: day) ?? day
+            let session = makeSession(
+                id: "live",
+                start: date(hour: 14, minute: 5, day: day, calendar: calendar),
+                end: end,
+                appName: "Xcode",
+                bundleIdentifier: "com.apple.dt.Xcode",
+                eventCount: 3,
+                inputEventCount: 1
+            )
+            let now = end.addingTimeInterval(5)
+            let groups = ComputerHistoryTenMinuteGroup.build(
+                sessions: [session], day: day, calendar: calendar, now: now
+            )
+            XCTAssertEqual(groups.count, 1)
+            XCTAssertLessThanOrEqual(try XCTUnwrap(groups[0].sessions.map(\.end).max()), now)
+        }
+
+        func testInspectorLabelsAreFrenchAndPluralised() {
+            for kind in EventKind.allCases {
+                let label = ActivityEventLabels.kind(kind)
+                XCTAssertFalse(label.isEmpty)
+                XCTAssertNotEqual(label, kind.rawValue)
+            }
+            XCTAssertEqual(ActivityEventLabels.reason(.privateBrowserWindow), "Fenêtre privée")
+            XCTAssertTrue(ActivityEventLabels.loadIssueWarning(count: 1).hasPrefix("1 ligne locale n’a pas"))
+            XCTAssertTrue(ActivityEventLabels.loadIssueWarning(count: 3).hasPrefix("3 lignes locales"))
+            XCTAssertEqual(MenuBarController.deletedItemsMessage(1), "1 élément détaillé supprimé.")
+            XCTAssertEqual(MenuBarController.deletedItemsMessage(0), "0 élément détaillé supprimé.")
+            XCTAssertEqual(MenuBarController.deletedItemsMessage(2), "2 éléments détaillés supprimés.")
+        }
+
+        func testCycleErrorsHaveFrenchDescriptionAndEnglishLogText() {
+            let error = ActivityAnalysisCycleError.sourceChangedDuringRead
+            XCTAssertTrue(error.frenchDescription.hasPrefix("Le journal source a changé"))
+            XCTAssertTrue(error.localizedDescription.hasPrefix("The source journal changed"))
+            XCTAssertEqual(
+                ComputerHistoryPageModel.displayMessage(for: error), error.frenchDescription)
+        }
+
         func testComputerHistorySortsAppsByUsageThenName() throws {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))

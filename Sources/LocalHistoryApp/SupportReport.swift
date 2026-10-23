@@ -218,7 +218,7 @@ enum SupportFindings {
             findings.append(SupportFinding(severity: .warning, code: .recordingWasInterrupted,
                 title: "Enregistrement interrompu \(interruptions.count) fois",
                 detail: (diskFull ? "Au moins une coupure venait d’un disque plein. " : "")
-                    + "\(lost) observation(s) n’ont pas pu être enregistrées ; chaque coupure est marquée dans l’historique."))
+                    + (lost > 1 ? "\(lost) observations n’ont pas pu être enregistrées" : "\(lost) observation n’a pas pu être enregistrée") + " ; chaque coupure est marquée dans l’historique."))
         }
         if let storage, storage.lowSpace, let free = storage.freeMB {
             findings.append(SupportFinding(severity: .warning, code: .lowDiskSpace,
@@ -233,7 +233,7 @@ enum SupportFindings {
         }
         if !crashes.isEmpty {
             findings.append(SupportFinding(severity: .error, code: .crashes,
-                title: "\(crashes.count) rapport(s) de plantage récent(s)",
+                title: crashes.count > 1 ? "\(crashes.count) rapports de plantage récents" : "1 rapport de plantage récent",
                 detail: "Types : " + Set(crashes.map(\.type.rawValue)).sorted().joined(separator: ", ") + "."))
         }
         let updateFailures = timeline.filter { $0.component == .updates && $0.event == .operationFailed }
@@ -254,7 +254,7 @@ enum SupportFindings {
         } else if statuses.contains(where: { $0 >= 500 }) {
             findings.append(SupportFinding(severity: .info, code: .monitoringUnavailable,
                 title: "Surveillance temps réel : service indisponible",
-                detail: "\(statuses.filter { $0 >= 500 }.count) réponse(s) serveur en erreur."))
+                detail: { let n = statuses.filter { $0 >= 500 }.count; return n > 1 ? "\(n) réponses du serveur en erreur." : "\(n) réponse du serveur en erreur." }()))
         }
         var repeated: [String: Int] = [:]
         for record in timeline where record.level == .error {

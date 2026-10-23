@@ -91,6 +91,9 @@ struct ConcentrationHubHeader: View {
                     BlockingListsSection(controller: controller, now: now ?? Date(), editing: $editingList)
                     if let error = controller.error, editingList == nil {
                         GoalongNote(error, tone: .warning).onTapGesture { controller.error = nil }
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityHint("Masquer ce message")
+                            .accessibilityAction(named: "Masquer") { controller.error = nil }
                     }
                 } else {
                     GoalongSection(title: "Listes") {

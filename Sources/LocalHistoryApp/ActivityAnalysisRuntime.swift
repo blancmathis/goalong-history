@@ -1282,6 +1282,22 @@
                     + "(\(rows) rows or \(bytes) estimated bytes)"
             }
         }
+
+        /// French text for the interface; `errorDescription` stays English for logs and journals.
+        var frenchDescription: String {
+            switch self {
+            case .sourceInaccessible(let message):
+                return message
+            case .sourceChangedDuringRead:
+                return "Le journal source a changé pendant la lecture. Les dernières vues valides sont conservées."
+            case .oversizedJSONLine(let path, let maximumBytes):
+                return "Ligne trop volumineuse refusée dans \(path) (maximum \(maximumBytes) octets)."
+            case .reentrantCycle:
+                return "Analyse déjà en cours sur cette source : nouvelle lecture refusée."
+            case .retainedEvidenceBudgetExceeded(let rows, let bytes):
+                return "La journée dépasse la mémoire prévue pour l’analyse (\(rows) lignes ou \(bytes) octets estimés). Les dernières vues valides sont conservées."
+            }
+        }
     }
 
     private struct ActivityAnalysisRevisionCacheFile: Codable {
