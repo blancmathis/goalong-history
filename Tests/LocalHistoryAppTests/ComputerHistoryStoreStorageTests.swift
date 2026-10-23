@@ -1649,6 +1649,15 @@
             XCTAssertNil(ComputerHistoryPageCopy.retainedGapMessage(for: complete))
         }
 
+        func testEmptyDayIsExplainedInOnePlace() {
+            for status in [ComputerHistorySourceStatus.available, .absent, .checking] {
+                XCTAssertTrue(ComputerHistoryPageCopy.timelineExplainsEmptyDay(status))
+            }
+            for status in [ComputerHistorySourceStatus.unverified, .inaccessible("x")] {
+                XCTAssertFalse(ComputerHistoryPageCopy.timelineExplainsEmptyDay(status))
+            }
+        }
+
         func testFrenchCountLabelsUseSingularAndNoEnglish() {
             XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 0, total: 0, searching: false), "0 période")
             XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 1, total: 1, searching: false), "1 période")

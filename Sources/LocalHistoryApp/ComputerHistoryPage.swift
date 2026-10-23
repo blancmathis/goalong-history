@@ -598,6 +598,15 @@
             let totalLabel = total <= 1 ? "\(total) période" : "\(total) périodes"
             return searching ? "\(visible) sur \(totalLabel)" : totalLabel
         }
+
+        /// With an empty timeline, one place explains why. The timeline card does it for a day without
+        /// data; the status card does it when it also offers « Réessayer ».
+        static func timelineExplainsEmptyDay(_ status: ComputerHistorySourceStatus) -> Bool {
+            switch status {
+            case .available, .absent, .checking: return true
+            case .inaccessible, .unverified: return false
+            }
+        }
     }
 
     struct ComputerHistoryPage: View {
@@ -717,10 +726,12 @@
                     VStack(alignment: .leading, spacing: 4) {
                         Text(recordingStateTitle)
                             .font(.system(size: 13, weight: .semibold))
-                        Text(recordingSummary)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        if showsRecordingSummary {
+                            Text(recordingSummary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer(minLength: 12)
                     if needsRetry {
@@ -821,6 +832,11 @@
             }
         }
 
+        private var showsRecordingSummary: Bool {
+            isPreparingTimeline || !tenMinuteGroups.isEmpty
+                || !ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
+        }
+
         private var recordingSummary: String {
             let events = snapshot.eventCount.formatted()
             if isPreparingTimeline {
@@ -899,7 +915,7 @@
                         Text("Plus ancien d’abord").tag(false)
                     }
                     .labelsHidden()
-                    .frame(width: 150)
+                    .frame(width: 190)
                 }
                 .font(.system(size: 12))
 
@@ -918,11 +934,11 @@
                         )
                         .font(.system(size: 14, weight: .semibold))
                         Spacer()
-                        Text(snapshot.eventCount == 0
-                            ? "Aucune activité enregistrée"
-                            : "\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                        if snapshot.eventCount > 0 {
+                            Text("\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 17)
@@ -947,11 +963,13 @@
                                 .foregroundStyle(.secondary)
                             Text(emptyTimelineTitle)
                                 .font(.system(size: 14, weight: .semibold))
-                            Text(emptyTimelineMessage)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
+                            if ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus) {
+                                Text(emptyTimelineMessage)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)

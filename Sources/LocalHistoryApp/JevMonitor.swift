@@ -184,7 +184,7 @@ struct JevRecentCheck: Identifiable {
     func saveKey(_ value: String) {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.validKey(key) else {
-            error = "La clé TypeSafe doit être une valeur ASCII sans espace (8 à 1 024 caractères)."; errorIsTransient = false; return
+            error = "La clé API Jev doit être une valeur ASCII sans espace (8 à 1 024 caractères)."; errorIsTransient = false; return
         }
         do {
             try JevLocalFiles.write(Data(key.utf8), name: "api-key", root: localRoot)

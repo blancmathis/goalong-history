@@ -3,6 +3,8 @@
     import SwiftUI
 
     struct UsageRulesList: View {
+        /// Wide enough for « Catégorie seulement » without truncation.
+        static let ruleColumnWidth: CGFloat = 176
         @ObservedObject var model: DashboardViewModel
         var showsDefaultRule = false
         var websiteSummaries: [ActivitySiteSummary] = []
@@ -102,7 +104,7 @@
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 140)
+                    .frame(width: UsageRulesList.ruleColumnWidth)
                 }
 
                 Text(Self.itemCountLabel(filteredItems.count))
@@ -134,7 +136,7 @@
                                 .help("Minutes distinctes avec des clics, frappes ou défilements observés.")
                                 .frame(width: 82, alignment: .trailing)
                             Text("Toujours lors du partage")
-                                .frame(width: 142, alignment: .trailing)
+                                .frame(width: UsageRulesList.ruleColumnWidth, alignment: .trailing)
                             if title == "Sites web" {
                                 Text(websiteSummaries.isEmpty ? "" : "Détails")
                                     .frame(width: 46, alignment: .trailing)
@@ -235,7 +237,7 @@
                     .font(.system(size: 11, weight: .semibold))
                     .frame(width: 96, alignment: .trailing)
 
-                Text(item.activeMinutes == 0 ? "—" : "\(item.activeMinutes)m")
+                Text(item.activeMinutes == 0 ? "—" : DashboardFormatters.duration(minutes: item.activeMinutes))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(width: 82, alignment: .trailing)
@@ -252,7 +254,7 @@
                     }
                 }
                 .labelsHidden()
-                .frame(width: 142)
+                .frame(width: UsageRulesList.ruleColumnWidth)
 
                 if item.kind == .website {
                     HStack(spacing: 5) {

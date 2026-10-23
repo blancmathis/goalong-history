@@ -259,7 +259,7 @@
                 withAnimation(reduceMotion ? nil : LHTheme.press) { isOn.toggle() }
             } label: { EmptyView() }
                 .buttonStyle(GoalongSwitchButtonStyle(isOn: isOn, small: controlSize == .small || controlSize == .mini))
-                .opacity(isEnabled ? 1 : 0.4)
+                .opacity(isEnabled ? 1 : 0.6)
         }
     }
 

@@ -9,7 +9,7 @@
                 PageHeader(
                     title: "Exporter un fichier signé",
                     subtitle:
-                        "Définissez une règle claire pour chaque app et site. Goalong vérifie ses signatures locales et sa chaîne d’intégrité avant de créer le paquet."
+                        "Choisissez ce que le fichier montre de chaque app et site. Goalong vérifie les signatures de l’historique avant de le créer."
                 ) {
                     HStack(spacing: 10) {
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
@@ -105,7 +105,7 @@
                     )
                     .font(.system(size: 11, weight: .semibold))
                     Text(
-                        "Les vérifications hors ligne portent sur les engagements, les chaînes, l’identité de l’appareil et les signatures. Rien n’est envoyé par cette action."
+                        "Les vérifications se font sur ce Mac, sans connexion. Rien n’est envoyé."
                     )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
