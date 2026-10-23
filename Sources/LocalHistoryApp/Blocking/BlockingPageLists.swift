@@ -520,11 +520,25 @@ import SwiftUI
     let now: Date
     var onDone: () -> Void
 
+    /// The sheet's title: a locked list says why it can only get stricter.
+    nonisolated static func title(locked: Bool) -> String { locked ? "Liste verrouillée" : "Modifier la liste" }
+
     var body: some View {
         Group {
             if let list = controller.list(listID) {
-                ScrollView {
-                    BlockListEditor(controller: controller, list: list, now: now, onDone: onDone).padding(28)
+                VStack(spacing: 0) {
+                    HStack {
+                        Text(Self.title(locked: controller.isStricterOnly(listID)))
+                            .font(.system(size: 15, weight: .semibold)).foregroundStyle(LHTheme.text)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer()
+                        Button("Fermer", action: onDone).buttonStyle(LHQuietButtonStyle())
+                            .accessibilityIdentifier("blocking-list-close")
+                    }
+                    .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 4)
+                    ScrollView {
+                        BlockListEditor(controller: controller, list: list, now: now, onDone: onDone).padding(28)
+                    }
                 }
             } else {
                 Color.clear.onAppear(perform: onDone)
@@ -577,8 +591,7 @@ struct BlockingActionPicture: View {
             ZStack(alignment: .leading) {
                 if list.effectiveAction == .block {
                     tile.overlay {
-                        Path { path in path.move(to: CGPoint(x: 4, y: 14)); path.addLine(to: CGPoint(x: 14, y: 4)) }
-                            .stroke(LHTheme.text, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(LHTheme.text)
                     }
                 } else {
                     HStack(spacing: 4) {
