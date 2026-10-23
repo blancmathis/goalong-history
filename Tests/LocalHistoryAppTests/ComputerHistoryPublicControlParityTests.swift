@@ -567,6 +567,32 @@
             XCTAssertEqual(MenuBarController.deletedItemsMessage(2), "2 éléments détaillés supprimés.")
         }
 
+        func testInspectorDetailsAreFrenchSearchableAndWellFormed() {
+            func event(_ kind: EventKind, message: String? = nil, keyboard: KeyboardSnapshot? = nil,
+                       metadata: [String: String]? = nil, reason: SuppressionReason? = nil) -> HistoryEvent {
+                HistoryEvent(schemaVersion: 4, sessionID: "s", timestamp: Date(), kind: kind,
+                             keyboard: keyboard, suppressionReason: reason, message: message, metadata: metadata)
+            }
+            let typing = ActivityEventLabels.detail(event(.typingBurst))
+            XCTAssertEqual(typing, "Frappe : nombre de touches inconnu, durée inconnue ; contenu non reconstitué")
+            let shortcut = ActivityEventLabels.detail(event(
+                .keyboardShortcut, keyboard: KeyboardSnapshot(category: "shortcut", key: "c", modifiers: ["cmd"], isRepeat: false)))
+            XCTAssertEqual(shortcut, "Raccourci : cmd+c")
+            XCTAssertNil(ActivityEventLabels.detail(event(.recorderStarted, message: "Goalong History started")))
+            XCTAssertEqual(
+                ActivityEventLabels.detail(event(.recorderHealth, message: "Input observation gap", metadata: ["observation_gap": "true"])),
+                "Lacune d’observation : des actions ont pu ne pas être enregistrées.")
+            let terms = ActivityEventLabels.searchTerms(event(.scrollBurst, reason: .privateBrowserWindow)).joined(separator: " ").lowercased()
+            XCTAssertTrue(terms.contains("défilement"))
+            XCTAssertTrue(terms.contains("fenêtre privée"))
+        }
+
+        func testSourceInaccessibleIsFrenchForTheInterface() {
+            let error = ActivityAnalysisCycleError.sourceInaccessible("Derived analysis kept views because 2 unreadable row(s)")
+            XCTAssertEqual(error.frenchDescription, "Goalong n’a pas pu lire les données locales de cette journée.")
+            XCTAssertTrue(error.localizedDescription.contains("row(s)"))
+        }
+
         func testCycleErrorsHaveFrenchDescriptionAndEnglishLogText() {
             let error = ActivityAnalysisCycleError.sourceChangedDuringRead
             XCTAssertTrue(error.frenchDescription.hasPrefix("Le journal source a changé"))

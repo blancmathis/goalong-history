@@ -83,9 +83,10 @@
                 ].compactMap { $0 }.joined(separator: " · ")
             case .typingBurst:
                 let count = event.metadata?["keystroke_count"].flatMap { Int($0) }
-                let duration = event.metadata?["duration_ms"] ?? "inconnue"
-                let keys = count.map { frCount($0, "touche", "touches") } ?? "touches : inconnu"
-                return "Frappe : \(keys), \(duration) ms ; contenu non reconstitué"
+                let duration = event.metadata?["duration_ms"].flatMap { Int($0) }
+                let keys = count.map { frCount($0, "touche", "touches") } ?? "nombre de touches inconnu"
+                let time = duration.map { "\($0) ms" } ?? "durée inconnue"
+                return "Frappe : \(keys), \(time) ; contenu non reconstitué"
             case .scrollBurst:
                 guard let scroll = event.scroll else { return nil }
                 let events = frCount(scroll.eventCount, "événement", "événements")
@@ -93,13 +94,36 @@
             case .keyboardShortcut, .keyPressed:
                 guard let keyboard = event.keyboard else { return nil }
                 let keys = (keyboard.modifiers + [keyboard.key].compactMap { $0 }).joined(separator: "+")
-                return "\(keyboard.category) : \(keys.isEmpty ? "touche sans nom" : keys)"
+                return "\(keyboardCategory(keyboard.category)) : \(keys.isEmpty ? "touche sans nom" : keys)"
             case .focusChanged:
                 return [event.element?.role, event.element?.label ?? event.element?.title]
                     .compactMap { $0 }.joined(separator: " · ")
+            case .recorderHealth:
+                return event.metadata?["observation_gap"] == "true"
+                    ? "Lacune d’observation : des actions ont pu ne pas être enregistrées."
+                    : nil
             default:
-                return event.message
+                // The stored `message` is English system text; it stays searchable only.
+                return nil
             }
+        }
+
+        static func keyboardCategory(_ raw: String) -> String {
+            switch raw {
+            case "shortcut": return "Raccourci"
+            case "navigation": return "Navigation"
+            case "text_activity": return "Saisie de texte"
+            default: return raw
+            }
+        }
+
+        /// Everything the user can read for an event, in French, plus raw identifiers.
+        static func searchTerms(_ event: HistoryEvent) -> [String] {
+            [
+                kind(event.kind),
+                event.suppressionReason.map { reason($0) },
+                detail(event),
+            ].compactMap { $0 }
         }
     }
 
@@ -337,7 +361,9 @@
                         )
                     }
                 } else {
-                    Text(event.message ?? "Le contexte détaillé n’a volontairement pas été enregistré.")
+                    Text(event.suppressionReason.map {
+                        "\(ActivityEventLabels.reason($0)) : le contexte détaillé n’a volontairement pas été enregistré."
+                    } ?? "Le contexte détaillé n’a volontairement pas été enregistré.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -363,11 +389,11 @@
 
         private func searchableText(_ event: HistoryEvent) -> String {
             if event.suppressionReason != nil {
-                return [event.kind.rawValue, event.suppressionReason?.rawValue, event.message]
-                    .compactMap { $0 }
+                let raw: [String?] = [event.kind.rawValue, event.suppressionReason?.rawValue, event.message]
+                return (ActivityEventLabels.searchTerms(event) + raw.compactMap { $0 })
                     .joined(separator: " ")
             }
-            return [
+            let fields: [String?] = [
                 event.kind.rawValue,
                 event.app?.name,
                 event.app?.bundleIdentifier,
@@ -383,7 +409,9 @@
                     for: event,
                     semanticSnapshots: inspector.semanticSnapshots
                 ),
-            ].compactMap { $0 }.joined(separator: " ")
+            ]
+            return (ActivityEventLabels.searchTerms(event) + fields.compactMap { $0 })
+                .joined(separator: " ")
         }
 
         private static func isAction(_ event: HistoryEvent) -> Bool {

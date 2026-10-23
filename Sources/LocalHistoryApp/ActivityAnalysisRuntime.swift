@@ -1286,8 +1286,8 @@
         /// French text for the interface; `errorDescription` stays English for logs and journals.
         var frenchDescription: String {
             switch self {
-            case .sourceInaccessible(let message):
-                return message
+            case .sourceInaccessible:
+                return "Goalong n’a pas pu lire les données locales de cette journée."
             case .sourceChangedDuringRead:
                 return "Le journal source a changé pendant la lecture. Les dernières vues valides sont conservées."
             case .oversizedJSONLine(let path, let maximumBytes):

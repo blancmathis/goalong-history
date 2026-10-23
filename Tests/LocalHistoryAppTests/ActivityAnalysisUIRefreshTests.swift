@@ -335,9 +335,9 @@
                 XCTAssertEqual(model.memory, stored)
                 XCTAssertEqual(
                     model.sourceStatus,
-                    .inaccessible(error.localizedDescription)
+                    .inaccessible(error.frenchDescription)
                 )
-                XCTAssertEqual(model.errorMessage, error.localizedDescription)
+                XCTAssertEqual(model.errorMessage, error.frenchDescription)
                 XCTAssertFalse(model.isLoading)
                 inaccessiblePublished.fulfill()
             }
