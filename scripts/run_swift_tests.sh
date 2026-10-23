@@ -51,8 +51,23 @@ executed_count() {
 }
 # Classes declared in a test file (a file name often differs from its classes).
 classes_in() {
-  grep -oE '^[[:space:]]*(final |public |open )*class [A-Za-z0-9_]+[[:space:]]*:[[:space:]]*[A-Za-z0-9_.]*(XCTestCase|TestCase|Tests)' "$1" 2>/dev/null \
+  # Optional attributes (@MainActor) and modifiers (final, private, fileprivate, ...) before `class`.
+  grep -oE '^[[:space:]]*(@[A-Za-z0-9_]+(\([^)]*\))?[[:space:]]+)*((final|public|open|internal|private|fileprivate)[[:space:]]+)*class [A-Za-z0-9_]+[[:space:]]*:[[:space:]]*[A-Za-z0-9_.]*(XCTestCase|TestCase|Tests)' "$1" 2>/dev/null \
     | sed -E 's/^.*class ([A-Za-z0-9_]+).*$/\1/'
+}
+# The last verdict of `make test-ui`: skips on a locked screen are not a pass (exit 1), they only
+# explain themselves. Skips on an unlocked screen are a failure too. 0 skips: pass.
+ui_verdict() { # skips screen-state
+  local skips="$1" state="$2"
+  if [[ "$skips" -gt 0 ]]; then
+    if [[ "$state" == locked ]]; then
+      echo "error: $skips opt-in UI test(s) skipped while the screen was locked: this is not a proof. Unlock the Mac and run again." >&2
+    else
+      echo "error: opt-in UI tests skipped although their variables are set" >&2
+    fi
+    return 1
+  fi
+  return 0
 }
 elapsed() { echo "Duration: $((SECONDS - start)) s"; }
 
@@ -93,16 +108,19 @@ case "$mode" in
                 Features/Braise/*) add BraiseCoreTests ;;
               esac
             fi ;;
-          # Core is used by the App and the query CLI: a Core change can break their tests too.
-          Tests/LocalHistoryCoreTests/*) add LocalHistoryCoreTests ;;
-          Sources/LocalHistoryCore/*) add LocalHistoryCoreTests; add LocalHistoryAppTests; add LocalHistoryQueryCLITests ;;
+          # A source change runs its own tests and the tests of every target that imports it
+          # (Package.swift graph: Core <- AgentActivity <- QueryCLI <- App; features <- App).
+          Sources/LocalHistoryCore/*) add LocalHistoryCoreTests; add AgentActivityTests; add LocalHistoryAppTests; add LocalHistoryQueryCLITests ;;
           Package.swift|Package.resolved|Makefile|scripts/*) fast=1 ;;
+          Tests/LocalHistoryCoreTests/*) add LocalHistoryCoreTests ;;
           Tests/LocalHistoryAppTests/*|Sources/LocalHistoryApp/*) add LocalHistoryAppTests ;;
-          Tests/LocalHistoryQueryCLITests/*|Sources/LocalHistoryQueryCLI/*) add LocalHistoryQueryCLITests ;;
-          Features/AgentActivity/*) add AgentActivityTests ;;
-          Features/AppleScreenTime/*) add AppleScreenTimeTests ;;
-          Features/Ambiance/*) add AmbianceTests ;;
-          Features/Braise/*) add BraiseCoreTests ;;
+          Tests/LocalHistoryQueryCLITests/*) add LocalHistoryQueryCLITests ;;
+          Sources/LocalHistoryQueryCLI/*) add LocalHistoryQueryCLITests; add LocalHistoryAppTests ;;
+          Features/AgentActivity/*) add AgentActivityTests; add LocalHistoryQueryCLITests; add LocalHistoryAppTests ;;
+          Features/AppleScreenTime/*) add AppleScreenTimeTests; add LocalHistoryQueryCLITests; add LocalHistoryAppTests ;;
+          Features/AppleSystemScreenTime/*) add LocalHistoryQueryCLITests; add LocalHistoryAppTests ;;
+          Features/Ambiance/*) add AmbianceTests; add LocalHistoryAppTests ;;
+          Features/Braise/*) add BraiseCoreTests; add LocalHistoryQueryCLITests; add LocalHistoryAppTests ;;
         esac
       done <<< "$changed"
       if [[ $fast -eq 1 ]]; then add LocalHistoryCoreTests; add LocalHistoryAppTests; fi
@@ -190,15 +208,10 @@ case "$mode" in
     if [[ "$skips" -gt 0 ]]; then grep "Test skipped" "$log" | sed 's/^.*-\[/  -[/'; fi
     elapsed
     [[ $status -ne 0 ]] && exit "$status"
-    if [[ "$skips" -gt 0 ]]; then
-      if [[ "$state" == locked ]]; then
-        echo "Screen was locked: the skips above are expected; unlock and run again for the full proof."
-      else
-        echo "error: opt-in UI tests skipped although their variables are set" >&2
-        exit 1
-      fi
-    fi
-    exit 0
+    ui_verdict "$skips" "$state"
+    exit $?
     ;;
+  classes-in) classes_in "${1:?file}"; exit 0 ;;   # test hook
+  ui-verdict) ui_verdict "${1:?skips}" "${2:?state}"; exit $? ;;   # test hook
   *) echo "usage: $0 check [FILTER] | full | ui" >&2; exit 2 ;;
 esac

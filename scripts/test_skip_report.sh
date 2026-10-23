@@ -21,6 +21,14 @@ if python3 "$ROOT/scripts/skip_report.py" "$dir/bad.log" --allowlist "$dir/allow
 fi
 grep -q "Mod.Rogue/testNew" "$dir/bad.out" || { echo "unknown skip not named" >&2; exit 1; }
 python3 "$ROOT/scripts/skip_report.py" "$dir/bad.log" --allowlist "$dir/allow.txt" --report-only >/dev/null
+# XCTest prints no "tests skipped" part when nothing was skipped: that run is valid and green.
+cat > "$dir/noskip.log" <<'LOG'
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.1 (0.1) seconds
+LOG
+out="$(python3 "$ROOT/scripts/skip_report.py" "$dir/noskip.log" --allowlist "$dir/allow.txt")" || { echo "zero-skip summary rejected" >&2; exit 1; }
+[[ "$out" == *"0 skipped of 5 executed"* ]] || { echo "bad zero-skip report: $out" >&2; exit 1; }
+printf '\t Executed 1 test, with 1 failure (0 unexpected) in 0.1 (0.1) seconds\n' > "$dir/one.log"
+python3 "$ROOT/scripts/skip_report.py" "$dir/one.log" --allowlist "$dir/allow.txt" | grep -q "0 skipped of 1 executed (1 failures)" || { echo "singular summary not parsed" >&2; exit 1; }
 echo "incomplete run" > "$dir/short.log"
 if python3 "$ROOT/scripts/skip_report.py" "$dir/short.log" --allowlist "$dir/allow.txt" 2>/dev/null; then
   echo "a log without a summary was accepted" >&2; exit 1

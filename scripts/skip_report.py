@@ -18,7 +18,8 @@ from collections import OrderedDict
 
 CASE = re.compile(r"Test Case '-\[(\S+) (\S+)\]' skipped")
 REASON = re.compile(r"-\[(\S+) (\S+)\] : Test skipped(?: - (.*))?$")
-EXECUTED = re.compile(r"Executed (\d+) tests?, with (\d+) tests? skipped and (\d+) failures?")
+# XCTest omits "N tests skipped and" when nothing was skipped: that form is a valid summary.
+EXECUTED = re.compile(r"Executed (\d+) tests?, with (?:(\d+) tests? skipped and )?(\d+) failures?")
 ENV = re.compile(r"GOALONG_[A-Z0-9_]+")
 
 
@@ -36,7 +37,7 @@ def parse(path):
                 skipped.append((f"{key[0]}/{key[1]}", reasons.get(key, "(no reason given)")))
             match = EXECUTED.search(line)
             if match:
-                totals = tuple(int(value) for value in match.groups())  # last one is the overall total
+                totals = tuple(int(value or 0) for value in match.groups())  # last one is the overall total
     return skipped, totals
 
 

@@ -19,6 +19,7 @@ test:
 	bash scripts/test_skip_report.sh
 	bash scripts/test_clean_leaked_test_prefs.sh
 	bash scripts/test_run_swift_tests.sh
+	bash scripts/test_headless_signal_cleanup.sh
 
 # make test-ui: the render and AX opt-in tests that run on this Mac, with no visible window.
 test-ui:

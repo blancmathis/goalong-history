@@ -93,6 +93,7 @@ jobs:
           bash scripts/test_skip_report.sh
           bash scripts/test_clean_leaked_test_prefs.sh
           bash scripts/test_run_swift_tests.sh
+          bash scripts/test_headless_signal_cleanup.sh
 
       - name: Isolated-HOME recording and navigation tests
         run: ./scripts/test_isolated_home.sh --skip-build

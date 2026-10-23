@@ -184,9 +184,14 @@ static void blockLaunchServices(void) {
 // plist did not exist yet. At exit (and on demand) the plist is deleted again, so a bare
 // `swift test` leaves no `<suite>.plist` in ~/Library/Preferences. A plist that already existed
 // (the owner's real suites) is never recorded and never touched, and only UUID-named suites are
-// recorded at all. SIGINT and SIGTERM clean too; SIGKILL cannot be caught: use scripts/clean_leaked_test_prefs.sh.
+// recorded at all. SIGINT, SIGTERM, SIGHUP and crashes (SIGABRT, SIGTRAP, SIGSEGV, SIGBUS, SIGILL) clean too through an async-signal-safe handler; SIGKILL cannot be caught: use scripts/clean_leaked_test_prefs.sh.
 static NSMutableSet<NSString *> *createdSuites;
 static NSLock *suiteLock;
+// The same plist paths as plain C strings, for the crash handler: it may only call
+// async-signal-safe functions (unlink), never Objective-C, malloc or locks.
+#define kMaxCrashPaths 4096
+static char *crashPaths[kMaxCrashPaths];
+static volatile int crashPathCount;
 
 // Only names a test made unique with a UUID are ever recorded. A real domain name (an app bundle
 // id, a production suite) never matches, so the hook can never delete the owner's real defaults.
@@ -222,6 +227,11 @@ static void trackSuites(void) {
         if (path && ![NSFileManager.defaultManager fileExistsAtPath:path]) {
             [suiteLock lock];
             [createdSuites addObject:name];
+            if (crashPathCount < kMaxCrashPaths) {
+                crashPaths[crashPathCount] = strdup(path.fileSystemRepresentation);
+                __sync_synchronize();   // the pointer is written before the count that publishes it
+                crashPathCount++;
+            }
             [suiteLock unlock];
         }
         return initSuite(d, @selector(initWithSuiteName:), name);
@@ -230,23 +240,48 @@ static void trackSuites(void) {
 
 NSString *GoalongHeadlessSuitePlistPath(NSString *name) { return suitePlistPath(name); }
 
-void GoalongHeadlessCleanLeakedDefaultSuites(void) {
-    [suiteLock lock];
-    NSArray<NSString *> *names = createdSuites.allObjects;
-    [createdSuites removeAllObjects];
-    [suiteLock unlock];
+// Deletes the plist files only. Asking cfprefsd to remove the domain (removePersistentDomain) makes it
+// write the empty domain back a moment later, which re-creates the file after the cleanup.
+static void unlinkSuitePlists(NSArray<NSString *> *names) {
     for (NSString *name in names) {
-        NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:name];
-        [defaults removePersistentDomainForName:name];
-        [defaults synchronize];
         NSString *path = suitePlistPath(name);
         if (path) [NSFileManager.defaultManager removeItemAtPath:path error:nil];
     }
 }
 
-// Ctrl-C or a timeout kill: clean up, then let the default action end the process.
+void GoalongHeadlessCleanLeakedDefaultSuites(void) {
+    [suiteLock lock];
+    NSArray<NSString *> *names = createdSuites.allObjects;
+    [createdSuites removeAllObjects];
+    [suiteLock unlock];
+    unlinkSuitePlists(names);
+}
+
+// At exit a write already queued in cfprefsd can still land: look again once after a short pause.
+static void cleanAtExit(void) {
+    [suiteLock lock];
+    NSArray<NSString *> *names = createdSuites.allObjects;
+    [suiteLock unlock];
+    unlinkSuitePlists(names);
+    if (names.count > 0) { usleep(300 * 1000); unlinkSuitePlists(names); }
+}
+
+// Only this suite, and only when this run created it: other tests' suites stay tracked.
+void GoalongHeadlessCleanLeakedDefaultSuite(NSString *name) {
+    [suiteLock lock];
+    // Stays recorded: a queued cfprefsd write can re-create the file, the exit cleanup removes it again.
+    BOOL tracked = [createdSuites containsObject:name];
+    [suiteLock unlock];
+    if (tracked) unlinkSuitePlists(@[name]);
+}
+
+// Ctrl-C, a timeout kill or a crash: delete the recorded plists with unlink() only (async-signal-safe),
+// then let the default action end the process.
 static void cleanOnSignal(int sig) {
-    GoalongHeadlessCleanLeakedDefaultSuites();
+    int count = crashPathCount;
+    for (int i = 0; i < count && i < kMaxCrashPaths; i++) {
+        if (crashPaths[i]) unlink(crashPaths[i]);
+    }
     signal(sig, SIG_DFL);
     raise(sig);
 }
@@ -259,9 +294,9 @@ static void cleanOnSignal(int sig) {
     NSDictionary *environment = NSProcessInfo.processInfo.environment;
     if (!NSClassFromString(@"XCTestCase") && !environment[@"XCTestConfigurationFilePath"]) return;
     trackSuites();
-    atexit(GoalongHeadlessCleanLeakedDefaultSuites);
-    signal(SIGINT, cleanOnSignal);
-    signal(SIGTERM, cleanOnSignal);
+    atexit(cleanAtExit);
+    static const int signals[] = {SIGINT, SIGTERM, SIGHUP, SIGABRT, SIGTRAP, SIGSEGV, SIGBUS, SIGILL};
+    for (size_t i = 0; i < sizeof signals / sizeof signals[0]; i++) signal(signals[i], cleanOnSignal);
     if ([environment[@"GOALONG_TESTS_VISIBLE"] isEqualToString:@"1"]) return;
     hideWindows();
     blockActivation();
