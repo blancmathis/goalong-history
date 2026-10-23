@@ -35,8 +35,8 @@ extension GalleryCatalog {
             },
             state("focus-indisponible") { model in
                 model.focusAvailable = false
-                model.focusUnavailableReason = "Activez Concentration dans Réglages."
-                model.focusUnavailableFix = .modules
+                model.focusUnavailableReason = "Activez l’enregistrement dans Réglages."
+                model.focusUnavailableFix = .recording
             },
             state("ambiance-chargement") { model in model.ambianceLoading = true },
             state("ambiance-erreur") { model in

@@ -444,10 +444,6 @@ private struct AmbianceFileRow: View {
                     Text(source.title).font(.system(size: 13, weight: playing ? .semibold : .regular))
                         .lineLimit(1).truncationMode(.middle)
                         .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.secondaryText)
-                    if !source.isAvailable {
-                        Label("Fichier introuvable", systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.warning)
-                    }
                     Spacer(minLength: 12)
                 }
                 .contentShape(Rectangle())
@@ -457,6 +453,10 @@ private struct AmbianceFileRow: View {
             .accessibilityLabel(source.title)
             .accessibilityValue(playing ? "En cours" : source.isAvailable ? "" : "Introuvable")
             .accessibilityIdentifier("ambiance-file-\(source.id)")
+            if !source.isAvailable {
+                Label("Fichier introuvable", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.warning)
+            }
             Button(action: onRemove) {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(LHTheme.tertiaryText)
