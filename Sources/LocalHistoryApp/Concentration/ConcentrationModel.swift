@@ -295,3 +295,15 @@ struct NoOpFocusSessionAudio: FocusSessionAudio {
     func stop() {}
 }
 #endif
+
+/// « mesuré 95 min · prévu 90 min » on a plan row: both figures carry their unit.
+enum FocusPlanMeasureText {
+    static func line(measured: Double?, estimate: Int?) -> String {
+        switch (measured, estimate) {
+        case let (measured?, estimate?): return "mesuré \(Int(measured.rounded())) min · prévu \(estimate) min"
+        case let (measured?, nil): return "mesuré \(Int(measured.rounded())) min"
+        case let (nil, estimate?): return "prévu \(estimate) min"
+        default: return ""
+        }
+    }
+}

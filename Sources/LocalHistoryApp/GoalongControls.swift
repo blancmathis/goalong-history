@@ -169,6 +169,21 @@
         }
     }
 
+    extension View {
+        /// A placeholder drawn by Goalong, in the placeholder colour, because the system one is
+        /// not always told apart from typed text. Put it on a field that has the Goalong field style.
+        func goalongPlaceholder(_ placeholder: String, isEmpty: Bool, alignment: Alignment = .leading,
+                                font: Font = .system(size: 13), top: CGFloat = 0) -> some View {
+            overlay(alignment: alignment) {
+                if isEmpty && !placeholder.isEmpty {
+                    Text(placeholder).font(font).foregroundStyle(LHTheme.tertiaryText)
+                        .padding(.horizontal, 11).padding(.top, top)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
+        }
+    }
+
     /// TextEditor with the same chrome and an in-field placeholder.
     struct GoalongTextArea: View {
         @Binding var text: String

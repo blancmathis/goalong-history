@@ -400,6 +400,9 @@ struct FocusLimitPanelView: View {
                 Spacer()
                 Button("Annuler", action: onClose).keyboardShortcut(.cancelAction)
                 Button("Enregistrer le bilan", action: save).buttonStyle(LHPrimaryButtonStyle())
+                    .disabled(!Self.hasAnswer(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commit: commitTomorrow))
+                    .help(Self.hasAnswer(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commit: commitTomorrow)
+                          ? "" : "Répondez pour au moins une tâche, ou écrivez une note.")
                     .accessibilityIdentifier("concentration-save-review")
             }
         }
@@ -428,6 +431,13 @@ struct FocusLimitPanelView: View {
         return FocusReview(day: plan.day, items: reviewItems,
                            tomorrowFirst: first.isEmpty ? nil : String(first.prefix(140)),
                            note: text.isEmpty ? nil : String(text.prefix(500)))
+    }
+
+    /// A review with no answer, no first task, no note and no commitment says nothing: it cannot be saved.
+    static func hasAnswer(choices: [UUID: Choice], tomorrowFirst: String, note: String, commit: Bool) -> Bool {
+        choices.values.contains { $0 != .unset } || commit
+            || !tomorrowFirst.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func save() {
