@@ -26,7 +26,6 @@
 ## Interdits
 - Jamais forcer la fermeture : un blocage actif peut refuser de quitter ; le résoudre dans l’app.
 - Ne pas modifier `/Applications/Goalong History.app`, ni le trousseau, ni `blocking.json` à la main app ouverte.
-- Démon garde `fr.lifeos.goalong-guard`, s’il est actif (inactif depuis le 2026-10-15) : il relance l’app installée ~5 s après un kill (`pgrep -x "Goalong History"`, Goalong Dev n’est pas concernée) ; l’arrêter demande le mot de passe admin.
 
 ## Vérifications
 - Jamais `swift test` nu. Trois commandes, toutes en HOME jetable (`scripts/run_swift_tests.sh`) : `make check` (boucle rapide : build incrémental + tests des cibles modifiées vs `origin/main`, ou `FILTER=Regex`, sans les 5 tests lents ; durée affichée), `make test` (suite complète puis rapport des tests ignorés ; un skip absent de `scripts/expected_skips.txt` fait échouer), `make test-ui` (rendus et tests AX opt-in, `GOALONG_*_SNAPSHOTS` / `*_UI_TESTS`, sans fenêtre visible ; dit si l’écran est verrouillé ; PNG dans `/tmp/goalong-test-ui-*`). Un test opt-in nouveau doit entrer dans `expected_skips.txt` (`python3 scripts/skip_report.py LOG --emit-allowlist` aide). Les cibles App et Ambiance chargent le hook `GoalongHeadlessTestSupport`, qui supprime à la sortie les plists `UserDefaults(suiteName:)` créés par la course (jamais ceux qui existaient) ; `scripts/clean_leaked_test_prefs.sh [--dry-run|--delete] [--include-other-test-suites]` nettoie les anciennes fuites (`goalong-auto-consent-*` seulement par défaut). Puis `make audit`.
