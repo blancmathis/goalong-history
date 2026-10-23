@@ -159,18 +159,58 @@ import SwiftUI
     private func time(_ title: String, minute: Binding<Int>) -> some View {
         HStack(spacing: 10) {
             Text(title)
-            HStack(spacing: 6) {
-                Text(String(format: "%02d:%02d", minute.wrappedValue / 60, minute.wrappedValue % 60))
-                    .font(.system(size: 13).monospacedDigit())
-                    .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(LHTheme.cardBackground))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(LHTheme.secondaryText.opacity(0.3)))
-                Stepper(title, value: Binding(get: { minute.wrappedValue }, set: { minute.wrappedValue = (($0 % 1440) + 1440) % 1440 }), in: -5...1445, step: 5)
-                    .labelsHidden()
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(title)
+            ScheduleTimeField(title: title, minute: minute)
         }
+    }
+}
+
+/// Editable "HH:mm" field with a 5-minute stepper. Typing "7", "0730" or "7:30" works; invalid text reverts on commit.
+struct ScheduleTimeField: View {
+    let title: String
+    @Binding var minute: Int
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    static func format(_ minute: Int) -> String { String(format: "%02d:%02d", minute / 60, minute % 60) }
+
+    /// Minutes since midnight for "H", "HH", "HHmm", "H:mm", "H h mm"; nil when not a valid time of day.
+    static func parse(_ raw: String) -> Int? {
+        let t = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !t.isEmpty else { return nil }
+        let parts = t.split(whereSeparator: { ":hH. ".contains($0) }).map(String.init).filter { !$0.isEmpty }
+        var hour: Int?, min = 0
+        if parts.count == 1, let n = Int(parts[0]), parts[0].allSatisfy(\.isNumber) {
+            if parts[0].count <= 2 { hour = n }
+            else if parts[0].count <= 4 { hour = n / 100; min = n % 100 }
+        } else if parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]), parts[1].count <= 2 { hour = h; min = m }
+        guard let hour, (0...23).contains(hour), (0...59).contains(min) else { return nil }
+        return hour * 60 + min
+    }
+
+    private func commit() {
+        if let parsed = Self.parse(text) { minute = parsed }
+        text = Self.format(minute)
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField("HH:mm", text: $text)
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.center)
+                .font(.system(size: 13).monospacedDigit())
+                .frame(width: 52)
+                .focused($focused)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 6).fill(LHTheme.cardBackground))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(focused ? Color.accentColor : LHTheme.secondaryText.opacity(0.3)))
+                .accessibilityLabel(title)
+                .onSubmit(commit)
+                .onChange(of: focused) { if !$0 { commit() } }
+            Stepper(title, value: Binding(get: { minute }, set: { minute = (($0 % 1440) + 1440) % 1440 }), in: -5...1445, step: 5)
+                .labelsHidden()
+        }
+        .onAppear { text = Self.format(minute) }
+        .onChange(of: minute) { text = Self.format($0) }
     }
 }
 #endif
