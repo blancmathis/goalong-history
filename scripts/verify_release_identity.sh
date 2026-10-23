@@ -38,6 +38,14 @@ codesign --verify --all-architectures --deep --strict "-R=$REQUIREMENT" "$APP"
 codesign --verify --all-architectures --strict "-R=$REQUIREMENT" "$APP/Contents/MacOS/goalong"
 HELPER_REQUIREMENT="identifier \"$BUNDLE.relauncher\" and anchor apple generic and certificate leaf = H\"$IDENTITY\" and certificate leaf[subject.OU] = \"$TEAM\""
 codesign --verify --all-architectures --strict "-R=$HELPER_REQUIREMENT" "$APP/Contents/MacOS/goalong-relauncher"
+# Spec K: the blocking guard agent carries its own identifier under the same pinned certificate.
+GUARD="$APP/Contents/MacOS/goalong-blocking-guard"
+if [[ -e "$GUARD" || -e "$APP/Contents/Library/LaunchAgents" ]]; then
+  GUARD_REQUIREMENT="identifier \"$BUNDLE.blocking-guard\" and anchor apple generic and certificate leaf = H\"$IDENTITY\" and certificate leaf[subject.OU] = \"$TEAM\""
+  codesign --verify --all-architectures --strict "-R=$GUARD_REQUIREMENT" "$GUARD"
+  [[ "$(ls "$APP/Contents/Library/LaunchAgents")" == "$BUNDLE.blocking-guard.plist" ]] \
+    || { echo "Unexpected launch agent in the bundle (expected only $BUNDLE.blocking-guard.plist)." >&2; exit 1; }
+fi
 for component in app cli relauncher; do
   suffix=''
   case "$component" in
@@ -57,4 +65,4 @@ for component in app cli relauncher; do
       --pins "$ROOT/Distribution/permission-requirements.json" --component "$component"
   done
 done
-echo "Identity verified ($CHANNEL, $BUNDLE): pinned certificate and unchanged app/CLI/relauncher requirements on every architecture."
+echo "Identity verified ($CHANNEL, $BUNDLE): pinned certificate and unchanged app/CLI/relauncher/guard requirements on every architecture."

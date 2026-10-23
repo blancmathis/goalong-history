@@ -89,6 +89,21 @@ for candidate in (app_dir.absolute(), app_dir.resolve()):
         fail(f'Goalong Dev never goes inside an app bundle: {app_dir}')
 PY
   warn_old_release
+  # Spec K: during a severe block of Goalong Dev, its blocking guard reopens the installed Goalong Dev
+  # (~/Applications only) and the block is a commitment: refuse before any build, quit or install.
+  # NO_LAUNCH=1 into another folder never touches that copy (the guard ignores copies outside
+  # /Applications and ~/Applications), so it stays allowed.
+  if [[ "$NO_LAUNCH" == 0 || "$DEV_APP_DIR" == "$HOME/Applications" || "$DEV_APP_DIR" == "$HOME/Applications/" ]]; then
+    dev_locked_until=0 now_epoch="$(/bin/date +%s)"
+    for marker in "$DEV_DATA/Blocking/guard-until" "$DEV_DATA/Blocking/locked-until"; do
+      [[ -f "$marker" && ! -L "$marker" ]] || continue
+      value="$(/usr/bin/head -c 12 "$marker" | /usr/bin/tr -cd '0-9')"
+      if [[ -n "$value" ]] && (( value > now_epoch && value > dev_locked_until )); then dev_locked_until="$value"; fi
+    done
+    if (( dev_locked_until > 0 )); then
+      refuse "Goalong Dev a un blocage sévère actif jusqu'à $(/bin/date -r "$dev_locked_until" '+%Y-%m-%d %H:%M') ; terminez-le ou attendez."
+    fi
+  fi
   if [[ "${GOALONG_DEV_VALIDATE_ONLY:-0}" == 1 ]]; then
     echo "Settings accepted: data $DATA, blocking $BLOCKING, server $SERVER, no launch $NO_LAUNCH, $DEV_APP"
     exit 0

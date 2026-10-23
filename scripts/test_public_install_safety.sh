@@ -214,4 +214,26 @@ make_fixture_bundle "$obsolete_local_app" "$OBSOLETE_LOCAL_BUNDLE_ID" "1"
 remove_verified_obsolete_local_bundle "$obsolete_local_app"
 [[ ! -e "$obsolete_local_app" && ! -L "$obsolete_local_app" ]]
 
+# Spec K: a severe block refuses the replacement (exit 3) unless GOALONG_INSTALL_DURING_LOCK=1, which
+# first releases the guard. Fake names: no Goalong copy runs, launchctl sees only an absent label.
+guard_home="$TEST_ROOT/guard-home"
+mkdir -p "$guard_home/Library/Application Support/LocalHistory/Blocking"
+guard_check() { # expected status, then env settings
+  local expected="$1" status=0; shift
+  ( export HOME="$guard_home" "$@"; APP_NAME="GoalongGuardStub$$" EXECUTABLE_NAME="GoalongGuardStub$$" \
+      BUNDLE_ID="ai.goalong.test.absent.$$"; refuse_install_during_severe_block ) >"$TEST_ROOT/guard-out" 2>&1 || status=$?
+  [[ "$status" == "$expected" ]] || { echo "Severe-block install check exited $status, expected $expected: $(cat "$TEST_ROOT/guard-out")" >&2; exit 1; }
+}
+guard_check 0 GOALONG_INSTALL_DURING_LOCK=
+echo "$(( $(/bin/date +%s) + 600 ))" > "$guard_home/Library/Application Support/LocalHistory/Blocking/guard-until"
+guard_check 3 GOALONG_INSTALL_DURING_LOCK=
+/usr/bin/grep -qF 'Goalong History was not replaced' "$TEST_ROOT/guard-out"
+stub="$guard_home/Applications/GoalongGuardStub$$.app/Contents/MacOS/GoalongGuardStub$$"
+mkdir -p "$(dirname "$stub")"
+printf '#!/bin/bash\n# --unregister-guard\necho "$1 $GOALONG_INSTALL_DURING_LOCK" > "%s/guard-ran"\n' "$TEST_ROOT" > "$stub"
+chmod +x "$stub"
+guard_check 0 GOALONG_INSTALL_DURING_LOCK=1
+[[ "$(cat "$TEST_ROOT/guard-ran")" == "--unregister-guard 1" ]]
+/usr/bin/grep -qF 'refuse_install_during_severe_block' "$SCRIPT_DIR/install_from_source.sh"
+
 echo "Public installer safety tests passed: stable identity preservation and ad-hoc downgrade refusal, exact identity, symlink/tamper refusal, target-filesystem staging, privacy/single-app fail-closed checks, rollback, interrupted-install recovery, and obsolete Local-edition cleanup."

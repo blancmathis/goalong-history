@@ -1,5 +1,9 @@
 # Changelog
 
+## À publier — protection contre l’arrêt forcé pendant un blocage sévère
+
+- **Un blocage verrouillé résiste maintenant à « Forcer à quitter ».** Pendant un blocage verrouillé ou protégé par mot de passe, un gel ou un programme verrouillé, un petit service de protection (`goalong-blocking-guard`, intégré à l’app) rouvre Goalong en arrière-plan, sans fenêtre, si on le ferme depuis le Moniteur d’activité, `kill -9` ou le Terminal. Les blocages libres ou « Difficile » ne changent pas, et rien ne change pour qui n’utilise pas de blocage sévère. macOS affiche une seule notification « élément en arrière-plan ajouté » au premier blocage sévère ; l’alerte de verrouillage le dit avant. Si ce service est coupé dans Réglages › Général › Ouverture, la page Blocage l’indique (« À autoriser… ») sans alerte. Quitter depuis le menu (avec mot de passe si demandé), la fermeture de session, l’extinction, les mises à jour et le redémarrage pour une autorisation restent normaux. Le service s’arrête seul à la fin du blocage ; « Retirer le service de protection » apparaît hors blocage. `uninstall.sh` et `install.sh` refusent pendant un blocage sévère (sortie 3), sauf `GOALONG_UNINSTALL_DURING_LOCK=1` / `GOALONG_INSTALL_DURING_LOCK=1`, et retirent alors d’abord le service ; `make dev` refuse pendant un blocage sévère de Goalong Dev.
+
 ## À publier — icône de barre des menus et Goalong Dev
 
 - **L’icône de Goalong ne disparaît plus de la barre des menus.** macOS gardait un ancien réglage « masqué » pour l’icône : Goalong et Braise ont maintenant chacun leur propre emplacement mémorisé.

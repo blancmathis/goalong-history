@@ -194,6 +194,9 @@ build_arch() {
   local helper_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-relauncher --arch "$arch" --scratch-path "$scratch")
   (cd "$ROOT_DIR" && "${helper_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
   cp "$bin_dir/goalong-relauncher" "$WORK_DIR/goalong-relauncher-$arch"
+  local guard_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-blocking-guard --arch "$arch" --scratch-path "$scratch")
+  (cd "$ROOT_DIR" && "${guard_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
+  cp "$bin_dir/goalong-blocking-guard" "$WORK_DIR/goalong-blocking-guard-$arch"
   python3 - "$OUTPUT_DIR/build-$arch-timing.json" "$started" "$arch" <<'PY'
 import json,sys,time
 from pathlib import Path
@@ -243,6 +246,10 @@ HELPER_BINARIES=()
 for arch in $ARCHS; do HELPER_BINARIES+=("$WORK_DIR/goalong-relauncher-$arch"); done
 lipo -create "${HELPER_BINARIES[@]}" -output "$CONTENTS/MacOS/goalong-relauncher"
 chmod 755 "$CONTENTS/MacOS/goalong-relauncher"
+GUARD_BINARIES=()
+for arch in $ARCHS; do GUARD_BINARIES+=("$WORK_DIR/goalong-blocking-guard-$arch"); done
+lipo -create "${GUARD_BINARIES[@]}" -output "$CONTENTS/MacOS/goalong-blocking-guard"
+chmod 755 "$CONTENTS/MacOS/goalong-blocking-guard"
 chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 chmod 755 "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
@@ -369,6 +376,38 @@ fi
 /usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --configure-info "$CONTENTS/Info.plist"
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
+# Spec K: the blocking guard agent. The app registers it with SMAppService only when the member
+# starts a severe block; launchd keeps it alive (never faster than every 10 s) until it exits 0.
+GUARD_LABEL="$BUNDLE_ID.blocking-guard"
+mkdir -p "$CONTENTS/Library/LaunchAgents"
+cat > "$CONTENTS/Library/LaunchAgents/$GUARD_LABEL.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$GUARD_LABEL</string>
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/goalong-blocking-guard</string>
+    <key>AssociatedBundleIdentifiers</key>
+    <array><string>$BUNDLE_ID</string></array>
+    <key>KeepAlive</key>
+    <dict><key>SuccessfulExit</key><false/></dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>MachServices</key>
+    <dict><key>$GUARD_LABEL</key><true/></dict>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>ProcessType</key>
+    <string>Standard</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>
+PLIST
+plutil -lint "$CONTENTS/Library/LaunchAgents/$GUARD_LABEL.plist" >/dev/null
+
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
   # Hardened Runtime library validation rejects ad-hoc signed dynamic frameworks
   # because neither side has a Team ID. Development bundles stay ad-hoc without
@@ -395,6 +434,7 @@ codesign "${SIGN_ARGS[@]}" "$SPARKLE_VERSION_DIR/Updater.app"
 codesign "${SIGN_ARGS[@]}" "$CONTENTS/Frameworks/Sparkle.framework"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID" "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID.relauncher" "$CONTENTS/MacOS/goalong-relauncher"
+codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID.blocking-guard" "$CONTENTS/MacOS/goalong-blocking-guard"
 
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then

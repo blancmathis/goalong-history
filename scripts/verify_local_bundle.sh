@@ -112,6 +112,24 @@ if [[ -f "$ROOT_DIR/Sources/GoalongRelauncher/main.swift" ]]; then
   /usr/bin/grep -Fxq "Identifier=$EXPECTED_BUNDLE_ID.relauncher" <<< "$RELAUNCHER_DETAILS"
 fi
 
+GUARD="$APP_PATH/Contents/MacOS/goalong-blocking-guard"
+GUARD_PLIST="$APP_PATH/Contents/Library/LaunchAgents/$EXPECTED_BUNDLE_ID.blocking-guard.plist"
+if [[ -f "$ROOT_DIR/Sources/GoalongGuard/main.swift" ]]; then
+  test -x "$GUARD"
+  test ! -L "$GUARD"
+  /usr/bin/codesign --verify --strict --verbose=2 "$GUARD"
+  /usr/bin/grep -Fxq "Identifier=$EXPECTED_BUNDLE_ID.blocking-guard" <<< "$(/usr/bin/codesign -d --verbose=4 "$GUARD" 2>&1)"
+  /usr/bin/plutil -lint "$GUARD_PLIST" >/dev/null
+  test "$(/usr/libexec/PlistBuddy -c 'Print :Label' "$GUARD_PLIST")" == "$EXPECTED_BUNDLE_ID.blocking-guard"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :BundleProgram' "$GUARD_PLIST")" == "Contents/MacOS/goalong-blocking-guard"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :KeepAlive:SuccessfulExit' "$GUARD_PLIST")" == false
+  test "$(/usr/libexec/PlistBuddy -c 'Print :ThrottleInterval' "$GUARD_PLIST")" -ge 10
+  if [[ "$(/bin/ls "$APP_PATH/Contents/Library/LaunchAgents" | /usr/bin/wc -l | /usr/bin/tr -d ' ')" != 1 ]]; then
+    echo "The bundle must embed exactly one launch agent: the blocking guard." >&2
+    exit 1
+  fi
+fi
+
 LOCALHISTORY_AUDIT_BINARY="$BINARY" "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
 
 if ! /usr/bin/grep -Fq 'app-server' "$STRINGS"; then
