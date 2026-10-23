@@ -427,7 +427,7 @@ struct BlockingMeter: View {
     /// The freeze the open alert promises, read at the click that opened it (B01-R2-01).
     @State private var pendingFreezePromise: BlockingFreezePromise?
     /// That click: the alert writes its end time against it.
-    @State private var pendingFreezeAt = Date()
+    @State private var pendingFreezeAt = GoalongToday.now
     @State private var picking = false
     /// « Plus tard »: a one-time block that starts by itself.
     @State private var later = false
