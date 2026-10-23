@@ -2,7 +2,7 @@ name: macOS quality gate
 
 on:
   push:
-    branches: [main]
+    branches: [main, motion/integration-20260917]
   pull_request:
   workflow_dispatch:
 
@@ -92,6 +92,7 @@ jobs:
         run: |
           bash scripts/test_skip_report.sh
           bash scripts/test_clean_leaked_test_prefs.sh
+          bash scripts/test_run_swift_tests.sh
 
       - name: Isolated-HOME recording and navigation tests
         run: ./scripts/test_isolated_home.sh --skip-build

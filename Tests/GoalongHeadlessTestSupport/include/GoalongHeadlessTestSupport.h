@@ -5,3 +5,6 @@
 // Deletes the UserDefaults suite plists this test process created (also runs at exit).
 // Suites whose plist existed before the process made them are never touched.
 FOUNDATION_EXPORT void GoalongHeadlessCleanLeakedDefaultSuites(void);
+
+// Real path of the plist cfprefsd writes for a suite (the account home, not CFFIXED_USER_HOME).
+FOUNDATION_EXPORT NSString * _Nullable GoalongHeadlessSuitePlistPath(NSString * _Nonnull name);

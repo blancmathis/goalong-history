@@ -45,6 +45,15 @@ trap cleanup EXIT
 start=$SECONDS
 export GOALONG_TEST_HOME="$home" CFFIXED_USER_HOME="$home"
 swift_test() { xcrun swift test "$@" 2>&1 | tee -a "$log"; return "${PIPESTATUS[0]}"; }
+# Highest "Executed N test(s)" in a log: the final XCTest total. 0 also when nothing ran at all.
+executed_count() {
+  grep -oE 'Executed [0-9]+ tests?' "$1" 2>/dev/null | awk '{ if ($2 > max) max = $2 } END { print max + 0 }'
+}
+# Classes declared in a test file (a file name often differs from its classes).
+classes_in() {
+  grep -oE '^[[:space:]]*(final |public |open )*class [A-Za-z0-9_]+[[:space:]]*:[[:space:]]*[A-Za-z0-9_.]*(XCTestCase|TestCase|Tests)' "$1" 2>/dev/null \
+    | sed -E 's/^.*class ([A-Za-z0-9_]+).*$/\1/'
+}
 elapsed() { echo "Duration: $((SECONDS - start)) s"; }
 
 case "$mode" in
@@ -55,20 +64,39 @@ case "$mode" in
       args+=(--filter "$filter")
       echo "make check: tests matching '$filter'"
     else
-      targets=(); classes=()
+      targets=(); classes=(); fast=0
       # The loop looks at what you are changing now (uncommitted + untracked). With a clean tree it
       # falls back to the whole branch vs origin/main (large on a long branch: then use FILTER=).
       changed="$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u)"
       scope="uncommitted files"
-      if [[ -z "$changed" ]]; then
+      if [[ -n "${GOALONG_CHECK_CHANGED+x}" ]]; then   # test hook: a fixed list of changed files
+        changed="$(printf '%s\n' $GOALONG_CHECK_CHANGED)"; scope="GOALONG_CHECK_CHANGED"
+      elif [[ -z "$changed" ]]; then
         changed="$(git diff --name-only origin/main...HEAD 2>/dev/null | sort -u)"; scope="files changed vs origin/main"
       fi
       add() { [[ " ${targets[*]-} " == *" $1 "* ]] || targets+=("$1"); }
       while IFS= read -r file; do
         case "$file" in
           Tests/LocalHistoryCoreTests/*Tests.swift|Tests/LocalHistoryAppTests/*Tests.swift|Tests/LocalHistoryQueryCLITests/*Tests.swift|Features/*/Tests/*Tests.swift)
-            classes+=("$(basename "$file" .swift)") ;;  # a changed test file runs its own class
-          Tests/LocalHistoryCoreTests/*|Sources/LocalHistoryCore/*) add LocalHistoryCoreTests ;;
+            # A changed test file runs the classes it declares; no class found: its whole target.
+            found="$(classes_in "$file")"
+            if [[ -n "$found" ]]; then
+              while IFS= read -r cls; do classes+=("$cls"); done <<< "$found"
+            else
+              case "$file" in
+                Tests/LocalHistoryCoreTests/*) add LocalHistoryCoreTests ;;
+                Tests/LocalHistoryAppTests/*) add LocalHistoryAppTests ;;
+                Tests/LocalHistoryQueryCLITests/*) add LocalHistoryQueryCLITests ;;
+                Features/AgentActivity/*) add AgentActivityTests ;;
+                Features/AppleScreenTime/*) add AppleScreenTimeTests ;;
+                Features/Ambiance/*) add AmbianceTests ;;
+                Features/Braise/*) add BraiseCoreTests ;;
+              esac
+            fi ;;
+          # Core is used by the App and the query CLI: a Core change can break their tests too.
+          Tests/LocalHistoryCoreTests/*) add LocalHistoryCoreTests ;;
+          Sources/LocalHistoryCore/*) add LocalHistoryCoreTests; add LocalHistoryAppTests; add LocalHistoryQueryCLITests ;;
+          Package.swift|Package.resolved|Makefile|scripts/*) fast=1 ;;
           Tests/LocalHistoryAppTests/*|Sources/LocalHistoryApp/*) add LocalHistoryAppTests ;;
           Tests/LocalHistoryQueryCLITests/*|Sources/LocalHistoryQueryCLI/*) add LocalHistoryQueryCLITests ;;
           Features/AgentActivity/*) add AgentActivityTests ;;
@@ -77,24 +105,33 @@ case "$mode" in
           Features/Braise/*) add BraiseCoreTests ;;
         esac
       done <<< "$changed"
+      if [[ $fast -eq 1 ]]; then add LocalHistoryCoreTests; add LocalHistoryAppTests; fi
       patterns=()
       [[ ${#targets[@]} -gt 0 ]] && patterns+=("^($(IFS='|'; echo "${targets[*]}"))\\.")
       [[ ${#classes[@]} -gt 0 ]] && patterns+=("\\.($(IFS='|'; echo "${classes[*]}"))/")
       if [[ ${#patterns[@]} -eq 0 ]]; then
-        patterns=('^(LocalHistoryCoreTests|LocalHistoryAppTests)\\.')
+        patterns=('^(LocalHistoryCoreTests|LocalHistoryAppTests)\.')
         echo "make check: no mapped change, running the fast Core and App tests"
       else
         echo "make check: from the $scope. targets: ${targets[*]-none}; test classes: ${classes[*]-none}"
       fi
       regex="$(IFS='|'; echo "${patterns[*]}")"
       args+=(--filter "$regex")
+      if [[ -n "${GOALONG_CHECK_DRY_RUN:-}" ]]; then echo "filter-regex: $regex"; exit 0; fi
     fi
     for slow in "${SLOW_TESTS[@]}"; do args+=(--skip "$slow"); done
     echo "Slow tests left out (run by make test): ${#SLOW_TESTS[@]}"
     report_screen
     swift_test "${args[@]}"; status=$?
     elapsed
-    exit "$status"
+    [[ $status -ne 0 ]] && exit "$status"
+    ran="$(executed_count "$log")"
+    echo "Tests executed: $ran"
+    if [[ "$ran" -eq 0 ]]; then
+      echo "error: make check ran 0 tests: the filter matched nothing. Use FILTER=<Class> or make test." >&2
+      exit 1
+    fi
+    exit 0
     ;;
   full)
     report_screen
@@ -113,11 +150,13 @@ case "$mode" in
     # Three groups, each in its own throwaway home: the brand and design-audit renders refuse any
     # home that is not /tmp/goalong-brand-*, and the sharing render wants /tmp/goalong-sharing-home-*.
     run_group() { # name home-prefix classes
-      local name="$1" prefix="$2" classes="$3" group_home
+      local name="$1" prefix="$2" classes="$3" group_home group_log="$(mktemp /tmp/goalong-test-group-XXXXXX)"
       group_home="$(mktemp -d "/tmp/$prefix-XXXXXX")"
       echo "---- make test-ui group $name"
       (
-        export GOALONG_TEST_HOME="$group_home" CFFIXED_USER_HOME="$group_home" HOME="$group_home"
+        # No HOME override (it would invalidate the SwiftPM and clang caches): CFFIXED_USER_HOME is enough.
+        export GOALONG_TEST_HOME="$group_home" CFFIXED_USER_HOME="$group_home"
+        export -n GOALONG_TESTS_VISIBLE  # this target promises no visible window
         export GOALONG_BRAND_TEST_HOME="$group_home" GOALONG_SHARING_TEST_HOME="$group_home"
         export GOALONG_BRAND_SNAPSHOTS="$out/brand" GOALONG_DESIGN_AUDIT="$out/design-audit"
         export GOALONG_SHARING_SNAPSHOTS="$out/sharing"
@@ -128,8 +167,17 @@ case "$mode" in
         done
         mkdir -p "$out/brand" "$out/design-audit" "$out/sharing" "$out/focus-ui"
         export GOALONG_FOCUS_UI_TESTS=1 GOALONG_FOCUS_UI_SNAPSHOT="$out/focus-ui/disclosures-expanded.png" GOALONG_BLOCKING_UI_TESTS=1
-        xcrun swift test --filter "$classes" 2>&1 | tee -a "$log"; exit "${PIPESTATUS[0]}"
+        xcrun swift test --filter "$classes" 2>&1 | tee -a "$log" "$group_log"; exit "${PIPESTATUS[0]}"
       ) || status=$?
+      # A group must really have run: some tests, and every expected class in its log.
+      if [[ "$(executed_count "$group_log")" -eq 0 ]]; then
+        echo "error: make test-ui group $name executed 0 tests" >&2; status=1
+      fi
+      local cls
+      for cls in ${classes//|/ }; do
+        grep -q "Test Suite '$cls' started" "$group_log" || { echo "error: make test-ui group $name: class $cls never ran (renamed or removed?)" >&2; status=1; }
+      done
+      rm -f "$group_log"
       rm -rf "$group_home"
     }
     run_group brand goalong-brand 'GoalongBrandRenderingTests|GoalongTrustRenderingTests|GoalongDesignAuditRenderingTests|GoalongControlsInteractionTests'

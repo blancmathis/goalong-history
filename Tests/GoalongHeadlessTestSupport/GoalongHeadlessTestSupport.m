@@ -6,6 +6,8 @@
 #import "GoalongHeadlessTestSupport.h"
 #import <AppKit/AppKit.h>
 #import <dlfcn.h>
+#import <pwd.h>
+#import <unistd.h>
 #import <objc/runtime.h>
 
 static const void *kLogicalAlpha = &kLogicalAlpha;
@@ -181,13 +183,33 @@ static void blockLaunchServices(void) {
 // Test suites: every `UserDefaults(suiteName:)` made while the tests run is remembered when its
 // plist did not exist yet. At exit (and on demand) the plist is deleted again, so a bare
 // `swift test` leaves no `<suite>.plist` in ~/Library/Preferences. A plist that already existed
-// (the owner's real suites) is never recorded and never touched.
+// (the owner's real suites) is never recorded and never touched, and only UUID-named suites are
+// recorded at all. SIGINT and SIGTERM clean too; SIGKILL cannot be caught: use scripts/clean_leaked_test_prefs.sh.
 static NSMutableSet<NSString *> *createdSuites;
 static NSLock *suiteLock;
 
+// Only names a test made unique with a UUID are ever recorded. A real domain name (an app bundle
+// id, a production suite) never matches, so the hook can never delete the owner's real defaults.
+static BOOL isTestSuiteName(NSString *name) {
+    static NSRegularExpression *uuid;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        uuid = [NSRegularExpression regularExpressionWithPattern:@"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+                                                         options:0 error:nil];
+    });
+    return [uuid firstMatchInString:name options:0 range:NSMakeRange(0, name.length)] != nil;
+}
+
+// cfprefsd ignores CFFIXED_USER_HOME: suite plists land in the account's real home, so that is
+// the folder to look at (NSHomeDirectory() would point at the throwaway home and see nothing).
+static NSString *realHomeDirectory(void) {
+    struct passwd *entry = getpwuid(getuid());
+    return entry && entry->pw_dir ? [NSString stringWithUTF8String:entry->pw_dir] : NSHomeDirectory();
+}
+
 static NSString *suitePlistPath(NSString *name) {
     if ([name containsString:@"/"] || name.length == 0) return nil;
-    return [[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences"]
+    return [[realHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences"]
         stringByAppendingPathComponent:[name stringByAppendingString:@".plist"]];
 }
 
@@ -196,7 +218,7 @@ static void trackSuites(void) {
     suiteLock = [[NSLock alloc] init];
     static id (*initSuite)(id, SEL, NSString *);
     initSuite = (void *)replace(NSUserDefaults.class, @selector(initWithSuiteName:), ^id(NSUserDefaults *d, NSString *name) {
-        NSString *path = name ? suitePlistPath(name) : nil;
+        NSString *path = (name && isTestSuiteName(name)) ? suitePlistPath(name) : nil;
         if (path && ![NSFileManager.defaultManager fileExistsAtPath:path]) {
             [suiteLock lock];
             [createdSuites addObject:name];
@@ -205,6 +227,8 @@ static void trackSuites(void) {
         return initSuite(d, @selector(initWithSuiteName:), name);
     });
 }
+
+NSString *GoalongHeadlessSuitePlistPath(NSString *name) { return suitePlistPath(name); }
 
 void GoalongHeadlessCleanLeakedDefaultSuites(void) {
     [suiteLock lock];
@@ -220,6 +244,13 @@ void GoalongHeadlessCleanLeakedDefaultSuites(void) {
     }
 }
 
+// Ctrl-C or a timeout kill: clean up, then let the default action end the process.
+static void cleanOnSignal(int sig) {
+    GoalongHeadlessCleanLeakedDefaultSuites();
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
 @interface GoalongHeadlessTestSupport : NSObject
 @end
 
@@ -229,6 +260,8 @@ void GoalongHeadlessCleanLeakedDefaultSuites(void) {
     if (!NSClassFromString(@"XCTestCase") && !environment[@"XCTestConfigurationFilePath"]) return;
     trackSuites();
     atexit(GoalongHeadlessCleanLeakedDefaultSuites);
+    signal(SIGINT, cleanOnSignal);
+    signal(SIGTERM, cleanOnSignal);
     if ([environment[@"GOALONG_TESTS_VISIBLE"] isEqualToString:@"1"]) return;
     hideWindows();
     blockActivation();

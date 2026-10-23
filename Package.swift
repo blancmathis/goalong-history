@@ -48,7 +48,7 @@ let package = Package(
     dependencies: packageDependencies,
     targets: [
         .target(name: "BraiseCore", path: "Features/Braise/Sources"),
-        .testTarget(name: "BraiseCoreTests", dependencies: ["BraiseCore"], path: "Features/Braise/Tests"),
+        .testTarget(name: "BraiseCoreTests", dependencies: ["BraiseCore", "GoalongHeadlessTestSupport"], path: "Features/Braise/Tests"),
         // Size over speed: keeps Ambiance under its 1 MB binary budget for ~0.1 % of one core.
         .target(name: "OndeDSP", path: "Features/Ambiance/Engine/OndeDSP", publicHeadersPath: "include",
                 cSettings: [.unsafeFlags(["-Os"], .when(configuration: .release))]),
@@ -137,17 +137,17 @@ let package = Package(
         ),
         .testTarget(
             name: "LocalHistoryCoreTests",
-            dependencies: ["LocalHistoryCore"],
+            dependencies: ["LocalHistoryCore", "GoalongHeadlessTestSupport"],
             path: "Tests/LocalHistoryCoreTests"
         ),
         .testTarget(
             name: "AppleScreenTimeTests",
-            dependencies: ["AppleScreenTime"],
+            dependencies: ["AppleScreenTime", "GoalongHeadlessTestSupport"],
             path: "Features/AppleScreenTime/Tests"
         ),
         .testTarget(
             name: "AgentActivityTests",
-            dependencies: ["AgentActivity"],
+            dependencies: ["AgentActivity", "GoalongHeadlessTestSupport"],
             path: "Features/AgentActivity/Tests"
         ),
         .testTarget(
@@ -159,7 +159,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LocalHistoryQueryCLITests",
-            dependencies: ["LocalHistoryQueryCLI", "AppleScreenTime", "AppleSystemScreenTime", "BraiseCore"],
+            dependencies: ["LocalHistoryQueryCLI", "AppleScreenTime", "AppleSystemScreenTime", "BraiseCore", "GoalongHeadlessTestSupport"],
             path: "Tests/LocalHistoryQueryCLITests"
         ),
     ],
