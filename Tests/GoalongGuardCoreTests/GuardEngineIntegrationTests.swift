@@ -53,9 +53,12 @@ final class GuardEngineIntegrationTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func startEngine(stopCheck: TimeInterval = 0.3, wall: (() -> Date)? = nil) {
+    private func startEngine(stopCheck: TimeInterval = 0.3, wall: (() -> Date)? = nil, bootTime: (() -> Double)? = nil,
+                             sessionEndWait: TimeInterval? = nil) {
         var environment = GuardEnvironment(locateApp: { [app] in app!.current }, launch: { [app] in app!.launch($0) })
         if let wall { environment.wall = wall }
+        if let bootTime { environment.bootTime = bootTime }
+        if let sessionEndWait { environment.sessionEndWait = sessionEndWait }
         environment.proofAlive = { [weak self] _ in self?.proofAlive ?? false }
         environment.stopCheckInterval = stopCheck
         environment.retryDelay = 0.05
@@ -241,6 +244,57 @@ final class GuardEngineIntegrationTests: XCTestCase {
         kill(pid, SIGKILL)
         startEngine(wall: { Date().addingTimeInterval(86_400) })
         XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 }, "the new guard reopens the app")
+        XCTAssertNil(code)
+    }
+
+    /// K2-kill-04: XNU shifts `kern.boottime` with the clock. The boot session id still names this boot,
+    /// so the new guard keeps its predecessor's window.
+    func testANewGuardKeepsTheWindowWhenBootTimeMovesWithTheClock() throws {
+        let pid = try app.spawn()
+        arm()
+        startEngine()
+        XCTAssertNotNil(waitUntil(1) { files.readState()?.endContinuous != nil })
+        let saved = try XCTUnwrap(files.readState())
+        XCTAssertEqual(saved.bootSession, GuardSystem.bootSession())
+        engine?.cancel()
+        engine = nil
+        XCTAssertTrue(files.writeState(saved))
+        kill(pid, SIGKILL)
+        // Clock two hours ahead, boot time shifted by the same amount: the marker (10 min) looks past.
+        startEngine(wall: { Date().addingTimeInterval(7200) }, bootTime: { GuardSystem.bootTime() + 7200 })
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 }, "the new guard reopens the app")
+        XCTAssertNil(code)
+    }
+
+    /// K2-kill-02: a logout cancelled by another app gives one session-end wait, not one per quit.
+    func testASecondSessionEndSoonAfterTheFirstIsRelaunchedAtOnce() throws {
+        let first = try app.spawn()
+        arm()
+        markHealthy(first)
+        startEngine(sessionEndWait: 0.6)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == first })
+        func quitForSessionEnd(_ pid: Int32) {
+            XCTAssertTrue(files.writeRelease(GuardRelease(pid: pid, reason: GuardRelease.sessionEnd,
+                                                          writtenAt: Date().timeIntervalSince1970, bootTime: GuardSystem.bootTime(),
+                                                          bootSession: GuardSystem.bootSession())))
+            kill(pid, SIGKILL)
+        }
+        let firstQuit = Date()
+        quitForSessionEnd(first)
+        usleep(300_000)
+        XCTAssertEqual(app.launchCount, 0, "the first session end is honoured: the guard waits")
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 }, "the session went on: relaunch after the wait")
+        guard app.launchCount == 1 else { return }
+        XCTAssertGreaterThanOrEqual(app.launches[0].timeIntervalSince(firstQuit), 0.55)
+        let second = try XCTUnwrap(app.current)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == second })
+        markHealthy(second)
+        usleep(1_100_000)  // the healthy-kill spacing (1 s) is not what this test measures
+        let secondQuit = Date()
+        quitForSessionEnd(second)
+        XCTAssertNotNil(waitUntil(1) { app.launchCount == 2 })
+        guard app.launchCount == 2 else { return }
+        XCTAssertLessThan(app.launches[1].timeIntervalSince(secondQuit), 0.3, "no second wait within the cooldown")
         XCTAssertNil(code)
     }
 

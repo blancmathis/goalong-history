@@ -80,6 +80,13 @@ enum GoalongGuardFiles {
         files.readOverride()?.isFresh(now: now.timeIntervalSince1970) == true
     }
 
+    /// A guard may still hold an armed window: the marker exists, or a guard killed by a signal left its
+    /// memory in `guard-state.json` (it would restore it). A block ended early by password removes the
+    /// marker, yet such a guard, restarted later in this boot, must still find this quit's token.
+    static func guardMayBeArmed(_ files: GuardFiles) -> Bool {
+        files.markerExists() || files.readState()?.endContinuous != nil
+    }
+
     /// Written once the blocking runtime runs: from now on this process may lower or remove the marker.
     static func reportHealth(_ files: GuardFiles = standard) {
         files.writeHealth(GuardHealth(pid: getpid(), at: Date().timeIntervalSince1970))
@@ -159,8 +166,10 @@ enum TerminationSignalSender {
     static let reregisteredBuildKey = "goalong.guard.reregisteredBuild"
     nonisolated static let pingTimeout: TimeInterval = 2
     static let pingInterval: TimeInterval = 30
-    /// SIGSTOP check of the known guard pid, at most this often (cheap: one proc_pidinfo).
-    static let stopCheckInterval: TimeInterval = 2
+    /// SIGSTOP check of the known guard pid while armed, on its own timer (cheap: one proc_pidinfo).
+    nonisolated static let stopCheckInterval: TimeInterval = 2
+    /// `launchctl kickstart` exit status when the label is not loaded: someone ran `launchctl bootout`.
+    nonisolated static let launchctlServiceNotFound: Int32 = 113
 
     var onChange: (() -> Void)?
     private let identity: GuardIdentity
@@ -182,7 +191,8 @@ enum TerminationSignalSender {
     private var kickstartUsed = false
     /// A ping answered "not armed" once in this arming: one early retry, after the marker check.
     private var notArmedRetried = false
-    private var lastStopCheck = Date.distantPast
+    /// Every 2 s while armed, independent of refresh (15 s apart when the Mac is idle).
+    private var stopWatch: GuardPeriodicCheck!
     /// Guard pid from its last reply. Touched on `queue` only.
     fileprivate nonisolated(unsafe) var guardPID: Int32?
     /// Kept open while armed: its interruption (the guard died) asks for a new ping. Touched on `queue` only.
@@ -203,8 +213,14 @@ enum TerminationSignalSender {
         build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
         guardExecutable = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS", isDirectory: true)
             .appendingPathComponent(GuardIdentity.executableName).path
+        stopWatch = GuardPeriodicCheck(queue: queue, interval: Self.stopCheckInterval) { [weak self] in
+            self?.resumeKnownGuardOnQueue()
+        }
         readStatus()
     }
+
+    /// The 2 s SIGSTOP check runs exactly while armed and no installer override is active.
+    var isWatchingForStop: Bool { stopWatch.isActive }
 
     var needsConsent: Bool {
         if let status { return status == .notRegistered || status == .notFound }
@@ -216,22 +232,21 @@ enum TerminationSignalSender {
         let wasArmed = armed
         armed = severeUntil != nil
         guard armed else {
-            if wasArmed { closeConnection() }
+            stopWatch.setActive(false)
+            // Spec §3.4 "nil : rien": no BTM call while idle. One status read when a block ends, so the
+            // "remove the service" button sees the current state; otherwise only the read at launch.
+            if Self.readsStatusWhenIdle(wasArmed: wasArmed) { closeConnection(); readStatus() }
             component = .notInstalled
-            if Date().timeIntervalSince(statusRead) > Self.pingInterval { readStatus() }
             return component
         }
         if !wasArmed { lastPing = .distantPast; kickstartUsed = false; notArmedRetried = false }
         if overrideActive() {
             // An installer is replacing or removing this copy with the override: never bring the guard back.
+            stopWatch.setActive(false)
             component = .notInstalled
             return component
         }
-        if Date().timeIntervalSince(lastStopCheck) >= Self.stopCheckInterval {
-            lastStopCheck = Date()
-            let worker = Worker(service: service, label: identity.label, client: self, overrideActive: overrideActive)
-            queue.async { worker.resumeKnownGuard() }
-        }
+        stopWatch.setActive(true)
         guard !working else { return component }
         switch status {
         case nil:
@@ -269,6 +284,17 @@ enum TerminationSignalSender {
         }
     }
 
+    /// Outside a severe block the status is read only once, when the block ends.
+    nonisolated static func readsStatusWhenIdle(wasArmed: Bool) -> Bool { wasArmed }
+
+    /// Re-register only when `launchctl kickstart` ran in this round and found the job loaded. A job
+    /// missing from launchd while BTM says `.enabled` was removed by `launchctl bootout`: an exit the
+    /// spec offers (§7), never undone here.
+    nonisolated static func mayReregister(kickstartStatus: Int32?) -> Bool {
+        guard let kickstartStatus else { return false }
+        return kickstartStatus != launchctlServiceNotFound
+    }
+
     /// SIGCONT to every stopped pid of the list. True when one was resumed.
     nonisolated static func resumeStopped(_ pids: [Int32], isStopped: (Int32) -> Bool = GuardProcesses.isStopped,
                                           resume: (Int32) -> Void = { _ = kill($0, SIGCONT) }) -> Bool {
@@ -285,6 +311,12 @@ enum TerminationSignalSender {
     }
 
     // MARK: Work off the main thread
+
+    /// Cheap check of the known guard pid. Runs on `queue` only (the 2 s timer while armed).
+    private nonisolated func resumeKnownGuardOnQueue() {
+        guard let pid = guardPID, Self.isGuardProcess(pid, executable: guardExecutable) else { return }
+        if Self.resumeStopped([pid]) { NSLog("Goalong: blocking guard was stopped, resumed") }
+    }
 
     fileprivate enum Outcome { case running, unreachable, notArmed }
 
@@ -395,9 +427,16 @@ enum TerminationSignalSender {
             if resumeStoppedGuards(), ping() == .running { return (.enabled, .running) }
             guard !overrideActive() else { return (.enabled, .notInstalled) }
             let mayKickstart = DispatchQueue.main.sync { MainActor.assumeIsolated { client?.claimKickstart() ?? false } }
+            var kickstartStatus: Int32?
             if mayKickstart {
-                kickstart()
+                kickstartStatus = kickstart()
                 if ping() == .running { return (.enabled, .running) }
+            }
+            guard GoalongGuardClient.mayReregister(kickstartStatus: kickstartStatus) else {
+                if kickstartStatus == GoalongGuardClient.launchctlServiceNotFound {
+                    return (.enabled, .failed("Service de protection arrêté jusqu’à la prochaine ouverture de session."))
+                }
+                return (service.status, .failed("Service de protection injoignable."))
             }
             let allowed = !overrideActive() && DispatchQueue.main.sync { MainActor.assumeIsolated { client?.claimReregister() ?? false } }
             if allowed {
@@ -452,13 +491,6 @@ enum TerminationSignalSender {
             return value
         }
 
-        /// Cheap check of the known guard pid, on every refresh while armed (throttled by the client).
-        func resumeKnownGuard() {
-            guard let client, let pid = client.guardPID,
-                  GoalongGuardClient.isGuardProcess(pid, executable: client.guardExecutable) else { return }
-            if GoalongGuardClient.resumeStopped([pid]) { NSLog("Goalong: blocking guard was stopped, resumed") }
-        }
-
         /// After a ping timeout: every process of this bundle's guard executable, by exact path.
         func resumeStoppedGuards() -> Bool {
             guard let client else { return false }
@@ -466,15 +498,17 @@ enum TerminationSignalSender {
         }
 
         /// `launchctl kickstart` without `-k`: starts the agent if launchd holds it stopped, never kills it.
-        func kickstart() {
+        /// Returns launchctl's exit status (113: the label is not loaded), nil when it could not run.
+        func kickstart() -> Int32? {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
             process.arguments = ["kickstart", "gui/\(getuid())/\(label)"]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
-            guard (try? process.run()) != nil else { return }
+            guard (try? process.run()) != nil else { return nil }
             process.waitUntilExit()
             Thread.sleep(forTimeInterval: 0.5)
+            return process.terminationStatus
         }
 
         final class Box: @unchecked Sendable { var value: Outcome?; var pid: Int32? }

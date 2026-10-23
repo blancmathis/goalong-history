@@ -720,10 +720,10 @@
                 sessionEnd: sessionEnd)
             if let release {
                 let files = GoalongGuardFiles.standard
-                // Only while the guard is armed: nothing to write for a member without a severe block.
-                if files.markerExists() {
+                // Only while a guard may be armed: nothing to write for a member without a severe block.
+                if GoalongGuardFiles.guardMayBeArmed(files) {
                     files.writeRelease(GuardRelease(pid: getpid(), reason: release, writtenAt: Date().timeIntervalSince1970,
-                                                    bootTime: GuardSystem.bootTime()))
+                                                    bootTime: GuardSystem.bootTime(), bootSession: GuardSystem.bootSession()))
                 }
             }
             BackgroundContinuityController.shared.stop(reason: reason)

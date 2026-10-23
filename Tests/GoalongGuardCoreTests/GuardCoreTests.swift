@@ -120,6 +120,58 @@ extension GuardDecisionTests {
         XCTAssertNil(arming.markerDate)
     }
 
+    /// K2-kill-02: one honoured session end per cooldown; the next death with a session_end token is relaunched.
+    func testASessionEndOutsideItsAllowanceIsRelaunched() {
+        let release = GuardRelease(pid: 42, reason: GuardRelease.sessionEnd, writtenAt: 999_999, bootTime: 900_000)
+        let death = GuardInput.Death(pid: 42, at: 1_000_000)
+        XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.release = release; $0.sessionEndAllowed = false }),
+                       .relaunch(after: 0))
+        let userQuit = GuardRelease(pid: 42, reason: GuardRelease.userQuit, writtenAt: 999_999, bootTime: 900_000)
+        XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.release = userQuit; $0.sessionEndAllowed = false }),
+                       .exit(0), "a user quit is never limited")
+        XCTAssertEqual(GuardDecision.sessionEndCooldown, 600)
+    }
+
+    /// K2-kill-04: the boot session id decides; boot times only when one side lacks it.
+    func testTheBootSessionIdNamesTheBootWhateverTheClockDoes() {
+        XCTAssertTrue(GuardDecision.sameBoot(42, "A", 7242, "A"), "boot time shifted by a clock change")
+        XCTAssertFalse(GuardDecision.sameBoot(42, "A", 42, "B"), "another boot at the same second")
+        XCTAssertTrue(GuardDecision.sameBoot(42, nil, 42.5, "B"), "older file: boot time fallback")
+        XCTAssertFalse(GuardDecision.sameBoot(42, "", 900, "B"))
+        let state = GuardState(build: "b", armed: true, endContinuous: 500, markerDate: 1_000_000, bootTime: 42, bootSession: "A")
+        XCTAssertNotNil(GuardArming.restored(from: state, bootTime: 42 + 7200, bootSession: "A", continuous: 100))
+        XCTAssertNil(GuardArming.restored(from: state, bootTime: 42, bootSession: "B", continuous: 100))
+        let token = GuardRelease(pid: 42, reason: GuardRelease.userQuit, writtenAt: 950_000, bootTime: 900_000, bootSession: "A")
+        XCTAssertEqual(GuardDecision.decide(input { $0.release = token; $0.bootTime = 907_200; $0.bootSession = "A" }), .exit(0))
+        XCTAssertEqual(GuardDecision.decide(input { $0.release = token; $0.bootSession = "B" }), .relaunch(after: 0))
+        let session = GuardSystem.bootSession()
+        XCTAssertEqual(session.count, 36, "kern.bootsessionuuid is a UUID")
+        XCTAssertEqual(session, GuardSystem.bootSession())
+    }
+
+    /// K2-kill-03: the app's SIGSTOP check of its guard runs on its own timer, only while active.
+    func testAPeriodicCheckRunsOnlyWhileActive() {
+        let counter = Counter()
+        let check = GuardPeriodicCheck(queue: DispatchQueue(label: "periodic-test"), interval: 0.05) { counter.add() }
+        XCTAssertFalse(check.isActive)
+        check.setActive(true)
+        check.setActive(true)
+        XCTAssertTrue(check.isActive)
+        usleep(400_000)
+        XCTAssertGreaterThanOrEqual(counter.value, 3)
+        check.setActive(false)
+        XCTAssertFalse(check.isActive)
+        let stopped = counter.value
+        usleep(200_000)
+        XCTAssertEqual(counter.value, stopped)
+    }
+
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock(); private var count = 0
+        func add() { lock.withLock { count += 1 } }
+        var value: Int { lock.withLock { count } }
+    }
+
     func testAPreviousGuardsMemoryIsRestoredOnlyForThisBootAndAFutureEnd() {
         let state = GuardState(build: "b", armed: true, endContinuous: 500, markerDate: 1_000_000, bootTime: 42)
         XCTAssertEqual(GuardArming.restored(from: state, bootTime: 42.5, continuous: 100),

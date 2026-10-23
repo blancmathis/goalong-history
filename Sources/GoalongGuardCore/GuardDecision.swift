@@ -27,9 +27,13 @@ public struct GuardArming: Equatable, Sendable {
     }
 
     /// Memory of a previous guard process of this boot (`guard-state.json`), when it still lies ahead.
-    public static func restored(from state: GuardState?, bootTime: Double, continuous: TimeInterval) -> GuardArming? {
+    /// The boot is named by `kern.bootsessionuuid` when both sides have it: a clock change shifts
+    /// `kern.boottime` by the same amount and must not erase the memory.
+    public static func restored(from state: GuardState?, bootTime: Double, bootSession: String = "",
+                                continuous: TimeInterval) -> GuardArming? {
         guard let state, let end = state.endContinuous, let boot = state.bootTime,
-              GuardDecision.sameBoot(boot, bootTime), end > continuous, end <= continuous + GuardFiles.maximumArming
+              GuardDecision.sameBoot(boot, state.bootSession, bootTime, bootSession),
+              end > continuous, end <= continuous + GuardFiles.maximumArming
         else { return nil }
         return GuardArming(endContinuous: end, markerDate: state.markerDate.map { Date(timeIntervalSince1970: $0) })
     }
@@ -57,9 +61,13 @@ public struct GuardInput: Equatable, Sendable {
     public var leasesInLastHour = 0
     /// The 30 s session-end wait for this death is over and the guard still lives.
     public var sessionEndWaitOver = false
+    /// False when another death's `session_end` was honoured less than `sessionEndCooldown` ago: a logout
+    /// cancelled by another app must not open a 30 s hole again and again.
+    public var sessionEndAllowed = true
     /// Delay the relaunch budget imposes, in seconds from now.
     public var budgetDelay: TimeInterval = 0
     public var bootTime: Double = 0
+    public var bootSession = ""
     public var now: Double = 0
 
     public struct Death: Equatable, Sendable {
@@ -84,6 +92,8 @@ public enum GuardAction: Equatable, Sendable {
 
 public enum GuardDecision {
     public static let sessionEndWait: TimeInterval = 30
+    /// At most one honoured `session_end` per this many seconds (continuous time) in one guard process.
+    public static let sessionEndCooldown: TimeInterval = 600
     /// A token counts only if written at most this long before the death.
     public static let tokenFreshness: TimeInterval = 10
     public static let leasesPerHour = 3
@@ -93,7 +103,9 @@ public enum GuardDecision {
         if let pid = input.alivePID { return .watch(pid) }
         if let release = validRelease(input) {
             if release.reason == GuardRelease.userQuit { return .exit(0) }
-            if release.reason == GuardRelease.sessionEnd, !input.sessionEndWaitOver { return .waitForSessionEnd(sessionEndWait) }
+            if release.reason == GuardRelease.sessionEnd, input.sessionEndAllowed, !input.sessionEndWaitOver {
+                return .waitForSessionEnd(sessionEndWait)
+            }
         }
         if let lease = validLease(input) { return .waitForLease(until: lease.until) }
         return .relaunch(after: max(0, input.budgetDelay))
@@ -104,7 +116,8 @@ public enum GuardDecision {
     static func validRelease(_ input: GuardInput) -> GuardRelease? {
         guard let release = input.release else { return nil }
         guard let death = input.death else {
-            return release.reason == GuardRelease.userQuit && sameBoot(release.bootTime, input.bootTime) ? release : nil
+            return release.reason == GuardRelease.userQuit
+                && sameBoot(release.bootTime, release.bootSession, input.bootTime, input.bootSession) ? release : nil
         }
         guard release.pid == death.pid, release.writtenAt <= death.at + 1,
               death.at - release.writtenAt <= tokenFreshness,
@@ -122,4 +135,10 @@ public enum GuardDecision {
     }
 
     static func sameBoot(_ a: Double, _ b: Double) -> Bool { a > 0 && b > 0 && abs(a - b) < 2 }
+
+    /// The boot session id decides when both sides have one; older files fall back to `kern.boottime`.
+    static func sameBoot(_ timeA: Double, _ sessionA: String?, _ timeB: Double, _ sessionB: String) -> Bool {
+        if let sessionA, !sessionA.isEmpty, !sessionB.isEmpty { return sessionA == sessionB }
+        return sameBoot(timeA, timeB)
+    }
 }

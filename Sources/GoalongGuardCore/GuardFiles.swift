@@ -9,10 +9,13 @@ public struct GuardRelease: Codable, Equatable, Sendable {
     public var reason: String
     /// Unix seconds.
     public var writtenAt: Double
-    /// `kern.boottime`, Unix seconds.
+    /// `kern.boottime`, Unix seconds. Moves with the wall clock: only a fallback for `bootSession`.
     public var bootTime: Double
-    public init(pid: Int32, reason: String, writtenAt: Double, bootTime: Double) {
+    /// `kern.bootsessionuuid`: names this boot whatever the clock does. nil in tokens of older builds.
+    public var bootSession: String?
+    public init(pid: Int32, reason: String, writtenAt: Double, bootTime: Double, bootSession: String? = nil) {
         self.pid = pid; self.reason = reason; self.writtenAt = writtenAt; self.bootTime = bootTime
+        self.bootSession = bootSession
     }
 }
 
@@ -50,10 +53,12 @@ public struct GuardState: Codable, Equatable, Sendable {
     public var endContinuous: Double?
     public var markerDate: Double?
     public var bootTime: Double?
+    public var bootSession: String?
     public init(build: String, armed: Bool, lastRelaunch: Double? = nil, gapMs: Int? = nil, budget: String = "normal",
-                endContinuous: Double? = nil, markerDate: Double? = nil, bootTime: Double? = nil) {
+                endContinuous: Double? = nil, markerDate: Double? = nil, bootTime: Double? = nil, bootSession: String? = nil) {
         self.build = build; self.armed = armed; self.lastRelaunch = lastRelaunch; self.gapMs = gapMs; self.budget = budget
         self.endContinuous = endContinuous; self.markerDate = markerDate; self.bootTime = bootTime
+        self.bootSession = bootSession
     }
 }
 
@@ -228,6 +233,16 @@ public enum GuardSystem {
         guard let resolved = realpath(url.path, nil) else { return url }
         defer { free(resolved) }
         return URL(fileURLWithPath: String(cString: resolved), isDirectory: url.hasDirectoryPath)
+    }
+
+    /// `kern.bootsessionuuid`: a new value at each boot, unchanged when the clock is set (unlike
+    /// `kern.boottime`, which XNU shifts with the wall clock). Empty when unreadable.
+    public static func bootSession() -> String {
+        var size = 0
+        guard sysctlbyname("kern.bootsessionuuid", nil, &size, nil, 0) == 0, size > 1, size <= 128 else { return "" }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("kern.bootsessionuuid", &buffer, &size, nil, 0) == 0 else { return "" }
+        return String(cString: buffer)
     }
 
     /// `kern.boottime` in Unix seconds; 0 when unreadable.

@@ -20,12 +20,15 @@ public struct GuardEnvironment {
     /// True when the guard's own executable was replaced (update): exit 75 so launchd starts the new one.
     public var binaryReplaced: () -> Bool = { false }
     public var bootTime: () -> Double = GuardSystem.bootTime
+    public var bootSession: () -> String = GuardSystem.bootSession
     public var log: (String) -> Void = { _ in }
     public var build: String = "unknown"
     /// Delay before a retry when LaunchServices still returns the dying instance (relauncher model).
     public var retryDelay: TimeInterval = 0.35
     /// Interval of the SIGSTOP check while the app runs.
     public var stopCheckInterval: TimeInterval = 2
+    /// Wait after an honoured `session_end` (tests shorten it).
+    public var sessionEndWait: TimeInterval = GuardDecision.sessionEndWait
 
     public init(locateApp: @escaping () -> Int32?, launch: @escaping (@escaping (Int32?, Error?) -> Void) -> Void) {
         self.locateApp = locateApp; self.launch = launch
@@ -65,6 +68,8 @@ public final class GuardEngine {
     private var relaunching = false
     private var leaseTimes: [TimeInterval] = []
     private var leaseHonoured = false
+    /// Last honoured `session_end`: the dead pid and the continuous time of that death.
+    private var sessionEndHonoured: (pid: Int32, at: TimeInterval)?
     private var finished = false
     private var lastState: GuardState?
     private var started = false
@@ -80,6 +85,7 @@ public final class GuardEngine {
             started = true
             // A previous guard process of this boot was killed while armed: keep its memory (clock changes).
             if let memory = GuardArming.restored(from: files.readState(), bootTime: environment.bootTime(),
+                                                 bootSession: environment.bootSession(),
                                                  continuous: environment.continuous()) {
                 arming = memory
                 environment.log("armed window restored from the previous guard")
@@ -124,9 +130,13 @@ public final class GuardEngine {
         if let lease = input.lease { input.leaseProofAlive = environment.proofAlive(lease.reason) }
         leaseTimes.removeAll { continuous - $0 >= 3600 }
         input.leasesInLastHour = leaseTimes.count - (leaseHonoured ? 1 : 0)
-        input.sessionEndWaitOver = death != nil && continuous - deathContinuous >= GuardDecision.sessionEndWait
+        input.sessionEndWaitOver = death != nil && continuous - deathContinuous >= environment.sessionEndWait
+        input.sessionEndAllowed = sessionEndHonoured.map { honoured in
+            honoured.pid == death?.pid || deathContinuous - honoured.at >= GuardDecision.sessionEndCooldown
+        } ?? true
         input.budgetDelay = budget.delay(at: continuous)
         input.bootTime = environment.bootTime()
+        input.bootSession = environment.bootSession()
         input.now = wall.timeIntervalSince1970
         let action = GuardDecision.decide(input)
         switch action {
@@ -139,8 +149,12 @@ public final class GuardEngine {
             startPolling()
             if delay <= 0 { relaunch() } else { scheduleWake(after: delay) }
         case .waitForSessionEnd:
+            if let pid = death?.pid, sessionEndHonoured?.pid != pid {
+                sessionEndHonoured = (pid, deathContinuous)
+                environment.log("session end announced: waiting \(environment.sessionEndWait) s")
+            }
             startPolling()
-            scheduleWake(after: deathContinuous + GuardDecision.sessionEndWait - continuous)
+            scheduleWake(after: deathContinuous + environment.sessionEndWait - continuous)
         case .waitForLease(let until):
             if !leaseHonoured { leaseHonoured = true; leaseTimes.append(continuous); environment.log("waiting for a planned relaunch") }
             startPolling()
@@ -284,6 +298,8 @@ public final class GuardEngine {
             state.endContinuous = end
             state.markerDate = arming.markerDate?.timeIntervalSince1970
             state.bootTime = environment.bootTime()
+            let session = environment.bootSession()
+            state.bootSession = session.isEmpty ? nil : session
         }
         guard state != lastState else { return }
         lastState = state
@@ -338,4 +354,37 @@ public enum GuardProcesses {
             pid > 0 && pid != excluding && (path(of: pid).map { $0 == wanted || $0 == executable } ?? false) && isAlive(pid)
         }
     }
+}
+
+/// A repeating check on its own queue, on only while asked (the app's SIGSTOP check of its guard while
+/// armed). `setActive` may be called from any thread; the timer lives on `queue`.
+public final class GuardPeriodicCheck: @unchecked Sendable {
+    public let interval: TimeInterval
+    private let queue: DispatchQueue
+    private let check: @Sendable () -> Void
+    /// Touched on `queue` only.
+    private var timer: DispatchSourceTimer?
+
+    public init(queue: DispatchQueue, interval: TimeInterval, check: @escaping @Sendable () -> Void) {
+        self.queue = queue; self.interval = interval; self.check = check
+    }
+
+    deinit { timer?.cancel() }
+
+    public func setActive(_ active: Bool) {
+        queue.async { [self] in
+            if active {
+                guard timer == nil else { return }
+                let source = DispatchSource.makeTimerSource(queue: queue)
+                source.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(Int(interval * 500)))
+                source.setEventHandler { [check] in check() }
+                timer = source
+                source.activate()
+            } else {
+                timer?.cancel(); timer = nil
+            }
+        }
+    }
+
+    public var isActive: Bool { queue.sync { timer != nil } }
 }

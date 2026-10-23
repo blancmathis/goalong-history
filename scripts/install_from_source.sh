@@ -515,8 +515,14 @@ refuse_install_during_severe_block() {
   until="$(goalong_marker_until "$blocking/guard-until")"
   if (( until == 0 )); then
     if (( $(goalong_marker_until "$blocking/locked-until") > 0 )); then
-      echo "A locked block is scheduled: Goalong History reopens at the end of this installation and resumes it."
+      echo "A locked block is active or scheduled: Goalong History reopens at the end of this installation and resumes it."
     fi
+    return 0
+  fi
+  # No installed copy (forced uninstall without --purge-data): no guard can reopen anything during the
+  # copy. The new app reads the block from its kept data and arms its own guard again.
+  if [[ ! -d "/Applications/$APP_NAME.app" && ! -d "$HOME/Applications/$APP_NAME.app" ]]; then
+    echo "A locked block is active, but no installed Goalong History was found: installing; the block resumes at launch."
     return 0
   fi
   if [[ "${GOALONG_INSTALL_DURING_LOCK:-}" != 1 ]]; then

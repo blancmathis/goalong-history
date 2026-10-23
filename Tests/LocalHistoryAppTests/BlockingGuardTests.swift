@@ -191,6 +191,36 @@ import XCTest
         XCTAssertFalse(GuardProcesses.isStopped(pid))
     }
 
+    /// K2-safe-02: `launchctl bootout` (spec §7) is an exit; a job missing from launchd is never re-registered.
+    func testABootoutIsNeverUndoneByAReregister() {
+        XCTAssertFalse(GoalongGuardClient.mayReregister(kickstartStatus: GoalongGuardClient.launchctlServiceNotFound))
+        XCTAssertFalse(GoalongGuardClient.mayReregister(kickstartStatus: nil), "no kickstart in this round: no proof")
+        XCTAssertTrue(GoalongGuardClient.mayReregister(kickstartStatus: 0), "loaded but unreachable: proven failure")
+        XCTAssertEqual(GoalongGuardClient.launchctlServiceNotFound, 113)
+    }
+
+    /// K2-safe-01: outside a severe block the client reads the BTM status only when a block has just ended.
+    func testIdleClientReadsTheStatusOnlyWhenABlockEnds() {
+        XCTAssertFalse(GoalongGuardClient.readsStatusWhenIdle(wasArmed: false))
+        XCTAssertTrue(GoalongGuardClient.readsStatusWhenIdle(wasArmed: true))
+    }
+
+    /// K2-safe-05: a guard killed while armed keeps its memory in guard-state.json. After an early end by
+    /// password (marker removed), a quit must still leave the user_quit token it will read.
+    func testAQuitTokenIsDueWhileAKilledGuardsMemoryRemains() throws {
+        let root = try store().directory
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let files = GoalongGuardFiles.files(for: root)
+        XCTAssertFalse(GoalongGuardFiles.guardMayBeArmed(files), "no block, no guard: nothing to write")
+        XCTAssertTrue(files.writeState(GuardState(build: "b", armed: false)))
+        XCTAssertFalse(GoalongGuardFiles.guardMayBeArmed(files), "a guard that finished cleanly")
+        XCTAssertTrue(files.writeState(GuardState(build: "b", armed: true, endContinuous: 500, markerDate: 1, bootTime: 2)))
+        XCTAssertTrue(GoalongGuardFiles.guardMayBeArmed(files), "a guard killed while armed")
+        XCTAssertTrue(files.writeState(GuardState(build: "b", armed: false)))
+        XCTAssertTrue(files.writeMarker(until: now.addingTimeInterval(600)))
+        XCTAssertTrue(GoalongGuardFiles.guardMayBeArmed(files))
+    }
+
     func testLevelLabels() {
         var state = BlockingProtectionState()
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Standard")
