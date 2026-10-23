@@ -11,6 +11,28 @@ import LocalHistoryCore
     @Published var trackingDetail = "Chargement de l’état du suivi…"
     /// Title shown above the detail when the tracking needs attention, so the cause is never lost to truncation.
     var attentionTitle: String? { if case .attention(let title) = tracking { return title }; return nil }
+    /// A one-tap repair that goes with the attention message or the unavailable-focus message.
+    enum PanelFix {
+        case permissions, modules, recording, app
+        var label: String {
+            switch self {
+            case .permissions: return "Réparer…"
+            case .modules: return "Activer dans Réglages"
+            case .recording: return "Ouvrir Réglages"
+            case .app: return "Ouvrir Goalong"
+            }
+        }
+    }
+    @Published var attentionFix: PanelFix?
+    @Published var focusUnavailableFix: PanelFix?
+    func perform(_ fix: PanelFix) {
+        switch fix {
+        case .permissions: onOpenSettingsPane(.permissions)
+        case .modules: openModulesSettings()
+        case .recording: onOpenSettingsPane(.recording)
+        case .app: openApp()
+        }
+    }
     /// Consent is off: the header action opens Réglages instead of pausing.
     @Published var consentOff = false
     /// Global pause is on: the header action opens Réglages, where the pause is lifted.
@@ -174,6 +196,7 @@ import LocalHistoryCore
         let pause = globalPause()
         consentOff = !pause.blocksActivity && !localHistoryEnabled()
         globalPaused = pause.blocksActivity
+        attentionFix = nil
         // Same order as the classic menu: global pause, then consent (consent off also sets the manual pause), then manual pause.
         if pause.blocksActivity {
             if case .paused = tracking {} else { pausedSince = nil }
@@ -193,6 +216,7 @@ import LocalHistoryCore
                    .accessibilityContextUnavailable, .inputTapUnavailable, .awaitingInputEvidence].contains(health()) {
             let health = health()
             tracking = .attention(health.frenchTitle); trackingDetail = health.frenchDetail
+            if health != .storageUnavailable && health != .awaitingInputEvidence { attentionFix = .permissions }
         } else if !state.isCapturing || suppression() == .sessionUnavailable {
             tracking = .attention("Session Mac inactive"); trackingDetail = "Le Mac est verrouillé, en veille ou indisponible"
         } else if suppression() == .accessibilityUnavailable {
@@ -244,10 +268,12 @@ import LocalHistoryCore
         let observing = state.isCapturing && localHistoryEnabled() && !globalPause().blocksActivity
         let controller = enabled ? concentration() : nil
         focusAvailable = enabled && observing && controller != nil
-        focusUnavailableReason = !enabled ? "Activez Concentration dans l’app."
+        focusUnavailableReason = !enabled ? "Activez Concentration dans Réglages."
             : !localHistoryEnabled() ? "Activez l’enregistrement dans Réglages."
             : !observing ? "Reprenez le suivi pour lancer une séance."
             : controller == nil ? "Concentration indisponible. Ouvrez l’app." : nil
+        focusUnavailableFix = !enabled ? .modules : !localHistoryEnabled() ? .recording
+            : (observing && controller == nil) ? .app : nil
         guard let controller else { focusRun = nil; return }
         controller.refresh()
         guard let session = controller.currentSession, let phase = controller.phase, phase.kind != .ended else {

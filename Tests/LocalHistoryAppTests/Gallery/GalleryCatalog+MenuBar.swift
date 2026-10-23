@@ -35,7 +35,8 @@ extension GalleryCatalog {
             },
             state("focus-indisponible") { model in
                 model.focusAvailable = false
-                model.focusUnavailableReason = "Activez le module Concentration dans Réglages."
+                model.focusUnavailableReason = "Activez Concentration dans Réglages."
+                model.focusUnavailableFix = .modules
             },
             state("ambiance-chargement") { model in model.ambianceLoading = true },
             state("ambiance-erreur") { model in
@@ -44,6 +45,7 @@ extension GalleryCatalog {
             state("permission-manquante") { model in
                 model.tracking = .attention("Accessibilité requise")
                 model.trackingDetail = "Autorisez Goalong dans Accessibilité pour reprendre le suivi."
+                model.attentionFix = .permissions
             },
             state("blocage-verrouille") { model in
                 model.blockLists[0] = .init(id: "social", title: "Réseaux sociaux", detail: "Verrouillé jusqu’à 16:34",
@@ -105,7 +107,7 @@ extension GalleryCatalog {
             onTogglePause: {}, onOpenSection: { _ in }, onOpenDay: {}, onShowClassicMenu: {})
         let sources = [("ambre", "Ambre", AmbianceSource.Kind.focus, true), ("canopee", "Canopée", .focus, true),
                        ("meridien", "Méridien", .focus, true), ("sillage", "Sillage", .focus, true),
-                       ("filigrane", "Filigrane", .focus, true), ("orbit", "Orbit", .focus, false),
+                       ("filigrane", "Filigrane", .focus, true), ("orbit", "Orbite", .focus, false),
                        ("lagoon", "Lagon", .relax, true), ("rain", "Pluie douce", .texture, true), ("ocean", "Marée", .texture, true)]
             .map { AmbianceSource(id: $0.0, title: $0.1, kind: $0.2, isAvailable: $0.3) }
         model.tracking = .active; model.trackingDetail = "Enregistrement local actif"

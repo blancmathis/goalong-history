@@ -34,7 +34,7 @@ final class MenuBarPanelRenderingTests: XCTestCase {
         }
         let sources = [
             source("ambre", "Ambre", .focus), source("canopee", "Canopée", .focus), source("meridien", "Méridien", .focus),
-            source("sillage", "Sillage", .focus), source("filigrane", "Filigrane", .focus), source("orbit", "Orbit", .focus, false),
+            source("sillage", "Sillage", .focus), source("filigrane", "Filigrane", .focus), source("orbit", "Orbite", .focus, false),
             source("lagoon", "Lagon", .relax), source("rain", "Pluie douce", .texture), source("ocean", "Marée", .texture),
         ]
         func base() {

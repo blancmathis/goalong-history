@@ -195,7 +195,7 @@ struct AmbiancePageContent: View {
     }
 
     @ViewBuilder private var downloaded: some View {
-        let kept = packs.filter { $0.status == .installed || $0.hasLeftovers }
+        let kept = Self.keptPacks(packs)
         if !kept.isEmpty {
             GoalongDisclosureGroup {
                 LHCard(padding: 0) {
@@ -252,6 +252,14 @@ struct AmbiancePageContent: View {
         panel.message = "Choisissez des fichiers audio ou un dossier. Goalong les lit là où ils sont."
         guard panel.runModal() == .OK else { return }
         actions.addFiles(panel.urls)
+    }
+
+    /// Packs the member can remove. A pack still downloading is not on this Mac yet: it has no size to show.
+    static func keptPacks(_ packs: [AmbiancePackState]) -> [AmbiancePackState] {
+        packs.filter {
+            if case .downloading = $0.status { return false }
+            return $0.status == .installed || $0.hasLeftovers
+        }
     }
 
     static func megabytes(_ bytes: Int64) -> String { "\(Int((Double(bytes) / 1_000_000).rounded())) Mo" }
@@ -384,8 +392,12 @@ private struct AmbianceTile: View {
                 HStack(spacing: 6) {
                     Text(source.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                         .minimumScaleFactor(0.85)
-                        .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.tertiaryText)
+                        .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.secondaryText)
                     Spacer(minLength: 0)
+                    if !source.isAvailable {
+                        Image(systemName: "arrow.down.circle").font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
+                    }
                     if playing {
                         Image(systemName: "speaker.wave.2.fill").font(.system(size: 11)).foregroundStyle(LHTheme.accent)
                     }
@@ -431,9 +443,10 @@ private struct AmbianceFileRow: View {
                         .frame(width: 22)
                     Text(source.title).font(.system(size: 13, weight: playing ? .semibold : .regular))
                         .lineLimit(1).truncationMode(.middle)
-                        .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.tertiaryText)
+                        .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.secondaryText)
                     if !source.isAvailable {
-                        Text("Introuvable").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                        Label("Fichier introuvable", systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.warning)
                     }
                     Spacer(minLength: 12)
                 }
@@ -453,6 +466,7 @@ private struct AmbianceFileRow: View {
             .accessibilityLabel("Retirer \(source.title)")
         }
         .padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
+        .background(playing ? LHTheme.selectionBackground : Color.clear)
     }
 }
 

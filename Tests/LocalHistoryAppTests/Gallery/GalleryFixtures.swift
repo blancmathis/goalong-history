@@ -186,7 +186,7 @@ import SwiftUI
 
     static let focusSources = [("ambre", "Ambre"), ("canopee", "Canopée"), ("meridien", "Méridien"), ("sillage", "Sillage"),
                                ("filigrane", "Filigrane"), ("confluence", "Confluence"), ("sanctuaire", "Sanctuaire"),
-                               ("gravite", "Gravité"), ("orbit", "Orbit"), ("sonar", "Sonar")]
+                               ("gravite", "Gravité"), ("orbit", "Orbite"), ("sonar", "Sonar")]
     static let relaxSources = [("lagoon", "Lagon"), ("stillwater", "Eau calme"), ("hearth", "Foyer"), ("reverie", "Rêverie"),
                                ("driftwood", "Bois flotté")]
     static let textureSources = [("rain", "Pluie douce"), ("ocean", "Marée"), ("brown", "Velours brun"), ("pink", "Air rose"),
