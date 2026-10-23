@@ -216,6 +216,9 @@
         private let receiptsDirectory: URL
         private let limits: Limits
         private let now: () -> Date
+        /// Size shown as « Espace utilisé par Goalong ». Nil measures the data folder; the gallery fixes it, since
+        /// its files carry the time they were written and their size moves by a few bytes between runs.
+        private let storageBytesOverride: (() -> Int64)?
         private let monotonicNow: () -> TimeInterval
         private let afterJournalReadForTesting: ((URL) -> Void)?
         private let cacheLock = NSLock()
@@ -242,6 +245,7 @@
             limits: Limits = .production,
             fileManager: FileManager = .default,
             now: @escaping () -> Date = Date.init,
+            storageBytes: (() -> Int64)? = nil,
             monotonicNow: @escaping () -> TimeInterval = {
                 ProcessInfo.processInfo.systemUptime
             },
@@ -268,6 +272,7 @@
             self.limits = limits
             self.fileManager = fileManager
             self.now = now
+            storageBytesOverride = storageBytes
             self.monotonicNow = monotonicNow
             self.afterJournalReadForTesting = afterJournalReadForTesting
         }
@@ -2396,6 +2401,7 @@
         private func calculateStorageBytes(
             cancellation: @escaping () -> Bool
         ) -> Int64? {
+            if let storageBytesOverride { return storageBytesOverride() }
             guard
                 let enumerator = fileManager.enumerator(
                     at: rootDirectory,

@@ -73,7 +73,7 @@ struct GoalongAnalyticsContent: View {
     private var focusSeconds: Double { current.focusSeconds(minimumMinutes: focusMinutes) }
     private var sparse: Bool { current.activeSeconds > 0 && current.activeSeconds < 600 }
     private var summary: GoalongActivitySummary {
-        GoalongActivitySummary(period: current, previous: payload.previous, now: payload.isPreview ? payload.updatedAt : Date())
+        GoalongActivitySummary(period: current, previous: payload.previous, now: payload.updatedAt)
     }
     private var usageItems: [GoalongActivityUsageItem] {
         GoalongActivityProjection.usage(current, grouping: grouping, previous: payload.previous)
