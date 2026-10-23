@@ -131,7 +131,7 @@ final class GoalongWebsitePairingCoordinator {
             return true
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Connexion à relancer"
+            alert.messageText = "Liaison non confirmée"
             alert.informativeText = goalongUserMessage(error)
             alert.addButton(withTitle: "Fermer")
             _ = await present(alert, on: window)

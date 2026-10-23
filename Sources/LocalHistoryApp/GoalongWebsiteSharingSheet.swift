@@ -317,7 +317,7 @@ struct GoalongSharingSelector: View {
             }.buttonStyle(LHQuietButtonStyle()).font(.caption)
             if uncheckedResults.count > roomLeft {
                 let left = uncheckedResults.count - roomLeft
-                Text("\(Self.selectionCap) éléments au plus par envoi : \(left) \(left > 1 ? "résultats non cochés" : "résultat non coché").")
+                Text("\(Self.selectionCap) éléments au plus par envoi : \(left) \(left > 1 ? "résultats ne pourront pas être cochés" : "résultat ne pourra pas être coché").")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !absent.isEmpty {
