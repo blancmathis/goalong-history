@@ -386,7 +386,7 @@
         let date: Date
         let onChange: (Date) -> Void
         @State private var showsCalendar = false
-        @State private var calendarDate = Date()
+        @State private var calendarDate = GoalongToday.now
 
         var body: some View {
             Button {
@@ -405,7 +405,7 @@
             .help("Choisir un jour dans le calendrier")
             .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {
                 VStack(alignment: .trailing, spacing: 12) {
-                    DatePicker("Jour", selection: $calendarDate, in: ...Date(), displayedComponents: .date)
+                    DatePicker("Jour", selection: $calendarDate, in: ...GoalongToday.now, displayedComponents: .date)
                         .labelsHidden()
                         .datePickerStyle(.graphical)
                         .environment(\.locale, GoalongUIFormat.locale)

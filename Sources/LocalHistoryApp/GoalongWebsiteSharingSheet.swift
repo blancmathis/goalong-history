@@ -136,7 +136,7 @@ import LocalHistoryQueryCLI
     private var selection: some View {
         VStack(alignment: .leading, spacing: 18) {
             DatePicker(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer", selection: $model.draft.date,
-                       in: ...Date(), displayedComponents: .date).datePickerStyle(.field)
+                       in: ...GoalongToday.now, displayedComponents: .date).datePickerStyle(.field)
                 .accessibilityIdentifier("sharing-selected-date")
             if model.loading {
                 ProgressView("Lecture sur ce Mac…").font(.system(size: 13))

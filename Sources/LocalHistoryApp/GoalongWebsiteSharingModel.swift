@@ -7,7 +7,7 @@ import LocalHistoryQueryCLI
 struct GoalongWebsiteShareDraft: Equatable, Codable {
     enum Delivery: String, CaseIterable, Codable { case once, daily }
     var delivery: Delivery = .once
-    var date = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+    var date = Calendar.current.date(byAdding: .day, value: -1, to: GoalongToday.now) ?? GoalongToday.now
     var deviceIDs = Set<String>()
     var applicationIDs = Set<String>()
     var anonymousApplicationIDs = Set<String>()

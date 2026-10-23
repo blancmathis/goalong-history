@@ -273,12 +273,12 @@ struct GoalongProfileStudio: View {
     @StateObject private var model: GoalongProfileStudioModel
     @StateObject private var connection = GoalongSiteAnalysisModel()
     @StateObject private var windowHost = GoalongWebsiteWindowHost()
-    @State private var start = Calendar.current.startOfDay(for: Date())
-    @State private var end = Date()
+    @State private var start = Calendar.current.startOfDay(for: GoalongToday.now)
+    @State private var end = GoalongToday.now
     @State private var rich = false
     @State private var computer = true
     @State private var conversations = false
-    @State private var conversationsFrom = Calendar.current.date(byAdding: .day, value: -6, to: Calendar.current.startOfDay(for: Date()))!
+    @State private var conversationsFrom = Calendar.current.date(byAdding: .day, value: -6, to: Calendar.current.startOfDay(for: GoalongToday.now))!
     @State private var modules = Set(GoalongProfileAnalysis.modules.filter { $0 != "ai" })
     @State private var exclusions = ""
     @State private var aliases = ""
@@ -287,9 +287,9 @@ struct GoalongProfileStudio: View {
          model: GoalongProfileStudioModel? = nil) {
         self.onSend = onSend; self.onClose = onClose; self.localOnly = localOnly
         _model = StateObject(wrappedValue: model ?? GoalongProfileStudioModel())
-        let day = Calendar.current.startOfDay(for: initialDay ?? Date())
+        let day = Calendar.current.startOfDay(for: initialDay ?? GoalongToday.now)
         _start = State(initialValue: day)
-        _end = State(initialValue: min(Date(), Calendar.current.date(byAdding: .day, value: 1, to: day) ?? Date()))
+        _end = State(initialValue: min(GoalongToday.now, Calendar.current.date(byAdding: .day, value: 1, to: day) ?? GoalongToday.now))
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

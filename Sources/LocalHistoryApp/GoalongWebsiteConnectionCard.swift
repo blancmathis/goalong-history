@@ -135,7 +135,7 @@ struct GoalongWebsiteConnectionSheet: View {
     @AppStorage("goalong.website.origin") private var origin = ""
     // Only the user's chosen file path is remembered. The token itself stays in that file.
     @AppStorage("goalong.website.tokenFilePath") private var tokenFilePath = ""
-    @State private var date = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+    @State private var date = Calendar.current.date(byAdding: .day, value: -1, to: GoalongToday.now) ?? GoalongToday.now
     @State private var includeApps = false
     @State private var includeHourly = false
     @State private var includeWebsites = false
@@ -239,7 +239,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     if preparedAnalysis == nil {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("2. Choisir vos données").font(.headline)
-                        DatePicker("Journée enregistrée", selection: $date, in: ...Date(), displayedComponents: .date)
+                        DatePicker("Journée enregistrée", selection: $date, in: ...GoalongToday.now, displayedComponents: .date)
                         Text("Les noms d’appareils et les totaux de temps d’écran sont inclus. Les sources doivent être activées dans Goalong. Rien n’est collecté ni analysé pendant l’export.")
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

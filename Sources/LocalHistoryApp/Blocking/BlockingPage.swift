@@ -416,7 +416,7 @@ struct BlockingMeter: View {
     @State private var selected: Set<UUID> = []
     @State private var wholeMac = false
     @State private var span: Span = .minutes(60)
-    @State private var until = Calendar.current.date(byAdding: .hour, value: 2, to: Date()) ?? Date()
+    @State private var until = Calendar.current.date(byAdding: .hour, value: 2, to: GoalongToday.now) ?? GoalongToday.now
     @State private var lock: BlockLock = .free
     @State private var freezeMode: BlockFreeze.Mode = .shield
     @State private var kept: [BlockAppRule] = []
@@ -425,7 +425,7 @@ struct BlockingMeter: View {
     @State private var picking = false
     /// « Plus tard »: a one-time block that starts by itself.
     @State private var later = false
-    @State private var startAt = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date()
+    @State private var startAt = Calendar.current.date(byAdding: .hour, value: 1, to: GoalongToday.now) ?? GoalongToday.now
 
     init(controller: BlockingController, now: Date, later: Bool = false, lock: BlockLock = .free) {
         self.controller = controller

@@ -13,7 +13,7 @@ struct GoalongActivityNavigation: Equatable {
     private(set) var period: Int
     private(set) var returnContext: Context?
 
-    init(day: Date = Date(), period: Int = 1, calendar: Calendar = .current) {
+    init(day: Date = GoalongToday.now, period: Int = 1, calendar: Calendar = .current) {
         self.day = calendar.startOfDay(for: day)
         self.period = [1, 7, 28].contains(period) ? period : 1
     }
@@ -24,7 +24,7 @@ struct GoalongActivityNavigation: Equatable {
         return DateInterval(start: start, end: end)
     }
 
-    mutating func selectDay(_ value: Date, now: Date = Date(), calendar: Calendar = .current) {
+    mutating func selectDay(_ value: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         day = min(calendar.startOfDay(for: value), calendar.startOfDay(for: now))
         returnContext = nil
     }
@@ -35,19 +35,19 @@ struct GoalongActivityNavigation: Equatable {
         returnContext = nil
     }
 
-    mutating func step(_ direction: Int, now: Date = Date(), calendar: Calendar = .current) {
+    mutating func step(_ direction: Int, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         guard direction == -1 || direction == 1,
               let next = calendar.date(byAdding: .day, value: direction * period, to: day) else { return }
         selectDay(next, now: now, calendar: calendar)
     }
 
-    mutating func today(now: Date = Date(), calendar: Calendar = .current) {
+    mutating func today(now: Date = GoalongToday.now, calendar: Calendar = .current) {
         day = calendar.startOfDay(for: now)
         period = 1
         returnContext = nil
     }
 
-    mutating func openDay(_ value: Date, now: Date = Date(), calendar: Calendar = .current) {
+    mutating func openDay(_ value: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         if period > 1 { returnContext = Context(day: day, period: period) }
         day = min(calendar.startOfDay(for: value), calendar.startOfDay(for: now))
         period = 1

@@ -37,7 +37,9 @@ extension GalleryCatalog {
             dashboard("activite/permission-manquante", section: .overview,
                       environment: { $0.permissions = .galleryMissing }, fixture: .recordingOn),
             dashboard("fenetre/interactions-indisponibles", section: .overview,
-                      environment: { $0.inputTapWorks = false }, fixture: .recordingOn),
+                      environment: { $0.inputTapWorks = false }, fixture: .recordingOn,
+                      note: "seul signe : le libellé tronqué « Interactions indispo… » et le point rouge de la barre "
+                          + "latérale ; le texte complet du statut n’est pas montré (C3-couverture-03)"),
             dashboard("fenetre/pause-globale", section: .overview, paused: true),
             dashboard("fenetre/stockage-plein", section: .overview, environment: { $0.storageFailure = .diskFull },
                       fixture: .recordingOn),
@@ -55,7 +57,9 @@ extension GalleryCatalog {
             // Definition and the member's own verdicts (agent not allowed: allowing it would start a ChatGPT
             // account check, a process). The review is open on the gallery day, Atlas unfolded: --full shows the
             // contexts by task with their verdicts (C2-couverture-03).
-            dashboard("mon-travail/classement-avec-donnees", section: .work, sizes: [.window, .full(1240)],
+            // --full only: at window size the review sits below the fold and the image matches
+            // definition-et-donnees (C3-couverture-04).
+            dashboard("mon-travail/classement-avec-donnees", section: .work, sizes: [.full(1240)],
                       fixture: .classified, reached: { (GoalongWorkReviewModel.lastLoadedRowCount ?? 0) > 0 },
                       configure: { _, _ in GoalongWorkPage.galleryReviewFocusTask = "Atlas" }),
             dashboard("mon-travail/definition-et-donnees", section: .work, fixture: .realistic, configure: { _, _ in
