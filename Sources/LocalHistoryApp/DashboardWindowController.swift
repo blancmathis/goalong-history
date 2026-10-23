@@ -95,19 +95,29 @@
             }
         }
 
-        override func loadWindow() {
-            let rootView = LocalHistoryDashboardView(model: viewModel)
-            let hostingController = NSHostingController(rootView: rootView)
-            let window = NSWindow(contentViewController: hostingController)
+        /// Real size of the dashboard window, and its smallest size.
+        static let defaultContentSize = NSSize(width: 1240, height: 790)
+        static let minimumContentSize = NSSize(width: 900, height: 620)
+
+        /// The look of the dashboard window (title, title bar, background, sizes). Shared with the
+        /// test gallery, which renders the same window without ever showing it.
+        static func configure(_ window: NSWindow) {
             window.title = ProductIdentity.mainWindowTitle
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.titleVisibility = .visible
             window.titlebarAppearsTransparent = true
             window.backgroundColor = NSColor(LHTheme.pageBackground)
             window.isMovableByWindowBackground = false
-            window.minSize = NSSize(width: 900, height: 620)
-            window.setContentSize(NSSize(width: 1240, height: 790))
+            window.minSize = minimumContentSize
+            window.setContentSize(defaultContentSize)
             window.isReleasedWhenClosed = false
+        }
+
+        override func loadWindow() {
+            let rootView = LocalHistoryDashboardView(model: viewModel)
+            let hostingController = NSHostingController(rootView: rootView)
+            let window = NSWindow(contentViewController: hostingController)
+            Self.configure(window)
             window.level = .normal
             window.collectionBehavior = [.managed, .fullScreenPrimary, .participatesInCycle]
             window.animationBehavior = .documentWindow

@@ -137,6 +137,7 @@ enum SupportSourceAllowlist {
         "GoalongChatGPTSettings.swift",
         "GoalongClipboardWriter.swift",
         "GoalongControls.swift",
+        "GoalongDefaultsEnvironment.swift",
         "GoalongDevChannelViews.swift",
         "GoalongDeveloperFileMonitor.swift",
         "GoalongDeveloperModel.swift",

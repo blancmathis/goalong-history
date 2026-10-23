@@ -7,8 +7,13 @@
         @State private var activityNavigation = GoalongActivityNavigation()
         /// Activité's days stay read while the window is open, so coming back to the page
         /// shows them at once; closing the window releases them.
-        @StateObject private var activity = GoalongAnalyticsModel()
+        @StateObject private var activity: GoalongAnalyticsModel
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        init(model: DashboardViewModel) {
+            _model = ObservedObject(wrappedValue: model)
+            _activity = StateObject(wrappedValue: GoalongAnalyticsModel(reader: model.analyticsReader))
+        }
 
         var body: some View {
             Group {
@@ -337,8 +342,7 @@
         }
 
         private static var version: String {
-            let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            return "v\(value ?? "0.6.0-dev")"
+            "v\(ProductIdentity.shortVersion ?? "0.6.0-dev")"
         }
     }
 

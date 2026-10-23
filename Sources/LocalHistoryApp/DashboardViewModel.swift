@@ -177,6 +177,12 @@
         private let refreshScheduler: DashboardRefreshScheduler
         private let dataReader: DashboardDataReader
         private let shareBuilder = SharePackageBuilder()
+        /// Clock, preferences and free-space reader: real ones in the app, fixed ones in tests and the gallery.
+        let now: () -> Date
+        private let defaults: UserDefaults
+        private let availableBytes: () -> Int64?
+        /// Activité's reader: the shared one in the app, so reopening the window shows the days already read.
+        let analyticsReader: GoalongAnalyticsReader
         private let dataQueue = DispatchQueue(label: "ai.goalong.localhistory.dashboard-data", qos: .userInitiated)
         private let metadataQueue = DispatchQueue(
             label: "ai.goalong.localhistory.dashboard-metadata",
@@ -216,7 +222,11 @@
             onReloadConfiguration: @escaping () -> Bool = { false },
             onResetConfiguration: @escaping () throws -> String? = { nil },
             refreshScheduler: DashboardRefreshScheduler = DashboardRefreshScheduler(),
-            dataReader: DashboardDataReader = DashboardDataReader()
+            dataReader: DashboardDataReader = DashboardDataReader(),
+            now: @escaping () -> Date = Date.init,
+            defaults: UserDefaults = .standard,
+            availableBytes: @escaping () -> Int64? = { StorageHealth.availableBytes() },
+            analyticsReader: GoalongAnalyticsReader = .shared
         ) {
             self.state = state
             self.permissions = permissions
@@ -245,14 +255,18 @@
             self.onResetConfiguration = onResetConfiguration
             self.refreshScheduler = refreshScheduler
             self.dataReader = dataReader
+            self.now = now
+            self.defaults = defaults
+            self.availableBytes = availableBytes
+            self.analyticsReader = analyticsReader
 
-            let today = Calendar.current.startOfDay(for: Date())
+            let today = Calendar.current.startOfDay(for: now())
             selectedDay = today
             snapshot = .empty(day: today)
             let draft = DashboardSettingsDraft(config: configManager.config)
             settingsDraft = draft
             savedSettingsDraft = draft
-            showWelcome = !UserDefaults.standard.bool(forKey: "didShowLocalHistoryConsentOnboardingV5")
+            showWelcome = !defaults.bool(forKey: "didShowLocalHistoryConsentOnboardingV5")
             refreshTrustNotices()
             trustObserver = NotificationCenter.default.addObserver(
                 forName: DeviceTrustState.didChange, object: nil, queue: .main
@@ -315,7 +329,7 @@
         func refreshTrustNotices() {
             trustNotices = [
                 DeviceTrustState.shared.sealingSuspendedNotice,
-                DeviceIdentityRotation.load()?.notice,
+                DeviceIdentityRotation.load(defaults: defaults)?.notice,
             ].compactMap { $0 }
         }
 
@@ -338,7 +352,7 @@
         }
 
         var isTodaySelected: Bool {
-            Calendar.current.isDateInToday(selectedDay)
+            Calendar.current.isDate(selectedDay, inSameDayAs: now())
         }
 
         var filteredSessions: [ActivitySession] {
@@ -504,6 +518,13 @@
             updateRefreshSchedule()
         }
 
+        /// Tests: waits until the data and metadata queues are idle, then lets queued main-thread work run.
+        func waitForPendingWorkForTesting() {
+            dataQueue.sync {}
+            metadataQueue.sync {}
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+
         func dashboardDidBecomeHidden(discardContents: Bool = true) {
             guard dashboardIsVisible else {
                 if discardContents { discardVisibleSnapshot() }
@@ -558,7 +579,7 @@
         }
 
         func dismissWelcome() {
-            UserDefaults.standard.set(true, forKey: "didShowLocalHistoryConsentOnboardingV5")
+            defaults.set(true, forKey: "didShowLocalHistoryConsentOnboardingV5")
             showWelcome = false
         }
 
@@ -937,9 +958,9 @@
                 runtimeState = .storageUnavailable(healthSnapshot.storageFailureKind ?? .unavailable)
             }
 
-            if freeDiskCheckedAt.map({ Date().timeIntervalSince($0) >= 60 }) ?? true {
-                freeDiskCheckedAt = Date()
-                let free = StorageHealth.availableBytes()
+            if freeDiskCheckedAt.map({ now().timeIntervalSince($0) >= 60 }) ?? true {
+                freeDiskCheckedAt = now()
+                let free = availableBytes()
                 if free != freeDiskBytes { freeDiskBytes = free }
             }
 

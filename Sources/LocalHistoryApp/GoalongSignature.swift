@@ -48,7 +48,19 @@
         @Published private(set) var current: Toast?
         private var dismissal: Task<Void, Never>?
 
+        #if DEBUG
+        /// Test gallery: no toast appears by itself; `setForTesting` shows a fixed one.
+        static var suppressedForTesting = false
+        func setForTesting(_ message: String?, symbol: String = "checkmark") {
+            dismissal?.cancel(); dismissal = nil
+            current = message.map { Toast(message: $0, symbol: symbol) }
+        }
+        #endif
+
         func show(_ message: String, symbol: String = "checkmark") {
+            #if DEBUG
+            if Self.suppressedForTesting { return }
+            #endif
             dismissal?.cancel()
             current = Toast(message: message, symbol: symbol)
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,

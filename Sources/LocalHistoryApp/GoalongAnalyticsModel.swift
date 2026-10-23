@@ -84,13 +84,15 @@ actor GoalongAnalyticsReader {
     private(set) var todayCheckpointBytesHashed: Int64 = 0
     private(set) var todayEventBytesRead: Int64 = 0
     private let root: URL
-    init(root: URL) { self.root = root }
+    /// The real clock in the app; a fixed one in tests and the gallery.
+    private let now: @Sendable () -> Date
+    init(root: URL, now: @escaping @Sendable () -> Date = { Date() }) { self.root = root; self.now = now }
 
     /// Focus reuses the same validated day cache and bounded current-day fold, without
     /// loading recap cards, starting analysis or changing the Activity selection.
     func focusDay(_ day: Date, verdicts: GoalongWorkVerdicts) throws -> GoalongLocalAnalytics.Day {
         try Task.checkCancellation()
-        let value = try days(ending: Calendar.current.startOfDay(for: day), count: 1, now: Date(), calendar: .current)[0]
+        let value = try days(ending: Calendar.current.startOfDay(for: day), count: 1, now: now(), calendar: .current)[0]
         return value.applying(verdicts)
     }
 
@@ -100,7 +102,7 @@ actor GoalongAnalyticsReader {
         // Preview exits before looking at caches, journals, daily reports or project archives.
         if preview { return GoalongAnalyticsPreview.make(ending: day, count: count) }
         _ = try GoalongGlobalPause.admit(in: root)
-        let calendar = Calendar.current, now = Date()
+        let calendar = Calendar.current, now = self.now()
         let count = [1, 7, 28].contains(count) ? count : 7
         let last = calendar.startOfDay(for: day)
         if force { cache.removeAll(); lastUse.removeAll(); today = nil }
@@ -206,7 +208,7 @@ actor GoalongAnalyticsReader {
     /// minutes of journal rather than everything written since the last visit.
     func advanceToday() {
         let calendar = Calendar.current
-        let now = Date()
+        let now = self.now()
         _ = try? readToday(calendar.startOfDay(for: now), now: now, calendar: calendar)
     }
 
@@ -317,6 +319,7 @@ actor GoalongAnalyticsReader {
         Task.detached(priority: .utility) { await GoalongAnalyticsReader.shared.advanceToday() }
     }
     init(root: URL) { reader = GoalongAnalyticsReader(root: root) }
+    init(reader: GoalongAnalyticsReader) { self.reader = reader }
     func load(_ request: GoalongAnalyticsLoadRequest, force: Bool = false,
               verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) async {
         guard request.permitsLoading, !Task.isCancelled else { return }

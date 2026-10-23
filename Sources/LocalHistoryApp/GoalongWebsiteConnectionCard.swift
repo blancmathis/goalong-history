@@ -14,6 +14,7 @@ extension Notification.Name {
 /// Explicit pairing and reviewed export. Credentials stay in private files, outside preferences.
 @MainActor struct GoalongWebsiteConnectionCard: View {
     @AppStorage("goalong.website.tokenFilePath") private var tokenPath = ""
+    @Environment(\.goalongDefaults) private var defaults
     @AppStorage("goalong.website.origin") private var origin = ""
     @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
     @State private var showsConnection = false
@@ -53,13 +54,13 @@ extension Notification.Name {
         }
         .onAppear {
             refreshCredential()
-            if UserDefaults.standard.bool(forKey: "goalong.website.openAfterPairing") {
-                UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
+            if defaults.bool(forKey: "goalong.website.openAfterPairing") {
+                defaults.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)
             .merge(with: NotificationCenter.default.publisher(for: .goalongWebsiteShareRequested))) { _ in
-            refreshCredential(); UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
+            refreshCredential(); defaults.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
         }
         .onChange(of: tokenPath) { _ in refreshCredential() }
         .sheet(isPresented: $showsConnection) { GoalongWebsiteSharingSheet().goalongControls() }

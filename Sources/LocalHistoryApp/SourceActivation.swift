@@ -400,6 +400,7 @@ import LocalHistoryCore
         let resumingAfterRestart: Bool
         @StateObject private var flow: SourceActivationFlow
         @Environment(\.dismiss) private var dismiss
+        @Environment(\.goalongDefaults) private var defaults
         @Environment(\.goalongRecordingModel) private var recordingModel
         @State private var showingRecordingReview = false
         @State private var continueAfterRecordingReview = false
@@ -425,7 +426,7 @@ import LocalHistoryCore
         private var needsRestart: Bool {
             PermissionRecoveryAdvice.prefersPrimaryRelaunch(status: access, openedSettings: openedSettings,
                 ready: ready, resumedAfterRestart: resumingAfterRestart,
-                progress: PermissionRecoveryLedger.load(access))
+                progress: PermissionRecoveryLedger.load(access, defaults: defaults))
         }
         private var primaryTitle: String {
             if restarting { return "Préparation du redémarrage…" }

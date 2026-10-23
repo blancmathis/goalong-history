@@ -2111,7 +2111,7 @@
 
                 let nextTimestamp: Date = {
                     if index + 1 < ordered.count { return ordered[index + 1].timestamp }
-                    if Calendar.current.isDateInToday(day) { return min(Date(), dayEnd) }
+                    if Calendar.current.isDate(day, inSameDayAs: now()) { return min(now(), dayEnd) }
                     return min(event.timestamp.addingTimeInterval(60), dayEnd)
                 }()
                 let next = index + 1 < ordered.count ? ordered[index + 1] : nil
@@ -2352,8 +2352,8 @@
         ) -> [TimelineBucket] {
             let calendar = Calendar.current
             let startOfDay = calendar.startOfDay(for: day)
-            let today = calendar.isDateInToday(day)
-            let now = Date()
+            let now = self.now()
+            let today = calendar.isDate(day, inSameDayAs: now)
 
             return (0..<96).map { bucketIndex in
                 let start = startOfDay.addingTimeInterval(TimeInterval(bucketIndex * 15 * 60))

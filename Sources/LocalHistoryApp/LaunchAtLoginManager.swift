@@ -140,10 +140,10 @@
             }
         }
 
-        var suggestedOnboardingPreference: Bool {
+        func suggestedOnboardingPreference(defaults: UserDefaults = .standard) -> Bool {
             let consent = GoalongCapabilityConsentStore.shared.document.consent(for: .launchAtLogin)
             return BackgroundContinuityPreferences.suggestedLoginPreference(
-                storedPreference: UserDefaults.standard.object(forKey: "launchAtLoginPreference") as? Bool,
+                storedPreference: defaults.object(forKey: "launchAtLoginPreference") as? Bool,
                 consentEnabled: consent.enabled,
                 consentWasRecorded: consent.changedAt != nil,
                 systemEnabled: isRegistered

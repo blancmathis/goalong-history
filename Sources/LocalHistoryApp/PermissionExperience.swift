@@ -202,7 +202,7 @@ struct PermissionPrivacyNote: View {
             }
             GoalongDisclosureGroup("Détails de cette installation", isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(Bundle.main.bundleURL.path).font(.system(size: 11, design: .monospaced))
+                    Text(ProductIdentity.bundleURL.path).font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     Text("Une autorisation macOS et votre choix d’enregistrer sont deux contrôles distincts. La réparation ne change ni l’historique, ni les sources, ni les envois.")
                         .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
@@ -263,7 +263,7 @@ struct PermissionPrivacyNote: View {
         let runtime = SupportDiagnosticsRuntime.shared.snapshot()
         advice = PermissionRecoveryAdvice.resolve(accessAvailable: available,
             observationPending: status == .fullDiskAccess ? false : snapshot.observationPending,
-            stableInstallation: PermissionRepair.canResetInstallation(path: Bundle.main.bundleURL.path),
+            stableInstallation: PermissionRepair.canResetInstallation(path: ProductIdentity.bundleURL.path),
             signatureValid: signatureValid,
             runningCopies: NSRunningApplication.runningApplications(withBundleIdentifier: PermissionRepair.bundleIdentifier).count,
             identityChanged: status == .accessibility && runtime[.permissionIdentityChanged] == .flag(true),

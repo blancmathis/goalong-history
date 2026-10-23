@@ -286,6 +286,191 @@ static void cleanOnSignal(int sig) {
     raise(sig);
 }
 
+// Gallery guards (`make gallery`, `GallerySmokeTests`). Installed once at load, active only between
+// GoalongGalleryGuardsBegin() and GoalongGalleryGuardsTake(). While active: ordering a window
+// on screen, presenting a sheet or a modal and creating a status item are refused and recorded;
+// every URL request fails and is counted; launching an NSTask is refused and counted; and
+// +[NSUserDefaults standardUserDefaults] called from the test bundle returns a throwaway suite and
+// is counted, with the stack of the first call. Outside a session every method behaves as before.
+static volatile BOOL galleryActive;
+static NSMutableArray<NSString *> *galleryViolations;
+static NSInteger galleryNetwork, galleryTasks, galleryStandard;
+static NSString *galleryStandardStack;
+static NSUserDefaults *galleryStandardSuite;
+static NSLock *galleryLock;
+static const char *ownImage;
+
+static void galleryRecord(NSString *kind, NSString *detail) {
+    [galleryLock lock];
+    [galleryViolations addObject:[NSString stringWithFormat:@"%@: %@", kind, detail]];
+    [galleryLock unlock];
+    fprintf(stderr, "[gallery-guard] refused %s: %s\n", kind.UTF8String, detail.UTF8String);
+}
+
+static BOOL calledByTestBundle(const void *returnAddress) {
+    Dl_info info;
+    if (!ownImage || !dladdr(returnAddress, &info) || !info.dli_fname) return NO;
+    return strcmp(info.dli_fname, ownImage) == 0;
+}
+
+@interface GoalongGalleryURLProtocol : NSURLProtocol
+@end
+@implementation GoalongGalleryURLProtocol
++ (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    if (!galleryActive) return NO;
+    [galleryLock lock]; galleryNetwork++; [galleryLock unlock];
+    fprintf(stderr, "[gallery-guard] refused request: %s\n", request.URL.absoluteString.UTF8String);
+    return YES;
+}
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
+- (void)startLoading {
+    [self.client URLProtocol:self didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNotConnectedToInternet userInfo:nil]];
+}
+- (void)stopLoading {}
+@end
+
+static NSURLSessionConfiguration *guardedConfiguration(NSURLSessionConfiguration *configuration) {
+    if (!configuration) return configuration;
+    NSMutableArray *classes = [configuration.protocolClasses mutableCopy] ?: [NSMutableArray array];
+    if (![classes containsObject:GoalongGalleryURLProtocol.class]) [classes insertObject:GoalongGalleryURLProtocol.class atIndex:0];
+    configuration.protocolClasses = classes;
+    return configuration;
+}
+
+static IMP replaceClassMethod(Class cls, SEL sel, id block) {
+    return replace(object_getClass(cls), sel, block);
+}
+
+static void installGalleryGuards(void) {
+    galleryViolations = [NSMutableArray array];
+    galleryLock = [[NSLock alloc] init];
+    Dl_info info;
+    if (dladdr((const void *)&installGalleryGuards, &info) && info.dli_fname) ownImage = strdup(info.dli_fname);
+    [NSURLProtocol registerClass:GoalongGalleryURLProtocol.class];
+
+    Class window = NSWindow.class;
+    static void (*orderFront)(id, SEL, id);
+    static void (*orderFrontRegardless)(id, SEL);
+    static void (*makeKeyAndOrderFront)(id, SEL, id);
+    static void (*beginSheet)(id, SEL, NSWindow *, id);
+    static void (*beginCriticalSheet)(id, SEL, NSWindow *, id);
+    orderFront = (void *)replace(window, @selector(orderFront:), ^(NSWindow *w, id sender) {
+        if (galleryActive) { galleryRecord(@"orderFront:", NSStringFromClass(w.class)); return; }
+        orderFront(w, @selector(orderFront:), sender);
+    });
+    orderFrontRegardless = (void *)replace(window, @selector(orderFrontRegardless), ^(NSWindow *w) {
+        if (galleryActive) { galleryRecord(@"orderFrontRegardless", NSStringFromClass(w.class)); return; }
+        orderFrontRegardless(w, @selector(orderFrontRegardless));
+    });
+    makeKeyAndOrderFront = (void *)replace(window, @selector(makeKeyAndOrderFront:), ^(NSWindow *w, id sender) {
+        if (galleryActive) { galleryRecord(@"makeKeyAndOrderFront:", NSStringFromClass(w.class)); return; }
+        makeKeyAndOrderFront(w, @selector(makeKeyAndOrderFront:), sender);
+    });
+    beginSheet = (void *)replace(window, @selector(beginSheet:completionHandler:), ^(NSWindow *w, NSWindow *sheet, id handler) {
+        if (galleryActive) { galleryRecord(@"beginSheet:completionHandler:", NSStringFromClass(sheet.class)); return; }
+        beginSheet(w, @selector(beginSheet:completionHandler:), sheet, handler);
+    });
+    beginCriticalSheet = (void *)replace(window, @selector(beginCriticalSheet:completionHandler:), ^(NSWindow *w, NSWindow *sheet, id handler) {
+        if (galleryActive) { galleryRecord(@"beginCriticalSheet:completionHandler:", NSStringFromClass(sheet.class)); return; }
+        beginCriticalSheet(w, @selector(beginCriticalSheet:completionHandler:), sheet, handler);
+    });
+
+    static NSModalResponse (*runModalForWindow)(id, SEL, NSWindow *);
+    runModalForWindow = (void *)replace(NSApplication.class, @selector(runModalForWindow:), ^NSModalResponse(NSApplication *a, NSWindow *w) {
+        if (galleryActive) { galleryRecord(@"runModalForWindow:", NSStringFromClass(w.class)); return NSModalResponseAbort; }
+        return runModalForWindow(a, @selector(runModalForWindow:), w);
+    });
+    static NSModalResponse (*alertRunModal)(id, SEL);
+    static void (*alertBeginSheet)(id, SEL, NSWindow *, id);
+    alertRunModal = (void *)replace(NSAlert.class, @selector(runModal), ^NSModalResponse(NSAlert *alert) {
+        if (galleryActive) { galleryRecord(@"NSAlert runModal", alert.messageText ?: @""); return NSAlertFirstButtonReturn; }
+        return alertRunModal(alert, @selector(runModal));
+    });
+    alertBeginSheet = (void *)replace(NSAlert.class, @selector(beginSheetModalForWindow:completionHandler:), ^(NSAlert *alert, NSWindow *w, id handler) {
+        if (galleryActive) { galleryRecord(@"NSAlert beginSheetModalForWindow:", alert.messageText ?: @""); return; }
+        alertBeginSheet(alert, @selector(beginSheetModalForWindow:completionHandler:), w, handler);
+    });
+    static id (*statusItem)(id, SEL, CGFloat);
+    statusItem = (void *)replace(NSStatusBar.class, @selector(statusItemWithLength:), ^id(NSStatusBar *bar, CGFloat length) {
+        if (galleryActive) { galleryRecord(@"NSStatusBar statusItemWithLength:", @"menu bar item"); return nil; }
+        return statusItem(bar, @selector(statusItemWithLength:), length);
+    });
+
+    static BOOL (*launchAndReturnError)(id, SEL, NSError **);
+    static void (*launch)(id, SEL);
+    launchAndReturnError = (void *)replace(NSTask.class, @selector(launchAndReturnError:), ^BOOL(NSTask *task, NSError **error) {
+        if (galleryActive) {
+            [galleryLock lock]; galleryTasks++; [galleryLock unlock];
+            fprintf(stderr, "[gallery-guard] refused NSTask: %s\n", task.executableURL.path.UTF8String ?: "?");
+            if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:EPERM userInfo:nil];
+            return NO;
+        }
+        return launchAndReturnError(task, @selector(launchAndReturnError:), error);
+    });
+    launch = (void *)replace(NSTask.class, @selector(launch), ^(NSTask *task) {
+        if (galleryActive) {
+            [galleryLock lock]; galleryTasks++; [galleryLock unlock];
+            fprintf(stderr, "[gallery-guard] refused NSTask launch: %s\n", task.launchPath.UTF8String ?: "?");
+            return;
+        }
+        launch(task, @selector(launch));
+    });
+
+    static id (*sessionWithConfiguration)(id, SEL, NSURLSessionConfiguration *);
+    static id (*sessionWithConfigurationDelegate)(id, SEL, NSURLSessionConfiguration *, id, NSOperationQueue *);
+    sessionWithConfiguration = (void *)replaceClassMethod(NSURLSession.class, @selector(sessionWithConfiguration:),
+        ^id(id cls, NSURLSessionConfiguration *configuration) {
+            return sessionWithConfiguration(cls, @selector(sessionWithConfiguration:), galleryActive ? guardedConfiguration(configuration) : configuration);
+        });
+    sessionWithConfigurationDelegate = (void *)replaceClassMethod(NSURLSession.class, @selector(sessionWithConfiguration:delegate:delegateQueue:),
+        ^id(id cls, NSURLSessionConfiguration *configuration, id delegate, NSOperationQueue *queue) {
+            return sessionWithConfigurationDelegate(cls, @selector(sessionWithConfiguration:delegate:delegateQueue:),
+                galleryActive ? guardedConfiguration(configuration) : configuration, delegate, queue);
+        });
+
+    static id (*standardDefaults)(id, SEL);
+    standardDefaults = (void *)replaceClassMethod(NSUserDefaults.class, @selector(standardUserDefaults), ^id(id cls) {
+        if (galleryActive && calledByTestBundle(__builtin_return_address(0))) {
+            [galleryLock lock];
+            galleryStandard++;
+            if (!galleryStandardStack) galleryStandardStack = [NSThread.callStackSymbols componentsJoinedByString:@"\n"];
+            NSUserDefaults *suite = galleryStandardSuite;
+            [galleryLock unlock];
+            if (suite) return suite;
+        }
+        return standardDefaults(cls, @selector(standardUserDefaults));
+    });
+}
+
+void GoalongGalleryGuardsBegin(void) {
+    // A fresh, empty suite each session (UUID name: the suite tracker deletes its plist).
+    NSString *name = [@"goalong-gallery-standard-" stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *suite = [[NSUserDefaults alloc] initWithSuiteName:name];
+    [galleryLock lock];
+    [galleryViolations removeAllObjects];
+    galleryNetwork = 0; galleryTasks = 0; galleryStandard = 0; galleryStandardStack = nil;
+    galleryStandardSuite = suite;
+    [galleryLock unlock];
+    galleryActive = YES;
+}
+
+NSDictionary<NSString *, id> *GoalongGalleryGuardsTake(void) {
+    galleryActive = NO;
+    [galleryLock lock];
+    NSDictionary *report = @{
+        @"violations": [galleryViolations copy] ?: @[],
+        @"network": @(galleryNetwork), @"tasks": @(galleryTasks), @"standardDefaults": @(galleryStandard),
+        @"standardStack": galleryStandardStack ?: @"",
+    };
+    [galleryViolations removeAllObjects];
+    galleryNetwork = 0; galleryTasks = 0; galleryStandard = 0; galleryStandardStack = nil;
+    galleryStandardSuite = nil;
+    [galleryLock unlock];
+    return report;
+}
+
+BOOL GoalongGalleryGuardsInstalled(void) { return galleryLock != nil; }
+
 @interface GoalongHeadlessTestSupport : NSObject
 @end
 
@@ -298,6 +483,7 @@ static void cleanOnSignal(int sig) {
     static const int signals[] = {SIGINT, SIGTERM, SIGHUP, SIGABRT, SIGTRAP, SIGSEGV, SIGBUS, SIGILL};
     for (size_t i = 0; i < sizeof signals / sizeof signals[0]; i++) signal(signals[i], cleanOnSignal);
     if ([environment[@"GOALONG_TESTS_VISIBLE"] isEqualToString:@"1"]) return;
+    installGalleryGuards();
     hideWindows();
     blockActivation();
     blockLaunchServices();
