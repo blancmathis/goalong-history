@@ -296,7 +296,7 @@
             return nil
         }
 
-        private static func initial(for appName: String) -> String {
+        static func initial(for appName: String) -> String {
             guard let first = GoalongActivityPresentation.displayName(appName).first else {
                 return "•"
             }
