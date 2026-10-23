@@ -8,7 +8,13 @@ LEGACY_APP_NAME="LocalHistory"
 BUNDLE_ID="ai.goalong.localhistory"
 DATA_DIR="$HOME/Library/Application Support/LocalHistory"
 LOG_DIR="$HOME/Library/Logs/LocalHistory"
+# Goalong Dev (make dev): only --purge-data touches it, since that option also removes LocalHistory-Dev.
+DEV_APP_PATH="$HOME/Applications/Goalong Dev.app"
+DEV_EXECUTABLE_NAME="Goalong History Dev"
+DEV_BUNDLE_ID="$BUNDLE_ID.dev"
+DEV_DATA_DIR="$DATA_DIR-Dev"
 PURGE_DATA=false
+TCC_SERVICES=(Accessibility ListenEvent SystemPolicyAllFiles Calendar Reminders)
 
 # Ask the running app to quit with SIGTERM: it flushes its history, seals the minute and closes
 # its journal. Wait for it (8 s by default), and only then force it. Names are executable names.
@@ -80,6 +86,29 @@ release_blocking_guard() { # APP_PATH...
   /bin/launchctl bootout "gui/$UID/$BUNDLE_ID.blocking-guard" >/dev/null 2>&1 || true
 }
 
+# The lock end that refuses this run: Goalong's own block, and Goalong Dev's too when its data is purged.
+uninstall_locked_until() { # PURGE_DATA (true|false)
+  local latest value
+  latest="$(goalong_severe_block_until "$DATA_DIR/Blocking")"
+  if [[ "$1" == true ]]; then
+    value="$(goalong_severe_block_until "$DEV_DATA_DIR/Blocking")"
+    if (( value > latest )); then latest="$value"; fi
+  fi
+  echo "$latest"
+}
+
+# --purge-data: Goalong Dev goes first, like the release: its guard (it would reopen Goalong Dev), then the
+# app itself (otherwise it recreates LocalHistory-Dev), then its data, preferences, permissions and key.
+purge_goalong_dev() {
+  ( EXECUTABLE_NAME="$DEV_EXECUTABLE_NAME" BUNDLE_ID="$DEV_BUNDLE_ID"; release_blocking_guard "$DEV_APP_PATH" )
+  quit_running_goalong "$DEV_EXECUTABLE_NAME"
+  rm -rf "$DEV_APP_PATH" "$DEV_DATA_DIR" "$HOME/Library/Caches/$DEV_BUNDLE_ID"
+  defaults delete "$DEV_BUNDLE_ID" >/dev/null 2>&1 || true
+  local service
+  for service in "${TCC_SERVICES[@]}"; do tccutil reset "$service" "$DEV_BUNDLE_ID" >/dev/null 2>&1 || true; done
+  while security delete-generic-password -s "goalong.evidence.v1.dev" >/dev/null 2>&1; do :; done
+}
+
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 
 case "${1:-}" in
@@ -97,10 +126,13 @@ esac
 
 # A locked block (Goalong › Blocage) is a commitment: refuse before any effect, until its end.
 if [[ "${GOALONG_UNINSTALL_DURING_LOCK:-}" != 1 ]]; then
-  locked_until="$(goalong_severe_block_until "$DATA_DIR/Blocking")"
+  locked_until="$(uninstall_locked_until "$PURGE_DATA")"
   if (( locked_until > 0 )); then
     echo "A locked block is active until $(date -r "$locked_until" '+%Y-%m-%d %H:%M')." >&2
     echo "Goalong History was not removed. Run this again after that time." >&2
+    if [[ "$PURGE_DATA" == true ]] && (( $(goalong_severe_block_until "$DATA_DIR/Blocking") == 0 )); then
+      echo "The lock belongs to Goalong Dev (--purge-data also removes it). Without --purge-data, Goalong Dev is kept." >&2
+    fi
     echo "To remove it anyway: GOALONG_UNINSTALL_DURING_LOCK=1 ./uninstall.sh" >&2
     exit 3
   fi
@@ -152,18 +184,16 @@ rm -rf "$LOG_DIR"
 
 remove_goalong_cli_link
 
-tccutil reset Accessibility "$BUNDLE_ID" >/dev/null 2>&1 || true
-tccutil reset ListenEvent "$BUNDLE_ID" >/dev/null 2>&1 || true
-tccutil reset SystemPolicyAllFiles "$BUNDLE_ID" >/dev/null 2>&1 || true
-tccutil reset Calendar "$BUNDLE_ID" >/dev/null 2>&1 || true
-tccutil reset Reminders "$BUNDLE_ID" >/dev/null 2>&1 || true
+for service in "${TCC_SERVICES[@]}"; do tccutil reset "$service" "$BUNDLE_ID" >/dev/null 2>&1 || true; done
 
 if [[ "$PURGE_DATA" == true ]]; then
-  rm -rf "$DATA_DIR" "$DATA_DIR-Dev"
+  purge_goalong_dev
+  rm -rf "$DATA_DIR"
   rm -rf "$HOME/Library/Caches/$BUNDLE_ID"
   defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
   while security delete-generic-password -s "goalong.evidence.v1" >/dev/null 2>&1; do :; done
   echo "Goalong History, its permissions, its recorded history, logs, preferences and caches were removed."
+  echo "Goalong Dev ($DEV_APP_PATH), its data, preferences, permissions and evidence key were removed too."
   echo "The device identity key in the Keychain is not removed by this script."
 else
   echo "Goalong History and its permissions were removed."

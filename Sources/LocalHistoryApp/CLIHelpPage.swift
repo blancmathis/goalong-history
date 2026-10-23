@@ -35,7 +35,7 @@
                     ) {
                         StatusPill(
                             title: statusTitle,
-                            symbol: cliIsReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+                            symbol: statusSymbol,
                             tint: cliIsReady ? LHTheme.success : LHTheme.warning
                         )
                     }
@@ -59,9 +59,7 @@
 
         private var readinessBanner: some View {
             GoalongBanner(symbol: "terminal", title: readinessTitle,
-                          detail: cliIsReady
-                              ? "Le lien pointe vers cette version installée de Goalong. Chaque requête se termine après sa réponse, sans processus supplémentaire."
-                              : installationReport.detail) {
+                          detail: readinessDetail) {
                 Button {
                     installationReport = GoalongCLIInstallation.inspect()
                 } label: {
@@ -218,6 +216,15 @@
             case .ready: return "Commande prête"
             case .missing: return "Commande absente"
             case .conflict: return "Conflit de commande"
+            case .development: return "Commande de Goalong installé"
+            }
+        }
+
+        private var statusSymbol: String {
+            switch installationReport.state {
+            case .ready: return "checkmark.circle.fill"
+            case .development: return "info.circle.fill"
+            case .missing, .conflict: return "exclamationmark.triangle.fill"
             }
         }
 
@@ -226,6 +233,19 @@
             case .ready: return "Vérifiée pour le Terminal"
             case .missing: return "Le lien de la commande est absent"
             case .conflict: return "Le lien de la commande n’est pas fiable"
+            case .development: return "La commande goalong sert Goalong installé"
+            }
+        }
+
+        private var readinessDetail: String {
+            switch installationReport.state {
+            case .ready:
+                return "Le lien pointe vers cette version installée de Goalong. Chaque requête se termine après sa réponse, sans processus supplémentaire."
+            case .development:
+                guard let path = installationReport.developmentCLIPath else { return installationReport.detail }
+                return installationReport.detail + " Exécutable de Goalong Dev : " + path
+            case .missing, .conflict:
+                return installationReport.detail
             }
         }
 

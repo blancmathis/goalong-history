@@ -99,6 +99,26 @@ grep -qF 'the installed Goalong predates Goalong Dev' "$WORK/out" || fail 'old r
 echo 'ai.goalong.localhistory ai.goalong.localhistory.dev' >"$OLD_RELEASE/Contents/MacOS/Goalong History"
 GOALONG_DEV_RELEASE_APP="$OLD_RELEASE" "$ROOT/scripts/dev_app.sh" dev >"$WORK/out" 2>&1
 ! grep -qF 'predates' "$WORK/out" || fail 'a family-aware release was reported'
+# Install swap interrupted (Ctrl-C between the two renames): cleanup puts the previous Goalong Dev back.
+# The real cleanup function is extracted and run on a scratch folder; nothing is built or launched.
+SWAP="$WORK/swap"; mkdir -p "$SWAP"
+eval "$(/usr/bin/sed -n '/^cleanup() {$/,/^}$/p' "$ROOT/scripts/dev_app.sh")"
+declare -F cleanup >/dev/null || fail 'cleanup function not found in dev_app.sh'
+(
+  DEV_APP="$SWAP/Goalong Dev.app" NEW_APP="$SWAP/.new" OLD_APP="$SWAP/.old"
+  HAVE_GLOBAL_LOCK=0 HAVE_WORKTREE_LOCK=0
+  mkdir -p "$NEW_APP" "$OLD_APP"; echo previous >"$OLD_APP/id"
+  cleanup
+)
+[[ "$(cat "$SWAP/Goalong Dev.app/id" 2>/dev/null)" == previous && ! -e "$SWAP/.old" && ! -e "$SWAP/.new" ]] || fail 'interrupted swap lost Goalong Dev'
+(
+  DEV_APP="$SWAP/Goalong Dev.app" NEW_APP='' OLD_APP="$SWAP/.old"
+  HAVE_GLOBAL_LOCK=0 HAVE_WORKTREE_LOCK=0
+  mkdir -p "$OLD_APP"; echo installed >"$DEV_APP/id"
+  cleanup
+)
+[[ "$(cat "$SWAP/Goalong Dev.app/id")" == installed && ! -e "$SWAP/.old" ]] || fail 'finished swap kept the old copy'
+unset -f cleanup
 # dev-stop never waits on this worktree's build lock (a make dev may compile for minutes); it waits on the
 # global lock only. Validation-only stop quits nothing. The control tool is renamed in place, never left half built.
 WORKTREE_LOCK="$ROOT/.build/goalong-dev/lock"; mkdir -p "$ROOT/.build/goalong-dev"
@@ -218,6 +238,15 @@ assert "lockedUntil" not in program and all("lock" not in r for r in program["ra
 assert d["lists"][0]["name"] == "n"
 PY
 [[ ! -e "$DEV/Focus" ]] || fail 'BLOCKING=copy created Focus'
+
+# No readable real lists: the message tells whether the dev lists (DATA=keep) stay or Blocking is empty.
+BASE2="$WORK/Other Support"; REAL2="$BASE2/LocalHistory" DEV2="$BASE2/LocalHistory-Dev"
+mkdir -p "$REAL2" "$DEV2/Blocking"; echo dev-lists >"$DEV2/Blocking/blocking.json"
+out="$("$CONTROL" copy-blocking "$REAL2" "$DEV2")"
+[[ "$out" == *"keeps its own block lists"* && "$(cat "$DEV2/Blocking/blocking.json")" == dev-lists ]] || fail "kept dev lists misreported: $out"
+rm -rf "$DEV2/Blocking"
+out="$("$CONTROL" copy-blocking "$REAL2" "$DEV2")"
+[[ "$out" == *"stays empty"* ]] || fail "empty dev blocking misreported: $out"
 
 AFTER="$(cd "$REAL" && find . -print0 | xargs -0 stat -f '%N %m %z' | sort | shasum)"
 [[ "$BEFORE" == "$AFTER" ]] || fail 'the real data folder changed'

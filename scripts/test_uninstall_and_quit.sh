@@ -52,9 +52,11 @@ GOALONG_QUIT_WAIT_TENTHS=5 quit_running_goalong "$POLITE_NAME" "$STUBBORN_NAME"
 /usr/bin/pgrep -x "$POLITE_NAME" >/dev/null && fail "Polite process survived."
 /usr/bin/pgrep -x "$STUBBORN_NAME" >/dev/null && fail "Stubborn process was not forced after the wait."
 (( SECONDS - start < 10 )) || fail "Quit wait was not bounded."
-for needle in '--uninstall-agent-integrations' 'reset SystemPolicyAllFiles' 'reset Calendar' 'reset Reminders'; do
-  grep -qF -- "$needle" "$SCRIPT_DIR/../uninstall.sh" || fail "uninstall.sh does not run: $needle"
+grep -qF -- '--uninstall-agent-integrations' "$SCRIPT_DIR/../uninstall.sh" || fail "uninstall.sh does not run: --uninstall-agent-integrations"
+for service in SystemPolicyAllFiles Calendar Reminders; do
+  [[ " ${TCC_SERVICES[*]} " == *" $service "* ]] || fail "uninstall.sh does not reset: $service"
 done
+grep -qF -- 'tccutil reset "$service" "$BUNDLE_ID"' "$SCRIPT_DIR/../uninstall.sh" || fail "uninstall.sh does not reset the permissions."
 grep -qF -- "grep -qaF -- '--uninstall-agent-integrations'" "$SCRIPT_DIR/../uninstall.sh" || fail "uninstall.sh does not guard the flag call."
 # Behavior of the guard: a stub without the flag must not be run; a stub with the flag must be.
 printf '#!/bin/bash\ntouch "%s/ran-old"\n' "$WORK" > "$WORK/old-stub"
@@ -96,4 +98,35 @@ release_body="$(declare -f release_blocking_guard)"
 [[ "${release_body%%launchctl bootout*}" == *'--unregister-guard'* ]] \
   || fail "--unregister-guard must run before the bootout (it leaves the override token for the running app)."
 [[ "$(cat "$WORK/guard-new")" == --unregister-guard ]] || fail "The guard was not unregistered."
+# 4. --purge-data and Goalong Dev: its lock refuses the purge (not a plain uninstall), and the purge
+# releases its guard, then quits it, then removes its app and data. Every system command is a stub.
+(
+  DATA_DIR="$WORK/purge/LocalHistory" DEV_DATA_DIR="$WORK/purge/LocalHistory-Dev"
+  mkdir -p "$DATA_DIR/Blocking" "$DEV_DATA_DIR/Blocking"
+  [[ "$(uninstall_locked_until true)" == 0 ]] || fail "No lock must allow the purge."
+  echo "$(( $(date +%s) + 600 ))" > "$DEV_DATA_DIR/Blocking/guard-until"
+  (( $(uninstall_locked_until true) > 0 )) || fail "A Goalong Dev lock must refuse --purge-data."
+  [[ "$(uninstall_locked_until false)" == 0 ]] || fail "A Goalong Dev lock must not refuse a plain uninstall."
+) || exit 1
+(
+  LOG="$WORK/purge-log"; : > "$LOG"
+  DEV_APP_PATH="$WORK/purge/Goalong Dev.app" DEV_DATA_DIR="$WORK/purge/LocalHistory-Dev" HOME="$WORK/purge-home"
+  mkdir -p "$DEV_APP_PATH" "$DEV_DATA_DIR"
+  release_blocking_guard() { echo "guard $BUNDLE_ID $EXECUTABLE_NAME $*" >> "$LOG"; }
+  quit_running_goalong() { [[ -d "$DEV_DATA_DIR" ]] && echo "quit $*" >> "$LOG"; }
+  defaults() { echo "defaults $*" >> "$LOG"; }
+  tccutil() { echo "tccutil $*" >> "$LOG"; }
+  security() { echo "security $*" >> "$LOG"; return 1; }
+  purge_goalong_dev
+  [[ ! -e "$DEV_APP_PATH" && ! -e "$DEV_DATA_DIR" ]] || fail "The purge left Goalong Dev or its data."
+  [[ "$(sed -n 1p "$LOG")" == "guard ai.goalong.localhistory.dev Goalong History Dev $DEV_APP_PATH" ]] || fail "The Goalong Dev guard must go first: $(cat "$LOG")"
+  [[ "$(sed -n 2p "$LOG")" == "quit Goalong History Dev" ]] || fail "Goalong Dev must quit before its data goes: $(cat "$LOG")"
+  grep -qx 'defaults delete ai.goalong.localhistory.dev' "$LOG" || fail "Goalong Dev preferences were kept."
+  grep -qx 'tccutil reset Accessibility ai.goalong.localhistory.dev' "$LOG" || fail "Goalong Dev permissions were kept."
+  grep -qx 'security delete-generic-password -s goalong.evidence.v1.dev' "$LOG" || fail "The Goalong Dev evidence key was kept."
+  ! grep -q 'ai.goalong.localhistory ' "$LOG" || fail "The Goalong Dev purge touched the release identity."
+) || exit 1
+purge_line="$(grep -n '^  purge_goalong_dev$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
+data_line="$(grep -n '^  rm -rf "$DATA_DIR"$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
+[[ -n "$purge_line" && -n "$data_line" ]] && (( purge_line < data_line )) || fail "--purge-data must handle Goalong Dev first."
 echo "Uninstall and quit tests passed."
