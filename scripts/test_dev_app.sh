@@ -118,6 +118,14 @@ declare -F cleanup >/dev/null || fail 'cleanup function not found in dev_app.sh'
   cleanup
 )
 [[ "$(cat "$SWAP/Goalong Dev.app/id")" == installed && ! -e "$SWAP/.old" ]] || fail 'finished swap kept the old copy'
+# Interrupted right after `mv NEW_APP DEV_APP`, before NEW_APP=''): the new copy is in place, the old one goes.
+(
+  DEV_APP="$SWAP/Goalong Dev.app" NEW_APP="$SWAP/.new" OLD_APP="$SWAP/.old"
+  HAVE_GLOBAL_LOCK=0 HAVE_WORKTREE_LOCK=0
+  mkdir -p "$OLD_APP"; echo previous >"$OLD_APP/id"; echo renamed >"$DEV_APP/id"
+  cleanup
+)
+[[ "$(cat "$SWAP/Goalong Dev.app/id")" == renamed && ! -e "$SWAP/.old" && ! -e "$SWAP/.new" ]] || fail 'swap interrupted after the rename kept the old copy'
 unset -f cleanup
 # dev-stop never waits on this worktree's build lock (a make dev may compile for minutes); it waits on the
 # global lock only. Validation-only stop quits nothing. The control tool is renamed in place, never left half built.

@@ -97,10 +97,36 @@ uninstall_locked_until() { # PURGE_DATA (true|false)
   echo "$latest"
 }
 
+# Goalong Dev copies installed outside ~/Applications (make dev DEV_APP_DIR=...): the running one, and
+# the ones Spotlight knows by the .dev bundle id. Build products (.build) and swap leftovers are skipped.
+goalong_dev_app_candidates() {
+  local pid executable
+  for pid in $(/usr/bin/pgrep -x "$DEV_EXECUTABLE_NAME" 2>/dev/null); do
+    executable="$(/bin/ps -o comm= -p "$pid" 2>/dev/null)" || continue
+    [[ "$executable" != */Contents/MacOS/* ]] || echo "${executable%/Contents/MacOS/*}"
+  done
+  /usr/bin/mdfind "kMDItemCFBundleIdentifier == '$DEV_BUNDLE_ID'" 2>/dev/null || true
+}
+other_goalong_dev_apps() {
+  local app id
+  goalong_dev_app_candidates | while IFS= read -r app; do
+    [[ "$app" == *.app && "$app" != "$DEV_APP_PATH" && "$app" != */.build/* && "${app##*/}" != .* ]] || continue
+    [[ -d "$app" ]] || continue
+    id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" 2>/dev/null)" || continue
+    [[ "$id" == "$DEV_BUNDLE_ID" ]] && echo "$app"
+  done | /usr/bin/sort -u
+}
+
 # --purge-data: Goalong Dev goes first, like the release: its guard (it would reopen Goalong Dev), then the
 # app itself (otherwise it recreates LocalHistory-Dev), then its data, preferences, permissions and key.
+# A copy installed elsewhere loses its guard and is quit, but stays in place: it is listed in DEV_KEPT_APPS.
+DEV_KEPT_APPS=()
 purge_goalong_dev() {
-  ( EXECUTABLE_NAME="$DEV_EXECUTABLE_NAME" BUNDLE_ID="$DEV_BUNDLE_ID"; release_blocking_guard "$DEV_APP_PATH" )
+  local app
+  DEV_KEPT_APPS=()
+  while IFS= read -r app; do [[ -z "$app" ]] || DEV_KEPT_APPS+=("$app"); done < <(other_goalong_dev_apps)
+  ( EXECUTABLE_NAME="$DEV_EXECUTABLE_NAME" BUNDLE_ID="$DEV_BUNDLE_ID"
+    release_blocking_guard "$DEV_APP_PATH" ${DEV_KEPT_APPS[@]+"${DEV_KEPT_APPS[@]}"} )
   quit_running_goalong "$DEV_EXECUTABLE_NAME"
   rm -rf "$DEV_APP_PATH" "$DEV_DATA_DIR" "$HOME/Library/Caches/$DEV_BUNDLE_ID"
   defaults delete "$DEV_BUNDLE_ID" >/dev/null 2>&1 || true
@@ -194,6 +220,10 @@ if [[ "$PURGE_DATA" == true ]]; then
   while security delete-generic-password -s "goalong.evidence.v1" >/dev/null 2>&1; do :; done
   echo "Goalong History, its permissions, its recorded history, logs, preferences and caches were removed."
   echo "Goalong Dev ($DEV_APP_PATH), its data, preferences, permissions and evidence key were removed too."
+  if (( ${#DEV_KEPT_APPS[@]} > 0 )); then
+    echo "Goalong Dev installed elsewhere was kept (quit, guard removed, data erased). Delete it by hand if needed:"
+    for app in "${DEV_KEPT_APPS[@]}"; do echo "  $app"; done
+  fi
   echo "The device identity key in the Keychain is not removed by this script."
 else
   echo "Goalong History and its permissions were removed."

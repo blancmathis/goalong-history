@@ -126,6 +126,34 @@ release_body="$(declare -f release_blocking_guard)"
   grep -qx 'security delete-generic-password -s goalong.evidence.v1.dev' "$LOG" || fail "The Goalong Dev evidence key was kept."
   ! grep -q 'ai.goalong.localhistory ' "$LOG" || fail "The Goalong Dev purge touched the release identity."
 ) || exit 1
+# A Goalong Dev installed elsewhere (DEV_APP_DIR) loses its guard and is listed as kept; build products,
+# swap leftovers, the release app and the ~/Applications copy are never in that list.
+(
+  LOG="$WORK/purge-elsewhere-log"; : > "$LOG"
+  P="$WORK/dev-elsewhere"; DEV_APP_PATH="$P/home-apps/Goalong Dev.app" DEV_DATA_DIR="$P/LocalHistory-Dev" HOME="$P/home"
+  make_bundle() { # PATH BUNDLE_ID
+    mkdir -p "$1/Contents"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $2" "$1/Contents/Info.plist" >/dev/null
+  }
+  make_bundle "$DEV_APP_PATH" ai.goalong.localhistory.dev
+  make_bundle "$P/Dev/Goalong Dev.app" ai.goalong.localhistory.dev
+  make_bundle "$P/repo/.build/goalong-dev/Goalong Dev.app" ai.goalong.localhistory.dev
+  make_bundle "$P/Dev/.Goalong Dev.app.old-12" ai.goalong.localhistory.dev
+  make_bundle "$P/Release/Goalong History.app" ai.goalong.localhistory
+  mkdir -p "$DEV_DATA_DIR"
+  goalong_dev_app_candidates() {
+    printf '%s\n' "$P/Dev/Goalong Dev.app" "$DEV_APP_PATH" "$P/repo/.build/goalong-dev/Goalong Dev.app" \
+      "$P/Dev/.Goalong Dev.app.old-12" "$P/Release/Goalong History.app" "$P/missing/Goalong Dev.app" "$P/Dev/Goalong Dev.app"
+  }
+  release_blocking_guard() { echo "guard $BUNDLE_ID $*" >> "$LOG"; }
+  quit_running_goalong() { :; }
+  defaults() { :; }; tccutil() { :; }; security() { return 1; }
+  purge_goalong_dev
+  [[ "${#DEV_KEPT_APPS[@]}" == 1 && "${DEV_KEPT_APPS[0]}" == "$P/Dev/Goalong Dev.app" ]] || fail "Kept Goalong Dev copies: ${DEV_KEPT_APPS[*]-}"
+  [[ "$(cat "$LOG")" == "guard ai.goalong.localhistory.dev $DEV_APP_PATH $P/Dev/Goalong Dev.app" ]] || fail "The guard of a Goalong Dev installed elsewhere was kept: $(cat "$LOG")"
+  [[ -d "$P/Dev/Goalong Dev.app" && ! -e "$DEV_APP_PATH" ]] || fail "Only the ~/Applications copy of Goalong Dev may be removed."
+) || exit 1
+grep -qF 'Goalong Dev installed elsewhere was kept' "$SCRIPT_DIR/../uninstall.sh" || fail "A kept Goalong Dev must be reported."
 purge_line="$(grep -n '^  purge_goalong_dev$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
 data_line="$(grep -n '^  rm -rf "$DATA_DIR"$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
 [[ -n "$purge_line" && -n "$data_line" ]] && (( purge_line < data_line )) || fail "--purge-data must handle Goalong Dev first."

@@ -152,7 +152,8 @@ cleanup() {
   if [[ -n "$OLD_APP" && ( -e "$OLD_APP" || -L "$OLD_APP" ) ]]; then
     if [[ ! -e "$DEV_APP" && ! -L "$DEV_APP" ]]; then
       mv -- "$OLD_APP" "$DEV_APP" || true
-    elif [[ -z "$NEW_APP" ]]; then
+    elif [[ -z "$NEW_APP" || ( ! -e "$NEW_APP" && ! -L "$NEW_APP" ) ]]; then
+      # The new bundle is in place (interrupted right after its rename too): the old copy goes.
       rm -rf -- "$OLD_APP" || true
     fi
   fi

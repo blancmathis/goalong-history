@@ -36,7 +36,7 @@
                         StatusPill(
                             title: statusTitle,
                             symbol: statusSymbol,
-                            tint: cliIsReady ? LHTheme.success : LHTheme.warning
+                            tint: statusTint
                         )
                     }
 
@@ -207,16 +207,21 @@
             }
         }
 
-        private var cliIsReady: Bool {
-            installationReport.state == .ready
-        }
-
         private var statusTitle: String {
             switch installationReport.state {
             case .ready: return "Commande prête"
             case .missing: return "Commande absente"
             case .conflict: return "Conflit de commande"
             case .development: return "Commande de Goalong installé"
+            }
+        }
+
+        // Goalong Dev never owns the command: a normal state, shown neutral rather than as a warning.
+        private var statusTint: Color {
+            switch installationReport.state {
+            case .ready: return LHTheme.success
+            case .development: return LHTheme.secondaryText
+            case .missing, .conflict: return LHTheme.warning
             }
         }
 
