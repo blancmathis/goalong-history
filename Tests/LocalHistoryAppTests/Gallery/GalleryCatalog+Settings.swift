@@ -26,6 +26,16 @@ extension GalleryCatalog {
             // Recording on, so the history row asks for the missing access instead of « Fonction désactivée ».
             dashboard("settings/permission-manquante", section: .settings, pane: .permissions,
                       environment: { $0.permissions = .galleryMissing }, fixture: .recordingOn),
+            // R7-C-01: the four switch states side by side; a disabled one must look disabled, on or off.
+            panel("settings-sheets/interrupteurs-etats", width: 360) { _ in
+                AnyView(VStack(alignment: .leading, spacing: 14) {
+                    ForEach(0..<4) { index in
+                        let on = index % 2 == 0, enabled = index < 2
+                        Toggle(on ? (enabled ? "Activé" : "Activé, indisponible") : (enabled ? "Désactivé" : "Désactivé, indisponible"),
+                               isOn: .constant(on)).disabled(!enabled)
+                    }
+                }.toggleStyle(.goalongSwitch).padding(24))
+            },
             panel("settings-sheets/connexion-jev", width: 560) { _ in AnyView(JevConnectionSheet()) },
             panel("settings-sheets/conservation", width: 700, height: 670) { _ in AnyView(HistoryRetentionSettingsSheet()) },
             panel("settings-sheets/partage-site", width: 740, clock: .injected) { _ in AnyView(GoalongWebsiteSharingSheet()) },

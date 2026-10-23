@@ -7,6 +7,15 @@ import XCTest
 
 /// Opt-in production-view renders with synthetic settings and a gamma driver that never touches displays.
 final class BraisePageRenderingTests: XCTestCase {
+    func testScheduleTimeFieldHoldsTypedTimeAsSoonAsItParses() {
+        // R7-B-01: Save keeps the focus on macOS, so the binding must follow the text without a commit.
+        XCTAssertEqual(ScheduleTimeField.minute(typing: "0830", current: 420), 510)
+        XCTAssertEqual(ScheduleTimeField.minute(typing: "8", current: 420), 480)
+        XCTAssertNil(ScheduleTimeField.minute(typing: "083", current: 480), "text that does not parse keeps the held time")
+        XCTAssertNil(ScheduleTimeField.minute(typing: "", current: 480))
+        XCTAssertNil(ScheduleTimeField.minute(typing: "08:00", current: 480), "no write when nothing changes (no reformat loop)")
+    }
+
     func testScheduleTimeFieldParsesTypedTimes() {
         XCTAssertEqual(ScheduleTimeField.parse("07"), 420)
         XCTAssertEqual(ScheduleTimeField.parse("7"), 420)

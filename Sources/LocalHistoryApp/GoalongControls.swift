@@ -285,7 +285,7 @@
             ZStack(alignment: isOn ? .trailing : .leading) {
                 track.fill(isOn ? (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground)
                            : (hovered && isEnabled ? LHTheme.switchTrackHover : LHTheme.switchTrack))
-                    .opacity(isOn && !isEnabled ? 0.6 : 1)
+                    .opacity(isEnabled ? 1 : 0.6)
                 if !isOn || contrast == .increased {
                     track.strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.controlBorder)
                 }
