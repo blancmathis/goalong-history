@@ -769,7 +769,12 @@ private final class HistoryPinnedSourceDirectory {
                 )
             }
             files.append(
-                HistoryPinnedSourceFile(directory: self, name: name)
+                HistoryPinnedSourceFile(
+                    directory: self,
+                    name: name,
+                    firstWrite: Date(timespec: entryStat.st_birthtimespec),
+                    lastWrite: Date(timespec: entryStat.st_mtimespec)
+                )
             )
         }
         guard isStable() else {
@@ -821,6 +826,9 @@ private final class HistoryPinnedSourceDirectory {
 private struct HistoryPinnedSourceFile {
     let directory: HistoryPinnedSourceDirectory
     let name: String
+    /// Birth and modification times seen at listing; nil when unknown.
+    var firstWrite: Date? = nil
+    var lastWrite: Date? = nil
 
     var url: URL {
         directory.url.appendingPathComponent(name, isDirectory: false)
@@ -2145,8 +2153,9 @@ public struct HistoryLocalStoreReader {
             )
             eventFiles = try eventsSource.matchingFiles(extensions: ["jsonl"])
                 .filter { file in
-                    guard let interval = localDayInterval(from: file.name) else { return true }
-                    return interval.end > start && interval.start < endExclusive
+                    dailyFile(
+                        named: file.name, firstWrite: file.firstWrite, lastWrite: file.lastWrite,
+                        mayIntersect: start, endExclusive)
                 }
             pinnedSourceRoot = sourceRoot
             pinnedEventsDirectory = eventsSource
@@ -2324,8 +2333,9 @@ public struct HistoryLocalStoreReader {
                 semanticFiles = try semanticSource.matchingFiles(
                     extensions: ["jsonl", "json"]
                 ).filter { file in
-                    guard let interval = localDayInterval(from: file.name) else { return true }
-                    return interval.end > start && interval.start < endExclusive
+                    dailyFile(
+                        named: file.name, firstWrite: file.firstWrite, lastWrite: file.lastWrite,
+                        mayIntersect: start, endExclusive)
                 }
                 pinnedSemanticDirectory = semanticSource
             } catch HistoryPinnedDirectoryError.absent {
@@ -2734,8 +2744,9 @@ public struct HistoryLocalStoreReader {
                 maximumMatchingFiles: Self.maximumSourceSearchFiles,
                 shouldContinue: hasTimeRemaining
             ).filter { file in
-                guard let interval = localDayInterval(from: file.name) else { return true }
-                return interval.end > start && interval.start < endExclusive
+                dailyFile(
+                    named: file.name, firstWrite: file.firstWrite, lastWrite: file.lastWrite,
+                    mayIntersect: start, endExclusive)
             }
             semanticSourceDirectory = directory
         } catch HistoryPinnedDirectoryError.absent {
@@ -2761,8 +2772,9 @@ public struct HistoryLocalStoreReader {
                 maximumMatchingFiles: Self.maximumSourceSearchFiles,
                 shouldContinue: hasTimeRemaining
             ).filter { file in
-                guard let interval = localDayInterval(from: file.name) else { return true }
-                return interval.end > start && interval.start < endExclusive
+                dailyFile(
+                    named: file.name, firstWrite: file.firstWrite, lastWrite: file.lastWrite,
+                    mayIntersect: start, endExclusive)
             }
             eventSourceDirectory = directory
         } catch {
@@ -3350,22 +3362,49 @@ public struct HistoryLocalStoreReader {
             )
         else { return [] }
         return rows.filter { url in
-            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            let values = try? url.resourceValues(
+                forKeys: [.isRegularFileKey, .creationDateKey, .contentModificationDateKey])
+            guard values?.isRegularFile == true else {
                 return false
             }
             let name = url.lastPathComponent.lowercased()
             guard extensions.contains(where: { suffix in name.hasSuffix(".\(suffix)") }) else {
                 return false
             }
-            guard let interval = localDayInterval(from: name) else {
-                // Unknown legacy names remain readable; only proven-disjoint daily
-                // files may be skipped without decoding their contents.
-                return true
-            }
-            if let start, interval.end <= start { return false }
-            if let end, interval.start > end { return false }
-            return true
+            // Unknown legacy names remain readable; only proven-disjoint daily
+            // files may be skipped without decoding their contents.
+            return dailyFile(
+                named: name, firstWrite: values?.creationDate, lastWrite: values?.contentModificationDate,
+                mayIntersect: start ?? .distantPast, end.map { $0.addingTimeInterval(0.001) } ?? .distantFuture)
         }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    /// A daily file is named after the writer's local day. Read from another time zone, that
+    /// name maps to an interval up to 26 hours away from the hours it really holds (UTC−12 to
+    /// UTC+14). A file whose name falls just outside the window is still read when its own
+    /// write times reach into the window; row timestamps keep the final filter exact.
+    /// Same-zone neighbours are not read: their writes stop (or start) at the day boundary.
+    private func dailyFile(
+        named fileName: String,
+        firstWrite: Date?,
+        lastWrite: Date?,
+        mayIntersect start: Date,
+        _ endExclusive: Date
+    ) -> Bool {
+        guard let interval = localDayInterval(from: fileName) else { return true }
+        if interval.end > start && interval.start < endExclusive { return true }
+        let reach: TimeInterval = 26 * 3_600
+        guard interval.end.addingTimeInterval(reach) > start,
+            interval.start.addingTimeInterval(-reach) < endExclusive
+        else { return false }
+        // The margin ignores late flushes into a closed day and early rows of the next one.
+        let margin: TimeInterval = 3_600
+        if interval.end <= start {
+            guard let lastWrite else { return false }
+            return lastWrite >= start.addingTimeInterval(margin)
+        }
+        guard let firstWrite, let lastWrite, firstWrite <= lastWrite else { return false }
+        return firstWrite.addingTimeInterval(margin) <= endExclusive
     }
 
     private func localDayInterval(from fileName: String) -> DateInterval? {
@@ -3530,4 +3569,10 @@ public struct HistoryLocalStoreReader {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
+}
+
+extension Date {
+    fileprivate init(timespec value: timespec) {
+        self.init(timeIntervalSince1970: Double(value.tv_sec) + Double(value.tv_nsec) / 1_000_000_000)
+    }
 }

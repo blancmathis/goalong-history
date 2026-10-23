@@ -254,7 +254,7 @@ struct GoalongWebsiteConnectionSheet: View {
                             Text("Leurs noms et identifiants sont neutralisés ; leurs durées sont conservées. Les domaines et le récap sont exclus pour éviter de réintroduire ces noms.").font(.caption)
                         }
                         Toggle("Rapport structuré de productivité", isOn: $structuredReport)
-                        Toggle("Calculer le rythme à partir de Computer History", isOn: $includeRhythm)
+                        Toggle("Calculer le rythme à partir de l’historique de ce Mac", isOn: $includeRhythm)
                         if includeRhythm {
                             Button(contextualRhythm == nil ? "Analyser le contexte d’une session…" : "Choisir une autre session…") { showsRhythmStudio = true }
                             if let rhythm = contextualRhythm {
@@ -464,7 +464,7 @@ struct GoalongWebsiteConnectionSheet: View {
                 Button("Produire ou actualiser avec mon agent") { recapRuntime.selectDay(date); recapRuntime.generateRecap() }
                     .disabled(recapRuntime.isGenerating || !GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis))
             }
-            if recapRuntime.isGenerating { ProgressView("L’agent prépare le récap dans Goalong History…") }
+            if recapRuntime.isGenerating { ProgressView("L’agent prépare le récap…") }
             if case .connected = recapRuntime.connectionState {} else { ChatGPTAccountConnectionCard(runtime: recapRuntime) }
             ForEach(recapSections.indices, id: \.self) { index in
                 Toggle(isOn: Binding(get: { selectedRecapSections.contains(index) }, set: { include in

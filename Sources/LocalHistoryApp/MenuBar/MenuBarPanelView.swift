@@ -147,11 +147,19 @@
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(ProductIdentity.displayName).font(.system(size: 13, weight: .semibold))
-                    HStack(spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Circle().fill(dotColor).frame(width: 6, height: 6)
-                        Text(model.trackingDetail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                            .lineLimit(1).truncationMode(.tail)
+                        VStack(alignment: .leading, spacing: 1) {
+                            if let title = model.attentionTitle {
+                                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
+                                    .lineLimit(1).truncationMode(.tail)
+                            }
+                            Text(model.trackingDetail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                .lineLimit(model.attentionTitle == nil ? 1 : 3).truncationMode(.tail)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
+                    .help(model.attentionTitle.map { "\($0) : \(model.trackingDetail)" } ?? model.trackingDetail)
                 }
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 8)

@@ -131,7 +131,7 @@ enum FocusCommitmentFormat {
     static func editUntil(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
         if calendar.isDate(date, inSameDayAs: now) { return "jusqu’à \(BlockingFormat.time(date))" }
         if date == calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) { return "jusqu’à minuit" }
-        return "jusqu’à \(BlockingFormat.moment(date, now: now, calendar: calendar))"
+        return BlockingFormat.untilPhrase(BlockingFormat.moment(date, now: now, calendar: calendar))
     }
 
     /// « Pris à 8:50 », « Pris dimanche à 21:40 ».

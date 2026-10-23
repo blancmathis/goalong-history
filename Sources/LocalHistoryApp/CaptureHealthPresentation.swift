@@ -44,4 +44,42 @@
             }
         }
     }
+
+    extension SuppressionReason {
+        var frenchLabel: String {
+            switch self {
+            case .privateBrowserWindow: return "fenêtre privée"
+            case .excludedApplication: return "app exclue"
+            case .excludedDomain: return "site exclu"
+            case .secureInput: return "saisie sécurisée"
+            case .sessionUnavailable: return "session indisponible"
+            case .manualPause: return "pause manuelle"
+            case .accessibilityUnavailable: return "Accessibilité indisponible"
+            }
+        }
+    }
+
+    extension CaptureEventTapLifecycle {
+        var frenchLabel: String {
+            switch self {
+            case .neverAttempted: return "jamais essayée"
+            case .creationFailed: return "création impossible"
+            case .createdDisabled: return "créée, désactivée"
+            case .createdEnabled: return "active"
+            }
+        }
+    }
+
+    extension BuildSignatureKind {
+        var frenchLabel: String {
+            switch self {
+            case .adHoc: return "signature locale"
+            case .appleDevelopment: return "développement Apple"
+            case .developerID: return "Developer ID"
+            case .appStore: return "App Store"
+            case .other: return "autre signature"
+            case .unsigned: return "non signée"
+            }
+        }
+    }
 #endif

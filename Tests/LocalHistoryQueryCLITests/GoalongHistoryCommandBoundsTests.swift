@@ -166,13 +166,13 @@ final class GoalongHistoryCommandBoundsTests: XCTestCase {
     func testRecentRejectsOutOfRangeMinutesInsteadOfTrapping() throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        for value in ["9223372036854775807", "525601", "0", "-5"] {
+        for value in ["9223372036854775807", "10081", "525601", "0", "-5"] {
             XCTAssertThrowsError(
                 try GoalongQueryCLI.run(arguments: ["--root", root.path, "recent", "--minutes", value]),
                 value
             )
         }
-        XCTAssertNoThrow(try output(["--root", root.path, "recent", "--minutes", "60", "--actions-only"]))
+        XCTAssertNoThrow(try output(["--root", root.path, "recent", "--minutes", "10080", "--actions-only"]))
     }
 
     func testHistoryCommandsRejectUnknownOrExtraArguments() throws {

@@ -88,7 +88,8 @@ struct FocusPlan: Codable, Equatable {
     var day: String
     var intention: String?
     var items: [FocusPlanItem] = []
-    var valid: Bool { schema == 1 && FocusValidation.day(day) && items.count <= 10
+    static let maximumItems = 10
+    var valid: Bool { schema == 1 && FocusValidation.day(day) && items.count <= Self.maximumItems
         && Set(items.map(\.id)).count == items.count && items.allSatisfy(\.valid)
         && (intention.map { FocusValidation.text($0, maximum: 140) } ?? true) }
 }
@@ -135,7 +136,11 @@ struct FocusSettings: Codable, Equatable {
     var valid: Bool { (0..<1440).contains(morningMinute) && (0..<1440).contains(eveningMinute) && limits.valid && jokerSettings.valid
         && (ignoredDistractionTargets.map { $0.count <= 2000 && $0.allSatisfy(\.isValid) && Set($0.map(\.id)).count == $0.count } ?? true) }
 }
-enum FocusFailure: String, Error { case moduleDisabled, invalidArgument, locked, notFound, storageFailed, appNotRunning }
+enum FocusFailure: String, Error {
+    case moduleDisabled, invalidArgument, locked, notFound, storageFailed, appNotRunning
+    /// A day plan holds at most `FocusPlan.maximumItems`; the CLI reports it as invalidArgument.
+    case planFull
+}
 enum FocusValidation {
     static func text(_ value: String, maximum: Int, required: Bool = false) -> Bool {
         value.count <= maximum && value.utf8.count <= maximum * 32 && (!required || !value.trimmingCharacters(in: .whitespaces).isEmpty)

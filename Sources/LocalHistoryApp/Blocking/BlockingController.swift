@@ -66,6 +66,8 @@ import LocalHistoryQueryCLI
     var onObservationRequirementChanged: ((Bool) -> Void)?
     /// Called after each refresh, sample or allowance: the timer capsule re-reads `timerInput`.
     var onTimerInputChanged: (() -> Void)?
+    /// True while the running Concentration session blocks this list, breaks included.
+    var focusSessionUsesList: (UUID) -> Bool = { _ in false }
     private var observing = false
     private var quitAuthorization: (blocks: Set<BlockingActiveBlock>, expires: Date)?
     var hasTimer: Bool { timer != nil }
@@ -310,6 +312,24 @@ import LocalHistoryQueryCLI
         return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
     }
 
+    /// Saves several lists all or none: every list, then the whole document, is checked before the
+    /// first write. With several lists, a refusal names its list.
+    @discardableResult func saveAll(_ values: [BlockList]) -> String? {
+        guard values.count > 1 else { return values.first.flatMap { save($0) } }
+        guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
+        func named(_ value: BlockList, _ reason: String) -> String { "« \(value.name) » : \(reason)" }
+        var candidate = document
+        for value in values {
+            if case .refused(let reason) = editCheck(value) { error = named(value, reason); return error }
+            candidate.lists.removeAll { $0.id == value.id }; candidate.lists.append(value)
+        }
+        guard BlockingRules.validate(candidate) else { error = "Vérifiez les listes, les horaires, le quota et les pauses."; return error }
+        for value in values {
+            if let reason = save(value) { error = named(value, reason); return error }
+        }
+        return nil
+    }
+
     @discardableResult func addException(_ input: String, to listID: UUID) -> BlockingEditCheck {
         guard let pattern = BlockingRules.normalize(input) else { return .refused("Adresse d’exception invalide.") }
         return editRules(listID) { list in
@@ -424,6 +444,7 @@ import LocalHistoryQueryCLI
     func delete(_ id: UUID) {
         guard admitEdit() else { return }
         if isStricterOnly(id) { error = "Une liste verrouillée ne peut pas être supprimée."; return }
+        if focusSessionUsesList(id) { error = "La séance de concentration en cours bloque cette liste. Arrêtez la séance pour la supprimer."; return }
         if document.sessions.contains(where: { $0.start > clock() && $0.lock != .free && $0.listIDs.contains(id) }) {
             error = "Annulez d’abord le blocage programmé avec son défi ou son mot de passe."; return
         }
@@ -1274,6 +1295,7 @@ import LocalHistoryQueryCLI
             hud.update()
             monitor?.blockingSink = { [weak value] target in value?.observe(target) }
             monitor?.blockingKeywords = { [weak value] in value?.activeKeywords ?? [] }
+            value.focusSessionUsesList = { id in ConcentrationRuntime.shared.controller?.currentSession?.blockListIds.contains(id) == true }
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
             controller.refresh(enforceLast: false)

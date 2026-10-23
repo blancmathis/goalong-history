@@ -52,7 +52,7 @@ extension Notification.Name {
     }
     private func revalidateNative() throws {
         do { try Self.revalidate(native: nativeSource, revisions: guardRevisions, root: AppPaths.applicationSupportDirectory) }
-        catch { dropNativeSelection(error.localizedDescription); throw error }
+        catch { dropNativeSelection(goalongUserMessage(error)); throw error }
     }
     var archive: GoalongProfileAnalysis.Archive? { guard let request, let result else { return nil }; return .init(request: request, result: result) }
     func invalidate() { cancel(); request = nil; result = nil; selectedItems = []; consent = false; reviewed = false }
@@ -64,7 +64,7 @@ extension Notification.Name {
         let root = AppPaths.applicationSupportDirectory
         if computer {
             do { guardRevisions = (GoalongPrivacyPolicy.load(in: root).revision, try GoalongGlobalPause.admit(in: root)) }
-            catch { guardRevisions = nil; self.error = error.localizedDescription; return }
+            catch { guardRevisions = nil; self.error = goalongUserMessage(error); return }
         } else { guardRevisions = nil }
         busy = true; error = nil; status = "Lecture locale des événements horodatés…"; let id = operation
         task = Task {
@@ -83,7 +83,7 @@ extension Notification.Name {
                 guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source a été désactivée pendant la lecture.") }
                 try Self.revalidate(native: computer, revisions: guardRevisions, root: root)
                 evidence = rows; selectedEvidence = Set(rows.map(\.id)); busy = false; status = "\(rows.count) événements chargés localement. Préparez ensuite le prompt pour appliquer vos règles. \(selection.1)"
-            } catch { guard operation == id else { return }; self.error = error.localizedDescription; busy = false }
+            } catch { guard operation == id else { return }; self.error = goalongUserMessage(error); busy = false }
         }
     }
     func prepare(day: Date, modules: Set<String>, policy: GoalongProfileAnalysis.Policy, includeConversations: Bool = false) {
@@ -95,7 +95,7 @@ extension Notification.Name {
             request = try GoalongProfileAnalysis.prepare(date: formatter.string(from: day), timezone: TimeZone.current.identifier,
                 evidence: evidence.filter { selectedEvidence.contains($0.id) }, policy: policy, selected: GoalongProfileAnalysis.modules.filter { modules.contains($0) }, includeConversations: includeConversations)
             status = "Prompt préparé. Les termes exclus ont retiré les événements concernés ; les alias ont été appliqués."
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = goalongUserMessage(error) }
     }
     func analyze() {
         guard !busy, consent, let selected = request, sourcesEnabled, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { error = "Relisez la sélection et autorisez son envoi à l’agent."; return }
@@ -120,14 +120,14 @@ extension Notification.Name {
                 try Self.revalidate(native: native, revisions: revisions, root: root)
                 result = try GoalongProfileAnalysis.apply(output, to: selected); busy = false; consent = false
                 status = "Analyse terminée. Elle reste locale. Relisez, corrigez et choisissez éventuellement les résultats à transmettre."
-            } catch { guard operation == id else { return }; self.error = error.localizedDescription; busy = false; consent = false }
+            } catch { guard operation == id else { return }; self.error = goalongUserMessage(error); busy = false; consent = false }
         }
     }
     func importResult(_ url: URL) {
         do { guard let request, sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Préparez ou rouvrez d’abord la sélection locale.") }
             result = try GoalongProfileAnalysis.apply(GoalongProfileAnalysis.parseResult(GoalongSiteAnalysisRequest.readSelectedBytes(url)), to: request)
             selectedItems = []; reviewed = false; status = "Réponse contrôlée. Aucun résultat n’a été envoyé."
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = goalongUserMessage(error) }
     }
     func save() {
         do {
@@ -141,7 +141,7 @@ extension Notification.Name {
             try ChatGPTSecureStorage.writeFileAtomically(bytes, to: url)
             status = "Enregistré dans Goalong History. Aucun envoi au site."
             NotificationCenter.default.post(name: .goalongProfileAnalysisDidSave, object: nil)
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = goalongUserMessage(error) }
     }
     func open(_ url: URL) {
         do {
@@ -151,7 +151,7 @@ extension Notification.Name {
                 let checked = try GoalongProfileAnalysis.apply(saved.result, to: saved.request); request = saved.request; result = checked
             } else { let saved = try GoalongProfileAnalysis.parseRequest(bytes); _ = try saved.context(); request = saved }
             nativeSource = false; richSource = false; conversationSource = false; guardRevisions = nil; evidence = []; selectedEvidence = []; status = "Dossier local rouvert. Relisez-le avant tout envoi."
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = goalongUserMessage(error) }
     }
     func correct(_ id: String, field: String, text: String) {
         guard let index = result?.items.firstIndex(where: { $0.id == id }) else { return }
@@ -302,7 +302,7 @@ struct GoalongProfileStudio: View {
                     GoalongProfileSection("1. Choisir les données") {
                         VStack(alignment: .leading, spacing: 10) {
                             DatePicker("Journée analysée — jusqu’à", selection: $end)
-                            Toggle("Computer History — activité de l’ordinateur", isOn: $computer)
+                            Toggle("Historique de ce Mac — activité de l’ordinateur", isOn: $computer)
                             if computer { DatePicker("Activité depuis", selection: $start); Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich) }
                             Toggle("Conversation History — utiliser les conversations IA comme contexte", isOn: $conversations)
                             if conversations {
@@ -369,7 +369,7 @@ struct GoalongProfileStudio: View {
                                 if let archive = model.archive, let projection = try? GoalongProfileAnalysis.project(archive, selectedIDs: model.selectedItems), let bytes = try? GoalongContextualRhythm.encode(projection) {
                                     GoalongDisclosureGroup("Voir exactement les cartes sélectionnées") { Text(String(decoding: bytes, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                                 }
-                                HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); closeStudio() } catch { model.error = error.localizedDescription } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
+                                HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); closeStudio() } catch { model.error = goalongUserMessage(error) } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
                                 Text("Le partage avec les autres se règle ensuite sur le site, rubrique par rubrique et selon le public choisi.").font(.caption).foregroundStyle(.secondary)
                                 }
                             }.padding(8)
@@ -400,7 +400,7 @@ struct GoalongProfileStudio: View {
                 return .init(term: parts[0].trimmingCharacters(in: .whitespaces), replacement: parts[1].trimmingCharacters(in: .whitespaces))
             }
             model.prepare(day: end.addingTimeInterval(-0.001), modules: modules, policy: .init(excluded_terms: split(exclusions), replacements: replacements, additional_instructions: instructions), includeConversations: conversations)
-        } catch { model.error = error.localizedDescription }
+        } catch { model.error = goalongUserMessage(error) }
     }
     private func chooseFile(_ action: @escaping (URL) -> Void, directory: URL? = nil) {
         guard let window = windowHost.window else { return }
@@ -410,10 +410,10 @@ struct GoalongProfileStudio: View {
     private func saveFile(_ name: String, data: Data) {
         guard let window = windowHost.window else { return }
         let panel = NSSavePanel(); panel.nameFieldStringValue = name
-        panel.beginSheetModal(for: window) { if $0 == .OK, let url = panel.url { do { try GoalongSiteAnalysisExportWriter.write(data, to: url); model.status = "Fichier exporté. Aucun envoi au site." } catch { model.error = error.localizedDescription } } }
+        panel.beginSheetModal(for: window) { if $0 == .OK, let url = panel.url { do { try GoalongSiteAnalysisExportWriter.write(data, to: url); model.status = "Fichier exporté. Aucun envoi au site." } catch { model.error = goalongUserMessage(error) } } }
     }
-    private func exportPrompt(_ r: GoalongProfileAnalysis.Request) { do { model.save(); saveFile("goalong-prompt.txt", data: Data(try r.prompt().utf8)) } catch { model.error = error.localizedDescription } }
-    private func exportCards() { do { saveFile("goalong-cartes.json", data: try model.projection()) } catch { model.error = error.localizedDescription } }
+    private func exportPrompt(_ r: GoalongProfileAnalysis.Request) { do { model.save(); saveFile("goalong-prompt.txt", data: Data(try r.prompt().utf8)) } catch { model.error = goalongUserMessage(error) } }
+    private func exportCards() { do { saveFile("goalong-cartes.json", data: try model.projection()) } catch { model.error = goalongUserMessage(error) } }
     private func importResult() { chooseFile { model.importResult($0) } }
     private func openSaved() { chooseFile({ url in
         model.open(url)
@@ -439,7 +439,7 @@ struct GoalongProfileStudio: View {
                 model.invalidate()
                 for var e in input.evidence { e.id = "e\(model.evidence.count + 1)"; model.evidence.append(e); model.selectedEvidence.insert(e.id) }
                 model.status = "Preuves ajoutées localement. Vérifiez les dates et préparez le prompt pour appliquer vos règles."
-            } catch { model.error = error.localizedDescription }
+            } catch { model.error = goalongUserMessage(error) }
         }
     }
 }

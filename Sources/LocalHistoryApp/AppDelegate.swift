@@ -163,6 +163,7 @@
 
             // Goalong Dev never runs on a LocalHistory-Dev cloned by the old make dev (real device key and tokens).
             if case .legacy(let found) = GoalongDevDataGuard.check(channel: .current, root: AppPaths.applicationSupportDirectory) {
+                NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
                 alert.messageText = GoalongDevDataGuard.refusalTitle
                 alert.informativeText = GoalongDevDataGuard.refusalMessage(found)
@@ -486,6 +487,7 @@
             guard let controller = BlockingRuntime.shared.controller else { return true }
             controller.refresh(enforceLast: false)
             if controller.quitIsLocked {
+                NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
                 alert.messageText = "Un blocage est verrouillé"
                 alert.informativeText = "Goalong reste ouvert jusqu’à la fin du verrou. Vous pouvez fermer la fenêtre."
@@ -520,7 +522,7 @@
                 case .refused(let reason): failure.informativeText = reason
                 case .ok: break
                 }
-                failure.addButton(withTitle: "OK"); failure.runModal(); return false
+                failure.addButton(withTitle: "OK"); NSApplication.shared.activate(ignoringOtherApps: true); failure.runModal(); return false
             }
             return !consumeAuthorization || controller.consumeQuitAuthorization()
             }

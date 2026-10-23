@@ -272,7 +272,12 @@
                     if decision.artifact.dataClass == .detailedEvents,
                         file.deletingLastPathComponent().lastPathComponent == "events" {
                         let root = file.deletingLastPathComponent().deletingLastPathComponent()
-                        try GoalongActivityDayStore(root: root).preserveBeforePurge(day: decision.artifact.start, now: now)
+                        // A journal with nothing to summarize, or one that stays unreadable, still
+                        // expires: retention must never keep detailed data past the chosen duration.
+                        if try GoalongActivityDayStore(root: root).preserveBeforePurge(day: decision.artifact.start, now: now)
+                            == .unreadable {
+                            diagnose("Retention cleanup expires an unreadable journal without a day summary at \(file.path)")
+                        }
                     }
                     guard activationMatchesCurrentPolicy() else { return }
                     try Self.unlinkRegularFile(at: file)

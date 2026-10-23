@@ -72,7 +72,14 @@ struct GoalongAnalyticsPage: View {
                         }
                         if developerMode { previewControl }
                         if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
-                        if let error = analytics.error {
+                        if analytics.paused {
+                            // The pause banner above says how to resume; reading restarts by itself.
+                            GoalongNote(analytics.payload == nil
+                                ? "Pause globale : Activité ne lit pas vos observations pendant la pause. La lecture reprend dès la reprise."
+                                : "Pause globale : les chiffres affichés ne sont plus actualisés. Ils le seront dès la reprise.",
+                                symbol: "pause.circle")
+                                .accessibilityIdentifier("activity-read-paused")
+                        } else if let error = analytics.error {
                             HStack(alignment: .center, spacing: 12) {
                                 GoalongNote(error, tone: .warning)
                                 Button("Réessayer", action: refresh).buttonStyle(LHSecondaryButtonStyle())
@@ -97,6 +104,8 @@ struct GoalongAnalyticsPage: View {
                                 onRecap: openRecap,
                                 detail: $detail)
                                 .id(selectionID)
+                        } else if analytics.paused {
+                            EmptyView()
                         } else if analytics.error == nil && !loadRequest.permitsLoading {
                             GoalongNote("Lecture en attente : cliquez dans cette fenêtre pour lire les observations de cette période. Les lectures privées restent suspendues lorsque vous utilisez une autre application.",
                                         symbol: "pause.circle")
@@ -209,6 +218,9 @@ struct GoalongAnalyticsPage: View {
             if !previewActive { revision += 1 }
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongProfileAnalysisDidSave)) { _ in
+            if !previewActive { revision += 1 }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in
             if !previewActive { revision += 1 }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in

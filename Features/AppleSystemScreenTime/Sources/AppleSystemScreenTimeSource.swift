@@ -3,6 +3,7 @@
     import AppleScreenTime
     import Darwin
     import Foundation
+    import os
     import SQLite3
 
     public enum AppleScreenTimeActivationAccess: Equatable {
@@ -2403,6 +2404,12 @@
             warnings: [String],
             privateAggregateStore: Bool = false
         ) -> AppleSystemScreenTimeStatus {
+            if !warnings.isEmpty {
+                // Detail stays out of the UI message; keep it in the logs for support.
+                let detail = warnings.joined(separator: "; ")
+                Logger(subsystem: "com.goalong.history", category: "AppleScreenTime")
+                    .notice("Screen Time warnings: \(detail, privacy: .private)")
+            }
             if permissionDenied, !hasData, activationAccess() == .permissionRequired {
                 return AppleSystemScreenTimeStatus(
                     kind: .fullDiskAccessRequired,
@@ -2422,18 +2429,16 @@
                 return AppleSystemScreenTimeStatus(
                     kind: .partial,
                     title: "Temps d’écran Apple partiellement disponible",
-                    message: warnings.first.map {
-                        "L’agrégat privé ScreenTimeAgent d’Apple a été lu, mais l’une de ses sources est indisponible ou incomplète ; \($0)"
-                    } ?? "L’agrégat privé ScreenTimeAgent d’Apple a été lu, mais l’une de ses sources est protégée : des appareils ou des blocs peuvent manquer."
+                    message: warnings.isEmpty
+                        ? "L’agrégat privé ScreenTimeAgent d’Apple a été lu, mais l’une de ses sources est protégée : des appareils ou des blocs peuvent manquer."
+                        : "L’agrégat privé ScreenTimeAgent d’Apple a été lu, mais l’une de ses sources est indisponible ou incomplète : des appareils ou des blocs peuvent manquer."
                 )
             }
             if hasData, permissionDenied || !warnings.isEmpty {
                 return AppleSystemScreenTimeStatus(
                     kind: .partial,
                     title: "Temps d’écran Apple partiellement disponible",
-                    message: warnings.first.map {
-                        "L’agrégat privé ScreenTimeAgent d’Apple est indisponible. La reconstruction lisible est affichée ; \($0)"
-                    } ?? "L’agrégat privé ScreenTimeAgent d’Apple est indisponible. Il s’agit d’une reconstruction partielle à partir des flux d’usage lisibles d’Apple, qui peut différer de Réglages."
+                    message: "L’agrégat privé ScreenTimeAgent d’Apple est indisponible. Il s’agit d’une reconstruction partielle à partir des flux d’usage lisibles d’Apple, qui peut différer de Réglages."
                 )
             }
             if hasData, remoteDeviceCount == 0 {

@@ -10,6 +10,7 @@
         var onEnableRichContext: (() -> Void)?
 
         @State private var expandedWebsiteIDs = Set<String>()
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         private var filteredItems: [TrackedUsageItem] {
             let query = model.usageSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -157,7 +158,7 @@
                                 richContextEnabled: richContextEnabled,
                                 onEnableRichContext: onEnableRichContext,
                                 onToggleExpanded: {
-                                    withAnimation(.easeInOut(duration: 0.18)) {
+                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                                         if isExpanded {
                                             expandedWebsiteIDs.remove(item.id)
                                         } else {

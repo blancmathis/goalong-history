@@ -10,6 +10,10 @@
         @AppStorage("goalongOnboardingStep") var step: SetupStep = .privacy
         @State var launchAtLoginPreference = true
         @State var note: String?
+        /// Site typed in the exclusions field but not yet added.
+        @State var pendingWebsite = ""
+        /// Bumped when the global pause changes so the « Prêt » text follows it.
+        @State var pauseRevision = 0
         @State var visibleTextDraft = true
         @State var localRecordingDraft = true
         @State private var showingLocalActivation = false
@@ -24,6 +28,7 @@
                 sidebar.frame(width: 208)
                 Rectangle().fill(LHTheme.separator).frame(width: 1)
                 VStack(spacing: 0) {
+                    GoalongGlobalPauseBanner(model: model)
                     ScrollView {
                         page
                             .frame(maxWidth: 680, alignment: .leading)
@@ -43,6 +48,7 @@
                     .environment(\.goalongRecordingModel, model)
                     .goalongControls()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pauseRevision += 1 }
             .onAppear {
                 if step == .welcome || !privacyReviewed { step = .privacy }
                 if !loadedProposal {
@@ -121,6 +127,11 @@
                     if step == .ready { finishSetup() }
                     else {
                         if step == .privacy {
+                            // Return in the exclusion field can reach this default button: never drop the typed site.
+                            if GoalongOnboardingExclusionEdit.commitPendingWebsite(&pendingWebsite, to: &model.settingsDraft) == .invalid {
+                                note = "Le site saisi dans les exclusions n’est pas valide (exemple : exemple.fr). Corrigez-le ou videz le champ."
+                                return
+                            }
                             let choices = GoalongRecordingSetup.Proposal(settings: model.settingsDraft,
                                 visibleText: visibleTextDraft)
                             guard model.applyRecordingSetup(choices) else {

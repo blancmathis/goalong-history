@@ -3,6 +3,7 @@ import AppKit
 import Combine
 import Foundation
 import LocalHistoryCore
+import LocalHistoryQueryCLI
 
 struct JevRecentCheck: Identifiable {
     let id = UUID()
@@ -191,7 +192,7 @@ struct JevRecentCheck: Identifiable {
             reconfigure()
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                self.error = error.localizedDescription; errorIsTransient = false }
+                self.error = goalongUserMessage(error); errorIsTransient = false }
     }
     func removeKey() {
         cancelPending(); inbox.configure(enabled: false)
@@ -200,7 +201,7 @@ struct JevRecentCheck: Identifiable {
             apiKey = ""; hasKey = false; keyStorageInvalid = false; circuitOpen = false; error = nil
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                self.error = error.localizedDescription; errorIsTransient = false; circuitOpen = true }
+                self.error = goalongUserMessage(error); errorIsTransient = false; circuitOpen = true }
         reconfigure()
     }
     private static func validKey(_ value: String) -> Bool {
@@ -219,7 +220,7 @@ struct JevRecentCheck: Identifiable {
             breakStorageInvalid = false; error = nil
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                breakStorageInvalid = true; self.error = error.localizedDescription; errorIsTransient = false }
+                breakStorageInvalid = true; self.error = goalongUserMessage(error); errorIsTransient = false }
         reconfigure()
     }
     func endBreak() {
@@ -228,7 +229,7 @@ struct JevRecentCheck: Identifiable {
             timedBreak = nil; remainingSeconds = 0; breakStorageInvalid = false; error = nil
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                breakStorageInvalid = true; self.error = error.localizedDescription; errorIsTransient = false }
+                breakStorageInvalid = true; self.error = goalongUserMessage(error); errorIsTransient = false }
         reconfigure()
     }
     func retry() {

@@ -405,7 +405,8 @@ struct FocusComposerDraft: Equatable {
         guard !intent.isEmpty else { return }
         let ids = chosenLists
         do {
-            try controller.startSession(intent: intent, mode: draft.mode, planItemId: draft.planItemId, blockListIds: ids,
+            controller.refresh()  // a new day replaces the plan before the link is checked
+            try controller.startSession(intent: intent, mode: draft.mode, planItemId: controller.openPlanItemID(draft.planItemId), blockListIds: ids,
                                         blockDuringBreaks: draft.kind == .pomodoro && draft.blockDuringBreaks,
                                         lock: draft.lock && draft.canLock && !ids.isEmpty)
             draft.remember()
@@ -783,7 +784,7 @@ struct FocusThreadModel: Equatable {
             }
             Menu {
                 if item.status == .open {
-                    Button("Déplacer à demain") { act { try controller.movePlanItem(item.id, day: plan.day, to: tomorrow) } }
+                    Button("Déplacer à demain") { moveToTomorrow(item) }
                     Button("Abandonner") { act { try controller.setItemStatus(item.id, day: plan.day, status: .dropped) } }
                 } else if item.status != .moved {
                     Button("Rouvrir") { reopen(item) }
@@ -856,11 +857,11 @@ struct FocusThreadModel: Equatable {
                         .help("Vos estimations : ×\(FocusUIFormat.decimal(ratio)). Médiane du temps mesuré sur le temps prévu, sur vos 20 dernières tâches estimées.")
                 }
                 Button("Ajouter", action: add)
-                    .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty || plan.items.count >= 10)
+                    .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty || plan.items.count >= FocusPlan.maximumItems)
             }
             if let addError {
                 Text(addError).font(.system(size: 12)).foregroundStyle(LHTheme.warning).padding(.leading, 28)
-            } else if plan.items.count >= 10 {
+            } else if plan.items.count >= FocusPlan.maximumItems {
                 Text("Le plan compte déjà dix tâches.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.leading, 28)
             }
         }
@@ -879,6 +880,8 @@ struct FocusThreadModel: Equatable {
     private func add() {
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
+        // Entrée in any field takes the same path as the button, which is off on a full plan.
+        guard plan.items.count < FocusPlan.maximumItems else { addError = FocusUIError.message(FocusFailure.planFull); return }
         var estimate: Int?
         let rawEstimate = newEstimate.trimmingCharacters(in: .whitespaces)
         if !rawEstimate.isEmpty {
@@ -894,6 +897,12 @@ struct FocusThreadModel: Equatable {
         } catch {
             addError = FocusUIError.message(error)
         }
+    }
+
+    private func moveToTomorrow(_ item: FocusPlanItem) {
+        do { try controller.movePlanItem(item.id, day: plan.day, to: tomorrow) }
+        catch FocusFailure.planFull { controller.error = "Le plan de demain compte déjà dix tâches." }
+        catch { controller.error = FocusUIError.message(error) }
     }
 
     private func setDone(_ item: FocusPlanItem, _ done: Bool) {
@@ -1275,6 +1284,7 @@ enum FocusUIError {
         case .locked: return "Le blocage de cette phase est verrouillé jusqu’à sa fin."
         case .invalidArgument: return "Vérifiez le texte et les durées."
         case .notFound: return "Cet élément n’existe plus."
+        case .planFull: return "Le plan compte déjà dix tâches."
         case .storageFailed: return "Enregistrement impossible. Les données déjà enregistrées restent intactes ; Goalong réessaie chaque minute."
         case .moduleDisabled: return "Activez Blocage dans Réglages › Modules pour bloquer pendant une séance."
         case .appNotRunning: return "Goalong ne répond pas."

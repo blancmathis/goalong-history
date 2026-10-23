@@ -946,6 +946,109 @@ final class BlockingEngineTests: XCTestCase {
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
         XCTAssertFalse(c.activeBlocks.isEmpty); XCTAssertTrue(c.needsObservation); XCTAssertTrue(c.hasTimer)
     }
+
+    /// R4-blocage-02: a range added to several lists is checked on every list before the first write.
+    @MainActor func testRangeOnSeveralListsIsAllOrNone() {
+        let now = date()
+        let a = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        var b = BlockList(name: "Réseaux", sites: [BlockSiteRule(pattern: "x.com")])
+        b.reason = String(repeating: "a", count: 200)
+        var locked = BlockList(name: "Travail", sites: [BlockSiteRule(pattern: "reddit.com")])
+        locked.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 600, endMinute: 900)], lockedUntil: now.addingTimeInterval(3600))
+        let c = BlockingController(document: BlockingDocument(lists: [a, b, locked]), clock: { now }, calendar: calendar,
+                                   continuous: { now.timeIntervalSince1970 })
+        func adding(_ list: BlockList) -> BlockList {
+            var next = list; next.program.ranges.append(BlockProgramRange(weekdays: [2], startMinute: 540, endMinute: 600)); return next
+        }
+        let refused = c.saveAll([adding(a), adding(b)])
+        XCTAssertEqual(refused?.hasPrefix("« Réseaux » : "), true)
+        XCTAssertEqual(c.list(a.id)?.program.ranges.count, 0, "nothing written when one list refuses")
+        XCTAssertEqual(c.list(b.id)?.program.ranges.count, 0)
+        // A refused change of a locked range returns its reason: the popover stays open on it.
+        var shorter = locked; shorter.program.ranges[0].endMinute = 840
+        XCTAssertNotNil(c.save(shorter))
+        XCTAssertEqual(c.list(locked.id)?.program.ranges.first?.endMinute, 900)
+        // Without the refused list, every chosen list gets its own copy of the range.
+        let valid = BlockingController(document: BlockingDocument(lists: [a, locked]), clock: { now }, calendar: calendar,
+                                       continuous: { now.timeIntervalSince1970 })
+        XCTAssertNil(valid.saveAll([adding(a), adding(locked)]))
+        XCTAssertEqual(valid.list(a.id)?.program.ranges.count, 1); XCTAssertEqual(valid.list(locked.id)?.program.ranges.count, 2)
+    }
+
+    /// R4-blocage-03: the composer reads the clock when it starts; a start time already past starts now.
+    func testNowPlanUsesTheClockOfTheStart() {
+        let now = date()
+        let past = BlockingNowPlan(later: true, startAt: now.addingTimeInterval(-10), minutes: 30, now: now)
+        XCTAssertFalse(past.startsLater); XCTAssertEqual(past.start, now)
+        XCTAssertEqual(past.end.timeIntervalSince(now), 30 * 60, "the full duration from this second")
+        let later = BlockingNowPlan(later: true, startAt: now.addingTimeInterval(3_600), minutes: 60, now: now)
+        XCTAssertTrue(later.startsLater); XCTAssertEqual(later.end, now.addingTimeInterval(7_200))
+        let until = BlockingNowPlan(later: false, startAt: now, until: date(5, 9), now: now, calendar: calendar)
+        XCTAssertEqual(until.end, date(6, 9), "an earlier time of day means tomorrow")
+    }
+
+    /// R4-blocage-01: the lock alert says the day of the end, and both ends of a later block.
+    func testLockAlertSaysTheDay() {
+        let now = date(5, 10) // Monday
+        func t(_ d: Date) -> String { BlockingFormat.time(d) }
+        XCTAssertEqual(BlockingFormat.deadline(date(5, 12), now: now, calendar: calendar), t(date(5, 12)))
+        XCTAssertEqual(BlockingFormat.deadline(date(6, 0), now: now, calendar: calendar), "minuit")
+        XCTAssertEqual(BlockingFormat.deadline(date(6, 2), now: now, calendar: calendar), "demain à \(t(date(6, 2)))")
+        XCTAssertEqual(BlockingFormat.deadline(date(10, 12), now: now, calendar: calendar), "samedi à \(t(date(10, 12)))")
+        XCTAssertEqual(BlockingFormat.deadline(date(11, 0), now: now, calendar: calendar), "samedi à minuit")
+        let saturday = BlockingNowPlan(later: true, startAt: date(10, 10), minutes: 120, now: now)
+        XCTAssertEqual(saturday.lockTitle(.locked, calendar: calendar), "Verrouiller samedi de \(t(date(10, 10))) à \(t(date(10, 12))) ?")
+        XCTAssertTrue(saturday.lockMessage(.locked, calendar: calendar).contains("avant samedi à \(t(date(10, 12)))"))
+        let overnight = BlockingNowPlan(later: false, startAt: now, minutes: 20 * 60, now: now)
+        XCTAssertEqual(overnight.lockTitle(.password, calendar: calendar), "Protéger par mot de passe jusqu’à demain à \(t(date(6, 6))) ?")
+        XCTAssertEqual(BlockingFormat.period(from: date(5, 22), to: date(6, 2), now: now, calendar: calendar),
+                       "d’aujourd’hui \(t(date(5, 22))) à demain \(t(date(6, 2)))")
+        XCTAssertEqual(BlockingFormat.period(from: date(6, 22), to: date(8, 0), now: now, calendar: calendar),
+                       "de demain \(t(date(6, 22))) à mercredi minuit")
+    }
+
+    /// B06-R1-01: a date beyond a week takes its article: « le », « jusqu’au », « avant le », « du … au ».
+    func testFarDatesTakeTheArticle() throws {
+        let now = date(5, 10) // Monday
+        func t(_ d: Date) -> String { BlockingFormat.time(d) }
+        let far = date(19, 12)
+        let (day, month) = ("19", "oct.")
+        let first = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: 9)))
+        XCTAssertEqual(BlockingFormat.moment(first, now: now, calendar: calendar), "le 1er nov. à \(t(first))")
+        XCTAssertEqual(BlockingFormat.moment(far, now: now, calendar: calendar), "le \(day) \(month) à \(t(far))")
+        XCTAssertEqual(BlockingFormat.until(far, now: now, calendar: calendar), "jusqu’au \(day) \(month) à \(t(far))")
+        XCTAssertEqual(BlockingFormat.until(date(6, 2), now: now, calendar: calendar), "jusqu’à demain à \(t(date(6, 2)))")
+        let later = BlockingNowPlan(later: true, startAt: date(19, 10), minutes: 120, now: now)
+        XCTAssertEqual(later.lockTitle(.locked, calendar: calendar), "Verrouiller le \(day) \(month) de \(t(date(19, 10))) à \(t(far)) ?")
+        XCTAssertTrue(later.lockMessage(.locked, calendar: calendar).contains("avant le \(day) \(month) à \(t(far))"))
+        let long = BlockingNowPlan(later: false, startAt: now, minutes: 14 * 1_440 + 120, now: now)
+        XCTAssertTrue(long.lockTitle(.password, calendar: calendar).hasPrefix("Protéger par mot de passe jusqu’au "))
+        XCTAssertTrue(long.lockMessage(.password, calendar: calendar).contains("va jusqu’au "))
+        let overnight = BlockingNowPlan(later: true, startAt: date(19, 22), minutes: 240, now: now)
+        XCTAssertTrue(overnight.lockTitle(.locked, calendar: calendar).hasPrefix("Verrouiller du \(day) \(month) \(t(date(19, 22))) au "))
+        XCTAssertFalse(overnight.lockTitle(.locked, calendar: calendar).contains(" à "))
+    }
+
+    /// B06-R1-02: once the « Plus tard » time has passed, the button says the block starts now.
+    func testActionTitleFollowsTheClock() {
+        let now = date(5, 10)
+        func t(_ d: Date) -> String { BlockingFormat.time(d) }
+        let ahead = BlockingNowPlan(later: true, startAt: date(5, 11), minutes: 60, now: now)
+        XCTAssertEqual(ahead.actionTitle(calendar: calendar), "Programmer aujourd’hui à \(t(date(5, 11)))")
+        let passed = BlockingNowPlan(later: true, startAt: now.addingTimeInterval(-300), minutes: 60, now: now)
+        XCTAssertEqual(passed.actionTitle(calendar: calendar), "Bloquer jusqu’à \(t(date(5, 11)))")
+    }
+
+    /// R4-blocage-05 and 07: a range ending at 24:00 reads 24:00; long durations keep their minutes.
+    func testRangeLabelAndLongRemaining() {
+        XCTAssertEqual(BlockingFormat.rangeLabel(name: "Vidéo", weekday: 1, start: 1_320, end: 1_440, lock: .locked),
+                       "Vidéo, lundi, 22:00 à 24:00, verrouillé")
+        XCTAssertEqual(BlockingFormat.rangeLabel(name: "Vidéo", weekday: 7, start: 540, end: 600, lock: .free), "Vidéo, dimanche, 9:00 à 10:00")
+        XCTAssertEqual(BlockingFormat.remaining(86_400), "1 jour")
+        XCTAssertEqual(BlockingFormat.remaining(86_400 + 2_400), "1 jour 40 min")
+        XCTAssertEqual(BlockingFormat.remaining(86_400 + 3 * 3_600 + 2_400), "1 jour 3 h 40")
+        XCTAssertEqual(BlockingFormat.remaining(2 * 86_400 + 3 * 3_600), "2 jours 3 h")
+    }
 }
 
 private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {

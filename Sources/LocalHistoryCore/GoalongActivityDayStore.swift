@@ -98,14 +98,38 @@ public struct GoalongActivityDayStore: Sendable {
     }
 
     public func read(day: Date, sourceRevision: String? = nil, calendar: Calendar = .current) throws -> GoalongLocalAnalytics.Day {
+        try readSummary(day: day, sourceRevision: sourceRevision, calendar: calendar).day
+    }
+
+    /// True when the saved summary of this date is valid but was written in another time zone.
+    /// Such a summary is the settled account of the day: it is never replaced by a recount.
+    public func hasForeignTimeZoneSummary(day: Date, calendar: Calendar = .current) -> Bool {
+        (try? readSummary(day: day, sourceRevision: nil, calendar: calendar))?.foreign == true
+    }
+
+    private func readSummary(day: Date, sourceRevision: String?, calendar: Calendar) throws -> (day: GoalongLocalAnalytics.Day, foreign: Bool) {
         let key = Self.dayKey(day, calendar: calendar)
         let bytes = try readPrivateFile(name: key + ".json", maximumBytes: Self.maximumBytes)
         let e = try JSONDecoder().decode(Envelope.self, from: bytes)
-        let start = calendar.startOfDay(for: day)
-        let end = calendar.date(byAdding: .day, value: 1, to: start)!
+        // A summary written in another time zone describes the same date in that zone. Without
+        // a journal it is still the only account of the day: validate it in its own zone, then
+        // place it on this zone's date. With a journal, the day is recounted in this zone.
+        var zone = calendar
+        let foreign = e.timeZone != calendar.timeZone.identifier
+        let start: Date
+        if foreign {
+            guard sourceRevision == nil, let timeZone = TimeZone(identifier: e.timeZone) else { throw Failure.invalidSummary }
+            zone.timeZone = timeZone
+            let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.timeZone = timeZone
+            f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
+            guard let parsed = f.date(from: key) else { throw Failure.invalidSummary }
+            start = zone.startOfDay(for: parsed)
+        } else {
+            start = calendar.startOfDay(for: day)
+        }
+        guard let end = zone.date(byAdding: .day, value: 1, to: start) else { throw Failure.invalidSummary }
         // Without a journal, a summary from an older method is still the only account of the day.
         guard e.schema == Self.schema, e.method == GoalongLocalAnalytics.method || sourceRevision == nil,
-              e.timeZone == calendar.timeZone.identifier,
               e.date == key, e.start == start, e.end == end, e.state == .ready, e.eventCount > 0,
               sourceRevision.map({ Self.revision(e.sourceRevision, describes: $0, timeZone: calendar.timeZone.identifier) }) ?? true,
               !e.sourceRevision.isEmpty, e.sourceRevision.utf8.count <= 1024,
@@ -146,7 +170,7 @@ public struct GoalongActivityDayStore: Sendable {
               first >= start, last <= end, first <= last else { throw Failure.invalidSummary }
         var previousEnd = start
         for hour in e.breakdown.hours {
-            guard let boundary = calendar.dateInterval(of: .hour, for: hour.start),
+            guard let boundary = zone.dateInterval(of: .hour, for: hour.start),
                   boundary.start == hour.start, boundary.end == hour.end, hour.start >= previousEnd else { throw Failure.invalidSummary }
             let active = segments.filter { $0.kind.isActive }.reduce(0.0) {
                 $0 + max(0, min($1.end, hour.end).timeIntervalSince(max($1.start, hour.start)))
@@ -154,7 +178,35 @@ public struct GoalongActivityDayStore: Sendable {
             guard active == hour.totalSeconds else { throw Failure.invalidSummary }
             previousEnd = hour.end
         }
-        return result
+        guard foreign else { return (result, false) }
+        // Same wall-clock day, moved onto this zone's date so pages match it to the selected day.
+        // Both midnights align. On a day whose length differs between the two zones (a clock
+        // change in only one of them), the moved day is cut at this zone's end, or its missing
+        // tail is marked as not recorded: the saved summary itself stays unchanged.
+        let localStart = calendar.startOfDay(for: day)
+        guard let localEnd = calendar.date(byAdding: .day, value: 1, to: localStart), localEnd > localStart else { throw Failure.invalidSummary }
+        let shift = localStart.timeIntervalSince(start)
+        var moved: [GoalongLocalAnalytics.Segment] = segments.compactMap {
+            let from = $0.start.addingTimeInterval(shift), to = min($0.end.addingTimeInterval(shift), localEnd)
+            guard to > from else { return nil }
+            return .init(start: from, end: to, kind: $0.kind, application: $0.application, bundleIdentifier: $0.bundleIdentifier,
+                         host: $0.host, contextKey: $0.contextKey, coverageReason: $0.coverageReason)
+        }
+        let coveredEnd = moved.last?.end ?? localStart
+        if coveredEnd < localEnd {
+            moved.append(.init(start: coveredEnd, end: localEnd, kind: .unobserved, application: nil, bundleIdentifier: nil,
+                               host: nil, contextKey: nil, coverageReason: .notRecorded))
+        }
+        let hours = e.breakdown.hours.compactMap { hour -> GoalongActivityBreakdown.Hour? in
+            let from = hour.start.addingTimeInterval(shift), to = hour.end.addingTimeInterval(shift)
+            return to <= localEnd ? .init(start: from, end: to, secondsByMode: hour.secondsByMode) : nil
+        }
+        let movedFirst = first.addingTimeInterval(shift), movedLast = min(last.addingTimeInterval(shift), localEnd)
+        let movedDay = GoalongLocalAnalytics.Day(date: localStart, end: localEnd, state: .ready, segments: moved,
+            eventCount: e.eventCount, classifierVersions: Set(e.classifierVersions), origin: .summary, hasDetailedSource: false,
+            firstObservation: min(movedFirst, movedLast), lastObservation: movedLast,
+            recordedBreakdown: GoalongActivityBreakdown(hours: hours))
+        return (movedDay, true)
     }
 
     public func write(_ day: GoalongLocalAnalytics.Day, sourceRevision: String, now: Date = Date(), calendar: Calendar = .current) throws {
@@ -207,18 +259,41 @@ public struct GoalongActivityDayStore: Sendable {
         guard fsync(file) == 0, renameat(fd, temporary, fd, name) == 0, fsync(fd) == 0 else { throw Failure.unavailable }
     }
 
-    /// Writes only if the journal is unchanged across the full read. A failed save never permits purge.
-    public func preserveBeforePurge(day: Date, now: Date = Date(), calendar: Calendar = .current) throws {
+    /// What a journal leaves behind before retention deletes it.
+    public enum Preservation: Equatable, Sendable {
+        /// A valid summary of the day is on disk.
+        case summarized
+        /// The journal holds no activity evidence (only health or permission rows): nothing to keep.
+        case nothingToSummarize
+        /// The journal stayed unchanged but its content cannot be read completely (corrupt or
+        /// oversized line, evidence budget). Its day has no summary; retention still applies.
+        case unreadable
+    }
+
+    /// Writes only if the journal is unchanged across the full read. A failed save, a source that
+    /// changes during the read or incomplete access to events/ never permits purge; a day with
+    /// nothing to summarize, or a stable journal with a content defect, does (the retention
+    /// policy still applies).
+    @discardableResult
+    public func preserveBeforePurge(day: Date, now: Date = Date(), calendar: Calendar = .current) throws -> Preservation {
         let revision = sourceRevision(day: day, calendar: calendar)
-        if (try? read(day: day, sourceRevision: revision, calendar: calendar)) != nil {
+        if (try? read(day: day, sourceRevision: revision, calendar: calendar)) != nil || hasForeignTimeZoneSummary(day: day, calendar: calendar) {
             guard revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
-            return
+            return .summarized
         }
-        let value = GoalongLocalAnalytics.load(root: root, day: day, now: now, calendar: calendar)
-        guard value.state == .ready, revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
+        let (value, defect) = GoalongLocalAnalytics.loadReportingDefect(root: root, day: day, now: now, calendar: calendar)
+        guard revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
+        switch value.state {
+        case .noSource: return .nothingToSummarize
+        // Only a defect in the journals' own content is permanent. Incomplete access to events/
+        // (a linked or foreign entry, a listing that changed, a cancelled read) keeps the journal.
+        case .incomplete: if defect == .content { return .unreadable }; throw Failure.sourceChanged
+        case .ready: break
+        }
         try write(value, sourceRevision: revision, now: now, calendar: calendar)
         _ = try read(day: day, sourceRevision: revision, calendar: calendar)
         guard revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
+        return .summarized
     }
 
     public func load(day: Date, now: Date = Date(), calendar: Calendar = .current, retentionDays: Int? = 30, summaryRetentionDays: Int? = nil,
@@ -245,7 +320,8 @@ public struct GoalongActivityDayStore: Sendable {
         value.hasDetailedSource = !absent
         if past, value.state == .ready, Self.isSettled(start, now: now, calendar: calendar), shouldContinue(),
            retains(day: start, now: now, days: summaryRetentionDays, calendar: calendar),
-           revision == sourceRevision(day: start, calendar: calendar) {
+           revision == sourceRevision(day: start, calendar: calendar),
+           !hasForeignTimeZoneSummary(day: start, calendar: calendar) {
             try? write(value, sourceRevision: revision, now: now, calendar: calendar)
         }
         return value
@@ -308,7 +384,8 @@ public struct GoalongActivityDayStore: Sendable {
             guard Self.isSettled(day, now: now, calendar: calendar),
                   retains(day: day, now: now, days: summaryRetentionDays, calendar: calendar) else { continue }
             let revision = sourceRevision(day: day, calendar: calendar)
-            if (try? read(day: day, sourceRevision: revision, calendar: calendar)) != nil { continue }
+            if (try? read(day: day, sourceRevision: revision, calendar: calendar)) != nil
+                || hasForeignTimeZoneSummary(day: day, calendar: calendar) { continue }
             let value = GoalongLocalAnalytics.load(root: root, day: day, now: now, calendar: calendar,
                 shouldContinue: shouldContinue)
             guard shouldContinue() else { break }

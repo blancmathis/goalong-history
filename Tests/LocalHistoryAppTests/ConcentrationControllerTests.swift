@@ -81,6 +81,57 @@ final class ConcentrationControllerTests: XCTestCase {
         XCTAssertEqual(c.phase?.kind, .shortBreak); XCTAssertTrue(b.activeBlocks.isEmpty)
         now = now.addingTimeInterval(300); c.refresh(); XCTAssertEqual(c.phase?.kind, .work); XCTAssertEqual(b.activeBlocks.count, 1)
     }
+    /// R4-concentration-01: a session list cannot be deleted during a free break; a list gone anyway
+    /// (older build, hand edit) does not release the session's other lists.
+    @MainActor func testSessionListsSurviveDeletionDuringBreak() throws {
+        let s = store(); try quiet(s); var now = Date(timeIntervalSince1970: 1791201600)
+        let social = BlockList(name: "Réseaux", sites: [.init(pattern: "example.org")])
+        let video = BlockList(name: "Vidéos", sites: [.init(pattern: "example.net")])
+        let b = BlockingController(document: BlockingDocument(lists: [social, video]), clock: { now }, continuous: { now.timeIntervalSince1970 })
+        let c = try ConcentrationController(store: s, clock: { now }, blocking: { b })
+        var mode = FocusMode(); mode.kind = .pomodoro; mode.workMinutes = 5
+        try c.startSession(intent: "Travail", mode: mode, blockListIds: [social.id, video.id], lock: true)
+        now = now.addingTimeInterval(300); c.refresh(); XCTAssertEqual(c.phase?.kind, .shortBreak); XCTAssertTrue(b.activeBlocks.isEmpty)
+        // Without the guard (no wired session), the list goes; the next work phase still blocks the other one.
+        b.delete(video.id); XCTAssertNil(b.list(video.id))
+        now = now.addingTimeInterval(300); c.refresh()
+        XCTAssertEqual(c.phase?.kind, .work); XCTAssertNil(c.error)
+        XCTAssertEqual(b.activeBlocks.map(\.listIDs), [[social.id]]); XCTAssertEqual(b.activeBlocks.first?.lock, .locked)
+        // Wired as the app does, the delete is refused while the session runs.
+        b.focusSessionUsesList = { c.currentSession?.blockListIds.contains($0) == true }
+        now = now.addingTimeInterval(300); c.refresh(); XCTAssertTrue(b.activeBlocks.isEmpty)
+        b.delete(social.id)
+        XCTAssertNotNil(b.list(social.id)); XCTAssertEqual(b.error, "La séance de concentration en cours bloque cette liste. Arrêtez la séance pour la supprimer.")
+    }
+    /// R4-concentration-02: a link to an item done since it was chosen is dropped; the session starts.
+    @MainActor func testStalePlanLinkIsDroppedAtStart() throws {
+        let s = store(); try quiet(s); let c = try ConcentrationController(store: s)
+        let day = BlockingController.dayKey(Date())
+        let item = try c.addPlanItem(title: "Rédiger rapport", day: day)
+        XCTAssertEqual(c.openPlanItemID(item.id), item.id); XCTAssertNil(c.openPlanItemID(nil))
+        try c.setItemStatus(item.id, day: day, status: .done)
+        XCTAssertNil(c.openPlanItemID(item.id)); XCTAssertNil(c.openPlanItemID(UUID()))
+        try c.startSession(intent: item.title, mode: FocusMode(minutes: 25), planItemId: c.openPlanItemID(item.id))
+        XCTAssertEqual(c.currentSession?.intent, "Rédiger rapport"); XCTAssertNil(c.currentSession?.planItemId)
+    }
+    /// R4-concentration-04: the ten-item limit has its own failure, also when a move fills tomorrow.
+    @MainActor func testFullPlanSaysSo() throws {
+        let s = store(); try quiet(s); let c = try ConcentrationController(store: s)
+        let day = BlockingController.dayKey(Date()), tomorrow = BlockingController.dayKey(Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
+        for i in 0..<FocusPlan.maximumItems { try c.addPlanItem(title: "Demain \(i)", day: tomorrow) }
+        XCTAssertThrowsError(try c.addPlanItem(title: "Onzième", day: tomorrow)) { XCTAssertEqual($0 as? FocusFailure, .planFull) }
+        let item = try c.addPlanItem(title: "Aujourd’hui", day: day)
+        XCTAssertThrowsError(try c.movePlanItem(item.id, day: day, to: tomorrow)) { XCTAssertEqual($0 as? FocusFailure, .planFull) }
+        XCTAssertEqual(try c.plan(on: day).items.first?.status, .open); XCTAssertEqual(try c.plan(on: tomorrow).items.count, 10)
+        XCTAssertEqual(FocusUIError.message(FocusFailure.planFull), "Le plan compte déjà dix tâches.")
+    }
+    /// R4-concentration-07: a panel action that fails opens the Concentration page, where its error shows.
+    @MainActor func testPanelErrorOpensThePage() throws {
+        let s = store(); try quiet(s); let c = try ConcentrationController(store: s)
+        var opened: [FocusPanel.Kind] = []; c.onOpenRequested = { opened.append($0) }
+        c.reportPanelError("Plus de joker ce mois-ci, ou le délai est passé.")
+        XCTAssertEqual(c.error, "Plus de joker ce mois-ci, ou le délai est passé."); XCTAssertEqual(opened.count, 1)
+    }
     @MainActor func testBreakBlockingFreeAndOpenLeaseRenewal() throws {
         let s = store(); try quiet(s); var now = Date(timeIntervalSince1970: 1791201600)
         let list = BlockList(name: "Apps")

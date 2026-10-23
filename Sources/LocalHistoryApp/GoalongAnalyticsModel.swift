@@ -306,6 +306,8 @@ actor GoalongAnalyticsReader {
     @Published private(set) var payload: GoalongAnalyticsPayload?
     @Published private(set) var busy = false
     @Published private(set) var error: String?
+    /// The global pause suspends reads of the observations: no error, nothing to retry.
+    @Published private(set) var paused = false
     private let reader: GoalongAnalyticsReader
     private var operation = UUID()
     init() { reader = .shared }
@@ -323,7 +325,7 @@ actor GoalongAnalyticsReader {
 
     func load(day: Date, count: Int, force: Bool = false, preview: Bool = false,
               verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) async {
-        let id = UUID(); operation = id; busy = true; error = nil
+        let id = UUID(); operation = id; busy = true; error = nil; paused = false
         let sameSelection = payload.map {
             $0.isPreview == preview && $0.current.days.count == count
                 && $0.current.days.last.map { Calendar.current.isDate($0.date, inSameDayAs: day) } == true
@@ -344,6 +346,10 @@ actor GoalongAnalyticsReader {
             busy = false
         } catch is CancellationError {
             if operation == id { busy = false }
+        } catch GoalongGlobalPause.PauseError.active, GoalongGlobalPause.PauseError.unreadable {
+            guard operation == id else { return }
+            paused = true
+            busy = false
         } catch {
             guard operation == id else { return }
             self.error = payload == nil

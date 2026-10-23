@@ -533,7 +533,7 @@ private struct ComputerHistoryReconstruction {
     let limitations: [String]
 }
 
-private enum CLIError: Error, CustomStringConvertible {
+enum CLIError: Error, CustomStringConvertible, LocalizedError {
     case usage(String)
     case invalidDate(String)
     case invalidInteger(String)
@@ -547,6 +547,32 @@ private enum CLIError: Error, CustomStringConvertible {
         case .invalidInteger(let value): return "Invalid integer: \(value)"
         case .missingHealth: return "capture-health.json is not available"
         case .unsafeSource(let value): return value
+        }
+    }
+
+    /// French text for the app, which shows these errors to people. The CLI keeps `description`.
+    var errorDescription: String? {
+        switch self {
+        case .unsafeSource(let value):
+            if value.hasPrefix("Apple Screen Time is off") { return "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer." }
+            if value.hasPrefix("No saved Screen Time") { return "Aucune donnée Apple enregistrée pour cette journée. Choisissez une autre date ou actualisez l’historique." }
+            if value.hasPrefix("Computer History is off") { return "Activez l’historique de ce Mac pour inclure les sites, ou désactivez Sites web." }
+            if value.hasPrefix("Website details are unavailable") { return "Les sites ne sont pas disponibles pour cette date. Les applications restent utilisables sans les sites." }
+            if value.hasPrefix("Saved ChatGPT analysis access is off") { return "Activez l’accès aux analyses ChatGPT enregistrées pour inclure un récap, ou décochez le récap." }
+            if value.hasPrefix("No saved recap exists") { return "Aucun récap enregistré pour cette journée. Décochez le récap ou choisissez une autre date." }
+            if value.hasPrefix("The saved recap belongs") || value.hasPrefix("The saved record does not match") { return "Les données enregistrées ne correspondent pas à la journée demandée. Choisissez une autre date." }
+            if value.hasPrefix("The saved day uses a different timezone") { return "Cette journée a été enregistrée dans un autre fuseau horaire. Exportez sans les sites." }
+            if value.hasPrefix("Enable Computer History and use its current timezone") { return "Activez l’historique de ce Mac avec son fuseau horaire actuel pour exporter le rythme." }
+            if value.hasPrefix("Rhythm is not calculable") { return "Le rythme n’est pas calculable. Sélectionnez des applications de projet ou décochez le rythme." }
+            if value.hasPrefix("Rename the project") { return "Renommez le projet avant l’export : son nom contient une application masquée." }
+            if value.hasPrefix("Select fewer details") { return "L’export dépasse 2 Mio. Sélectionnez moins de détails." }
+            if value.hasPrefix("Enable the explicitly selected Computer History") { return "Activez les sources de l’historique de ce Mac choisies avant de lire leurs preuves." }
+            if value.hasPrefix("Conversation source authorization changed") { return "L’autorisation de la source de conversations a changé pendant la lecture. Réessayez." }
+            // Messages already written in French keep their precise text.
+            if value.unicodeScalars.contains(where: { "àâçéèêëîïôùûœ’".unicodeScalars.contains($0) }) { return value }
+            return "Une source nécessaire n’est pas activée. Vérifiez les réglages d’Enregistrement."
+        case .missingHealth: return "Les données de santé ne sont pas disponibles."
+        case .invalidDate, .invalidInteger, .usage: return "Une valeur n’est pas valide. Vérifiez la sélection, puis réessayez."
         }
     }
 }
@@ -658,8 +684,8 @@ public enum GoalongQueryCLI {
 
         case "recent":
             let minutes = try integer(arguments.removeOption("--minutes") ?? "60")
-            guard (1...525_600).contains(minutes) else {
-                throw CLIError.usage("--minutes must be between 1 and 525600")
+            guard (1...10_080).contains(minutes) else {
+                throw CLIError.usage("--minutes must be between 1 and 10080")
             }
             let actionsOnly = arguments.removeFlag("--actions-only")
             let gapsOnly = arguments.removeFlag("--gaps-only")

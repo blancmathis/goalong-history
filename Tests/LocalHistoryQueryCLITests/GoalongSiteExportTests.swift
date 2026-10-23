@@ -345,7 +345,10 @@ final class GoalongSiteExportTests: XCTestCase {
         let file = archiveRoot.appendingPathComponent("2026-09-02.json")
         let original = try AppleScreenTimeJSON.encode(record)
         try original.write(to: file)
-        XCTAssertThrowsError(try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02"))
+        XCTAssertThrowsError(try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02")) {
+            // The app shows this text: French, never the generic "opération n'a pas pu être achevée".
+            XCTAssertEqual(goalongUserMessage($0), "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer.")
+        }
         let consent = Data(#"{"schemaVersion":1,"policyVersion":1,"capabilities":{"appleScreenTime":{"enabled":true}}}"#.utf8)
         try consent.write(to: root.appendingPathComponent("capability-consent.json"))
         _ = try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: "2026-09-02")
@@ -508,6 +511,25 @@ final class GoalongSiteExportTests: XCTestCase {
             deviceSourceLabels: [:], latestAppleUpdate: end, knowledgeIntervalCount: 0, biomeIntervalCount: 0)
         return .init(dayStart: start, dayEnd: end, timeZoneIdentifier: calendar.timeZone.identifier,
                      state: .completed, storedAt: end, collection: collection)
+    }
+
+    func testExportErrorsShownInTheAppAreFrenchAndKeepEnglishForTheCLI() {
+        do {
+            _ = try GoalongSiteExport.payload(record: fixture(), options: .init(deviceIDs: ["missing"]))
+            XCTFail("An unknown device must be refused")
+        } catch {
+            XCTAssertEqual(goalongUserMessage(error), "Un appareil choisi n’est pas disponible pour cette journée. Actualisez ou ajustez la sélection.")
+            XCTAssertTrue(String(describing: error).hasPrefix("A selected device is absent"))
+        }
+        XCTAssertFalse(goalongUserMessage(GoalongCanonicalJSONError.trailingData).contains("Canonical"))
+        XCTAssertFalse(goalongUserMessage(GoalongCanonicalJSONError.tooLarge).contains("signer"))
+    }
+
+    func testUnsafeSourceMessagesKeepTheirPreciseFrenchReason() {
+        let french = "Les exclusions ont changé. Préparez un nouvel aperçu."
+        XCTAssertEqual(goalongUserMessage(CLIError.unsafeSource(french)), french)
+        XCTAssertEqual(goalongUserMessage(CLIError.unsafeSource("No saved recap exists for this day. Export without --include-recap.")),
+                       "Aucun récap enregistré pour cette journée. Décochez le récap ou choisissez une autre date.")
     }
 }
 #endif

@@ -201,7 +201,7 @@ import SwiftUI
                 Button {
                     editing = editDraft(span, anchor: CGRect(x: origin + x(span.start), y: top, width: x(span.end) - x(span.start), height: Self.rowHeight))
                 } label: {
-                    spanView(span, width: max(Self.laneHeight, x(span.end) - x(span.start)))
+                    spanView(span, day: day, width: max(Self.laneHeight, x(span.end) - x(span.start)))
                 }
                 .buttonStyle(.plain)
                 .offset(x: x(span.start), y: (Self.rowHeight - Self.laneHeight) / 2 + CGFloat(span.lane) * Self.laneHeight)
@@ -230,7 +230,7 @@ import SwiftUI
         .frame(width: width, height: height, alignment: .topLeading)
     }
 
-    private func spanView(_ span: Span, width: CGFloat) -> some View {
+    private func spanView(_ span: Span, day: Int, width: CGFloat) -> some View {
         let ink = LHTheme.text.opacity(span.slowed ? 1 : (span.lock.protectsLists ? 1 : 0.42))
         return ZStack(alignment: .leading) {
             if span.slowed {
@@ -253,9 +253,9 @@ import SwiftUI
         .frame(width: width, height: Self.laneHeight - 3)
         .padding(.vertical, 1.5)
         .contentShape(Capsule())
-        .help("\(span.name) · \(BlockingFormat.minuteOfDay(span.start)) → \(span.end == 1_440 ? "24:00" : BlockingFormat.minuteOfDay(span.end))")
+        .help("\(span.name) · \(BlockingFormat.minuteOfDay(span.start)) → \(BlockingFormat.rangeEnd(span.end))")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(span.name), \(BlockingFormat.minuteOfDay(span.start)) à \(BlockingFormat.minuteOfDay(span.end % 1_440))")
+        .accessibilityLabel(BlockingFormat.rangeLabel(name: span.name, weekday: day, start: span.start, end: span.end, lock: span.lock))
         .accessibilityAddTraits(.isButton)
     }
 
@@ -395,19 +395,22 @@ struct BlockingRangeDraft: Identifiable {
                           endMinute: minutes(end) == 0 ? 1_440 : minutes(end), lock: draft.lock == .free ? nil : draft.lock)
     }
 
+    /// A refused save keeps the popover open: its note shows why, and the draft stays.
     private func save() {
+        let failure: String?
         if let existing = draft.existing, var next = list,
            let index = next.program.ranges.firstIndex(where: { $0.id == existing }) {
             next.program.ranges[index] = range(id: existing)
-            controller.save(next)
+            failure = controller.save(next)
         } else {
-            for id in controller.lists.map(\.id) where draft.listIDs.contains(id) {
-                guard var next = controller.list(id) else { continue }
+            // Each list gets its own range id; all lists are checked before the first write.
+            failure = controller.saveAll(controller.lists.filter { draft.listIDs.contains($0.id) }.map { list in
+                var next = list
                 next.program.ranges.append(range())
-                controller.save(next)
-            }
+                return next
+            })
         }
-        onClose()
+        if failure == nil { onClose() }
     }
 
     private func remove() {

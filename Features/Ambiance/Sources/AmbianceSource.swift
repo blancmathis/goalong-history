@@ -43,12 +43,13 @@ public struct AmbianceDiagnostics: Equatable {
 }
 
 public enum AmbianceError: Error, LocalizedError {
-    case invalidPack(String), cancelled, unavailable, disabled, audioBoundary, networkBoundary, network, serverUnavailable
+    case invalidPack(String), cancelled, unavailable, disabled, audioBoundary, networkBoundary, network, tooSlow, serverUnavailable
     public var errorDescription: String? {
         switch self {
         case .invalidPack(let detail): return "Pack invalide : \(detail)"
         case .cancelled: return "Téléchargement annulé."
         case .network: return "Connexion impossible. Vérifiez Internet puis réessayez."
+        case .tooSlow: return "Téléchargement trop lent. Réessayez avec une connexion plus rapide."
         case .serverUnavailable: return "Le pack est indisponible pour le moment. Réessayez plus tard."
         case .unavailable: return "Cette source est indisponible. Installez son pack ou retrouvez le fichier."
         case .disabled: return "Le module Ambiance est désactivé."

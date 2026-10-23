@@ -1735,12 +1735,13 @@
         let openResource: (ComputerHistoryResourceReference) -> Void
         let requestDeletion: () -> Void
         @State private var expanded = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             LHCard(padding: 16) {
                 VStack(alignment: .leading, spacing: 11) {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { expanded.toggle() }
                     } label: {
                         HStack(alignment: .top, spacing: 11) {
                             VStack(alignment: .leading, spacing: 5) {

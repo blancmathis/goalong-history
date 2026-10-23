@@ -100,6 +100,11 @@ final class MenuBarPanelModelTests: XCTestCase {
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention(f.health.frenchTitle))
         f.health = .permissionRequired
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention(f.health.frenchTitle))
+        XCTAssertEqual(model.attentionTitle, f.health.frenchTitle)
+        f.health = .ready; f.consent = false
+        model.refreshRuntimeState(); XCTAssertEqual(model.attentionTitle, "Enregistrement désactivé")
+        f.consent = true
+        model.refreshRuntimeState(); XCTAssertNil(model.attentionTitle)
     }
 
     @MainActor func testConsentOffWinsOverTheManualPauseSetByProduction() {
