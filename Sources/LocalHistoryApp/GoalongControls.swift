@@ -115,7 +115,9 @@
     struct GoalongFieldStyle: TextFieldStyle {
         // swiftlint:disable:next identifier_name
         func _body(configuration: TextField<Self._Label>) -> some View {
-            GoalongFieldChrome { configuration.textFieldStyle(.plain) }
+            // The field keeps its own text height: a layout pass that offered it less (15 pt for 16) moved its text
+            // half a point off, from one launch to the next (C final UI check).
+            GoalongFieldChrome { configuration.textFieldStyle(.plain).fixedSize(horizontal: false, vertical: true) }
         }
     }
 
@@ -150,7 +152,9 @@
             content
                 .font(.system(size: small ? 12 : 13))
                 .padding(.horizontal, small ? 9 : 11)
-                .padding(.vertical, small ? 5 : 8)
+                // A small field's line is 15 pt high: 5 + 15 + 6 fills its 26 pt, so the text starts on a whole point.
+                // Centred, it started on a half point and drew half a point off from one launch to the next.
+                .padding(.top, small ? 5 : 8).padding(.bottom, small ? 6 : 8)
                 .frame(minHeight: small ? 26 : 34)
                 .background {
                     shape.fill(LHTheme.fieldBackground).onTapGesture(perform: focus)
