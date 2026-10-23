@@ -1039,6 +1039,33 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(passed.start, date(5, 11, 5)); XCTAssertFalse(passed.startsLater); XCTAssertEqual(passed.end, date(5, 12))
     }
 
+    /// B01-R1-02: the freeze never ends later than its alert said. An end the engine would push back to its
+    /// 5 min minimum is promised as « pendant 5 min » from the click; a promised end too close by then is refused.
+    func testFreezeNeverEndsAfterItsAlert() throws {
+        let tick = date(5, 11, 58).addingTimeInterval(40)
+        let raised = BlockingFreezePromise(end: date(5, 12), now: tick)
+        XCTAssertEqual(raised, .minimum)
+        XCTAssertEqual(raised.phrase(now: tick), "pendant 5 min")
+        let click = date(5, 12, 0).addingTimeInterval(10)
+        XCTAssertEqual(raised.end(at: click), click.addingTimeInterval(300), "5 min from the click, as the alert said")
+        // A « 25 min » alert left open 21 min: 4 min left, the engine would make it 5. Refused.
+        let duration = BlockingFreezePromise(end: date(5, 10, 25), now: date(5, 10))
+        XCTAssertEqual(duration, .until(date(5, 10, 25)))
+        XCTAssertEqual(duration.end(at: date(5, 10, 10)), date(5, 10, 25))
+        XCTAssertEqual(duration.end(at: date(5, 10, 20)), date(5, 10, 25), "exactly 5 min left: the engine keeps it")
+        XCTAssertNil(duration.end(at: date(5, 10, 21)))
+        XCTAssertEqual(BlockingFreezePromise(end: date(5, 12).addingTimeInterval(30 * 3_600), now: date(5, 12)),
+                       .until(date(6, 12)), "the 24 h cap is promised as such")
+    }
+
+    /// B01-R1-03: a late click is refused in the words of the chosen span.
+    func testLateClickRefusalSpeaksOfTheChosenSpan() {
+        XCTAssertEqual(BlockingNowComposer.refusal(.minutes(30), freeze: false), "Ce blocage serait déjà fini. Relancez-le.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.until, freeze: false), "L’heure de fin est passée. Choisissez une autre heure.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.minutes(25), freeze: true), "Le gel durerait moins de 5 min. Relancez-le.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.until, freeze: true), "Le gel durerait moins de 5 min. Choisissez une autre heure.")
+    }
+
     /// R5-blocage-01: a free session inside a locked block speaks with the locked block's lock and end.
     @MainActor func testVeilSpeaksForTheStrongestBlock() {
         let now = date(); let backend = FakeBlockingBackend()

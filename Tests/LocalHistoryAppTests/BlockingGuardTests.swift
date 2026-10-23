@@ -97,6 +97,24 @@ import XCTest
         XCTAssertTrue(c.canRemoveGuard, "after the block, the button comes back")
     }
 
+    /// B01-R1-01: a weekly locked or password range not started yet also keeps the service.
+    func testAFutureLockedRangeHidesTheRemoveButton() throws {
+        let weekday = Calendar.current.component(.weekday, from: now) % 7 + 1 // ISO weekday, never today
+        for lock in [BlockLock.locked, .password] {
+            var program = list
+            program.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [weekday], startMinute: 540, endMinute: 720, lock: lock)])
+            let (c, client, _) = try controller(BlockingDocument(lists: [program])) { [now] in now }
+            XCTAssertNil(c.severeUntil, "\(lock): tomorrow's range arms nothing yet")
+            XCTAssertFalse(c.canRemoveGuard, "\(lock)")
+            c.removeGuardService()
+            XCTAssertEqual(client.removals, 0, "\(lock)")
+        }
+        var free = list
+        free.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [weekday], startMinute: 540, endMinute: 720, lock: .free)])
+        let (c, _, _) = try controller(BlockingDocument(lists: [free])) { [now] in now }
+        XCTAssertTrue(c.canRemoveGuard, "a free range keeps the button")
+    }
+
     func testADeletedMarkerIsRewrittenAndTheEndRemovesIt() throws {
         var clockNow = now
         let (c, client, files) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked)])) { clockNow }

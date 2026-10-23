@@ -201,10 +201,13 @@ import LocalHistoryQueryCLI
     }
     /// Confirmations that can arm the guard first add `GuardConsent.text`.
     var guardNeedsConsent: Bool { guardClient?.needsConsent ?? false }
-    /// « Retirer le service de protection »: hidden while any lock is running or planned. A planned locked
-    /// block was confirmed with the service in place: at its start the service would come back, with its
-    /// macOS notification, and no new consent sentence (R5-garde-02).
-    var canRemoveGuard: Bool { guardClient?.canRemove == true && lockedUntil == nil }
+    /// « Retirer le service de protection »: hidden while any lock is running or planned, a weekly locked or
+    /// password range included. A planned locked block was confirmed with the service in place: at its start
+    /// the service would come back, with its macOS notification, and no new consent sentence (R5-garde-02).
+    var canRemoveGuard: Bool {
+        guardClient?.canRemove == true && lockedUntil == nil
+            && !lists.contains { $0.program.ranges.contains { effectiveLock($0.effectiveLock).protectsLists } }
+    }
     func removeGuardService() {
         refresh(enforceLast: false)
         guard canRemoveGuard else { return }

@@ -450,11 +450,11 @@ struct BlockingMeter: View {
     private var startsLater: Bool { plan(at: now).startsLater }
     private var end: Date { plan(at: now).end }
 
-    /// The end the engine will store: the alert must promise this one.
-    private var freezeEnd: Date { BlockingWallClock.freezeEnd(end, now: now) }
+    /// What the freeze button promises: the end the engine will store, or its 5 min minimum.
+    private var freezePromise: BlockingFreezePromise { BlockingFreezePromise(end: end, now: now) }
 
     private var actionTitle: String {
-        if wholeMac { return "Geler \(BlockingFormat.until(freezeEnd, now: now))…" }
+        if wholeMac { return "Geler \(freezePromise.phrase(now: now))…" }
         return plan(at: now).actionTitle()
     }
 
@@ -466,13 +466,23 @@ struct BlockingMeter: View {
         return plan(at: now).confirmed(at: date)
     }
 
-    /// The freeze end the alert promises, from the plan frozen when it opened.
-    private var pendingFreezeEnd: Date {
-        pending.map { BlockingWallClock.freezeEnd($0.end, now: $0.now) } ?? freezeEnd
+    /// The freeze the alert promises, from the plan frozen when it opened.
+    private var pendingFreeze: BlockingFreezePromise {
+        pending.map { BlockingFreezePromise(end: $0.end, now: $0.now) } ?? freezePromise
     }
 
-    private func refuseEndPassed() {
-        controller.error = "L’heure de fin est passée. Choisissez une autre heure."
+    /// Why a click came too late, in the words of the chosen span: a duration has no end time to change.
+    nonisolated static func refusal(_ span: Span, freeze: Bool) -> String {
+        switch (span, freeze) {
+        case (.minutes, false): return "Ce blocage serait déjà fini. Relancez-le."
+        case (.until, false): return "L’heure de fin est passée. Choisissez une autre heure."
+        case (.minutes, true): return "Le gel durerait moins de 5 min. Relancez-le."
+        case (.until, true): return "Le gel durerait moins de 5 min. Choisissez une autre heure."
+        }
+    }
+
+    private func refuseEndPassed(freeze: Bool = false) {
+        controller.error = Self.refusal(span, freeze: freeze)
     }
 
     private func confirm() {
@@ -582,17 +592,16 @@ struct BlockingMeter: View {
             } message: {
                 Text(GuardConsent.message((pending ?? plan(at: now)).lockMessage(lock), needed: controller.guardNeedsConsent))
             }
-            .alert("Geler le Mac \(BlockingFormat.until(pendingFreezeEnd, now: pending?.now ?? now)) ?", isPresented: $confirmingFreeze) {
+            .alert("Geler le Mac \(pendingFreeze.phrase(now: pending?.now ?? now)) ?", isPresented: $confirmingFreeze) {
                 Button("Annuler", role: .cancel) {}
                 Button("Geler") {
-                    // The promised end, even after a long wait; only an end already reached is refused.
-                    let end = pendingFreezeEnd
-                    guard end.timeIntervalSince(Date()) >= 60 else { return refuseEndPassed() }
+                    // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
+                    guard let end = pendingFreeze.end(at: Date()) else { return refuseEndPassed(freeze: true) }
                     controller.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
                     wholeMac = false
                 }
             } message: {
-                Text(GuardConsent.message("J\(BlockingFormat.until(pendingFreezeEnd, now: pending?.now ?? now).dropFirst()), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
+                Text(GuardConsent.message("\(pendingFreeze.phrase(now: pending?.now ?? now).capitalizedFirst), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
                                           needed: controller.guardNeedsConsent))
             }
         }
@@ -671,6 +680,41 @@ struct BlockingNowPlan: Equatable {
             ? "Sans le mot de passe, ce blocage va \(until). Ses listes peuvent seulement devenir plus strictes, et quitter Goalong demande le mot de passe."
             : "Personne ne pourra arrêter ce blocage avant \(deadline), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas."
     }
+}
+
+/// What the freeze alert promises. The engine stores at least 5 min from its own clock: an end time it
+/// would push back is promised as « pendant 5 min », counted from the click, so the freeze never ends later
+/// than the alert said.
+enum BlockingFreezePromise: Equatable {
+    case until(Date)
+    case minimum
+
+    static let minimumSeconds: TimeInterval = 5 * 60
+
+    init(end: Date, now: Date) {
+        let bounded = BlockingWallClock.freezeEnd(end, now: now)
+        self = bounded > end ? .minimum : .until(bounded)
+    }
+
+    /// The end for a click at `date`; nil when the engine would move the promised end later.
+    func end(at date: Date) -> Date? {
+        switch self {
+        case .minimum: return date.addingTimeInterval(Self.minimumSeconds)
+        case .until(let end): return end.timeIntervalSince(date) >= Self.minimumSeconds ? end : nil
+        }
+    }
+
+    /// « jusqu’à 12:30 », « pendant 5 min ».
+    func phrase(now: Date, calendar: Calendar = .current) -> String {
+        switch self {
+        case .minimum: return "pendant \(BlockingFormat.duration(minutes: Int(Self.minimumSeconds / 60)))"
+        case .until(let end): return BlockingFormat.until(end, now: now, calendar: calendar)
+        }
+    }
+}
+
+private extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }
 
 /// « Tout le Mac » next to the lists: the freeze, drawn as a small covered screen.
@@ -799,7 +843,7 @@ struct BlockingLockExplainer: View {
                 }
             }
             if controller.canRemoveGuard {
-                // Without any lock, running or planned: the member may take the background service away.
+                // Without any lock, running, planned or weekly: the member may take the background service away.
                 Button("Retirer le service de protection") { controller.removeGuardService() }
                     .buttonStyle(LHQuietButtonStyle())
                     .accessibilityIdentifier("blocking-remove-guard")
