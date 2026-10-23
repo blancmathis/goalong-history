@@ -11,12 +11,29 @@ final class GoalongWebsitePairingCoordinator {
     }
     /// Deletes the credential file when pairing created it (never a file the user picked) and drops
     /// the account details bound to it. The access stays valid on the site until it is revoked there.
-    static func forgetStoredToken(path: String) {
+    /// Returns true only when the file was deleted.
+    @discardableResult static func forgetStoredToken(path: String) -> Bool {
         GoalongWebsiteAutoSender.shared.forget()
-        GoalongSitePairing.discardManagedToken(path: path, directory: connectionsDirectory)
-        for key in ["goalong.website.accountID", "goalong.website.accountCredentialFingerprint"] {
+        let deleted = GoalongSitePairing.discardManagedToken(path: path, directory: connectionsDirectory)
+        for key in ["goalong.website.accountID", "goalong.website.accountCredentialFingerprint", GoalongWebsiteAutoSender.refusedCredentialKey] {
             UserDefaults.standard.removeObject(forKey: key)
         }
+        return deleted
+    }
+    /// True for a file that « Relier mon Mac » created (<UUID>.token in the connections folder).
+    /// Only such a file is deleted on disconnect; a file the user picked stays.
+    static func isManagedTokenPath(_ path: String, directory: URL? = nil) -> Bool {
+        guard !path.isEmpty else { return false }
+        let directory = directory ?? connectionsDirectory
+        let file = URL(fileURLWithPath: path)
+        return file.lastPathComponent.range(of: "^[0-9A-F-]{36}\\.token$", options: .regularExpression) != nil
+            && file.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL.path
+                == directory.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+    /// Pairing the same account on the same site again keeps the daily plan (paused for a review).
+    /// Any other account, or an unknown previous account, drops it.
+    static func keepsSchedule(savedOrigin: String, savedAccountID: String, newOrigin: String, newAccountID: String) -> Bool {
+        !savedAccountID.isEmpty && savedAccountID == newAccountID && !savedOrigin.isEmpty && savedOrigin == newOrigin
     }
     private var pendingPrompt: (alert: NSAlert, parent: NSWindow)?
 
@@ -63,7 +80,7 @@ final class GoalongWebsitePairingCoordinator {
             NSApp.activate(ignoringOtherApps: true)
             let confirmation = NSAlert()
             confirmation.messageText = "Relier ce Mac à votre compte Goalong ?"
-            confirmation.informativeText = "Site : \(pairing.origin)\n\nL’accès sera enregistré automatiquement sur ce Mac. Il permet uniquement l’envoi des journées que vous choisirez. Cette liaison ne transmet aucune activité et ne change pas vos permissions.\n\nSi un compte est déjà configuré, cette liaison le remplacera dans l’app."
+            confirmation.informativeText = "Site : \(pairing.origin)\n\nL’accès sera enregistré automatiquement sur ce Mac. Il permet uniquement l’envoi des journées que vous choisirez. Cette liaison ne transmet aucune activité et ne change pas vos permissions.\n\nSi un compte est déjà configuré, cette liaison le remplacera dans l’app." + (GoalongWebsiteAutoSender.shared.savedConfiguration == nil ? "" : " Avec le même compte, l’envoi quotidien reste programmé, en pause jusqu’à votre relecture. Avec un autre compte, il sera supprimé.")
             confirmation.addButton(withTitle: "Relier mon Mac")
             confirmation.addButton(withTitle: "Annuler")
             guard await present(confirmation, on: window) == .alertFirstButtonReturn else { return false }
@@ -76,8 +93,18 @@ final class GoalongWebsitePairingCoordinator {
                 let token = try GoalongSiteSubmission.readToken(file: file)
                 return (file: file, accountID: accountID, fingerprint: SHA256Digest.hashHex(Data(token.utf8)))
             }.value
-            // A schedule approved for the old account must not survive re-pairing.
-            GoalongWebsiteAutoSender.shared.forget()
+            // A schedule approved for another account must not survive re-pairing. The same
+            // account keeps it, bound to the new access and paused until the user reviews it.
+            let previousOrigin = UserDefaults.standard.string(forKey: "goalong.website.origin") ?? ""
+            let previousAccount = UserDefaults.standard.string(forKey: "goalong.website.accountID") ?? ""
+            if Self.keepsSchedule(savedOrigin: previousOrigin, savedAccountID: previousAccount,
+                                  newOrigin: pairing.origin, newAccountID: saved.accountID ?? ""),
+               GoalongWebsiteAutoSender.shared.savedConfiguration?.origin == pairing.origin {
+                GoalongWebsiteAutoSender.shared.rebind(tokenPath: saved.file.path, credentialFingerprint: saved.fingerprint)
+            } else {
+                GoalongWebsiteAutoSender.shared.forget()
+            }
+            UserDefaults.standard.removeObject(forKey: GoalongWebsiteAutoSender.refusedCredentialKey)
             UserDefaults.standard.set(pairing.origin, forKey: "goalong.website.origin")
             UserDefaults.standard.set(saved.file.path, forKey: "goalong.website.tokenFilePath")
             UserDefaults.standard.set(saved.accountID, forKey: "goalong.website.accountID")

@@ -83,16 +83,27 @@
     final class SharingRulesStore {
         private let lock = NSLock()
         private var document: SharingRulesDocument
+        private let fileURL: URL
+        /// The file exists but cannot be read or decoded (truncated, no access, unknown value).
+        /// Then nothing is shared by name: every app and site counts as hidden (fail-closed).
+        private var damaged = false
 
-        init() {
-            if let data = try? Data(contentsOf: AppPaths.sharingRulesFile),
+        /// Defaults apply only when the file does not exist.
+        init(fileURL: URL = AppPaths.sharingRulesFile) {
+            self.fileURL = fileURL
+            if let data = try? Data(contentsOf: fileURL),
                 let decoded = try? JSONDecoder().decode(SharingRulesDocument.self, from: data)
             {
                 document = decoded
             } else {
                 document = SharingRulesDocument()
+                // attributesOfItem does not follow a final symlink: a dangling link or an unreadable file counts as present.
+                damaged = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)) != nil
             }
         }
+
+        /// True while the rules file is present but unreadable. Senders must refuse to run.
+        var isDamaged: Bool { lock.withValue { damaged } }
 
         var defaultVisibility: SharingVisibility {
             lock.withValue { document.defaultVisibility }
@@ -105,21 +116,23 @@
         /// True for a website the user hid in every share (explicit rule, or a hidden default).
         /// Reads the rules once, so callers can test many hosts cheaply.
         func hiddenWebsiteFilter() -> (String) -> Bool {
-            let (rules, fallback) = lock.withValue { (document.rules, document.defaultVisibility) }
+            let (rules, fallback, damaged) = lock.withValue { (document.rules, document.defaultVisibility, self.damaged) }
+            if damaged { return { _ in true } }
             return { host in (rules[SharingSubjectKey.website(host: host)] ?? fallback) == .hidden }
         }
 
         /// True for an application the user hid in every share (explicit rule, or a hidden default).
         /// Arguments are the bundle identifier (or Screen Time id) and the display name.
         func hiddenApplicationFilter() -> (String?, String) -> Bool {
-            let (rules, fallback) = lock.withValue { (document.rules, document.defaultVisibility) }
+            let (rules, fallback, damaged) = lock.withValue { (document.rules, document.defaultVisibility, self.damaged) }
+            if damaged { return { _, _ in true } }
             return { identifier, name in
                 (rules[SharingSubjectKey.application(bundleIdentifier: identifier, name: name)] ?? fallback) == .hidden
             }
         }
 
         func visibility(for key: String) -> SharingVisibility {
-            lock.withValue { document.rules[key] ?? document.defaultVisibility }
+            lock.withValue { damaged ? .hidden : document.rules[key] ?? document.defaultVisibility }
         }
 
         @discardableResult
@@ -141,14 +154,36 @@
         }
 
         private func persistLocked() throws {
+            // Keep the unreadable file (sharing-rules.damaged-<date>.json) before writing a new one.
+            if damaged {
+                try moveDamagedFileAsideLocked()
+                damaged = false
+            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             let data = try encoder.encode(document)
-            try data.write(to: AppPaths.sharingRulesFile, options: [.atomic])
+            try data.write(to: fileURL, options: [.atomic])
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o600],
-                ofItemAtPath: AppPaths.sharingRulesFile.path
+                ofItemAtPath: fileURL.path
             )
+        }
+
+        private func moveDamagedFileAsideLocked() throws {
+            let fm = FileManager.default
+            guard (try? fm.attributesOfItem(atPath: fileURL.path)) != nil else { return }
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            let folder = fileURL.deletingLastPathComponent()
+            let base = fileURL.deletingPathExtension().lastPathComponent
+            var name = "\(base).damaged-\(stamp).json"
+            var index = 1
+            while (try? fm.attributesOfItem(atPath: folder.appendingPathComponent(name).path)) != nil {
+                name = "\(base).damaged-\(stamp)-\(index).json"
+                index += 1
+            }
+            let target = folder.appendingPathComponent(name, isDirectory: false)
+            try fm.moveItem(at: fileURL, to: target)
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
         }
     }
 

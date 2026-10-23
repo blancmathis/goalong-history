@@ -26,5 +26,24 @@ final class GoalongWebsitePairingPresentationTests: XCTestCase {
         XCTAssertFalse(connected, "Cancelling must return before exchanging a code or saving access")
         XCTAssertNil(window.attachedSheet)
     }
+    @MainActor
+    func testOnlyTheSameAccountOnTheSameSiteKeepsTheDailyPlan() {
+        XCTAssertTrue(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "acc", newOrigin: "https://a.example", newAccountID: "acc"))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "acc", newOrigin: "https://a.example", newAccountID: "other"))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "acc", newOrigin: "https://b.example", newAccountID: "acc"))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "", newOrigin: "https://a.example", newAccountID: ""))
+    }
+
+    @MainActor
+    func testDisconnectPromisesDeletionOnlyForAFileCreatedByPairing() {
+        let directory = URL(fileURLWithPath: "/tmp/goalong-connections-\(UUID().uuidString)")
+        let managed = directory.appendingPathComponent(UUID().uuidString + ".token").path
+        XCTAssertTrue(GoalongWebsitePairingCoordinator.isManagedTokenPath(managed, directory: directory))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.isManagedTokenPath(NSHomeDirectory() + "/Downloads/goalong-token.txt", directory: directory))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.isManagedTokenPath("", directory: directory))
+        let picked = GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: NSHomeDirectory() + "/Downloads/goalong-token.txt")
+        XCTAssertFalse(picked.contains("supprimé de ce Mac"))
+        XCTAssertTrue(picked.contains("restera à sa place"))
+    }
 }
 #endif

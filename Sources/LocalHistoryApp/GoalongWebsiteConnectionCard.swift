@@ -9,6 +9,8 @@ extension Notification.Name {
     static let goalongWebsiteConnected = Notification.Name("goalong.website.connected")
     /// A site "share" link: reveals the picker without changing the credential.
     static let goalongWebsiteShareRequested = Notification.Name("goalong.website.shareRequested")
+    /// The site refused the stored access (HTTP 401/403): the account card offers to pair again.
+    static let goalongWebsiteAccessRefused = Notification.Name("goalong.website.accessRefused")
 }
 
 /// Explicit pairing and reviewed export. Credentials stay in private files, outside preferences.
@@ -19,14 +21,18 @@ extension Notification.Name {
     @State private var showsConnection = false
     @State private var disconnecting = false
     @State private var credentialAvailable = false
+    @State private var accessRefused = false
+    /// Set after a disconnect that could not delete the access file (a file the user picked).
+    @State private var keptTokenFile = false
     var body: some View {
         GoalongSettingsGroup(title: "Compte Goalong") {
             HStack(spacing: 14) {
                 Image(systemName: "link").font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 22).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(credentialAvailable ? "Liaison enregistrée" : "Compte non relié").font(.system(size: 13, weight: .semibold))
-                    Text(credentialAvailable ? (URL(string: origin)?.host ?? "Goalong") : "La liaison ne transmet aucune activité.")
+                    Text(credentialAvailable ? "Liaison enregistrée" : accessRefused ? "Accès refusé par le site" : "Compte non relié").font(.system(size: 13, weight: .semibold))
+                    Text(credentialAvailable ? (URL(string: origin)?.host ?? "Goalong")
+                         : accessRefused ? "Reliez de nouveau ce Mac pour reprendre les envois." : "La liaison ne transmet aucune activité.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
@@ -40,10 +46,9 @@ extension Notification.Name {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(sender.enabled ? "Envoi quotidien activé"
-                         : sender.pauseReason != nil ? "En pause après un échec"
-                         : sender.savedConfiguration != nil ? "Envoi quotidien en pause" : "Envois automatiques désactivés")
+                         : sender.savedConfiguration != nil || sender.pauseReason != nil ? "Envoi quotidien en pause" : "Envois automatiques désactivés")
                         .font(.system(size: 13, weight: .medium))
-                    if !sender.enabled, let reason = sender.pauseReason { Text(reason).font(.system(size: 12)).foregroundStyle(.secondary) }
+                    if !sender.enabled, let reason = sender.pauseReason { Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.warning) }
                     if let day = sender.lastSuccess { Text("Dernière journée reçue : \(day)").font(.system(size: 12)).foregroundStyle(.secondary) }
                 }
                 Spacer()
@@ -61,20 +66,35 @@ extension Notification.Name {
             .merge(with: NotificationCenter.default.publisher(for: .goalongWebsiteShareRequested))) { _ in
             refreshCredential(); UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteAccessRefused)) { _ in refreshCredential() }
         .onChange(of: tokenPath) { _ in refreshCredential() }
         .sheet(isPresented: $showsConnection) { GoalongWebsiteSharingSheet().goalongControls() }
         .alert("Déconnecter ce compte ?", isPresented: $disconnecting) {
             Button("Annuler", role: .cancel) {}
             Button("Déconnecter") {
                 sender.forget()
-                GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenPath)
-                tokenPath = ""; origin = ""; credentialAvailable = false
+                let deleted = GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenPath)
+                keptTokenFile = !deleted && !tokenPath.isEmpty
+                tokenPath = ""; origin = ""; credentialAvailable = false; accessRefused = false
             }
-        } message: { Text("Les prochains envois seront arrêtés et le fichier d’accès sera supprimé de ce Mac. Les données déjà reçues restent sur le site. Un envoi déjà commencé peut encore aboutir. Pour révoquer l’accès immédiatement, utilisez les réglages du site.") }
+        } message: { Text(Self.disconnectMessage(tokenPath: tokenPath)) }
+        .alert("Fichier d’accès conservé", isPresented: $keptTokenFile) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(Self.keptFileMessage) }
+    }
+    static let keptFileMessage = "Ce Mac n’utilise plus ce compte, mais le fichier d’accès que vous aviez choisi reste à sa place. Supprimez-le vous-même ou révoquez l’accès dans les réglages du site."
+    /// Only a file created by « Relier mon Mac » is deleted; a file the user picked stays where it is.
+    static func disconnectMessage(tokenPath: String) -> String {
+        let file = GoalongWebsitePairingCoordinator.isManagedTokenPath(tokenPath)
+            ? "le fichier d’accès sera supprimé de ce Mac"
+            : "le fichier d’accès que vous avez choisi restera à sa place"
+        return "Les prochains envois seront arrêtés et \(file). Les données déjà reçues restent sur le site. Un envoi déjà commencé peut encore aboutir. Pour révoquer l’accès immédiatement, utilisez les réglages du site."
     }
     private func refreshCredential() {
-        credentialAvailable = !origin.isEmpty && !tokenPath.isEmpty
+        let readable = !origin.isEmpty && !tokenPath.isEmpty
             && (try? GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))) != nil
+        accessRefused = readable && GoalongWebsiteAutoSender.accessWasRefused(tokenPath: tokenPath)
+        credentialAvailable = readable && !accessRefused
     }
     private func openWebsite() {
         let site = origin.isEmpty ? "https://goalong.spry-crumb-3668.chatgpt.site" : origin
@@ -213,7 +233,9 @@ struct GoalongWebsiteConnectionSheet: View {
                                     .font(.caption).lineLimit(1).truncationMode(.middle)
                                 Button("Oublier le fichier") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = ""; status = nil }
                                     .buttonStyle(LHQuietButtonStyle())
-                                    .help("Le fichier d’accès est supprimé de ce Mac. Pour révoquer l’accès, utilisez les réglages du site.")
+                                    .help(GoalongWebsitePairingCoordinator.isManagedTokenPath(tokenFilePath)
+                                          ? "Le fichier d’accès est supprimé de ce Mac. Pour révoquer l’accès, utilisez les réglages du site."
+                                          : "Goalong oublie ce fichier sans le supprimer. Pour révoquer l’accès, utilisez les réglages du site.")
                             }
                         }
                         GoalongDisclosureGroup("Autre méthode : coller le chemin du fichier", isExpanded: $showsTokenPath) {
@@ -531,7 +553,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     }
                 }
                 let applications = rows.reduce(0) { $0 + (($1["apps"] as? [Any])?.count ?? 0) }
-                previewSummary = "\(day) · \(rows.count) appareil(s) · \(applications) ligne(s) d’applications · \(result.count) octets. Vérifiez les champs exacts ci-dessous."
+                previewSummary = "\(day) · \(GoalongWebsiteSharingModel.frCount(rows.count, "appareil", "appareils")) · \(GoalongWebsiteSharingModel.frCount(applications, "ligne", "lignes")) d’applications · \(GoalongWebsiteSharingModel.frCount(result.count, "octet", "octets")). Vérifiez les champs exacts ci-dessous."
                 payload = result
                 previewPrivacyRevision = reviewed.privacyRevision
             } catch { self.error = goalongUserMessage(error) }
@@ -558,9 +580,17 @@ struct GoalongWebsiteConnectionSheet: View {
                         privacyRoot: privacyRoot, expectedPrivacyRevision: privacyRevision)
                 }.value
                 let result = try JSONSerialization.jsonObject(with: receipt) as? [String: Any] ?? [:]
-                status = "Reçu par le site : \(result["imported"] ?? 0) nouveau(x), \(result["updated"] ?? 0) mis à jour, \(result["skipped"] ?? 0) inchangé(s). Données non vérifiées ; vos règles de partage du site s’appliquent."
+                func count(_ key: String) -> Int { (result[key] as? NSNumber)?.intValue ?? 0 }
+                status = "Reçu par le site : \(GoalongWebsiteSharingModel.frCount(count("imported"), "nouveau", "nouveaux")), \(count("updated")) mis à jour, \(GoalongWebsiteSharingModel.frCount(count("skipped"), "inchangé", "inchangés")). Données non vérifiées ; vos règles de partage du site s’appliquent."
                 payload = nil; previewPrivacyRevision = nil
-            } catch { self.error = goalongUserMessage(error) }
+            } catch {
+                if case GoalongSiteSubmissionError.accessRefused = error,
+                   let token = try? GoalongSiteSubmission.readToken(file: tokenFile) {
+                    GoalongWebsiteAutoSender.shared.markAccessRefused(fingerprint: SHA256Digest.hashHex(Data(token.utf8)))
+                    NotificationCenter.default.post(name: .goalongWebsiteAccessRefused, object: nil)
+                }
+                self.error = goalongUserMessage(error)
+            }
             busy = false
         }
     }

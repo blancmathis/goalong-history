@@ -30,6 +30,8 @@ struct GoalongSettingsLink: View {
     let value: String
     let symbol: String
     var detail: String?
+    /// Alert color for a value that needs the user (e.g. a plan the app paused by itself).
+    var valueTint: Color? = nil
     var action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -43,7 +45,7 @@ struct GoalongSettingsLink: View {
                     }
                 }
                 Spacer(minLength: 12)
-                Text(value).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                Text(value).font(.system(size: 13)).foregroundStyle(valueTint ?? LHTheme.secondaryText).lineLimit(1)
                 GoalongRowChevron()
             }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: detail == nil ? 44 : 56).contentShape(Rectangle())
         }.buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
@@ -104,8 +106,9 @@ struct GoalongSettingsList<Content: View>: View {
                 row("Enregistrement local", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
                     detail: "Ce que Goalong conserve sur ce Mac", symbol: "internaldrive", pane: .recording)
                 GoalongRowDivider()
-                row("Envoi à Goalong", status: sender.enabled ? "Chaque jour" : "À la demande",
-                    detail: "Compte, données et fréquence des envois", symbol: "arrow.up.circle", pane: .website)
+                row("Envoi à Goalong", status: Self.websiteStatus(enabled: sender.enabled, hasPlan: sender.savedConfiguration != nil, pauseReason: sender.pauseReason),
+                    detail: "Compte, données et fréquence des envois",
+                    symbol: "arrow.up.circle", pane: .website, tint: !sender.enabled && sender.pauseReason != nil ? LHTheme.warning : nil)
                 GoalongRowDivider()
                 row("Analyse ChatGPT", status: chatGPTStatus,
                     detail: "Applications, textes, noms masqués et consignes", symbol: "sparkles", pane: .chatGPT)
@@ -128,10 +131,16 @@ struct GoalongSettingsList<Content: View>: View {
         case (false, false): return "À la demande"
         }
     }
-    private func row(_ title: String, status: String, detail: String, symbol: String, pane: SettingsPane) -> some View {
+    /// A saved plan that is not running is never shown as "on demand": it waits for the user.
+    static func websiteStatus(enabled: Bool, hasPlan: Bool, pauseReason: String?) -> String {
+        if enabled { return "Chaque jour" }
+        if pauseReason != nil { return "À reprendre" }
+        return hasPlan ? "En pause" : "À la demande"
+    }
+    private func row(_ title: String, status: String, detail: String, symbol: String, pane: SettingsPane, tint: Color? = nil) -> some View {
         // A disabled or unconfigured service is not "suspended": the global pause changes nothing for it.
         GoalongSettingsLink(title: title, value: pause.blocksActivity && !["Désactivé", "À configurer", "Non connecté"].contains(status) ? "Suspendu" : status,
-                            symbol: symbol, detail: detail) {
+                            symbol: symbol, detail: detail, valueTint: pause.blocksActivity ? nil : tint) {
             model.selectSection(.settings); model.settingsPane = pane
         }
         .accessibilityIdentifier("settings-\(pane)")

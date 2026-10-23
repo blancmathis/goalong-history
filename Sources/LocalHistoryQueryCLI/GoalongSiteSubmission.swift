@@ -12,6 +12,42 @@ public struct GoalongSiteTokenFileReview: Sendable {
     fileprivate let modifiedNanoseconds: Int
 }
 
+/// Failures the app treats apart from the others. Every other failure may mean the
+/// site received the import, so it never triggers an automatic retry.
+public enum GoalongSiteSubmissionError: Error, LocalizedError, CustomStringConvertible, Equatable {
+    /// The request never left this Mac or never reached the site (no network, unknown host,
+    /// connection refused). The site cannot have received it, so a later retry is safe.
+    case unreachable
+    /// The site refused the access (HTTP 401 or 403): the access was revoked or replaced.
+    case accessRefused
+
+    /// URL errors raised before any byte of the request can reach the site.
+    static let unsentURLErrorCodes: Set<Int> = [
+        NSURLErrorNotConnectedToInternet, NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost,
+        NSURLErrorDNSLookupFailed, NSURLErrorInternationalRoamingOff, NSURLErrorDataNotAllowed,
+    ]
+
+    /// The error for a finished task, or nil when the receipt status is unknown.
+    static func classify(_ error: Error) -> GoalongSiteSubmissionError? {
+        let value = error as NSError
+        return value.domain == NSURLErrorDomain && unsentURLErrorCodes.contains(value.code) ? .unreachable : nil
+    }
+
+    public var description: String {
+        switch self {
+        case .unreachable: return "The website could not be reached; the upload was not sent."
+        case .accessRefused: return "The upload token was refused or revoked. Create a new upload-only token in Goalong."
+        }
+    }
+
+    public var errorDescription: String? {
+        switch self {
+        case .unreachable: return "Le site n’a pas pu être joint ; rien n’a été envoyé."
+        case .accessRefused: return "Ce Mac n’est plus relié au site. Reliez-le de nouveau avec « Relier mon Mac »."
+        }
+    }
+}
+
 public enum GoalongSiteSubmission {
     /// Resolve only a user-entered local path; never search for or discover token files.
     public static func tokenFileURL(path raw: String) throws -> URL {
@@ -196,7 +232,7 @@ public enum GoalongSiteSubmission {
             let reason: GoalongSiteExportError
             switch status {
             case 301...399: reason = .localized("Upload redirects are refused. Use the final website HTTPS origin.", french: "Le site a redirigé l’envoi, ce qui est refusé. Utilisez l’adresse HTTPS finale du site.")
-            case 401, 403: reason = .localized("The upload token was refused or revoked. Create a new upload-only token in Goalong.", french: "Ce Mac n’est plus relié au site. Reliez-le de nouveau avec « Relier mon Mac ».")
+            case 401, 403: throw GoalongSiteSubmissionError.accessRefused
             case 409: reason = .localized("The import conflicts with another operation. Inspect the site's import history.", french: "L’envoi est en conflit avec une autre opération. Consultez l’historique d’import du site.")
             case 413: reason = .localized("The website refused the size of this import.", french: "Le site a refusé la taille de cet envoi.")
             case 429: reason = .localized("The website import rate limit was reached. Try again later.", french: "Trop d’envois en peu de temps. Réessayez plus tard.")
@@ -229,6 +265,7 @@ private final class SubmissionResponse: NSObject, URLSessionDataDelegate, @unche
     private var data = Data()
     private var status = 0
     private var failure: GoalongSiteExportError?
+    private var unsent: GoalongSiteSubmissionError?
 
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
@@ -256,12 +293,15 @@ private final class SubmissionResponse: NSObject, URLSessionDataDelegate, @unche
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if error != nil && failure == nil { failure = .localized("Upload failed. Check import history before retrying; receipt status may be unknown.", french: "L’envoi a échoué. Vérifiez l’historique d’import avant de réessayer ; on ne sait pas s’il a été reçu.") }
+        if let error, failure == nil, let known = GoalongSiteSubmissionError.classify(error) {
+            unsent = known
+        } else if error != nil && failure == nil { failure = .localized("Upload failed. Check import history before retrying; receipt status may be unknown.", french: "L’envoi a échoué. Vérifiez l’historique d’import avant de réessayer ; on ne sait pas s’il a été reçu.") }
         finished.signal()
     }
 
     func result() throws -> Data {
         if let failure { throw failure }
+        if let unsent { throw unsent }
         return try GoalongSiteSubmission.validatedResponse(data, status: status)
     }
 }
