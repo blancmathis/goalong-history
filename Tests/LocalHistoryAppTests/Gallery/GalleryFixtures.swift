@@ -78,7 +78,7 @@ import SwiftUI
         { _ in
             guard model.snapshotGeneration > 0, !model.isRefreshing,
                   ComputerHistoryPageModel.refreshesInFlight == 0,
-                  GoalongAnalyticsModel.loadsInFlight == 0 else { return false }
+                  GoalongAnalyticsModel.loadsInFlight == 0, GoalongWorkReviewModel.loadsInFlight == 0 else { return false }
             model.waitForPendingWorkForTesting()
             return model.snapshotGeneration > 0 && !model.isRefreshing
         }
@@ -223,6 +223,8 @@ import SwiftUI
         GoalongToastCenter.shared.setForTesting(nil)
         GoalongToastCenter.suppressedForTesting = true
         ProductIdentity.galleryOverride = ProductIdentity.GalleryIdentity()
+        GoalongWorkPage.galleryReviewFocusTask = nil
+        GoalongWorkReviewModel.lastLoadedRowCount = nil
         guard resetData else { return }
         try resetHome(home)
         JevWorkContextStore.shared.resetForTesting()
@@ -261,8 +263,8 @@ import SwiftUI
         // refreshes, then close the derived-write barrier like a history clear does, so no late summary or
         // checkpoint of the previous data lands in this entry's HOME.
         let deadline = Date().addingTimeInterval(5)
-        while (ComputerHistoryPageModel.refreshesInFlight > 0 || GoalongAnalyticsModel.loadsInFlight > 0)
-                && Date() < deadline {
+        while (ComputerHistoryPageModel.refreshesInFlight > 0 || GoalongAnalyticsModel.loadsInFlight > 0
+                || GoalongWorkReviewModel.loadsInFlight > 0) && Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
         }
         let barrier = DerivedHistoryWriteBarrier.shared

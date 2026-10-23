@@ -263,7 +263,7 @@ struct GoalongAnalyticsContent: View {
 
     /// Only what changes how the figures should be read; nothing when the period is complete.
     @ViewBuilder private var coverage: some View {
-        let today = !payload.isPreview && current.days.contains { Calendar.current.isDateInToday($0.date) }
+        let today = !payload.isPreview && current.days.contains { GoalongToday.isToday($0.date) }
         let restored = current.days.filter { $0.observedSeconds > 0 && !$0.hasDetailedSource }.count
         if current.incompleteDays > 0 {
             GoalongNote("\(current.incompleteDays) jour(s) illisible(s) ou incomplet(s), exclus des totaux. Actualisez ou consultez l’historique.",
@@ -331,7 +331,7 @@ struct GoalongAnalyticsContent: View {
     private var classifyLabel: String {
         guard !isDay else { return "Classer maintenant" }
         let target = GoalongWorkAgent.manualTarget(days: current.days, fallback: current.days.last?.date ?? Date())
-        if Calendar.current.isDateInToday(target) { return "Classer aujourd’hui" }
+        if GoalongToday.isToday(target) { return "Classer aujourd’hui" }
         return "Classer le \(GoalongActivitySummary.weekdayDate(target))"
     }
 
@@ -761,7 +761,7 @@ struct GoalongAnalyticsContent: View {
     /// Today with nothing yet is a day that has not started, not a missing archive.
     private var isEmptyToday: Bool {
         isDay && current.eventCount == 0 && current.incompleteDays == 0
-            && current.days.contains { Calendar.current.isDateInToday($0.date) }
+            && current.days.contains { GoalongToday.isToday($0.date) }
     }
 
     @ViewBuilder private var emptyState: some View {

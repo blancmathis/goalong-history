@@ -912,7 +912,7 @@
                 LazyVStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Text(
-                            Calendar.current.isDateInToday(day)
+                            GoalongToday.isToday(day)
                                 ? "Aujourd’hui"
                                 : DashboardFormatters.dayTitle.string(from: day)
                         )
@@ -1004,7 +1004,7 @@
                 return model.memory == nil
                     ? "Aucun journal pour cette date"
                     : "Détails de la journée indisponibles"
-            case .available where Calendar.current.isDateInToday(day):
+            case .available where GoalongToday.isToday(day):
                 return "Aucune activité enregistrée aujourd’hui"
             case .available:
                 return "Aucune activité trouvée"
@@ -1025,7 +1025,7 @@
                 return model.memory == nil
                     ? "Aucun historique conservé pour ce jour. Les autres jours sont inchangés."
                     : "Le journal d’origine est absent, mais l’historique conservé n’a pas été supprimé."
-            case .available where Calendar.current.isDateInToday(day):
+            case .available where GoalongToday.isToday(day):
                 return "L’activité apparaît ici lorsque Goalong enregistre une application autorisée."
             case .available:
                 return "Choisissez une autre date. Un historique vide ne prouve pas une absence d’activité."

@@ -260,7 +260,15 @@
             return cache
         }()
 
-        private static func icon(bundleIdentifier: String?) -> NSImage? {
+        #if DEBUG
+        /// Test gallery only: no icon is read from this Mac, every app shows its initial.
+        static var galleryHidesHostIcons = false
+        #endif
+
+        static func icon(bundleIdentifier: String?) -> NSImage? {
+            #if DEBUG
+            if galleryHidesHostIcons { return nil }
+            #endif
             guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return nil }
             let key = bundleIdentifier as NSString
             if let cached = cache.object(forKey: key) { return cached }
@@ -335,9 +343,9 @@
         var body: some View {
             HStack(spacing: 8) {
                 stepper
-                if showsToday && !Calendar.current.isDateInToday(date) {
+                if showsToday && !GoalongToday.isToday(date) {
                     Button("Aujourd’hui") {
-                        onChange(Date())
+                        onChange(GoalongToday.now)
                     }
                     .controlSize(.small)
                     .help("Revenir à aujourd’hui")
@@ -351,7 +359,7 @@
                 GoalongCalendarButton(date: date, onChange: onChange)
                     .accessibilityIdentifier(identifierPrefix.map { "\($0)-date-picker" } ?? "")
                 stepButton(1, symbol: "chevron.right", label: nextLabel, identifier: "next-period")
-                    .disabled(Calendar.current.isDateInToday(date))
+                    .disabled(GoalongToday.isToday(date))
             }
             .padding(.horizontal, 3)
             .frame(minHeight: 30)
@@ -361,7 +369,7 @@
         private func stepButton(_ direction: Int, symbol: String, label: String, identifier: String) -> some View {
             Button {
                 if let onStep { onStep(direction) }
-                else if let day = Calendar.current.date(byAdding: .day, value: direction, to: date), day <= Date() { onChange(day) }
+                else if let day = Calendar.current.date(byAdding: .day, value: direction, to: date), day <= GoalongToday.now { onChange(day) }
             } label: {
                 Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 24)
                     .contentShape(Rectangle())

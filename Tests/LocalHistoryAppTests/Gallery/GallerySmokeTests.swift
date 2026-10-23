@@ -36,7 +36,28 @@ final class GallerySmokeTests: XCTestCase {
         let preferences = ActivityAnalysisRuntime.shared.preferences
         let version = SoftwareUpdateManager.shared.currentVersion
         let applications = GoalongApplicationCatalog.galleryApplications
+        // A policy other than the gallery's, so a missing restore shows (an earlier render may have left .accessory).
+        let original = NSApplication.shared.activationPolicy()
+        if original == .accessory { _ = NSApplication.shared.setActivationPolicy(.prohibited) }
+        defer { if NSApplication.shared.activationPolicy() != original { _ = NSApplication.shared.setActivationPolicy(original) } }
+        let policy = NSApplication.shared.activationPolicy()
+        XCTAssertNotEqual(policy, .accessory, "could not leave the gallery's activation policy")
+        let hidesIcons = AppIconView.galleryHidesHostIcons
+        let today = GoalongToday.galleryClock
         GalleryRenderer.withPreparedApplication {
+            XCTAssertEqual(NSApplication.shared.activationPolicy(), .accessory)
+            // « Aujourd’hui » is the gallery day on any real date (C2-couverture-02).
+            XCTAssertEqual(GoalongToday.now, GalleryClock.now)
+            XCTAssertTrue(GoalongToday.isToday(GalleryClock.now))
+            XCTAssertFalse(GoalongToday.isToday(GalleryClock.now.addingTimeInterval(-86_400)))
+            // No LaunchServices: Safari (on every Mac) shows its initial; an app outside the invented list is absent
+            // even when this Mac has it; a listed one keeps the list's name (C2-outil-01, C2-couverture-05).
+            XCTAssertNil(AppIconView.icon(bundleIdentifier: "com.apple.Safari"))
+            XCTAssertFalse(GoalongApplicationsSettings.choice(id: "com.apple.finder", storedName: nil).installed)
+            let listed = GalleryFixtures.installedApplications[0]
+            let choice = GoalongApplicationsSettings.choice(id: listed.id, storedName: nil)
+            XCTAssertTrue(choice.installed)
+            XCTAssertEqual(choice.name, listed.name)
             XCTAssertEqual(NSTimeZone.default.identifier, "Europe/Paris")
             XCTAssertEqual(ActivityAnalysisRuntime.shared.clock(), GalleryClock.now)
             // Settings › home and the "updated" banner show the gallery's version, not xctest's (C1-couverture-04).
@@ -47,6 +68,9 @@ final class GallerySmokeTests: XCTestCase {
             XCTAssertEqual(Set(catalog.apps.map(\.id)), Set(GalleryFixtures.installedApplications.map(\.id)))
         }
         XCTAssertEqual(GoalongApplicationCatalog.galleryApplications, applications)
+        XCTAssertEqual(NSApplication.shared.activationPolicy(), policy, "activation policy not restored (C2-outil-03)")
+        XCTAssertEqual(AppIconView.galleryHidesHostIcons, hidesIcons)
+        XCTAssertEqual(GoalongToday.galleryClock == nil, today == nil, "today clock not restored")
         XCTAssertEqual(NSTimeZone.default, zone)
         XCTAssertEqual(GoalongToastCenter.suppressedForTesting, toasts)
         XCTAssertEqual(ProductIdentity.galleryOverride, identity)
@@ -117,12 +141,30 @@ final class GallerySmokeTests: XCTestCase {
         let panel = try renderProbe(GalleryEntry("essai/panneau", sizes: [.fixed(300, 200)]) { _ in
             AnyView(Text("Panneau").padding())
         })
-        XCTAssertEqual(panel.bitmap.colorAt(x: 0, y: 0)?.alphaComponent, 1, "transparent margin around a fixed panel")
+        Self.assertOpaqueEdges(panel, "fixed panel")
+        // A fitted panel of a fractional height: the window rounds it up, the rest is page colour (C2-couverture-04).
+        let fitted = try renderProbe(GalleryEntry("essai/panneau-ajuste", sizes: [.fitWidth(300)]) { _ in
+            AnyView(Text("Panneau").frame(height: 100.3))
+        })
+        XCTAssertEqual(fitted.pointSize.height, 101, "fitted panel height")
+        Self.assertOpaqueEdges(fitted, "fitted panel")
         // A short page rendered whole keeps the window height, without an empty band down to 1500 pt (C1-couverture-09).
         let page = try renderProbe(GalleryEntry("essai/page-courte", sizes: [.full(600)]) { _ in
             AnyView(ScrollView { Text("Page courte").padding() })
         })
         XCTAssertEqual(page.pointSize.height, GalleryRenderer.fullStartHeight, "short --full page height")
+    }
+
+    /// Every pixel of the first and last rows and columns is opaque.
+    static func assertOpaqueEdges(_ image: GalleryImage, _ label: String, file: StaticString = #filePath, line: UInt = #line) {
+        let bitmap = image.bitmap
+        let w = bitmap.pixelsWide, h = bitmap.pixelsHigh
+        var points = [(Int, Int)]()
+        for x in 0..<w { points.append((x, 0)); points.append((x, h - 1)) }
+        for y in 0..<h { points.append((0, y)); points.append((w - 1, y)) }
+        let transparent = points.filter { (bitmap.colorAt(x: $0.0, y: $0.1)?.alphaComponent ?? 0) < 1 }
+        XCTAssertTrue(transparent.isEmpty, "\(label): \(transparent.count) transparent edge pixels, first \(transparent.first.map { "\($0)" } ?? "")",
+                      file: file, line: line)
     }
 
     @MainActor private func renderProbe(_ entry: GalleryEntry) throws -> GalleryImage {

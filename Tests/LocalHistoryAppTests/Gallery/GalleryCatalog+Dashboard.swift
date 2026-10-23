@@ -52,9 +52,12 @@ extension GalleryCatalog {
                     content: "Documentation Swift, e-mails clients, rédaction de posts Goalong.",
                     procrastination: "jeux, x.com, youtube.com")
             }),
-            // Definition and the member's verdicts: the review lists the contexts by task, below the form.
+            // Definition and the member's own verdicts (agent not allowed: allowing it would start a ChatGPT
+            // account check, a process). The review is open on the gallery day, Atlas unfolded: --full shows the
+            // contexts by task with their verdicts (C2-couverture-03).
             dashboard("mon-travail/classement-avec-donnees", section: .work, sizes: [.window, .full(1240)],
-                      fixture: .classified),
+                      fixture: .classified, reached: { (GoalongWorkReviewModel.lastLoadedRowCount ?? 0) > 0 },
+                      configure: { _, _ in GoalongWorkPage.galleryReviewFocusTask = "Atlas" }),
             dashboard("mon-travail/definition-et-donnees", section: .work, fixture: .realistic, configure: { _, _ in
                 try JevWorkContextStore.shared.save("Atlas : préparer le lancement de l’app mobile.",
                     applications: "Xcode, Terminal et GitHub pour Atlas.",
@@ -76,7 +79,13 @@ extension GalleryCatalog {
             dashboard("confidentialite/pause-globale", section: .privacy, paused: true),
             dashboard("confidentialite/suivi-actif", section: .privacy, fixture: .realistic),
             dashboard("terminal/aide", section: .cli),
-            dashboard("surveillance/a-configurer", section: .monitoring),
+            // Without a key but with history on and a work definition: not the same image as Réglages › Jev, which
+            // the section opens (C2-couverture-01).
+            dashboard("surveillance/a-configurer", section: .monitoring, fixture: .recordingOn, configure: { _, _ in
+                try JevWorkContextStore.shared.save("Atlas : préparer le lancement de l’app mobile.",
+                    applications: "Xcode, Terminal et GitHub pour Atlas.", content: "Documentation Swift.",
+                    procrastination: "youtube.com, Messages")
+            }),
             dashboard("concentration/page", section: .concentration, sizes: [.window, .full(1240)]),
             dashboard("distractions/page", section: .distractions),
             dashboard("programme/page", section: .blocking),

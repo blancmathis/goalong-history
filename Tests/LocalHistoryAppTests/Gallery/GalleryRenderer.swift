@@ -39,9 +39,14 @@ struct GalleryImage {
         GoalongToastCenter.suppressedForTesting = true
         ProductIdentity.galleryOverride = ProductIdentity.GalleryIdentity()
         GoalongApplicationCatalog.galleryApplications = GalleryFixtures.installedApplications
+        // No LaunchServices read: the invented apps decide what is installed, every icon is the app's initial
+        // (C2-outil-01, C2-couverture-05).
+        AppIconView.galleryHidesHostIcons = true
         // History's analysis passes: a throwaway suite (the hook deletes it) and the frozen clock.
         ActivityAnalysisRuntime.shared.preferences = processDefaults
         ActivityAnalysisRuntime.shared.clock = { GalleryClock.now }
+        // « Aujourd’hui » in the views is the gallery day, whatever the real date (C2-couverture-02).
+        GoalongToday.galleryClock = { GalleryClock.now }
         warmSingletons()
     }
 
@@ -54,6 +59,9 @@ struct GalleryImage {
         let analysisPreferences: UserDefaults
         let analysisClock: () -> Date
         let applications: [GoalongApplicationChoice]?
+        let today: (() -> Date)?
+        let hidesHostIcons: Bool
+        let activationPolicy: NSApplication.ActivationPolicy
     }
 
     static func saveGlobals() -> ProcessGlobals {
@@ -61,7 +69,9 @@ struct GalleryImage {
                        identity: ProductIdentity.galleryOverride,
                        analysisPreferences: ActivityAnalysisRuntime.shared.preferences,
                        analysisClock: ActivityAnalysisRuntime.shared.clock,
-                       applications: GoalongApplicationCatalog.galleryApplications)
+                       applications: GoalongApplicationCatalog.galleryApplications,
+                       today: GoalongToday.galleryClock, hidesHostIcons: AppIconView.galleryHidesHostIcons,
+                       activationPolicy: NSApplication.shared.activationPolicy())
     }
 
     static func restoreGlobals(_ saved: ProcessGlobals) {
@@ -71,6 +81,10 @@ struct GalleryImage {
         ActivityAnalysisRuntime.shared.preferences = saved.analysisPreferences
         ActivityAnalysisRuntime.shared.clock = saved.analysisClock
         GoalongApplicationCatalog.galleryApplications = saved.applications
+        GoalongToday.galleryClock = saved.today
+        AppIconView.galleryHidesHostIcons = saved.hidesHostIcons
+        let app = NSApplication.shared
+        if app.activationPolicy() != saved.activationPolicy { app.setActivationPolicy(saved.activationPolicy) }
     }
 
     /// `prepareApplication`, `body`, then the process globals as they were, even when `body` throws.
@@ -101,7 +115,11 @@ struct GalleryImage {
         var content = try entry.view(ctx)
         switch size {
         case let .fixed(width, height): content = AnyView(content.frame(width: width, height: height))
-        case let .fitWidth(width): content = AnyView(content.frame(width: width).fixedSize(horizontal: false, vertical: true))
+        case let .fitWidth(width):
+            // Top-aligned in a frame that fills the window: the window height is rounded up to a whole point, and
+            // the page colour below covers that rest instead of a transparent row (C2-couverture-04).
+            content = AnyView(content.frame(width: width).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top))
         case let .full(width): content = AnyView(content.frame(width: width).frame(maxHeight: .infinity))
         }
         if entry.pageBackground && !entry.dashboardWindow {

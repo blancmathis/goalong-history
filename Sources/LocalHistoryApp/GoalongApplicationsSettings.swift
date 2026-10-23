@@ -140,7 +140,16 @@ enum GoalongKnownApplications {
                 && (item.installed || excludedOnly || !search.isEmpty)
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
-    private static func choice(id: String, storedName: String?) -> GoalongApplicationChoice {
+    static func choice(id: String, storedName: String?) -> GoalongApplicationChoice {
+        #if DEBUG
+        // Test gallery: an app is installed when the invented list has it; LaunchServices is never asked.
+        if let fixed = GoalongApplicationCatalog.galleryApplications {
+            if let app = fixed.first(where: { $0.id.caseInsensitiveCompare(id) == .orderedSame }) {
+                return .init(id: id, name: storedName ?? app.name)
+            }
+            return .init(id: id, name: storedName ?? GoalongKnownApplications.name(for: id) ?? id, installed: false)
+        }
+        #endif
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
             return .init(id: id, name: storedName ?? url.deletingPathExtension().lastPathComponent)
         }

@@ -40,6 +40,23 @@ final class GalleryGuardTests: XCTestCase {
         XCTAssertThrowsError(try GalleryStateReset.resetHome(URL(fileURLWithPath: "/tmp", isDirectory: true)))
     }
 
+    /// Views decide « aujourd’hui » through `GoalongToday`, which the gallery freezes; `Calendar.isDateInToday` reads
+    /// the real clock and changes images on another day (C2-couverture-02). Background code may keep it.
+    func testViewsDoNotReadTheRealTodayDirectly() throws {
+        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Sources/LocalHistoryApp")
+        let allowed: Set<String> = ["GoalongCallPresenceMonitor.swift", "GoalongToday.swift"]
+        let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+        var offenders: [String] = []
+        var scanned = 0
+        for case let url as URL in files where url.pathExtension == "swift" && !allowed.contains(url.lastPathComponent) {
+            scanned += 1
+            if try String(contentsOf: url, encoding: .utf8).contains("isDateInToday(") { offenders.append(url.lastPathComponent) }
+        }
+        XCTAssertGreaterThan(scanned, 50, "sources not found at \(sources.path)")
+        XCTAssertEqual(offenders, [], "use GoalongToday.isToday in views")
+    }
+
     /// The frozen clock reads « vendredi 23 octobre 2026 » and « 09:41 » whatever the Mac's language and time zone.
     func testFrozenClockReadsInFrench() {
         XCTAssertEqual(GalleryWitness.dateText(GalleryClock.base), "vendredi 23 octobre 2026")

@@ -23,11 +23,16 @@ import SwiftUI
                           environment: ((inout GalleryEnvironment) -> Void)? = nil,
                           paused: Bool = false, fixture: GalleryFixtureHome.Kind = .empty, period: Int = 1,
                           note: String? = nil, file: String = #fileID,
+                          reached: (@MainActor () -> Bool)? = nil,
                           configure: (@MainActor (DashboardViewModel, GalleryContext) throws -> Void)? = nil) -> GalleryEntry {
         var model: DashboardViewModel?
+        // `reached`: the state the entry names is on screen; else the image is `not-ready`, not a quiet wrong image.
         return GalleryEntry(id, sizes: sizes, themes: themes, clock: .injected, dashboardWindow: true, note: note,
                             section: section == .settings ? nil : section, pane: section == .settings ? pane : nil,
-                            ready: { ctx in model.map { GalleryFixtures.dashboardReady($0)(ctx) } ?? false }, file: file) { ctx in
+                            ready: { ctx in
+                                guard let model, GalleryFixtures.dashboardReady(model)(ctx) else { return false }
+                                return reached?() ?? true
+                            }, file: file) { ctx in
             ctx.environment.usedBytes = GalleryFixtureHome.usedBytes(fixture)
             if let environment { environment(&ctx.environment) }
             try GalleryFixtureHome.install(fixture)

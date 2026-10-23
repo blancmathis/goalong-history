@@ -585,7 +585,7 @@
         }
 
         private var isToday: Bool {
-            Calendar.current.isDateInToday(recapRuntime.selectedDay)
+            GoalongToday.isToday(recapRuntime.selectedDay)
         }
 
         private func scoreTint(_ score: Int) -> Color {
