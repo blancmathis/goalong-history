@@ -213,6 +213,8 @@ struct GalleryImage {
     }
 
     private static func capture(_ host: NSView, window: NSWindow) throws -> Capture {
+        // A screen at rest, before every capture: AppKit may hand the focus to a field after the first layout.
+        if window.firstResponder !== window { window.makeFirstResponder(nil) }
         hideScrollPockets(host)
         scrollToTop(host)
         host.layoutSubtreeIfNeeded()
