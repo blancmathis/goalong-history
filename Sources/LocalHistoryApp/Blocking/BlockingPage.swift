@@ -424,6 +424,10 @@ struct BlockingMeter: View {
     @State private var confirmingFreeze = false
     /// The plan the open alert promises: a click on it keeps this end (R5-regressions-01).
     @State private var pending: BlockingNowPlan?
+    /// The freeze the open alert promises, read at the click that opened it (B01-R2-01).
+    @State private var pendingFreezePromise: BlockingFreezePromise?
+    /// That click: the alert writes its end time against it.
+    @State private var pendingFreezeAt = Date()
     @State private var picking = false
     /// « Plus tard »: a one-time block that starts by itself.
     @State private var later = false
@@ -466,10 +470,8 @@ struct BlockingMeter: View {
         return plan(at: now).confirmed(at: date)
     }
 
-    /// The freeze the alert promises, from the plan frozen when it opened.
-    private var pendingFreeze: BlockingFreezePromise {
-        pending.map { BlockingFreezePromise(end: $0.end, now: $0.now) } ?? freezePromise
-    }
+    /// The freeze the alert promises, read when it opened.
+    private var pendingFreeze: BlockingFreezePromise { pendingFreezePromise ?? freezePromise }
 
     /// Why a click came too late, in the words of the chosen span: a duration has no end time to change.
     nonisolated static func refusal(_ span: Span, freeze: Bool) -> String {
@@ -489,7 +491,12 @@ struct BlockingMeter: View {
         let date = Date()
         if wholeMac {
             // The freeze promises what the button showed; its 5 min minimum covers an end time just reached.
-            if case .minutes = span { pending = plan(at: date) } else { pending = plan(at: now) }
+            let shown: BlockingNowPlan
+            if case .minutes = span { shown = plan(at: date) } else { shown = plan(at: now) }
+            pending = shown
+            // Promised from the click, not the page tick (up to 30 s old), with time to read the alert.
+            pendingFreezePromise = BlockingFreezePromise.alert(end: shown.end, click: date)
+            pendingFreezeAt = date
             confirmingFreeze = true
             return
         }
@@ -592,7 +599,7 @@ struct BlockingMeter: View {
             } message: {
                 Text(GuardConsent.message((pending ?? plan(at: now)).lockMessage(lock), needed: controller.guardNeedsConsent))
             }
-            .alert("Geler le Mac \(pendingFreeze.phrase(now: pending?.now ?? now)) ?", isPresented: $confirmingFreeze) {
+            .alert("Geler le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
                 Button("Annuler", role: .cancel) {}
                 Button("Geler") {
                     // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
@@ -601,7 +608,7 @@ struct BlockingMeter: View {
                     wholeMac = false
                 }
             } message: {
-                Text(GuardConsent.message("\(pendingFreeze.phrase(now: pending?.now ?? now).capitalizedFirst), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
+                Text(GuardConsent.message("\(pendingFreeze.phrase(now: pendingFreezeAt).capitalizedFirst), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
                                           needed: controller.guardNeedsConsent))
             }
         }
@@ -690,10 +697,19 @@ enum BlockingFreezePromise: Equatable {
     case minimum
 
     static let minimumSeconds: TimeInterval = 5 * 60
+    /// Time left to read the alert before « Geler »: an end closer than 5 min + this is promised as the minimum.
+    static let readingSeconds: TimeInterval = 60
 
-    init(end: Date, now: Date) {
+    /// `margin` keeps an end time the engine could still take, but not after a read of the alert, out of `.until`.
+    init(end: Date, now: Date, margin: TimeInterval = 0) {
         let bounded = BlockingWallClock.freezeEnd(end, now: now)
-        self = bounded > end ? .minimum : .until(bounded)
+        let tight = bounded < now.addingTimeInterval(Self.minimumSeconds + margin)
+        self = bounded > end || tight ? .minimum : .until(bounded)
+    }
+
+    /// What the alert promises, read at the click on the button that opens it (B01-R2-01).
+    static func alert(end: Date, click: Date) -> BlockingFreezePromise {
+        BlockingFreezePromise(end: end, now: click, margin: readingSeconds)
     }
 
     /// The end for a click at `date`; nil when the engine would move the promised end later.

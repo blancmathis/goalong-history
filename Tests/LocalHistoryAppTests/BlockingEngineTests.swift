@@ -1058,6 +1058,24 @@ final class BlockingEngineTests: XCTestCase {
                        .until(date(6, 12)), "the 24 h cap is promised as such")
     }
 
+    /// B01-R2-01: the freeze alert reads its promise at the click, not at the page tick, and leaves time to
+    /// read it. « Jusqu’à 12:05 » drawn at 11:59:50, opened at 12:00:15: never a promise « Geler » can only refuse.
+    func testFreezeAlertPromisesFromTheClick() throws {
+        let tick = date(5, 11, 59).addingTimeInterval(50)
+        XCTAssertEqual(BlockingFreezePromise(end: date(5, 12, 5), now: tick), .until(date(5, 12, 5)), "the button, at the tick")
+        let click = date(5, 12).addingTimeInterval(15)
+        let alert = BlockingFreezePromise.alert(end: date(5, 12, 5), click: click)
+        XCTAssertEqual(alert, .minimum)
+        XCTAssertEqual(alert.phrase(now: click), "pendant 5 min")
+        let freeze = click.addingTimeInterval(40)
+        XCTAssertEqual(alert.end(at: freeze), freeze.addingTimeInterval(300))
+        // Less than 6 min from the click: promised as the minimum; 6 min or more keeps the end time.
+        XCTAssertEqual(BlockingFreezePromise.alert(end: click.addingTimeInterval(359), click: click), .minimum)
+        let far = BlockingFreezePromise.alert(end: date(5, 12, 7), click: click)
+        XCTAssertEqual(far, .until(date(5, 12, 7)))
+        XCTAssertEqual(far.end(at: click.addingTimeInterval(60)), date(5, 12, 7), "a read of one minute still freezes")
+    }
+
     /// B01-R1-03: a late click is refused in the words of the chosen span.
     func testLateClickRefusalSpeaksOfTheChosenSpan() {
         XCTAssertEqual(BlockingNowComposer.refusal(.minutes(30), freeze: false), "Ce blocage serait déjà fini. Relancez-le.")

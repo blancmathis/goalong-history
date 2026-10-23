@@ -87,10 +87,14 @@
         /// The file exists but cannot be read or decoded (truncated, no access, unknown value).
         /// Then nothing is shared by name: every app and site counts as hidden (fail-closed).
         private var damaged = false
+        /// Writes one file; tests replace it to simulate a full disk.
+        private let write: (Data, URL) throws -> Void
 
         /// Defaults apply only when the file does not exist.
-        init(fileURL: URL = AppPaths.sharingRulesFile) {
+        init(fileURL: URL = AppPaths.sharingRulesFile,
+             write: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: [.atomic]) }) {
             self.fileURL = fileURL
+            self.write = write
             if let data = try? Data(contentsOf: fileURL),
                 let decoded = try? JSONDecoder().decode(SharingRulesDocument.self, from: data)
             {
@@ -157,24 +161,36 @@
         }
 
         private func persistLocked() throws {
-            // Keep the unreadable file (sharing-rules.damaged-<date>.json) before writing a new one.
-            if damaged {
-                try moveDamagedFileAsideLocked()
-                damaged = false
-            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             let data = try encoder.encode(document)
-            try data.write(to: fileURL, options: [.atomic])
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o600],
-                ofItemAtPath: fileURL.path
-            )
+            guard damaged else {
+                try write(data, fileURL)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+                return
+            }
+            // Keep the unreadable file (sharing-rules.damaged-<date>.json). The new file is written first, next to it:
+            // a failed write (full disk) leaves the damaged file in place, so the next launch still hides everything.
+            let fm = FileManager.default
+            let staged = fileURL.deletingLastPathComponent()
+                .appendingPathComponent(".\(fileURL.lastPathComponent).\(UUID().uuidString).tmp", isDirectory: false)
+            defer { try? fm.removeItem(at: staged) }
+            try write(data, staged)
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: staged.path)
+            let aside = try moveDamagedFileAsideLocked()
+            do {
+                try fm.moveItem(at: staged, to: fileURL)
+            } catch {
+                if let aside { try? fm.moveItem(at: aside, to: fileURL) }
+                throw error
+            }
+            damaged = false
         }
 
-        private func moveDamagedFileAsideLocked() throws {
+        /// Returns where the damaged file went, or nil when it is gone already.
+        private func moveDamagedFileAsideLocked() throws -> URL? {
             let fm = FileManager.default
-            guard (try? fm.attributesOfItem(atPath: fileURL.path)) != nil else { return }
+            guard (try? fm.attributesOfItem(atPath: fileURL.path)) != nil else { return nil }
             let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
             let folder = fileURL.deletingLastPathComponent()
             let base = fileURL.deletingPathExtension().lastPathComponent
@@ -187,6 +203,7 @@
             let target = folder.appendingPathComponent(name, isDirectory: false)
             try fm.moveItem(at: fileURL, to: target)
             try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+            return target
         }
     }
 

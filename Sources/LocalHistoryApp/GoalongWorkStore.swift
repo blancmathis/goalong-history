@@ -62,7 +62,11 @@ extension Notification.Name {
     /// and nothing is written over it) instead of being silently replaced.
     @Published private(set) var storageNotice: String?
     @Published var automatic: Bool {
-        didSet { guard automatic != document.automatic else { return }; document.automatic = automatic; persist() }
+        didSet {
+            guard automatic != document.automatic else { return }
+            if writesBlocked { automaticChangedWhileBlocked = true }
+            document.automatic = automatic; persist()
+        }
     }
     private var document: Document
     private let fileURL: URL
@@ -70,6 +74,8 @@ extension Notification.Name {
     private var observer: NSObjectProtocol?
     /// True when an unreadable file could not be moved aside: writing would destroy it.
     private var writesBlocked = false
+    /// The user switched automatic classification while the file was unreadable: a repaired file keeps that choice.
+    private var automaticChangedWhileBlocked = false
 
     init(fileURL: URL = AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongWorkStore.fileName),
          definition: @escaping @MainActor () -> GoalongWorkDefinition = { GoalongWorkDefinition(JevWorkContextStore.shared.context) }) {
@@ -243,18 +249,24 @@ extension Notification.Name {
             storageNotice = "Le classement enregistré était illisible. Il a été mis de côté (\(name)) et vos corrections Travail / Hors travail repartent de zéro."
         }
         writesBlocked = false
+        automaticChangedWhileBlocked = false
     }
 
-    /// Merges a repaired file under the changes made while it was unreadable.
+    /// Merges a repaired file under the changes made while it was unreadable. An owner correction
+    /// always wins over an agent verdict, as in `merge`: the agent saw an empty file meanwhile.
     private func adopt(_ saved: Document) {
         var entries = saved.revision == document.revision ? saved.entries : saved.entries.filter { $0.value.byOwner }
-        entries.merge(document.entries) { _, current in current }
-        let changed = Set(document.entries.keys)
+        entries.merge(document.entries) { kept, current in current.byOwner || !kept.byOwner ? current : kept }
+        let changed = Set(document.entries.filter { $0.value.byOwner }.keys)
         var corrections = saved.corrections.filter { !changed.contains($0.key) }
         corrections.append(contentsOf: document.corrections)
         let limit = GoalongWorkClassification.maximumExamples * 4
         if corrections.count > limit { corrections.removeFirst(corrections.count - limit) }
         document.entries = entries; document.corrections = corrections
+        if !automaticChangedWhileBlocked {
+            document.automatic = saved.automatic
+            automatic = saved.automatic
+        }
         prune(); publish()
     }
 

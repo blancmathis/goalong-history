@@ -120,10 +120,24 @@ other_goalong_dev_apps() {
 # --purge-data: Goalong Dev goes first, like the release: its guard (it would reopen Goalong Dev), then the
 # app itself (otherwise it recreates LocalHistory-Dev), then its data, preferences, permissions and key.
 # A copy installed elsewhere loses its guard and is quit, but stays in place: it is listed in DEV_KEPT_APPS.
+# DEV_REMOVED: Goalong Dev was in ~/Applications or had data, so the purge says it removed it.
 DEV_KEPT_APPS=()
+DEV_REMOVED=false
+goalong_dev_purge_summary() {
+  local app
+  if [[ "$DEV_REMOVED" == true ]]; then
+    echo "Goalong Dev ($DEV_APP_PATH), its data, preferences, permissions and evidence key were removed too."
+  fi
+  if (( ${#DEV_KEPT_APPS[@]} > 0 )); then
+    echo "Goalong Dev installed elsewhere was kept (quit, guard removed, data erased). Delete it by hand if needed:"
+    for app in "${DEV_KEPT_APPS[@]}"; do echo "  $app"; done
+  fi
+}
 purge_goalong_dev() {
   local app
   DEV_KEPT_APPS=()
+  DEV_REMOVED=false
+  if [[ -e "$DEV_APP_PATH" || -L "$DEV_APP_PATH" || -e "$DEV_DATA_DIR" || -L "$DEV_DATA_DIR" ]]; then DEV_REMOVED=true; fi
   while IFS= read -r app; do [[ -z "$app" ]] || DEV_KEPT_APPS+=("$app"); done < <(other_goalong_dev_apps)
   ( EXECUTABLE_NAME="$DEV_EXECUTABLE_NAME" BUNDLE_ID="$DEV_BUNDLE_ID"
     release_blocking_guard "$DEV_APP_PATH" ${DEV_KEPT_APPS[@]+"${DEV_KEPT_APPS[@]}"} )
@@ -219,11 +233,7 @@ if [[ "$PURGE_DATA" == true ]]; then
   defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
   while security delete-generic-password -s "goalong.evidence.v1" >/dev/null 2>&1; do :; done
   echo "Goalong History, its permissions, its recorded history, logs, preferences and caches were removed."
-  echo "Goalong Dev ($DEV_APP_PATH), its data, preferences, permissions and evidence key were removed too."
-  if (( ${#DEV_KEPT_APPS[@]} > 0 )); then
-    echo "Goalong Dev installed elsewhere was kept (quit, guard removed, data erased). Delete it by hand if needed:"
-    for app in "${DEV_KEPT_APPS[@]}"; do echo "  $app"; done
-  fi
+  goalong_dev_purge_summary
   echo "The device identity key in the Keychain is not removed by this script."
 else
   echo "Goalong History and its permissions were removed."

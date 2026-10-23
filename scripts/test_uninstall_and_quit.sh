@@ -125,6 +125,15 @@ release_body="$(declare -f release_blocking_guard)"
   grep -qx 'tccutil reset Accessibility ai.goalong.localhistory.dev' "$LOG" || fail "Goalong Dev permissions were kept."
   grep -qx 'security delete-generic-password -s goalong.evidence.v1.dev' "$LOG" || fail "The Goalong Dev evidence key was kept."
   ! grep -q 'ai.goalong.localhistory ' "$LOG" || fail "The Goalong Dev purge touched the release identity."
+  [[ "$(goalong_dev_purge_summary)" == "Goalong Dev ($DEV_APP_PATH), its data"* ]] || fail "A removed Goalong Dev must be reported."
+) || exit 1
+# Never installed (every end user): the purge does not claim it removed Goalong Dev.
+(
+  DEV_APP_PATH="$WORK/never/Goalong Dev.app" DEV_DATA_DIR="$WORK/never/LocalHistory-Dev" HOME="$WORK/never-home"
+  release_blocking_guard() { :; }; quit_running_goalong() { :; }; goalong_dev_app_candidates() { :; }
+  defaults() { :; }; tccutil() { :; }; security() { return 1; }
+  purge_goalong_dev
+  [[ "$DEV_REMOVED" == false && -z "$(goalong_dev_purge_summary)" ]] || fail "A Goalong Dev never installed was reported removed: $(goalong_dev_purge_summary)"
 ) || exit 1
 # A Goalong Dev installed elsewhere (DEV_APP_DIR) loses its guard and is listed as kept; build products,
 # swap leftovers, the release app and the ~/Applications copy are never in that list.
@@ -152,8 +161,9 @@ release_body="$(declare -f release_blocking_guard)"
   [[ "${#DEV_KEPT_APPS[@]}" == 1 && "${DEV_KEPT_APPS[0]}" == "$P/Dev/Goalong Dev.app" ]] || fail "Kept Goalong Dev copies: ${DEV_KEPT_APPS[*]-}"
   [[ "$(cat "$LOG")" == "guard ai.goalong.localhistory.dev $DEV_APP_PATH $P/Dev/Goalong Dev.app" ]] || fail "The guard of a Goalong Dev installed elsewhere was kept: $(cat "$LOG")"
   [[ -d "$P/Dev/Goalong Dev.app" && ! -e "$DEV_APP_PATH" ]] || fail "Only the ~/Applications copy of Goalong Dev may be removed."
+  [[ "$(goalong_dev_purge_summary)" == *"was kept"*"  $P/Dev/Goalong Dev.app" ]] || fail "A kept Goalong Dev must be listed: $(goalong_dev_purge_summary)"
 ) || exit 1
-grep -qF 'Goalong Dev installed elsewhere was kept' "$SCRIPT_DIR/../uninstall.sh" || fail "A kept Goalong Dev must be reported."
+grep -qx '  goalong_dev_purge_summary' "$SCRIPT_DIR/../uninstall.sh" || fail "A kept Goalong Dev must be reported."
 purge_line="$(grep -n '^  purge_goalong_dev$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
 data_line="$(grep -n '^  rm -rf "$DATA_DIR"$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
 [[ -n "$purge_line" && -n "$data_line" ]] && (( purge_line < data_line )) || fail "--purge-data must handle Goalong Dev first."

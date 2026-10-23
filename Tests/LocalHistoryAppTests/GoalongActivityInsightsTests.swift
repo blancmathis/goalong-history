@@ -251,18 +251,40 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertNil(deleted.lastError); XCTAssertNil(deleted.storageNotice)
         XCTAssertEqual(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).corrections.map(\.key), [label.key])
 
-        // Repaired by the user: its corrections stay, the new one is added.
+        // Repaired by the user: its corrections and its automatic switch stay, the new one is added.
+        // The agent classed the corrected context meanwhile, from an empty file: the correction still wins (B02-R2-01).
         try Data("{tronqué".utf8).write(to: file)
         try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
         let repaired = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        repaired.merge([label.key: GoalongWorkAssignment(verdict: .other, task: nil, byOwner: false)],
+                       revision: repaired.revision, day: "2026-09-11")
         try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
         try fm.removeItem(at: file)
         let source = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
         source.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+        source.automatic = false
         repaired.correct(key: other.key, label: other, verdict: .other, task: nil, day: "2026-09-11")
         XCTAssertNil(repaired.lastError); XCTAssertNil(repaired.storageNotice)
-        XCTAssertEqual(Set(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).corrections.map(\.key)),
-                       [label.key, other.key])
+        XCTAssertFalse(repaired.automatic)
+        XCTAssertEqual(repaired.verdicts.assignment(for: label.key)?.byOwner, true)
+        let reread = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        XCTAssertEqual(Set(reread.corrections.map(\.key)), [label.key, other.key])
+        XCTAssertEqual(reread.entry(for: label.key)?.verdict, .work); XCTAssertEqual(reread.entry(for: label.key)?.byOwner, true)
+        XCTAssertFalse(reread.automatic)
+        for name in try fm.contentsOfDirectory(atPath: folder.path) { try fm.removeItem(at: folder.appendingPathComponent(name)) }
+
+        // Switched while the file was unreadable: the user's newer choice stays after the repair.
+        try Data("{tronqué".utf8).write(to: file)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let switched = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        switched.automatic = false
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        try fm.removeItem(at: file)
+        GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+            .correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+        switched.correct(key: other.key, label: other, verdict: .other, task: nil, day: "2026-09-11")
+        XCTAssertNil(switched.lastError)
+        XCTAssertFalse(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).automatic)
     }
 
     @MainActor func testFullHistoryClearErasesWorkCorrectionsAndTheirTitles() throws {

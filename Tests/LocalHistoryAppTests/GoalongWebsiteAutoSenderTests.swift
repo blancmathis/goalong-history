@@ -303,6 +303,13 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         XCTAssertFalse(missing.hiddenWebsiteFilter()("example.org"))
         let damagedBytes = Data(#"{"schemaVersion":1,"defaultVisibility":"categoryOnly","rules":{"site:secret.example":"newerValue"}}"#.utf8)
         try damagedBytes.write(to: file)
+        // B03-R2-01: a write that fails (full disk) keeps the damaged file in place: the next launch still hides everything.
+        let fullDisk = SharingRulesStore(fileURL: file, write: { _, _ in throw CocoaError(.fileWriteOutOfSpace) })
+        XCTAssertThrowsError(try fullDisk.set(.identity, for: "site:allowed.example"))
+        XCTAssertTrue(fullDisk.isDamaged)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["sharing-rules.json"])
+        XCTAssertEqual(try Data(contentsOf: file), damagedBytes)
+        XCTAssertEqual(SharingRulesStore(fileURL: file).defaultVisibility, .hidden)
         let damaged = SharingRulesStore(fileURL: file)
         XCTAssertTrue(damaged.isDamaged)
         XCTAssertTrue(damaged.hiddenWebsiteFilter()("example.org"))
