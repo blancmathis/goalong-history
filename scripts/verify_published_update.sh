@@ -16,9 +16,17 @@ EXPECTED_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$DIST/Goa
 # Retry only a VALID older feed, at the unchanged client URL. Malformed/unsigned
 # feeds and a newer unexpected generation fail immediately. Check before any ZIP.
 for ((attempt=0; attempt<60; attempt++)); do
-  curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --max-time 90 \
-    --header 'Cache-Control: no-cache' --header 'Pragma: no-cache' \
-    --proto '=https' --proto-redir '=https' "$SPARKLE_FEED_URL" -o "$WORK/feed.xml"
+  if [[ "${LOCALHISTORY_FEED_SOURCE:-public}" == api ]]; then
+    # Same asset as $SPARKLE_FEED_URL, read through the authenticated API (no download cache).
+    FEED_REPO="$(echo "$SPARKLE_FEED_URL" | cut -d/ -f4-5)"
+    FEED_TAG="$(echo "$SPARKLE_FEED_URL" | cut -d/ -f8)"
+    FEED_ASSET="$(gh api "repos/$FEED_REPO/releases/tags/$FEED_TAG" --jq ".assets[] | select(.name == \"${SPARKLE_FEED_URL##*/}\") | .id")"
+    gh api -H 'Accept: application/octet-stream' "repos/$FEED_REPO/releases/assets/$FEED_ASSET" > "$WORK/feed.xml"
+  else
+    curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --max-time 90 \
+      --header 'Cache-Control: no-cache' --header 'Pragma: no-cache' \
+      --proto '=https' --proto-redir '=https' "$SPARKLE_FEED_URL" -o "$WORK/feed.xml"
+  fi
   "$WORK/verify" --feed-only "$(cat "$ROOT/Distribution/sparkle-public-ed-key.txt")" "$WORK/feed.xml" > "$WORK/feed.json"
   set +e
   python3 - "$WORK/feed.json" "$EXPECTED_BUILD" <<'PY'
@@ -112,7 +120,7 @@ if os.environ.get('LOCALHISTORY_PUBLIC_RECEIPT'):
   'manifestSha256':digest(dist/'release-manifest.json'),'feedSha256':digest(work/'feed.xml'),
   'archive':{'url':feed['url'],'sizeBytes':(work/'update.zip').stat().st_size,
              'sha256':digest(work/'update.zip'),'edSignature':feed['signature']},
-  'publicGET':{'authenticated':False,'complete':True,'startedAt':os.environ['PUBLIC_GET_STARTED']},
+  'publicGET':{'authenticated':os.environ.get('LOCALHISTORY_FEED_SOURCE')=='api','complete':True,'startedAt':os.environ['PUBLIC_GET_STARTED']},
   'verification':'PUBLIC_UPDATE_VERIFIED','verifiedAt':datetime.now(timezone.utc).isoformat()}
  Path(os.environ['LOCALHISTORY_PUBLIC_RECEIPT']).write_text(json.dumps(receipt,indent=2)+'\n')
 PY
