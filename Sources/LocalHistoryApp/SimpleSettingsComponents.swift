@@ -88,6 +88,18 @@ struct GoalongSettingsList<Content: View>: View {
     }
 }
 
+/// Symbols and short labels of the settings home rows, kept apart from the views so tests can assert them.
+enum GoalongHomeRows {
+    static let recordingSymbol = SettingsPane.recording.symbol
+    static let sendSymbol = "arrow.up.circle"
+    static let chatGPTSymbol = "sparkles"
+    static func jevSummary(enabled: Bool) -> String { enabled ? "Activé" : "Surveillance en direct" }
+    /// One glyph per permission row, shared with the activation sheet.
+    static func permissionSymbol(_ capability: GoalongCapability) -> String {
+        PermissionSetupCopy(capability: capability, status: .ready).symbol
+    }
+}
+
 @MainActor struct GoalongDataStatus: View {
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
@@ -102,13 +114,13 @@ struct GoalongSettingsList<Content: View>: View {
         LHCard(padding: 0) {
             VStack(spacing: 0) {
                 row("Enregistrement local", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
-                    detail: "Ce que Goalong conserve sur ce Mac", symbol: SettingsPane.recording.symbol, pane: .recording)
+                    detail: "Ce que Goalong conserve sur ce Mac", symbol: GoalongHomeRows.recordingSymbol, pane: .recording)
                 GoalongRowDivider()
                 row("Envoi à Goalong", status: sender.enabled ? "Chaque jour" : "À la demande",
-                    detail: "Compte, données et fréquence des envois", symbol: "arrow.up.circle", pane: .website)
+                    detail: "Compte, données et fréquence des envois", symbol: GoalongHomeRows.sendSymbol, pane: .website)
                 GoalongRowDivider()
                 row("Analyse ChatGPT", status: chatGPTStatus,
-                    detail: "Applications, textes, noms masqués et consignes", symbol: "sparkles", pane: .chatGPT)
+                    detail: "Applications, textes, noms masqués et consignes", symbol: GoalongHomeRows.chatGPTSymbol, pane: .chatGPT)
             }
         }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
             .onReceive(NotificationCenter.default.publisher(for: .goalongAnalysisSelectionDidChange)) { _ in analysisSelection = .load() }
@@ -147,7 +159,7 @@ struct GoalongSettingsList<Content: View>: View {
     @State private var showing = false
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: PermissionSetupCopy(capability: capability, status: .ready).symbol)
+            Image(systemName: GoalongHomeRows.permissionSymbol(capability))
                 .font(.system(size: 14, weight: .medium)).frame(width: 22).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {

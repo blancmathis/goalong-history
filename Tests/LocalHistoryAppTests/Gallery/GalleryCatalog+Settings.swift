@@ -37,6 +37,13 @@ extension GalleryCatalog {
                                                              initialTab: tab) { _ in })
             })
         }
+        // A freshly added rule has no search text yet: the test area must not pretend it replaced something.
+        entries.append(panel("settings-sheets/analyse-sites-regle-vide", width: 940, clock: .injected) { ctx in
+            let model = try GalleryFixtures.dashboardModel(ctx, .init(section: .settings, settingsPane: .chatGPT))
+            var selection = GoalongAnalysisSelection.load()
+            selection.replacements = [GoalongTextReplacement()]
+            return AnyView(GoalongAnalysisSelectionSheet(model: model, selection: selection, initialTab: 1) { _ in })
+        })
         let activations: [(String, GoalongCapability, SourceAccessStatus)] = [
             ("historique-accessibilite", .localComputerHistory, .accessibility),
             ("historique-pret", .localComputerHistory, .ready),

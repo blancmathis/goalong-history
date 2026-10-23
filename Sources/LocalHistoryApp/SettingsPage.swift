@@ -270,7 +270,7 @@ import AppKit
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
-        case .jev: return GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring) ? "Activé" : "Surveillance en direct"
+        case .jev: return GoalongHomeRows.jevSummary(enabled: GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
         case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
         case .permissions: return "Selon vos fonctions"
         case .storage: return "Conservation et effacement"

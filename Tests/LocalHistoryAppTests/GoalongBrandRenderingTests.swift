@@ -168,7 +168,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
         fine.applicationNames = ["com.apple.Safari": "Safari", "com.apple.Notes": "Notes"]
         fine.windowTitles = true; fine.websiteDomains = true
         granular.scope = fine
-        granular.replacements = [GoalongTextReplacement(search: "Hi Charlie", replacement: "Projet A")]
+        granular.replacements = [GoalongTextReplacement(search: "Bonjour Charlie", replacement: "Projet A")]
         granular.outputGuidance = "Concentre-toi sur les progrès des projets. Ne cite pas les noms de personnes."
         for tab in 0...2 {
             let editor = NSHostingController(rootView: GoalongAnalysisSelectionSheet(model: model, selection: granular, initialTab: tab) { _ in

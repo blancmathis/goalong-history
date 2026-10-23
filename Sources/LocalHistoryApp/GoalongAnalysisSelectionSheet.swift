@@ -251,8 +251,13 @@ import AgentActivity
         }
     }
     private var transformedExample: String {
-        if rules.wrappedValue.isEmpty { return "Aucun remplacement défini." }
-        return (try? GoalongTextTransformer(rules.wrappedValue).apply(sampleText)) ?? "Vérifiez les règles de remplacement."
+        Self.exampleResult(rules: rules.wrappedValue, sample: sampleText)
+    }
+    /// A rule with an empty search is ignored by the transformer, so it counts as no rule.
+    nonisolated static func exampleResult(rules: [GoalongTextReplacement], sample: String) -> String {
+        if rules.allSatisfy({ $0.search.isEmpty }) { return "Aucun remplacement défini." }
+        guard let result = try? GoalongTextTransformer(rules).apply(sample) else { return "Vérifiez les règles de remplacement." }
+        return result == sample ? "Aucun texte remplacé dans cet exemple." : result
     }
     private var instructions: some View {
         GoalongSettingsGroup(title: "Comment rédiger le bilan") {
