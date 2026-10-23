@@ -124,7 +124,7 @@ final class JourneyRetentionTests: XCTestCase {
         policy.setDuration(RetentionDuration(days: 1), for: .detailedEvents)
         let description = policy.retentionDescription
         XCTAssertTrue(description.contains("Activité détaillée : 1 jour"))
-        XCTAssertTrue(description.contains("Preuves locales : jusqu’à ce que je supprime"))
+        XCTAssertTrue(description.contains("Sceaux d’intégrité : jusqu’à ce que je supprime"))
         XCTAssertFalse(description.lowercased().contains("sans limite"))
         XCTAssertEqual(HistoryRetentionPolicy.noLimitLabel, "Jusqu’à ce que je supprime")
         XCTAssertEqual(HistoryRetentionPolicy.automaticCleanupSummary(enabled: false), "Jusqu’à suppression manuelle")

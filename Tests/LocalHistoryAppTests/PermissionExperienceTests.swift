@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import LocalHistoryCore
 import XCTest
 @testable import LocalHistoryApp
 
@@ -60,6 +61,20 @@ final class PermissionExperienceTests: XCTestCase {
         XCTAssertEqual(computer.permission, "Accessibilité")
         XCTAssertTrue(computer.privacy.contains("Pas de captures d’écran"))
         XCTAssertFalse(computer.purpose.contains("record what you type"))
+    }
+    func testUIU05SheetTitleAndBadgeCopy() {
+        XCTAssertEqual(PermissionSetupCopy(capability: .localComputerHistory, status: .accessibility).title, "Autoriser l’historique de ce Mac")
+        XCTAssertEqual(PermissionSetupCopy(capability: .appleScreenTime, status: .fullDiskAccess).title, "Autoriser Temps d’écran Apple")
+        XCTAssertEqual(PermissionSetupStatusCard.badge(checking: false, ready: false, unavailable: false), "À autoriser")
+        XCTAssertEqual(PermissionSetupStatusCard.badge(checking: false, ready: false, unavailable: true), "Non confirmé")
+        XCTAssertEqual(PermissionSetupStatusCard.badge(checking: true, ready: false, unavailable: true), "Vérification")
+        XCTAssertEqual(PermissionSetupStatusCard.badge(checking: false, ready: true, unavailable: true), "Autorisé")
+    }
+    func testUIU05RetentionTitlesAreDistinctAndPlain() {
+        let titles = HistoryDataClass.allCases.map { $0.retentionTitle }
+        XCTAssertEqual(Set(titles).count, titles.count)
+        XCTAssertFalse(titles.contains("Preuves locales"))
+        XCTAssertFalse(titles.contains("Résumés d’Activité"))
     }
 }
 #endif

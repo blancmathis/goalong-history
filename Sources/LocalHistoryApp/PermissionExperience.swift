@@ -46,6 +46,8 @@ struct PermissionSetupCopy {
         default: return "Pas de captures d’écran ni de caractères tapés. Cet accès n’autorise aucun envoi."
         }
     }
+    /// The macOS list shows the app under its bundle name, not under the capability name.
+    var title: String { capability == .localComputerHistory ? "Autoriser l’historique de ce Mac" : "Autoriser \(capability.title)" }
     var settingsPath: String { status == .screenTimeSetup ? "Réglages Système  ›  Temps d’écran" : "Confidentialité et sécurité  ›  \(permission)" }
 }
 
@@ -61,7 +63,7 @@ struct PermissionSetupHeader: View {
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
-                Text(ready ? "Accès disponible" : "Autoriser \(copy.capability.title)")
+                Text(ready ? "Accès disponible" : copy.title)
                     .font(LHTheme.sheetTitleFont).tracking(-0.4)
                     .foregroundStyle(LHTheme.text)
                     .accessibilityAddTraits(.isHeader)
@@ -78,6 +80,12 @@ struct PermissionSetupStatusCard: View {
     let copy: PermissionSetupCopy
     let checking: Bool
     let ready: Bool
+    var unavailable = false
+
+    /// A check that could not run (repair in progress, source not opened) is not "to authorize".
+    static func badge(checking: Bool, ready: Bool, unavailable: Bool) -> String {
+        checking ? "Vérification" : ready ? "Autorisé" : unavailable ? "Non confirmé" : "À autoriser"
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -92,11 +100,11 @@ struct PermissionSetupStatusCard: View {
             Spacer(minLength: 8)
             HStack(spacing: 5) {
                 if checking { ProgressView().controlSize(.mini) }
-                else { Image(systemName: ready ? "checkmark.circle.fill" : "circle.dashed").font(.system(size: 11)) }
-                Text(checking ? "Vérification" : ready ? "Autorisé" : "À autoriser")
+                else { Image(systemName: ready ? "checkmark.circle.fill" : unavailable ? "exclamationmark.circle" : "circle.dashed").font(.system(size: 11)) }
+                Text(Self.badge(checking: checking, ready: ready, unavailable: unavailable))
                     .font(.system(size: 11, weight: .medium))
             }
-            .foregroundStyle(ready ? LHTheme.success : LHTheme.secondaryText)
+            .foregroundStyle(ready ? LHTheme.success : unavailable && !checking ? LHTheme.warning : LHTheme.secondaryText)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .accessibilityElement(children: .combine)
@@ -114,8 +122,8 @@ struct PermissionSetupSteps: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             step(1, title: "Ouvrir les réglages macOS", detail: copy.settingsPath, done: openedSettings || ready, active: !openedSettings && !ready)
-            step(2, title: copy.status == .screenTimeSetup ? "Activer le temps d’écran" : "Autoriser Goalong History",
-                 detail: copy.status == .screenTimeSetup ? "Apple commencera à mesurer votre usage." : "Activez Goalong History dans la liste.",
+            step(2, title: copy.status == .screenTimeSetup ? "Activer le temps d’écran" : "Autoriser Goalong",
+                 detail: copy.status == .screenTimeSetup ? "Apple commencera à mesurer votre usage." : "Dans la liste de macOS, l’app s’appelle « Goalong History ». Activez-la.",
                  done: ready, active: openedSettings && !ready)
             step(3, title: "Revenir dans Goalong", detail: "Vérification automatique au retour. Relancez Goalong si macOS le demande.", done: ready, active: false)
         }
