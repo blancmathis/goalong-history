@@ -173,14 +173,19 @@ def pixel_diff(pairs: list[tuple[Path, Path, Path, int]]) -> list[dict]:
 # ---------------------------------------------------------------- render
 
 class Homes:
-    """Throwaway shard HOMEs; all removed on exit, error or signal (the `trap` of spec §8)."""
+    """Throwaway shard HOMEs under /tmp/goalong-gallery-<run>/; all removed on exit, error or signal (spec §8).
+
+    Each HOME sits one level below the run folder: Goalong trusts the parent of its data folders and opens them
+    without following symlinks, so that parent must be a real folder, not /tmp (a symlink to /private/tmp).
+    """
 
     def __init__(self, run_name: str) -> None:
-        self.prefix = f"goalong-gallery-{run_name}-"
+        self.root = Path("/private/tmp") / f"goalong-gallery-{run_name}"
         self.paths: set[str] = set()
 
     def new(self, shard: int) -> str:
-        path = tempfile.mkdtemp(prefix=f"{self.prefix}{shard}-", dir="/tmp")
+        self.root.mkdir(mode=0o700, exist_ok=True)
+        path = tempfile.mkdtemp(prefix=f"shard-{shard}-", dir=self.root)
         self.paths.add(path)
         return path
 
@@ -191,8 +196,7 @@ class Homes:
     def remove_all(self) -> None:
         for path in list(self.paths):
             self.remove(path)
-        for leftover in Path("/tmp").glob(f"{self.prefix}*"):
-            shutil.rmtree(leftover, ignore_errors=True)
+        shutil.rmtree(self.root, ignore_errors=True)
 
 
 def build() -> None:
@@ -280,6 +284,17 @@ def manifest_image(entry: dict) -> dict:
             **({"standardStack": entry["standardStack"]} if entry.get("standardStack") else {})}
 
 
+def duplicate_groups(images: list[dict]) -> list[list[str]]:
+    """Images with the same pixels that come from different entries (ids), as sorted groups of keys."""
+    by_hash: dict[str, list[dict]] = {}
+    for image in images:
+        if image.get("sha256") and image.get("status") == "ok":
+            by_hash.setdefault(image["sha256"], []).append(image)
+    groups = [sorted(image["key"] for image in group) for group in by_hash.values()
+              if len({image["id"] for image in group}) > 1]
+    return sorted(groups)
+
+
 def command_run(args: argparse.Namespace) -> int:
     if not args.no_build:
         build()
@@ -321,6 +336,7 @@ def command_run(args: argparse.Namespace) -> int:
         "shards": args.shards, "only": args.only or "", "duration": duration, "problems": problems,
         "images": [manifest_image(entry) for entry in results],
     }
+    manifest["duplicates"] = duplicate_groups(manifest["images"])
     write_json(run / "manifest.json", manifest)
     if not results:
         problems.append("aucune image rendue")
@@ -352,6 +368,12 @@ def command_run(args: argparse.Namespace) -> int:
             log(f"  {image['status']:9} {image['key']}  {image['detail']}")
     for problem in problems:
         log(f"  problème : {problem}")
+    if manifest["duplicates"]:
+        # Not a failure: an entry may legitimately match another (Surveillance opens Réglages › Jev). But a group
+        # of different states with one image is how blank pages and ignored fixtures were found.
+        log(f"gallery: {len(manifest['duplicates'])} groupe(s) d’images identiques entre états différents :")
+        for group in manifest["duplicates"]:
+            log("  identiques  " + "  ".join(group))
     log(f"gallery: index : {run / 'index.html'}")
     bad = problems or any(image["status"] != "ok" for image in manifest["images"])
     return 1 if bad else 0
