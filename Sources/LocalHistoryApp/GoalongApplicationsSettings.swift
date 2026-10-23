@@ -295,6 +295,17 @@ enum GoalongOnboardingExclusionEdit {
         let domains = try PrivacyScopeInput.domains(input)
         settings.excludedDomainsText = merged(settings.excludedDomainsText, adding: domains)
     }
+    /// Items of `current` that are not in `baseline` (what the user added; default exclusions are never listed).
+    static func added(current: String, baseline: String) -> [String] {
+        let base = Set(lines(baseline))
+        return lines(current).filter { !base.contains($0) }
+    }
+    enum PendingWebsiteResult: Equatable { case nothingPending, added, invalid }
+    /// Validation step of « Valider mes choix »: a typed site is added to the draft; an invalid one blocks and is kept.
+    static func commitPendingWebsite(_ pending: inout String, to settings: inout DashboardSettingsDraft) -> PendingWebsiteResult {
+        guard !pending.trimmingCharacters(in: .whitespaces).isEmpty else { return .nothingPending }
+        do { try addDomains(pending, to: &settings); pending = ""; return .added } catch { return .invalid }
+    }
 }
 
 @MainActor struct GoalongOnboardingExclusions: View {
@@ -303,14 +314,22 @@ enum GoalongOnboardingExclusionEdit {
     @Binding var website: String
     @State private var appText = ""
     @State private var message: String?
-    private var domains: [String] { GoalongOnboardingExclusionEdit.lines(model.settingsDraft.excludedDomainsText) }
-    private var applications: [String] { GoalongOnboardingExclusionEdit.lines(model.settingsDraft.excludedApplicationsText) }
+    private static let defaults = DashboardSettingsDraft(config: .default)
+    private var domains: [String] {
+        GoalongOnboardingExclusionEdit.added(current: model.settingsDraft.excludedDomainsText, baseline: Self.defaults.excludedDomainsText)
+    }
+    private var applications: [String] {
+        GoalongOnboardingExclusionEdit.added(current: model.settingsDraft.excludedApplicationsText, baseline: Self.defaults.excludedApplicationsText)
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ApplicationScopePickerButton(text: $appText)
                 .onChange(of: appText) { value in
+                    let picked = value.components(separatedBy: .newlines).filter { !$0.isEmpty }
+                    guard !picked.isEmpty else { return }
+                    appText = ""
                     model.settingsDraft.excludedApplicationsText = GoalongOnboardingExclusionEdit.merged(
-                        model.settingsDraft.excludedApplicationsText, adding: value.components(separatedBy: .newlines))
+                        model.settingsDraft.excludedApplicationsText, adding: picked)
                     announce("Application ajoutée à la liste d’exclusion.")
                 }
             HStack {

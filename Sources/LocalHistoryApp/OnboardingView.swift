@@ -128,14 +128,9 @@
                     else {
                         if step == .privacy {
                             // Return in the exclusion field can reach this default button: never drop the typed site.
-                            if !pendingWebsite.trimmingCharacters(in: .whitespaces).isEmpty {
-                                do {
-                                    try GoalongOnboardingExclusionEdit.addDomains(pendingWebsite, to: &model.settingsDraft)
-                                    pendingWebsite = ""
-                                } catch {
-                                    note = "Le site saisi dans les exclusions n’est pas valide (exemple : exemple.fr). Corrigez-le ou videz le champ."
-                                    return
-                                }
+                            if GoalongOnboardingExclusionEdit.commitPendingWebsite(&pendingWebsite, to: &model.settingsDraft) == .invalid {
+                                note = "Le site saisi dans les exclusions n’est pas valide (exemple : exemple.fr). Corrigez-le ou videz le champ."
+                                return
                             }
                             let choices = GoalongRecordingSetup.Proposal(settings: model.settingsDraft,
                                 visibleText: visibleTextDraft)
