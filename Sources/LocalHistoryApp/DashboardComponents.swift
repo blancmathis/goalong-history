@@ -263,11 +263,16 @@
         #if DEBUG
         /// Test gallery only: no icon is read from this Mac, every app shows its initial.
         static var galleryHidesHostIcons = false
+        /// Test gallery only: the invented icon of an app, drawn by the gallery. Nil keeps the initial.
+        static var galleryIconProvider: ((String) -> NSImage?)?
         #endif
 
         static func icon(bundleIdentifier: String?) -> NSImage? {
             #if DEBUG
-            if galleryHidesHostIcons { return nil }
+            if galleryHidesHostIcons {
+                guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return nil }
+                return galleryIconProvider?(bundleIdentifier)
+            }
             #endif
             guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return nil }
             let key = bundleIdentifier as NSString

@@ -42,6 +42,7 @@ struct GalleryImage {
         // No LaunchServices read: the invented apps decide what is installed, every icon is the app's initial
         // (C2-outil-01, C2-couverture-05).
         AppIconView.galleryHidesHostIcons = true
+        AppIconView.galleryIconProvider = { GalleryFixtures.applicationIcon(bundleIdentifier: $0) }
         // History's analysis passes: a throwaway suite (the hook deletes it) and the frozen clock.
         ActivityAnalysisRuntime.shared.preferences = processDefaults
         ActivityAnalysisRuntime.shared.clock = { GalleryClock.now }
@@ -61,6 +62,7 @@ struct GalleryImage {
         let applications: [GoalongApplicationChoice]?
         let today: (() -> Date)?
         let hidesHostIcons: Bool
+        let iconProvider: ((String) -> NSImage?)?
         let activationPolicy: NSApplication.ActivationPolicy
     }
 
@@ -71,6 +73,7 @@ struct GalleryImage {
                        analysisClock: ActivityAnalysisRuntime.shared.clock,
                        applications: GoalongApplicationCatalog.galleryApplications,
                        today: GoalongToday.galleryClock, hidesHostIcons: AppIconView.galleryHidesHostIcons,
+                       iconProvider: AppIconView.galleryIconProvider,
                        activationPolicy: NSApplication.shared.activationPolicy())
     }
 
@@ -83,6 +86,7 @@ struct GalleryImage {
         GoalongApplicationCatalog.galleryApplications = saved.applications
         GoalongToday.galleryClock = saved.today
         AppIconView.galleryHidesHostIcons = saved.hidesHostIcons
+        AppIconView.galleryIconProvider = saved.iconProvider
         let app = NSApplication.shared
         if app.activationPolicy() != saved.activationPolicy { app.setActivationPolicy(saved.activationPolicy) }
     }

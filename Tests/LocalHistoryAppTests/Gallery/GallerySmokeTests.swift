@@ -45,6 +45,7 @@ final class GallerySmokeTests: XCTestCase {
         let policy = NSApplication.shared.activationPolicy()
         XCTAssertNotEqual(policy, .accessory, "could not leave the gallery's activation policy")
         let hidesIcons = AppIconView.galleryHidesHostIcons
+        let hadIconProvider = AppIconView.galleryIconProvider != nil
         let today = GoalongToday.galleryClock
         GalleryRenderer.withPreparedApplication {
             XCTAssertEqual(NSApplication.shared.activationPolicy(), .accessory)
@@ -54,7 +55,16 @@ final class GallerySmokeTests: XCTestCase {
             XCTAssertFalse(GoalongToday.isToday(GalleryClock.now.addingTimeInterval(-86_400)))
             // No LaunchServices: Safari (on every Mac) shows its initial; an app outside the invented list is absent
             // even when this Mac has it; a listed one keeps the list's name (C2-outil-01, C2-couverture-05).
-            XCTAssertNil(AppIconView.icon(bundleIdentifier: "com.apple.Safari"))
+            // Safari has the gallery's invented icon, drawn at 64 pt, never the system's; the unknown one keeps its initial
+            // (UI-sombre-18, UI-sombre-19).
+            let safari = AppIconView.icon(bundleIdentifier: "com.apple.Safari")
+            XCTAssertEqual(safari?.size, NSSize(width: 64, height: 64))
+            XCTAssertNotNil(safari)
+            XCTAssertNil(AppIconView.icon(bundleIdentifier: "com.apple.finder"))
+            XCTAssertNil(AppIconView.icon(bundleIdentifier: nil))
+            for app in GalleryFixtures.installedApplications {
+                XCTAssertNotNil(AppIconView.icon(bundleIdentifier: app.id), "no gallery icon for \(app.id)")
+            }
             XCTAssertFalse(GoalongApplicationsSettings.choice(id: "com.apple.finder", storedName: nil).installed)
             let listed = GalleryFixtures.installedApplications[0]
             let choice = GoalongApplicationsSettings.choice(id: listed.id, storedName: nil)
@@ -72,6 +82,7 @@ final class GallerySmokeTests: XCTestCase {
         XCTAssertEqual(GoalongApplicationCatalog.galleryApplications, applications)
         XCTAssertEqual(NSApplication.shared.activationPolicy(), policy, "activation policy not restored (C2-outil-03)")
         XCTAssertEqual(AppIconView.galleryHidesHostIcons, hidesIcons)
+        XCTAssertEqual(AppIconView.galleryIconProvider != nil, hadIconProvider, "icon provider not restored")
         XCTAssertEqual(GoalongToday.galleryClock == nil, today == nil, "today clock not restored")
         XCTAssertEqual(NSTimeZone.default, zone)
         XCTAssertEqual(GoalongToastCenter.suppressedForTesting, toasts)

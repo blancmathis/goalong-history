@@ -25,6 +25,42 @@ import SwiftUI
         ("com.exemple.atlas", "Atlas"), ("org.keepassxc.keepassxc", "KeePassXC"),
     ].map { GoalongApplicationChoice(id: $0.0, name: $0.1) }
 
+    /// The invented icon of each invented app: a coloured tile and one symbol, drawn here. Nothing is read from this
+    /// Mac, and an app outside the list keeps its initial (UI-sombre-18, UI-sombre-19, UI-parcours-30).
+    private static let iconStyles: [String: (symbol: String, top: NSColor, bottom: NSColor)] = [
+        "com.apple.dt.Xcode": ("hammer.fill", .systemBlue, .systemIndigo),
+        "com.apple.Safari": ("safari.fill", .systemTeal, .systemBlue),
+        "com.apple.Terminal": ("terminal.fill", .darkGray, .black),
+        "com.apple.Notes": ("note.text", .systemYellow, .systemOrange),
+        "com.apple.mail": ("envelope.fill", .systemCyan, .systemBlue),
+        "com.apple.MobileSMS": ("message.fill", .systemGreen, .systemTeal),
+        "com.apple.iCal": ("calendar", .systemRed, .systemPink),
+        "com.apple.Music": ("music.note", .systemPink, .systemRed),
+        "com.apple.Preview": ("photo.fill", .systemPurple, .systemBlue),
+        "com.exemple.atlas": ("map.fill", .systemOrange, .systemRed),
+        "org.keepassxc.keepassxc": ("key.fill", .systemGreen, .systemMint),
+        "com.apple.TV": ("tv.fill", .darkGray, .black),
+        "com.apple.iWork.Pages": ("doc.text.fill", .systemOrange, .systemYellow),
+    ]
+
+    /// Same image on every run; nil for a bundle identifier that is not one of the invented apps.
+    static func applicationIcon(bundleIdentifier: String) -> NSImage? {
+        guard let style = iconStyles[bundleIdentifier] else { return nil }
+        let configuration = NSImage.SymbolConfiguration(pointSize: 30, weight: .semibold).applying(.init(paletteColors: [.white]))
+        let symbol = NSImage(systemSymbolName: style.symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        return NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
+            let tile = NSBezierPath(roundedRect: rect, xRadius: 15, yRadius: 15)
+            NSGradient(starting: style.top, ending: style.bottom)?.draw(in: tile, angle: -90)
+            if let symbol {
+                let size = symbol.size
+                symbol.draw(in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
+                                       width: size.width, height: size.height))
+            }
+            return true
+        }
+    }
+
     static func dashboardModel(_ ctx: GalleryContext, _ options: DashboardOptions = DashboardOptions()) throws -> DashboardViewModel {
         let config = ConfigManager()
         let status = ctx.environment.permissions

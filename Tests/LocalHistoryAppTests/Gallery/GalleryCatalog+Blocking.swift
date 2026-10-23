@@ -101,9 +101,9 @@ extension GalleryCatalog {
             // The capsule keeps its own colours over any desktop: one theme is enough.
             GalleryEntry("blocking-surfaces/\(name)", sizes: [.fixed(320, 64)], themes: [.light], clock: .none,
                          pageBackground: false, note: "Même rendu en clair et en sombre (couleurs propres)") { _ in
+                // A flat desktop tone: a gradient would look like part of the capsule (UI-clair-36).
                 AnyView(ZStack {
-                    LinearGradient(colors: [Color(white: 0.85), Color(red: 0.35, green: 0.45, blue: 0.6)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Color(white: 0.88)
                     BlockingTimerCapsule(timer: timer, pulse: 0)
                 })
             }

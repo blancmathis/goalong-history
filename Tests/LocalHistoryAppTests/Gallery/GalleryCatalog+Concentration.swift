@@ -142,7 +142,7 @@ extension GalleryCatalog {
             page("ambiance/etroit", width: 640, height: 900, sources: all, packs: GalleryFixtures.ambiancePacks(.installed, .installed),
                  state: { .playing($0[0]) }),
             panel("braise/page", width: 900, height: 1_050) { ctx in AnyView(BraisePageContent(controller: try braise(ctx))) },
-            panel("braise/panneau-compact", width: 480, height: 680) { ctx in
+            panel("braise/panneau-compact", width: 480, height: 820) { ctx in
                 AnyView(BraisePageContent(controller: try braise(ctx), compact: true))
             },
             panel("braise/editeur-de-regle", width: 650, height: 400) { ctx in
