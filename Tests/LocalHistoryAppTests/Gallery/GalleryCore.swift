@@ -73,6 +73,8 @@ enum GalleryClockUse { case injected, none }
 struct GalleryEnvironment {
     var permissions = PermissionStatus.galleryAllGranted
     var freeBytes: Int64? = 120_000_000_000
+    /// « Espace utilisé par Goalong »: fixed, the fixture files' sizes move with their write times.
+    var usedBytes: Int64 = 48_300_000
     var identity = ProductIdentity.GalleryIdentity()
     /// The recorder's input tap is created and has seen input; false shows « Interactions indisponibles ».
     var inputTapWorks = true

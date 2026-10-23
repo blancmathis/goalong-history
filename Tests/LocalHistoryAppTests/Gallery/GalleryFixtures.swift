@@ -36,6 +36,7 @@ import SwiftUI
         let paused = options.globallyPaused
         if paused { try GalleryFixtureHome.writeGlobalPause() }
         let freeBytes = ctx.environment.freeBytes
+        let usedBytes = ctx.environment.usedBytes
         let model = DashboardViewModel(state: CaptureState(isGloballyPaused: { paused }), permissions: permissions,
             configManager: config, sharingRulesStore: SharingRulesStore(), agentActivityRuntime: agents,
             deviceInfo: DeviceIdentityInfo(deviceID: "galerie", publicKeyBase64: "", trustTier: "test", algorithm: "test"),
@@ -43,7 +44,7 @@ import SwiftUI
             onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
             onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
             onDeleteTargetedDetails: { _, done in done(.success(0)) },
-            dataReader: DashboardDataReader(now: { GalleryClock.now }),
+            dataReader: DashboardDataReader(now: { GalleryClock.now }, storageBytes: { usedBytes }),
             now: { GalleryClock.now }, defaults: ctx.defaults, availableBytes: { freeBytes },
             analyticsReader: GoalongAnalyticsReader(root: AppPaths.applicationSupportDirectory, now: { GalleryClock.now }))
         model.showWelcome = options.showWelcome
@@ -218,6 +219,22 @@ import SwiftUI
         GoalongCapabilityConsentStore.shared.reload()
     }
 
+    /// About one reset in 300 met « Operation not permitted » while removing the data folder (cause not found,
+    /// C-impl.md). Two more tries, then the folder moves aside inside the shard HOME, which the script deletes.
+    static func removeOrMoveAside(_ folder: URL, home: URL) throws {
+        let manager = FileManager.default
+        var lastError: Error?
+        for attempt in 0..<3 {
+            do { try manager.removeItem(at: folder); return } catch { lastError = error }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05 * Double(attempt + 1)))
+        }
+        do {
+            try manager.moveItem(at: folder, to: home.appendingPathComponent(".gallery-trash-" + UUID().uuidString))
+        } catch {
+            throw lastError ?? error
+        }
+    }
+
     /// Removes the entry's data under the shard HOME. `Library/Preferences` stays: the hook deletes the suites' plists.
     static func resetHome(_ home: URL) throws {
         let manager = FileManager.default
@@ -243,7 +260,7 @@ import SwiftUI
         barrier.notifyWhenDrained(suspension) { drained = true }
         while !drained && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
         guard drained else { throw GalleryError.render("background history work did not finish in 5 s") }
-        if manager.fileExists(atPath: support.path) { try manager.removeItem(at: support) }
+        if manager.fileExists(atPath: support.path) { try removeOrMoveAside(support, home: home) }
         try manager.createDirectory(at: support, withIntermediateDirectories: true)
     }
 }
