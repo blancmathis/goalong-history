@@ -153,7 +153,7 @@ struct GalleryImage {
         case let .fitWidth(width): start = NSSize(width: width, height: 900)
         case let .full(width): start = NSSize(width: width, height: fullStartHeight)
         }
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: start),
+        let window = GalleryWindow(contentRect: NSRect(origin: .zero, size: start),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)
         if entry.dashboardWindow {
             DashboardWindowController.configure(window)
@@ -185,15 +185,7 @@ struct GalleryImage {
             }
         }
         pump(0.05)
-        switch size {
-        case .fitWidth(let width):
-            let height = ceil(host.fittingSize.height)
-            window.setContentSize(NSSize(width: width, height: max(60, min(height, maximumFullHeight))))
-        case .full(let width):
-            let height = fullHeight(host) ?? fallbackFullHeight  // floor: start.height, the window's
-            window.setContentSize(NSSize(width: width, height: min(maximumFullHeight, max(start.height, height))))
-        case .fixed: break
-        }
+        _ = fitContent(size, window: window, host: host, start: start)
         // A screen at rest: no field keeps the focus (its placeholder and caret change with it, at random times).
         window.makeFirstResponder(nil)
         // Stability: two identical captures in a row, confirmed by a third 150 ms later (a late AppKit redraw under a
@@ -201,6 +193,12 @@ struct GalleryImage {
         var previous = try capture(host, window: window)
         for _ in 0..<10 {
             pump(0.05)
+            // A late layout (a row that appears or leaves after the first measure) changes the fitted height: the
+            // window follows it before the capture counts, else one run in two kept 10 pt of empty page (C2-outil-02).
+            if fitContent(size, window: window, host: host, start: start) {
+                previous = try capture(host, window: window)
+                continue
+            }
             let next = try capture(host, window: window)
             if next.bitmapData == previous.bitmapData {
                 pump(0.15)
@@ -214,6 +212,24 @@ struct GalleryImage {
             previous = next
         }
         return image(previous, host: host, window: window, status: .unstable, detail: "no two identical captures in 10 tries")
+    }
+
+    /// Sets a fitted or whole-page window to its content's current height; true when the size changed.
+    static func fitContent(_ size: GallerySize, window: NSWindow, host: NSView, start: NSSize) -> Bool {
+        let target: NSSize
+        switch size {
+        case .fitWidth(let width):
+            let height = ceil(host.fittingSize.height)
+            target = NSSize(width: width, height: max(60, min(height, maximumFullHeight)))
+        case .full(let width):
+            let height = fullHeight(host) ?? fallbackFullHeight  // floor: start.height, the window's
+            target = NSSize(width: width, height: min(maximumFullHeight, max(start.height, height)))
+        case .fixed: return false
+        }
+        guard host.bounds.size != target else { return false }
+        window.setContentSize(target)
+        host.layoutSubtreeIfNeeded()
+        return true
     }
 
     /// Height of the main scroll view's content after the first layout, scrolled back to the top.
@@ -308,6 +324,15 @@ struct GalleryImage {
         return GalleryImage(png: png, pixelHash: digest, pointSize: host.bounds.size,
                             pixelSize: (capture.rep.pixelsWide, capture.rep.pixelsHigh), backingScale: window.backingScaleFactor,
                             status: status, detail: detail, bitmap: capture.rep)
+    }
+}
+
+/// The gallery's window never hands the focus to a view. A field that held it once, even for a moment before the
+/// capture cleared it, could keep its text drawn half a point lower (one image in about 650, C2-outil-02).
+final class GalleryWindow: NSWindow {
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        guard responder == nil || responder === self else { return false }
+        return super.makeFirstResponder(responder)
     }
 }
 
