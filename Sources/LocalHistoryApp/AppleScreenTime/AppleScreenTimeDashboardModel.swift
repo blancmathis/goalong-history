@@ -49,7 +49,7 @@
         init(
             rootDirectory: URL,
             deviceID: String,
-            selectedDay: Date = Date(),
+            selectedDay: Date = GoalongToday.now,
             accessEnabled: Bool = true,
             refreshInterval: TimeInterval = AppleScreenTimeDashboardModel.defaultRefreshInterval,
             includesUnfilteredSummary: Bool = false,
@@ -108,7 +108,7 @@
         var remoteDeviceCount: Int { availableDevices.filter { $0.id != currentMacDevice.id }.count }
         var hasRemoteDevices: Bool { remoteDeviceCount > 0 }
         var selectedDeviceIDs: Set<String> { Set(configuration.scope.selectedDeviceIDs) }
-        var selectedDayIsToday: Bool { Calendar.current.isDateInToday(selectedDay) }
+        var selectedDayIsToday: Bool { GoalongToday.isToday(selectedDay) }
         var needsFullDiskAccess: Bool { status.kind == .fullDiskAccessRequired }
 
         private static func storageUnavailableCollection(

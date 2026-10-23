@@ -66,7 +66,7 @@
                     state: .missing,
                     linkPath: linkPath,
                     resolvedTargetPath: nil,
-                    detail: "Le lien de la commande goalong est absent. Réinstallez Goalong pour le créer en toute sécurité."
+                    detail: "Cela recrée en toute sécurité le lien de la commande goalong dans le Terminal."
                 )
             }
 

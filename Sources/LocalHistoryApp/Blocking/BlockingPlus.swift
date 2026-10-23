@@ -45,7 +45,7 @@ struct BlockingListFeedback: Equatable, Hashable {
     var attemptsToday: Int
     var earnedMinutesToday: Double
     var reasonLine: String? { reason.map { "« \($0) »" } }
-    var attemptLine: String? { attemptsToday >= 2 ? "\(attemptsToday)ᵉ tentative aujourd’hui" : nil }
+    var attemptLine: String? { attemptsToday >= 2 ? "\(FocusUIFormat.ordinal(attemptsToday)) tentative aujourd’hui" : nil }
     var earnedLine: String? { earnedMinutesToday > 0 ? "+\(Int(earnedMinutesToday)) min gagnées" : nil }
 }
 

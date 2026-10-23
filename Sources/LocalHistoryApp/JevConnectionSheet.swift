@@ -11,13 +11,15 @@ import SwiftUI
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Connexion à TypeSafe").font(LHTheme.sheetTitleFont)
+            Text("Connexion à Jev").font(LHTheme.sheetTitleFont)
                 .accessibilityAddTraits(.isHeader)
-            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API TypeSafe pour utiliser la surveillance temps réel.")
+            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API Jev pour utiliser la surveillance temps réel.")
                 .font(.callout).foregroundStyle(.secondary)
-            SecureField("Clé API TypeSafe", text: $key)
+            Text("Clé API").font(.callout.weight(.medium))
+            SecureField("Clé API Jev", text: $key, prompt: Text("Collez votre clé").foregroundColor(LHTheme.placeholder))
+                .labelsHidden()
                 .textFieldStyle(GoalongFieldStyle()).accessibilityIdentifier("jev-api-key")
-            Text("L’usage de l’API est facturé par TypeSafe. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. La surveillance reste soumise à votre choix d’activation sur sa page.")
+            Text("L’usage de l’API est facturé par TypeSafe, le fournisseur de Jev. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. La surveillance reste soumise à votre choix d’activation sur sa page.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Label("Clé conservée dans un fichier privé (0600), jamais dans l’historique ni les journaux de diagnostic.", systemImage: "lock")
@@ -50,7 +52,7 @@ import SwiftUI
         .padding(26).frame(width: 510, alignment: .leading)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .onDisappear { key = "" }
-        .alert("Supprimer la clé TypeSafe ?", isPresented: $confirmingRemoval) {
+        .alert("Supprimer la clé Jev ?", isPresented: $confirmingRemoval) {
             Button("Annuler", role: .cancel) {}
             Button("Supprimer la clé", role: .destructive) { monitor.removeKey(); keyError = monitor.error }
         } message: {

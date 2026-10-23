@@ -234,6 +234,7 @@ struct SupportRequestView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Ce que Goalong a détecté").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
             LHCard(padding: 16) {
+                VStack(alignment: .leading, spacing: 0) {
                 switch controller.phase {
                 case .idle, .preparing:
                     HStack(spacing: 10) {
@@ -255,6 +256,8 @@ struct SupportRequestView: View {
                     }
                     .accessibilityIdentifier("support-findings")
                 }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -279,6 +282,7 @@ struct SupportRequestView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -291,6 +295,12 @@ struct SupportRequestView: View {
         }
     }
 
+    /// Why the e-mail button is disabled: the report is still being prepared, or it failed.
+    var emailHint: String {
+        if case .failed = controller.phase { return "Réessayez d’abord de préparer le rapport." }
+        return "Disponible quand le rapport est prêt."
+    }
+
     private var actions: some View {
         let ready: URL? = { if case .ready(let url, _, _, _) = controller.phase { return url }; return nil }()
         return HStack(spacing: 10) {
@@ -300,7 +310,7 @@ struct SupportRequestView: View {
                 Button("Actualiser le rapport") { controller.prepare() }
                 Divider()
                 Button("Enregistrer une copie…") { controller.saveCopy() }.disabled(ready == nil)
-            } label: { Text("Plus") }
+            } label: { Text("Autres options") }
             .menuStyle(.borderlessButton).fixedSize()
             .accessibilityIdentifier("support-more")
             Spacer()
@@ -310,6 +320,11 @@ struct SupportRequestView: View {
                 }
                 .buttonStyle(LHSecondaryButtonStyle())
                 .accessibilityIdentifier("support-share")
+            }
+            if ready == nil {
+                Text(emailHint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("support-email-hint")
             }
             Button {
                 controller.sendByEmail()

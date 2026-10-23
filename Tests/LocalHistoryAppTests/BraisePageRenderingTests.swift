@@ -7,6 +7,20 @@ import XCTest
 
 /// Opt-in production-view renders with synthetic settings and a gamma driver that never touches displays.
 final class BraisePageRenderingTests: XCTestCase {
+    func testScheduleTimeFieldParsesTypedTimes() {
+        XCTAssertEqual(ScheduleTimeField.parse("07"), 420)
+        XCTAssertEqual(ScheduleTimeField.parse("7"), 420)
+        XCTAssertEqual(ScheduleTimeField.parse("22:03"), 1323)
+        XCTAssertEqual(ScheduleTimeField.parse("0730"), 450)
+        XCTAssertEqual(ScheduleTimeField.parse("7h30"), 450)
+        XCTAssertEqual(ScheduleTimeField.parse(" 00:00 "), 0)
+        XCTAssertNil(ScheduleTimeField.parse("24:00"))
+        XCTAssertNil(ScheduleTimeField.parse("12:60"))
+        XCTAssertNil(ScheduleTimeField.parse("abc"))
+        XCTAssertNil(ScheduleTimeField.parse(""))
+        XCTAssertEqual(ScheduleTimeField.format(1323), "22:03")
+    }
+
     @MainActor func testRenderPanelAndEditor() throws {
         guard let path = ProcessInfo.processInfo.environment["GOALONG_BRAISE_SNAPSHOTS"] else { throw XCTSkip("Opt-in Braise render") }
         let output = URL(fileURLWithPath: path); try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)

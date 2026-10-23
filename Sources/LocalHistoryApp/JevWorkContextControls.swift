@@ -84,7 +84,7 @@ import LocalHistoryCore
                   text: $content, identifier: "monitoring-work-content")
             sectionLabel("Hors travail", mark: LHTheme.otherData).padding(.top, 8)
             field("Ce qui n’est pas du travail",
-                  detail: "Des exemples certains, pas une liste exhaustive.", help: procrastinationText,
+                  detail: "Des exemples clairs, pas une liste complète.", help: procrastinationText,
                   hint: "Ex. Scroller le fil Pour vous de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
                   text: $procrastination, identifier: "monitoring-procrastination")
             GoalongNote("Ces critères restent stockés sur ce Mac. Enregistrer autorise leur envoi à votre compte ChatGPT avec les contextes à classer si le classement est activé, et l’envoi de vos critères de travail et exemples hors travail à TypeSafe avec les prochaines analyses si la surveillance est activée. N’indiquez ni clé API ni information sensible.",
@@ -162,7 +162,7 @@ import LocalHistoryCore
         .accessibilityAddTraits(.isHeader)
     }
     private var procrastinationText: String {
-        "Des exemples certains, pas une liste exhaustive. La surveillance continue de repérer les autres distractions. Un usage qui correspond clairement à un exemple prime sur une autorisation générale ; précisez l’usage plutôt que seulement le site."
+        "Des exemples clairs, pas une liste complète. La surveillance continue de repérer les autres distractions. Un usage qui correspond clairement à un exemple prime sur une autorisation générale ; précisez l’usage plutôt que seulement le site."
     }
     private func loadDraft() {
         draft = store.context.summary; applications = store.context.applications
@@ -171,8 +171,9 @@ import LocalHistoryCore
     private func field(_ title: String, detail: String? = nil, help: String? = nil, hint: String,
                        text: Binding<String>, identifier: String) -> some View {
         GoalongFormField(title: title, detail: detail, help: help) {
-            TextField(hint, text: text, axis: .vertical)
+            TextField("", text: text, axis: .vertical)
                 .lineLimit(2...6)
+                .goalongPlaceholder(hint, isEmpty: text.wrappedValue.isEmpty, alignment: .topLeading, top: 8)
                 .accessibilityIdentifier(identifier).accessibilityLabel(title)
         }
     }

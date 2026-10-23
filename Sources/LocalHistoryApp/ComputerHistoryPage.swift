@@ -49,6 +49,9 @@
             qos: .userInitiated
         )
         private var refreshRequestID = UUID()
+        /// Refreshes asked and not yet published, all pages together (main thread). The gallery waits for 0 before
+        /// it captures the page, so « Vérification de la journée » never lands in an image by chance.
+        private(set) static var refreshesInFlight = 0
 
         init(
             store: ComputerHistoryStore = ComputerHistoryStore(),
@@ -65,6 +68,7 @@
             let normalized = Calendar.current.startOfDay(for: day)
             let requestID = UUID()
             refreshRequestID = requestID
+            Self.refreshesInFlight += 1
             errorMessage = nil
             isLoading = true
             sourceStatus = .checking
@@ -102,6 +106,7 @@
                         memory = invalidated ? nil : load(normalized) ?? retained.value
                     }
                     DispatchQueue.main.async { [weak self] in
+                        Self.refreshesInFlight -= 1
                         guard let self, self.refreshRequestID == requestID else { return }
                         self.memory = memory
                         self.isAnalysisPartial = Self.exceededAnalysisCeiling(result)
@@ -601,6 +606,15 @@
             let totalLabel = total <= 1 ? "\(total) période" : "\(total) périodes"
             return searching ? "\(visible) sur \(totalLabel)" : totalLabel
         }
+
+        /// With an empty timeline, one place explains why. The timeline card does it for a day without
+        /// data; the status card does it when it also offers « Réessayer ».
+        static func timelineExplainsEmptyDay(_ status: ComputerHistorySourceStatus) -> Bool {
+            switch status {
+            case .available, .absent, .checking: return true
+            case .inaccessible, .unverified: return false
+            }
+        }
     }
 
     struct ComputerHistoryPage: View {
@@ -720,10 +734,12 @@
                     VStack(alignment: .leading, spacing: 4) {
                         Text(recordingStateTitle)
                             .font(.system(size: 13, weight: .semibold))
-                        Text(recordingSummary)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        if showsRecordingSummary {
+                            Text(recordingSummary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer(minLength: 12)
                     if needsRetry {
@@ -824,6 +840,11 @@
             }
         }
 
+        private var showsRecordingSummary: Bool {
+            isPreparingTimeline || !tenMinuteGroups.isEmpty || model.isAnalysisPartial
+                || !ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
+        }
+
         private var recordingSummary: String {
             let events = snapshot.eventCount.formatted()
             if isPreparingTimeline {
@@ -902,7 +923,7 @@
                         Text("Plus ancien d’abord").tag(false)
                     }
                     .labelsHidden()
-                    .frame(width: 150)
+                    .frame(width: 190)
                 }
                 .font(.system(size: 12))
 
@@ -915,17 +936,17 @@
                 LazyVStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Text(
-                            Calendar.current.isDateInToday(day)
+                            GoalongToday.isToday(day)
                                 ? "Aujourd’hui"
                                 : DashboardFormatters.dayTitle.string(from: day)
                         )
                         .font(.system(size: 14, weight: .semibold))
                         Spacer()
-                        Text(snapshot.eventCount == 0
-                            ? "Aucune activité enregistrée"
-                            : "\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                        if snapshot.eventCount > 0 {
+                            Text("\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 17)
@@ -950,11 +971,13 @@
                                 .foregroundStyle(.secondary)
                             Text(emptyTimelineTitle)
                                 .font(.system(size: 14, weight: .semibold))
-                            Text(emptyTimelineMessage)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
+                            if ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus) {
+                                Text(emptyTimelineMessage)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
@@ -1007,7 +1030,7 @@
                 return model.memory == nil
                     ? "Aucun journal pour cette date"
                     : "Détails de la journée indisponibles"
-            case .available where Calendar.current.isDateInToday(day):
+            case .available where GoalongToday.isToday(day):
                 return "Aucune activité enregistrée aujourd’hui"
             case .available:
                 return "Aucune activité trouvée"
@@ -1028,7 +1051,7 @@
                 return model.memory == nil
                     ? "Aucun historique conservé pour ce jour. Les autres jours sont inchangés."
                     : "Le journal d’origine est absent, mais l’historique conservé n’a pas été supprimé."
-            case .available where Calendar.current.isDateInToday(day):
+            case .available where GoalongToday.isToday(day):
                 return "L’activité apparaît ici lorsque Goalong enregistre une application autorisée."
             case .available:
                 return "Choisissez une autre date. Un historique vide ne prouve pas une absence d’activité."

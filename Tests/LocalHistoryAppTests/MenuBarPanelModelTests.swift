@@ -107,6 +107,30 @@ final class MenuBarPanelModelTests: XCTestCase {
         model.refreshRuntimeState(); XCTAssertNil(model.attentionTitle)
     }
 
+    @MainActor func testAttentionAndUnavailableFocusOfferARepairAction() {
+        let f = fixture(), model = f.model()
+        f.health = .permissionRequired
+        model.refreshRuntimeState()
+        XCTAssertEqual(model.attentionFix, .permissions)
+        model.perform(.permissions)
+        XCTAssertEqual(f.openedPanes, [.permissions])
+        f.health = .storageUnavailable; model.refreshRuntimeState()
+        XCTAssertNil(model.attentionFix)
+        f.health = .ready; model.refreshRuntimeState()
+        XCTAssertNil(model.attentionFix)
+        // Concentration is off: the reason names Réglages and the action opens the modules pane.
+        XCTAssertEqual(model.focusUnavailableReason, "Activez Concentration dans Réglages.")
+        XCTAssertEqual(model.focusUnavailableFix, .modules)
+        model.perform(.modules); model.perform(.recording); model.perform(.app)
+        XCTAssertEqual(f.openedPanes, [.permissions, .modules, .recording])
+        XCTAssertEqual(f.opened, [.overview])
+        // Recording is off while Concentration is on: the panel shows this case, with the recording pane.
+        f.modules.setEnabled(.concentration, true); f.consent = false
+        model.refreshRuntimeState()
+        XCTAssertEqual(model.focusUnavailableReason, "Activez l’enregistrement dans Réglages.")
+        XCTAssertEqual(model.focusUnavailableFix, .recording)
+    }
+
     @MainActor func testConsentOffWinsOverTheManualPauseSetByProduction() {
         let f = fixture(), model = f.model()
         // applyCapabilityConsents sets the manual pause whenever consent is off.

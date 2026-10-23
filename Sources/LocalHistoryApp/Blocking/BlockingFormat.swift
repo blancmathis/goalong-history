@@ -130,7 +130,8 @@ enum BlockingFormat {
         return formatter.string(from: date)
     }
 
-    static let weekdayLetters = ["L", "M", "M", "J", "V", "S", "D"]
+    /// Two letters, so Tuesday and Wednesday no longer both read « M ».
+    static let weekdayLetters = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"]
     static let weekdayShort = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
 
     /// « Tous les jours », « Lun–ven », « Sam, dim », « Lun, mer, ven ».

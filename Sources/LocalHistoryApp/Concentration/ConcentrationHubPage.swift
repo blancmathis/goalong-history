@@ -133,8 +133,8 @@ struct ConcentrationHubHeader: View {
     @State private var error: String?
 
     var body: some View {
-        GoalongSection(title: "En mots, pour la surveillance",
-                       subtitle: "Des exemples certains. La surveillance s’en sert pour reconnaître une distraction qu’aucune liste ne contient.") {
+        GoalongSection(title: "Distractions en mots",
+                       subtitle: "Des exemples clairs. La surveillance s’en sert pour reconnaître une distraction qu’aucune liste ne contient.") {
             VStack(alignment: .leading, spacing: 12) {
                 if editing {
                     TextEditor(text: $text)

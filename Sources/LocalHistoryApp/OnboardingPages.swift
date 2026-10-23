@@ -150,7 +150,7 @@
                          ? "Tout le suivi est suspendu : rien n’est enregistré pour l’instant. Reprenez-le pour que votre fil apparaisse dans Activité."
                          : consents.isEnabled(.localComputerHistory)
                          ? "Votre fil apparaîtra dans Activité dès les premières minutes d’utilisation de ce Mac."
-                         : "L’enregistrement local est désactivé : Activité restera vide. Vous pourrez l’activer dans Réglages, Enregistrement local.")
+                         : "L’enregistrement local est désactivé : rien n’apparaîtra dans Activité. Vous pourrez l’activer dans Réglages, Enregistrement local.")
                         .font(.system(size: 14)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }

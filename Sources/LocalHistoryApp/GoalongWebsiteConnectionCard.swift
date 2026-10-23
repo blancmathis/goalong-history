@@ -16,6 +16,7 @@ extension Notification.Name {
 /// Explicit pairing and reviewed export. Credentials stay in private files, outside preferences.
 @MainActor struct GoalongWebsiteConnectionCard: View {
     @AppStorage("goalong.website.tokenFilePath") private var tokenPath = ""
+    @Environment(\.goalongDefaults) private var defaults
     @AppStorage("goalong.website.origin") private var origin = ""
     @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
     @State private var showsConnection = false
@@ -60,13 +61,13 @@ extension Notification.Name {
         }
         .onAppear {
             refreshCredential()
-            if UserDefaults.standard.bool(forKey: "goalong.website.openAfterPairing") {
-                UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
+            if defaults.bool(forKey: "goalong.website.openAfterPairing") {
+                defaults.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)
             .merge(with: NotificationCenter.default.publisher(for: .goalongWebsiteShareRequested))) { _ in
-            refreshCredential(); UserDefaults.standard.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
+            refreshCredential(); defaults.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteAccessRefused)) { _ in refreshCredential() }
         .onChange(of: tokenPath) { _ in refreshCredential() }
@@ -156,7 +157,7 @@ struct GoalongWebsiteConnectionSheet: View {
     @AppStorage("goalong.website.origin") private var origin = ""
     // Only the user's chosen file path is remembered. The token itself stays in that file.
     @AppStorage("goalong.website.tokenFilePath") private var tokenFilePath = ""
-    @State private var date = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+    @State private var date = Calendar.current.date(byAdding: .day, value: -1, to: GoalongToday.now) ?? GoalongToday.now
     @State private var includeApps = false
     @State private var includeHourly = false
     @State private var includeWebsites = false
@@ -262,7 +263,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     if preparedAnalysis == nil {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("2. Choisir vos données").font(.headline)
-                        DatePicker("Journée enregistrée", selection: $date, in: ...Date(), displayedComponents: .date)
+                        DatePicker("Journée enregistrée", selection: $date, in: ...GoalongToday.now, displayedComponents: .date)
                         Text("Les noms d’appareils et les totaux de temps d’écran sont inclus. Les sources doivent être activées dans Goalong. Rien n’est collecté ni analysé pendant l’export.")
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

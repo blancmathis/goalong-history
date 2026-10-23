@@ -274,6 +274,8 @@ import LocalHistoryCore
         var surface: GoalongConsentSurface = .settings
         var prepare: () throws -> Void = {}
         var onCheckingChanged: (Bool) -> Void = { _ in }
+        /// When set, a disabled source shows this button instead of a bare switch.
+        var activateButtonTitle: String? = nil
         @ViewBuilder var label: () -> Label
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @Environment(\.sourceAccessCheck) private var checkAccess
@@ -291,6 +293,11 @@ import LocalHistoryCore
         var body: some View {
             HStack(spacing: 20) {
                 label().frame(maxWidth: .infinity, alignment: .leading)
+                if let activateButtonTitle, !consents.isEnabled(capability) {
+                    Button(activateButtonTitle) { beginActivation() }
+                        .buttonStyle(LHPrimaryButtonStyle())
+                        .accessibilityIdentifier("source-\(capability.rawValue)")
+                } else {
                 Toggle(isOn: Binding(
                     get: { consents.isEnabled(capability) },
                     set: { enabled in
@@ -302,6 +309,7 @@ import LocalHistoryCore
                 .toggleStyle(.goalongSwitchOnly)
                 .accessibilityIdentifier("source-\(capability.rawValue)")
                 .fixedSize()
+                }
             }
             .disabled(checking)
             .sheet(isPresented: $showingActivation) {
@@ -400,6 +408,7 @@ import LocalHistoryCore
         let resumingAfterRestart: Bool
         @StateObject private var flow: SourceActivationFlow
         @Environment(\.dismiss) private var dismiss
+        @Environment(\.goalongDefaults) private var defaults
         @Environment(\.goalongRecordingModel) private var recordingModel
         @State private var showingRecordingReview = false
         @State private var continueAfterRecordingReview = false
@@ -422,15 +431,16 @@ import LocalHistoryCore
         private var access: SourceAccessStatus { flow.result ?? (capability == .appleScreenTime ? .fullDiskAccess : .accessibility) }
         private var copy: PermissionSetupCopy { PermissionSetupCopy(capability: capability, status: access) }
         private var ready: Bool { flow.result == .ready }
+        private var isUnavailable: Bool { if case .unavailable = access { return true } else { return false } }
         private var needsRestart: Bool {
             PermissionRecoveryAdvice.prefersPrimaryRelaunch(status: access, openedSettings: openedSettings,
                 ready: ready, resumedAfterRestart: resumingAfterRestart,
-                progress: PermissionRecoveryLedger.load(access))
+                progress: PermissionRecoveryLedger.load(access, defaults: defaults))
         }
         private var primaryTitle: String {
             if restarting { return "Préparation du redémarrage…" }
             if flow.checking { return "Vérification de l’accès…" }
-            if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Terminé" : "Activer \(capability.title)" }
+            if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Terminé" : copy.activateTitle }
             if needsRestart { return "Quitter et rouvrir" }
             if !openedSettings && access.hasSettingsAction { return "Ouvrir Réglages Système" }
             return "Vérifier l’accès"
@@ -441,7 +451,7 @@ import LocalHistoryCore
                 PermissionSetupHeader(copy: copy, ready: ready).padding(28)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
-                        PermissionSetupStatusCard(copy: copy, checking: flow.checking, ready: ready)
+                        PermissionSetupStatusCard(copy: copy, checking: flow.checking, ready: ready, unavailable: isUnavailable)
                         if ready {
                             VStack(alignment: .leading, spacing: 7) {
                                 Text("Accès confirmé").font(.system(size: 15, weight: .semibold))
@@ -461,9 +471,12 @@ import LocalHistoryCore
                             }
                             PermissionSetupSteps(copy: copy, openedSettings: openedSettings, ready: ready)
                             if case .unavailable(let message) = access {
-                                Label(message, systemImage: "exclamationmark.circle")
-                                    .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                                Label(message, systemImage: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.warning)
                                     .fixedSize(horizontal: false, vertical: true)
+                                    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(LHTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .accessibilityIdentifier("source-access-unavailable")
                             } else if openedSettings && !flow.checking {
                                 Label(needsRestart ? "Relancez Goalong pour appliquer l’accès, puis terminez ici." : "En attente de macOS. Nouvelle vérification à votre retour.",
                                       systemImage: needsRestart ? "arrow.clockwise.circle" : "clock")
@@ -489,8 +502,7 @@ import LocalHistoryCore
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 HStack(spacing: 12) {
                     Button("Plus tard", role: .cancel) { PermissionRecovery.clearSetup(); flow.cancel(); dismiss() }
-                        .keyboardShortcut(.cancelAction).buttonStyle(.plain)
-                        .foregroundStyle(LHTheme.secondaryText).disabled(restarting)
+                        .keyboardShortcut(.cancelAction).buttonStyle(LHSecondaryButtonStyle()).disabled(restarting)
                     Spacer(minLength: 8)
                     if openedSettings && !ready {
                         Button(needsRestart ? "Vérifier à nouveau" : "Ouvrir les réglages") {
@@ -671,7 +683,7 @@ import LocalHistoryCore
         var body: some View {
             LHCard(padding: 20) {
                 // The explanation is the switch's own label: no second, floating title.
-                SourceActivationToggle(capability: .localComputerHistory) {
+                SourceActivationToggle(capability: .localComputerHistory, activateButtonTitle: "Activer…") {
                     VStack(alignment: .leading, spacing: 8) {
                         GoalongThreadPlaceholder().padding(.bottom, 2)
                         Text("L’historique de ce Mac est désactivé").font(LHTheme.sectionTitleFont).tracking(-0.2)

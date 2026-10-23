@@ -359,10 +359,15 @@ struct FocusCommitmentEditRequest: Identifiable {
         }
     }
 
+    static func emptyText(for kind: FocusCommitmentPeriod.Kind) -> String {
+        kind == .day ? "Un objectif pour aujourd’hui, que Goalong mesure. Ajoutez un enjeu si vous voulez."
+                     : "Un objectif pour la semaine, que Goalong mesure. Ajoutez un enjeu si vous voulez."
+    }
+
     @ViewBuilder private var empty: some View {
         VStack(alignment: .leading, spacing: 10) {
             FocusCommitmentGauge(empty: true)
-            Text("Un objectif que Goalong mesure, avec un enjeu si vous voulez.")
+            Text(Self.emptyText(for: currentPeriod.kind))
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
         }
         Button("Prendre un engagement") { onCreate(currentPeriod) }

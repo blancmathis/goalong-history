@@ -4,11 +4,19 @@
 
     struct LocalHistoryDashboardView: View {
         @ObservedObject var model: DashboardViewModel
-        @State private var activityNavigation = GoalongActivityNavigation()
+        /// Starts on the model's today (the real clock in the app, the frozen one in the gallery).
+        @State private var activityNavigation: GoalongActivityNavigation
         /// Activité's days stay read while the window is open, so coming back to the page
         /// shows them at once; closing the window releases them.
-        @StateObject private var activity = GoalongAnalyticsModel()
+        @StateObject private var activity: GoalongAnalyticsModel
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        /// `activityPeriod` (1, 7 or 28 days) lets the gallery open Activité on a week or a month.
+        init(model: DashboardViewModel, activityPeriod: Int = 1) {
+            _model = ObservedObject(wrappedValue: model)
+            _activity = StateObject(wrappedValue: GoalongAnalyticsModel(reader: model.analyticsReader))
+            _activityNavigation = State(initialValue: GoalongActivityNavigation(day: model.now(), period: activityPeriod))
+        }
 
         var body: some View {
             Group {
@@ -337,8 +345,7 @@
         }
 
         private static var version: String {
-            let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            return "v\(value ?? "0.6.0-dev")"
+            "v\(ProductIdentity.shortVersion ?? "0.6.0-dev")"
         }
     }
 

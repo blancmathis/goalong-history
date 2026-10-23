@@ -150,18 +150,25 @@
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Circle().fill(dotColor).frame(width: 6, height: 6)
                         VStack(alignment: .leading, spacing: 1) {
-                            if let title = model.attentionTitle {
-                                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
-                                    .lineLimit(1).truncationMode(.tail)
+                            VStack(alignment: .leading, spacing: 1) {
+                                if let title = model.attentionTitle {
+                                    Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
+                                        .lineLimit(1).truncationMode(.tail)
+                                }
+                                Text(model.trackingDetail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                    .lineLimit(model.attentionTitle == nil ? 1 : 3).truncationMode(.tail)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            Text(model.trackingDetail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                .lineLimit(model.attentionTitle == nil ? 1 : 3).truncationMode(.tail)
-                                .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityElement(children: .combine)
+                            if let fix = model.attentionFix {
+                                Button(fix.label) { model.perform(fix) }
+                                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                                    .accessibilityIdentifier("menubar-attention-fix")
+                            }
                         }
                     }
                     .help(model.attentionTitle.map { "\($0) : \(model.trackingDetail)" } ?? model.trackingDetail)
                 }
-                .accessibilityElement(children: .combine)
                 Spacer(minLength: 8)
                 PanelIconButton(
                     symbol: model.consentOff || model.globalPaused ? "gearshape.fill" : (paused ? "play.fill" : "pause.fill"),
@@ -324,8 +331,16 @@
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.focusAvailable)
                 if !model.focusAvailable, let reason = model.focusUnavailableReason {
-                    Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let fix = model.focusUnavailableFix {
+                            Spacer(minLength: 8)
+                            Button(fix.label) { model.perform(fix) }
+                                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                                .accessibilityIdentifier("menubar-focus-fix")
+                        }
+                    }
                 }
             }
             .animation(reduceMotion ? nil : LHTheme.settle, value: model.focusKind)
@@ -382,7 +397,7 @@
                         .accessibilityHidden(true)
                     }
                     Spacer(minLength: 8)
-                    Button("Terminer", action: model.stopFocus)
+                    Button("Arrêter", action: model.stopFocus)
                         .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                 }
             }
@@ -497,7 +512,8 @@
                 VStack(alignment: .leading, spacing: 1) {
                     Text(model.ambianceCurrent?.title ?? "Aucun son choisi")
                         .font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 4)
@@ -522,7 +538,7 @@
         private var subtitle: String {
             guard let current = model.ambianceCurrent else { return "Choisissez un son ci-dessous" }
             if model.ambianceLoading { return "\(kindTitle(current.kind)), chargement…" }
-            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en lecture" : "\(kindTitle(current.kind)), dernière écoutée"
+            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en cours" : "\(kindTitle(current.kind)), écouté en dernier"
         }
 
         private var volume: some View {

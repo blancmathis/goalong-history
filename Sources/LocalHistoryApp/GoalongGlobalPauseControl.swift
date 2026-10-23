@@ -62,9 +62,11 @@ struct GoalongGlobalPauseBanner: View {
                         Text("Historique suspendu · confidentialité").font(.system(size: 13, weight: .semibold))
                         Text(pause.invalid ? "Réglage illisible : reprise bloquée par sécurité." : "Tout le suivi est arrêté, pas seulement la surveillance. Reprenez-le pour enregistrer à nouveau.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    GoalongGlobalPauseControl(model: model, compact: true).frame(width: 170)
+                    // The action keeps its whole name: the text beside it wraps instead.
+                    GoalongGlobalPauseControl(model: model, compact: true).fixedSize()
                 }.padding(14).background(LHTheme.cardBackground)
                 Divider()
             }

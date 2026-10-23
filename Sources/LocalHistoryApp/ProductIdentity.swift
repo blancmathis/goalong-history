@@ -17,7 +17,20 @@
             "GoLong History",
         ]
 
+        #if DEBUG
+        /// Test gallery only: a fixed name, version and bundle path, so renders do not show "xctest".
+        struct GalleryIdentity: Equatable {
+            var displayName = "Goalong"
+            var version = "0.6.82 (galerie)"
+            var bundlePath = "/Applications/Goalong.app"
+        }
+        static var galleryOverride: GalleryIdentity?
+        #endif
+
         static var displayName: String {
+            #if DEBUG
+            if let galleryOverride { return galleryOverride.displayName }
+            #endif
             let candidates = [
                 Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
                 Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String,
@@ -39,8 +52,22 @@
             string: "https://github.com/blancmathis/goalong-history/releases/tag/\(rollingReleaseTag)"
         )!
         static let guideURL = URL(string: "https://github.com/blancmathis/goalong-history/blob/main/GUIDE_FR.md")!
-        static var installationPath: String {
-            Bundle.main.bundleURL.path
+        static var installationPath: String { bundleURL.path }
+
+        /// This copy's bundle (the gallery shows a fixed path).
+        static var bundleURL: URL {
+            #if DEBUG
+            if let galleryOverride { return URL(fileURLWithPath: galleryOverride.bundlePath, isDirectory: true) }
+            #endif
+            return Bundle.main.bundleURL
+        }
+
+        /// Marketing version shown in the app (`CFBundleShortVersionString`).
+        static var shortVersion: String? {
+            #if DEBUG
+            if let galleryOverride { return galleryOverride.version }
+            #endif
+            return Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         }
     }
 #endif

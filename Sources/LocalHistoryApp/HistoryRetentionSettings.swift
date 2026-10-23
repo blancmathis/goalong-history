@@ -14,8 +14,8 @@ extension HistoryDataClass {
         case .semanticSnapshots: return "Texte affiché"
         case .memories: return "Historique et résumés locaux"
         case .analysisCaches: return "Fichiers temporaires d’analyse"
-        case .minuteSeals: return "Preuves locales"
-        case .activitySummaries: return "Résumés d’Activité"
+        case .minuteSeals: return "Sceaux d’intégrité"
+        case .activitySummaries: return "Résumés de journée"
         case .anchorReceipts: return "Reçus de vérification"
         }
     }
@@ -135,12 +135,17 @@ extension HistoryRetentionPolicy {
                             .font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                             .accessibilityIdentifier("retention-confirm-proofs")
                     }
-                    Text("Ces règles couvrent l’activité gérée par Goalong, le texte affiché, les résumés d’Activité, les souvenirs dérivés, les caches d’analyse, les sceaux et les reçus. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni les fichiers exportés, sauvegardes ou données déjà envoyées à un site ou un service : ceux-ci se suppriment depuis leurs propres réglages. Elles ne suppriment pas non plus les bilans ChatGPT enregistrés : ils s’effacent avec « Effacer l’historique détaillé » pour les jours concernés.")
+                    Text("Ces règles couvrent les données ci-dessus. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni les exports, sauvegardes ou données déjà envoyées. Les bilans ChatGPT ne sont pas concernés : effacez-les avec « Effacer l’historique détaillé » pour les jours voulus.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     if let error = model.error {
                         Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                     }
                 }.fixedSize(horizontal: false, vertical: true).padding(24)
+            }
+            // A soft fade shows that the list continues under the footer.
+            .overlay(alignment: .bottom) {
+                LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 18).allowsHitTesting(false)
             }
             Divider()
             HStack {

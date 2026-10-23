@@ -170,6 +170,11 @@
             return try self.performRefresh(day: day, force: force)
         }
 
+        /// Preferences and clock of the analysis passes. The app keeps `.standard` and the real clock; the gallery sets
+        /// its own suite and frozen clock once, before any page asks for a refresh.
+        var preferences: UserDefaults = .standard
+        var clock: () -> Date = Date.init
+
         private let axClient: AXClient
         private let applicationWitness: (pid_t) -> (() -> Bool)?
         private let allowsSemantic: (ContextSnapshot) -> Bool
@@ -696,7 +701,7 @@
             force: Bool
         ) throws -> ActivityAnalysisCycleResult {
             let calendar = Calendar.current
-            let today = calendar.startOfDay(for: Date())
+            let today = calendar.startOfDay(for: clock())
             let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
             if force {
                 store.removeOrphanedAnalyses()
@@ -711,7 +716,7 @@
             let result = try autoreleasepool {
                 try analysisCycleService.process(
                     day: day,
-                    tokenBudget: ActivityAnalysisPreferences.agentTokenBudget,
+                    tokenBudget: ActivityAnalysisPreferences.agentTokenBudget(in: preferences),
                     forceVerification: force,
                     includeActivityMemory: memoryStore != nil
                 )

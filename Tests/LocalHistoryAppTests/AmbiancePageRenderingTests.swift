@@ -25,7 +25,7 @@ final class AmbianceModuleNavigationTests: XCTestCase {
 final class AmbiancePageRenderingTests: XCTestCase {
     private static let focus = [("ambre", "Ambre"), ("canopee", "Canopée"), ("meridien", "Méridien"), ("sillage", "Sillage"),
                                 ("filigrane", "Filigrane"), ("confluence", "Confluence"), ("sanctuaire", "Sanctuaire"), ("gravite", "Gravité"),
-                                ("orbit", "Orbit"), ("sonar", "Sonar")]
+                                ("orbit", "Orbite"), ("sonar", "Sonar")]
     private static let relax = [("lagoon", "Lagon"), ("stillwater", "Eau calme"), ("hearth", "Foyer"), ("reverie", "Rêverie"), ("driftwood", "Bois flotté")]
     private static let textures = [("rain", "Pluie douce"), ("ocean", "Marée"), ("brown", "Velours brun"), ("pink", "Air rose"), ("aube", "Aube")]
 
@@ -127,6 +127,12 @@ final class AmbiancePageRenderingTests: XCTestCase {
                 sources: playing, packs: packs(.installed, .installed),
                 state: .playing(playing[0]), volume: binding, actions: actions))
         }
+    }
+
+    func testDownloadingPackIsNotListedAsDownloadedSound() {
+        let packs = [AmbiancePackState(id: "orchestra", title: "Orchestre", bytes: 77_000_000, status: .downloading(0.4), hasLeftovers: true),
+                     AmbiancePackState(id: "textures", title: "Textures", bytes: 83_000_000, status: .installed)]
+        XCTAssertEqual(AmbiancePageContent.keptPacks(packs).map(\.id), ["textures"])
     }
 }
 #endif

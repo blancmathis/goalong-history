@@ -270,7 +270,7 @@ import AppKit
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
-        case .jev: return GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring) ? "Activé" : "Clé API et surveillance"
+        case .jev: return GoalongHomeRows.jevSummary(enabled: GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
         case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
         case .permissions: return "Selon vos fonctions"
         case .storage: return "Conservation et effacement"
@@ -343,6 +343,7 @@ enum SettingsPane: Hashable {
         case .modules: return "square.stack.3d.up"
         case .permissions: return "hand.raised"
         case .storage: return "internaldrive"
+        case .advanced: return "wrench.and.screwdriver"
         default: return "slider.horizontal.3"
         }
     }

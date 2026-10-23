@@ -384,6 +384,25 @@ import XCTest
         XCTAssertTrue(GoalongGuardFiles.guardMayBeArmed(files))
     }
 
+    func testStandardLevelIsSettledButAGuardWaitingIsNot() {
+        var state = BlockingProtectionState()
+        XCTAssertTrue(BlockingProtectionDetails.levelIsSettled(state))
+        state.guardian = .awaitingApproval
+        XCTAssertFalse(BlockingProtectionDetails.levelIsSettled(state))
+        state.guardian = .failed("x")
+        XCTAssertFalse(BlockingProtectionDetails.levelIsSettled(state))
+    }
+
+    func testStartHintSaysWhyTheButtonIsOff() {
+        let hint = BlockingProtectionDetails.startHint
+        XCTAssertNil(hint(false, false, true, true, false))
+        XCTAssertEqual(hint(false, false, false, false, false), "Créez d’abord une liste.")
+        XCTAssertEqual(hint(false, false, true, false, false), "Choisissez au moins une liste.")
+        XCTAssertEqual(hint(false, false, true, true, true), "Choisissez d’abord un mot de passe de blocage.")
+        XCTAssertEqual(hint(true, true, true, true, false), "Le Mac est déjà gelé.")
+        XCTAssertNil(hint(true, false, true, false, false))
+    }
+
     func testLevelLabels() {
         var state = BlockingProtectionState()
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Standard")

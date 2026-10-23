@@ -33,7 +33,7 @@ struct BlockedSiteVeil: View {
                         .accessibilityIdentifier("blocking-veil-reason")
                 }
                 Text(detail).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                    .multilineTextAlignment(.center).frame(maxWidth: 380).fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.center).frame(maxWidth: 460).fixedSize(horizontal: false, vertical: true)
                 if let counts = countsLine {
                     Text(counts).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
                         .accessibilityIdentifier("blocking-veil-attempts")
@@ -66,14 +66,14 @@ struct BlockedSiteVeil: View {
     private var icon: BlockingItem {
         switch presentation.reason {
         case .site(let host), .quotaUsed(let host, _): return .site(host)
-        case .unsupportedBrowser(let name): return .app(BlockAppRule(bundleIdentifier: "", name: name))
+        case .unsupportedBrowser: return .symbol("globe")
         }
     }
 
     private var title: String {
         switch presentation.reason {
         case .site(let host), .quotaUsed(let host, _): return host
-        case .unsupportedBrowser(let name): return "\(name) n’est pas pris en charge"
+        case .unsupportedBrowser(let name): return name
         }
     }
 
@@ -90,8 +90,8 @@ struct BlockedSiteVeil: View {
     private var detail: String {
         switch presentation.reason {
         case .site: return "Liste « \(presentation.listName) »."
-        case .quotaUsed(_, let minutes): return "Vos \(BlockingFormat.duration(minutes: minutes)) du jour sont passées. Liste « \(presentation.listName) »."
-        case .unsupportedBrowser: return "Goalong ne lit pas l’adresse dans ce navigateur. Pendant un blocage de sites, il reste couvert. Safari, Chrome, Edge, Brave, Arc et Aside sont pris en charge."
+        case .quotaUsed(_, let minutes): return "Temps du jour écoulé : \(BlockingFormat.duration(minutes: minutes)) (liste « \(presentation.listName) »)."
+        case .unsupportedBrowser(let name): return "\(name) n’est pas pris en charge : Goalong ne lit pas l’adresse dans ce navigateur. Pendant un blocage de sites, il reste couvert. Safari, Chrome, Edge, Brave, Arc et Aside sont pris en charge."
         }
     }
 }
@@ -203,9 +203,32 @@ struct BlockingStruckIcon: View {
     let item: BlockingItem
     var size: CGFloat = 48
 
+    /// The initial shown for an item without an icon of its own (a site, an app Goalong cannot read the icon of).
+    static func fallbackInitial(for item: BlockingItem) -> String? {
+        switch item {
+        case .site(let host): return host.first.map { String($0).uppercased() } ?? "•"
+        case .app(let app): return AppIconView.icon(bundleIdentifier: app.bundleIdentifier) == nil ? AppIconView.initial(for: app.name) : nil
+        case .symbol: return nil
+        }
+    }
+
     var body: some View {
         ZStack {
-            BlockingIconStack(items: [item], size: size)
+            if let initial = Self.fallbackInitial(for: item) {
+                // The initial sits in a corner, away from the stroke, so both stay whole.
+                let shape = RoundedRectangle(cornerRadius: size * 0.23, style: .continuous)
+                ZStack {
+                    shape.fill(LHTheme.insetBackground)
+                    shape.strokeBorder(LHTheme.separator)
+                    Text(initial)
+                        .font(.system(size: size * 0.36, weight: .bold, design: .rounded))
+                        .foregroundStyle(LHTheme.secondaryText)
+                        .offset(x: -size * 0.19, y: -size * 0.19)
+                }
+                .frame(width: size, height: size)
+            } else {
+                BlockingIconStack(items: [item], size: size)
+            }
             Path { path in
                 path.move(to: CGPoint(x: size * 0.08, y: size * 0.92))
                 path.addLine(to: CGPoint(x: size * 0.92, y: size * 0.08))

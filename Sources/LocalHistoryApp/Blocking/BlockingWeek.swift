@@ -16,6 +16,12 @@ import SwiftUI
     private static let label: CGFloat = 52
     private static let gap: CGFloat = 10
     private static let spacing: CGFloat = 4
+    /// A range without a lock: a light tint, so its name (in the text colour) stays readable in both themes.
+    static let freeFill = 0.2
+
+    /// A capsule is filled with the text colour only when its lock protects the lists and it does not slow down.
+    /// Its label then takes the page colour; on every other capsule the label keeps the text colour.
+    nonisolated static func isSolid(lock: BlockLock, slowed: Bool) -> Bool { !slowed && lock.protectsLists }
 
     fileprivate struct Span: Hashable {
         var listID: UUID
@@ -149,7 +155,7 @@ import SwiftUI
             }
             HStack(spacing: 16) {
                 legend(Capsule().fill(LHTheme.text), "Verrouillé")
-                legend(Capsule().fill(LHTheme.text.opacity(0.42)), "Libre")
+                legend(Capsule().fill(LHTheme.text.opacity(Self.freeFill)), "Libre ou difficile")
                 legend(Capsule().strokeBorder(LHTheme.text.opacity(0.7), lineWidth: 1.5), "Ralenti")
                 HStack(spacing: 6) {
                     Circle().fill(LHTheme.accent).frame(width: 8, height: 8)
@@ -231,7 +237,8 @@ import SwiftUI
     }
 
     private func spanView(_ span: Span, day: Int, width: CGFloat) -> some View {
-        let ink = LHTheme.text.opacity(span.slowed ? 1 : (span.lock.protectsLists ? 1 : 0.42))
+        let solid = Self.isSolid(lock: span.lock, slowed: span.slowed)
+        let ink = LHTheme.text.opacity(solid ? 1 : Self.freeFill)
         return ZStack(alignment: .leading) {
             if span.slowed {
                 Capsule().fill(LHTheme.pageBackground)
@@ -246,7 +253,7 @@ import SwiftUI
                     if span.lock != .free { Image(systemName: span.lock.symbol).font(.system(size: 8, weight: .bold)) }
                     Text(span.name).font(.system(size: 10.5, weight: .semibold)).lineLimit(1)
                 }
-                .foregroundStyle(span.slowed || !span.locked ? LHTheme.text : LHTheme.pageBackground)
+                .foregroundStyle(solid ? LHTheme.pageBackground : LHTheme.text)
                 .padding(.horizontal, 9)
             }
         }
@@ -327,14 +334,14 @@ struct BlockingRangeDraft: Identifiable {
                     BlockingNewListChip { draft.listIDs.insert($0) }
                 }
             }
-            HStack(spacing: 3) {
+            HStack(spacing: 4) {
                 ForEach(1...7, id: \.self) { day in
                     let on = draft.days.contains(day)
                     Button {
                         if on { draft.days.remove(day) } else { draft.days.insert(day) }
                     } label: {
                         Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
-                            .frame(width: 26, height: 26)
+                            .frame(width: 32, height: 28)
                             .foregroundStyle(on ? LHTheme.onAccent : LHTheme.secondaryText)
                             .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
                                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -350,9 +357,13 @@ struct BlockingRangeDraft: Identifiable {
                 }
             }
             HStack(spacing: 12) {
-                DatePicker("De", selection: $start, displayedComponents: .hourAndMinute).fixedSize()
+                Text("De").font(.system(size: 13))
+                DatePicker("De", selection: $start, displayedComponents: .hourAndMinute).labelsHidden()
+                    .fixedSize().padding(.trailing, 6)
                     .environment(\.locale, Locale(identifier: "fr_FR"))
-                DatePicker("à", selection: $end, displayedComponents: .hourAndMinute).fixedSize()
+                Text("à").font(.system(size: 13))
+                DatePicker("à", selection: $end, displayedComponents: .hourAndMinute).labelsHidden()
+                    .fixedSize().padding(.trailing, 6)
                     .environment(\.locale, Locale(identifier: "fr_FR"))
                 if minutes(end) <= minutes(start), minutes(end) != 0 {
                     Text("le lendemain").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)

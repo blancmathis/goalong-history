@@ -115,7 +115,9 @@
     struct GoalongFieldStyle: TextFieldStyle {
         // swiftlint:disable:next identifier_name
         func _body(configuration: TextField<Self._Label>) -> some View {
-            GoalongFieldChrome { configuration.textFieldStyle(.plain) }
+            // The field keeps its own text height: a layout pass that offered it less (15 pt for 16) moved its text
+            // half a point off, from one launch to the next (C final UI check).
+            GoalongFieldChrome { configuration.textFieldStyle(.plain).fixedSize(horizontal: false, vertical: true) }
         }
     }
 
@@ -150,7 +152,9 @@
             content
                 .font(.system(size: small ? 12 : 13))
                 .padding(.horizontal, small ? 9 : 11)
-                .padding(.vertical, small ? 5 : 8)
+                // A small field's line is 15 pt high: 5 + 15 + 6 fills its 26 pt, so the text starts on a whole point.
+                // Centred, it started on a half point and drew half a point off from one launch to the next.
+                .padding(.top, small ? 5 : 8).padding(.bottom, small ? 6 : 8)
                 .frame(minHeight: small ? 26 : 34)
                 .background {
                     shape.fill(LHTheme.fieldBackground).onTapGesture(perform: focus)
@@ -166,6 +170,21 @@
                 .contentShape(shape)
                 .onHover { hovered = $0 }
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: focused)
+        }
+    }
+
+    extension View {
+        /// A placeholder drawn by Goalong, in the placeholder colour, because the system one is
+        /// not always told apart from typed text. Put it on a field that has the Goalong field style.
+        func goalongPlaceholder(_ placeholder: String, isEmpty: Bool, alignment: Alignment = .leading,
+                                font: Font = .system(size: 13), top: CGFloat = 0) -> some View {
+            overlay(alignment: alignment) {
+                if isEmpty && !placeholder.isEmpty {
+                    Text(placeholder).font(font).foregroundStyle(LHTheme.placeholder)
+                        .padding(.horizontal, 11).padding(.top, top)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
         }
     }
 
@@ -244,7 +263,6 @@
                 withAnimation(reduceMotion ? nil : LHTheme.press) { isOn.toggle() }
             } label: { EmptyView() }
                 .buttonStyle(GoalongSwitchButtonStyle(isOn: isOn, small: controlSize == .small || controlSize == .mini))
-                .opacity(isEnabled ? 1 : 0.4)
         }
     }
 
@@ -266,7 +284,8 @@
             let stretch: CGFloat = configuration.isPressed && !reduceMotion ? 4 : 0
             ZStack(alignment: isOn ? .trailing : .leading) {
                 track.fill(isOn ? (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground)
-                           : (hovered && isEnabled ? LHTheme.pressedBackground : LHTheme.switchTrack))
+                           : (hovered && isEnabled ? LHTheme.switchTrackHover : LHTheme.switchTrack))
+                    .opacity(isOn && !isEnabled ? 0.6 : 1)
                 if !isOn || contrast == .increased {
                     track.strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.controlBorder)
                 }
@@ -274,6 +293,7 @@
                     .fill(isOn ? LHTheme.onAccent : LHTheme.switchKnob)
                     .frame(width: knob + stretch, height: knob)
                     .padding(.horizontal, 3)
+                    .opacity(isEnabled ? 1 : 0.6)
             }
             .frame(width: width, height: height)
             .overlay { RoundedRectangle(cornerRadius: radius + 3, style: .continuous)

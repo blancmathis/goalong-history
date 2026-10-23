@@ -9,8 +9,8 @@ struct GoalongHealthImportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var host = GoalongWebsiteWindowHost()
     @State private var file: URL?
-    @State private var from = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-    @State private var through = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+    @State private var from = Calendar.current.date(byAdding: .day, value: -7, to: GoalongToday.now) ?? GoalongToday.now
+    @State private var through = Calendar.current.date(byAdding: .day, value: -1, to: GoalongToday.now) ?? GoalongToday.now
     @State private var selected = Set(GoalongHealthGroup.allCases)
     @State private var preferred: [GoalongHealthGroup: String] = [:]
     @State private var result: GoalongHealthImportResult?

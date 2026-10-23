@@ -28,6 +28,8 @@ LocalHistoryAppTests.ConcentrationRenderingTests/testRenderConcentrationSurfaces
 LocalHistoryAppTests.ConcentrationRuntimeCostTests/testDetectionCPUCost  # other: Opt-in local CPU measurement
 LocalHistoryAppTests.DashboardDataReaderIncrementalTests/testOptInRealDashboardRootLoadsExistingDayWithoutEmptyReplacement  # GOALONG_TEST_REAL_DASHBOARD_ROOT + GOALONG_TEST_REAL_DASHBOARD_DAY
 LocalHistoryAppTests.ForegroundPresenceRuntimeTests/testLiveForegroundReadingProbeWithoutControlLabels  # other: Opt-in native foreground probe
+LocalHistoryAppTests.GallerySmokeTests/testKeyEntriesRenderRealContentInvisibly  # other: WindowServer: no Aqua session on the console
+LocalHistoryAppTests.GalleryTests/testRenderGallery  # other: Opt-in gallery render: make gallery
 LocalHistoryAppTests.GoalongAnalyticsRenderingTests/testRenderActivityDrillDownsWithSyntheticData  # other: Opt-in native rendering with synthetic data only
 LocalHistoryAppTests.GoalongAnalyticsRenderingTests/testRenderAnalyticsWithSyntheticData  # other: Opt-in native rendering with synthetic data only
 LocalHistoryAppTests.GoalongBrandRenderingTests/testIsolatedSparkleWindowsStayAboveDashboard  # other: Isolated native Sparkle UI audit only

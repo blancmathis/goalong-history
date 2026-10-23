@@ -33,6 +33,10 @@ extension Notification.Name {
     static func reviewedVerdict(_ verdict: JevVerdict, work: JevWorkContext, window: JevWindow) -> JevVerdict {
         JevEvidencePolicy.reviewed(verdict, work: work, window: window)
     }
+    #if DEBUG
+    /// Test gallery: back to "nothing saved" between two images (the file is gone with the gallery HOME data).
+    func resetForTesting() { context = .empty; error = nil }
+    #endif
     /// Called only by the explicit Save action; editing a draft does not authorize new context.
     func save(_ summary: String, applications: String = "", content: String = "", procrastination: String = "") throws {
         let value = try JevWorkContext(summary: summary, applications: applications, content: content, procrastination: procrastination)

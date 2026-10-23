@@ -90,6 +90,18 @@ struct GoalongSettingsList<Content: View>: View {
     }
 }
 
+/// Symbols and short labels of the settings home rows, kept apart from the views so tests can assert them.
+enum GoalongHomeRows {
+    static let recordingSymbol = SettingsPane.recording.symbol
+    static let sendSymbol = "arrow.up.circle"
+    static let chatGPTSymbol = "sparkles"
+    static func jevSummary(enabled: Bool) -> String { enabled ? "Activé" : "Surveillance en direct" }
+    /// One glyph per permission row, shared with the activation sheet.
+    static func permissionSymbol(_ capability: GoalongCapability) -> String {
+        PermissionSetupCopy(capability: capability, status: .ready).symbol
+    }
+}
+
 @MainActor struct GoalongDataStatus: View {
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
@@ -104,14 +116,14 @@ struct GoalongSettingsList<Content: View>: View {
         LHCard(padding: 0) {
             VStack(spacing: 0) {
                 row("Enregistrement local", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
-                    detail: "Ce que Goalong conserve sur ce Mac", symbol: "internaldrive", pane: .recording)
+                    detail: "Ce que Goalong conserve sur ce Mac", symbol: GoalongHomeRows.recordingSymbol, pane: .recording)
                 GoalongRowDivider()
                 row("Envoi à Goalong", status: Self.websiteStatus(enabled: sender.enabled, hasPlan: sender.savedConfiguration != nil, pauseReason: sender.pauseReason),
                     detail: "Compte, données et fréquence des envois",
-                    symbol: "arrow.up.circle", pane: .website, tint: !sender.enabled && sender.pauseReason != nil ? LHTheme.warning : nil)
+                    symbol: GoalongHomeRows.sendSymbol, pane: .website, tint: !sender.enabled && sender.pauseReason != nil ? LHTheme.warning : nil)
                 GoalongRowDivider()
                 row("Analyse ChatGPT", status: chatGPTStatus,
-                    detail: "Applications, textes, noms masqués et consignes", symbol: "sparkles", pane: .chatGPT)
+                    detail: "Applications, textes, noms masqués et consignes", symbol: GoalongHomeRows.chatGPTSymbol, pane: .chatGPT)
             }
         }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
             .onReceive(NotificationCenter.default.publisher(for: .goalongAnalysisSelectionDidChange)) { _ in analysisSelection = .load() }
@@ -151,10 +163,12 @@ struct GoalongSettingsList<Content: View>: View {
     let capability: GoalongCapability
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @StateObject private var validation = SourceAccessValidation()
+    /// The real probe by default; the test gallery answers with simulated permissions.
+    @Environment(\.sourceAccessCheck) private var checkAccess
     @State private var showing = false
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: capability == .appleScreenTime ? "hourglass" : capability == .aiConversations ? "folder" : "accessibility")
+            Image(systemName: GoalongHomeRows.permissionSymbol(capability))
                 .font(.system(size: 14, weight: .medium)).frame(width: 22).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -175,7 +189,7 @@ struct GoalongSettingsList<Content: View>: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in check() }
         .onDisappear { validation.cancel() }
         .sheet(isPresented: $showing, onDismiss: check) {
-            SourceActivationSheet(capability: capability, surface: .settings, prepare: {}, check: SourceAccessService.check)
+            SourceActivationSheet(capability: capability, surface: .settings, prepare: {}, check: checkAccess)
                 .goalongControls()
         }
     }
@@ -191,6 +205,6 @@ struct GoalongSettingsList<Content: View>: View {
         case .unavailable: return "Source indisponible"
         }
     }
-    private func check() { validation.validate(capability, check: SourceAccessService.check) }
+    private func check() { validation.validate(capability, check: checkAccess) }
 }
 #endif

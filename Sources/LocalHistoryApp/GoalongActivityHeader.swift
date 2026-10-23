@@ -60,7 +60,7 @@ struct GoalongActivityHeader: View {
                                  nextLabel: selection.period == 1 ? "Jour suivant" : "Période suivante",
                                  identifierPrefix: "activity", showsToday: false)
             Button("Aujourd’hui", action: onToday)
-                .disabled(selection.period == 1 && Calendar.current.isDateInToday(selection.day))
+                .disabled(selection.period == 1 && GoalongToday.isToday(selection.day))
                 .accessibilityIdentifier("activity-today")
         }
         .controlSize(.regular)
@@ -85,7 +85,7 @@ struct GoalongActivityHeader: View {
 
     private var rangeLabel: String {
         if selection.period == 1 {
-            return Calendar.current.isDateInToday(selection.day)
+            return GoalongToday.isToday(selection.day)
                 ? "Aujourd’hui, \(GoalongUIFormat.day(selection.day))"
                 : GoalongUIFormat.day(selection.day)
         }

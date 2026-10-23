@@ -21,6 +21,7 @@
         @State private var loadedProposal = false
         @State var showingRetention = false
         @AppStorage("goalongOnboardingPrivacyReviewedV1") var privacyReviewed = false
+        @Environment(\.goalongDefaults) private var defaults
         @State var checkingSources: Set<GoalongCapability> = []
 
         var body: some View {
@@ -34,6 +35,12 @@
                             .frame(maxWidth: 680, alignment: .leading)
                             .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 32)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .overlay(alignment: .bottom) {
+                        // A soft fade tells the reader that the list goes on under the footer.
+                        LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: 28).allowsHitTesting(false).accessibilityHidden(true)
                     }
                     Rectangle().fill(LHTheme.separator).frame(height: 1)
                     footer
@@ -52,16 +59,16 @@
             .onAppear {
                 if step == .welcome || !privacyReviewed { step = .privacy }
                 if !loadedProposal {
-                    let previouslyReviewed = GoalongRecordingSetup.hasReviewedChoices()
+                    let previouslyReviewed = GoalongRecordingSetup.hasReviewedChoices(defaults: defaults)
                     let proposed = GoalongRecordingSetup.proposal(from: model.appliedSettings,
-                        visibleText: ActivityAnalysisPreferences.richContextEnabled)
+                        visibleText: defaults.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey), defaults: defaults)
                     model.settingsDraft = proposed.settings
                     visibleTextDraft = proposed.visibleText
                     localRecordingDraft = previouslyReviewed ? consents.isEnabled(.localComputerHistory) : true
                     loadedProposal = true
                 }
                 launchAtLogin.refresh()
-                launchAtLoginPreference = launchAtLogin.suggestedOnboardingPreference
+                launchAtLoginPreference = launchAtLogin.suggestedOnboardingPreference(defaults: defaults)
             }
         }
 
@@ -173,7 +180,7 @@
                 note = "Autorisez le démarrage dans les réglages macOS, ou désactivez cette option pour continuer."
                 return
             }
-            UserDefaults.standard.set(launchAtLoginPreference, forKey: "launchAtLoginPreference")
+            defaults.set(launchAtLoginPreference, forKey: "launchAtLoginPreference")
             model.selectSection(.overview)
             model.dismissWelcome()
             step = .privacy

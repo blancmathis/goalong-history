@@ -183,8 +183,10 @@ struct FocusReviewPanelView: View {
                     .accessibilityLabel("Fermer sans répondre")
                 }
                 FocusFactsView(facts: facts)
-                TextField("Une note, si vous voulez", text: $note)
+                TextField("", text: $note)
                     .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("Une note, si vous voulez", isEmpty: note.isEmpty)
+                    .accessibilityLabel("Note")
                     .onChange(of: note) { value in if value.count > 140 { note = String(value.prefix(140)) } }
                     .accessibilityIdentifier("concentration-review-note")
                 HStack(spacing: 8) {
@@ -315,6 +317,8 @@ struct FocusLimitPanelView: View {
     @State private var error: String?
     @State private var commitTomorrow: Bool
     @State private var tomorrowDraft: FocusCommitmentDraft
+    /// A review already saved: it can be edited down to nothing.
+    private let hasSavedReview: Bool
 
     /// Renders pin the clock; the app reads it when the sheet opens.
     private let now: Date
@@ -325,6 +329,7 @@ struct FocusLimitPanelView: View {
         self.now = now
         self.plan = plan
         self.onClose = onClose
+        self.hasSavedReview = review != nil
         var initial: [UUID: Choice] = [:]
         for item in plan.items {
             if let answer = review?.items.first(where: { $0.id == item.id }) {
@@ -386,8 +391,10 @@ struct FocusLimitPanelView: View {
             }
             FocusReviewCommitmentPart(controller: controller, day: plan.day, commit: $commitTomorrow, draft: $tomorrowDraft, now: now)
             GoalongFormField(title: "Demain, je commence par") {
-                TextField("La première chose à faire demain", text: $tomorrowFirst)
+                TextField("", text: $tomorrowFirst)
                     .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("La première chose à faire demain", isEmpty: tomorrowFirst.isEmpty)
+                    .accessibilityLabel("Demain, je commence par")
                     .accessibilityIdentifier("concentration-tomorrow-first")
             }
             GoalongFormField(title: "Note", detail: "Facultative, jusqu’à 500 caractères.") {
@@ -400,6 +407,9 @@ struct FocusLimitPanelView: View {
                 Spacer()
                 Button("Annuler", action: onClose).keyboardShortcut(.cancelAction)
                 Button("Enregistrer le bilan", action: save).buttonStyle(LHPrimaryButtonStyle())
+                    .disabled(!Self.hasAnswer(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commit: commitTomorrow, existing: hasSavedReview))
+                    .help(Self.hasAnswer(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commit: commitTomorrow)
+                          ? "" : "Répondez pour au moins une tâche, ou écrivez une note.")
                     .accessibilityIdentifier("concentration-save-review")
             }
         }
@@ -428,6 +438,14 @@ struct FocusLimitPanelView: View {
         return FocusReview(day: plan.day, items: reviewItems,
                            tomorrowFirst: first.isEmpty ? nil : String(first.prefix(140)),
                            note: text.isEmpty ? nil : String(text.prefix(500)))
+    }
+
+    /// A review with no answer, no first task, no note and no commitment says nothing: it cannot be saved.
+    static func hasAnswer(choices: [UUID: Choice], tomorrowFirst: String, note: String, commit: Bool,
+                          existing: Bool = false) -> Bool {
+        existing || choices.values.contains { $0 != .unset } || commit
+            || !tomorrowFirst.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func save() {

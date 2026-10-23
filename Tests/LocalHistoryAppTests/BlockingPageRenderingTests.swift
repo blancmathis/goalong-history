@@ -193,5 +193,16 @@ final class BlockingPageRenderingTests: XCTestCase {
                                       BlockAppRule(bundleIdentifier: "com.apple.iCal", name: "Calendrier")])
         }
     }
+
+    func testStruckIconKeepsInitialOfItemsWithoutIcon() {
+        XCTAssertEqual(BlockingStruckIcon.fallbackInitial(for: .site("instagram.com")), "I")
+        XCTAssertEqual(BlockingStruckIcon.fallbackInitial(for: .app(BlockAppRule(bundleIdentifier: "", name: "Musique"))), "M")
+        XCTAssertNil(BlockingStruckIcon.fallbackInitial(for: .symbol("globe")))
+    }
+
+    func testQuotaVeilSentenceHasNoPluralAgreement() {
+        let one = BlockingFormat.duration(minutes: 60)
+        XCTAssertEqual("Temps du jour écoulé : \(one) (liste « Réseaux »).", "Temps du jour écoulé : 1 h (liste « Réseaux »).")
+    }
 }
 #endif

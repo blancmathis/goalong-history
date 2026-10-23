@@ -191,6 +191,18 @@ extension Notification.Name {
         publish(); persist()
     }
 
+    #if DEBUG
+    /// Test gallery: back to the file on disk (gone with the gallery HOME data) between two images.
+    /// An unreadable file reads as empty here; the write block and notices of the last image go.
+    func resetForTesting() {
+        if case .loaded(let saved) = Self.load(from: fileURL) { document = saved } else { document = Document() }
+        writesBlocked = false; automaticChangedWhileBlocked = false
+        storageNotice = nil; lastError = nil
+        automatic = document.automatic
+        reconcileDefinition()
+    }
+    #endif
+
     /// Full clear: the saved file is rewritten without any title, and the unreadable copies
     /// (kept aside or left in place) go too, since they hold the same titles.
     func removeAll() {

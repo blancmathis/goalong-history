@@ -160,10 +160,11 @@ struct GoalongRecordingStateNotice: View {
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @State private var globalPause = GoalongGlobalPause.load()
 
-    enum Kind: Equatable { case off, paused, permissions }
+    enum Kind: Equatable { case off, paused, permissions, input }
 
+    /// `captureHealth` tells a failed input tap apart from a recorder still waiting for its first event.
     static func kind(localEnabled: Bool, globallyPaused: Bool, dashboardVisible: Bool,
-                     runtime: RuntimeStateKind) -> Kind? {
+                     runtime: RuntimeStateKind, captureHealth: CaptureHealthState? = nil) -> Kind? {
         guard !globallyPaused else { return nil }
         guard localEnabled else { return .off }
         // The runtime is only refreshed while the window is visible; never alarm on a stale value.
@@ -171,6 +172,7 @@ struct GoalongRecordingStateNotice: View {
         switch runtime {
         case .paused, .suppressed(.manualPause): return .paused
         case .permissionsMissing: return .permissions
+        case .inputTapUnavailable: return captureHealth == .inputTapUnavailable ? .input : nil
         default: return nil
         }
     }
@@ -178,7 +180,8 @@ struct GoalongRecordingStateNotice: View {
     private var kind: Kind? {
         Self.kind(localEnabled: consents.isEnabled(.localComputerHistory),
                   globallyPaused: globalPause.blocksActivity,
-                  dashboardVisible: model.dashboardIsVisible, runtime: model.runtime.state)
+                  dashboardVisible: model.dashboardIsVisible, runtime: model.runtime.state,
+                  captureHealth: model.runtime.captureHealth?.state)
     }
 
     var body: some View {
@@ -187,7 +190,7 @@ struct GoalongRecordingStateNotice: View {
                 LHCard(padding: 16) {
                     HStack(alignment: .center, spacing: 14) {
                         Image(systemName: symbol(kind)).font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(kind == .permissions ? LHTheme.warning : LHTheme.secondaryText)
+                            .foregroundStyle(kind == .permissions || kind == .input ? LHTheme.warning : LHTheme.secondaryText)
                             .frame(width: 22).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(title(kind)).font(.system(size: 13, weight: .semibold))
@@ -212,6 +215,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "record.circle"
         case .paused: return "pause.circle"
         case .permissions: return "exclamationmark.triangle"
+        case .input: return "keyboard.badge.ellipsis"
         }
     }
     private func title(_ kind: Kind) -> String {
@@ -219,6 +223,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "L’enregistrement de ce Mac est désactivé"
         case .paused: return "Enregistrement en pause"
         case .permissions: return "Autorisation macOS à rétablir"
+        case .input: return "Clics et frappe non reçus"
         }
     }
     private func detail(_ kind: Kind) -> String {
@@ -226,6 +231,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "Activez-le pour voir ici votre temps actif, vos blocs de travail et vos apps et sites. Tout reste sur ce Mac."
         case .paused: return "Aucune nouvelle activité n’est enregistrée. L’historique existant reste consultable."
         case .permissions: return "Rien n’est enregistré tant que l’accès n’est pas rétabli. Goalong vous guide pas à pas."
+        case .input: return "Le clavier et la souris ne parviennent pas à Goalong : une partie de votre activité peut manquer. Vérifiez la Surveillance de l’entrée."
         }
     }
     private func actionTitle(_ kind: Kind) -> String {
@@ -233,13 +239,14 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "Activer…"
         case .paused: return "Reprendre"
         case .permissions: return "Rétablir l’accès…"
+        case .input: return "Vérifier les accès…"
         }
     }
     private func perform(_ kind: Kind) {
         switch kind {
         case .off: model.openRecordingSettings()
         case .paused: model.togglePause()
-        case .permissions: model.selectSection(.settings); model.settingsPane = .permissions
+        case .permissions, .input: model.selectSection(.settings); model.settingsPane = .permissions
         }
     }
 }
@@ -249,13 +256,19 @@ struct GoalongRecordingCoverageNotice: View {
     @ObservedObject var model: DashboardViewModel
     /// On Activité a deliberate custom profile can be acknowledged once; Settings always shows it.
     var dismissible = false
+    /// Activité shows one banner only: a stopped or broken recording outranks a choice of details.
+    var hidden = false
+
+    static func showsOnActivity(recording: GoalongRecordingStateNotice.Kind?, globallyPaused: Bool) -> Bool {
+        recording == nil && !globallyPaused
+    }
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey) private var visibleText = false
     @AppStorage(GoalongRecordingCoverageNotice.dismissedProfileKey) private var dismissedProfile = ""
     private var count: Int { GoalongRecordingSetup.enabledCount(model.appliedSettings, visibleText: visibleText) }
     private var profile: String { GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText) }
     var body: some View {
-        if consents.isEnabled(.localComputerHistory) && count < 8 && !(dismissible && dismissedProfile == profile) {
+        if !hidden && consents.isEnabled(.localComputerHistory) && count < 8 && !(dismissible && dismissedProfile == profile) {
             LHCard {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 5) {
