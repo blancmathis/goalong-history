@@ -201,8 +201,10 @@ import LocalHistoryQueryCLI
     }
     /// Confirmations that can arm the guard first add `GuardConsent.text`.
     var guardNeedsConsent: Bool { guardClient?.needsConsent ?? false }
-    /// « Retirer le service de protection »: hidden during a severe block.
-    var canRemoveGuard: Bool { guardClient?.canRemove == true && severeUntil == nil }
+    /// « Retirer le service de protection »: hidden while any lock is running or planned. A planned locked
+    /// block was confirmed with the service in place: at its start the service would come back, with its
+    /// macOS notification, and no new consent sentence (R5-garde-02).
+    var canRemoveGuard: Bool { guardClient?.canRemove == true && lockedUntil == nil }
     func removeGuardService() {
         refresh(enforceLast: false)
         guard canRemoveGuard else { return }
@@ -305,34 +307,55 @@ import LocalHistoryQueryCLI
     /// Returns this save's own refusal, never an unrelated banner such as the login-item notice.
     @discardableResult func save(_ value: BlockList) -> String? {
         guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
-        var next = value
-        if let reason = next.reason {
-            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.isEmpty || BlockingRules.normalizeReason(trimmed) != nil else {
-                error = "La raison doit contenir de 1 à 140 caractères."; return error
-            }
-            next.reason = trimmed.isEmpty ? nil : trimmed
-        }
-        if case .refused(let reason) = editCheck(next) { error = reason; return reason }
-        guard !next.program.ranges.contains(where: { $0.effectiveLock == .password }) || hasPassword
-            || document.lists.first(where: { $0.id == next.id })?.program.ranges == next.program.ranges else {
-            error = "Définissez d’abord le mot de passe de blocage."; return error
-        }
-        guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse de site invalide."; return error }
-        next.sites = Array(Set(next.sites.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
-        if let exceptions = next.exceptions {
-            guard exceptions.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse d’exception invalide."; return error }
-            next.exceptions = Array(Set(exceptions.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
-        }
-        if let keywords = next.keywords {
-            guard keywords.allSatisfy({ BlockingRules.normalizeKeyword($0) != nil }) else { error = "Chaque mot-clé doit contenir de 2 à 40 caractères."; return error }
-            var seen = Set<String>()
-            next.keywords = keywords.compactMap(BlockingRules.normalizeKeyword).filter { seen.insert(BlockingRules.foldKeyword($0)).inserted }.sorted()
+        let next: BlockList
+        switch normalized(value) {
+        case .failure(let refusal): error = refusal.reason; return refusal.reason
+        case .success(let value): next = value
         }
         var candidate = document
         candidate.lists.removeAll { $0.id == next.id }; candidate.lists.append(next)
         guard BlockingRules.validate(candidate) else { error = "Vérifiez la liste, les horaires, le quota et les pauses."; return error }
-        if case .refused(let reason) = editCheck(next) { error = reason; return reason }
+        apply(next)
+        commit()
+        return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
+    }
+
+    private struct EditRefusal: Error { var reason: String }
+
+    /// One list checked and cleaned up (reason, sites, exceptions, keywords), without writing anything.
+    private func normalized(_ value: BlockList) -> Result<BlockList, EditRefusal> {
+        func refuse(_ reason: String) -> Result<BlockList, EditRefusal> { .failure(EditRefusal(reason: reason)) }
+        var next = value
+        if let reason = next.reason {
+            let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.isEmpty || BlockingRules.normalizeReason(trimmed) != nil else {
+                return refuse("La raison doit contenir de 1 à 140 caractères.")
+            }
+            next.reason = trimmed.isEmpty ? nil : trimmed
+        }
+        if case .refused(let reason) = editCheck(next) { return refuse(reason) }
+        guard !next.program.ranges.contains(where: { $0.effectiveLock == .password }) || hasPassword
+            || document.lists.first(where: { $0.id == next.id })?.program.ranges == next.program.ranges else {
+            return refuse("Définissez d’abord le mot de passe de blocage.")
+        }
+        guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { return refuse("Adresse de site invalide.") }
+        next.sites = Array(Set(next.sites.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
+        if let exceptions = next.exceptions {
+            guard exceptions.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { return refuse("Adresse d’exception invalide.") }
+            next.exceptions = Array(Set(exceptions.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
+        }
+        if let keywords = next.keywords {
+            guard keywords.allSatisfy({ BlockingRules.normalizeKeyword($0) != nil }) else { return refuse("Chaque mot-clé doit contenir de 2 à 40 caractères.") }
+            var seen = Set<String>()
+            next.keywords = keywords.compactMap(BlockingRules.normalizeKeyword).filter { seen.insert(BlockingRules.foldKeyword($0)).inserted }.sorted()
+        }
+        // Sites and keywords are cleaned up: the cleaned list must still pass the stricter-only rules.
+        if case .refused(let reason) = editCheck(next) { return refuse(reason) }
+        return .success(next)
+    }
+
+    /// Puts a checked list in the document, without writing. A new action or delay resets its friction.
+    private func apply(_ next: BlockList) {
         if let index = document.lists.firstIndex(where: { $0.id == next.id }) {
             let old = document.lists[index]
             if old.effectiveAction != next.effectiveAction || old.delaySeconds != next.delaySeconds || old.allowanceMinutes != next.allowanceMinutes {
@@ -343,26 +366,28 @@ import LocalHistoryQueryCLI
         } else {
             document.lists.append(next)
         }
-        commit()
-        return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
     }
 
-    /// Saves several lists all or none: every list, then the whole document, is checked before the
-    /// first write. With several lists, a refusal names its list.
+    /// Saves several lists all or none: every list, then the whole document, is checked, then one write
+    /// holds every list. A failed write leaves the document as it was. A refusal names its list.
     @discardableResult func saveAll(_ values: [BlockList]) -> String? {
         guard values.count > 1 else { return values.first.flatMap { save($0) } }
         guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
         func named(_ value: BlockList, _ reason: String) -> String { "« \(value.name) » : \(reason)" }
         var candidate = document
+        var prepared: [BlockList] = []
         for value in values {
-            if case .refused(let reason) = editCheck(value) { error = named(value, reason); return error }
-            candidate.lists.removeAll { $0.id == value.id }; candidate.lists.append(value)
+            switch normalized(value) {
+            case .failure(let refusal): error = named(value, refusal.reason); return error
+            case .success(let next):
+                prepared.append(next)
+                candidate.lists.removeAll { $0.id == next.id }; candidate.lists.append(next)
+            }
         }
         guard BlockingRules.validate(candidate) else { error = "Vérifiez les listes, les horaires, le quota et les pauses."; return error }
-        for value in values {
-            if let reason = save(value) { error = named(value, reason); return error }
-        }
-        return nil
+        for next in prepared { apply(next) }
+        commit()
+        return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
     }
 
     @discardableResult func addException(_ input: String, to listID: UUID) -> BlockingEditCheck {
@@ -1039,8 +1064,8 @@ import LocalHistoryQueryCLI
             let seconds = min(15, max(0, target.at.timeIntervalSince(from)))
             var usage = todayUsage()
             for list in lists where list.quotaMinutesPerDay != nil && BlockingRules.wouldBlock(previous, list: list) {
-                guard let block = activeBlocks.first(where: { $0.listIDs.contains(list.id) }),
-                      block.start <= previous.at, usage.breakEnds[list.id].map({ $0 > previous.at }) != true else { continue }
+                guard activeBlocks.contains(where: { $0.listIDs.contains(list.id) && $0.start <= previous.at }),
+                      usage.breakEnds[list.id].map({ $0 > previous.at }) != true else { continue }
                 usage.quotaSecondsUsed[list.id] = min(BlockingRules.effectiveQuotaSeconds(list, usage: usage)!, (usage.quotaSecondsUsed[list.id] ?? 0) + seconds)
             }
             if document.usage != usage && !usage.quotaSecondsUsed.isEmpty {
@@ -1063,7 +1088,7 @@ import LocalHistoryQueryCLI
         let blockedSite = false
         var slowCandidates: [(BlockList, BlockingActiveBlock)] = []
         for list in lists.sorted(by: { $0.effectiveAction == .block && $1.effectiveAction != .block }) {
-            guard let block = activeBlocks.first(where: { $0.listIDs.contains(list.id) }) else { continue }
+            guard let block = rulingBlock(for: list.id) else { continue }
             let usage = todayUsage()
             if usage.breakEnds[list.id].map({ $0 > target.at }) == true { continue }
             if target.isBrowser, !target.isForeground,
@@ -1108,6 +1133,13 @@ import LocalHistoryQueryCLI
             showFriction(target, list: list)
         } else if frictionTarget?.isBrowser == true { clearFriction() }
         else if let current = friction, !activeBlocks.contains(where: { $0.listIDs.contains(current.listID) }) { clearFriction() }
+    }
+
+    /// The block a veil speaks for when several cover one list (a free session inside a locked range):
+    /// the strongest lock, then the latest end, as on the page and in `siteActionDeadline` (R5-blocage-01).
+    func rulingBlock(for listID: UUID) -> BlockingActiveBlock? {
+        activeBlocks.filter { $0.listIDs.contains(listID) }
+            .max { ($0.lock.strength, $0.end) < ($1.lock.strength, $1.end) }
     }
 
     /// Final action admission reads current main-owned rules without a disk read,

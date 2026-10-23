@@ -1018,6 +1018,59 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(until.end, date(6, 9), "an earlier time of day means tomorrow")
     }
 
+    /// R5-regressions-01: a click keeps the end the button and the alert promised. A « Jusqu’à 12:00 »
+    /// shown at 11:58:40 and clicked at 12:00:05 is refused, never a 24 h lock.
+    func testConfirmedPlanKeepsThePromisedEnd() throws {
+        let shown = date(5, 11, 58).addingTimeInterval(40)
+        let until = BlockingNowPlan(later: false, startAt: shown, until: date(5, 12), now: shown, calendar: calendar)
+        XCTAssertEqual(until.end, date(5, 12))
+        XCTAssertNil(until.confirmed(at: date(5, 12).addingTimeInterval(5)), "the end is passed: refused, not tomorrow")
+        XCTAssertNil(until.confirmed(at: date(5, 11, 59).addingTimeInterval(30)), "less than a minute left")
+        let soon = try XCTUnwrap(until.confirmed(at: date(5, 11, 59)))
+        XCTAssertEqual(soon.start, date(5, 11, 59)); XCTAssertEqual(soon.end, date(5, 12)); XCTAssertFalse(soon.startsLater)
+        // A duration alert left open 10 min ends when it said, not 10 min later.
+        let duration = BlockingNowPlan(later: false, startAt: date(5, 10), minutes: 30, now: date(5, 10))
+        let late = try XCTUnwrap(duration.confirmed(at: date(5, 10, 10)))
+        XCTAssertEqual(late.start, date(5, 10, 10)); XCTAssertEqual(late.end, date(5, 10, 30))
+        // A later start stays ahead; once passed during the alert, the block starts at the click.
+        let later = BlockingNowPlan(later: true, startAt: date(5, 11), minutes: 60, now: date(5, 10))
+        XCTAssertEqual(try XCTUnwrap(later.confirmed(at: date(5, 10, 5))).start, date(5, 11))
+        let passed = try XCTUnwrap(later.confirmed(at: date(5, 11, 5)))
+        XCTAssertEqual(passed.start, date(5, 11, 5)); XCTAssertFalse(passed.startsLater); XCTAssertEqual(passed.end, date(5, 12))
+    }
+
+    /// R5-blocage-01: a free session inside a locked block speaks with the locked block's lock and end.
+    @MainActor func testVeilSpeaksForTheStrongestBlock() {
+        let now = date(); let backend = FakeBlockingBackend()
+        let list = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "youtube.com")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(15 * 60), lock: .free)
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(3 * 3_600), lock: .locked)
+        XCTAssertEqual(c.activeBlocks.count, 2); XCTAssertEqual(c.activeBlocks.first?.lock, .free, "the free session comes first")
+        XCTAssertEqual(c.rulingBlock(for: list.id)?.lock, .locked)
+        c.observe(target(now))
+        XCTAssertEqual(backend.lastPresentation?.lock, .locked)
+        XCTAssertEqual(backend.lastPresentation?.end, now.addingTimeInterval(3 * 3_600))
+    }
+
+    /// R5-regressions-02: a range on several lists is one write; the previous generation is the state before it.
+    @MainActor func testSeveralListsAreWrittenInOneGeneration() throws {
+        let store = try temporaryStore(), now = date()
+        let a = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        let b = BlockList(name: "Réseaux", sites: [BlockSiteRule(pattern: "x.com")])
+        try store.save(BlockingDocument(lists: [a, b]))
+        let c = BlockingController(clock: { now }, store: store, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        let before = try store.load()
+        func adding(_ list: BlockList) -> BlockList {
+            var next = list; next.program.ranges.append(BlockProgramRange(weekdays: [2], startMinute: 540, endMinute: 600)); return next
+        }
+        XCTAssertNil(c.saveAll([adding(a), adding(b)]))
+        let saved = try store.load()
+        XCTAssertEqual(saved.lists.map(\.program.ranges.count), [1, 1])
+        try Data("bad-json".utf8).write(to: store.directory.appendingPathComponent("blocking.json"))
+        XCTAssertEqual(try store.loadRecovering().document.lists, before.lists, "no generation holds one list without the other")
+    }
+
     /// R4-blocage-01: the lock alert says the day of the end, and both ends of a later block.
     func testLockAlertSaysTheDay() {
         let now = date(5, 10) // Monday
@@ -1098,6 +1151,7 @@ private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
     var siteBlocks = 0
     var appBlocks = 0
     var lastReason: BlockingVeilPresentation.Reason?
+    var lastPresentation: BlockingVeilPresentation?
     var protectionRequired = false
     var protectionComponent: BlockingProtectionState.Component?
     func updateProtection(locked: Bool) -> BlockingProtectionState {
@@ -1108,7 +1162,9 @@ private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
         return result
     }
     func blockApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) { appBlocks += 1 }
-    func blockSite(_ target: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) { siteBlocks += 1; lastReason = presentation.reason }
+    func blockSite(_ target: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) {
+        siteBlocks += 1; lastReason = presentation.reason; lastPresentation = presentation
+    }
     func clearSite() { clearSites += 1 }
     func updateFreeze(_ freeze: BlockFreeze?) {}
     func returnToShield() {}

@@ -85,6 +85,18 @@ import XCTest
         }
     }
 
+    /// R5-garde-02: a planned locked block keeps the service: removed now, it would come back at the start.
+    func testAPlannedLockedBlockHidesTheRemoveButton() throws {
+        var clockNow = now
+        let (c, client, _) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked, start: 600, end: 3600)])) { clockNow }
+        XCTAssertNil(c.severeUntil, "nothing armed yet")
+        XCTAssertFalse(c.canRemoveGuard)
+        c.removeGuardService()
+        XCTAssertEqual(client.removals, 0)
+        clockNow = now.addingTimeInterval(3601); c.refresh()
+        XCTAssertTrue(c.canRemoveGuard, "after the block, the button comes back")
+    }
+
     func testADeletedMarkerIsRewrittenAndTheEndRemovesIt() throws {
         var clockNow = now
         let (c, client, files) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked)])) { clockNow }
@@ -357,10 +369,15 @@ import XCTest
     func testLevelLabels() {
         var state = BlockingProtectionState()
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Standard")
-        state.guardian = .failed("x")
+        XCTAssertNil(BlockingProtectionDetails.levelHelp(state))
+        state.guardian = .failed(GuardEscalation.stoppedUntilLogin)
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Indisponible")
+        XCTAssertEqual(BlockingProtectionDetails.levelHelp(state), GuardEscalation.stoppedUntilLogin, "R5-garde-01: the cause under « Niveau »")
+        state.guardian = .awaitingApproval
+        XCTAssertNil(BlockingProtectionDetails.levelHelp(state))
         state.guardian = .running; state.level = .strict
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Renforcé")
+        XCTAssertNil(BlockingProtectionDetails.levelHelp(state))
     }
 
     func testConsentSentenceIsAddedOnlyBeforeTheFirstRegistration() {
