@@ -55,6 +55,26 @@ expect_refusal 'Refusing redirected Goalong Dev path' GOALONG_DEV_NO_LAUNCH=1 "G
 rm "$WORK/apps/Goalong Dev.app"
 ln -s /Applications "$WORK/to-applications"
 expect_refusal 'never goes into /Applications' GOALONG_DEV_NO_LAUNCH=1 "GOALONG_DEV_APP_DIR=$WORK/to-applications/Sub"
+# Spec K: a severe block of Goalong Dev (guard-until or locked-until in the future) refuses make dev;
+# NO_LAUNCH=1 into another folder stays allowed, an ended block changes nothing.
+mkdir -p "$HOME/Library/Application Support/LocalHistory-Dev/Blocking"
+DEV_MARKER="$HOME/Library/Application Support/LocalHistory-Dev/Blocking/guard-until"
+echo "$(( $(date +%s) + 600 ))" > "$DEV_MARKER"
+expect_refusal 'Goalong Dev a un blocage sévère actif' GOALONG_DEV_DATA=keep
+expect_refusal 'Goalong Dev a un blocage sévère actif' GOALONG_DEV_NO_LAUNCH=1 "GOALONG_DEV_APP_DIR=$HOME/Applications"
+GOALONG_DEV_NO_LAUNCH=1 GOALONG_DEV_APP_DIR="$WORK/apps" "$ROOT/scripts/dev_app.sh" dev >"$WORK/out" 2>&1 \
+  || fail "NO_LAUNCH elsewhere refused during a dev block: $(cat "$WORK/out")"
+mv "$DEV_MARKER" "${DEV_MARKER%guard-until}locked-until"
+expect_refusal 'Goalong Dev a un blocage sévère actif' GOALONG_DEV_DATA=keep
+echo "$(( $(date +%s) - 5 ))" > "${DEV_MARKER%guard-until}locked-until"
+"$ROOT/scripts/dev_app.sh" dev >"$WORK/out" 2>&1 || fail "an ended dev block still refused: $(cat "$WORK/out")"
+rm -rf "$HOME/Library/Application Support/LocalHistory-Dev"
+# Spec K: the dev bundle embeds only its own guard agent (.dev.blocking-guard), never the release one.
+grep -qF 'GUARD_LABEL="$BUNDLE_ID.blocking-guard"' "$ROOT/scripts/build_app_core.sh" || fail 'guard agent label is not derived from the bundle id'
+if [[ -n "${GOALONG_DEV_BUNDLE_CHECK:-}" ]]; then
+  agents="$(ls "$GOALONG_DEV_BUNDLE_CHECK/Contents/Library/LaunchAgents")"
+  [[ "$agents" == ai.goalong.localhistory.dev.blocking-guard.plist ]] || fail "dev bundle launch agents: $agents"
+fi
 # Marker name shared by make dev and the app's guard.
 grep -qF 'let seedMarker = ".goalong-dev-seed-v3"' "$ROOT/scripts/dev_app.swift" \
   && grep -qF 'public static let seedMarker = ".goalong-dev-seed-v3"' "$ROOT/Sources/LocalHistoryCore/GoalongBuildChannel.swift" \

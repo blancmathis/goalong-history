@@ -206,6 +206,53 @@
                            "update")
             XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: false, restarting: false, externalSignal: false, userQuit: true),
                            "user_quit")
+            XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: false, restarting: false, externalSignal: true, userQuit: false,
+                                                  sessionEnd: true), "session_end")
+        }
+
+        func testSigtermIsIgnoredOnlyDuringASevereBlockOutsideASessionEnd() {
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: false, sessionEnding: false))
+            XCTAssertFalse(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: false))
+            XCTAssertFalse(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: false, senderPID: 4242),
+                           "killall or kill from a shell: ignored, no gap")
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: true))
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: false, senderPID: 1),
+                          "launchd at a shutdown or `sudo reboot` without a power-off notice")
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: false, installOverride: true),
+                          "an installer with the documented override quits Goalong cleanly")
+        }
+
+        func testAPowerOffNoticeCountsOnlyBriefly() {
+            let at = Date(timeIntervalSince1970: 1_000_000)
+            XCTAssertFalse(AppDelegate.isPowerOffRecent(nil, now: at))
+            XCTAssertTrue(AppDelegate.isPowerOffRecent(at, now: at.addingTimeInterval(30)))
+            XCTAssertFalse(AppDelegate.isPowerOffRecent(at, now: at.addingTimeInterval(AppDelegate.powerOffWindow + 1)),
+                           "a logout cancelled by another app must not leave SIGTERM honoured")
+            XCTAssertFalse(AppDelegate.isPowerOffRecent(at, now: at.addingTimeInterval(-10)))
+        }
+
+        func testGuardReleaseTokenNamesOnlyAConfirmedQuitOrALoginwindowEnd() {
+            func reason(_ sender: String?, user: Bool = false, approved: Bool = false, powerOff: Bool = false) -> String? {
+                AppDelegate.guardReleaseReason(senderBundleID: sender, userQuit: user, blockingQuitApproved: approved,
+                                               powerOffRecent: powerOff)
+            }
+            for sender in [nil, "com.apple.systempreferences", "com.apple.SystemSettings", "com.apple.dock",
+                           "com.apple.ActivityMonitor"] as [String?] {
+                XCTAssertNil(reason(sender), "\(sender ?? "nil"): a kill, a signal or a Settings quit leaves no token")
+            }
+            XCTAssertEqual(reason("com.apple.loginwindow"), "session_end")
+            XCTAssertEqual(reason(nil, powerOff: true), "session_end")
+            XCTAssertEqual(reason("com.apple.dock", user: true), "user_quit")
+            XCTAssertEqual(reason("com.apple.ActivityMonitor", approved: true), "user_quit",
+                           "a password-approved external quit is the member's own")
+            XCTAssertEqual(reason("com.apple.SystemSettings", approved: true), "user_quit")
+            XCTAssertEqual(reason("com.apple.loginwindow", user: true), "session_end")
+        }
+
+        @MainActor func testAGuardRelaunchShowsNoPreviousSessionBanner() {
+            XCTAssertNil(BackgroundContinuityController.interruptionNotice(quietRelaunch: true))
+            XCTAssertEqual(BackgroundContinuityController.interruptionNotice(quietRelaunch: false),
+                           BackgroundContinuityController.interruptionNoticeText)
         }
     }
 #endif

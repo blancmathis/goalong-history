@@ -46,6 +46,40 @@ remove_goalong_cli_link() {
   esac
 }
 
+# Spec K: the latest future end among the lock markers of a Blocking folder (locked-until and the
+# blocking guard's guard-until), or 0. Only regular files are read; a link is ignored.
+goalong_marker_until() { # MARKER_FILE: its end when it is a regular file in the future, else 0
+  local value
+  [[ -f "$1" && ! -L "$1" ]] || { echo 0; return; }
+  value="$(/usr/bin/head -c 12 "$1" | /usr/bin/tr -cd '0-9')"
+  if [[ -n "$value" ]] && (( value > $(/bin/date +%s) )); then echo "$value"; else echo 0; fi
+}
+goalong_severe_block_until() { # BLOCKING_DIR
+  local marker value latest=0
+  for marker in "$1/locked-until" "$1/guard-until"; do
+    value="$(goalong_marker_until "$marker")"
+    if (( value > latest )); then latest="$value"; fi
+  done
+  echo "$latest"
+}
+
+# Spec K: stop the blocking guard agent and remove its registration, so it cannot reopen Goalong
+# during a replacement or a removal. Only builds that know --unregister-guard are run (an older
+# build would start the full app); the app itself refuses (exit 3) during a severe block unless
+# GOALONG_UNINSTALL_DURING_LOCK=1 or GOALONG_INSTALL_DURING_LOCK=1.
+# --unregister-guard runs first: with the override it leaves guard-override, so the running app neither
+# registers the guard again when its connection drops nor ignores the SIGTERM that follows.
+release_blocking_guard() { # APP_PATH...
+  local app executable
+  for app in "$@"; do
+    executable="$app/Contents/MacOS/$EXECUTABLE_NAME"
+    [[ -x "$executable" ]] || continue
+    /usr/bin/grep -qaF -- '--unregister-guard' "$executable" 2>/dev/null || continue
+    "$executable" --unregister-guard >/dev/null 2>&1 || true
+  done
+  /bin/launchctl bootout "gui/$UID/$BUNDLE_ID.blocking-guard" >/dev/null 2>&1 || true
+}
+
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 
 case "${1:-}" in
@@ -62,16 +96,17 @@ case "${1:-}" in
 esac
 
 # A locked block (Goalong › Blocage) is a commitment: refuse before any effect, until its end.
-LOCK_MARKER="$DATA_DIR/Blocking/locked-until"
-if [[ "${GOALONG_UNINSTALL_DURING_LOCK:-}" != 1 && -f "$LOCK_MARKER" && ! -L "$LOCK_MARKER" ]]; then
-  locked_until="$(head -c 12 "$LOCK_MARKER" | tr -cd '0-9')"
-  if [[ -n "$locked_until" ]] && (( locked_until > $(date +%s) )); then
+if [[ "${GOALONG_UNINSTALL_DURING_LOCK:-}" != 1 ]]; then
+  locked_until="$(goalong_severe_block_until "$DATA_DIR/Blocking")"
+  if (( locked_until > 0 )); then
     echo "A locked block is active until $(date -r "$locked_until" '+%Y-%m-%d %H:%M')." >&2
     echo "Goalong History was not removed. Run this again after that time." >&2
     echo "To remove it anyway: GOALONG_UNINSTALL_DURING_LOCK=1 ./uninstall.sh" >&2
     exit 3
   fi
 fi
+# The guard goes first: otherwise it would reopen Goalong while it is quit and removed.
+release_blocking_guard "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"
 
 AGENT_HOOKS_NOTE=false
 for app in \

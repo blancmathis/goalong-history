@@ -54,10 +54,11 @@ expect_refusal 'Designated requirement changed' "$WORK/2/Goalong History.app"
 codesign --force --sign - "$WORK/2/Goalong History.app" 2>/dev/null
 expect_refusal 'Refusing public release: an ad-hoc identity' "$WORK/2/Goalong History.app"
 # Goalong Dev (make dev): same certificate, .dev identifiers, GoalongBuildChannel=dev.
-make_fixture() { # APP BUNDLE_ID CHANNEL_KEY(dev|none) RELAUNCHER_ID
+make_fixture() { # APP BUNDLE_ID CHANNEL_KEY(dev|none) RELAUNCHER_ID [GUARD_ID]
   local app="$1"
-  rm -rf "$app"; mkdir -p "$app/Contents/MacOS"
-  for name in 'Goalong History Dev' goalong goalong-relauncher; do cp /usr/bin/true "$app/Contents/MacOS/$name"; done
+  rm -rf "$app"; mkdir -p "$app/Contents/MacOS" "$app/Contents/Library/LaunchAgents"
+  for name in 'Goalong History Dev' goalong goalong-relauncher goalong-blocking-guard; do cp /usr/bin/true "$app/Contents/MacOS/$name"; done
+  : > "$app/Contents/Library/LaunchAgents/$2.blocking-guard.plist"
   python3 - "$app/Contents/Info.plist" "$2" "$3" <<'PLIST'
 import plistlib,sys
 info={'CFBundleIdentifier':sys.argv[2],'CFBundleExecutable':'Goalong History Dev','CFBundlePackageType':'APPL','CFBundleVersion':'1'}
@@ -66,6 +67,7 @@ with open(sys.argv[1],'wb') as stream: plistlib.dump(info,stream)
 PLIST
   codesign --force --timestamp=none --options runtime --sign "$IDENTITY" --identifier "$2" "$app/Contents/MacOS/goalong" 2>/dev/null
   codesign --force --timestamp=none --options runtime --sign "$IDENTITY" --identifier "$4" "$app/Contents/MacOS/goalong-relauncher" 2>/dev/null
+  codesign --force --timestamp=none --options runtime --sign "$IDENTITY" --identifier "${5:-$2.blocking-guard}" "$app/Contents/MacOS/goalong-blocking-guard" 2>/dev/null
   codesign --force --timestamp=none --options runtime --sign "$IDENTITY" --identifier "$2" "$app" 2>/dev/null
 }
 DEV_APP="$WORK/dev/Goalong Dev.app"
@@ -76,6 +78,9 @@ expect_refusal 'Refusing a dev identity on a bundle without GoalongBuildChannel=
 make_fixture "$DEV_APP" ai.goalong.localhistory.dev none ai.goalong.localhistory.dev.relauncher
 expect_refusal 'Refusing a dev identity on a bundle without GoalongBuildChannel=dev.' "$DEV_APP" dev
 make_fixture "$DEV_APP" ai.goalong.localhistory.dev dev ai.goalong.localhistory.relauncher
+expect_refusal 'failed to satisfy specified code requirement' "$DEV_APP" dev
+# Spec K: a dev bundle whose guard kept the release identifier is refused.
+make_fixture "$DEV_APP" ai.goalong.localhistory.dev dev ai.goalong.localhistory.dev.relauncher ai.goalong.localhistory.blocking-guard
 expect_refusal 'failed to satisfy specified code requirement' "$DEV_APP" dev
 # A development build that kept the release bundle ID: only GoalongBuildChannel=dev tells it apart.
 DEV_AS_RELEASE="$WORK/dev-release-id/Goalong History.app"

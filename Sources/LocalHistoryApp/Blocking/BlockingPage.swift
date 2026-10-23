@@ -550,7 +550,7 @@ struct BlockingMeter: View {
                 Button("Annuler", role: .cancel) {}
                 Button(lock == .password ? "Protéger" : "Verrouiller") { start() }
             } message: {
-                Text(plan(at: now).lockMessage(lock))
+                Text(GuardConsent.message(plan(at: now).lockMessage(lock), needed: controller.guardNeedsConsent))
             }
             .alert("Geler le Mac \(BlockingFormat.until(freezeEnd, now: now)) ?", isPresented: $confirmingFreeze) {
                 Button("Annuler", role: .cancel) {}
@@ -561,7 +561,8 @@ struct BlockingMeter: View {
                     wholeMac = false
                 }
             } message: {
-                Text("J\(BlockingFormat.until(freezeEnd, now: now).dropFirst()), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
+                Text(GuardConsent.message("J\(BlockingFormat.until(freezeEnd, now: now).dropFirst()), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
+                                          needed: controller.guardNeedsConsent))
             }
         }
     }
@@ -748,7 +749,13 @@ struct BlockingLockExplainer: View {
                 GoalongRowDivider()
                 statusRow(symbol: "shield.lefthalf.filled", title: "Niveau",
                           ok: controller.protection.level == .strict,
-                          value: controller.protection.level == .strict ? "Renforcé" : "Standard")
+                          value: Self.levelLabel(controller.protection))
+            }
+            if controller.canRemoveGuard {
+                // Outside a severe block only: the member may take the background service away.
+                Button("Retirer le service de protection") { controller.removeGuardService() }
+                    .buttonStyle(LHQuietButtonStyle())
+                    .accessibilityIdentifier("blocking-remove-guard")
             }
             GoalongDisclosureGroup("Ce qui reste contournable") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -769,6 +776,16 @@ struct BlockingLockExplainer: View {
                 BlockingPasswordSheet(controller: controller, purpose: purpose) { passwordPurpose = nil }
                     .goalongControls()
             }
+        }
+    }
+
+    /// « Renforcé » only while the kill guard answers; otherwise what stops it, never an alert (spec K §6).
+    static func levelLabel(_ protection: BlockingProtectionState) -> String {
+        if protection.level == .strict { return "Renforcé" }
+        switch protection.guardian {
+        case .awaitingApproval: return "À autoriser dans Réglages › Général › Ouverture"
+        case .failed: return "Indisponible"
+        case .running, .notInstalled: return "Standard"
         }
     }
 

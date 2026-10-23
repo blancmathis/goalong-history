@@ -308,7 +308,8 @@ struct FocusComposerDraft: Equatable {
             Button("Annuler", role: .cancel) {}
             Button("Verrouiller") { begin() }
         } message: {
-            Text("Pendant le travail, ni la séance ni le blocage ne pourront être arrêtés ou passés avant la fin de la phase. Quitter Goalong ou redémarrer ne les arrête pas.")
+            Text(GuardConsent.message("Pendant le travail, ni la séance ni le blocage ne pourront être arrêtés ou passés avant la fin de la phase. Quitter Goalong ou redémarrer ne les arrête pas.",
+                                      needed: BlockingRuntime.shared.controller?.guardNeedsConsent ?? false))
         }
     }
 

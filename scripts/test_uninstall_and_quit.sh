@@ -65,4 +65,35 @@ for stub in old-stub new-stub; do
 done
 [[ ! -e "$WORK/ran-old" ]] || fail "Stub without the flag was run."
 [[ -e "$WORK/ran-new" ]] || fail "Stub with the flag was not run."
+# 3. Spec K: lock markers and the blocking guard. Fake bundle id and executable name: launchctl only
+# ever sees a label that does not exist, and no Goalong copy is run.
+BLOCKING="$WORK/blocking"; mkdir -p "$BLOCKING"
+[[ "$(goalong_severe_block_until "$BLOCKING")" == 0 ]] || fail "No marker must mean no block."
+now_epoch="$(date +%s)"
+echo "$((now_epoch - 10))" > "$BLOCKING/locked-until"
+[[ "$(goalong_severe_block_until "$BLOCKING")" == 0 ]] || fail "An ended lock still counts."
+echo "$((now_epoch + 300))" > "$BLOCKING/guard-until"
+[[ "$(goalong_severe_block_until "$BLOCKING")" == "$((now_epoch + 300))" ]] || fail "guard-until alone (freeze, program) must count."
+echo "$((now_epoch + 900))" > "$BLOCKING/locked-until"
+[[ "$(goalong_severe_block_until "$BLOCKING")" == "$((now_epoch + 900))" ]] || fail "The latest end must win."
+rm "$BLOCKING/locked-until" "$BLOCKING/guard-until"
+echo "$((now_epoch + 900))" > "$WORK/elsewhere"; ln -s "$WORK/elsewhere" "$BLOCKING/guard-until"
+[[ "$(goalong_severe_block_until "$BLOCKING")" == 0 ]] || fail "A linked marker must be ignored."
+grep -qF 'release_blocking_guard "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"' "$SCRIPT_DIR/../uninstall.sh" \
+  || fail "uninstall.sh does not release the blocking guard."
+(
+  BUNDLE_ID="ai.goalong.test.absent.$$" EXECUTABLE_NAME="GoalongGuardStub$$"
+  for kind in old new; do
+    mkdir -p "$WORK/$kind.app/Contents/MacOS"
+    if [[ "$kind" == new ]]; then flag='# --unregister-guard'; else flag='#'; fi
+    printf '#!/bin/bash\n%s\necho "$1" > "%s/guard-%s"\n' "$flag" "$WORK" "$kind" > "$WORK/$kind.app/Contents/MacOS/$EXECUTABLE_NAME"
+    chmod +x "$WORK/$kind.app/Contents/MacOS/$EXECUTABLE_NAME"
+  done
+  release_blocking_guard "$WORK/old.app" "$WORK/new.app" "$WORK/missing.app"
+)
+[[ ! -e "$WORK/guard-old" ]] || fail "A build without --unregister-guard was run."
+release_body="$(declare -f release_blocking_guard)"
+[[ "${release_body%%launchctl bootout*}" == *'--unregister-guard'* ]] \
+  || fail "--unregister-guard must run before the bootout (it leaves the override token for the running app)."
+[[ "$(cat "$WORK/guard-new")" == --unregister-guard ]] || fail "The guard was not unregistered."
 echo "Uninstall and quit tests passed."

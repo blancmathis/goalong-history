@@ -283,7 +283,8 @@ import SwiftUI
                         Button(list.program.isLocked(at: now) ? "Prolonger le verrou…" : "Verrouiller le programme…") { lockingProgram = true }
                             .buttonStyle(LHQuietButtonStyle())
                             .popover(isPresented: $lockingProgram) {
-                                BlockingProgramLock(current: list.program.lockedUntil, now: now) { date in
+                                BlockingProgramLock(current: list.program.lockedUntil, now: now,
+                                                    consent: controller.guardNeedsConsent) { date in
                                     controller.lockProgram(listID: list.id, until: date)
                                     lockingProgram = false
                                 }
@@ -611,12 +612,15 @@ struct BlockingActionPicture: View {
 struct BlockingProgramLock: View {
     let current: Date?
     let now: Date
+    /// Shows `GuardConsent.text` while the guard was never registered.
+    var consent = false
     var onLock: (Date) -> Void
     @State private var until: Date
 
-    init(current: Date?, now: Date, onLock: @escaping (Date) -> Void) {
+    init(current: Date?, now: Date, consent: Bool = false, onLock: @escaping (Date) -> Void) {
         self.current = current
         self.now = now
+        self.consent = consent
         self.onLock = onLock
         _until = State(initialValue: Self.initialUntil(current: current, now: now))
     }
@@ -631,6 +635,10 @@ struct BlockingProgramLock: View {
             Text("Verrouiller le programme").font(LHTheme.cardTitleFont)
             Text("Jusqu’à cette date, la liste et son programme peuvent seulement devenir plus stricts. Les plages programmées ne peuvent pas être arrêtées.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            if consent {
+                Text(GuardConsent.text)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            }
             DatePicker("Jusqu’au", selection: $until, in: max(now, current ?? now)..., displayedComponents: .date)
                 .datePickerStyle(.field)
             HStack {

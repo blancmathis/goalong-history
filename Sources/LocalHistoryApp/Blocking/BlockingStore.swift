@@ -162,6 +162,12 @@ struct BlockingClockState: Codable, Equatable {
     var wall: Date
     var continuous: Double
     var boot: String
+    /// Wall minus continuous seconds at the last compensated jump (or the first sample of this boot).
+    /// Forward jumps are measured from it, not from the last refresh: small steps of 60 s or less
+    /// add up and are compensated once their sum passes 60 s. nil in documents of older builds.
+    var anchor: Double? = nil
+
+    var offset: Double { wall.timeIntervalSince1970 - continuous }
 }
 
 enum BlockingClock {
@@ -176,10 +182,21 @@ enum BlockingClock {
     }
     static func adjustment(previous: BlockingClockState, now: BlockingClockState) -> TimeInterval {
         if previous.boot == now.boot, now.continuous >= previous.continuous {
-            let jump = now.wall.timeIntervalSince(previous.wall) - (now.continuous - previous.continuous)
+            let jump = now.offset - (previous.anchor ?? previous.offset)
             return jump > 60 ? jump : 0
         }
         return min(0, now.wall.timeIntervalSince(previous.wall))
+    }
+    /// `now` with the anchor the next refresh measures from: kept while no jump was compensated in
+    /// this boot, moved to `now` after a compensation, a reboot or without any previous sample.
+    static func advanced(previous: BlockingClockState?, now: BlockingClockState, adjusted: TimeInterval) -> BlockingClockState {
+        var next = now
+        if let previous, adjusted == 0, previous.boot == now.boot, now.continuous >= previous.continuous {
+            next.anchor = previous.anchor ?? previous.offset
+        } else {
+            next.anchor = now.offset
+        }
+        return next
     }
 }
 #endif

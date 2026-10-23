@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import GoalongGuardCore
     import SwiftUI
 
     /// Recovery never changes TCC, code signatures, saved consent, or recording choices.
@@ -141,6 +142,8 @@
                 completion("Le composant de redémarrage est indisponible. Goalong est resté ouvert ; installez la dernière mise à jour puis réessayez.")
                 return
             }
+            // The relauncher reopens Goalong: the guard waits for it while it lives (spec K §8).
+            GoalongGuardFiles.writeLease(GuardLease.permissionRestart, seconds: 60)
             let child = Process()
             child.executableURL = helper
             child.arguments = ["--parent", String(ProcessInfo.processInfo.processIdentifier),
@@ -179,6 +182,7 @@
             timeout?.cancel(); timeout = nil
             pipe?.fileHandleForReading.readabilityHandler = nil
             if error != nil, let process, process.isRunning { process.terminate() }
+            if error != nil { GoalongGuardFiles.standard.removeLease() }
             completion(error)
         }
     }

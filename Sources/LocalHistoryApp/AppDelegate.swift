@@ -4,6 +4,7 @@
     import Carbon
     import AppleSystemScreenTime
     import Foundation
+    import GoalongGuardCore
     import LocalHistoryCore
     import LocalHistoryQueryCLI
 
@@ -130,6 +131,14 @@
         private var userQuitConfirmed = false
         /// Set when an installer or uninstaller asked us to stop with SIGTERM.
         private var terminatingForSignal = false
+        /// Sender of the quit that was accepted (set only on the paths that really terminate).
+        private var acceptedQuitSenderID: String?
+        /// When macOS last announced a power off. Counts only for `powerOffWindow`: a logout cancelled by
+        /// another app must not leave SIGTERM honoured for the rest of the block.
+        private var powerOffAt: Date?
+        private var powerOffObserver: NSObjectProtocol?
+        /// The blocking confirmation (password) approved this quit: the guard does not reopen Goalong.
+        private var blockingQuitApproved = false
         private var terminationSignalSource: DispatchSourceSignal?
         private var quitAlertIsVisible = false
         private let continuityPreferences = BackgroundContinuityPreferences()
@@ -173,6 +182,8 @@
             }
 
             runtimeStarted = true
+            // A guard token always belongs to the process that wrote it (spec K).
+            GoalongGuardFiles.standard.clearTokens()
             installTerminationSignalHandler()
             let buildIdentity = BuildIdentityReader.current()
             LegacyInstallationMigrator.run()
@@ -427,8 +438,13 @@
 
             installWorkspaceObservers()
             let resumedSetup = PermissionRecovery.consumeSetupReturn()
-            if !resumedSetup { showDashboardOnFirstConsentLaunch() }
-            if resumedSetup {
+            if GoalongGuardFiles.isGuardRelaunch {
+                // Reopened by the blocking guard after a kill: quiet, no window (spec K §6).
+                Diagnostics.write("Goalong reopened by its blocking guard")
+            } else if !resumedSetup { showDashboardOnFirstConsentLaunch() }
+            if GoalongGuardFiles.isGuardRelaunch {
+                UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
+            } else if resumedSetup {
                 // The activation toggles live in the Recording pane, not on the Settings home.
                 if let capability = PermissionRecovery.resumedCapability,
                    PermissionRecovery.resumeDestination(for: capability) != nil {
@@ -529,14 +545,34 @@
         }
 
         /// Turns SIGTERM (installer, uninstaller) into a normal quit so the full shutdown sequence runs:
-        /// flush, seal the minute, close the journal. A locked block resumes from its marker and the guard.
+        /// flush, seal the minute, close the journal. During a severe block SIGTERM is ignored unless the
+        /// session ends; a kill -9 is answered by the blocking guard (spec K), which reopens Goalong.
         private func installTerminationSignalHandler() {
             guard terminationSignalSource == nil else { return }
             signal(SIGTERM, SIG_IGN)
+            powerOffObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
+            ) { [weak self] _ in self?.powerOffAt = Date() }
+            TerminationSignalSender.install()
             let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
             source.setEventHandler { [weak self] in
-                self?.terminatingForSignal = true
-                NSApplication.shared.terminate(nil)
+                // Let the SA_SIGINFO handler record the sender first (it runs on signal delivery).
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    guard let self else { return }
+                    let honoured = MainActor.assumeIsolated {
+                        Self.honoursTerminationSignal(
+                            controller: BlockingRuntime.shared.controller,
+                            sessionEnding: Self.isPowerOffRecent(self.powerOffAt, now: Date()),
+                            senderPID: TerminationSignalSender.take(),
+                            installOverride: GoalongGuardFiles.overrideActive())
+                    }
+                    guard honoured else {
+                        Diagnostics.write("SIGTERM ignored during a severe block")
+                        return
+                    }
+                    self.terminatingForSignal = true
+                    NSApplication.shared.terminate(nil)
+                }
             }
             source.resume()
             terminationSignalSource = source
@@ -549,9 +585,47 @@
             !systemQuit && !restarting && !relaunchingForUpdate && !externalSignal
         }
 
-        static func exitReason(relaunchingForUpdate: Bool, restarting: Bool, externalSignal: Bool, userQuit: Bool) -> String {
-            relaunchingForUpdate ? "update" : restarting ? "permission_restart"
+        static func exitReason(relaunchingForUpdate: Bool, restarting: Bool, externalSignal: Bool, userQuit: Bool,
+                               sessionEnd: Bool = false) -> String {
+            relaunchingForUpdate ? "update" : restarting ? "permission_restart" : sessionEnd ? "session_end"
                 : externalSignal ? "signal_terminate" : userQuit ? "user_quit" : "system_or_application_exit"
+        }
+
+        /// SIGTERM ends Goalong except during a severe block. There it is honoured only when the session
+        /// ends (a recent power-off notice), when launchd sends it (pid 1: system shutdown, `sudo reboot`),
+        /// or when an installer runs with the documented override. Otherwise the kill -9 path answers.
+        static func honoursTerminationSignal(severeBlock: Bool, sessionEnding: Bool, senderPID: Int32? = nil,
+                                             installOverride: Bool = false) -> Bool {
+            !severeBlock || sessionEnding || senderPID == 1 || installOverride
+        }
+
+        /// The SIGTERM decision with the live controller: refresh first, so a block that started since the
+        /// last sample counts, then read `severeUntil`.
+        @MainActor static func honoursTerminationSignal(controller: BlockingController?, sessionEnding: Bool,
+                                                        senderPID: Int32?, installOverride: Bool) -> Bool {
+            var severe = false
+            if let controller {
+                controller.refresh(enforceLast: false)
+                severe = controller.severeUntil != nil
+            }
+            return honoursTerminationSignal(severeBlock: severe, sessionEnding: sessionEnding, senderPID: senderPID,
+                                            installOverride: installOverride)
+        }
+
+        /// A power-off notice counts this long: a cancelled logout or shutdown must not open a lasting hole.
+        static let powerOffWindow: TimeInterval = 120
+        static func isPowerOffRecent(_ at: Date?, now: Date) -> Bool {
+            guard let at else { return false }
+            return now >= at && now.timeIntervalSince(at) <= powerOffWindow
+        }
+
+        /// The token that tells the guard not to reopen Goalong. Only loginwindow (or a recent power-off
+        /// notice) means a session end; System Settings, the Dock or an unknown sender never do. A user quit
+        /// counts when the member confirmed it, including a password-approved external quit.
+        static func guardReleaseReason(senderBundleID: String?, userQuit: Bool, blockingQuitApproved: Bool,
+                                       powerOffRecent: Bool) -> String? {
+            let sessionEnd = senderBundleID == "com.apple.loginwindow" || powerOffRecent
+            return sessionEnd ? GuardRelease.sessionEnd : (userQuit || blockingQuitApproved) ? GuardRelease.userQuit : nil
         }
 
         func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -571,7 +645,10 @@
                 relaunchingForUpdate: SoftwareUpdateManager.shared.isRelaunchingForUpdate,
                 externalSignal: terminatingForSignal) {
                 guard confirmBlockingQuitIfNeeded(consumeAuthorization: true) else { return .terminateCancel }
+                blockingQuitApproved = true
             }
+            // Every path below terminates (or replies later for the same quit): remember who asked.
+            acceptedQuitSenderID = senderID
             guard event?.eventClass == AEEventClass(kCoreEventClass), event?.eventID == AEEventID(kAEQuitApplication),
                   PermissionRecovery.shouldAssistSettingsQuit(senderBundleID: senderID,
                     pendingSetup: PermissionRecovery.pendingSetup() != nil, alreadyRestarting: PermissionRecovery.isRestarting) else {
@@ -635,9 +712,22 @@
                 minuteSealer?.stopAndSeal()
             }
             recorder?.close()
+            let powerOffRecent = Self.isPowerOffRecent(powerOffAt, now: Date())
+            let release = Self.guardReleaseReason(senderBundleID: acceptedQuitSenderID, userQuit: userQuitConfirmed,
+                                                  blockingQuitApproved: blockingQuitApproved, powerOffRecent: powerOffRecent)
+            let sessionEnd = release == GuardRelease.sessionEnd
             let reason = Self.exitReason(
                 relaunchingForUpdate: SoftwareUpdateManager.shared.isRelaunchingForUpdate,
-                restarting: PermissionRecovery.isRestarting, externalSignal: terminatingForSignal, userQuit: userQuitConfirmed)
+                restarting: PermissionRecovery.isRestarting, externalSignal: terminatingForSignal, userQuit: userQuitConfirmed,
+                sessionEnd: sessionEnd)
+            if let release {
+                let files = GoalongGuardFiles.standard
+                // Only while a guard may be armed: nothing to write for a member without a severe block.
+                if GoalongGuardFiles.guardMayBeArmed(files) {
+                    files.writeRelease(GuardRelease(pid: getpid(), reason: release, writtenAt: Date().timeIntervalSince1970,
+                                                    bootTime: GuardSystem.bootTime(), bootSession: GuardSystem.bootSession()))
+                }
+            }
             BackgroundContinuityController.shared.stop(reason: reason)
 
             let center = NSWorkspace.shared.notificationCenter
