@@ -38,8 +38,8 @@ extension GalleryCatalog {
                       environment: { $0.permissions = .galleryMissing }, fixture: .recordingOn),
             dashboard("fenetre/interactions-indisponibles", section: .overview,
                       environment: { $0.inputTapWorks = false }, fixture: .recordingOn,
-                      note: "seul signe : le libellé tronqué « Interactions indispo… » et le point rouge de la barre "
-                          + "latérale ; le texte complet du statut n’est pas montré (C3-couverture-03)"),
+                      note: "bannière « Clics et frappe non reçus » avec « Vérifier les accès… », et statut "
+                          + "« Saisie non reçue » dans la barre latérale"),
             dashboard("fenetre/pause-globale", section: .overview, paused: true),
             dashboard("fenetre/stockage-plein", section: .overview, environment: { $0.storageFailure = .diskFull },
                       fixture: .recordingOn),

@@ -457,8 +457,11 @@ struct GoalongAnalyticsPage: View {
             Label("Mode développeur", systemImage: "hammer")
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
                 .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(LHTheme.warning.opacity(0.14), in: Capsule())
-                .overlay(Capsule().strokeBorder(LHTheme.warning.opacity(0.35), lineWidth: 1))
+                // Border as a filled ring: a stroked capsule rendered 1 pt ticks at both ends (gallery, u01-r1-02).
+                .background {
+                    Capsule().fill(LHTheme.warning.opacity(0.14))
+                        .overlay(CapsuleRing(width: 1).fill(LHTheme.warning.opacity(0.35), style: FillStyle(eoFill: true)))
+                }
                 .accessibilityIdentifier("analytics-developer-mode")
         }
     }
@@ -506,3 +509,13 @@ struct GoalongAnalyticsPreviewBanner: View {
     }
 }
 #endif
+
+/// A capsule outline of `width` drawn as an even-odd fill, so it has no stroke join at the rounded ends.
+private struct CapsuleRing: Shape {
+    var width: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var path = Capsule().path(in: rect)
+        path.addPath(Capsule().path(in: rect.insetBy(dx: width, dy: width)))
+        return path
+    }
+}
