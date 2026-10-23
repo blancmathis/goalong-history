@@ -69,6 +69,9 @@ import SwiftUI
                         if let error = controller.error {
                             GoalongNote(FocusUIError.message(raw: error), tone: .warning)
                                 .onTapGesture { controller.error = nil }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("Masquer ce message")
+                                .accessibilityAction(named: "Masquer") { controller.error = nil }
                                 .accessibilityIdentifier("concentration-error")
                         }
                         if modules.isEnabled(.concentration), let note = Self.measurementNote(runtime.measurementError) {

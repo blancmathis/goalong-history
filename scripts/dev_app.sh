@@ -147,6 +147,16 @@ fi
 
 HAVE_WORKTREE_LOCK=0 HAVE_GLOBAL_LOCK=0 NEW_APP='' OLD_APP=''
 cleanup() {
+  # Interrupted during the install swap: put the previous Goalong Dev back before dropping the new one,
+  # so the install folder never ends up without Goalong Dev. After the swap, only the old copy goes.
+  if [[ -n "$OLD_APP" && ( -e "$OLD_APP" || -L "$OLD_APP" ) ]]; then
+    if [[ ! -e "$DEV_APP" && ! -L "$DEV_APP" ]]; then
+      mv -- "$OLD_APP" "$DEV_APP" || true
+    elif [[ -z "$NEW_APP" || ( ! -e "$NEW_APP" && ! -L "$NEW_APP" ) ]]; then
+      # The new bundle is in place (interrupted right after its rename too): the old copy goes.
+      rm -rf -- "$OLD_APP" || true
+    fi
+  fi
   [[ -z "$NEW_APP" ]] || rm -rf -- "$NEW_APP" || true
   # The lock itself is released by the kernel when this shell exits; only the PID note is removed.
   [[ "$HAVE_GLOBAL_LOCK" == 0 ]] || rm -f -- "$GLOBAL_LOCK.pid" || true
@@ -256,6 +266,7 @@ fi
 mv "$NEW_APP" "$DEV_APP"
 NEW_APP=''
 rm -rf -- "$OLD_APP"
+OLD_APP=''
 step_done 'install'
 if [[ "$NO_LAUNCH" == 1 ]]; then
   echo "Installed (not launched, dev data not prepared): $DEV_APP"

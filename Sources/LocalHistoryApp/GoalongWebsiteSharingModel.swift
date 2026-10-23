@@ -98,6 +98,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     let autoSender: GoalongWebsiteAutoSender
     private let hiddenWebsites: () -> (String) -> Bool
     private let hiddenApplications: () -> (String?, String) -> Bool
+    private let sharingRulesReadable: () -> Bool
     /// The `includeWebsites` value the catalog on screen was loaded with. The model's own
     /// fallback change must not trigger another load that would erase its explanation.
     private var loadedIncludeWebsites: Bool?
@@ -113,7 +114,9 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
          sender: ((Data, String, URL, String) throws -> Data)? = nil,
          sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) },
          hiddenWebsites: @escaping () -> (String) -> Bool = { SharingRulesStore().hiddenWebsiteFilter() },
-         hiddenApplications: @escaping () -> (String?, String) -> Bool = { SharingRulesStore().hiddenApplicationFilter() }) {
+         hiddenApplications: @escaping () -> (String?, String) -> Bool = { SharingRulesStore().hiddenApplicationFilter() },
+         sharingRulesReadable: @escaping () -> Bool = { !SharingRulesStore().isDamaged }) {
+        self.sharingRulesReadable = sharingRulesReadable
         self.hiddenWebsites = hiddenWebsites
         self.hiddenApplications = hiddenApplications
         let autoSender = autoSender ?? .shared
@@ -259,6 +262,9 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         }
         let snapshot = draft, target = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let ticket = UUID(); generation = ticket
+        guard sharingRulesReadable() else {
+            error = "Les règles de partage sont illisibles. Vérifiez-les dans les réglages avant de préparer l’aperçu."; return
+        }
         let hiddenApp = hiddenApplications()
         let catalogNames = Dictionary(catalog.devices.flatMap { $0.applications }.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         var options = GoalongWebsiteAutoSender.removingHiddenWebsites(snapshot.options, isHidden: hiddenWebsites(),
@@ -336,7 +342,13 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
                 func count(_ key: String) -> Int { (object[key] as? NSNumber)?.intValue ?? 0 }
                 status = "Reçu par Goalong : \(Self.frCount(count("imported"), "ajout", "ajouts")), \(Self.frCount(count("updated"), "mise à jour", "mises à jour")), \(Self.frCount(count("skipped"), "inchangé", "inchangés")). Aucun envoi quotidien n’a été activé."
             }
-        } catch { self.error = "Envoi non confirmé : \(goalongUserMessage(error))" }
+        } catch {
+            if case GoalongSiteSubmissionError.accessRefused = error {
+                autoSender.markAccessRefused(fingerprint: approved.credentialFingerprint)
+                NotificationCenter.default.post(name: .goalongWebsiteAccessRefused, object: nil)
+            }
+            self.error = "Envoi non confirmé : \(goalongUserMessage(error))"
+        }
     }
 }
 #endif

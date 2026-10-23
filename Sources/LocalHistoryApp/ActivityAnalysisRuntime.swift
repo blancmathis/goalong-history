@@ -812,6 +812,18 @@
                 return "The activity-analysis runtime is no longer available"
             }
         }
+
+        /// French text for the interface; `errorDescription` stays English for logs.
+        var frenchDescription: String {
+            switch self {
+            case .temporarilySuspended:
+                return "Actualisation en pause pendant l’effacement de l’historique local."
+            case .invalidatedByHistoryClear:
+                return "Actualisation annulée : l’historique local a été effacé."
+            case .runtimeUnavailable:
+                return "L’analyse d’activité n’est plus disponible."
+            }
+        }
     }
 
     /// Coalesces equal UI/background requests onto one serial coordinator execution.
@@ -1280,6 +1292,22 @@
                 return "Derived analysis kept the last-known-good views because the "
                     + "retained-evidence budget was exceeded "
                     + "(\(rows) rows or \(bytes) estimated bytes)"
+            }
+        }
+
+        /// French text for the interface; `errorDescription` stays English for logs and journals.
+        var frenchDescription: String {
+            switch self {
+            case .sourceInaccessible:
+                return "Goalong n’a pas pu lire les données locales de cette journée."
+            case .sourceChangedDuringRead:
+                return "Le journal source a changé pendant la lecture. Les dernières vues valides sont conservées."
+            case .oversizedJSONLine(let path, let maximumBytes):
+                return "Ligne trop volumineuse refusée dans \(path) (maximum \(maximumBytes) octets)."
+            case .reentrantCycle:
+                return "Analyse déjà en cours sur cette source : nouvelle lecture refusée."
+            case .retainedEvidenceBudgetExceeded(let rows, let bytes):
+                return "La journée dépasse la mémoire prévue pour l’analyse (\(rows) lignes ou \(bytes) octets estimés). Les dernières vues valides sont conservées."
             }
         }
     }

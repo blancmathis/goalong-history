@@ -1018,6 +1018,104 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(until.end, date(6, 9), "an earlier time of day means tomorrow")
     }
 
+    /// R5-regressions-01: a click keeps the end the button and the alert promised. A « Jusqu’à 12:00 »
+    /// shown at 11:58:40 and clicked at 12:00:05 is refused, never a 24 h lock.
+    func testConfirmedPlanKeepsThePromisedEnd() throws {
+        let shown = date(5, 11, 58).addingTimeInterval(40)
+        let until = BlockingNowPlan(later: false, startAt: shown, until: date(5, 12), now: shown, calendar: calendar)
+        XCTAssertEqual(until.end, date(5, 12))
+        XCTAssertNil(until.confirmed(at: date(5, 12).addingTimeInterval(5)), "the end is passed: refused, not tomorrow")
+        XCTAssertNil(until.confirmed(at: date(5, 11, 59).addingTimeInterval(30)), "less than a minute left")
+        let soon = try XCTUnwrap(until.confirmed(at: date(5, 11, 59)))
+        XCTAssertEqual(soon.start, date(5, 11, 59)); XCTAssertEqual(soon.end, date(5, 12)); XCTAssertFalse(soon.startsLater)
+        // A duration alert left open 10 min ends when it said, not 10 min later.
+        let duration = BlockingNowPlan(later: false, startAt: date(5, 10), minutes: 30, now: date(5, 10))
+        let late = try XCTUnwrap(duration.confirmed(at: date(5, 10, 10)))
+        XCTAssertEqual(late.start, date(5, 10, 10)); XCTAssertEqual(late.end, date(5, 10, 30))
+        // A later start stays ahead; once passed during the alert, the block starts at the click.
+        let later = BlockingNowPlan(later: true, startAt: date(5, 11), minutes: 60, now: date(5, 10))
+        XCTAssertEqual(try XCTUnwrap(later.confirmed(at: date(5, 10, 5))).start, date(5, 11))
+        let passed = try XCTUnwrap(later.confirmed(at: date(5, 11, 5)))
+        XCTAssertEqual(passed.start, date(5, 11, 5)); XCTAssertFalse(passed.startsLater); XCTAssertEqual(passed.end, date(5, 12))
+    }
+
+    /// B01-R1-02: the freeze never ends later than its alert said. An end the engine would push back to its
+    /// 5 min minimum is promised as « pendant 5 min » from the click; a promised end too close by then is refused.
+    func testFreezeNeverEndsAfterItsAlert() throws {
+        let tick = date(5, 11, 58).addingTimeInterval(40)
+        let raised = BlockingFreezePromise(end: date(5, 12), now: tick)
+        XCTAssertEqual(raised, .minimum)
+        XCTAssertEqual(raised.phrase(now: tick), "pendant 5 min")
+        let click = date(5, 12, 0).addingTimeInterval(10)
+        XCTAssertEqual(raised.end(at: click), click.addingTimeInterval(300), "5 min from the click, as the alert said")
+        // A « 25 min » alert left open 21 min: 4 min left, the engine would make it 5. Refused.
+        let duration = BlockingFreezePromise(end: date(5, 10, 25), now: date(5, 10))
+        XCTAssertEqual(duration, .until(date(5, 10, 25)))
+        XCTAssertEqual(duration.end(at: date(5, 10, 10)), date(5, 10, 25))
+        XCTAssertEqual(duration.end(at: date(5, 10, 20)), date(5, 10, 25), "exactly 5 min left: the engine keeps it")
+        XCTAssertNil(duration.end(at: date(5, 10, 21)))
+        XCTAssertEqual(BlockingFreezePromise(end: date(5, 12).addingTimeInterval(30 * 3_600), now: date(5, 12)),
+                       .until(date(6, 12)), "the 24 h cap is promised as such")
+    }
+
+    /// B01-R2-01: the freeze alert reads its promise at the click, not at the page tick, and leaves time to
+    /// read it. « Jusqu’à 12:05 » drawn at 11:59:50, opened at 12:00:15: never a promise « Geler » can only refuse.
+    func testFreezeAlertPromisesFromTheClick() throws {
+        let tick = date(5, 11, 59).addingTimeInterval(50)
+        XCTAssertEqual(BlockingFreezePromise(end: date(5, 12, 5), now: tick), .until(date(5, 12, 5)), "the button, at the tick")
+        let click = date(5, 12).addingTimeInterval(15)
+        let alert = BlockingFreezePromise.alert(end: date(5, 12, 5), click: click)
+        XCTAssertEqual(alert, .minimum)
+        XCTAssertEqual(alert.phrase(now: click), "pendant 5 min")
+        let freeze = click.addingTimeInterval(40)
+        XCTAssertEqual(alert.end(at: freeze), freeze.addingTimeInterval(300))
+        // Less than 6 min from the click: promised as the minimum; 6 min or more keeps the end time.
+        XCTAssertEqual(BlockingFreezePromise.alert(end: click.addingTimeInterval(359), click: click), .minimum)
+        let far = BlockingFreezePromise.alert(end: date(5, 12, 7), click: click)
+        XCTAssertEqual(far, .until(date(5, 12, 7)))
+        XCTAssertEqual(far.end(at: click.addingTimeInterval(60)), date(5, 12, 7), "a read of one minute still freezes")
+    }
+
+    /// B01-R1-03: a late click is refused in the words of the chosen span.
+    func testLateClickRefusalSpeaksOfTheChosenSpan() {
+        XCTAssertEqual(BlockingNowComposer.refusal(.minutes(30), freeze: false), "Ce blocage serait déjà fini. Relancez-le.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.until, freeze: false), "L’heure de fin est passée. Choisissez une autre heure.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.minutes(25), freeze: true), "Le gel durerait moins de 5 min. Relancez-le.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.until, freeze: true), "Le gel durerait moins de 5 min. Choisissez une autre heure.")
+    }
+
+    /// R5-blocage-01: a free session inside a locked block speaks with the locked block's lock and end.
+    @MainActor func testVeilSpeaksForTheStrongestBlock() {
+        let now = date(); let backend = FakeBlockingBackend()
+        let list = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "youtube.com")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(15 * 60), lock: .free)
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(3 * 3_600), lock: .locked)
+        XCTAssertEqual(c.activeBlocks.count, 2); XCTAssertEqual(c.activeBlocks.first?.lock, .free, "the free session comes first")
+        XCTAssertEqual(c.rulingBlock(for: list.id)?.lock, .locked)
+        c.observe(target(now))
+        XCTAssertEqual(backend.lastPresentation?.lock, .locked)
+        XCTAssertEqual(backend.lastPresentation?.end, now.addingTimeInterval(3 * 3_600))
+    }
+
+    /// R5-regressions-02: a range on several lists is one write; the previous generation is the state before it.
+    @MainActor func testSeveralListsAreWrittenInOneGeneration() throws {
+        let store = try temporaryStore(), now = date()
+        let a = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        let b = BlockList(name: "Réseaux", sites: [BlockSiteRule(pattern: "x.com")])
+        try store.save(BlockingDocument(lists: [a, b]))
+        let c = BlockingController(clock: { now }, store: store, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        let before = try store.load()
+        func adding(_ list: BlockList) -> BlockList {
+            var next = list; next.program.ranges.append(BlockProgramRange(weekdays: [2], startMinute: 540, endMinute: 600)); return next
+        }
+        XCTAssertNil(c.saveAll([adding(a), adding(b)]))
+        let saved = try store.load()
+        XCTAssertEqual(saved.lists.map(\.program.ranges.count), [1, 1])
+        try Data("bad-json".utf8).write(to: store.directory.appendingPathComponent("blocking.json"))
+        XCTAssertEqual(try store.loadRecovering().document.lists, before.lists, "no generation holds one list without the other")
+    }
+
     /// R4-blocage-01: the lock alert says the day of the end, and both ends of a later block.
     func testLockAlertSaysTheDay() {
         let now = date(5, 10) // Monday
@@ -1098,6 +1196,7 @@ private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
     var siteBlocks = 0
     var appBlocks = 0
     var lastReason: BlockingVeilPresentation.Reason?
+    var lastPresentation: BlockingVeilPresentation?
     var protectionRequired = false
     var protectionComponent: BlockingProtectionState.Component?
     func updateProtection(locked: Bool) -> BlockingProtectionState {
@@ -1108,7 +1207,9 @@ private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
         return result
     }
     func blockApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) { appBlocks += 1 }
-    func blockSite(_ target: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) { siteBlocks += 1; lastReason = presentation.reason }
+    func blockSite(_ target: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) {
+        siteBlocks += 1; lastReason = presentation.reason; lastPresentation = presentation
+    }
     func clearSite() { clearSites += 1 }
     func updateFreeze(_ freeze: BlockFreeze?) {}
     func returnToShield() {}

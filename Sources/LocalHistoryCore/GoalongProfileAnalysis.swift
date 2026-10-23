@@ -161,9 +161,12 @@ public enum GoalongProfileAnalysis {
     public static func parseArchive(_ bytes: Data) throws -> Archive {
         _ = try GoalongCanonicalJSONValue.parse(bytes, maximumBytes: 256*1024, maximumDepth: 12)
         try keys(bytes, ["request", "result"])
-        let object = try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
-        let request = try parseRequest(JSONSerialization.data(withJSONObject: object["request"]!))
-        let result = try apply(parseResult(JSONSerialization.data(withJSONObject: object["result"]!)), to: request)
+        guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              let requestObject = object["request"] as? [String: Any], let resultObject = object["result"] as? [String: Any],
+              JSONSerialization.isValidJSONObject(requestObject), JSONSerialization.isValidJSONObject(resultObject)
+        else { throw invalid("Analyse enregistrée illisible.") }
+        let request = try parseRequest(JSONSerialization.data(withJSONObject: requestObject))
+        let result = try apply(parseResult(JSONSerialization.data(withJSONObject: resultObject)), to: request)
         return Archive(request: request, result: result)
     }
     public static func parseResult(_ bytes: Data) throws -> Result {

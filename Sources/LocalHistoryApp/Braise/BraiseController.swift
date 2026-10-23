@@ -12,6 +12,8 @@ import ServiceManagement
     @Published private(set) var displayCount = 0
     @Published private(set) var nextEvent = ""
     @Published private(set) var errorMessage: String?
+    /// Set once when unreadable settings were reset at start.
+    @Published private(set) var recoveryNotice: String?
     @Published var shortcutAvailable = false
     @Published private(set) var loginEnabled = false
     @Published private(set) var loginApprovalRequired = false
@@ -31,7 +33,8 @@ import ServiceManagement
          clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) throws {
         self.store = store; self.gamma = gamma; self.runsTimers = runsTimers
         self.clock = clock; self.calendar = calendar
-        preferences = try store.load()
+        let loaded = try store.loadRecovering()
+        preferences = loaded.preferences; recoveryNotice = loaded.notice
         gamma.onError = { [weak self] message in
             guard let self, self.running else { return }
             self.preferences.mode = .off; self.preferences.pauseUntil = nil; self.active = false

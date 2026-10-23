@@ -295,24 +295,38 @@ struct GoalongSharingSelector: View {
     static let selectionCap = 200
     @State private var search = ""
     private var absent: [String] { selection.subtracting(Set(items.map(\.id))).sorted() }
+    private var present: Set<String> { selection.intersection(Set(items.map(\.id))) }
+    private var roomLeft: Int { Self.roomLeft(selection: selection, itemIDs: items.map(\.id)) }
+    /// Same cap for the bulk button and for each checkbox: the export refuses more.
+    static func roomLeft(selection: Set<String>, itemIDs: [String]) -> Int {
+        max(0, selectionCap - selection.intersection(itemIDs).count)
+    }
+    static func canCheck(_ id: String, selection: Set<String>, itemIDs: [String]) -> Bool {
+        selection.contains(id) || roomLeft(selection: selection, itemIDs: itemIDs) > 0
+    }
+    private var uncheckedResults: [Item] { visible.filter { !selection.contains($0.id) } }
     private var visible: [Item] { items.filter { search.isEmpty || $0.title.localizedStandardContains(search) } }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(title).font(.callout.weight(.semibold))
                 Spacer()
-                Text("\(selection.intersection(Set(items.map(\.id))).count) / \(items.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                Text("\(present.count) / \(items.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }
             if items.count > 4 {
                 GoalongSearchField("Rechercher…", text: $search, accessibilityLabel: "Rechercher dans \(title)")
             }
             HStack(spacing: 12) {
                 Button("Sélectionner les résultats") {
-                    let room = max(0, Self.selectionCap - selection.count)
-                    selection.formUnion(visible.map(\.id).filter { !selection.contains($0) }.prefix(room))
-                }.disabled(visible.isEmpty)
+                    selection.formUnion(uncheckedResults.map(\.id).prefix(roomLeft))
+                }.disabled(uncheckedResults.isEmpty || roomLeft == 0)
                 Button("Tout décocher") { selection.removeAll() }.disabled(selection.isEmpty)
             }.buttonStyle(LHQuietButtonStyle()).font(.caption)
+            if uncheckedResults.count > roomLeft {
+                let left = uncheckedResults.count - roomLeft
+                Text("\(Self.selectionCap) éléments au plus par envoi : \(left) \(left > 1 ? "résultats ne pourront pas être cochés" : "résultat ne pourra pas être coché").")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if !absent.isEmpty {
                 GoalongDisclosureGroup("\(absent.count) choix enregistrés absents de cette journée") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -337,7 +351,7 @@ struct GoalongSharingSelector: View {
                     LazyVStack(spacing: 0) {
                         ForEach(visible) { item in
                             Toggle(isOn: Binding(get: { selection.contains(item.id) }, set: {
-                                if $0 { selection.insert(item.id) } else { selection.remove(item.id) }
+                                if !$0 { selection.remove(item.id) } else if roomLeft > 0 { selection.insert(item.id) }
                             })) {
                                 HStack(spacing: 10) {
                                     Image(systemName: item.symbol ?? symbol).foregroundStyle(.secondary).frame(width: 20)
@@ -347,7 +361,9 @@ struct GoalongSharingSelector: View {
                                     }
                                     Spacer(minLength: 0)
                                 }
-                            }.toggleStyle(.goalongCheckbox).padding(.vertical, 8).padding(.horizontal, 9)
+                            }.toggleStyle(.goalongCheckbox)
+                                .disabled(!Self.canCheck(item.id, selection: selection, itemIDs: items.map(\.id)))
+                                .padding(.vertical, 8).padding(.horizontal, 9)
                                 .background(selection.contains(item.id) ? LHTheme.accent.opacity(0.07) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                                 .accessibilityLabel("\(title) : \(item.title)")
                         }

@@ -138,7 +138,7 @@
                         } else {
                             self.analysis = self.storedAnalysisLoader(normalized)
                         }
-                        self.errorMessage = error.localizedDescription
+                        self.errorMessage = ComputerHistoryPageModel.displayMessage(for: error)
                     }
                     self.isLoading = false
                 }

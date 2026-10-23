@@ -60,17 +60,39 @@ final class BraiseModuleTests: XCTestCase {
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: store.directory.path)[.posixPermissions] as? NSNumber)?.intValue, 0o700)
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: store.settingsURL.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
-    func testMalformedOversizedAndSymlinkSettingsAreRefused() throws {
+    func testMalformedOversizedAndSymlinkLegacySettingsAreNotImported() throws {
+        let fm = FileManager.default
         let root = try root(), legacy = root.appendingPathComponent("legacy.json")
         let store = BraiseStore(directory: root.appendingPathComponent("Braise"), legacySettings: legacy)
-        try Data("bad".utf8).write(to: legacy); XCTAssertThrowsError(try store.load())
-        XCTAssertFalse(FileManager.default.fileExists(atPath: store.settingsURL.path))
-        try Data(repeating: 32, count: 65_537).write(to: legacy); XCTAssertThrowsError(try store.load())
-        try FileManager.default.removeItem(at: legacy)
-        let real = root.appendingPathComponent("real.json"); try JSONEncoder().encode(Preferences()).write(to: real)
-        try FileManager.default.createSymbolicLink(at: legacy, withDestinationURL: real)
-        XCTAssertThrowsError(try store.load())
-        XCTAssertFalse(FileManager.default.fileExists(atPath: store.settingsURL.path))
+        var imported = Preferences(); imported.mode = .on
+        let real = root.appendingPathComponent("real.json"); try JSONEncoder().encode(imported).write(to: real)
+        for write in [{ try Data("bad".utf8).write(to: legacy) }, { try Data(repeating: 32, count: 65_537).write(to: legacy) },
+                      { try fm.createSymbolicLink(at: legacy, withDestinationURL: real) }] as [() throws -> Void] {
+            try? fm.removeItem(at: legacy); try? fm.removeItem(at: store.settingsURL)
+            try write()
+            let loaded = try store.loadRecovering()
+            XCTAssertEqual(loaded.preferences.mode, .off); XCTAssertNotNil(loaded.notice)
+            XCTAssertTrue(fm.fileExists(atPath: store.settingsURL.path))
+            XCTAssertNotNil(try? fm.attributesOfItem(atPath: legacy.path), "The legacy file is never moved")
+        }
+    }
+    func testDamagedSettingsAreKeptAsideAndBraiseStartsWithDefaults() throws {
+        let fm = FileManager.default
+        let root = try root()
+        let store = BraiseStore(directory: root.appendingPathComponent("Braise"), legacySettings: root.appendingPathComponent("missing"))
+        _ = try store.load()
+        try Data("{\"mode\":\"auto\",\"rules\":[".utf8).write(to: store.settingsURL)
+        let loaded = try store.loadRecovering()
+        XCTAssertEqual(loaded.preferences.mode, .off)
+        XCTAssertTrue(loaded.notice?.contains(store.directory.path) == true)
+        let kept = try fm.contentsOfDirectory(atPath: store.directory.path).filter { $0.hasPrefix("settings.damaged-") }
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(try String(contentsOf: store.directory.appendingPathComponent(kept[0]), encoding: .utf8), "{\"mode\":\"auto\",\"rules\":[")
+        XCTAssertNil(try store.loadRecovering().notice)
+        // An older file without some fields still opens as is.
+        try Data("{\"mode\":\"auto\",\"intensity\":0.5}".utf8).write(to: store.settingsURL)
+        let older = try store.loadRecovering()
+        XCTAssertNil(older.notice); XCTAssertEqual(older.preferences.mode, .auto); XCTAssertEqual(older.preferences.intensity, 0.5)
     }
     @MainActor func testModesPauseEmergencyDisableAndCLIStayLocal() throws {
         let root = try root(), gamma = BraiseTestGamma(), modules = try modules()

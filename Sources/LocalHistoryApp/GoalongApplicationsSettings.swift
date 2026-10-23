@@ -27,7 +27,9 @@ final class GoalongExclusionStore: ObservableObject {
             policy = saved; error = nil
             Task { @MainActor in
                 ChatGPTRecapRuntime.shared.stop()
-                GoalongWebsiteAutoSender.shared.stop()
+                // A running plan pauses with its cause; a plan the user paused keeps its state.
+                let sender = GoalongWebsiteAutoSender.shared
+                if sender.enabled { sender.stop(reason: GoalongWebsiteAutoSender.exclusionsChangedReason) }
             }
             NotificationCenter.default.post(name: .goalongExclusionsDidChange, object: nil)
             return true

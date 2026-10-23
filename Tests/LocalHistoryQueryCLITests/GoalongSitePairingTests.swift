@@ -108,4 +108,12 @@ final class GoalongSitePairingTests: XCTestCase {
         let other = NSError(domain: "X", code: 1, userInfo: [NSLocalizedDescriptionKey: "Error Domain=X Code=1"])
         XCTAssertFalse(goalongUserMessage(other).contains("Domain="))
     }
+
+    func testPairingFailureMessageKeepsTheRealCause() {
+        XCTAssertTrue(PairingResponse.failureMessage(status: 0, transportError: URLError(.notConnectedToInternet)).hasPrefix("Pas de connexion"))
+        XCTAssertTrue(PairingResponse.failureMessage(status: 503, transportError: nil).contains("ne répond pas"))
+        XCTAssertTrue(PairingResponse.failureMessage(status: 429, transportError: nil).contains("ne répond pas"))
+        XCTAssertTrue(PairingResponse.failureMessage(status: 410, transportError: nil).contains("expiré"))
+        XCTAssertFalse(PairingResponse.failureMessage(status: 0, transportError: nil).contains("expiré"))
+    }
 }

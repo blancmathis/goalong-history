@@ -59,5 +59,20 @@ final class GoalongSiteSubmissionIntentTests: XCTestCase {
         XCTAssertTrue(source.contains("session.dataTask(with: requestForNewSubmission(payload: payload, endpoint: destination, token: token)).resume()"))
         XCTAssertFalse(source.contains("session.dataTask(with: request(payload:"))
     }
+    func testOnlyFailuresBeforeTheSiteAreSafeToRetryAndRefusedAccessIsTyped() {
+        for code in [NSURLErrorNotConnectedToInternet, NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost] {
+            XCTAssertEqual(GoalongSiteSubmissionError.classify(URLError(URLError.Code(rawValue: code))), .unreachable)
+        }
+        for code in [NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorCancelled, NSURLErrorSecureConnectionFailed] {
+            XCTAssertNil(GoalongSiteSubmissionError.classify(URLError(URLError.Code(rawValue: code))), "\(code) may mean the site received the import")
+        }
+        XCTAssertNil(GoalongSiteSubmissionError.classify(GoalongSiteExportError.invalid("x")))
+        for status in [401, 403] {
+            XCTAssertThrowsError(try GoalongSiteSubmission.validatedResponse(Data(), status: status)) {
+                XCTAssertEqual($0 as? GoalongSiteSubmissionError, .accessRefused)
+            }
+        }
+        XCTAssertFalse(goalongUserMessage(GoalongSiteSubmissionError.unreachable).contains("website"))
+    }
 }
 #endif

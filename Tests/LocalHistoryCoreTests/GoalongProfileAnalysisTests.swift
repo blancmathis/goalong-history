@@ -51,6 +51,18 @@ final class GoalongProfileAnalysisTests: XCTestCase {
         XCTAssertThrowsError(try A.parseResult(Data("{\"items\":[],\"items\":[]}".utf8)))
         XCTAssertEqual(try A.parseRequest(r.encoded()), r)
     }
+    func testDamagedArchiveThrowsInsteadOfCrashing() throws {
+        let (r, result) = try fixture()
+        let request = try JSONSerialization.jsonObject(with: r.encoded())
+        let response = try JSONSerialization.jsonObject(with: JSONEncoder().encode(result))
+        for text in ["{\"request\":1,\"result\":2}", "{\"request\":null,\"result\":null}", "{\"request\":\"a\",\"result\":[]}", "[1]", "3"] {
+            XCTAssertThrowsError(try A.parseArchive(Data(text.utf8)), text)
+        }
+        XCTAssertThrowsError(try A.parseArchive(JSONSerialization.data(withJSONObject: ["request": request, "result": 2])))
+        XCTAssertThrowsError(try A.parseArchive(JSONSerialization.data(withJSONObject: ["request": NSNull(), "result": response])))
+        let archive = try A.parseArchive(JSONSerialization.data(withJSONObject: ["request": request, "result": response]))
+        XCTAssertEqual(archive.request, r)
+    }
     func testConversationContextIsIndependentFromAIRubricAndLegacyArchivesStillOpen() throws {
         let e = A.Evidence(id: "old", start: "2026-09-07T08:00:00Z", end: "2026-09-07T09:00:00Z", kind: "ai", application: "Agent", text: "Décision antérieure Atlas")
         let policy = A.Policy(replacements: [.init(term: "Atlas", replacement: "Projet secret")])

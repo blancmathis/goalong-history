@@ -172,7 +172,11 @@ struct GoalongAnalyticsPage: View {
         } message: {
             Text("Choisissez le type d’analyse. Les sources et les autorisations restent à vérifier avant toute génération.")
         }
-        .onAppear { model.selectDay(navigation.day) }
+        .onAppear {
+            // The page is rebuilt on each section change: a day that turned while it was away counts too.
+            followCalendarDay()
+            model.selectDay(navigation.day)
+        }
         .task(id: loadRequest) {
             let request = loadRequest
             guard request.permitsLoading else { return }
@@ -226,7 +230,12 @@ struct GoalongAnalyticsPage: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if model.dashboardIsVisible && !previewActive { revision += 1 }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
+            followCalendarDay()
+        }
         .onReceive(refreshTimer) { _ in
+            // Also catches a missed day-change notification (sleep across midnight).
+            followCalendarDay()
             // Visible-page refresh only. Completed days reuse the existing cache.
             guard model.dashboardIsVisible, !previewActive, !analytics.busy,
                   Calendar.current.isDateInToday(navigation.day),
@@ -442,6 +451,15 @@ struct GoalongAnalyticsPage: View {
             Spacer(minLength: 0)
             Text("Mode développeur").font(.system(size: 11)).foregroundStyle(.secondary)
         }
+    }
+
+    /// A page left on today moves to the new today at midnight (same period); the day that just
+    /// ended is read once more. A past day chosen by the user stays as it is.
+    private func followCalendarDay(now: Date = Date()) {
+        let shown = navigation.day
+        guard navigation.followToday(now: now) else { return }
+        if !previewActive, navigation.day != shown { model.selectDay(navigation.day) }
+        if !previewActive { revision += 1 }
     }
 
     private func updateSelection(_ change: (inout GoalongActivityNavigation) -> Void) {

@@ -177,7 +177,11 @@ func copyBlocking(_ realPath: String, _ devPath: String) -> Never {
           let data = FileManager.default.contents(atPath: source.path),
           let document = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
           let version = document["version"] as? Int, var lists = document["lists"] as? [[String: Any]] else {
-        print("No readable real block lists: Goalong Dev blocking stays empty."); exit(0)
+        // DATA=keep leaves the dev Blocking folder in place: say so instead of claiming it is empty.
+        let kept = lstat(directory.appendingPathComponent("blocking.json").path, &info) == 0
+        print(kept ? "No readable real block lists: Goalong Dev keeps its own block lists."
+                   : "No readable real block lists: Goalong Dev blocking stays empty.")
+        exit(0)
     }
     for index in lists.indices {
         guard var program = lists[index]["program"] as? [String: Any] else { continue }

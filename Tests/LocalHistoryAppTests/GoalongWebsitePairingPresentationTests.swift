@@ -26,5 +26,37 @@ final class GoalongWebsitePairingPresentationTests: XCTestCase {
         XCTAssertFalse(connected, "Cancelling must return before exchanging a code or saving access")
         XCTAssertNil(window.attachedSheet)
     }
+    @MainActor
+    func testOnlyTheSameAccountOnTheSameSiteKeepsTheDailyPlan() {
+        XCTAssertTrue(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "acc", newOrigin: "https://a.example", newAccountID: "acc"))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "acc", newOrigin: "https://a.example", newAccountID: "other"))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "acc", newOrigin: "https://b.example", newAccountID: "acc"))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "", newOrigin: "https://a.example", newAccountID: ""))
+    }
+
+    @MainActor
+    func testConfirmationPromisesToKeepThePlanOnlyWhenItCanBeKept() {
+        typealias C = GoalongWebsitePairingCoordinator
+        let site = "https://a.example"
+        XCTAssertEqual(C.scheduleNotice(planOrigin: nil, savedOrigin: site, savedAccountID: "acc", newOrigin: site), "")
+        XCTAssertTrue(C.scheduleNotice(planOrigin: site, savedOrigin: site, savedAccountID: "acc", newOrigin: site).contains("reste programmé"))
+        // A plan made with a hand-picked token file has no recorded account: it will be deleted.
+        let noAccount = C.scheduleNotice(planOrigin: site, savedOrigin: site, savedAccountID: "", newOrigin: site)
+        XCTAssertFalse(noAccount.contains("reste programmé")); XCTAssertTrue(noAccount.contains("sera supprimé"))
+        XCTAssertFalse(C.scheduleNotice(planOrigin: "https://b.example", savedOrigin: site, savedAccountID: "acc", newOrigin: site).contains("reste programmé"))
+        XCTAssertFalse(C.scheduleNotice(planOrigin: site, savedOrigin: "", savedAccountID: "acc", newOrigin: site).contains("reste programmé"))
+    }
+
+    @MainActor
+    func testDisconnectPromisesDeletionOnlyForAFileCreatedByPairing() {
+        let directory = URL(fileURLWithPath: "/tmp/goalong-connections-\(UUID().uuidString)")
+        let managed = directory.appendingPathComponent(UUID().uuidString + ".token").path
+        XCTAssertTrue(GoalongWebsitePairingCoordinator.isManagedTokenPath(managed, directory: directory))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.isManagedTokenPath(NSHomeDirectory() + "/Downloads/goalong-token.txt", directory: directory))
+        XCTAssertFalse(GoalongWebsitePairingCoordinator.isManagedTokenPath("", directory: directory))
+        let picked = GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: NSHomeDirectory() + "/Downloads/goalong-token.txt")
+        XCTAssertFalse(picked.contains("supprimé de ce Mac"))
+        XCTAssertTrue(picked.contains("restera à sa place"))
+    }
 }
 #endif

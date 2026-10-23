@@ -30,7 +30,7 @@
         static let lead: TimeInterval = 15
 
         /// A moment just before the next local midnight. Inside the last `lead` seconds it targets the following midnight.
-        static func fireDate(after now: Date, calendar: Calendar = .current, lead: TimeInterval = lead) -> Date? {
+        static func fireDate(after now: Date, calendar: Calendar = .autoupdatingCurrent, lead: TimeInterval = lead) -> Date? {
             let components = DateComponents(hour: 0, minute: 0, second: 0)
             guard var midnight = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) else { return nil }
             if midnight.addingTimeInterval(-lead) <= now {

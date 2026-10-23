@@ -85,6 +85,36 @@ import XCTest
         }
     }
 
+    /// R5-garde-02: a planned locked block keeps the service: removed now, it would come back at the start.
+    func testAPlannedLockedBlockHidesTheRemoveButton() throws {
+        var clockNow = now
+        let (c, client, _) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked, start: 600, end: 3600)])) { clockNow }
+        XCTAssertNil(c.severeUntil, "nothing armed yet")
+        XCTAssertFalse(c.canRemoveGuard)
+        c.removeGuardService()
+        XCTAssertEqual(client.removals, 0)
+        clockNow = now.addingTimeInterval(3601); c.refresh()
+        XCTAssertTrue(c.canRemoveGuard, "after the block, the button comes back")
+    }
+
+    /// B01-R1-01: a weekly locked or password range not started yet also keeps the service.
+    func testAFutureLockedRangeHidesTheRemoveButton() throws {
+        let weekday = Calendar.current.component(.weekday, from: now) % 7 + 1 // ISO weekday, never today
+        for lock in [BlockLock.locked, .password] {
+            var program = list
+            program.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [weekday], startMinute: 540, endMinute: 720, lock: lock)])
+            let (c, client, _) = try controller(BlockingDocument(lists: [program])) { [now] in now }
+            XCTAssertNil(c.severeUntil, "\(lock): tomorrow's range arms nothing yet")
+            XCTAssertFalse(c.canRemoveGuard, "\(lock)")
+            c.removeGuardService()
+            XCTAssertEqual(client.removals, 0, "\(lock)")
+        }
+        var free = list
+        free.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [weekday], startMinute: 540, endMinute: 720, lock: .free)])
+        let (c, _, _) = try controller(BlockingDocument(lists: [free])) { [now] in now }
+        XCTAssertTrue(c.canRemoveGuard, "a free range keeps the button")
+    }
+
     func testADeletedMarkerIsRewrittenAndTheEndRemovesIt() throws {
         var clockNow = now
         let (c, client, files) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked)])) { clockNow }
@@ -357,10 +387,15 @@ import XCTest
     func testLevelLabels() {
         var state = BlockingProtectionState()
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Standard")
-        state.guardian = .failed("x")
+        XCTAssertNil(BlockingProtectionDetails.levelHelp(state))
+        state.guardian = .failed(GuardEscalation.stoppedUntilLogin)
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Indisponible")
+        XCTAssertEqual(BlockingProtectionDetails.levelHelp(state), GuardEscalation.stoppedUntilLogin, "R5-garde-01: the cause under « Niveau »")
+        state.guardian = .awaitingApproval
+        XCTAssertNil(BlockingProtectionDetails.levelHelp(state))
         state.guardian = .running; state.level = .strict
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Renforcé")
+        XCTAssertNil(BlockingProtectionDetails.levelHelp(state))
     }
 
     func testConsentSentenceIsAddedOnlyBeforeTheFirstRegistration() {

@@ -337,7 +337,9 @@ final class GuardEngineIntegrationTests: XCTestCase {
         quitForSessionEnd(second)
         XCTAssertNotNil(waitUntil(2) { app.launchCount == 2 }, "no new 5 s session-end wait")
         guard app.launchCount == 2 else { return }
-        XCTAssertLessThan(app.launches[1].timeIntervalSince(secondQuit), 1.5)
+        let delay = app.launches[1].timeIntervalSince(secondQuit)
+        XCTAssertGreaterThanOrEqual(delay, 0.15, "the refused session end keeps its short delay (0.2 s), not at once")
+        XCTAssertLessThan(delay, 1.5)
         XCTAssertNil(code)
     }
 
