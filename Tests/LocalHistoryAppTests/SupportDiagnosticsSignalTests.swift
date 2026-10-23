@@ -119,6 +119,11 @@ final class SupportDiagnosticsSignalTests: XCTestCase {
         XCTAssertTrue(empty.first { $0.code == .diagnosticsDisabled }?.detail.contains("état actuel") == true)
     }
 
+    @MainActor func testDisabledEmailButtonExplainsWhy() {
+        let view = SupportRequestView(controller: SupportRequestController())
+        XCTAssertEqual(view.emailHint, "Disponible quand le rapport est prêt.")
+    }
+
     @MainActor func testMarkingAnIssueWithTheJournalOffRecordsNothingAndSaysSo() throws {
         let (journal, _) = try journal(clock: Clock())
         journal.start()

@@ -24,7 +24,7 @@ import SwiftUI
     var body: some View {
         GoalongSettingsGroup(title: "Aide et diagnostic") {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Un souci ? Envoyez un rapport en un clic.").font(.system(size: 13, weight: .semibold))
+                Text("Un problème ? Envoyez un rapport en un clic.").font(.system(size: 13, weight: .semibold))
                 Text("Goalong résume ce qu’il a détecté et prépare un fichier technique que vous relisez avant de l’envoyer. Il ne contient ni votre historique, ni les sites visités, ni aucun texte.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -33,7 +33,7 @@ import SwiftUI
             Divider()
             Toggle("Conserver les journaux techniques sur ce Mac", isOn: $enabled)
                 .toggleStyle(.goalongSwitch).onChange(of: enabled) { SupportDiagnostics.shared.setEnabled($0) }
-            Text("Recommandé : en le désactivant, plus aucun nouvel événement n’est conservé ; les journaux déjà enregistrés restent jusqu’à leur expiration ou jusqu’à « Effacer les journaux ». Conservation locale de 7 jours au plus, 5,3 Mio maximum, aucun envoi automatique.")
+            Text("Recommandé : en le désactivant, plus aucun nouvel événement n’est conservé ; les journaux déjà enregistrés restent jusqu’à leur expiration ou jusqu’à « Effacer les journaux ». Conservation locale de 7 jours au plus, 5,3 Mo maximum, aucun envoi automatique.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {

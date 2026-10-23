@@ -36,6 +36,12 @@
                             .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 32)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
+                    .overlay(alignment: .bottom) {
+                        // A soft fade tells the reader that the list goes on under the footer.
+                        LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: 28).allowsHitTesting(false).accessibilityHidden(true)
+                    }
                     Rectangle().fill(LHTheme.separator).frame(height: 1)
                     footer
                 }

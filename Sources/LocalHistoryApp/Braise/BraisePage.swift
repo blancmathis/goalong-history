@@ -33,7 +33,7 @@ import SwiftUI
                     Text("Le filtre rouge, à vos horaires.").foregroundStyle(LHTheme.secondaryText)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(controller.stateLabel).font(.system(size: compact ? 22 : 28, weight: .medium))
+                    Text(controller.stateLabel).font(.system(size: compact ? 20 : 22, weight: .semibold))
                     Text(controller.nextEvent).foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 8) {
                         Button("Rétablir les couleurs") { controller.emergencyOff() }.buttonStyle(LHSecondaryButtonStyle())
@@ -41,7 +41,7 @@ import SwiftUI
                         if controller.isPaused {
                             Button("Reprendre") { controller.resume() }.buttonStyle(LHQuietButtonStyle())
                         } else {
-                            Button("Pause 15 min") { controller.pause() }.buttonStyle(LHQuietButtonStyle()).disabled(!controller.active)
+                            Button("Pause 15 min") { controller.pause() }.buttonStyle(LHSecondaryButtonStyle()).disabled(!controller.active)
                         }
                     }
                 }
@@ -64,7 +64,7 @@ import SwiftUI
                             HStack(spacing: 12) {
                                 Button { editingRule = rule } label: {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(rule.hours + (rule.crossesMidnight ? " · lendemain" : "")).monospacedDigit()
+                                        Text(rule.hours + (rule.crossesMidnight ? " · le lendemain" : "")).monospacedDigit()
                                         Text(rule.dayLabel).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                 }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Modifier l’horaire \(rule.hours), \(rule.dayLabel)")
@@ -128,7 +128,7 @@ import SwiftUI
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text(existed ? "Modifier l’horaire" : "Ajouter un horaire").font(.system(size: 22, weight: .semibold))
-            Text("Jours de début").foregroundStyle(LHTheme.secondaryText)
+            Text("Jours de début de la plage").foregroundStyle(LHTheme.secondaryText)
             HStack(spacing: 10) {
                 ForEach(days, id: \.0) { day in
                     Toggle(day.1, isOn: Binding(get: { draft.weekdays.contains(day.0) }, set: { on in
@@ -148,7 +148,7 @@ import SwiftUI
             HStack {
                 if existed { Button("Supprimer", role: .destructive) { controller.deleteRule(draft.id); dismiss() }.buttonStyle(LHQuietButtonStyle()) }
                 Spacer()
-                Button("Annuler") { dismiss() }.buttonStyle(LHQuietButtonStyle()).keyboardShortcut(.cancelAction)
+                Button("Annuler") { dismiss() }.buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
                 Button("Enregistrer") {
                     do { try controller.saveRule(draft); dismiss() } catch { self.error = "Impossible d’ajouter cet horaire (32 plages au maximum)." }
                 }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction).disabled(!draft.isValid)
@@ -157,10 +157,14 @@ import SwiftUI
             .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
     }
     private func time(_ title: String, minute: Binding<Int>) -> some View {
-        DatePicker(title, selection: Binding(get: {
+        HStack(spacing: 10) {
+            Text(title)
+            DatePicker(title, selection: Binding(get: {
             Calendar.current.date(bySettingHour: minute.wrappedValue / 60, minute: minute.wrappedValue % 60, second: 0, of: Date()) ?? Date()
         }, set: { date in minute.wrappedValue = Calendar.current.component(.hour, from: date) * 60 + Calendar.current.component(.minute, from: date) }), displayedComponents: .hourAndMinute)
-            .environment(\.locale, Locale(identifier: "fr_FR"))
+                .labelsHidden().frame(minWidth: 96)
+                .environment(\.locale, Locale(identifier: "fr_FR"))
+        }
     }
 }
 #endif

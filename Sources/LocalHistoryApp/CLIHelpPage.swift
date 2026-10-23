@@ -224,7 +224,7 @@
         private var readinessTitle: String {
             switch installationReport.state {
             case .ready: return "Vérifiée pour le Terminal"
-            case .missing: return "Le lien de la commande est absent"
+            case .missing: return "Réinstallez Goalong"
             case .conflict: return "Le lien de la commande n’est pas fiable"
             }
         }

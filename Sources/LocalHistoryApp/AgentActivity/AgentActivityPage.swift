@@ -653,12 +653,14 @@
                         }
                         .buttonStyle(LHSecondaryButtonStyle())
                         .disabled(!consents.isEnabled(.aiConversations))
-                        Button {
-                            agents.chooseFolder()
-                        } label: {
-                            Label("Ajouter un dossier", systemImage: "plus")
+                        // With no folder yet, the empty state below carries the one primary action.
+                        if agents.userWatchedFolders.isEmpty {
+                            Button { agents.chooseFolder() } label: { Label("Ajouter un dossier", systemImage: "plus") }
+                                .buttonStyle(LHSecondaryButtonStyle())
+                        } else {
+                            Button { agents.chooseFolder() } label: { Label("Ajouter un dossier", systemImage: "plus") }
+                                .buttonStyle(LHPrimaryButtonStyle())
                         }
-                        .buttonStyle(LHPrimaryButtonStyle())
                     }
 
                     if agents.userWatchedFolders.isEmpty {

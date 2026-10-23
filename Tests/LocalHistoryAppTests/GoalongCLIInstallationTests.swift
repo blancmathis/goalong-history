@@ -34,6 +34,9 @@
 
             XCTAssertEqual(report.state, .missing)
             XCTAssertNil(report.resolvedTargetPath)
+            // The page already says « Commande absente » and the banner title says what to do:
+            // the detail must not repeat that the link is missing.
+            XCTAssertFalse(report.detail.contains("absent"))
         }
 
         func testUnrelatedExecutableAndRegularFileAreConflicts() throws {
