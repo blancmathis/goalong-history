@@ -24,6 +24,8 @@ final class GallerySmokeTests: XCTestCase {
             try renderProbes()
         }
         XCTAssertFalse(NSApp.windows.contains { $0.isVisible }, "a window became visible")
+        // In the log: the review's budget proof at each version (C3-outil-02).
+        print(String(format: "gallery smoke: key entries %.2f s, with probes %.2f s", elapsed, Date().timeIntervalSince(started)))
         XCTAssertLessThan(elapsed, 5, "smoke budget is 5 s")
     }
 
