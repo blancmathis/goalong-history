@@ -296,6 +296,10 @@ import SwiftUI
                                   message: "Aucune activité attribuable n’a été observée. Choisissez un autre jour avec le sélecteur ci-dessus.")
             }
             ForEach(groups) { group in groupView(group) }
+            if let notice = work.storageNotice {
+                Label(notice, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let error = work.lastError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
             }

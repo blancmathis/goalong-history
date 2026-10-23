@@ -45,6 +45,7 @@ import SwiftUI
                         }
                     }
                 }
+                if let notice = controller.recoveryNotice { GoalongNote(notice, tone: .warning).accessibilityIdentifier("braise-recovery") }
                 if let error = controller.errorMessage { GoalongNote(error, tone: .warning).accessibilityIdentifier("braise-error") }
                 LHCard {
                     VStack(alignment: .leading, spacing: 18) {

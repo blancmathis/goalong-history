@@ -202,6 +202,36 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertTrue(reloaded.examples.isEmpty)
     }
 
+    @MainActor func testUnreadableWorkFileIsKeptAsideNeverOverwritten() throws {
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("work-damaged-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path); try? fm.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("work-classification.json")
+        let label = GoalongWorkContext.Label(application: "Xcode", bundleIdentifier: "fixture.Xcode", host: nil, title: "Goalong")
+        for broken in ["{\"version\":2,\"entries\":{}}", "{tronqué"] {
+            try Data(broken.utf8).write(to: file)
+            let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+            XCTAssertNotNil(store.storageNotice)
+            let kept = try fm.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix("work-classification.damaged-") }
+            XCTAssertEqual(kept.count, 1)
+            XCTAssertEqual(try String(contentsOf: folder.appendingPathComponent(kept[0]), encoding: .utf8), broken)
+            store.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+            XCTAssertNil(store.lastError)
+            XCTAssertNil(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).storageNotice)
+            for name in try fm.contentsOfDirectory(atPath: folder.path) { try fm.removeItem(at: folder.appendingPathComponent(name)) }
+        }
+
+        // The file cannot be moved aside: nothing is written over it.
+        try Data("{tronqué".utf8).write(to: file)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let blocked = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        XCTAssertNotNil(blocked.storageNotice)
+        blocked.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+        XCTAssertNotNil(blocked.lastError)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "{tronqué")
+    }
+
     @MainActor func testFullHistoryClearErasesWorkCorrectionsAndTheirTitles() throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: file) }

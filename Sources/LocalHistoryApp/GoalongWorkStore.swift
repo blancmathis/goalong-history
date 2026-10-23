@@ -58,6 +58,9 @@ extension Notification.Name {
 
     @Published private(set) var verdicts = GoalongWorkVerdicts()
     @Published private(set) var lastError: String?
+    /// Set once when the saved file could not be read: it was kept aside (or left in place,
+    /// and nothing is written over it) instead of being silently replaced.
+    @Published private(set) var storageNotice: String?
     @Published var automatic: Bool {
         didSet { guard automatic != document.automatic else { return }; document.automatic = automatic; persist() }
     }
@@ -65,12 +68,26 @@ extension Notification.Name {
     private let fileURL: URL
     private let definitionSource: @MainActor () -> GoalongWorkDefinition
     private var observer: NSObjectProtocol?
+    /// True when an unreadable file could not be moved aside: writing would destroy it.
+    private var writesBlocked = false
 
     init(fileURL: URL = AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongWorkStore.fileName),
          definition: @escaping @MainActor () -> GoalongWorkDefinition = { GoalongWorkDefinition(JevWorkContextStore.shared.context) }) {
         self.fileURL = fileURL
         self.definitionSource = definition
-        let loaded = Self.load(from: fileURL)
+        let loaded: Document
+        switch Self.load(from: fileURL) {
+        case .missing: loaded = Document()
+        case .loaded(let value): loaded = value
+        case .unreadable:
+            loaded = Document()
+            if let name = try? Self.moveDamagedFileAside(fileURL) {
+                storageNotice = "Le classement enregistré était illisible. Il a été mis de côté (\(name)) et vos corrections Travail / Hors travail repartent de zéro."
+            } else {
+                writesBlocked = true
+                storageNotice = "Le classement enregistré est illisible. Rien ne sera enregistré par-dessus tant qu’il n’est pas réparé ou supprimé."
+            }
+        }
         document = loaded
         automatic = loaded.automatic
         reconcileDefinition()
@@ -206,6 +223,10 @@ extension Notification.Name {
     }
 
     private func persist() {
+        guard !writesBlocked else {
+            lastError = "Le classement n’a pas été enregistré : le fichier existant est illisible."
+            return
+        }
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
@@ -218,10 +239,33 @@ extension Notification.Name {
         }
     }
 
-    private static func load(from url: URL) -> Document {
+    enum LoadOutcome<Value> { case missing, loaded(Value), unreadable }
+
+    /// A missing file is a fresh start. A file that exists but cannot be read, is too large,
+    /// or has another version is unreadable: it must not be overwritten silently.
+    private static func load(from url: URL) -> LoadOutcome<Document> {
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
         guard let data = try? SupportDiagnostics.readPrivateFile(url, maximum: 16 * 1_024 * 1_024),
-              let value = try? JSONDecoder().decode(Document.self, from: data), value.version == 1 else { return Document() }
-        return value
+              let value = try? JSONDecoder().decode(Document.self, from: data), value.version == 1 else { return .unreadable }
+        return .loaded(value)
+    }
+
+    /// Keeps the user's unreadable file next to the original, under a dated name.
+    nonisolated static func moveDamagedFileAside(_ url: URL) throws -> String {
+        let fm = FileManager.default
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let folder = url.deletingLastPathComponent()
+        let base = url.deletingPathExtension().lastPathComponent, ext = url.pathExtension
+        var name = "\(base).damaged-\(stamp).\(ext)"
+        var index = 1
+        while fm.fileExists(atPath: folder.appendingPathComponent(name).path) {
+            name = "\(base).damaged-\(stamp)-\(index).\(ext)"
+            index += 1
+        }
+        let target = folder.appendingPathComponent(name, isDirectory: false)
+        try fm.moveItem(at: url, to: target)
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+        return name
     }
 }
 
