@@ -141,6 +141,39 @@ extension GuardDecisionTests {
         XCTAssertEqual(GuardDecision.sessionEndCooldown, 600)
     }
 
+    /// K3-safe-01: a real logout after a cancelled one (cooldown running) is never met by a relaunch at
+    /// once: every evaluation before the short delay waits, whatever the crash budget says.
+    func testARefusedSessionEndNeverRelaunchesBeforeTheShortDelay() {
+        let release = GuardRelease(pid: 42, reason: GuardRelease.sessionEnd, writtenAt: 999_999, bootTime: 900_000)
+        let death = GuardInput.Death(pid: 42, at: 1_000_000)
+        for tenth in 0..<Int(GuardDecision.refusedSessionEndDelay * 10) {
+            let since = TimeInterval(tenth) / 10
+            for budget in [0.0, 1, 30] {
+                let action = GuardDecision.decide(input {
+                    $0.death = death; $0.release = release; $0.sessionEndAllowed = false
+                    $0.sinceDeath = since; $0.budgetDelay = budget
+                })
+                guard case .relaunch(let after) = action else { return XCTFail("\(action) at \(since) s") }
+                XCTAssertGreaterThan(after, 0, "no relaunch at once \(since) s after a session_end death")
+                XCTAssertGreaterThanOrEqual(since + after, GuardDecision.refusedSessionEndDelay - 1e-9)
+            }
+        }
+    }
+
+    /// K3-kill-01: the cooldown counts from the last honoured session_end, restored or not; the honoured
+    /// death itself keeps its wait.
+    func testTheSessionEndCooldownAllowsOneWaitPerTenMinutes() {
+        XCTAssertTrue(GuardDecision.sessionEndAllowed(lastHonoured: nil, deathPID: 42, deathContinuous: 100))
+        XCTAssertTrue(GuardDecision.sessionEndAllowed(lastHonoured: (42, 100), deathPID: 42, deathContinuous: 100))
+        XCTAssertFalse(GuardDecision.sessionEndAllowed(lastHonoured: (42, 100), deathPID: 43, deathContinuous: 160))
+        XCTAssertFalse(GuardDecision.sessionEndAllowed(lastHonoured: (42, 100), deathPID: 43, deathContinuous: 699))
+        XCTAssertTrue(GuardDecision.sessionEndAllowed(lastHonoured: (42, 100), deathPID: 43, deathContinuous: 700))
+        // A new guard (kill -9 of the old one) starts from the state file: the same answer.
+        let state = GuardState(build: "b", armed: true, bootTime: 42, bootSession: "A", sessionEndPID: 42, sessionEndContinuous: 100)
+        let restored = GuardDecision.restoredSessionEnd(from: state, bootTime: 42, bootSession: "A", continuous: 160)
+        XCTAssertFalse(GuardDecision.sessionEndAllowed(lastHonoured: restored, deathPID: 43, deathContinuous: 160))
+    }
+
     /// K3-kill-01: the session_end cooldown survives a guard restart of the same boot, and only while it runs.
     func testTheSessionEndCooldownIsRestoredFromTheGuardState() {
         let state = GuardState(build: "b", armed: true, bootTime: 42, bootSession: "A", sessionEndPID: 7, sessionEndContinuous: 1000)

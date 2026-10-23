@@ -137,9 +137,8 @@ public final class GuardEngine {
         leaseTimes.removeAll { continuous - $0 >= 3600 }
         input.leasesInLastHour = leaseTimes.count - (leaseHonoured ? 1 : 0)
         input.sessionEndWaitOver = death != nil && continuous - deathContinuous >= environment.sessionEndWait
-        input.sessionEndAllowed = sessionEndHonoured.map { honoured in
-            honoured.pid == death?.pid || deathContinuous - honoured.at >= GuardDecision.sessionEndCooldown
-        } ?? true
+        input.sessionEndAllowed = GuardDecision.sessionEndAllowed(lastHonoured: sessionEndHonoured, deathPID: death?.pid,
+                                                                  deathContinuous: deathContinuous)
         input.sinceDeath = death == nil ? 0 : continuous - deathContinuous
         input.refusedSessionEndDelay = environment.refusedSessionEndDelay
         input.budgetDelay = budget.delay(at: continuous)

@@ -142,6 +142,14 @@ public enum GuardDecision {
         return lease
     }
 
+    /// A death's `session_end` may open the 30 s wait when none was honoured in the cooldown before it,
+    /// or when it is the very death already honoured (re-evaluations during its own wait).
+    public static func sessionEndAllowed(lastHonoured: (pid: Int32, at: TimeInterval)?, deathPID: Int32?,
+                                         deathContinuous: TimeInterval) -> Bool {
+        guard let lastHonoured else { return true }
+        return lastHonoured.pid == deathPID || deathContinuous - lastHonoured.at >= sessionEndCooldown
+    }
+
     /// The last honoured `session_end` kept in `guard-state.json`, when it is of this boot and its
     /// cooldown still runs.
     public static func restoredSessionEnd(from state: GuardState?, bootTime: Double, bootSession: String,
