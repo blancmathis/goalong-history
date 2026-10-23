@@ -35,16 +35,22 @@ remove_goalong_cli_link "$BIN/goalong"
 remove_goalong_cli_link "$WORK/missing" || fail "A missing link must not fail."
 
 # 2. Bounded wait: a polite process exits on SIGTERM, a stubborn one is forced after the wait.
-# Names stay under 16 characters (MAXCOMLEN): pgrep -x on macOS 15 only sees the truncated name.
+# The test processes are built here: a re-signed copy of a system binary (arm64e) does not run on
+# macOS 15. Names stay under 16 characters (MAXCOMLEN), the part of the name every pgrep -x sees.
 POLITE_NAME="GLPolite$$"
 STUBBORN_NAME="GLStubborn$$"
-cp /bin/sleep "$WORK/$POLITE_NAME"
-cp /bin/bash "$WORK/$STUBBORN_NAME"
-# Copies of system binaries need a fresh ad-hoc signature to run on Apple silicon.
-/usr/bin/codesign --force --sign - "$WORK/$POLITE_NAME" "$WORK/$STUBBORN_NAME" >/dev/null 2>&1 \
-  || fail "Could not sign the test processes."
-"$WORK/$POLITE_NAME" 60 & disown
-"$WORK/$STUBBORN_NAME" -c 'trap "" TERM; while :; do /bin/sleep 1; done' & disown
+printf '%s\n' '#include <signal.h>' '#include <string.h>' '#include <unistd.h>' \
+  'int main(int argc, char **argv) {' \
+  '  if (argc > 1 && strcmp(argv[1], "probe") == 0) return 0;' \
+  '  if (argc > 1 && strcmp(argv[1], "stubborn") == 0) signal(SIGTERM, SIG_IGN);' \
+  '  for (int i = 0; i < 60; i++) sleep(1);' \
+  '  return 0;' \
+  '}' > "$WORK/quit-test.c"
+/usr/bin/cc -o "$WORK/$POLITE_NAME" "$WORK/quit-test.c" || fail "Could not build the test processes."
+cp "$WORK/$POLITE_NAME" "$WORK/$STUBBORN_NAME"
+"$WORK/$POLITE_NAME" probe || fail "The test process cannot run (status $?)."
+"$WORK/$POLITE_NAME" & disown
+"$WORK/$STUBBORN_NAME" stubborn & disown
 started() { # NAME: waits up to 10 s, a busy CI runner can be slow to start a new binary
   local tries=0
   until /usr/bin/pgrep -x "$1" >/dev/null; do (( ++tries <= 100 )) || return 1; /bin/sleep 0.1; done
