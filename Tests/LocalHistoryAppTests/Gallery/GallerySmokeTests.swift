@@ -171,6 +171,18 @@ final class GallerySmokeTests: XCTestCase {
             AnyView(ScrollView { Text("Page courte").padding() })
         })
         XCTAssertEqual(page.pointSize.height, GalleryRenderer.fullStartHeight, "short --full page height")
+        // Activité follows « aujourd’hui » at midnight. The frozen day is in the past, so a real `Date()` on that path
+        // moves the page to the Mac's day, empty (R9, 2026-10-24); the baseline, rendered on the frozen day, hid it.
+        let activity = try XCTUnwrap(GalleryCatalog.all.first { $0.id == "activite/jour-realiste" })
+        let ctx = GalleryContext()
+        defer { ctx.finish() }
+        GalleryGuardReport.begin()
+        defer { _ = GalleryGuardReport.take() }
+        let image = try GalleryRenderer.render(activity, theme: .light, size: activity.sizes[0], ctx: ctx)
+        XCTAssertEqual(image.status, .ok, "\(activity.id): \(image.detail ?? "")")
+        let model = try XCTUnwrap(ctx.retained.lazy.compactMap { $0 as? DashboardViewModel }.first)
+        XCTAssertTrue(GalleryClock.calendar.isDate(model.selectedDay, inSameDayAs: GalleryClock.now),
+                      "Activité left the gallery day for \(model.selectedDay): a view read the real clock")
     }
 
     /// Every pixel of the first and last rows and columns is opaque.

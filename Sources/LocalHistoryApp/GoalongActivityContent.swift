@@ -339,7 +339,7 @@ struct GoalongAnalyticsContent: View {
 
     private var classifyLabel: String {
         guard !isDay else { return "Classer maintenant" }
-        let target = GoalongWorkAgent.manualTarget(days: current.days, fallback: current.days.last?.date ?? Date())
+        let target = GoalongWorkAgent.manualTarget(days: current.days, fallback: current.days.last?.date ?? GoalongToday.now)
         if GoalongToday.isToday(target) { return "Classer aujourd’hui" }
         return "Classer le \(GoalongActivitySummary.weekdayDate(target))"
     }

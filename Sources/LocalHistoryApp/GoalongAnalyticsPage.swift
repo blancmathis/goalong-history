@@ -477,7 +477,7 @@ struct GoalongAnalyticsPage: View {
 
     /// A page left on today moves to the new today at midnight (same period); the day that just
     /// ended is read once more. A past day chosen by the user stays as it is.
-    private func followCalendarDay(now: Date = Date()) {
+    private func followCalendarDay(now: Date = GoalongToday.now) {
         let shown = navigation.day
         guard navigation.followToday(now: now) else { return }
         if !previewActive, navigation.day != shown { model.selectDay(navigation.day) }
