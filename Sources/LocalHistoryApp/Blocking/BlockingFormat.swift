@@ -47,31 +47,47 @@ enum BlockingFormat {
         return rest == 0 ? "\(hours) h" : String(format: "%d h %02d", hours, rest)
     }
 
-    /// « aujourd’hui à 14:00 », « demain à 9:00 », « lundi à 9:00 », « 31 oct. à 9:00 ».
+    /// « aujourd’hui à 14:00 », « demain à 9:00 », « lundi à 9:00 », « le 31 oct. à 9:00 ».
     static func moment(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
         "\(dayWord(date, now: now, calendar: calendar)) à \(time(date))"
     }
 
     /// The end of a block, with its day when it is not today: « 12:00 », « minuit », « demain à 2:00 »,
-    /// « samedi à 12:00 », « vendredi à minuit ». A 0:00 end belongs to the day before.
+    /// « samedi à 12:00 », « vendredi à minuit », « le 31 oct. à 12:00 ». A 0:00 end belongs to the day before.
     static func deadline(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let midnight = calendar.startOfDay(for: date) == date
-        let day = midnight ? date.addingTimeInterval(-1) : date
-        let value = midnight ? "minuit" : time(date)
+        let (day, value) = endParts(date, calendar: calendar)
         if calendar.isDate(day, inSameDayAs: now) { return value }
         return "\(dayWord(day, now: now, calendar: calendar)) à \(value)"
     }
 
-    /// A block that starts later: « samedi de 10:00 à 12:00 », « de demain à 22:00 à samedi à 2:00 ».
-    static func period(from start: Date, to end: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let midnight = calendar.startOfDay(for: end) == end
-        if calendar.isDate(start, inSameDayAs: midnight ? end.addingTimeInterval(-1) : end) {
-            return "\(dayWord(start, now: now, calendar: calendar)) de \(time(start)) à \(endTime(end))"
-        }
-        return "de \(moment(start, now: now, calendar: calendar)) à \(deadline(end, now: now, calendar: calendar))"
+    /// « jusqu’à 12:00 », « jusqu’à demain à 2:00 », « jusqu’au 31 oct. à 12:00 ».
+    static func until(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        untilPhrase(deadline(date, now: now, calendar: calendar))
     }
 
-    /// « aujourd’hui », « demain », « lundi » within a week, else « 31 oct. ».
+    /// Puts « jusqu’à » before a moment, contracted to « jusqu’au » before « le 31 oct. ».
+    static func untilPhrase(_ moment: String) -> String {
+        moment.hasPrefix("le ") ? "jusqu’au \(moment.dropFirst(3))" : "jusqu’à \(moment)"
+    }
+
+    /// A block that starts later: « samedi de 10:00 à 12:00 », « le 31 oct. de 10:00 à 12:00 »,
+    /// « d’aujourd’hui 22:00 à demain 2:00 », « du 31 oct. 22:00 au 1er nov. 2:00 ».
+    static func period(from start: Date, to end: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let (endDay, endValue) = endParts(end, calendar: calendar)
+        let first = dayWord(start, now: now, calendar: calendar)
+        if calendar.isDate(start, inSameDayAs: endDay) { return "\(first) de \(time(start)) à \(endValue)" }
+        let last = dayWord(endDay, now: now, calendar: calendar)
+        let from = first == "aujourd’hui" ? "d’aujourd’hui" : (first.hasPrefix("le ") ? "du \(first.dropFirst(3))" : "de \(first)")
+        let to = last.hasPrefix("le ") ? "au \(last.dropFirst(3))" : "à \(last)"
+        return "\(from) \(time(start)) \(to) \(endValue)"
+    }
+
+    /// The day an end belongs to and its time: 0:00 reads « minuit » of the day before.
+    private static func endParts(_ date: Date, calendar: Calendar) -> (Date, String) {
+        calendar.startOfDay(for: date) == date ? (date.addingTimeInterval(-1), "minuit") : (date, time(date))
+    }
+
+    /// « aujourd’hui », « demain », « lundi » within a week, else « le 31 oct. », « le 1er nov. ».
     private static func dayWord(_ date: Date, now: Date, calendar: Calendar) -> String {
         if calendar.isDate(date, inSameDayAs: now) { return "aujourd’hui" }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
@@ -81,8 +97,13 @@ enum BlockingFormat {
         formatter.locale = locale
         formatter.timeZone = calendar.timeZone
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
-        formatter.dateFormat = days < 7 ? "EEEE" : "d MMM"
-        return formatter.string(from: date)
+        if days < 7 {
+            formatter.dateFormat = "EEEE"
+            return formatter.string(from: date)
+        }
+        formatter.dateFormat = "MMM"
+        let day = calendar.component(.day, from: date)
+        return "le \(day == 1 ? "1er" : String(day)) \(formatter.string(from: date))"
     }
 
     /// The end of a week range: 1 440 reads « 24:00 », as in the range's tooltip.

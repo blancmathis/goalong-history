@@ -444,15 +444,16 @@ struct BlockingMeter: View {
         return BlockingNowPlan(later: scheduling, startAt: startAt, until: until, now: date)
     }
     private var begin: Date { plan(at: now).start }
+    /// A « Plus tard » start time already past starts now: the button must say so.
+    private var startsLater: Bool { plan(at: now).startsLater }
     private var end: Date { plan(at: now).end }
 
     /// The end the engine will store: the alert must promise this one.
     private var freezeEnd: Date { BlockingWallClock.freezeEnd(end, now: now) }
 
     private var actionTitle: String {
-        if wholeMac { return "Geler jusqu’à \(BlockingFormat.deadline(freezeEnd, now: now))…" }
-        if scheduling { return "Programmer \(BlockingFormat.moment(begin, now: now))" }
-        return "Bloquer jusqu’à \(BlockingFormat.deadline(end, now: now))"
+        if wholeMac { return "Geler \(BlockingFormat.until(freezeEnd, now: now))…" }
+        return plan(at: now).actionTitle()
     }
 
     var body: some View {
@@ -535,7 +536,7 @@ struct BlockingMeter: View {
                         Button {
                             if wholeMac { confirmingFreeze = true } else if lock.protectsLists { confirmingLock = true } else { start() }
                         } label: {
-                            Label(actionTitle, systemImage: wholeMac ? "snowflake" : (scheduling ? "calendar" : lock.symbol))
+                            Label(actionTitle, systemImage: wholeMac ? "snowflake" : (startsLater ? "calendar" : lock.symbol))
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
                         .disabled(wholeMac ? controller.freeze != nil
@@ -551,7 +552,7 @@ struct BlockingMeter: View {
             } message: {
                 Text(plan(at: now).lockMessage(lock))
             }
-            .alert("Geler le Mac jusqu’à \(BlockingFormat.deadline(freezeEnd, now: now)) ?", isPresented: $confirmingFreeze) {
+            .alert("Geler le Mac \(BlockingFormat.until(freezeEnd, now: now)) ?", isPresented: $confirmingFreeze) {
                 Button("Annuler", role: .cancel) {}
                 Button("Geler") {
                     let date = Date()
@@ -560,7 +561,7 @@ struct BlockingMeter: View {
                     wholeMac = false
                 }
             } message: {
-                Text("Jusqu’à \(BlockingFormat.deadline(freezeEnd, now: now)), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
+                Text("J\(BlockingFormat.until(freezeEnd, now: now).dropFirst()), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
             }
         }
     }
@@ -574,6 +575,7 @@ struct BlockingMeter: View {
             if controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) != nil { later = false }
         } else {
             controller.start(listIDs: ids, until: plan.end, lock: lock)
+            later = false
         }
     }
 
@@ -608,17 +610,24 @@ struct BlockingNowPlan: Equatable {
         end = BlockingWallClock.next(hour: parts.hour ?? 0, minute: parts.minute ?? 0, after: start, calendar: calendar)
     }
 
+    /// « Programmer » only while the start is still ahead: a start time already past starts now.
+    func actionTitle(calendar: Calendar = .current) -> String {
+        startsLater ? "Programmer \(BlockingFormat.moment(start, now: now, calendar: calendar))"
+                    : "Bloquer \(BlockingFormat.until(end, now: now, calendar: calendar))"
+    }
+
     /// The lock alert says the day: « Verrouiller jusqu’à demain à 2:00 ? », « Verrouiller samedi de 10:00 à 12:00 ? ».
     func lockTitle(_ lock: BlockLock, calendar: Calendar = .current) -> String {
         let when = startsLater ? BlockingFormat.period(from: start, to: end, now: now, calendar: calendar)
-                               : "jusqu’à \(BlockingFormat.deadline(end, now: now, calendar: calendar))"
+                               : BlockingFormat.until(end, now: now, calendar: calendar)
         return (lock == .password ? "Protéger par mot de passe " : "Verrouiller ") + when + " ?"
     }
 
     func lockMessage(_ lock: BlockLock, calendar: Calendar = .current) -> String {
         let deadline = BlockingFormat.deadline(end, now: now, calendar: calendar)
+        let until = BlockingFormat.untilPhrase(deadline)
         return lock == .password
-            ? "Sans le mot de passe, ce blocage va jusqu’à \(deadline). Ses listes peuvent seulement devenir plus strictes, et quitter Goalong demande le mot de passe."
+            ? "Sans le mot de passe, ce blocage va \(until). Ses listes peuvent seulement devenir plus strictes, et quitter Goalong demande le mot de passe."
             : "Personne ne pourra arrêter ce blocage avant \(deadline), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas."
     }
 }

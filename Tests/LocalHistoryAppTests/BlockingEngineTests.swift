@@ -991,7 +991,41 @@ final class BlockingEngineTests: XCTestCase {
         let overnight = BlockingNowPlan(later: false, startAt: now, minutes: 20 * 60, now: now)
         XCTAssertEqual(overnight.lockTitle(.password, calendar: calendar), "Protéger par mot de passe jusqu’à demain à \(t(date(6, 6))) ?")
         XCTAssertEqual(BlockingFormat.period(from: date(5, 22), to: date(6, 2), now: now, calendar: calendar),
-                       "de aujourd’hui à \(t(date(5, 22))) à demain à \(t(date(6, 2)))")
+                       "d’aujourd’hui \(t(date(5, 22))) à demain \(t(date(6, 2)))")
+        XCTAssertEqual(BlockingFormat.period(from: date(6, 22), to: date(8, 0), now: now, calendar: calendar),
+                       "de demain \(t(date(6, 22))) à mercredi minuit")
+    }
+
+    /// B06-R1-01: a date beyond a week takes its article: « le », « jusqu’au », « avant le », « du … au ».
+    func testFarDatesTakeTheArticle() throws {
+        let now = date(5, 10) // Monday
+        func t(_ d: Date) -> String { BlockingFormat.time(d) }
+        let far = date(19, 12)
+        let (day, month) = ("19", "oct.")
+        let first = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: 9)))
+        XCTAssertEqual(BlockingFormat.moment(first, now: now, calendar: calendar), "le 1er nov. à \(t(first))")
+        XCTAssertEqual(BlockingFormat.moment(far, now: now, calendar: calendar), "le \(day) \(month) à \(t(far))")
+        XCTAssertEqual(BlockingFormat.until(far, now: now, calendar: calendar), "jusqu’au \(day) \(month) à \(t(far))")
+        XCTAssertEqual(BlockingFormat.until(date(6, 2), now: now, calendar: calendar), "jusqu’à demain à \(t(date(6, 2)))")
+        let later = BlockingNowPlan(later: true, startAt: date(19, 10), minutes: 120, now: now)
+        XCTAssertEqual(later.lockTitle(.locked, calendar: calendar), "Verrouiller le \(day) \(month) de \(t(date(19, 10))) à \(t(far)) ?")
+        XCTAssertTrue(later.lockMessage(.locked, calendar: calendar).contains("avant le \(day) \(month) à \(t(far))"))
+        let long = BlockingNowPlan(later: false, startAt: now, minutes: 14 * 1_440 + 120, now: now)
+        XCTAssertTrue(long.lockTitle(.password, calendar: calendar).hasPrefix("Protéger par mot de passe jusqu’au "))
+        XCTAssertTrue(long.lockMessage(.password, calendar: calendar).contains("va jusqu’au "))
+        let overnight = BlockingNowPlan(later: true, startAt: date(19, 22), minutes: 240, now: now)
+        XCTAssertTrue(overnight.lockTitle(.locked, calendar: calendar).hasPrefix("Verrouiller du \(day) \(month) \(t(date(19, 22))) au "))
+        XCTAssertFalse(overnight.lockTitle(.locked, calendar: calendar).contains(" à "))
+    }
+
+    /// B06-R1-02: once the « Plus tard » time has passed, the button says the block starts now.
+    func testActionTitleFollowsTheClock() {
+        let now = date(5, 10)
+        func t(_ d: Date) -> String { BlockingFormat.time(d) }
+        let ahead = BlockingNowPlan(later: true, startAt: date(5, 11), minutes: 60, now: now)
+        XCTAssertEqual(ahead.actionTitle(calendar: calendar), "Programmer aujourd’hui à \(t(date(5, 11)))")
+        let passed = BlockingNowPlan(later: true, startAt: now.addingTimeInterval(-300), minutes: 60, now: now)
+        XCTAssertEqual(passed.actionTitle(calendar: calendar), "Bloquer jusqu’à \(t(date(5, 11)))")
     }
 
     /// R4-blocage-05 and 07: a range ending at 24:00 reads 24:00; long durations keep their minutes.
