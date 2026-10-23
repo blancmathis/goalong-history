@@ -341,6 +341,28 @@ static IMP replaceClassMethod(Class cls, SEL sel, id block) {
     return replace(object_getClass(cls), sel, block);
 }
 
+static void installTaskGuard(Class cls) {
+    __block BOOL (*launchAndReturnError)(id, SEL, NSError **) = NULL;
+    __block void (*launch)(id, SEL) = NULL;
+    launchAndReturnError = (void *)replace(cls, @selector(launchAndReturnError:), ^BOOL(NSTask *task, NSError **error) {
+        if (galleryActive) {
+            [galleryLock lock]; galleryTasks++; [galleryLock unlock];
+            fprintf(stderr, "[gallery-guard] refused NSTask: %s\n", task.executableURL.path.UTF8String ?: "?");
+            if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:EPERM userInfo:nil];
+            return NO;
+        }
+        return launchAndReturnError(task, @selector(launchAndReturnError:), error);
+    });
+    launch = (void *)replace(cls, @selector(launch), ^(NSTask *task) {
+        if (galleryActive) {
+            [galleryLock lock]; galleryTasks++; [galleryLock unlock];
+            fprintf(stderr, "[gallery-guard] refused NSTask launch: %s\n", task.launchPath.UTF8String ?: "?");
+            return;
+        }
+        launch(task, @selector(launch));
+    });
+}
+
 static void installGalleryGuards(void) {
     galleryViolations = [NSMutableArray array];
     galleryLock = [[NSLock alloc] init];
@@ -396,25 +418,11 @@ static void installGalleryGuards(void) {
         return statusItem(bar, @selector(statusItemWithLength:), length);
     });
 
-    static BOOL (*launchAndReturnError)(id, SEL, NSError **);
-    static void (*launch)(id, SEL);
-    launchAndReturnError = (void *)replace(NSTask.class, @selector(launchAndReturnError:), ^BOOL(NSTask *task, NSError **error) {
-        if (galleryActive) {
-            [galleryLock lock]; galleryTasks++; [galleryLock unlock];
-            fprintf(stderr, "[gallery-guard] refused NSTask: %s\n", task.executableURL.path.UTF8String ?: "?");
-            if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:EPERM userInfo:nil];
-            return NO;
-        }
-        return launchAndReturnError(task, @selector(launchAndReturnError:), error);
-    });
-    launch = (void *)replace(NSTask.class, @selector(launch), ^(NSTask *task) {
-        if (galleryActive) {
-            [galleryLock lock]; galleryTasks++; [galleryLock unlock];
-            fprintf(stderr, "[gallery-guard] refused NSTask launch: %s\n", task.launchPath.UTF8String ?: "?");
-            return;
-        }
-        launch(task, @selector(launch));
-    });
+    // NSTask is a class cluster: `Process()` / `[NSTask new]` is a private subclass that overrides both
+    // selectors, so the guard goes on that subclass too (each class keeps its own original).
+    installTaskGuard(NSTask.class);
+    Class concreteTask = [[NSTask alloc] init].class;
+    if (concreteTask && concreteTask != NSTask.class) installTaskGuard(concreteTask);
 
     static id (*sessionWithConfiguration)(id, SEL, NSURLSessionConfiguration *);
     static id (*sessionWithConfigurationDelegate)(id, SEL, NSURLSessionConfiguration *, id, NSOperationQueue *);
