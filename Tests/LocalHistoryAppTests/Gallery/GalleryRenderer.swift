@@ -195,6 +195,11 @@ struct GalleryImage {
         visit(view)
     }
 
+    static func markNeedsDisplay(_ view: NSView) {
+        view.needsDisplay = true
+        view.subviews.forEach(markNeedsDisplay)
+    }
+
     static func pump(_ seconds: TimeInterval) {
         RunLoop.current.run(until: Date().addingTimeInterval(seconds))
     }
@@ -218,6 +223,9 @@ struct GalleryImage {
         hideScrollPockets(host)
         scrollToTop(host)
         host.layoutSubtreeIfNeeded()
+        // Every view draws again with the current state: a layer-backed text field kept, about once in 700 images,
+        // a placeholder drawn in an earlier state (slightly other grey).
+        markNeedsDisplay(host)
         host.displayIfNeeded()
         let scale = window.backingScaleFactor
         let bounds = host.bounds
