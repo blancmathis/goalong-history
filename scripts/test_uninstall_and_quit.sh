@@ -92,5 +92,8 @@ grep -qF 'release_blocking_guard "/Applications/$APP_NAME.app" "$HOME/Applicatio
   release_blocking_guard "$WORK/old.app" "$WORK/new.app" "$WORK/missing.app"
 )
 [[ ! -e "$WORK/guard-old" ]] || fail "A build without --unregister-guard was run."
+release_body="$(declare -f release_blocking_guard)"
+[[ "${release_body%%launchctl bootout*}" == *'--unregister-guard'* ]] \
+  || fail "--unregister-guard must run before the bootout (it leaves the override token for the running app)."
 [[ "$(cat "$WORK/guard-new")" == --unregister-guard ]] || fail "The guard was not unregistered."
 echo "Uninstall and quit tests passed."

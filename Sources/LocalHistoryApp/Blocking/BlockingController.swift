@@ -204,6 +204,14 @@ import LocalHistoryQueryCLI
         guardClient?.removeService()
     }
 
+    /// True when `guard-until` must be written: memo out of date, or the file differs from `wanted`
+    /// (read back while a severe block runs; a cheap stat otherwise).
+    static func guardMarkerNeedsWrite(memo: Date??, wanted: Date?, files: GuardFiles, now: Date) -> Bool {
+        guard memo == .some(wanted) else { return true }
+        guard let wanted else { return files.markerExists() }
+        return files.readMarker(now: now) != .date(wanted)
+    }
+
     /// A password cannot override an overlapping hard lock or a freeze.
     var quitIsLocked: Bool {
         activeBlocks.contains { $0.lock == .locked && $0.end > clock() }
@@ -810,9 +818,11 @@ import LocalHistoryQueryCLI
         let severe = severeUntil
         if let store, !storeFailed {
             let files = GoalongGuardFiles.files(for: store.directory)
-            // The memo alone is not enough: a deleted marker is rewritten while the block runs (stat only).
-            if guardMarker != .some(severe) || (severe != nil && !files.markerExists()) {
-                if files.writeMarker(until: severe) { guardMarker = .some(severe) }
+            let wanted = severe.map { GuardFiles.markerEnd($0, now: now) }
+            // The memo alone is not enough: a deleted, modified or planted marker is put right on every
+            // refresh. The guard accepts any end from the healthy app, so a forged value must not stay.
+            if Self.guardMarkerNeedsWrite(memo: guardMarker, wanted: wanted, files: files, now: now) {
+                if files.writeMarker(until: wanted) { guardMarker = .some(wanted) }
             }
         }
         let next = nextStart(after: now)

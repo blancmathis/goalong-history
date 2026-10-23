@@ -57,7 +57,8 @@ environment.build = build
 
 let engine = GuardEngine(files: files, environment: environment, queue: .main) { code in
     logger.log("guard exits with \(code)")
-    exit(code)
+    // A ping that woke this guard is answered first ("not armed"), so the app does not escalate.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { exit(code) }
 }
 
 // Wake-up channel. A message is only a ping: the guard decides from its own files, never from a request.
@@ -90,6 +91,8 @@ xpc_connection_set_event_handler(listener) { peer in
             xpc_dictionary_set_bool(reply, "armed", snapshot.armed)
             xpc_dictionary_set_int64(reply, "watchingPID", Int64(snapshot.watchingPID ?? 0))
             xpc_dictionary_set_string(reply, "state", snapshot.state)
+            // Lets the app notice a SIGSTOP of this guard and resume it (launchd only sees a live job).
+            xpc_dictionary_set_int64(reply, "pid", Int64(getpid()))
             xpc_connection_send_message(peer, reply)
         }
     }

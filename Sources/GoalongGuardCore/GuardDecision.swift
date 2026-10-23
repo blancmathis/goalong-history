@@ -5,19 +5,33 @@ import Foundation
 public struct GuardArming: Equatable, Sendable {
     /// `mach_continuous_time` seconds at which the block ends; nil when nothing is armed.
     public private(set) var endContinuous: TimeInterval?
+    /// The marker value that set `endContinuous`. Read again unchanged, it keeps the end: a wall clock
+    /// jump between two reads of the same file can neither end nor stretch the block.
+    public private(set) var markerDate: Date?
 
-    public init(endContinuous: TimeInterval? = nil) { self.endContinuous = endContinuous }
+    public init(endContinuous: TimeInterval? = nil, markerDate: Date? = nil) {
+        self.endContinuous = endContinuous; self.markerDate = markerDate
+    }
 
     /// Applies one read of `guard-until`. A higher end always wins; a lower, removed or unreadable
     /// marker is accepted only while the app is alive. Without any memory, an unreadable marker arms nothing.
     public mutating func apply(_ marker: GuardMarker, wall: Date, continuous: TimeInterval, appAlive: Bool) {
         switch marker {
         case .date(let date):
+            if endContinuous != nil, date == markerDate { return }
             let end = continuous + date.timeIntervalSince(wall)
-            if appAlive || endContinuous.map({ end > $0 }) ?? true { endContinuous = end }
+            if appAlive || endContinuous.map({ end > $0 }) ?? true { endContinuous = end; markerDate = date }
         case .absent, .invalid:
-            if appAlive || endContinuous == nil { endContinuous = nil }
+            if appAlive || endContinuous == nil { endContinuous = nil; markerDate = nil }
         }
+    }
+
+    /// Memory of a previous guard process of this boot (`guard-state.json`), when it still lies ahead.
+    public static func restored(from state: GuardState?, bootTime: Double, continuous: TimeInterval) -> GuardArming? {
+        guard let state, let end = state.endContinuous, let boot = state.bootTime,
+              GuardDecision.sameBoot(boot, bootTime), end > continuous, end <= continuous + GuardFiles.maximumArming
+        else { return nil }
+        return GuardArming(endContinuous: end, markerDate: state.markerDate.map { Date(timeIntervalSince1970: $0) })
     }
 
     public func isArmed(continuous: TimeInterval) -> Bool { endContinuous.map { $0 > continuous } ?? false }

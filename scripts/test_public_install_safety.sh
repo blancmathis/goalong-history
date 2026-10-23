@@ -225,6 +225,10 @@ guard_check() { # expected status, then env settings
   [[ "$status" == "$expected" ]] || { echo "Severe-block install check exited $status, expected $expected: $(cat "$TEST_ROOT/guard-out")" >&2; exit 1; }
 }
 guard_check 0 GOALONG_INSTALL_DURING_LOCK=
+# A locked session scheduled for later (locked-until only) arms nothing: a note, never a refusal.
+echo "$(( $(/bin/date +%s) + 86400 ))" > "$guard_home/Library/Application Support/LocalHistory/Blocking/locked-until"
+guard_check 0 GOALONG_INSTALL_DURING_LOCK=
+/usr/bin/grep -qF 'A locked block is scheduled' "$TEST_ROOT/guard-out"
 echo "$(( $(/bin/date +%s) + 600 ))" > "$guard_home/Library/Application Support/LocalHistory/Blocking/guard-until"
 guard_check 3 GOALONG_INSTALL_DURING_LOCK=
 /usr/bin/grep -qF 'Goalong History was not replaced' "$TEST_ROOT/guard-out"

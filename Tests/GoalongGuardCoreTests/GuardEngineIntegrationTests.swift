@@ -53,8 +53,9 @@ final class GuardEngineIntegrationTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func startEngine(stopCheck: TimeInterval = 0.3) {
+    private func startEngine(stopCheck: TimeInterval = 0.3, wall: (() -> Date)? = nil) {
         var environment = GuardEnvironment(locateApp: { [app] in app!.current }, launch: { [app] in app!.launch($0) })
+        if let wall { environment.wall = wall }
         environment.proofAlive = { [weak self] _ in self?.proofAlive ?? false }
         environment.stopCheckInterval = stopCheck
         environment.retryDelay = 0.05
@@ -194,11 +195,53 @@ final class GuardEngineIntegrationTests: XCTestCase {
         // No app at start: the guard opens it at once. Each new app dies before reporting health.
         for round in 1...3 {
             XCTAssertNotNil(waitUntil(3) { app.launchCount == round }, "round \(round)")
-            if let pid = app.current { kill(pid, SIGKILL) }
+            // `launches` grows just before the spawn: wait until the guard watches this round's live app,
+            // or the kill can miss it and the app of that round survives.
+            var watched: Int32?
+            XCTAssertNotNil(waitUntil(2) {
+                guard let pid = app.current, snapshot()?.watchingPID == pid else { return false }
+                watched = pid
+                return true
+            }, "round \(round) watched")
+            if let watched { kill(watched, SIGKILL) }
         }
         usleep(1_500_000)
         XCTAssertEqual(app.launchCount, 3, "three early deaths: 30 s back-off")
         XCTAssertNotNil(waitUntil(1) { files.readState()?.budget == "backoff" })
+    }
+
+    /// K1-kill-03: the clock moves forward a day while the healthy app has not rewritten the marker yet.
+    func testAClockJumpWithTheAppAliveDoesNotDisarm() throws {
+        let pid = try app.spawn()
+        arm()
+        markHealthy(pid)
+        var wallOffset: TimeInterval = 0
+        let lock = NSLock()
+        startEngine(wall: { lock.withLock { Date().addingTimeInterval(wallOffset) } })
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == pid })
+        lock.withLock { wallOffset = 86_400 }
+        // Any write in the folder makes the guard read the unchanged marker again (locked-until, the store).
+        XCTAssertTrue(files.writeHealth(GuardHealth(pid: pid, at: Date().timeIntervalSince1970)))
+        usleep(300_000)
+        XCTAssertNil(code, "an unchanged marker keeps its end")
+        XCTAssertEqual(snapshot()?.armed, true)
+    }
+
+    /// K1-kill-03: guard and app killed, clock moved, then a new guard starts: its predecessor's memory holds.
+    func testANewGuardAfterAClockJumpKeepsThePreviousGuardsWindow() throws {
+        let pid = try app.spawn()
+        arm()
+        startEngine()
+        XCTAssertNotNil(waitUntil(1) { files.readState()?.endContinuous != nil })
+        // The guard is killed (no finish): only its state file remains. The app is killed too.
+        let saved = try XCTUnwrap(files.readState())
+        engine?.cancel()
+        engine = nil
+        XCTAssertTrue(files.writeState(saved), "a killed guard leaves its last state, not the armed:false of a clean finish")
+        kill(pid, SIGKILL)
+        startEngine(wall: { Date().addingTimeInterval(86_400) })
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 }, "the new guard reopens the app")
+        XCTAssertNil(code)
     }
 
     private func snapshot() -> GuardSnapshot? {

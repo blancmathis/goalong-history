@@ -74,6 +74,12 @@ enum GoalongGuardFiles {
         files.writeLease(GuardLease(pid: getpid(), reason: reason, until: Date().timeIntervalSince1970 + seconds))
     }
 
+    /// An installer runs with the documented override (`--unregister-guard` wrote `guard-override`):
+    /// the app neither re-registers the guard nor ignores SIGTERM until the token is stale.
+    static func overrideActive(_ files: GuardFiles = standard, now: Date = Date()) -> Bool {
+        files.readOverride()?.isFresh(now: now.timeIntervalSince1970) == true
+    }
+
     /// Written once the blocking runtime runs: from now on this process may lower or remove the marker.
     static func reportHealth(_ files: GuardFiles = standard) {
         files.writeHealth(GuardHealth(pid: getpid(), at: Date().timeIntervalSince1970))
@@ -92,17 +98,58 @@ enum GuardUnregisterCommand {
         return !overrides.contains { environment[$0] == "1" }
     }
 
+    /// Not refused and a severe block runs: the override was used.
+    static func writesOverride(marker: GuardMarker, now: Date) -> Bool {
+        if case .date(let end) = marker, end > now { return true }
+        return false
+    }
+
     /// Runs the command and exits. Never touches another copy's guard: the plist name is this bundle's own.
     static func run() -> Never {
         guard let identity = GoalongGuardGate.identity else { exit(0) }
         let files = GoalongGuardFiles.standard
-        if isRefused(marker: files.readMarker(now: Date()), now: Date(), environment: ProcessInfo.processInfo.environment) {
+        let marker = files.readMarker(now: Date())
+        if isRefused(marker: marker, now: Date(), environment: ProcessInfo.processInfo.environment) {
             FileHandle.standardError.write(Data("Un blocage sévère est actif : le service de protection reste en place.\n".utf8))
             exit(refusedExitCode)
+        }
+        // Override during a severe block: tell the running app first, so it does not register the guard
+        // again when its XPC connection drops, and honours the installer's SIGTERM.
+        if writesOverride(marker: marker, now: Date()) {
+            files.writeOverride(GuardOverride(pid: getpid(), writtenAt: Date().timeIntervalSince1970))
         }
         let service = SMAppService.agent(plistName: identity.plistName)
         if service.status != .notRegistered { try? service.unregister() }
         exit(0)
+    }
+}
+
+/// Records the pid that sent the last SIGTERM (SA_SIGINFO). The handler only stores an integer; the
+/// DispatchSource on the main queue makes the decision. pid 1 is launchd: system shutdown or reboot.
+enum TerminationSignalSender {
+    private nonisolated(unsafe) static let storage: UnsafeMutablePointer<Int32> = {
+        let pointer = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
+        pointer.initialize(to: 0)
+        return pointer
+    }()
+
+    /// Replaces SIG_IGN with a recording handler. The kqueue signal source still fires.
+    static func install() {
+        _ = storage  // initialised before any signal can arrive
+        var action = sigaction()
+        action.__sigaction_u.__sa_sigaction = { _, info, _ in
+            TerminationSignalSender.storage.pointee = info?.pointee.si_pid ?? 0
+        }
+        action.sa_flags = SA_SIGINFO
+        sigemptyset(&action.sa_mask)
+        sigaction(SIGTERM, &action, nil)
+    }
+
+    /// The last sender, then forgotten. nil when unknown.
+    static func take() -> Int32? {
+        let pid = storage.pointee
+        storage.pointee = 0
+        return pid > 0 ? pid : nil
     }
 }
 
@@ -112,12 +159,16 @@ enum GuardUnregisterCommand {
     static let reregisteredBuildKey = "goalong.guard.reregisteredBuild"
     nonisolated static let pingTimeout: TimeInterval = 2
     static let pingInterval: TimeInterval = 30
+    /// SIGSTOP check of the known guard pid, at most this often (cheap: one proc_pidinfo).
+    static let stopCheckInterval: TimeInterval = 2
 
     var onChange: (() -> Void)?
     private let identity: GuardIdentity
     private let service: SMAppService
     private let defaults: UserDefaults
     private let build: String
+    private let overrideActive: @Sendable () -> Bool
+    fileprivate nonisolated let guardExecutable: String
     fileprivate nonisolated let queue = DispatchQueue(label: "ai.goalong.guard-client", qos: .utility)
     private var status: SMAppService.Status?
     private var statusRead = Date.distantPast
@@ -125,6 +176,15 @@ enum GuardUnregisterCommand {
     private var armed = false
     private var lastPing = Date.distantPast
     private var component: BlockingProtectionState.Component = .notInstalled
+    /// register() failed in this launch: no retry until the next launch (an unsigned copy would loop).
+    private var registerFailed = false
+    /// `launchctl kickstart` already ran for this arming.
+    private var kickstartUsed = false
+    /// A ping answered "not armed" once in this arming: one early retry, after the marker check.
+    private var notArmedRetried = false
+    private var lastStopCheck = Date.distantPast
+    /// Guard pid from its last reply. Touched on `queue` only.
+    fileprivate nonisolated(unsafe) var guardPID: Int32?
     /// Kept open while armed: its interruption (the guard died) asks for a new ping. Touched on `queue` only.
     private nonisolated(unsafe) var connection: xpc_connection_t?
 
@@ -134,11 +194,15 @@ enum GuardUnregisterCommand {
         return GoalongGuardClient(identity: identity, defaults: defaults)
     }
 
-    init(identity: GuardIdentity, defaults: UserDefaults) {
+    init(identity: GuardIdentity, defaults: UserDefaults,
+         overrideActive: @escaping @Sendable () -> Bool = { GoalongGuardFiles.overrideActive() }) {
         self.identity = identity
         service = SMAppService.agent(plistName: identity.plistName)
         self.defaults = defaults
+        self.overrideActive = overrideActive
         build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        guardExecutable = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS", isDirectory: true)
+            .appendingPathComponent(GuardIdentity.executableName).path
         readStatus()
     }
 
@@ -157,13 +221,25 @@ enum GuardUnregisterCommand {
             if Date().timeIntervalSince(statusRead) > Self.pingInterval { readStatus() }
             return component
         }
-        if !wasArmed { lastPing = .distantPast }
+        if !wasArmed { lastPing = .distantPast; kickstartUsed = false; notArmedRetried = false }
+        if overrideActive() {
+            // An installer is replacing or removing this copy with the override: never bring the guard back.
+            component = .notInstalled
+            return component
+        }
+        if Date().timeIntervalSince(lastStopCheck) >= Self.stopCheckInterval {
+            lastStopCheck = Date()
+            let worker = Worker(service: service, label: identity.label, client: self, overrideActive: overrideActive)
+            queue.async { worker.resumeKnownGuard() }
+        }
         guard !working else { return component }
         switch status {
         case nil:
             readStatus()
         case .notRegistered?, .notFound?:
-            // The only system notification: the first registration of this build's guard.
+            // The only system notification: the first registration of this build's guard. Tried once per
+            // launch when it fails (unsigned or unnotarised copy), never on every refresh.
+            guard !registerFailed else { component = .failed("Service de protection indisponible."); break }
             component = .notInstalled
             work { client in client.registerThenPing() }
         case .requiresApproval?:
@@ -193,6 +269,21 @@ enum GuardUnregisterCommand {
         }
     }
 
+    /// SIGCONT to every stopped pid of the list. True when one was resumed.
+    nonisolated static func resumeStopped(_ pids: [Int32], isStopped: (Int32) -> Bool = GuardProcesses.isStopped,
+                                          resume: (Int32) -> Void = { _ = kill($0, SIGCONT) }) -> Bool {
+        var resumed = false
+        for pid in pids where pid > 0 && isStopped(pid) { resume(pid); resumed = true }
+        return resumed
+    }
+
+    /// A remembered pid may have been reused: signal it only while it still runs this guard executable.
+    nonisolated static func isGuardProcess(_ pid: Int32, executable: String,
+                                           path: (Int32) -> String? = GuardProcesses.path(of:)) -> Bool {
+        guard let actual = path(pid) else { return false }
+        return actual == executable || actual == URL(fileURLWithPath: executable).resolvingSymlinksInPath().path
+    }
+
     // MARK: Work off the main thread
 
     fileprivate enum Outcome { case running, unreachable, notArmed }
@@ -212,7 +303,7 @@ enum GuardUnregisterCommand {
 
     private func work(_ job: @escaping @Sendable (Worker) -> (SMAppService.Status, BlockingProtectionState.Component)) {
         working = true
-        let worker = Worker(service: service, label: identity.label, client: self)
+        let worker = Worker(service: service, label: identity.label, client: self, overrideActive: overrideActive)
         queue.async { [weak self] in
             let (next, component) = job(worker)
             DispatchQueue.main.async { self?.finish(status: next, component: component) }
@@ -241,6 +332,23 @@ enum GuardUnregisterCommand {
         return true
     }
 
+    /// `launchctl kickstart` at most once per arming (spec §3.4): later rounds only ping.
+    fileprivate func claimKickstart() -> Bool {
+        guard armed, !kickstartUsed else { return false }
+        kickstartUsed = true
+        return true
+    }
+
+    fileprivate func noteRegisterFailed() { registerFailed = true }
+
+    /// The guard answered but does not see the block (marker forged or not yet written): the controller
+    /// has rewritten the marker before this update, so ping once more soon instead of in 30 s.
+    fileprivate func noteNotArmed() {
+        guard armed, !notArmedRetried else { return }
+        notArmedRetried = true
+        lastPing = Date().addingTimeInterval(-Self.pingInterval + 3)
+    }
+
     fileprivate func connectionLost() {
         guard armed else { return }
         lastPing = .distantPast
@@ -252,6 +360,7 @@ enum GuardUnregisterCommand {
         let service: SMAppService
         let label: String
         weak var client: GoalongGuardClient?
+        let overrideActive: @Sendable () -> Bool
 
         func registerThenPing() -> (SMAppService.Status, BlockingProtectionState.Component) {
             try? service.register()
@@ -259,20 +368,38 @@ enum GuardUnregisterCommand {
             switch status {
             case .enabled: return pingEscalating()
             case .requiresApproval: return (status, .awaitingApproval)
-            default: return (status, .failed("Service de protection indisponible."))
+            default:
+                DispatchQueue.main.async { MainActor.assumeIsolated { client?.noteRegisterFailed() } }
+                return (status, .failed("Service de protection indisponible."))
             }
         }
 
-        /// Ping → kickstart once → re-register once per build → failed. Never an alert.
+        /// Status first: an intentional unregister or a switch-off in Login Items is never undone here.
+        /// Then ping → resume a stopped guard → kickstart once per arming → re-register once per build →
+        /// failed. Never an alert.
         func pingEscalating() -> (SMAppService.Status, BlockingProtectionState.Component) {
+            let status = service.status
+            switch status {
+            case .enabled: break
+            case .requiresApproval: return (status, .awaitingApproval)
+            default: return (status, .notInstalled)
+            }
             switch ping() {
             case .running: return (.enabled, .running)
-            case .notArmed: return (.enabled, .failed("Le service de protection ne voit pas le blocage."))
+            case .notArmed:
+                DispatchQueue.main.async { MainActor.assumeIsolated { client?.noteNotArmed() } }
+                return (.enabled, .failed("Le service de protection ne voit pas le blocage."))
             case .unreachable: break
             }
-            kickstart()
-            if ping() == .running { return (.enabled, .running) }
-            let allowed = DispatchQueue.main.sync { MainActor.assumeIsolated { client?.claimReregister() ?? false } }
+            // A SIGSTOPped guard looks alive to launchd, so nothing else would ever restart it.
+            if resumeStoppedGuards(), ping() == .running { return (.enabled, .running) }
+            guard !overrideActive() else { return (.enabled, .notInstalled) }
+            let mayKickstart = DispatchQueue.main.sync { MainActor.assumeIsolated { client?.claimKickstart() ?? false } }
+            if mayKickstart {
+                kickstart()
+                if ping() == .running { return (.enabled, .running) }
+            }
+            let allowed = !overrideActive() && DispatchQueue.main.sync { MainActor.assumeIsolated { client?.claimReregister() ?? false } }
             if allowed {
                 try? service.unregister()
                 Thread.sleep(forTimeInterval: 1)
@@ -301,6 +428,9 @@ enum GuardUnregisterCommand {
                 client.connection = value
                 return value
             }()
+            if let pid = client.guardPID, GoalongGuardClient.isGuardProcess(pid, executable: client.guardExecutable) {
+                _ = GoalongGuardClient.resumeStopped([pid])
+            }
             let message = xpc_dictionary_create(nil, nil, 0)
             xpc_dictionary_set_string(message, "ping", "goalong")
             let done = DispatchSemaphore(value: 0)
@@ -308,6 +438,8 @@ enum GuardUnregisterCommand {
             xpc_connection_send_message_with_reply(connection, message, DispatchQueue.global(qos: .utility)) { reply in
                 if xpc_get_type(reply) == XPC_TYPE_DICTIONARY {
                     result.value = xpc_dictionary_get_bool(reply, "armed") ? .running : .notArmed
+                    let pid = xpc_dictionary_get_int64(reply, "pid")
+                    result.pid = pid > 0 && pid <= Int64(Int32.max) ? Int32(pid) : nil
                 }
                 done.signal()
             }
@@ -316,7 +448,21 @@ enum GuardUnregisterCommand {
                 if client.connection === connection { client.connection = nil }
                 return .unreachable
             }
+            if let pid = result.pid { client.guardPID = pid }
             return value
+        }
+
+        /// Cheap check of the known guard pid, on every refresh while armed (throttled by the client).
+        func resumeKnownGuard() {
+            guard let client, let pid = client.guardPID,
+                  GoalongGuardClient.isGuardProcess(pid, executable: client.guardExecutable) else { return }
+            if GoalongGuardClient.resumeStopped([pid]) { NSLog("Goalong: blocking guard was stopped, resumed") }
+        }
+
+        /// After a ping timeout: every process of this bundle's guard executable, by exact path.
+        func resumeStoppedGuards() -> Bool {
+            guard let client else { return false }
+            return GoalongGuardClient.resumeStopped(GuardProcesses.pids(executable: client.guardExecutable))
         }
 
         /// `launchctl kickstart` without `-k`: starts the agent if launchd holds it stopped, never kills it.
@@ -331,7 +477,7 @@ enum GuardUnregisterCommand {
             Thread.sleep(forTimeInterval: 0.5)
         }
 
-        final class Box: @unchecked Sendable { var value: Outcome? }
+        final class Box: @unchecked Sendable { var value: Outcome?; var pid: Int32? }
     }
 }
 #endif

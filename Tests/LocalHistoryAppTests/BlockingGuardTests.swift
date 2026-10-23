@@ -105,6 +105,92 @@ import XCTest
         XCTAssertEqual(client.removals, 1)
     }
 
+    /// K1-kill-04: a modified marker is put right like a deleted one; a planted one is removed.
+    func testAModifiedOrPlantedMarkerIsRewritten() throws {
+        var clockNow = now
+        let (c, _, files) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked)])) { clockNow }
+        XCTAssertTrue(files.writeMarker(until: now.addingTimeInterval(1)))
+        c.refresh()
+        XCTAssertEqual(files.readMarker(now: now), .date(now.addingTimeInterval(3600)), "a lowered end does not stay")
+        XCTAssertTrue(files.writeMarker(until: now.addingTimeInterval(86_400)))
+        c.refresh()
+        XCTAssertEqual(files.readMarker(now: now), .date(now.addingTimeInterval(3600)), "a raised end does not stay")
+        clockNow = now.addingTimeInterval(3601)
+        c.refresh()
+        XCTAssertEqual(files.readMarker(now: clockNow), .absent)
+        XCTAssertTrue(files.writeMarker(until: clockNow.addingTimeInterval(600)))
+        c.refresh()
+        XCTAssertEqual(files.readMarker(now: clockNow), .absent, "no severe block: a planted marker is removed")
+    }
+
+    /// K1-safe-03: a lock further than the guard accepts is written capped, so the guard stays armed.
+    func testAFarLockIsCappedToWhatTheGuardAccepts() throws {
+        var program = list
+        program.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 600, endMinute: 900)],
+                                       lockedUntil: now.addingTimeInterval(800 * 86_400))
+        let (c, _, files) = try controller(BlockingDocument(lists: [program])) { [now] in now }
+        XCTAssertEqual(c.severeUntil, now.addingTimeInterval(800 * 86_400))
+        guard case .date(let written) = files.readMarker(now: now) else { return XCTFail("the guard must read a valid end") }
+        XCTAssertLessThanOrEqual(written.timeIntervalSince(now), GuardFiles.maximumArming)
+        XCTAssertGreaterThan(written.timeIntervalSince(now), GuardFiles.maximumArming - 3 * 86_400)
+        XCTAssertEqual(GuardFiles.markerEnd(now.addingTimeInterval(10.2), now: now), Date(timeIntervalSince1970: (now.timeIntervalSince1970 + 10.2).rounded(.up)))
+        XCTAssertEqual(GuardFiles.markerEnd(now.addingTimeInterval(800 * 86_400), now: now),
+                       GuardFiles.markerEnd(now.addingTimeInterval(900 * 86_400), now: now.addingTimeInterval(60)),
+                       "whole days: the capped file does not change on every refresh")
+    }
+
+    /// K1-kill-05: the SIGTERM handler refreshes the live controller and reads `severeUntil`.
+    func testSigtermHandlerReadsTheLiveController() throws {
+        let (locked, _, _) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked, start: -60)])) { [now] in now }
+        let (free, _, _) = try controller(BlockingDocument(lists: [list], sessions: [session(.free, start: -60)])) { [now] in now }
+        XCTAssertFalse(AppDelegate.honoursTerminationSignal(controller: locked, sessionEnding: false, senderPID: 4242, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: free, sessionEnding: false, senderPID: 4242, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: nil, sessionEnding: false, senderPID: nil, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: locked, sessionEnding: true, senderPID: 4242, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: locked, sessionEnding: false, senderPID: 1, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: locked, sessionEnding: false, senderPID: 4242, installOverride: true))
+    }
+
+    /// K1-safe-01 / K1-safe-05: the override token is fresh only briefly and written only during a severe block.
+    func testOverrideTokenIsWrittenOnlyDuringASevereBlockAndExpires() throws {
+        let root = try store().directory
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let files = GoalongGuardFiles.files(for: root)
+        XCTAssertTrue(GuardUnregisterCommand.writesOverride(marker: .date(now.addingTimeInterval(60)), now: now))
+        XCTAssertFalse(GuardUnregisterCommand.writesOverride(marker: .date(now.addingTimeInterval(-1)), now: now))
+        XCTAssertFalse(GuardUnregisterCommand.writesOverride(marker: .absent, now: now))
+        XCTAssertFalse(GoalongGuardFiles.overrideActive(files, now: now))
+        XCTAssertTrue(files.writeOverride(GuardOverride(pid: 1, writtenAt: now.timeIntervalSince1970)))
+        XCTAssertTrue(GoalongGuardFiles.overrideActive(files, now: now.addingTimeInterval(60)))
+        XCTAssertFalse(GoalongGuardFiles.overrideActive(files, now: now.addingTimeInterval(GuardOverride.lifetime + 1)))
+        XCTAssertFalse(GoalongGuardFiles.overrideActive(files, now: now.addingTimeInterval(-60)), "a token from the future is ignored")
+    }
+
+    /// K1-kill-01: a stopped guard is resumed, but a reused pid that runs something else is never signalled.
+    func testAStoppedGuardIsResumedOnlyWhenItIsTheGuard() throws {
+        var resumed: [Int32] = []
+        XCTAssertTrue(GoalongGuardClient.resumeStopped([10, 11, 12], isStopped: { $0 != 11 }, resume: { resumed.append($0) }))
+        XCTAssertEqual(resumed, [10, 12])
+        XCTAssertFalse(GoalongGuardClient.resumeStopped([11], isStopped: { _ in false }, resume: { _ in XCTFail("running") }))
+        let guardPath = "/Applications/Goalong History.app/Contents/MacOS/goalong-blocking-guard"
+        XCTAssertTrue(GoalongGuardClient.isGuardProcess(5, executable: guardPath, path: { _ in guardPath }))
+        XCTAssertFalse(GoalongGuardClient.isGuardProcess(5, executable: guardPath, path: { _ in "/bin/zsh" }))
+        XCTAssertFalse(GoalongGuardClient.isGuardProcess(5, executable: guardPath, path: { _ in nil }))
+        // A real stopped process (it plays the guard).
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["30"]
+        try process.run()
+        defer { kill(process.processIdentifier, SIGKILL) }
+        let pid = process.processIdentifier
+        kill(pid, SIGSTOP)
+        for _ in 0..<100 where !GuardProcesses.isStopped(pid) { usleep(10_000) }
+        XCTAssertTrue(GuardProcesses.isStopped(pid))
+        XCTAssertTrue(GoalongGuardClient.resumeStopped([pid]))
+        for _ in 0..<100 where GuardProcesses.isStopped(pid) { usleep(10_000) }
+        XCTAssertFalse(GuardProcesses.isStopped(pid))
+    }
+
     func testLevelLabels() {
         var state = BlockingProtectionState()
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Standard")

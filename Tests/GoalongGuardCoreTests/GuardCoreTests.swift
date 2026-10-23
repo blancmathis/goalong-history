@@ -101,6 +101,38 @@ final class GuardDecisionTests: XCTestCase {
     }
 }
 
+extension GuardDecisionTests {
+    /// K1-kill-03: an unchanged marker keeps its end whatever the wall clock does, even from the live app.
+    func testAWallClockJumpDoesNotMoveAnUnchangedMarker() {
+        let wall = Date(timeIntervalSince1970: 1_000_000)
+        let end = wall.addingTimeInterval(7200)
+        var arming = GuardArming()
+        arming.apply(.date(end), wall: wall, continuous: 100, appAlive: true)
+        XCTAssertEqual(arming.remaining(continuous: 100), 7200)
+        arming.apply(.date(end), wall: wall.addingTimeInterval(86_400), continuous: 110, appAlive: true)
+        XCTAssertEqual(arming.remaining(continuous: 110), 7190, "the healthy app has not rewritten the marker yet")
+        arming.apply(.date(end), wall: wall.addingTimeInterval(-86_400), continuous: 120, appAlive: false)
+        XCTAssertEqual(arming.remaining(continuous: 120), 7180)
+        // The app rewrites the end after the jump: a new value is read against the new wall clock.
+        arming.apply(.date(end.addingTimeInterval(86_400)), wall: wall.addingTimeInterval(86_400), continuous: 130, appAlive: true)
+        XCTAssertEqual(arming.remaining(continuous: 130), 7200)
+        arming.apply(.absent, wall: wall, continuous: 140, appAlive: true)
+        XCTAssertNil(arming.markerDate)
+    }
+
+    func testAPreviousGuardsMemoryIsRestoredOnlyForThisBootAndAFutureEnd() {
+        let state = GuardState(build: "b", armed: true, endContinuous: 500, markerDate: 1_000_000, bootTime: 42)
+        XCTAssertEqual(GuardArming.restored(from: state, bootTime: 42.5, continuous: 100),
+                       GuardArming(endContinuous: 500, markerDate: Date(timeIntervalSince1970: 1_000_000)))
+        XCTAssertNil(GuardArming.restored(from: state, bootTime: 900, continuous: 100), "another boot")
+        XCTAssertNil(GuardArming.restored(from: state, bootTime: 42, continuous: 600), "already over")
+        XCTAssertNil(GuardArming.restored(from: GuardState(build: "b", armed: false), bootTime: 42, continuous: 100))
+        XCTAssertNil(GuardArming.restored(from: nil, bootTime: 42, continuous: 100))
+        var far = state; far.endContinuous = 100 + GuardFiles.maximumArming + 1
+        XCTAssertNil(GuardArming.restored(from: far, bootTime: 42, continuous: 100))
+    }
+}
+
 final class RelaunchBudgetTests: XCTestCase {
     func testHealthyKillsComeBackOneSecondApartForever() {
         var budget = RelaunchBudget()

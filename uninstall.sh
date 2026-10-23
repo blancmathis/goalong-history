@@ -48,13 +48,17 @@ remove_goalong_cli_link() {
 
 # Spec K: the latest future end among the lock markers of a Blocking folder (locked-until and the
 # blocking guard's guard-until), or 0. Only regular files are read; a link is ignored.
+goalong_marker_until() { # MARKER_FILE: its end when it is a regular file in the future, else 0
+  local value
+  [[ -f "$1" && ! -L "$1" ]] || { echo 0; return; }
+  value="$(/usr/bin/head -c 12 "$1" | /usr/bin/tr -cd '0-9')"
+  if [[ -n "$value" ]] && (( value > $(/bin/date +%s) )); then echo "$value"; else echo 0; fi
+}
 goalong_severe_block_until() { # BLOCKING_DIR
-  local marker value latest=0 now
-  now="$(/bin/date +%s)"
+  local marker value latest=0
   for marker in "$1/locked-until" "$1/guard-until"; do
-    [[ -f "$marker" && ! -L "$marker" ]] || continue
-    value="$(/usr/bin/head -c 12 "$marker" | /usr/bin/tr -cd '0-9')"
-    if [[ -n "$value" ]] && (( value > now && value > latest )); then latest="$value"; fi
+    value="$(goalong_marker_until "$marker")"
+    if (( value > latest )); then latest="$value"; fi
   done
   echo "$latest"
 }
@@ -63,15 +67,17 @@ goalong_severe_block_until() { # BLOCKING_DIR
 # during a replacement or a removal. Only builds that know --unregister-guard are run (an older
 # build would start the full app); the app itself refuses (exit 3) during a severe block unless
 # GOALONG_UNINSTALL_DURING_LOCK=1 or GOALONG_INSTALL_DURING_LOCK=1.
+# --unregister-guard runs first: with the override it leaves guard-override, so the running app neither
+# registers the guard again when its connection drops nor ignores the SIGTERM that follows.
 release_blocking_guard() { # APP_PATH...
   local app executable
-  /bin/launchctl bootout "gui/$UID/$BUNDLE_ID.blocking-guard" >/dev/null 2>&1 || true
   for app in "$@"; do
     executable="$app/Contents/MacOS/$EXECUTABLE_NAME"
     [[ -x "$executable" ]] || continue
     /usr/bin/grep -qaF -- '--unregister-guard' "$executable" 2>/dev/null || continue
     "$executable" --unregister-guard >/dev/null 2>&1 || true
   done
+  /bin/launchctl bootout "gui/$UID/$BUNDLE_ID.blocking-guard" >/dev/null 2>&1 || true
 }
 
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0

@@ -326,13 +326,17 @@ stage_release_bundle() {
 # its journal. Wait for it (8 s by default), and only then force it. Names are executable names.
 # Spec K: the latest future end among the lock markers of a Blocking folder (locked-until and the
 # blocking guard's guard-until), or 0. Only regular files are read; a link is ignored.
+goalong_marker_until() { # MARKER_FILE: its end when it is a regular file in the future, else 0
+  local value
+  [[ -f "$1" && ! -L "$1" ]] || { echo 0; return; }
+  value="$(/usr/bin/head -c 12 "$1" | /usr/bin/tr -cd '0-9')"
+  if [[ -n "$value" ]] && (( value > $(/bin/date +%s) )); then echo "$value"; else echo 0; fi
+}
 goalong_severe_block_until() { # BLOCKING_DIR
-  local marker value latest=0 now
-  now="$(/bin/date +%s)"
+  local marker value latest=0
   for marker in "$1/locked-until" "$1/guard-until"; do
-    [[ -f "$marker" && ! -L "$marker" ]] || continue
-    value="$(/usr/bin/head -c 12 "$marker" | /usr/bin/tr -cd '0-9')"
-    if [[ -n "$value" ]] && (( value > now && value > latest )); then latest="$value"; fi
+    value="$(goalong_marker_until "$marker")"
+    if (( value > latest )); then latest="$value"; fi
   done
   echo "$latest"
 }
@@ -341,23 +345,32 @@ goalong_severe_block_until() { # BLOCKING_DIR
 # during a replacement or a removal. Only builds that know --unregister-guard are run (an older
 # build would start the full app); the app itself refuses (exit 3) during a severe block unless
 # GOALONG_UNINSTALL_DURING_LOCK=1 or GOALONG_INSTALL_DURING_LOCK=1.
+# --unregister-guard runs first: with the override it leaves guard-override, so the running app neither
+# registers the guard again when its connection drops nor ignores the SIGTERM that follows.
 release_blocking_guard() { # APP_PATH...
   local app executable
-  /bin/launchctl bootout "gui/$UID/$BUNDLE_ID.blocking-guard" >/dev/null 2>&1 || true
   for app in "$@"; do
     executable="$app/Contents/MacOS/$EXECUTABLE_NAME"
     [[ -x "$executable" ]] || continue
     /usr/bin/grep -qaF -- '--unregister-guard' "$executable" 2>/dev/null || continue
     "$executable" --unregister-guard >/dev/null 2>&1 || true
   done
+  /bin/launchctl bootout "gui/$UID/$BUNDLE_ID.blocking-guard" >/dev/null 2>&1 || true
 }
 # Spec K: during a severe block the blocking guard would reopen the old app in the middle of the copy,
 # and the block is a commitment. Refuse (exit 3) unless GOALONG_INSTALL_DURING_LOCK=1, which first
 # stops and unregisters the guard.
+# Only guard-until (a severe block already running) refuses: a locked session that has not started yet
+# arms nothing, and only gets the note it always had.
 refuse_install_during_severe_block() {
-  local until
-  until="$(goalong_severe_block_until "$HOME/Library/Application Support/LocalHistory/Blocking")"
-  (( until > 0 )) || return 0
+  local until blocking="$HOME/Library/Application Support/LocalHistory/Blocking"
+  until="$(goalong_marker_until "$blocking/guard-until")"
+  if (( until == 0 )); then
+    if (( $(goalong_marker_until "$blocking/locked-until") > 0 )); then
+      echo "  A locked block is scheduled: Goalong History reopens at the end of this installation and resumes it."
+    fi
+    return 0
+  fi
   if [[ "${GOALONG_INSTALL_DURING_LOCK:-}" != 1 ]]; then
     echo "A locked block is active until $(/bin/date -r "$until" '+%Y-%m-%d %H:%M'). Goalong History was not replaced." >&2
     echo "Run this again after that time, or: GOALONG_INSTALL_DURING_LOCK=1 (Goalong reopens and resumes the block)." >&2

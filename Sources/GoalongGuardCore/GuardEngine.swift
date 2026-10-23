@@ -74,7 +74,19 @@ public final class GuardEngine {
         self.files = files; self.environment = environment; self.queue = queue; self.onFinish = onFinish
     }
 
-    public func start() { queue.async { [self] in guard !started else { return }; started = true; watchDirectory(); evaluate() } }
+    public func start() {
+        queue.async { [self] in
+            guard !started else { return }
+            started = true
+            // A previous guard process of this boot was killed while armed: keep its memory (clock changes).
+            if let memory = GuardArming.restored(from: files.readState(), bootTime: environment.bootTime(),
+                                                 continuous: environment.continuous()) {
+                arming = memory
+                environment.log("armed window restored from the previous guard")
+            }
+            watchDirectory(); evaluate()
+        }
+    }
     /// Stops every source without calling `onFinish` (tests, shutdown).
     public func cancel() { queue.sync { [self] in onFinish = nil; finish(0) } }
     /// Wake-up from the app's ping or a workspace launch notification: re-read everything.
@@ -267,7 +279,12 @@ public final class GuardEngine {
     private func stopPolling() { pollTimer?.cancel(); pollTimer = nil }
 
     private func writeState(armed: Bool) {
-        let state = GuardState(build: environment.build, armed: armed, lastRelaunch: lastRelaunch, gapMs: gapMs, budget: budget.label)
+        var state = GuardState(build: environment.build, armed: armed, lastRelaunch: lastRelaunch, gapMs: gapMs, budget: budget.label)
+        if armed, !finished, let end = arming.endContinuous {
+            state.endContinuous = end
+            state.markerDate = arming.markerDate?.timeIntervalSince1970
+            state.bootTime = environment.bootTime()
+        }
         guard state != lastState else { return }
         lastState = state
         files.writeState(state)

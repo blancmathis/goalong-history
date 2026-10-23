@@ -45,9 +45,27 @@ public struct GuardState: Codable, Equatable, Sendable {
     /// Death of the app to its next `guard-health`, in milliseconds.
     public var gapMs: Int?
     public var budget: String
-    public init(build: String, armed: Bool, lastRelaunch: Double? = nil, gapMs: Int? = nil, budget: String = "normal") {
+    /// Continuous end, marker value and boot of the armed window: a new guard process of the same boot
+    /// starts from this memory, so a clock change while the guard was down cannot disarm it.
+    public var endContinuous: Double?
+    public var markerDate: Double?
+    public var bootTime: Double?
+    public init(build: String, armed: Bool, lastRelaunch: Double? = nil, gapMs: Int? = nil, budget: String = "normal",
+                endContinuous: Double? = nil, markerDate: Double? = nil, bootTime: Double? = nil) {
         self.build = build; self.armed = armed; self.lastRelaunch = lastRelaunch; self.gapMs = gapMs; self.budget = budget
+        self.endContinuous = endContinuous; self.markerDate = markerDate; self.bootTime = bootTime
     }
+}
+
+/// `guard-override`: written by `--unregister-guard` when an installer runs with the documented override
+/// during a severe block. While fresh, the running app neither re-registers the guard nor ignores SIGTERM.
+public struct GuardOverride: Codable, Equatable, Sendable {
+    public static let lifetime: TimeInterval = 600
+    public var pid: Int32
+    /// Unix seconds.
+    public var writtenAt: Double
+    public init(pid: Int32, writtenAt: Double) { self.pid = pid; self.writtenAt = writtenAt }
+    public func isFresh(now: Double) -> Bool { writtenAt <= now + 5 && now - writtenAt <= Self.lifetime }
 }
 
 /// Result of reading `guard-until`. Anything but `.date` arms nothing (fail open).
@@ -61,12 +79,19 @@ public enum GuardMarker: Equatable, Sendable {
 /// without following links, owner checked, regular files only, 0600, atomic replace with fsync.
 public struct GuardFiles: Sendable {
     public static let until = "guard-until", release = "guard-release", lease = "guard-lease"
-    public static let health = "guard-health", state = "guard-state.json"
+    public static let health = "guard-health", state = "guard-state.json", override = "guard-override"
     /// A marker further than this arms nothing: a typo or a forged file can never lock the Mac for years.
     public static let maximumArming: TimeInterval = 400 * 86_400
 
     public let directory: URL
     public init(directory: URL) { self.directory = directory }
+
+    /// The end the app writes for `severe`: whole seconds rounded up, and never past what the guard accepts
+    /// (`maximumArming`, two days of margin, whole days so the file changes at most once a day).
+    public static func markerEnd(_ severe: Date, now: Date) -> Date {
+        let limit = ((now.timeIntervalSince1970 + maximumArming - 2 * 86_400) / 86_400).rounded(.down) * 86_400
+        return Date(timeIntervalSince1970: min(severe.timeIntervalSince1970.rounded(.up), limit))
+    }
 
     // MARK: Reading
 
@@ -84,6 +109,7 @@ public struct GuardFiles: Sendable {
     public func readLease() -> GuardLease? { decode(Self.lease) }
     public func readHealth() -> GuardHealth? { decode(Self.health) }
     public func readState() -> GuardState? { decode(Self.state) }
+    public func readOverride() -> GuardOverride? { decode(Self.override) }
 
     // MARK: Writing
 
@@ -97,6 +123,7 @@ public struct GuardFiles: Sendable {
     @discardableResult public func writeLease(_ value: GuardLease) -> Bool { encode(value, to: Self.lease) }
     @discardableResult public func writeHealth(_ value: GuardHealth) -> Bool { encode(value, to: Self.health) }
     @discardableResult public func writeState(_ value: GuardState) -> Bool { encode(value, to: Self.state, create: false) }
+    @discardableResult public func writeOverride(_ value: GuardOverride) -> Bool { encode(value, to: Self.override) }
     @discardableResult public func removeLease() -> Bool { remove(Self.lease) }
     /// Called by the app at launch: a token always belongs to the process that wrote it.
     public func clearTokens() { _ = remove(Self.release); _ = remove(Self.lease) }
