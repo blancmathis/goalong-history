@@ -408,7 +408,7 @@ struct FocusLimitPanelView: View {
                 Button("Annuler", action: onClose).keyboardShortcut(.cancelAction)
                 Button("Enregistrer le bilan", action: save).buttonStyle(LHPrimaryButtonStyle())
                     .disabled(!Self.hasAnswer(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commit: commitTomorrow, existing: hasSavedReview))
-                    .help(Self.hasAnswer(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commit: commitTomorrow)
+                    .help(Self.hasAnswer(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commit: commitTomorrow, existing: hasSavedReview)
                           ? "" : "Répondez pour au moins une tâche, ou écrivez une note.")
                     .accessibilityIdentifier("concentration-save-review")
             }

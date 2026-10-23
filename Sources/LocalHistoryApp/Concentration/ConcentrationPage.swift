@@ -856,6 +856,7 @@ struct FocusThreadModel: Equatable {
                     .goalongPlaceholder(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", isEmpty: newTitle.isEmpty)
                     .focused(addFocused)
                     .onSubmit(add)
+                    .accessibilityLabel(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche")
                     .accessibilityIdentifier("concentration-add-item")
                 TextField("", text: $newProject)
                     .textFieldStyle(GoalongFieldStyle())
