@@ -3,6 +3,7 @@
     import AppleScreenTime
     import Darwin
     import Foundation
+    import os
     import SQLite3
 
     public enum AppleScreenTimeActivationAccess: Equatable {
@@ -2403,6 +2404,12 @@
             warnings: [String],
             privateAggregateStore: Bool = false
         ) -> AppleSystemScreenTimeStatus {
+            if !warnings.isEmpty {
+                // Detail stays out of the UI message; keep it in the logs for support.
+                let detail = warnings.joined(separator: "; ")
+                Logger(subsystem: "com.goalong.history", category: "AppleScreenTime")
+                    .notice("Screen Time warnings: \(detail, privacy: .private)")
+            }
             if permissionDenied, !hasData, activationAccess() == .permissionRequired {
                 return AppleSystemScreenTimeStatus(
                     kind: .fullDiskAccessRequired,
