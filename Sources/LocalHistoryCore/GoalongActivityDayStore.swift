@@ -180,22 +180,33 @@ public struct GoalongActivityDayStore: Sendable {
         }
         guard foreign else { return (result, false) }
         // Same wall-clock day, moved onto this zone's date so pages match it to the selected day.
+        // Both midnights align. On a day whose length differs between the two zones (a clock
+        // change in only one of them), the moved day is cut at this zone's end, or its missing
+        // tail is marked as not recorded: the saved summary itself stays unchanged.
         let localStart = calendar.startOfDay(for: day)
-        guard let localEnd = calendar.date(byAdding: .day, value: 1, to: localStart),
-              localEnd.timeIntervalSince(localStart) == end.timeIntervalSince(start) else { throw Failure.invalidSummary }
+        guard let localEnd = calendar.date(byAdding: .day, value: 1, to: localStart), localEnd > localStart else { throw Failure.invalidSummary }
         let shift = localStart.timeIntervalSince(start)
-        let moved = GoalongLocalAnalytics.Day(date: localStart, end: localEnd, state: .ready,
-            segments: segments.map {
-                .init(start: $0.start.addingTimeInterval(shift), end: $0.end.addingTimeInterval(shift), kind: $0.kind,
-                      application: $0.application, bundleIdentifier: $0.bundleIdentifier, host: $0.host,
-                      contextKey: $0.contextKey, coverageReason: $0.coverageReason)
-            },
+        var moved: [GoalongLocalAnalytics.Segment] = segments.compactMap {
+            let from = $0.start.addingTimeInterval(shift), to = min($0.end.addingTimeInterval(shift), localEnd)
+            guard to > from else { return nil }
+            return .init(start: from, end: to, kind: $0.kind, application: $0.application, bundleIdentifier: $0.bundleIdentifier,
+                         host: $0.host, contextKey: $0.contextKey, coverageReason: $0.coverageReason)
+        }
+        let coveredEnd = moved.last?.end ?? localStart
+        if coveredEnd < localEnd {
+            moved.append(.init(start: coveredEnd, end: localEnd, kind: .unobserved, application: nil, bundleIdentifier: nil,
+                               host: nil, contextKey: nil, coverageReason: .notRecorded))
+        }
+        let hours = e.breakdown.hours.compactMap { hour -> GoalongActivityBreakdown.Hour? in
+            let from = hour.start.addingTimeInterval(shift), to = hour.end.addingTimeInterval(shift)
+            return to <= localEnd ? .init(start: from, end: to, secondsByMode: hour.secondsByMode) : nil
+        }
+        let movedFirst = first.addingTimeInterval(shift), movedLast = min(last.addingTimeInterval(shift), localEnd)
+        let movedDay = GoalongLocalAnalytics.Day(date: localStart, end: localEnd, state: .ready, segments: moved,
             eventCount: e.eventCount, classifierVersions: Set(e.classifierVersions), origin: .summary, hasDetailedSource: false,
-            firstObservation: first.addingTimeInterval(shift), lastObservation: last.addingTimeInterval(shift),
-            recordedBreakdown: GoalongActivityBreakdown(hours: e.breakdown.hours.map {
-                .init(start: $0.start.addingTimeInterval(shift), end: $0.end.addingTimeInterval(shift), secondsByMode: $0.secondsByMode)
-            }))
-        return (moved, true)
+            firstObservation: min(movedFirst, movedLast), lastObservation: movedLast,
+            recordedBreakdown: GoalongActivityBreakdown(hours: hours))
+        return (movedDay, true)
     }
 
     public func write(_ day: GoalongLocalAnalytics.Day, sourceRevision: String, now: Date = Date(), calendar: Calendar = .current) throws {
@@ -254,14 +265,15 @@ public struct GoalongActivityDayStore: Sendable {
         case summarized
         /// The journal holds no activity evidence (only health or permission rows): nothing to keep.
         case nothingToSummarize
-        /// The journal stayed unchanged but cannot be read completely (corrupt line, evidence
-        /// budget, unreadable source). Its day has no summary; retention still applies.
+        /// The journal stayed unchanged but its content cannot be read completely (corrupt or
+        /// oversized line, evidence budget). Its day has no summary; retention still applies.
         case unreadable
     }
 
-    /// Writes only if the journal is unchanged across the full read. A failed save or a journal
-    /// that changes during the read never permits purge; a day with nothing to summarize, or a
-    /// stable journal that cannot be read completely, does (the retention policy still applies).
+    /// Writes only if the journal is unchanged across the full read. A failed save, a source that
+    /// changes during the read or incomplete access to events/ never permits purge; a day with
+    /// nothing to summarize, or a stable journal with a content defect, does (the retention
+    /// policy still applies).
     @discardableResult
     public func preserveBeforePurge(day: Date, now: Date = Date(), calendar: Calendar = .current) throws -> Preservation {
         let revision = sourceRevision(day: day, calendar: calendar)
@@ -269,11 +281,13 @@ public struct GoalongActivityDayStore: Sendable {
             guard revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
             return .summarized
         }
-        let value = GoalongLocalAnalytics.load(root: root, day: day, now: now, calendar: calendar)
+        let (value, defect) = GoalongLocalAnalytics.loadReportingDefect(root: root, day: day, now: now, calendar: calendar)
         guard revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
         switch value.state {
         case .noSource: return .nothingToSummarize
-        case .incomplete: return .unreadable
+        // Only a defect in the journals' own content is permanent. Incomplete access to events/
+        // (a linked or foreign entry, a listing that changed, a cancelled read) keeps the journal.
+        case .incomplete: if defect == .content { return .unreadable }; throw Failure.sourceChanged
         case .ready: break
         }
         try write(value, sourceRevision: revision, now: now, calendar: calendar)

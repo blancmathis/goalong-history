@@ -103,6 +103,61 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         XCTAssertTrue(store.hasForeignTimeZoneSummary(day: tokyoDay, calendar: tokyo))
         XCTAssertFalse(store.hasForeignTimeZoneSummary(day: parisDay, calendar: paris))
     }
+    func testRetentionKeepsValidJournalWhenEventsFolderCannotBeListedCompletely() throws {
+        // B01-R1-01: a linked *.jsonl entry makes every day load incomplete. That is an access
+        // problem, not a defect of this journal: it must never expire without a summary.
+        let root = try root(), file = try writeEvents(root: root)
+        let target = root.appendingPathComponent("outside.txt")
+        try Data("do-not-delete\n".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("events/2020-01-03.jsonl"), withDestinationURL: target)
+        let later = day.addingTimeInterval(10 * 86400)
+        XCTAssertEqual(GoalongLocalAnalytics.loadReportingDefect(root: root, day: day, now: later).defect, .access)
+        XCTAssertThrowsError(try GoalongActivityDayStore(root: root).preserveBeforePurge(day: day, now: later))
+        let store = retention(root: root); try store.updateDetailedRetention(fromLegacyDays: 1)
+        store.applyCleanup(now: later)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        // Once events/ is readable again, the day is summarized before its journal goes.
+        try FileManager.default.removeItem(at: root.appendingPathComponent("events/2020-01-03.jsonl"))
+        store.applyCleanup(now: later)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertEqual(try GoalongActivityDayStore(root: root).read(day: day).activeSeconds, 120)
+    }
+    func testForeignSummaryOfAClockChangeDayIsReadAndNeverRecounted() throws {
+        // B01-R1-02: Paris has 25 h on 2026-10-25 and 23 h on 2026-03-29; New York has 24 h on both.
+        var paris = Calendar(identifier: .gregorian); paris.timeZone = TimeZone(identifier: "Europe/Paris")!
+        var newYork = paris; newYork.timeZone = TimeZone(identifier: "America/New_York")!
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        for (month, date) in [(10, 25), (3, 29)] {
+            let parisDay = paris.date(from: DateComponents(year: 2026, month: month, day: date))!
+            let localDay = newYork.date(from: DateComponents(year: 2026, month: month, day: date))!
+            let root = try root(), key = GoalongActivityDayStore.dayKey(parisDay, calendar: paris)
+            let journal = root.appendingPathComponent("events/\(key).jsonl")
+            var bytes = Data()
+            for seconds in [0.0, 60, 120] {
+                bytes.append(try encoder.encode(HistoryEvent(sessionID: "fixture", timestamp: parisDay.addingTimeInterval(3 * 3600 + seconds),
+                    kind: .heartbeat, app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1))))
+                bytes.append(10)
+            }
+            try bytes.write(to: journal)
+            let store = GoalongActivityDayStore(root: root), later = parisDay.addingTimeInterval(10 * 86400)
+            XCTAssertEqual(try store.preserveBeforePurge(day: parisDay, now: later, calendar: paris), .summarized, key)
+            let summary = root.appendingPathComponent("activity-days/\(key).json")
+            let saved = try Data(contentsOf: summary)
+            XCTAssertTrue(store.hasForeignTimeZoneSummary(day: localDay, calendar: newYork), key)
+            _ = store.load(day: localDay, now: later, calendar: newYork)
+            try store.backfill(now: later, calendar: newYork)
+            XCTAssertEqual(try store.preserveBeforePurge(day: localDay, now: later, calendar: newYork), .summarized, key)
+            XCTAssertEqual(try Data(contentsOf: summary), saved, key)
+            try FileManager.default.removeItem(at: journal)
+            let restored = try store.read(day: localDay, calendar: newYork)
+            let localEnd = newYork.date(byAdding: .day, value: 1, to: localDay)!
+            XCTAssertEqual(restored.date, localDay, key); XCTAssertEqual(restored.end, localEnd, key)
+            XCTAssertEqual(restored.activeSeconds, 120, key); XCTAssertEqual(restored.breakdown.totalSeconds, 120, key)
+            XCTAssertEqual(restored.segments.first?.start, localDay, key); XCTAssertEqual(restored.segments.last?.end, localEnd, key)
+            XCTAssertTrue(zip(restored.segments, restored.segments.dropFirst()).allSatisfy { $0.end == $1.start }, key)
+            XCTAssertNotEqual(store.load(day: localDay, now: later, calendar: newYork).dayReason, .purgedWithoutSummary, key)
+        }
+    }
     func testTargetedDayDeletionInvalidatesSummaryAndClearingRemovesDirectory() throws {
         let root = try root(); _ = try writeEvents(root: root)
         let store = GoalongActivityDayStore(root: root)

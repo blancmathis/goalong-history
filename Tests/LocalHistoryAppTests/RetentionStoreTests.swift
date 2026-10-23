@@ -1096,7 +1096,7 @@
             try store.updateDetailedRetention(fromLegacyDays: 1)
             store.applyCleanup(now: fixture.now)
 
-            XCTAssertFalse(FileManager.default.fileExists(atPath: oldEvent.path), "An expired journal is removed even when it cannot be summarized")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: oldEvent.path), "A linked or foreign entry in events/ blocks the read: the journal stays")
             XCTAssertTrue(FileManager.default.fileExists(atPath: unknown.path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: invalidDay.path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: disguisedDirectory.path))
