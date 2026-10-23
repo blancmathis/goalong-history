@@ -35,17 +35,22 @@ remove_goalong_cli_link "$BIN/goalong"
 remove_goalong_cli_link "$WORK/missing" || fail "A missing link must not fail."
 
 # 2. Bounded wait: a polite process exits on SIGTERM, a stubborn one is forced after the wait.
-POLITE_NAME="GoalongQuitPolite$$"
-STUBBORN_NAME="GoalongQuitStubborn$$"
+# Names stay under 16 characters (MAXCOMLEN): pgrep -x on macOS 15 only sees the truncated name.
+POLITE_NAME="GLPolite$$"
+STUBBORN_NAME="GLStubborn$$"
 cp /bin/sleep "$WORK/$POLITE_NAME"
 cp /bin/bash "$WORK/$STUBBORN_NAME"
 # Copies of system binaries need a fresh ad-hoc signature to run on Apple silicon.
-/usr/bin/codesign --force --sign - "$WORK/$POLITE_NAME" "$WORK/$STUBBORN_NAME" >/dev/null 2>&1
+/usr/bin/codesign --force --sign - "$WORK/$POLITE_NAME" "$WORK/$STUBBORN_NAME" >/dev/null 2>&1 \
+  || fail "Could not sign the test processes."
 "$WORK/$POLITE_NAME" 60 & disown
 "$WORK/$STUBBORN_NAME" -c 'trap "" TERM; while :; do /bin/sleep 1; done' & disown
-/bin/sleep 0.5
-/usr/bin/pgrep -x "$POLITE_NAME" >/dev/null || fail "Polite process did not start."
-/usr/bin/pgrep -x "$STUBBORN_NAME" >/dev/null || fail "Stubborn process did not start."
+started() { # NAME: waits up to 10 s, a busy CI runner can be slow to start a new binary
+  local tries=0
+  until /usr/bin/pgrep -x "$1" >/dev/null; do (( ++tries <= 100 )) || return 1; /bin/sleep 0.1; done
+}
+started "$POLITE_NAME" || fail "Polite process did not start."
+started "$STUBBORN_NAME" || fail "Stubborn process did not start."
 
 start=$SECONDS
 GOALONG_QUIT_WAIT_TENTHS=5 quit_running_goalong "$POLITE_NAME" "$STUBBORN_NAME"
@@ -112,6 +117,7 @@ release_body="$(declare -f release_blocking_guard)"
   LOG="$WORK/purge-log"; : > "$LOG"
   DEV_APP_PATH="$WORK/purge/Goalong Dev.app" DEV_DATA_DIR="$WORK/purge/LocalHistory-Dev" HOME="$WORK/purge-home"
   mkdir -p "$DEV_APP_PATH" "$DEV_DATA_DIR"
+  goalong_dev_app_candidates() { :; } # hermetic: no running copy or Spotlight result from this Mac
   release_blocking_guard() { echo "guard $BUNDLE_ID $EXECUTABLE_NAME $*" >> "$LOG"; }
   quit_running_goalong() { [[ -d "$DEV_DATA_DIR" ]] && echo "quit $*" >> "$LOG"; }
   defaults() { echo "defaults $*" >> "$LOG"; }
