@@ -20,7 +20,7 @@ import AgentActivity
     @State private var previewText: String?
     @State private var previewBusy = false
     @State private var previewGeneration = UUID()
-    @State private var sampleText = "Hi Charlie — travail sur le projet"
+    @State private var sampleText = "Bonjour Charlie — travail sur le projet"
     @State private var loaded = false
     @State private var catalogLoading = true
     @State private var catalogError: String?
@@ -240,7 +240,7 @@ import AgentActivity
             }
             ForEach(rules) { rule in GoalongReplacementRow(rule: rule) { selection.replacements?.removeAll { $0.id == rule.wrappedValue.id } } }
             if rules.wrappedValue.isEmpty {
-                Text("Exemple : Hi Charlie → Projet A").font(.system(size: 14)).foregroundStyle(.secondary).padding(.vertical, 16)
+                Text("Exemple : Bonjour Charlie → Projet A").font(.system(size: 14)).foregroundStyle(.secondary).padding(.vertical, 16)
             }
             GoalongSettingsGroup(title: "Tester vos remplacements") {
                 TextField("Texte d’exemple", text: $sampleText, axis: .vertical).textFieldStyle(GoalongFieldStyle()).lineLimit(2...4)
@@ -251,7 +251,8 @@ import AgentActivity
         }
     }
     private var transformedExample: String {
-        (try? GoalongTextTransformer(rules.wrappedValue).apply(sampleText)) ?? "Vérifiez les règles de remplacement."
+        if rules.wrappedValue.isEmpty { return "Aucun remplacement défini." }
+        return (try? GoalongTextTransformer(rules.wrappedValue).apply(sampleText)) ?? "Vérifiez les règles de remplacement."
     }
     private var instructions: some View {
         GoalongSettingsGroup(title: "Comment rédiger le bilan") {

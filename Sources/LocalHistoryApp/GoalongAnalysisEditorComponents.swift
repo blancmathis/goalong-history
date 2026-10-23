@@ -68,7 +68,7 @@ struct GoalongReplacementRow: View {
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Rechercher").font(.system(size: 12)).foregroundStyle(.secondary)
-                        TextField("Hi Charlie", text: $rule.search).textFieldStyle(GoalongFieldStyle())
+                        TextField("Bonjour Charlie", text: $rule.search).textFieldStyle(GoalongFieldStyle())
                     }
                     Image(systemName: "arrow.right").foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 5) {

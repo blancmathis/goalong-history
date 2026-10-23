@@ -102,7 +102,7 @@ struct GoalongSettingsList<Content: View>: View {
         LHCard(padding: 0) {
             VStack(spacing: 0) {
                 row("Enregistrement local", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
-                    detail: "Ce que Goalong conserve sur ce Mac", symbol: "internaldrive", pane: .recording)
+                    detail: "Ce que Goalong conserve sur ce Mac", symbol: SettingsPane.recording.symbol, pane: .recording)
                 GoalongRowDivider()
                 row("Envoi à Goalong", status: sender.enabled ? "Chaque jour" : "À la demande",
                     detail: "Compte, données et fréquence des envois", symbol: "arrow.up.circle", pane: .website)
@@ -147,7 +147,7 @@ struct GoalongSettingsList<Content: View>: View {
     @State private var showing = false
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: capability == .appleScreenTime ? "hourglass" : capability == .aiConversations ? "folder" : "accessibility")
+            Image(systemName: PermissionSetupCopy(capability: capability, status: .ready).symbol)
                 .font(.system(size: 14, weight: .medium)).frame(width: 22).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
