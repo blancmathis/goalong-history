@@ -440,7 +440,7 @@ import LocalHistoryCore
         private var primaryTitle: String {
             if restarting { return "Préparation du redémarrage…" }
             if flow.checking { return "Vérification de l’accès…" }
-            if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Terminé" : "Activer \(capability.title)" }
+            if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Terminé" : copy.activateTitle }
             if needsRestart { return "Quitter et rouvrir" }
             if !openedSettings && access.hasSettingsAction { return "Ouvrir Réglages Système" }
             return "Vérifier l’accès"

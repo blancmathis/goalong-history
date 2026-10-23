@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
+import LocalHistoryCore
 
 /// Display copy is source-specific. It never infers permission from a simulated checkbox.
 struct PermissionSetupCopy {
@@ -48,6 +49,11 @@ struct PermissionSetupCopy {
     }
     /// The macOS list shows the app under its bundle name, not under the capability name.
     var title: String { capability == .localComputerHistory ? "Autoriser l’historique de ce Mac" : "Autoriser \(capability.title)" }
+    var activateTitle: String { capability == .localComputerHistory ? "Activer l’historique de ce Mac" : "Activer \(capability.title)" }
+    /// Name shown in the macOS privacy list: the dev copy is "Goalong Dev", the gallery rewrites ProductIdentity.displayName.
+    static func macOSListName(isDevelopment: Bool = GoalongBuildChannel.current.isDevelopment) -> String {
+        isDevelopment ? "Goalong Dev" : ProductIdentity.canonicalDisplayName
+    }
     var settingsPath: String { status == .screenTimeSetup ? "Réglages Système  ›  Temps d’écran" : "Confidentialité et sécurité  ›  \(permission)" }
 }
 
@@ -123,7 +129,7 @@ struct PermissionSetupSteps: View {
         VStack(alignment: .leading, spacing: 18) {
             step(1, title: "Ouvrir les réglages macOS", detail: copy.settingsPath, done: openedSettings || ready, active: !openedSettings && !ready)
             step(2, title: copy.status == .screenTimeSetup ? "Activer le temps d’écran" : "Autoriser Goalong",
-                 detail: copy.status == .screenTimeSetup ? "Apple commencera à mesurer votre usage." : "Dans la liste de macOS, l’app s’appelle « Goalong History ». Activez-la.",
+                 detail: copy.status == .screenTimeSetup ? "Apple commencera à mesurer votre usage." : "Dans la liste de macOS, l’app s’appelle « \(PermissionSetupCopy.macOSListName()) ». Activez-la.",
                  done: ready, active: openedSettings && !ready)
             step(3, title: "Revenir dans Goalong", detail: "Vérification automatique au retour. Relancez Goalong si macOS le demande.", done: ready, active: false)
         }

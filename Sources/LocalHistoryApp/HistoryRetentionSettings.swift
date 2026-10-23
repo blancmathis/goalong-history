@@ -135,7 +135,7 @@ extension HistoryRetentionPolicy {
                             .font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                             .accessibilityIdentifier("retention-confirm-proofs")
                     }
-                    Text("Ces règles couvrent ce que Goalong enregistre. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni les exports, sauvegardes ou données déjà envoyées. Les bilans ChatGPT s’effacent avec « Effacer l’historique détaillé ».")
+                    Text("Ces règles couvrent les données ci-dessus. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni les exports, sauvegardes ou données déjà envoyées. Les bilans ChatGPT ne sont pas concernés : effacez-les avec « Effacer l’historique détaillé » pour les jours voulus.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     if let error = model.error {
                         Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)

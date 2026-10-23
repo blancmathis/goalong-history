@@ -76,5 +76,12 @@ final class PermissionExperienceTests: XCTestCase {
         XCTAssertFalse(titles.contains("Preuves locales"))
         XCTAssertFalse(titles.contains("Résumés d’Activité"))
     }
+
+    func testUIU05ReviewActivationTitleAndListName() {
+        XCTAssertEqual(PermissionSetupCopy(capability: .localComputerHistory, status: .ready).activateTitle, "Activer l’historique de ce Mac")
+        XCTAssertEqual(PermissionSetupCopy(capability: .appleScreenTime, status: .ready).activateTitle, "Activer \(GoalongCapability.appleScreenTime.title)")
+        XCTAssertEqual(PermissionSetupCopy.macOSListName(isDevelopment: true), "Goalong Dev")
+        XCTAssertEqual(PermissionSetupCopy.macOSListName(isDevelopment: false), ProductIdentity.canonicalDisplayName)
+    }
 }
 #endif
