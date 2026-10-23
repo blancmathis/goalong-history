@@ -10,6 +10,7 @@ import SwiftUI
     @ObservedObject private var concentration = ConcentrationRuntime.shared
     @ObservedObject private var blocking = BlockingRuntime.shared
     @State private var confirmingDelete = false
+    @State private var deleteMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -27,13 +28,27 @@ import SwiftUI
                     .buttonStyle(LHQuietButtonStyle())
                     .disabled(concentration.controller?.hasLockedBlock == true)
             }
-            if let error = concentration.error { Text(error).font(.callout) }
+            if let error = concentration.error {
+                Text(FocusUIError.message(raw: error)).font(.callout)
+            } else if let deleteMessage {
+                GoalongNote(deleteMessage).accessibilityIdentifier("settings-concentration-delete-result")
+            }
             GoalongNote("Un module désactivé ne tourne pas, n’installe rien et ne demande aucun accès.")
         }
+        .onChange(of: concentration.error) { if $0 != nil { deleteMessage = nil } }
         .alert("Supprimer les données Concentration ?", isPresented: $confirmingDelete) {
             Button("Annuler", role: .cancel) {}
-            // On failure the runtime keeps the reason in `error`, shown above.
-            Button("Supprimer", role: .destructive) { try? concentration.deleteData() }
+            // A failure and a success both show a message above.
+            Button("Supprimer", role: .destructive) {
+                deleteMessage = nil
+                do {
+                    try concentration.deleteData()
+                    // A failed re-enable sets `concentration.error`; it must not hide behind a success note.
+                    if concentration.error == nil { deleteMessage = "Données Concentration supprimées." }
+                } catch {
+                    deleteMessage = FocusUIError.message(error)
+                }
+            }
         } message: { Text("Séances, plans, bilans et réglages de ce module. Le reste de Goalong ne change pas.") }
     }
 

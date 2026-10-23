@@ -41,6 +41,17 @@ final class ConcentrationCommitmentControllerTests: XCTestCase {
         _ = try c.setCommitment(period: future, kind: .sessions, target: 1); try c.deleteCommitment(period: future)
         XCTAssertEqual(try s.commitments().count, 1)
     }
+    @MainActor func testNonGregorianSystemCalendarStillFindsTodayCommitment() throws {
+        for identifier in [Calendar.Identifier.buddhist, .japanese] {
+            var system = Calendar(identifier: identifier); system.timeZone = TimeZone(identifier: "Europe/Paris")!
+            let now = date("2026-10-04")
+            XCTAssertEqual(BlockingController.dayKey(now, calendar: system), "2026-10-04")
+            XCTAssertEqual(BlockingController.dayKey(date("2026-12-31", 23), calendar: system), "2026-12-31")
+            let c = try ConcentrationController(store: try store(), clock: { now }, calendar: system)
+            _ = try c.setCommitment(period: .init(kind: .day, key: FocusCalendar.dayKey(now, calendar: system)), kind: .work, target: 60)
+            XCTAssertNotNil(c.todayCommitment, "\(identifier)")
+        }
+    }
     @MainActor func testDayAndWeekSettleOnlyAtRefreshTogetherOnceAndNoStakeJoker() throws {
         let s = try store(); var now = date("2026-10-04")
         let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
@@ -95,6 +106,8 @@ final class ConcentrationCommitmentControllerTests: XCTestCase {
         XCTAssertThrowsError(try runtime.deleteData()) { XCTAssertEqual($0 as? FocusFailure, .locked) }
         // An unrelated free focus session can still stop; it does not own this stake.
         try c.startSession(intent: "Lire", mode: .init(minutes: 5)); XCTAssertFalse(c.hasLockedSessionBlock)
+        XCTAssertFalse(FocusActiveSession(controller: c, session: try XCTUnwrap(c.currentSession), now: now, live: false).locked,
+                       "the session card keeps Stop and Skip while the stake runs")
         try c.stopSession(); XCTAssertTrue(c.hasLockedBlock)
         try c.useCommitmentJoker(period: period)
         XCTAssertTrue(b.activeBlocks.isEmpty); XCTAssertFalse(c.hasLockedBlock)
@@ -214,6 +227,31 @@ final class ConcentrationCommitmentControllerTests: XCTestCase {
         let history = try runtime.handle(GoalongFocusCLI.parse(command: "commitments", arguments: ["--from", "2026-10-04", "--to", "2026-10-04"]))
         XCTAssertEqual((try JSONSerialization.jsonObject(with: history) as! [String: Any])["commitments"].map { ($0 as! [Any]).count }, 2)
         XCTAssertThrowsError(try runtime.handle(.init(command: "commitment show", options: ["--from": "2026-10-04"]))) { XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument) }
+    }
+    @MainActor func testCLIStakeRefusesMalformedIDsAndMidnightAndBlockListsReportsFrozenLists() throws {
+        let s = try store(); let now = date("2026-10-04")
+        let a = BlockList(name: "A", sites: [.init(pattern: "a.org")]), bList = BlockList(name: "B", sites: [.init(pattern: "b.org")])
+        let cList = BlockList(name: "C", sites: [.init(pattern: "c.org")])
+        let b = BlockingController(document: .init(lists: [a, bList, cList]), clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 }, boot: { "test" })
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar, blocking: { b })
+        let m = modules(); m.setEnabled(.concentration, true); m.setEnabled(.blocking, true)
+        let runtime = ConcentrationRuntime(storeFactory: { s }, factory: { _ in c }, blockingProvider: { b }, presentsPanels: false, clock: { now }, calendar: calendar)
+        runtime.start(modules: m)
+        func set(_ stake: String, until: String? = nil) throws -> Data {
+            var o = ["--day": "2026-10-04", "--kind": "work", "--target": "6h", "--stake": stake]; o["--until"] = until
+            return try runtime.handle(.init(command: "commitment set", options: o))
+        }
+        XCTAssertThrowsError(try set("\(a.id.uuidString),typo")) { XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument) }
+        XCTAssertThrowsError(try set(a.id.uuidString, until: "00:00")) { XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument) }
+        XCTAssertTrue(c.commitments.isEmpty)
+        func locked() throws -> [String: Bool] {
+            let json = try JSONSerialization.jsonObject(with: runtime.handle(.init(command: "block-lists"))) as! [String: Any]
+            return Dictionary(uniqueKeysWithValues: (json["lists"] as! [[String: Any]]).map { ($0["name"] as! String, $0["locked"] as! Bool) })
+        }
+        XCTAssertEqual(try locked(), ["A": false, "B": false, "C": false])
+        try b.startFocusBlock(id: UUID(), listIDs: [a.id], until: now.addingTimeInterval(600), lock: .typing)
+        try b.startFocusBlock(id: UUID(), listIDs: [bList.id], until: now.addingTimeInterval(600), lock: .free)
+        XCTAssertEqual(try locked(), ["A": true, "B": false, "C": false])
     }
 }
 #endif

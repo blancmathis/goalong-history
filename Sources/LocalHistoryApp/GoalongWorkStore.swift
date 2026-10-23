@@ -58,19 +58,42 @@ extension Notification.Name {
 
     @Published private(set) var verdicts = GoalongWorkVerdicts()
     @Published private(set) var lastError: String?
+    /// Set once when the saved file could not be read: it was kept aside (or left in place,
+    /// and nothing is written over it) instead of being silently replaced.
+    @Published private(set) var storageNotice: String?
     @Published var automatic: Bool {
-        didSet { guard automatic != document.automatic else { return }; document.automatic = automatic; persist() }
+        didSet {
+            guard automatic != document.automatic else { return }
+            if writesBlocked { automaticChangedWhileBlocked = true }
+            document.automatic = automatic; persist()
+        }
     }
     private var document: Document
     private let fileURL: URL
     private let definitionSource: @MainActor () -> GoalongWorkDefinition
     private var observer: NSObjectProtocol?
+    /// True when an unreadable file could not be moved aside: writing would destroy it.
+    private var writesBlocked = false
+    /// The user switched automatic classification while the file was unreadable: a repaired file keeps that choice.
+    private var automaticChangedWhileBlocked = false
 
     init(fileURL: URL = AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongWorkStore.fileName),
          definition: @escaping @MainActor () -> GoalongWorkDefinition = { GoalongWorkDefinition(JevWorkContextStore.shared.context) }) {
         self.fileURL = fileURL
         self.definitionSource = definition
-        let loaded = Self.load(from: fileURL)
+        let loaded: Document
+        switch Self.load(from: fileURL) {
+        case .missing: loaded = Document()
+        case .loaded(let value): loaded = value
+        case .unreadable:
+            loaded = Document()
+            if let name = try? Self.moveDamagedFileAside(fileURL) {
+                storageNotice = "Le classement enregistré était illisible. Il a été mis de côté (\(name)) et vos corrections Travail / Hors travail repartent de zéro."
+            } else {
+                writesBlocked = true
+                storageNotice = "Le classement enregistré est illisible. Rien ne sera enregistré par-dessus tant qu’il n’est pas réparé ou supprimé."
+            }
+        }
         document = loaded
         automatic = loaded.automatic
         reconcileDefinition()
@@ -100,16 +123,21 @@ extension Notification.Name {
     func entry(for key: String) -> Entry? { document.entries[key] }
 
     /// Saves one agent answer. A newer definition or an owner correction always wins.
-    func merge(_ assignments: [String: GoalongWorkAssignment], revision: String, day: String) {
-        guard revision == document.revision, !assignments.isEmpty else { return }
+    /// Returns the verdicts actually stored (none for an older definition).
+    @discardableResult
+    func merge(_ assignments: [String: GoalongWorkAssignment], revision: String, day: String) -> [String: GoalongWorkAssignment] {
+        guard revision == document.revision, !assignments.isEmpty else { return [:] }
+        var applied: [String: GoalongWorkAssignment] = [:]
         for (key, assignment) in assignments where document.entries[key]?.byOwner != true {
             let previous = document.entries[key]
             let attempts = min(3, (previous?.attempts ?? 0) + (previous?.lastAskedDay == day ? 0 : 1))
             document.entries[key] = Entry(verdict: assignment.verdict, task: assignment.task, byOwner: false,
                 seen: day, attempts: attempts, lastAskedDay: day)
+            applied[key] = assignment
         }
         prune()
         publish(); persist()
+        return applied
     }
 
     /// Persist a re-ask before dispatch: a failed answer still counts as an automatic attempt.
@@ -163,9 +191,26 @@ extension Notification.Name {
         publish(); persist()
     }
 
+    #if DEBUG
+    /// Test gallery: back to the file on disk (gone with the gallery HOME data) between two images.
+    /// An unreadable file reads as empty here; the write block and notices of the last image go.
+    func resetForTesting() {
+        if case .loaded(let saved) = Self.load(from: fileURL) { document = saved } else { document = Document() }
+        writesBlocked = false; automaticChangedWhileBlocked = false
+        storageNotice = nil; lastError = nil
+        automatic = document.automatic
+        reconcileDefinition()
+    }
+    #endif
+
+    /// Full clear: the saved file is rewritten without any title, and the unreadable copies
+    /// (kept aside or left in place) go too, since they hold the same titles.
     func removeAll() {
         document.entries = [:]; document.corrections = []
+        if writesBlocked { try? FileManager.default.removeItem(at: fileURL) }
+        liftWriteBlock(keepingSavedCorrections: false)
         publish(); persist()
+        removeDamagedCopies()
     }
 
     /// Re-reads the definition. A changed meaning invalidates the agent's verdicts.
@@ -200,7 +245,66 @@ extension Notification.Name {
         }
     }
 
+    /// The unreadable file was left in place. Once it is deleted, repaired or can be moved
+    /// aside, writing resumes. A repaired file keeps its corrections unless the user changed
+    /// the same context meanwhile, or asked for a full clear.
+    private func liftWriteBlock(keepingSavedCorrections: Bool) {
+        guard writesBlocked else { return }
+        switch Self.load(from: fileURL) {
+        case .missing:
+            storageNotice = nil
+        case .loaded(let saved):
+            if keepingSavedCorrections { adopt(saved) }
+            storageNotice = nil
+        case .unreadable:
+            guard let name = try? Self.moveDamagedFileAside(fileURL) else { return }
+            storageNotice = "Le classement enregistré était illisible. Il a été mis de côté (\(name)) et vos corrections Travail / Hors travail repartent de zéro."
+        }
+        writesBlocked = false
+        automaticChangedWhileBlocked = false
+    }
+
+    /// Merges a repaired file under the changes made while it was unreadable. An owner correction
+    /// always wins over an agent verdict, as in `merge`: the agent saw an empty file meanwhile.
+    private func adopt(_ saved: Document) {
+        var entries = saved.revision == document.revision ? saved.entries : saved.entries.filter { $0.value.byOwner }
+        entries.merge(document.entries) { kept, current in current.byOwner || !kept.byOwner ? current : kept }
+        let changed = Set(document.entries.filter { $0.value.byOwner }.keys)
+        var corrections = saved.corrections.filter { !changed.contains($0.key) }
+        corrections.append(contentsOf: document.corrections)
+        let limit = GoalongWorkClassification.maximumExamples * 4
+        if corrections.count > limit { corrections.removeFirst(corrections.count - limit) }
+        document.entries = entries; document.corrections = corrections
+        if !automaticChangedWhileBlocked {
+            document.automatic = saved.automatic
+            automatic = saved.automatic
+        }
+        prune(); publish()
+    }
+
+    /// Deletes the `work-classification.damaged-*` copies next to the saved file.
+    private func removeDamagedCopies() {
+        let fm = FileManager.default
+        let folder = fileURL.deletingLastPathComponent()
+        let prefix = fileURL.deletingPathExtension().lastPathComponent + ".damaged-", suffix = "." + fileURL.pathExtension
+        guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
+        var failed = false
+        for name in names where name.hasPrefix(prefix) && name.hasSuffix(suffix) {
+            do { try fm.removeItem(at: folder.appendingPathComponent(name, isDirectory: false)) } catch { failed = true }
+        }
+        if failed {
+            if lastError == nil { lastError = "Une copie illisible du classement n’a pas pu être effacée. Supprimez-la dans le dossier de Goalong." }
+        } else if !writesBlocked {
+            storageNotice = nil
+        }
+    }
+
     private func persist() {
+        liftWriteBlock(keepingSavedCorrections: true)
+        guard !writesBlocked else {
+            lastError = "Le classement n’a pas été enregistré : le fichier existant est illisible."
+            return
+        }
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
@@ -213,10 +317,33 @@ extension Notification.Name {
         }
     }
 
-    private static func load(from url: URL) -> Document {
+    enum LoadOutcome<Value> { case missing, loaded(Value), unreadable }
+
+    /// A missing file is a fresh start. A file that exists but cannot be read, is too large,
+    /// or has another version is unreadable: it must not be overwritten silently.
+    private static func load(from url: URL) -> LoadOutcome<Document> {
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
         guard let data = try? SupportDiagnostics.readPrivateFile(url, maximum: 16 * 1_024 * 1_024),
-              let value = try? JSONDecoder().decode(Document.self, from: data), value.version == 1 else { return Document() }
-        return value
+              let value = try? JSONDecoder().decode(Document.self, from: data), value.version == 1 else { return .unreadable }
+        return .loaded(value)
+    }
+
+    /// Keeps the user's unreadable file next to the original, under a dated name.
+    nonisolated static func moveDamagedFileAside(_ url: URL) throws -> String {
+        let fm = FileManager.default
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let folder = url.deletingLastPathComponent()
+        let base = url.deletingPathExtension().lastPathComponent, ext = url.pathExtension
+        var name = "\(base).damaged-\(stamp).\(ext)"
+        var index = 1
+        while fm.fileExists(atPath: folder.appendingPathComponent(name).path) {
+            name = "\(base).damaged-\(stamp)-\(index).\(ext)"
+            index += 1
+        }
+        let target = folder.appendingPathComponent(name, isDirectory: false)
+        try fm.moveItem(at: url, to: target)
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+        return name
     }
 }
 

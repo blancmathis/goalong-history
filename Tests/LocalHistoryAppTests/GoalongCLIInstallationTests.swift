@@ -34,6 +34,9 @@
 
             XCTAssertEqual(report.state, .missing)
             XCTAssertNil(report.resolvedTargetPath)
+            // The page already says « Commande absente » and the banner title says what to do:
+            // the detail must not repeat that the link is missing.
+            XCTAssertFalse(report.detail.contains("absent"))
         }
 
         func testUnrelatedExecutableAndRegularFileAreConflicts() throws {
@@ -64,6 +67,42 @@
                 ).state,
                 .conflict
             )
+        }
+
+        func testGoalongDevNeverReportsTheInstalledCommandAsAConflict() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            // ~/.local/bin/goalong points to the installed Goalong, not to the running Goalong Dev.
+            let installed = fixture.root.appendingPathComponent("Installed", isDirectory: false)
+            try Data("installed".utf8).write(to: installed)
+            XCTAssertEqual(Darwin.chmod(installed.path, 0o700), 0)
+            try FileManager.default.createSymbolicLink(atPath: fixture.link.path, withDestinationPath: installed.path)
+
+            let report = GoalongCLIInstallation.inspect(
+                linkURL: fixture.link,
+                expectedExecutableURL: fixture.executable,
+                isDevelopment: true
+            )
+
+            XCTAssertEqual(report.state, .development)
+            XCTAssertEqual(report.resolvedTargetPath, installed.standardizedFileURL.resolvingSymlinksInPath().path)
+            XCTAssertEqual(
+                report.developmentCLIPath,
+                fixture.executable.deletingLastPathComponent().appendingPathComponent("goalong").path
+            )
+            XCTAssertTrue(report.detail.contains("Goalong installé"))
+            XCTAssertTrue(report.detail.contains("Ne réinstallez pas"))
+            // The link is only read, never rewritten.
+            XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: fixture.link.path), installed.path)
+
+            try FileManager.default.removeItem(at: fixture.link)
+            let missing = GoalongCLIInstallation.inspect(
+                linkURL: fixture.link,
+                expectedExecutableURL: fixture.executable,
+                isDevelopment: true
+            )
+            XCTAssertEqual(missing.state, .development)
+            XCTAssertNil(missing.resolvedTargetPath)
         }
 
         private func makeFixture() throws -> (root: URL, executable: URL, link: URL) {

@@ -633,3 +633,78 @@ final class DailyWebsiteUsageProjectionTests: XCTestCase {
         return formatter
     }()
 }
+
+final class DailyWebsiteUsageTornRowTests: XCTestCase {
+    private func websiteRow(at timestamp: Date, host: String) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let event = HistoryEvent(
+            sessionID: "fixture",
+            timestamp: timestamp,
+            kind: .windowChanged,
+            app: .init(name: "Aside", bundleIdentifier: "at.studio.AsideBrowser", processIdentifier: 0),
+            url: .init(value: "https://\(host)/", host: host, redactionApplied: false)
+        )
+        return try encoder.encode(event)
+    }
+
+    private func makeRoot() throws -> (URL, Date, URL) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("goalong-websites-torn-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("events"), withIntermediateDirectories: true)
+        let day = Calendar.current.startOfDay(for: fixtureStart)
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return (root, day, root.appendingPathComponent("events/\(formatter.string(from: day)).jsonl"))
+    }
+
+    func testTornRowInTheMiddleIsSkippedAndTheOtherRowsStayUsable() throws {
+        let (root, day, journalURL) = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var journal = try websiteRow(at: day.addingTimeInterval(0), host: "x.com") + Data([10])
+        journal.append(Data("{\"kind\":\"urlCh\n".utf8))
+        journal.append(try websiteRow(at: day.addingTimeInterval(30), host: "x.com") + Data([10]))
+        journal.append(try websiteRow(at: day.addingTimeInterval(60), host: "y.com") + Data([10]))
+        try journal.write(to: journalURL)
+        let loaded = HistoryLocalStoreReader(rootDirectory: root).loadDailyWebsiteUsage(
+            day: day, currentTime: day.addingTimeInterval(120))
+        XCTAssertEqual(loaded.state, .ready)
+        XCTAssertEqual(loaded.skippedMalformedRowCount, 1)
+        XCTAssertEqual(loaded.sourceRowCount, 4)
+        XCTAssertEqual(Set(loaded.websites.map(\.host)), ["x.com", "y.com"])
+        XCTAssertEqual(loaded.issues.map(\.line), [2])
+        XCTAssertFalse(loaded.issues.contains { $0.message.contains("urlCh") })
+        XCTAssertEqual(try Data(contentsOf: journalURL), journal)
+    }
+
+    func testTornTrailingRowWithoutNewlineKeepsTheDayUsable() throws {
+        let (root, day, journalURL) = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var journal = try websiteRow(at: day, host: "x.com") + Data([10])
+        journal.append(try websiteRow(at: day.addingTimeInterval(30), host: "y.com") + Data([10]))
+        journal.append(Data("{\"kind\":\"urlCh".utf8))
+        try journal.write(to: journalURL)
+        let loaded = HistoryLocalStoreReader(rootDirectory: root).loadDailyWebsiteUsage(
+            day: day, currentTime: day.addingTimeInterval(120))
+        XCTAssertEqual(loaded.state, .ready)
+        XCTAssertEqual(Set(loaded.websites.map(\.host)), ["x.com", "y.com"])
+        XCTAssertEqual(try Data(contentsOf: journalURL), journal)
+    }
+
+    func testManyMalformedRowsStillFailClosed() throws {
+        let (root, day, journalURL) = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var journal = try websiteRow(at: day, host: "x.com") + Data([10])
+        for _ in 0..<40 { journal.append(Data("not json\n".utf8)) }
+        try journal.write(to: journalURL)
+        let loaded = HistoryLocalStoreReader(rootDirectory: root).loadDailyWebsiteUsage(
+            day: day, currentTime: day.addingTimeInterval(120))
+        XCTAssertEqual(loaded.state, .sourceUnavailable)
+        XCTAssertTrue(loaded.websites.isEmpty)
+    }
+}

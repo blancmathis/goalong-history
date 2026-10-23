@@ -51,6 +51,18 @@ final class GoalongProfileAnalysisTests: XCTestCase {
         XCTAssertThrowsError(try A.parseResult(Data("{\"items\":[],\"items\":[]}".utf8)))
         XCTAssertEqual(try A.parseRequest(r.encoded()), r)
     }
+    func testDamagedArchiveThrowsInsteadOfCrashing() throws {
+        let (r, result) = try fixture()
+        let request = try JSONSerialization.jsonObject(with: r.encoded())
+        let response = try JSONSerialization.jsonObject(with: JSONEncoder().encode(result))
+        for text in ["{\"request\":1,\"result\":2}", "{\"request\":null,\"result\":null}", "{\"request\":\"a\",\"result\":[]}", "[1]", "3"] {
+            XCTAssertThrowsError(try A.parseArchive(Data(text.utf8)), text)
+        }
+        XCTAssertThrowsError(try A.parseArchive(JSONSerialization.data(withJSONObject: ["request": request, "result": 2])))
+        XCTAssertThrowsError(try A.parseArchive(JSONSerialization.data(withJSONObject: ["request": NSNull(), "result": response])))
+        let archive = try A.parseArchive(JSONSerialization.data(withJSONObject: ["request": request, "result": response]))
+        XCTAssertEqual(archive.request, r)
+    }
     func testConversationContextIsIndependentFromAIRubricAndLegacyArchivesStillOpen() throws {
         let e = A.Evidence(id: "old", start: "2026-09-07T08:00:00Z", end: "2026-09-07T09:00:00Z", kind: "ai", application: "Agent", text: "Décision antérieure Atlas")
         let policy = A.Policy(replacements: [.init(term: "Atlas", replacement: "Projet secret")])
@@ -78,5 +90,50 @@ final class GoalongProfileAnalysisTests: XCTestCase {
         if let path = ProcessInfo.processInfo.environment["GOALONG_PROFILE_FIXTURE"] {
             try GoalongContextualRhythm.encode(A.Archive(request: r, result: result)).write(to: URL(fileURLWithPath: path))
         }
+    }
+
+    private func loadRoot(_ events: [HistoryEvent]) throws -> (URL, Date, Date) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-profile-load-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("events"), withIntermediateDirectories: true)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let day = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        var data = Data()
+        for event in events { data.append(try encoder.encode(event)); data.append(10) }
+        let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
+        try data.write(to: root.appendingPathComponent("events/\(formatter.string(from: day)).jsonl"))
+        return (root, day, day.addingTimeInterval(86_000))
+    }
+    private func event(_ app: String, bundle: String, host: String? = nil, at day: Date, offset: TimeInterval) -> HistoryEvent {
+        HistoryEvent(sessionID: "s", timestamp: day.addingTimeInterval(offset), kind: .applicationActivated,
+            app: .init(name: app, bundleIdentifier: bundle, processIdentifier: 0),
+            window: .init(title: "\(app) window", role: nil, subrole: nil),
+            url: host.map { .init(value: "https://\($0)/page", host: $0, redactionApplied: false) })
+    }
+    func testLoadOmitsEventsExcludedByGlobalPolicyAndFailsClosedWhenUnreadable() throws {
+        let day = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        let (root, start, end) = try loadRoot([
+            event("Keeper", bundle: "test.keeper", at: day, offset: 60),
+            event("Secret", bundle: "test.secret", at: day, offset: 120),
+            event("Browser", bundle: "test.browser", host: "private.example", at: day, offset: 180),
+        ])
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertEqual(try A.load(root: root, start: start, end: end, rich: false).count, 3)
+        var policy = GoalongPrivacyPolicy()
+        policy.applications = ["test.secret": "Secret"]; policy.domains = ["private.example"]
+        try policy.save(in: root)
+        let rows = try A.load(root: root, start: start, end: end, rich: false)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertFalse(rows.contains { $0.text.contains("Secret") || $0.text.contains("private.example") })
+        try Data("not json".utf8).write(to: GoalongPrivacyPolicy.file(in: root))
+        XCTAssertThrowsError(try A.load(root: root, start: start, end: end, rich: false))
+    }
+    func testLoadReadsNothingWhileGlobalPauseIsOn() throws {
+        let day = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        let (root, start, end) = try loadRoot([event("Keeper", bundle: "test.keeper", at: day, offset: 60)])
+        defer { try? FileManager.default.removeItem(at: root) }
+        try GoalongGlobalPause.setPaused(true, in: root)
+        XCTAssertThrowsError(try A.load(root: root, start: start, end: end, rich: false))
+        try GoalongGlobalPause.setPaused(false, in: root)
+        XCTAssertEqual(try A.load(root: root, start: start, end: end, rich: false).count, 1)
     }
 }

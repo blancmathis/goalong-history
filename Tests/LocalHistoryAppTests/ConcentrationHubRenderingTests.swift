@@ -6,13 +6,17 @@ import XCTest
 @testable import LocalHistoryApp
 
 /// Opt-in renders of the four Concentration tabs, with fixed data only. Run with an isolated HOME:
-/// `GOALONG_CONCENTRATION_HUB_SNAPSHOTS=<dir> HOME=<tmp> CFFIXED_USER_HOME=<tmp> swift test --filter ConcentrationHubRenderingTests`
+/// `GOALONG_CONCENTRATION_HUB_SNAPSHOTS=<dir> HOME=/tmp/goalong-hub-render-x CFFIXED_USER_HOME=/tmp/goalong-hub-render-x swift test --filter ConcentrationHubRenderingTests`
 final class ConcentrationHubRenderingTests: XCTestCase {
     private final class Clock { var now: Date; init(_ now: Date) { self.now = now } }
 
     @MainActor func testRenderConcentrationTabs() throws {
         guard let path = ProcessInfo.processInfo.environment["GOALONG_CONCENTRATION_HUB_SNAPSHOTS"] else {
             throw XCTSkip("Opt-in native rendering with fixed data only")
+        }
+        guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
+            XCTFail("Refusing to render with real user data: run with HOME=/tmp/goalong-hub-render-…")
+            return
         }
         let directory = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -24,6 +28,8 @@ final class ConcentrationHubRenderingTests: XCTestCase {
         defer { window.orderOut(nil); window.contentViewController = nil }
         let root = URL(fileURLWithPath: "/private/tmp/focus-hub-render-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        // The shared runtime is started only under the guarded /tmp/goalong- HOME above, so its store and
+        // backend touch disposable data. Views read it directly (« Nouvelle liste… », add-to-list menus).
         let suite = "hub-render-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -35,7 +41,7 @@ final class ConcentrationHubRenderingTests: XCTestCase {
         try FileManager.default.createDirectory(at: AppPaths.applicationSupportDirectory, withIntermediateDirectories: true)
         BlockingRuntime.shared.start(modules: modules)
         defer { BlockingRuntime.shared.apply(enabled: false) }
-        // The shared runtime only shows « Nouvelle liste… »; the data lives in memory, like the other renders.
+        // The data shown in lists lives in memory, like the other renders.
         let blocking = BlockingController(document: BlockingDocument(), clock: { Date() }, continuous: { Date().timeIntervalSince1970 })
         let lists = BlockingRuntime(controller: blocking)
 

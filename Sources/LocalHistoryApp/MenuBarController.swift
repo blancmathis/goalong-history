@@ -25,13 +25,15 @@
         private let onOpenShare: () -> Void
         private let onTogglePause: () -> Void
         private let onRequestPermissions: () -> Void
-        private let onReloadConfig: () -> Void
+        private let onReloadConfig: () -> Bool
+        private let onRetryKeychain: () -> Void
         private let onQuit: () -> Void
 
         private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let permissionMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        private let globalPauseItem = NSMenuItem(title: "Arrêt de confidentialité", action: #selector(toggleGlobalPause), keyEquivalent: "")
+        private let globalPauseItem = NSMenuItem(title: "Confidentialité · tout suspendre…", action: #selector(toggleGlobalPause), keyEquivalent: "")
         private let pauseMenuItem = NSMenuItem(title: "", action: #selector(togglePause), keyEquivalent: "p")
+        private let sealingSuspendedItem = NSMenuItem(title: "", action: #selector(retryKeychain), keyEquivalent: "")
         private let technicalStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let updateMenuItem = NSMenuItem(title: "Rechercher les mises à jour…", action: #selector(checkForUpdates), keyEquivalent: "")
 
@@ -50,7 +52,8 @@
             onOpenShare: @escaping () -> Void,
             onTogglePause: @escaping () -> Void,
             onRequestPermissions: @escaping () -> Void,
-            onReloadConfig: @escaping () -> Void,
+            onReloadConfig: @escaping () -> Bool,
+            onRetryKeychain: @escaping () -> Void,
             onQuit: @escaping () -> Void
         ) {
             self.state = state
@@ -68,14 +71,21 @@
             self.onTogglePause = onTogglePause
             self.onRequestPermissions = onRequestPermissions
             self.onReloadConfig = onReloadConfig
+            self.onRetryKeychain = onRetryKeychain
             self.onQuit = onQuit
 
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            // Control Centre keeps a stale "blocked" record for the default key Item-0 that the
+            // Menu Bar setting no longer reaches (2026-10-15): a fixed name gives the item a fresh key.
+            statusItem.autosaveName = GoalongDevChannelMarks.autosaveName("goalong-menu")
             super.init()
 
             configureStatusItem()
             buildMenu()
             updateStatus()
+            NotificationCenter.default.addObserver(
+                forName: DeviceTrustState.didChange, object: nil, queue: .main
+            ) { [weak self] _ in self?.updateStatus() }
         }
 
         func menuWillOpen(_ menu: NSMenu) {
@@ -163,24 +173,23 @@
             }
         }
 
-        func updateStatus() {
-            let permissionStatus = permissions.snapshot
-            let recording = state.isCapturing
-            let suppression = recording ? currentSuppression() : nil
-            let health = captureHealth()
-
+        static func statusDisplay(
+            health: CaptureHealthState, localEnabled: Bool, globalPaused: Bool, recording: Bool, suppression: SuppressionReason?,
+            configUnreadable: Bool = false
+        ) -> (title: String, symbol: String, description: String) {
             let display: (title: String, symbol: String, description: String)
-            let localEnabled = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
-            if GoalongGlobalPause.isPaused() {
+            if globalPaused {
                 display = ("Arrêt de confidentialité", "pause.circle.fill", "Sources et envois suspendus")
+            } else if configUnreadable {
+                display = ("Réglages illisibles", "exclamationmark.triangle.fill", ConfigManager.failClosedNotice)
             } else if !localEnabled {
                 display = ("Enregistrement désactivé", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
-            } else if health.state == .storageUnavailable {
+            } else if health == .storageUnavailable {
                 display = ("Enregistrement interrompu", "externaldrive.badge.exclamationmark",
                            "L’historique ne peut pas être écrit (disque plein ?). Reprise automatique dès que possible")
-            } else if health.state == .permissionRequired
-                || health.state == .permissionAppearsEnabledButStaleForBuild
-                || health.state == .accessibilityContextUnavailable
+            } else if health == .permissionRequired
+                || health == .permissionAppearsEnabledButStaleForBuild
+                || health == .accessibilityContextUnavailable
             {
                 display = ("Autorisation macOS à vérifier", "exclamationmark.triangle.fill",
                            "Ouvrez Goalong pour rétablir l’accès : rien n’est enregistré en attendant")
@@ -191,13 +200,30 @@
                            "Cette fenêtre ne peut pas être lue en toute sécurité : aucun détail enregistré")
             } else if let suppression, suppression == .sessionUnavailable {
                 display = ("Session Mac inactive", "lock.fill", "Le Mac est verrouillé, en veille ou indisponible")
-            } else if health.state == .inputTapUnavailable || health.state == .awaitingInputEvidence {
+            } else if health == .inputTapUnavailable {
+                // A failed tap never recovers by waiting: say what to check, like the panel.
+                display = (health.frenchTitle, "exclamationmark.triangle.fill", health.frenchDetail)
+            } else if health == .awaitingInputEvidence {
                 display = ("Interactions en attente", "waveform.path.ecg",
                            "Les clics et la frappe seront comptés dès le premier événement reçu")
             } else {
                 display = ("Enregistrement local actif", "record.circle.fill",
                            "Votre activité reste sur ce Mac")
             }
+            return display
+        }
+
+        func updateStatus() {
+            let permissionStatus = permissions.snapshot
+            let recording = state.isCapturing
+            let suppression = recording ? currentSuppression() : nil
+            let health = captureHealth()
+
+            let localEnabled = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
+            let display = Self.statusDisplay(
+                health: health.state, localEnabled: localEnabled,
+                globalPaused: GoalongGlobalPause.isPaused(), recording: recording, suppression: suppression,
+                configUnreadable: configManager.isFailClosed)
 
             statusMenuItem.title = display.title
             statusMenuItem.image = NSImage(
@@ -208,7 +234,18 @@
             permissionMenuItem.title = display.description
             technicalStatusItem.title =
                 "Accessibilité : \(permissionStatus.accessibility ? "oui" : "non") · Surveillance de l’entrée : \(permissionStatus.inputMonitoringStatusLabel) · Interactions : \(eventTapStatus() ? "actives" : "inactives") · Preuve : \(health.captureProven ? "oui" : "non")"
-            globalPauseItem.title = GoalongGlobalPause.isPaused() ? "Reprendre tout le suivi" : "Tout suspendre pour confidentialité…"
+            if let notice = DeviceTrustState.shared.sealingSuspendedNotice {
+                sealingSuspendedItem.title = "\(notice) · Réessayer…"
+                sealingSuspendedItem.toolTip = DeviceTrustState.shared.retryFeedback
+                sealingSuspendedItem.isEnabled = !DeviceTrustState.shared.isRetryInFlight
+                sealingSuspendedItem.isHidden = false
+            } else {
+                sealingSuspendedItem.isHidden = true
+            }
+            if let rotation = DeviceIdentityRotation.load() {
+                technicalStatusItem.title += " · Identité changée le \(rotation.at.formatted(date: .abbreviated, time: .omitted))"
+            }
+            globalPauseItem.title = GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité · tout suspendre…"
             pauseMenuItem.title = !localEnabled
                 ? "Configurer l’enregistrement…"
                 : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Arrêter l’enregistrement local…")
@@ -268,14 +305,17 @@
             permissionMenuItem.isEnabled = false
             menu.addItem(statusMenuItem)
             menu.addItem(permissionMenuItem)
+            sealingSuspendedItem.target = self
+            sealingSuspendedItem.isHidden = true
+            menu.addItem(sealingSuspendedItem)
             menu.addItem(.separator())
 
             globalPauseItem.target = self
             pauseMenuItem.target = self
-            let privacyMenu = NSMenu(title: "Confidentialité · arrêter le suivi")
+            let privacyMenu = NSMenu(title: "Confidentialité")
             privacyMenu.addItem(globalPauseItem)
             privacyMenu.addItem(pauseMenuItem)
-            let privacyItem = NSMenuItem(title: "Confidentialité · arrêter le suivi", action: nil, keyEquivalent: "")
+            let privacyItem = NSMenuItem(title: "Confidentialité", action: nil, keyEquivalent: "")
             privacyItem.submenu = privacyMenu
             menu.addItem(privacyItem)
             Task { @MainActor in JevMenuController.shared.install(in: self.menu, onOpenMonitoring: self.onOpenMonitoring) }
@@ -347,19 +387,23 @@
                 try GoalongGlobalPause.setPaused(!GoalongGlobalPause.isPaused(), recordingWasPaused: state.isManuallyPaused)
                 updateStatus()
             } catch {
-                let alert = NSAlert(); alert.messageText = "Pause non modifiée"; alert.informativeText = error.localizedDescription
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                let alert = NSAlert(); alert.messageText = GoalongGlobalPauseText.failureTitle; alert.informativeText = GoalongUserFacingError.message(error)
                 alert.runModal()
             }
         }
 
         private func confirmRecordingStop(allSources: Bool) -> Bool {
+            NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Arrêter l’enregistrement local ?"
             alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour suspendre seulement les rappels de surveillance, utilisez plutôt « Faire une pause » : l’historique continue."
             alert.addButton(withTitle: "Annuler")
-            alert.addButton(withTitle: "Suspendre le suivi")
+            alert.addButton(withTitle: allSources ? "Suspendre le suivi" : "Arrêter l’enregistrement")
             return alert.runModal() == .alertSecondButtonReturn
         }
+        @objc private func retryKeychain() { onRetryKeychain() }
+
         @objc private func togglePause() {
             if state.isCapturing, !confirmRecordingStop(allSources: false) { return }
             onTogglePause()
@@ -403,7 +447,13 @@
         }
 
         @objc private func reloadConfiguration() {
-            onReloadConfig()
+            guard onReloadConfig() else {
+                showInformation(
+                    title: "Configuration non rechargée",
+                    message: configManager.statusNotice ?? ConfigManager.reloadFailedNotice
+                )
+                return
+            }
             showInformation(
                 title: "Configuration rechargée",
                 message: "\(ProductIdentity.displayName) a relu config.json et actualisé ses réglages."
@@ -427,7 +477,7 @@
                 confirmDestructiveAction(
                     title: "Effacer tout l’historique détaillé ?",
                     message:
-                        "Les événements détaillés enregistrés sur ce Mac seront supprimés. Les sceaux cryptographiques sont conservés : les périodes concernées restent visibles, mais ne pourront plus être partagées qu’en mode privé."
+                        "Les événements détaillés enregistrés sur ce Mac seront supprimés, ainsi que leurs analyses et mémoires, les appels, l’activité de développement, les notes du jour et les verdicts et corrections de « Mon travail ». Les sceaux cryptographiques sont conservés : les périodes concernées restent visibles, mais ne pourront plus être partagées qu’en mode privé."
                 )
             else { return }
 
@@ -436,12 +486,16 @@
                 case .success(let itemCount):
                     self?.showInformation(
                         title: "Historique détaillé effacé",
-                        message: "\(itemCount) élément(s) détaillé(s) supprimé(s). Les sceaux existants sont conservés."
+                        message: "\(Self.deletedItemsMessage(itemCount)) Les sceaux existants sont conservés."
                     )
                 case .failure(let error):
                     self?.showError(error)
                 }
             }
+        }
+
+        static func deletedItemsMessage(_ count: Int) -> String {
+            count > 1 ? "\(count) éléments détaillés supprimés." : "\(count) élément détaillé supprimé."
         }
 
         @objc private func quit() {
@@ -453,7 +507,7 @@
                 confirmDestructiveAction(
                     title: "Effacer l’historique \(label) ?",
                     message:
-                        "Les événements détaillés correspondants seront supprimés de ce Mac. Les sceaux cryptographiques sont conservés ; les périodes effacées apparaîtront comme privées."
+                        "Les événements détaillés correspondants seront supprimés de ce Mac, ainsi que leurs analyses et mémoires, et les appels et l’activité de développement des jours concernés (journée entière). Les notes du jour sont conservées. Les sceaux cryptographiques sont conservés ; les périodes effacées apparaîtront comme privées."
                 )
             else { return }
 
@@ -462,7 +516,7 @@
                 case .success(let count):
                     self?.showInformation(
                         title: "Historique détaillé effacé",
-                        message: "\(count) élément(s) détaillé(s) supprimé(s). Les sceaux existants sont conservés."
+                        message: "\(Self.deletedItemsMessage(count)) Les sceaux existants sont conservés."
                     )
                 case .failure(let error):
                     self?.showError(error)
@@ -492,7 +546,12 @@
 
         private func showError(_ error: Error) {
             NSApplication.shared.activate(ignoringOtherApps: true)
-            NSAlert(error: error).runModal()
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Échec de la suppression"
+            alert.informativeText = GoalongUserFacingError.message(error)
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
 #endif

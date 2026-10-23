@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import GoalongGuardCore
     import SwiftUI
 
     /// Recovery never changes TCC, code signatures, saved consent, or recording choices.
@@ -77,6 +78,19 @@
             return resumedCapability != nil
         }
 
+        /// Where a resumed setup reopens: the Recording pane hosts the activation toggle of all three resumable sources.
+        static func resumeDestination(for capability: GoalongCapability) -> (section: DashboardSection, pane: SettingsPane)? {
+            switch capability {
+            case .localComputerHistory, .appleScreenTime, .aiConversations: return (.settings, .recording)
+            default: return nil
+            }
+        }
+
+        /// A resumed capability that no toggle claimed in time must not open its sheet out of context later.
+        @MainActor static func expireResumedCapability(after delay: TimeInterval) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { resumedCapability = nil }
+        }
+
         @MainActor static func takeSetupReturn(for capability: GoalongCapability) -> Bool {
             guard resumedCapability == capability else { return false }
             resumedCapability = nil
@@ -121,13 +135,15 @@
         func start(completion: @escaping (String?) -> Void) {
             let bundle = Bundle.main
             let helper = bundle.bundleURL.resolvingSymlinksInPath().appendingPathComponent("Contents/MacOS/goalong-relauncher")
-            guard bundle.bundleURL.pathExtension == "app", bundle.bundleIdentifier == "ai.goalong.localhistory",
+            guard bundle.bundleURL.pathExtension == "app", bundle.bundleIdentifier == ProductIdentity.bundleIdentifier,
                   helper.resolvingSymlinksInPath() == helper.standardizedFileURL,
                   FileManager.default.isExecutableFile(atPath: helper.path),
                   let launched = NSRunningApplication.current.launchDate else {
                 completion("Le composant de redémarrage est indisponible. Goalong est resté ouvert ; installez la dernière mise à jour puis réessayez.")
                 return
             }
+            // The relauncher reopens Goalong: the guard waits for it while it lives (spec K §8).
+            GoalongGuardFiles.writeLease(GuardLease.permissionRestart, seconds: 60)
             let child = Process()
             child.executableURL = helper
             child.arguments = ["--parent", String(ProcessInfo.processInfo.processIdentifier),
@@ -166,6 +182,7 @@
             timeout?.cancel(); timeout = nil
             pipe?.fileHandleForReading.readabilityHandler = nil
             if error != nil, let process, process.isRunning { process.terminate() }
+            if error != nil { GoalongGuardFiles.standard.removeLease() }
             completion(error)
         }
     }

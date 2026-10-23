@@ -44,7 +44,7 @@ struct SupportBuild: Codable {
             signatureKind: identity.signatureKind,
             codeHash: validated(identity.codeDirectoryHash, pattern: #"^[0-9a-f]{40,64}$"#),
             signatureValidation: validity, installation: installation(path: Bundle.main.bundleURL.path),
-            runningCopies: NSRunningApplication.runningApplications(withBundleIdentifier: "ai.goalong.localhistory").count,
+            runningCopies: NSRunningApplication.runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier).count,
             designatedRequirementSHA256: identity.designatedRequirement.map { text in
                 SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
             },
@@ -91,12 +91,12 @@ struct SupportCrash: Codable {
             ?? newline.flatMap { (try? JSONSerialization.jsonObject(with: Data(data.suffix(from: data.index(after: $0))))) as? [String: Any] }
         guard let body,
               let bundle = body["bundleInfo"] as? [String: Any],
-              bundle["CFBundleIdentifier"] as? String == "ai.goalong.localhistory",
-              ["Goalong History", "LocalHistory"].contains(body["procName"] as? String ?? "") else { return nil }
+              bundle["CFBundleIdentifier"] as? String == ProductIdentity.bundleIdentifier,
+              ["Goalong History", "Goalong History Dev", "LocalHistory"].contains(body["procName"] as? String ?? "") else { return nil }
         let exception = body["exception"] as? [String: Any]
         let type = (exception?["type"] as? String).flatMap(CrashType.init(rawValue:)) ?? .unknown
         let images = body["usedImages"] as? [[String: Any]] ?? []
-        let index = images.firstIndex { ["Goalong History", "LocalHistory"].contains($0["name"] as? String ?? "") }
+        let index = images.firstIndex { ["Goalong History", "Goalong History Dev", "LocalHistory"].contains($0["name"] as? String ?? "") }
         let uuid = index.flatMap { (images[$0]["uuid"] as? String).flatMap(UUID.init(uuidString:)) }
         let thread = body["faultingThread"] as? Int
         let threads = body["threads"] as? [[String: Any]] ?? []
@@ -218,7 +218,7 @@ enum SupportFindings {
             findings.append(SupportFinding(severity: .warning, code: .recordingWasInterrupted,
                 title: "Enregistrement interrompu \(interruptions.count) fois",
                 detail: (diskFull ? "Au moins une coupure venait d’un disque plein. " : "")
-                    + "\(lost) observation(s) n’ont pas pu être enregistrées ; chaque coupure est marquée dans l’historique."))
+                    + (lost > 1 ? "\(lost) observations n’ont pas pu être enregistrées" : "\(lost) observation n’a pas pu être enregistrée") + " ; chaque coupure est marquée dans l’historique."))
         }
         if let storage, storage.lowSpace, let free = storage.freeMB {
             findings.append(SupportFinding(severity: .warning, code: .lowDiskSpace,
@@ -233,7 +233,7 @@ enum SupportFindings {
         }
         if !crashes.isEmpty {
             findings.append(SupportFinding(severity: .error, code: .crashes,
-                title: "\(crashes.count) rapport(s) de plantage récent(s)",
+                title: crashes.count > 1 ? "\(crashes.count) rapports de plantage récents" : "1 rapport de plantage récent",
                 detail: "Types : " + Set(crashes.map(\.type.rawValue)).sorted().joined(separator: ", ") + "."))
         }
         let updateFailures = timeline.filter { $0.component == .updates && $0.event == .operationFailed }
@@ -254,13 +254,15 @@ enum SupportFindings {
         } else if statuses.contains(where: { $0 >= 500 }) {
             findings.append(SupportFinding(severity: .info, code: .monitoringUnavailable,
                 title: "Surveillance temps réel : service indisponible",
-                detail: "\(statuses.filter { $0 >= 500 }.count) réponse(s) serveur en erreur."))
+                detail: { let n = statuses.filter { $0 >= 500 }.count; return n > 1 ? "\(n) réponses du serveur en erreur." : "\(n) réponse du serveur en erreur." }()))
         }
         var repeated: [String: Int] = [:]
         for record in timeline where record.level == .error {
             let label = [symbol(record.values, .errorType)?.split(separator: ".").last.map(String.init),
                          symbol(record.values, .errorCase)].compactMap { $0 }.joined(separator: ".")
-            let key = "\(record.component.rawValue) · " + (label.isEmpty ? "\(record.event.rawValue) \(count(record.values, .errorCode) ?? 0)" : label)
+            let eventName = record.event == .repeatSummary
+                ? symbol(record.values, .repeatedEvent) ?? record.event.rawValue : record.event.rawValue
+            let key = "\(record.component.rawValue) · " + (label.isEmpty ? "\(eventName) \(count(record.values, .errorCode) ?? 0)" : label)
             let extra = record.event == .repeatSummary ? (count(record.values, .suppressedCount) ?? 0) - 1 : 0
             repeated[key, default: 0] += 1 + max(0, extra)
         }
@@ -280,7 +282,10 @@ enum SupportFindings {
         }
         if !diagnosticsEnabled {
             findings.append(SupportFinding(severity: .info, code: .diagnosticsDisabled,
-                title: "Journal technique désactivé", detail: "Le rapport ne contient que l’état actuel."))
+                title: "Journal technique désactivé",
+                detail: timeline.isEmpty
+                    ? "Le rapport ne contient que l’état actuel."
+                    : "Aucun nouvel événement n’est enregistré ; les journaux déjà conservés (7 jours au plus) restent inclus."))
         }
         if findings.isEmpty {
             findings.append(SupportFinding(severity: .info, code: .noProblemDetected,
@@ -387,9 +392,10 @@ struct SupportReport: Codable {
         if let free = StorageHealth.availableBytes() { values[.freeSpaceMB] = .count(Int(free / 1_048_576)) }
         values[.monitoringEnabled] = .flag(GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
         values[.websiteAutoSend] = .flag(GoalongWebsiteAutoSender.shared.enabled)
-        let connections = AppPaths.applicationSupportDirectory.appendingPathComponent("website-connections").path
-        values[.websiteLinked] = .flag(((try? FileManager.default.contentsOfDirectory(atPath: connections)) ?? [])
-            .contains { !$0.hasPrefix(".") })
+        let defaults = UserDefaults.standard
+        let tokenPath = defaults.string(forKey: "goalong.website.tokenFilePath") ?? ""
+        values[.websiteLinked] = .flag(!tokenPath.isEmpty && !(defaults.string(forKey: "goalong.website.origin") ?? "").isEmpty
+            && FileManager.default.fileExists(atPath: tokenPath))
         return values
     }
     private func heartbeat() {

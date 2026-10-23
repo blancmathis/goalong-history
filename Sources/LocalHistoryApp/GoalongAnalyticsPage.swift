@@ -10,7 +10,6 @@ struct GoalongAnalyticsPage: View {
     @ObservedObject var model: DashboardViewModel
     @Binding var navigation: GoalongActivityNavigation
     @ObservedObject var analytics: GoalongAnalyticsModel
-    @StateObject private var studio = GoalongProfileWindow()
     @ObservedObject private var work = GoalongWorkStore.shared
     @ObservedObject private var agent = GoalongWorkAgent.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
@@ -68,12 +67,24 @@ struct GoalongAnalyticsPage: View {
                         Color.clear.frame(height: 0).id("activity-top")
                         if !previewActive {
                             GoalongRecordingStateNotice(model: model)
-                            GoalongRecordingCoverageNotice(model: model, dismissible: true)
+                            GoalongRecordingCoverageNotice(model: model, dismissible: true,
+                                hidden: !GoalongRecordingCoverageNotice.showsOnActivity(recording: recordingKind, globallyPaused: analytics.paused))
                             ConcentrationActivityMarks(day: selection.day)
                         }
                         if developerMode { previewControl }
                         if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
-                        if let error = analytics.error {
+                        if analytics.paused {
+                            // The pause banner at the top of the window names the pause and resumes it;
+                            // here only what it means for this page, without repeating it.
+                            if analytics.payload == nil {
+                                GoalongEmptyState(title: "Activité en pause",
+                                    message: "Vos observations ne sont pas lues pendant la pause. Vos durées reviennent ici dès que le suivi reprend.")
+                                    .accessibilityIdentifier("activity-read-paused")
+                            } else {
+                                GoalongNote("Chiffres figés pendant la pause : ils seront actualisés dès la reprise.", symbol: "pause.circle")
+                                    .accessibilityIdentifier("activity-read-paused")
+                            }
+                        } else if let error = analytics.error {
                             HStack(alignment: .center, spacing: 12) {
                                 GoalongNote(error, tone: .warning)
                                 Button("Réessayer", action: refresh).buttonStyle(LHSecondaryButtonStyle())
@@ -88,16 +99,19 @@ struct GoalongAnalyticsPage: View {
                             GoalongAnalyticsContent(payload: payload, focusMinutes: $focusMinutes,
                                 lanes: lanes,
                                 workStatus: previewActive ? .preview : workStatus,
+                                recording: previewActive ? nil : recordingKind,
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { model.selectSection(.work) },
                                 onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
-                                onClassify: { agent.classify(day: selection.day) },
+                                onClassify: { agent.classify(day: GoalongWorkAgent.manualTarget(days: payload.current.days, fallback: selection.day)) },
                                 onHistory: { openHistory(selection.day) },
                                 onProjects: { if !previewActive { showingAnalysisChoice = true } },
                                 onHistoryDay: openHistory,
                                 onRecap: openRecap,
                                 detail: $detail)
                                 .id(selectionID)
+                        } else if analytics.paused {
+                            EmptyView()
                         } else if analytics.error == nil && !loadRequest.permitsLoading {
                             GoalongNote("Lecture en attente : cliquez dans cette fenêtre pour lire les observations de cette période. Les lectures privées restent suspendues lorsque vous utilisez une autre application.",
                                         symbol: "pause.circle")
@@ -158,13 +172,17 @@ struct GoalongAnalyticsPage: View {
             Button("Bilan quotidien et sources…") { openRecap(navigation.day) }
             Button("Projets et avancées…") {
                 guard !previewActive else { return }
-                studio.show(localOnly: true, initialDay: navigation.day, onSend: { _ in })
+                model.profileStudio.show(localOnly: true, initialDay: navigation.day)
             }
             Button("Annuler", role: .cancel) {}
         } message: {
             Text("Choisissez le type d’analyse. Les sources et les autorisations restent à vérifier avant toute génération.")
         }
-        .onAppear { model.selectDay(navigation.day) }
+        .onAppear {
+            // The page is rebuilt on each section change: a day that turned while it was away counts too.
+            followCalendarDay()
+            model.selectDay(navigation.day)
+        }
         .task(id: loadRequest) {
             let request = loadRequest
             guard request.permitsLoading else { return }
@@ -212,13 +230,21 @@ struct GoalongAnalyticsPage: View {
         .onReceive(NotificationCenter.default.publisher(for: .goalongProfileAnalysisDidSave)) { _ in
             if !previewActive { revision += 1 }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in
+            if !previewActive { revision += 1 }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if model.dashboardIsVisible && !previewActive { revision += 1 }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
+            followCalendarDay()
+        }
         .onReceive(refreshTimer) { _ in
+            // Also catches a missed day-change notification (sleep across midnight).
+            followCalendarDay()
             // Visible-page refresh only. Completed days reuse the existing cache.
             guard model.dashboardIsVisible, !previewActive, !analytics.busy,
-                  Calendar.current.isDateInToday(navigation.day),
+                  GoalongToday.isToday(navigation.day),
                   Date().timeIntervalSince(lastAutomaticRefresh) >= max(30, lastReadSeconds * 10) else { return }
             lastAutomaticRefresh = Date()
             revision += 1
@@ -291,8 +317,13 @@ struct GoalongAnalyticsPage: View {
         let settings = { model.openRecordingSettings() }
         let isDay = selection.period == 1
         let value = isDay ? developer.value.flatMap { Calendar.current.isDate($0.day, inSameDayAs: selection.day) ? $0 : nil } : nil
-        var rows = [GoalongSourceRow(id: "mac", title: "Activité de ce Mac", state: .ready,
-                                     detail: "Applications, sites et saisie : la source du temps actif.")]
+        let macState = GoalongSourceRow.macState(consentEnabled: consents.isEnabled(.localComputerHistory),
+                                                 runtime: model.runtime.state)
+        var rows = [GoalongSourceRow(id: "mac", title: "Activité de ce Mac", state: macState,
+                                     detail: "Applications, sites et saisie : la source du temps actif.",
+                                     actionTitle: macState == .off ? "Activer…" : macState == .needsPermission ? "Autorisations…" : nil,
+                                     action: macState == .off ? settings
+                                        : { model.selectSection(.settings); model.settingsPane = .permissions })]
         rows += systemRows(settings: settings)
         if !ai {
             rows.append(.init(id: "agents", title: "Conversations d’agents", state: .off,
@@ -312,7 +343,7 @@ struct GoalongAnalyticsPage: View {
                 case .ready, .partial:
                     detail = GoalongCodeDay.count(requests, "demande", "demandes") + " ce jour-là, dans "
                         + GoalongCodeDay.count(t3.projects.count, "projet", "projets") + "."
-                        + (t3.status == .partial ? " Lecture partielle : la base dépasse les limites de lecture." : "")
+                        + (t3.status == .partial ? " Lecture partielle : certaines activités T3 n’ont pas pu être lues en entier." : "")
                 case .noData: detail = "Aucune demande ce jour-là."
                 case .unsupported: detail = "Cette version de T3 Code n’est pas encore prise en charge."
                 case .failed(let reason): detail = reason
@@ -412,6 +443,14 @@ struct GoalongAnalyticsPage: View {
             classifiesOnOpen: work.automatic && agent.readiness == .ready)
     }
 
+    /// The same reading as the recording banner, so the page body never contradicts it.
+    private var recordingKind: GoalongRecordingStateNotice.Kind? {
+        GoalongRecordingStateNotice.kind(localEnabled: consents.isEnabled(.localComputerHistory),
+            globallyPaused: analytics.paused,
+            dashboardVisible: model.dashboardIsVisible, runtime: model.runtime.state,
+            captureHealth: model.runtime.captureHealth?.state)
+    }
+
     private var previewControl: some View {
         HStack(spacing: 12) {
             Button {
@@ -424,8 +463,25 @@ struct GoalongAnalyticsPage: View {
             }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).accessibilityIdentifier("analytics-preview-toggle")
             Spacer(minLength: 0)
-            Text("Mode développeur").font(.system(size: 11)).foregroundStyle(.secondary)
+            Label("Mode développeur", systemImage: "hammer")
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                // Border as a filled ring: a stroked capsule rendered 1 pt ticks at both ends (gallery, u01-r1-02).
+                .background {
+                    Capsule().fill(LHTheme.warning.opacity(0.14))
+                        .overlay(CapsuleRing(width: 1).fill(LHTheme.warning.opacity(0.35), style: FillStyle(eoFill: true)))
+                }
+                .accessibilityIdentifier("analytics-developer-mode")
         }
+    }
+
+    /// A page left on today moves to the new today at midnight (same period); the day that just
+    /// ended is read once more. A past day chosen by the user stays as it is.
+    private func followCalendarDay(now: Date = Date()) {
+        let shown = navigation.day
+        guard navigation.followToday(now: now) else { return }
+        if !previewActive, navigation.day != shown { model.selectDay(navigation.day) }
+        if !previewActive { revision += 1 }
     }
 
     private func updateSelection(_ change: (inout GoalongActivityNavigation) -> Void) {
@@ -471,3 +527,13 @@ struct GoalongAnalyticsPreviewBanner: View {
     }
 }
 #endif
+
+/// A capsule outline of `width` drawn as an even-odd fill, so it has no stroke join at the rounded ends.
+private struct CapsuleRing: Shape {
+    var width: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var path = Capsule().path(in: rect)
+        path.addPath(Capsule().path(in: rect.insetBy(dx: width, dy: width)))
+        return path
+    }
+}

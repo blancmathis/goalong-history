@@ -25,7 +25,7 @@ final class AmbianceModuleNavigationTests: XCTestCase {
 final class AmbiancePageRenderingTests: XCTestCase {
     private static let focus = [("ambre", "Ambre"), ("canopee", "Canopée"), ("meridien", "Méridien"), ("sillage", "Sillage"),
                                 ("filigrane", "Filigrane"), ("confluence", "Confluence"), ("sanctuaire", "Sanctuaire"), ("gravite", "Gravité"),
-                                ("orbit", "Orbit"), ("sonar", "Sonar")]
+                                ("orbit", "Orbite"), ("sonar", "Sonar")]
     private static let relax = [("lagoon", "Lagon"), ("stillwater", "Eau calme"), ("hearth", "Foyer"), ("reverie", "Rêverie"), ("driftwood", "Bois flotté")]
     private static let textures = [("rain", "Pluie douce"), ("ocean", "Marée"), ("brown", "Velours brun"), ("pink", "Air rose"), ("aube", "Aube")]
 
@@ -47,6 +47,27 @@ final class AmbiancePageRenderingTests: XCTestCase {
     private func packs(_ orchestra: AmbiancePackState.Status, _ textures: AmbiancePackState.Status) -> [AmbiancePackState] {
         [AmbiancePackState(id: "orchestra", title: "Orchestre acoustique", bytes: 77_158_400, status: orchestra),
          AmbiancePackState(id: "textures", title: "Textures et Aube", bytes: 83_363_840, status: textures)]
+    }
+
+    func testEveryKindHasOneNonEmptyNameSharedByPageAndPanel() {
+        let names = AmbianceSource.Kind.allCases.map(\.displayName)
+        XCTAssertTrue(names.allSatisfy { !$0.isEmpty })
+        XCTAssertEqual(Set(names).count, names.count)
+        for kind in AmbianceSource.Kind.allCases { XCTAssertEqual(AmbiancePageContent.kindLabel(kind), kind.displayName) }
+        XCTAssertEqual(AmbianceSource.Kind.ownFile.displayName, "Ma musique")
+    }
+
+    func testPlayerIsOfferedWithoutOrchestraPack() throws {
+        let texture = try XCTUnwrap(sources(orchestra: false, textures: true, files: true).first { $0.kind == .texture })
+        let all = sources(orchestra: false, textures: true, files: true)
+        XCTAssertEqual(AmbiancePageContent.playerSource(sources: all, state: .playing(texture), lastSource: nil), texture)
+        // Idle: an installed texture is offered, never an unavailable focus piece.
+        let idle = try XCTUnwrap(AmbiancePageContent.playerSource(sources: all, state: .idle, lastSource: nil))
+        XCTAssertTrue(idle.isAvailable)
+        XCTAssertNil(AmbiancePageContent.playerSource(
+            sources: sources(orchestra: false, textures: false, files: false), state: .idle, lastSource: "ambre"))
+        XCTAssertEqual(AmbiancePageContent.playerSource(
+            sources: sources(orchestra: true, textures: true, files: false), state: .idle, lastSource: nil)?.kind, .focus)
     }
 
     @MainActor func testRenderAmbiancePage() throws {
@@ -106,6 +127,12 @@ final class AmbiancePageRenderingTests: XCTestCase {
                 sources: playing, packs: packs(.installed, .installed),
                 state: .playing(playing[0]), volume: binding, actions: actions))
         }
+    }
+
+    func testDownloadingPackIsNotListedAsDownloadedSound() {
+        let packs = [AmbiancePackState(id: "orchestra", title: "Orchestre", bytes: 77_000_000, status: .downloading(0.4), hasLeftovers: true),
+                     AmbiancePackState(id: "textures", title: "Textures", bytes: 83_000_000, status: .installed)]
+        XCTAssertEqual(AmbiancePageContent.keptPacks(packs).map(\.id), ["textures"])
     }
 }
 #endif

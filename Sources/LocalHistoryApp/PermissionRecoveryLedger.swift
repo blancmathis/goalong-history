@@ -63,6 +63,16 @@ enum PermissionRecoveryLedger {
             .attempt: .count(action == .resetSucceeded ? progress.resets : progress.relaunches)
         ])
     }
+    /// Permissions whose recovery progress is obsolete once this capability's check is ready.
+    /// Local history is ready only after the input path is accepted, so it covers both entries.
+    /// AI conversations stay out: that probe is ready with no folder enabled, which proves no Full Disk Access.
+    static func permissionsProvenWorking(by capability: GoalongCapability) -> [SourceAccessStatus] {
+        switch capability {
+        case .localComputerHistory: return [.accessibility, .inputMonitoring]
+        case .appleScreenTime: return [.fullDiskAccess]
+        default: return []
+        }
+    }
     static func clear(_ permission: SourceAccessStatus, defaults: UserDefaults = .standard) {
         guard let service = PermissionRepair.service(for: permission) else { return }
         lock.lock(); defer { lock.unlock() }

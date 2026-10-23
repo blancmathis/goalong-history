@@ -270,7 +270,7 @@ public enum AppleBiomeSEGBDecoder {
                       rawLength <= UInt64(Int.max)
                 else { return nil }
                 let length = Int(rawLength)
-                guard length >= 0, cursor + length <= data.count else { return nil }
+                guard length >= 0, length <= data.count - cursor else { return nil }
                 bundleIdentifier = String(data: data.subdata(in: cursor..<(cursor + length)), encoding: .utf8)
                 cursor += length
             default:
@@ -357,7 +357,7 @@ public enum AppleBiomeSEGBDecoder {
               rawLength <= UInt64(Int.max)
         else { return nil }
         let length = Int(rawLength)
-        guard length >= 0, cursor + length <= data.count else { return nil }
+        guard length >= 0, length <= data.count - cursor else { return nil }
         defer { cursor += length }
         return String(data: data.subdata(in: cursor..<(cursor + length)), encoding: .utf8)
     }
@@ -367,7 +367,7 @@ public enum AppleBiomeSEGBDecoder {
         case 0:
             return readVarint(data, cursor: &cursor) != nil
         case 1:
-            guard cursor + 8 <= data.count else { return false }
+            guard data.count - cursor >= 8 else { return false }
             cursor += 8
             return true
         case 2:
@@ -375,11 +375,11 @@ public enum AppleBiomeSEGBDecoder {
                   rawLength <= UInt64(Int.max)
             else { return false }
             let length = Int(rawLength)
-            guard cursor + length <= data.count else { return false }
+            guard length <= data.count - cursor else { return false }
             cursor += length
             return true
         case 5:
-            guard cursor + 4 <= data.count else { return false }
+            guard data.count - cursor >= 4 else { return false }
             cursor += 4
             return true
         default:

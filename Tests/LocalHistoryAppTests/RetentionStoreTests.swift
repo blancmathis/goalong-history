@@ -356,6 +356,88 @@
             XCTAssertEqual(try Data(contentsOf: moved), original)
         }
 
+        func testDurableSyncFallsBackToFsyncOnlyWhenFullSyncIsUnsupported() throws {
+            var fallbackCalls = 0
+            let unsupported = DurableSync.sync(3, primary: { _ in errno = ENOTSUP; return -1 },
+                                               fallback: { _ in fallbackCalls += 1; return 0 })
+            XCTAssertEqual(unsupported, 0); XCTAssertEqual(fallbackCalls, 1)
+            var attempts = 0
+            let interrupted = DurableSync.sync(3, primary: { _ in attempts += 1; if attempts == 1 { errno = EINTR; return -1 }; return 0 },
+                                               fallback: { _ in fallbackCalls += 1; return 0 })
+            XCTAssertEqual(interrupted, 0); XCTAssertEqual(attempts, 2); XCTAssertEqual(fallbackCalls, 1)
+            let ioError = DurableSync.sync(3, primary: { _ in errno = EIO; return -1 },
+                                           fallback: { _ in fallbackCalls += 1; return 0 })
+            XCTAssertEqual(ioError, EIO); XCTAssertEqual(fallbackCalls, 1, "A real I/O error is not hidden by fsync")
+            let root = try makeTemporaryDirectory()
+            let file = root.appendingPathComponent("sync.bin")
+            try Data("x".utf8).write(to: file)
+            let handle = try FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            XCTAssertEqual(DurableSync.full(handle.fileDescriptor), 0)
+            XCTAssertEqual(DurableSync.barrier(handle.fileDescriptor), 0)
+        }
+
+        func testJSONLAppendFailureKeepsErrnoForTheStorageBanner() throws {
+            for (code, kind) in [(ENOSPC, CaptureStorageFailureKind.diskFull), (EACCES, .permissionDenied)] {
+                let root = try makeTemporaryDirectory()
+                let events = root.appendingPathComponent("events", isDirectory: true)
+                try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+                let store = try JSONLStore(
+                    retentionDays: 0,
+                    eventsDirectory: events,
+                    prepareApplicationStorage: false,
+                    eventFilePermissionSetter: { _, _ in errno = code; return -1 }
+                )
+                XCTAssertThrowsError(
+                    try store.appendAndWait(
+                        HistoryEvent(
+                            sessionID: "errno",
+                            timestamp: Self.date(year: 2026, month: 8, day: 23, hour: 12),
+                            kind: .heartbeat
+                        )
+                    )
+                ) { error in
+                    XCTAssertEqual(StorageHealth.failureKind(for: error), kind)
+                    XCTAssertFalse(error.localizedDescription.isEmpty)
+                }
+            }
+        }
+
+        func testLatestPersistedEventGrowsTheTailWindowPastLargeRowsAndJunk() throws {
+            let root = try makeTemporaryDirectory()
+            let events = root.appendingPathComponent("events", isDirectory: true)
+            try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+            let store = try JSONLStore(
+                retentionDays: 0, eventsDirectory: events, prepareApplicationStorage: false
+            )
+            let day = Self.date(year: 2026, month: 8, day: 23, hour: 12)
+            func integrity(_ sequence: UInt64) -> EventIntegrity {
+                EventIntegrity(
+                    sequence: sequence,
+                    previousEventHash: String(repeating: "a", count: 64),
+                    eventRoot: String(repeating: "b", count: 64),
+                    eventHash: String(repeating: "c", count: 64),
+                    fieldCommitments: []
+                )
+            }
+            try store.appendAndWait(
+                HistoryEvent(id: "small", sessionID: "tail", timestamp: day, kind: .heartbeat, integrity: integrity(1))
+            )
+            let large = HistoryEvent(
+                id: "large", sessionID: "tail", timestamp: day.addingTimeInterval(1), kind: .heartbeat,
+                message: String(repeating: "m", count: 300 * 1_024), integrity: integrity(2)
+            )
+            try store.appendAndWait(large)
+            // A torn, undecodable tail larger than the first 64 KB window.
+            let file = events.appendingPathComponent("2026-08-23.jsonl")
+            let handle = try FileHandle(forWritingTo: file)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(String(repeating: "x", count: 100 * 1_024).utf8))
+            try handle.close()
+
+            XCTAssertEqual(try store.latestPersistedEvent()?.id, "large")
+        }
+
         func testJSONLAppendFailsClosedBeforeWritingWhenPermissionRepairFails() throws {
             let root = try makeTemporaryDirectory()
             let events = root.appendingPathComponent("events", isDirectory: true)
@@ -955,6 +1037,30 @@
             XCTAssertFalse(FileManager.default.fileExists(atPath: oldEvent.path))
         }
 
+        func testArtifactDaysFollowTheTimeZoneInForceNotTheOneAtLaunch() throws {
+            let fixture = try makeFixture()
+            let event = fixture.events.appendingPathComponent("2026-10-01.jsonl")
+            try Data("event\n".utf8).write(to: event)
+            let store = HistoryRetentionStore(
+                legacyRetentionDays: 1,
+                storage: fixture.storage,
+                diagnostics: { _ in }
+            )
+            let original = NSTimeZone.default
+            defer { NSTimeZone.default = original }
+            for name in ["Europe/Paris", "America/New_York", "Pacific/Auckland"] {
+                NSTimeZone.default = TimeZone(identifier: name)!
+                var calendar = Calendar(identifier: .gregorian)
+                calendar.timeZone = Calendar.current.timeZone
+                let expected = calendar.date(
+                    from: DateComponents(year: 2026, month: 10, day: 1)
+                )!
+                let artifact = try XCTUnwrap(store.storedArtifacts().first { URL(fileURLWithPath: $0.localPath).lastPathComponent == event.lastPathComponent })
+                XCTAssertEqual(artifact.start, expected, name)
+                XCTAssertEqual(Calendar.current.startOfDay(for: artifact.start), artifact.start, name)
+            }
+        }
+
         func testCleanupOnlyUnlinksKnownRegularArtifacts() throws {
             let fixture = try makeFixture()
             let oldEvent = fixture.events.appendingPathComponent("2020-01-01.jsonl")
@@ -990,7 +1096,7 @@
             try store.updateDetailedRetention(fromLegacyDays: 1)
             store.applyCleanup(now: fixture.now)
 
-            XCTAssertTrue(FileManager.default.fileExists(atPath: oldEvent.path), "Invalid evidence cannot be summarized, so retention keeps the journal")
+            XCTAssertTrue(FileManager.default.fileExists(atPath: oldEvent.path), "A linked or foreign entry in events/ blocks the read: the journal stays")
             XCTAssertTrue(FileManager.default.fileExists(atPath: unknown.path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: invalidDay.path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: disguisedDirectory.path))

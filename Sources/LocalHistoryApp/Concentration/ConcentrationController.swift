@@ -41,6 +41,8 @@ struct FocusPanel: Equatable {
     @Published private(set) var itemMeasures: [FocusItemMeasure] = []
     @Published private(set) var estimateRatio: Double?
     @Published private(set) var sessionFacts = FocusFacts()
+    /// The session the « C’est fait ? » panel asks about; cleared when another panel or none replaces it.
+    @Published private(set) var reviewedSession: FocusSession?
     @Published private(set) var limitMarks: [FocusLimitMark] = []
     @Published private(set) var requestedEditor: FocusPanel.Kind?
     @Published private(set) var panel: FocusPanel?
@@ -69,6 +71,9 @@ struct FocusPanel: Equatable {
     private var phaseBlockID: UUID?
     private var phaseBlockKey: String?
     private var storageFailed = false
+    /// A stop that could not be saved. `retryStorage` writes it before it clears the latch.
+    private var pendingStop: (session: FocusSession, end: Date, reason: FocusSession.Event.Reason)?
+    private var lastStorageRetry = Date.distantPast
     private var promptState: FocusPromptState
     private var phaseIdentity: String?
     private var currentDay: String
@@ -76,6 +81,8 @@ struct FocusPanel: Equatable {
     private var definitionAvailable = false
     private var lastMeasureRequest = Date.distantPast
     private var lastCommitmentCardRefresh = Date.distantPast
+    /// Decoded session files for commitment progress. This controller is their only writer: `persist` keeps it current.
+    private var sessionCache: [String: [FocusSession]] = [:]
     var hasTimer: Bool { timer != nil }
     var hasLockedSessionBlock: Bool { hasLockedPhaseBlock }
     var hasLockedBlock: Bool {
@@ -98,12 +105,12 @@ struct FocusPanel: Equatable {
         return (phase.isWork ? "Concentration" : "Pause") + (seconds.map { " \($0 / 60):\(String(format: "%02d", $0 % 60))" } ?? "")
     }
 
-    init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .current,
+    init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
          blocking: @escaping () -> BlockingController? = { nil }, audio: FocusSessionAudio = NoOpFocusSessionAudio(), runsTimers: Bool = false) throws {
         self.store = store; self.clock = clock; self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
-        let day = BlockingController.dayKey(clock(), calendar: calendar); currentDay = day
+        let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day
         status = FocusStatus(since: clock()); plan = FocusPlan(day: day); promptState = FocusPromptState(day: day)
-        try store.recover(); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
+        try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
         // Preserve once-per-week warnings made by the pre-ISO implementation.
         for i in limitMarks.indices where limitMarks[i].kind == "weekly" && FocusValidation.day(limitMarks[i].period) {
             limitMarks[i].period = FocusCalendar.weekKey(limitMarks[i].at, calendar: calendar)
@@ -111,6 +118,17 @@ struct FocusPanel: Equatable {
         promptState = try store.prompts() ?? promptState
         if promptState.day != day { promptState = FocusPromptState(day: day) }
         try loadDay(day)
+        // A stop that quit or module-off could not save: close it before any open session is restored.
+        if let tomb = try store.pendingStopTombstone() {
+            let tombDay = tomb.day
+            if var value = try store.sessions(tombDay).first(where: { $0.id == tomb.sessionID && $0.endedAt == nil }) {
+                value.events.append(.init(kind: .stop, at: tomb.end, reason: tomb.reason))
+                value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
+                try persist(value)
+                try? blocking()?.creditEarnedTime(for: value)
+            }
+            try store.clearPendingStopTombstone()
+        }
         // A free open session may have started on any retained day, not only yesterday.
         var running: [FocusSession] = []
         for date in try store.sessionDays() {
@@ -137,19 +155,58 @@ struct FocusPanel: Equatable {
         sessions = try store.sessions(day); plan = try store.plan(day) ?? FocusPlan(day: day); review = try store.review(day)
     }
     private func admit() throws { if storageFailed { throw FocusFailure.storageFailed } }
+    /// Clears the write latch only after the files read back cleanly. No write happens here.
+    @discardableResult func retryStorage() -> Bool {
+        guard storageFailed else { return true }
+        defer { scheduleTimer() }
+        let now = clock(), day = FocusCalendar.dayKey(now, calendar: calendar)
+        lastStorageRetry = now
+        do {
+            try store.recover(); try loadDay(day)
+            sessionCache.removeAll()
+            if day != currentDay { currentDay = day; promptState = FocusPromptState(day: day); measurementRefresh?() }
+        } catch { return false }
+        if let pending = pendingStop {
+            // Save the stop first, so the disk never holds two open sessions. A failure re-sets the latch.
+            storageFailed = false
+            var value = pending.session
+            value.events.append(.init(kind: .stop, at: pending.end, reason: pending.reason))
+            value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
+            let shown = error
+            do { try persist(value) } catch { storageFailed = true; self.error = shown; return false }
+            pendingStop = nil
+            do { try blocking()?.creditEarnedTime(for: value) } catch { self.error = String(describing: error); return true }
+        }
+        storageFailed = false; error = nil
+        return true
+    }
+    /// The disk keeps the open session until `retryStorage` saves the pending stop. If the app quits first, `flushPendingStop`
+    /// leaves a tombstone that the next launch applies. Without it, only a timed session that has ended is closed on launch.
+    private func endInMemory(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) {
+        if pendingStop == nil { pendingStop = (session, end, reason) }
+        if let id = phaseBlockID, !hasLockedPhaseBlock { blocking()?.stop(id); phaseBlockID = nil; phaseBlockKey = nil }
+        currentSession = nil; phase = nil; phaseIdentity = nil; audio.stop()
+    }
     private func saving(_ action: () throws -> Void) throws {
         try admit()
         do { try action() } catch {
-            if (error as? FocusFailure) != .invalidArgument { storageFailed = true }
+            if (error as? FocusFailure) != .invalidArgument { storageFailed = true; scheduleTimer() }
             self.error = String(describing: error); throw error
         }
     }
     private func persist(_ value: FocusSession) throws {
-        let day = BlockingController.dayKey(value.startedAt, calendar: calendar)
+        let day = FocusCalendar.dayKey(value.startedAt, calendar: calendar)
         var values = try store.sessions(day)
         if let i = values.firstIndex(where: { $0.id == value.id }) { values[i] = value } else { values.append(value) }
         try saving { try store.saveSessions(values, day: day) }
+        sessionCache[day] = values
         if day == currentDay { sessions = values }
+    }
+    /// The plan link a draft may still pass: the item can be done, moved or removed since it was chosen,
+    /// or today's plan replaced at midnight. A stale link is dropped, the session keeps its intention.
+    func openPlanItemID(_ id: UUID?) -> UUID? {
+        guard let id, plan.items.contains(where: { $0.id == id && $0.status == .open }) else { return nil }
+        return id
     }
     func startSession(intent: String, mode: FocusMode, planItemId: UUID? = nil, blockListIds: [UUID] = [],
                       blockDuringBreaks: Bool = false, lock: Bool = false, ambiance: Bool = false) throws {
@@ -182,6 +239,11 @@ struct FocusPanel: Equatable {
         try persist(value); currentSession = value; refresh()
     }
     func stopSession(outcome: FocusSession.Outcome? = nil, note: String? = nil) throws {
+        if storageFailed, currentSession != nil {
+            // Nothing can be written: end the session in memory only. A retry, or the stop tombstone at quit, closes it on disk.
+            if hasLockedPhaseBlock { throw FocusFailure.locked }
+            endInMemory(currentSession!, at: clock(), reason: .member); publishStatus(); scheduleTimer(); throw FocusFailure.storageFailed
+        }
         try admit(); refresh()
         guard var value = currentSession else { throw FocusFailure.notFound }
         if hasLockedPhaseBlock { throw FocusFailure.locked }
@@ -193,10 +255,11 @@ struct FocusPanel: Equatable {
         var value = session; value.events.append(.init(kind: .stop, at: end, reason: reason))
         value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
         try persist(value)
-        try blocking()?.creditEarnedTime(for: value)
+        // The stop is on disk: the session ends in memory too, even if the earned-time credit fails.
+        do { try blocking()?.creditEarnedTime(for: value) } catch { self.error = String(describing: error) }
         if let id = phaseBlockID { blocking()?.stop(id) }
         currentSession = nil; phase = nil; phaseBlockID = nil; phaseBlockKey = nil; phaseIdentity = nil; audio.stop()
-        sessionFacts = facts(value)
+        sessionFacts = facts(value); reviewedSession = value
         showPanel(.init(kind: .sessionReview, text: "C’est fait ?", sessionID: value.id))
         refresh()
     }
@@ -261,6 +324,7 @@ struct FocusPanel: Equatable {
     func plan(on day: String) throws -> FocusPlan { try store.plan(day) ?? FocusPlan(day: day) }
     func review(on day: String) throws -> FocusReview { try store.review(day) ?? FocusReview(day: day) }
     func setPlan(_ value: FocusPlan) throws {
+        guard value.items.count <= FocusPlan.maximumItems else { throw FocusFailure.planFull }
         guard value.valid, !value.items.isEmpty else { throw FocusFailure.invalidArgument }
         try saving { try store.savePlans([value]) }; if value.day == currentDay { plan = value }; updateMeasures()
     }
@@ -271,24 +335,55 @@ struct FocusPanel: Equatable {
     }
     func setItemStatus(_ id: UUID, day: String, status: FocusPlanItem.Status) throws {
         guard status == .done || status == .dropped else { throw FocusFailure.invalidArgument }
-        var value = try plan(on: day); guard let i = value.items.firstIndex(where: { $0.id == id }) else { throw FocusFailure.notFound }
-        value.items[i].status = status; value.items[i].toDay = nil; try setPlan(value)
+        try settleItem(id, day: day, status: status)
+    }
+    /// Reopens an item; a copy an earlier move left open in another day is withdrawn.
+    func reopenPlanItem(_ id: UUID, day: String) throws { try settleItem(id, day: day, status: .open) }
+    private func settleItem(_ id: UUID, day: String, status: FocusPlanItem.Status) throws {
+        var value = try plan(on: day), changed: [String: FocusPlan] = [:]
+        guard let i = value.items.firstIndex(where: { $0.id == id }) else { throw FocusFailure.notFound }
+        if value.items[i].status == .moved, let previous = value.items[i].toDay { try withdrawMovedCopy(id, from: previous, into: &changed) }
+        value.items[i].status = status; value.items[i].toDay = nil
+        guard !changed.isEmpty else { try setPlan(value); return }
+        guard value.valid, !value.items.isEmpty else { throw FocusFailure.invalidArgument }
+        changed[day] = value; try savePlanChanges(changed)
     }
     func movePlanItem(_ id: UUID, day: String, to target: String) throws {
         guard FocusValidation.day(target), target != day else { throw FocusFailure.invalidArgument }
-        var source = try plan(on: day), destination = try plan(on: target)
+        var source = try plan(on: day), changed: [String: FocusPlan] = [:]
         guard let i = source.items.firstIndex(where: { $0.id == id }) else { throw FocusFailure.notFound }
+        if source.items[i].status == .moved, let previous = source.items[i].toDay, previous != target {
+            try withdrawMovedCopy(id, from: previous, into: &changed)
+        }
+        var destination = try changed[target] ?? plan(on: target)
         var item = source.items[i]; item.status = .open; item.toDay = nil
         if !destination.items.contains(where: { $0.id == id }) { destination.items.append(item) }
         source.items[i].status = .moved; source.items[i].toDay = target
-        try saving { try store.savePlans([source, destination]) }
-        if day == currentDay { plan = source } else if target == currentDay { plan = destination }; updateMeasures()
+        changed[target] = destination; changed[day] = source
+        try savePlanChanges(changed)
+    }
+    /// A moved item left an open copy in `day`. Removes that copy only while it is still open there:
+    /// a copy the member finished, moved or dropped in its new day stays.
+    private func withdrawMovedCopy(_ id: UUID, from day: String, into changed: inout [String: FocusPlan]) throws {
+        var value = try changed[day] ?? plan(on: day)
+        guard let j = value.items.firstIndex(where: { $0.id == id }), value.items[j].status == .open else { return }
+        value.items.remove(at: j); changed[day] = value
+    }
+    private func savePlanChanges(_ changed: [String: FocusPlan], review value: FocusReview? = nil) throws {
+        // A move or a review carry can target a plan that is already full.
+        guard changed.values.allSatisfy({ $0.items.count <= FocusPlan.maximumItems }) else { throw FocusFailure.planFull }
+        try saving { try store.savePlans(Array(changed.values), review: value) }
+        if let today = changed[currentDay] { plan = today }; if let value, value.day == currentDay { review = value }; updateMeasures()
     }
     func setReview(_ value: FocusReview) throws {
         guard value.valid else { throw FocusFailure.invalidArgument }
         var source = try plan(on: value.day), changed: [String: FocusPlan] = [:]
         for item in value.items {
             guard let i = source.items.firstIndex(where: { $0.id == item.id }) else { throw FocusFailure.notFound }
+            // A new answer replaces an earlier move: its still-open copy leaves the old target day.
+            if source.items[i].status == .moved, let previous = source.items[i].toDay, previous != item.toDay {
+                try withdrawMovedCopy(item.id, from: previous, into: &changed)
+            }
             if let target = item.toDay {
                 guard target != value.day else { throw FocusFailure.invalidArgument }
                 var destination = try changed[target] ?? plan(on: target)
@@ -308,17 +403,16 @@ struct FocusPanel: Equatable {
             next.items.insert(FocusPlanItem(id: carryID, title: title), at: 0); changed[tomorrow] = next
         }
         changed[source.day] = source
-        try saving { try store.savePlans(Array(changed.values), review: value) }
-        if let today = changed[currentDay] { plan = today }; if value.day == currentDay { review = value }; updateMeasures()
+        try savePlanChanges(changed, review: value)
     }
     private func carryItemID(day: String) -> UUID {
         let digits = day.replacingOccurrences(of: "-", with: "")
         return UUID(uuidString: "F0C05000-0000-4000-8000-0000" + digits)!
     }
-    private func dayAfter(_ day: String) throws -> String {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = calendar.timeZone
-        guard let date = f.date(from: day), let next = calendar.date(byAdding: .day, value: 1, to: date) else { throw FocusFailure.invalidArgument }
-        return BlockingController.dayKey(next, calendar: calendar)
+    /// The civil day after `day`, in this controller's time zone. The page and the review sheet use it too.
+    func dayAfter(_ day: String) throws -> String {
+        guard let interval = FocusCalendar.dayInterval(day, calendar: calendar) else { throw FocusFailure.invalidArgument }
+        return FocusCalendar.dayKey(interval.end, calendar: calendar)
     }
     func updateSettings(_ value: FocusSettings) throws {
         guard value.valid else { throw FocusFailure.invalidArgument }; try saving { try store.saveSettings(value) }; settings = value
@@ -335,7 +429,7 @@ struct FocusPanel: Equatable {
         if value.observing, value.at.timeIntervalSince(lastMeasureRequest) >= 60 { lastMeasureRequest = value.at; measurementRefresh?() }
     }
     func applyMeasurements(_ days: [GoalongLocalAnalytics.Day], hasDefinition: Bool) {
-        measuredDays = Dictionary(uniqueKeysWithValues: days.map { (BlockingController.dayKey($0.date, calendar: calendar), $0) })
+        measuredDays = Dictionary(uniqueKeysWithValues: days.map { (FocusCalendar.dayKey($0.date, calendar: calendar), $0) })
         definitionAvailable = hasDefinition; updateMeasures(); checkLimits(); settleCommitments()
         if let currentSession { sessionFacts = facts(currentSession) }
     }
@@ -384,8 +478,9 @@ struct FocusPanel: Equatable {
         showPanel(.init(kind: .limit, text: mark.kind == "endOfDay" ? "Fin de journée — votre limite." : "\(mark.kind == "weekly" ? settings.limits.weeklyHours ?? 0 : settings.limits.dailyHours ?? 0) h \(mark.usesActiveTime ? "d’activité (sans définition du travail)" : "de travail") — votre limite."))
     }
     func refresh() {
+        if storageFailed, clock().timeIntervalSince(lastStorageRetry) >= 60 { retryStorage() }
         if phaseBlockID != nil || commitments.contains(where: { $0.result?.stake.state == .applied }) { blocking()?.refresh(enforceLast: false) }
-        let now = clock(), day = BlockingController.dayKey(now, calendar: calendar)
+        let now = clock(), day = FocusCalendar.dayKey(now, calendar: calendar)
         if day != currentDay {
             do { try loadDay(day); currentDay = day; promptState = FocusPromptState(day: day); measurementRefresh?() } catch { self.error = String(describing: error); storageFailed = true }
         }
@@ -396,10 +491,18 @@ struct FocusPanel: Equatable {
                 p = phase ?? p; p.endsAt = block.end
             }
             if p.kind == .ended {
-                do { try finish(value, at: p.startedAt, reason: .completed) } catch { self.error = String(describing: error) }
+                do { try finish(value, at: p.startedAt, reason: .completed) } catch {
+                    // The stop cannot be saved: end the session in memory so it does not run on and re-raise the error.
+                    if self.error == nil { self.error = String(describing: error) }
+                    endInMemory(value, at: p.startedAt, reason: .completed)
+                }
             } else {
                 let key = phaseKey(p)
-                do { try syncBlock(value, phase: p) } catch { self.error = String(describing: error) }
+                do { try syncBlock(value, phase: p) } catch {
+                    // Refresh runs every few seconds: publish a failure once, not on each tick.
+                    let message = String(describing: error)
+                    if self.error != message { self.error = message }
+                }
                 if phaseIdentity != key {
                     if phaseIdentity != nil { showPanel(.init(kind: .phase, text: p.isWork ? "On reprend : \(value.intent)" : "Pause — \(Int((p.endsAt?.timeIntervalSince(p.startedAt) ?? 0) / 60)) min", expiresAt: now.addingTimeInterval(6))); if settings.phaseSound { onPhaseSound?() } }
                     if value.ambiance { if p.isWork { audio.startWork() } else { audio.startBreak() } }
@@ -434,7 +537,11 @@ struct FocusPanel: Equatable {
         // Open free sessions renew one short free lease on the existing Blocking clock.
         let end = p.endsAt ?? clock().addingTimeInterval(60)
         let id = blockID(value.id, phase: p)
-        try b.startFocusBlock(id: id, listIDs: value.blockListIds, until: end, lock: value.lock && p.isWork ? .locked : .free)
+        // A list deleted since the start (by an older build or by hand) must not release the others.
+        let existing = Set(b.lists.map(\.id))
+        let listIDs = value.blockListIds.filter(existing.contains)
+        guard !listIDs.isEmpty else { throw FocusFailure.notFound }
+        try b.startFocusBlock(id: id, listIDs: listIDs, until: end, lock: value.lock && p.isWork ? .locked : .free)
         phaseBlockID = id; phaseBlockKey = key
     }
     private func publishStatus() {
@@ -475,7 +582,16 @@ struct FocusPanel: Equatable {
     func promptNow() { guard let kind = panel?.kind else { return }; requestedEditor = kind; onOpenRequested?(kind); dismissPanel() }
     func dismissEditor() { requestedEditor = nil }
     func dismissPanel() { showPanel(nil) }
-    private func showPanel(_ value: FocusPanel?) { if panel != value { panel = value; onPanelChange?(value) } }
+    /// A floating panel has no room for an error, and `error` shows on the Concentration page only:
+    /// open that page so the click does not look lost.
+    func reportPanelError(_ message: String) {
+        error = message
+        onOpenRequested?(panel?.kind ?? .sessionReview)
+    }
+    private func showPanel(_ value: FocusPanel?) {
+        if value?.kind != .sessionReview { reviewedSession = nil }
+        if panel != value { panel = value; onPanelChange?(value) }
+    }
     private func scheduleTimer() {
         timer?.invalidate(); timer = nil; guard runsTimers else { return }
         let now = clock()
@@ -483,6 +599,7 @@ struct FocusPanel: Equatable {
                           promptState.eveningReminded ? nil : promptState.eveningReminderAt].compactMap { $0 }
         boundaries += commitmentCards.compactMap(\.exitUntil)
         boundaries += commitmentCards.filter { $0.editMode == "free" }.map(\.editUntil)
+        if storageFailed { boundaries.append(max(now.addingTimeInterval(1), lastStorageRetry.addingTimeInterval(60))) }
         if currentSession?.mode.kind == .free, currentSession?.mode.minutes == nil, phaseBlockID != nil { boundaries.append(now.addingTimeInterval(45)) }
         if settings.eveningPrompt || settings.limits.endMinute != nil {
             let minute = settings.limits.endMinute ?? settings.eveningMinute
@@ -494,7 +611,18 @@ struct FocusPanel: Equatable {
         let t = Timer(timeInterval: max(0.05, next.timeIntervalSince(now)), repeats: false) { [weak self] _ in Task { @MainActor in self?.refresh() } }
         RunLoop.main.add(t, forMode: .common); timer = t
     }
+    /// Saves a stop that could not be written (one forced retry). If the store still fails, a small tombstone outside the
+    /// sessions folder keeps the stop for the next launch. Called at quit and on module-off.
+    func flushPendingStop() {
+        guard let pending = pendingStop else { return }
+        lastStorageRetry = .distantPast
+        if retryStorage(), pendingStop == nil { try? store.clearPendingStopTombstone(); return }
+        guard pendingStop != nil else { return }
+        try? store.savePendingStopTombstone(.init(sessionID: pending.session.id, day: FocusCalendar.dayKey(pending.session.startedAt, calendar: calendar),
+                                                  end: pending.end, reason: pending.reason))
+    }
     func shutdown() {
+        flushPendingStop()
         if let value = currentSession, !hasLockedPhaseBlock { try? finish(value, at: clock(), reason: .moduleDisabled) }
         timer?.invalidate(); timer = nil; audio.stop(); showPanel(nil); observation = nil; detection.reset()
     }
@@ -568,8 +696,12 @@ extension ConcentrationController {
         if clock() <= bounds.start { return .init(usesActiveTime: value.kind == .work && !definitionAvailable) }
         var values: [FocusSession] = [], plans: [FocusPlan] = []
         if value.kind == .sessions {
-            for day in try store.sessionDays() where FocusCalendar.dayInterval(day, calendar: calendar)!.start < bounds.end {
-                values += try store.sessions(day).filter { ($0.endedAt ?? clock()) > bounds.start }
+            // Any older day can hold an open or long session, so every day is checked, but each file is decoded once.
+            let days = try store.sessionDays(), listed = Set(days)
+            sessionCache = sessionCache.filter { listed.contains($0.key) }
+            for day in days where FocusCalendar.dayInterval(day, calendar: calendar)!.start < bounds.end {
+                let decoded = try sessionCache[day] ?? store.sessions(day); sessionCache[day] = decoded
+                values += decoded.filter { ($0.endedAt ?? clock()) > bounds.start }
             }
         }
         if value.kind == .plan {

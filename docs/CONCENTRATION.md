@@ -61,9 +61,11 @@ Options per session, each shown only when its module is on:
   for each work phase, ending at the phase end. Breaks are not blocked unless « Bloquer aussi pendant
   les pauses ». « Verrouiller » locks each work-phase block (Blocking lock rules; a free session « sans
   fin » cannot lock). Stopping a session whose current block is locked is refused, CLI included.
-- **Ambiance**: plays Focus during work phases, fades out at breaks, stops at the end. Ambiance is
-  not on `main` yet: define `FocusSessionAudio` (`startWork()`, `startBreak()`, `stop()`) with a no-op
-  default; the Ambiance adapter is added after Ambiance merges.
+- **Ambiance**: plays an installed Focus source during work phases (the last one played, else the
+  first), stops it at breaks and at the end. `AmbianceFocusSessionAudio` implements
+  `FocusSessionAudio` (`startWork()`, `startBreak()`, `stop()`). It does nothing when the Ambiance
+  module is off or no Focus pack is installed, never downloads, and never replaces or stops a source
+  the user started. Tests and controllers built without it use `NoOpFocusSessionAudio`.
 
 Phase changes show a non-activating panel for 6 s (« Pause — 5 min », « On reprend : <intention> »)
 with an optional system sound (Settings, default on). The menu bar item shows the phase and the time
@@ -259,7 +261,7 @@ series, jokers left, stake window.
 All new commands go through the running app over the existing owner-only socket
 (`GoalongReadOnlyQueryBroker`, `0600`), extended with Concentration routes. The app is the only
 writer. Output: sorted JSON on stdout like every data command; errors as JSON on stderr, nonzero exit
-(`appNotRunning`, `moduleDisabled`, `invalidArgument`, `locked`, `notFound`). Text arguments are
+(`appNotRunning`, `moduleDisabled`, `invalidArgument`, `locked`, `notFound`, `outcomeUnknown` for a timeout after the request was sent: run `focus status` before retrying). Text arguments are
 bounded and control characters are rejected; `--file -` reads stdin, at most 64 KB.
 
 ```bash
@@ -289,7 +291,7 @@ goalong commitment delete --day DAY|--week WEEK                  # `locked` afte
 goalong commitment joker --day DAY|--week WEEK
 goalong commitment declare --day DAY|--week WEEK                 # « J'ai tenu, hors mesure »
 goalong commitments [--from DAY] [--to DAY]                      # history, series, jokers left
-goalong block-lists                                # id, name, mode, action, locked
+goalong block-lists                                # id, name, mode, action, locked (stricter-only: frozen by a non-free active block or a program lock)
 goalong friction [DAY]                             # « Ralentir » counts per list
 ```
 

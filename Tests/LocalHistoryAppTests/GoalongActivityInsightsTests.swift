@@ -83,6 +83,38 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertEqual(onlyToday.averageActivePerDay ?? 0, 1800, accuracy: 1)
     }
 
+    func testChartAverageIsTheHeadlineAverageWithoutToday() throws {
+        let now = date(12).addingTimeInterval(10 * 3600)
+        let current = GoalongLocalAnalytics.Period(days: [day(10, from: 9 * 3600, minutes: 300),
+            day(11, from: 9 * 3600, minutes: 300), day(12, from: 9 * 3600, minutes: 30, now: now)])
+        let summary = GoalongActivitySummary(period: current, previous: .init(days: []), calendar: calendar, now: now)
+        let line = try XCTUnwrap(GoalongDailyClassChart.averageLine(for: summary))
+        XCTAssertEqual(line.value, summary.averageActivePerDay ?? -1, accuracy: 0.001)
+        XCTAssertNotEqual(line.value, current.activeSeconds / Double(current.observedDays.count), accuracy: 1)
+        XCTAssertTrue(line.excludesToday)
+        // One completed day is not enough for a rule.
+        let single = GoalongActivitySummary(period: .init(days: [day(11, from: 9 * 3600, minutes: 300), day(12, from: 9 * 3600, minutes: 30, now: now)]),
+                                            previous: .init(days: []), calendar: calendar, now: now)
+        XCTAssertNil(GoalongDailyClassChart.averageLine(for: single))
+    }
+
+    func testHeadlineComparisonNamesTheDailyAverageOverSeveralDays() throws {
+        let comparison = GoalongActivitySummary.Comparison(current: 5 * 3600, previous: 3600, label: "les 7 jours précédents")
+        XCTAssertTrue(try XCTUnwrap(comparison.headlineLine(isDay: false)).contains("par jour par rapport aux 7 jours précédents"))
+        let dayLine = GoalongActivitySummary.Comparison(current: 5 * 3600, previous: 3600, label: "la veille")
+        XCTAssertFalse(try XCTUnwrap(dayLine.headlineLine(isDay: true)).contains("par jour"))
+        XCTAssertNil(GoalongActivitySummary.Comparison(current: 100, previous: 90, label: "la veille").headlineLine(isDay: true))
+    }
+
+    func testManualClassifyTargetsTheLatestUnclassifiedReadyDayOfAPeriod() {
+        let days = [day(10, from: 9 * 3600, minutes: 90), day(11, from: 9 * 3600, minutes: 90),
+                    day(12, from: 9 * 3600, minutes: 90, work: true)]
+        XCTAssertEqual(days.map { $0.seconds(.unclassified) >= 120 }, [true, true, false])
+        XCTAssertEqual(GoalongWorkAgent.manualTarget(days: days, fallback: date(12)), date(11))
+        XCTAssertEqual(GoalongWorkAgent.manualTarget(days: [days[2], days[2]], fallback: date(12)), date(12), "Nothing to classify: the fallback")
+        XCTAssertEqual(GoalongWorkAgent.manualTarget(days: [days[0]], fallback: date(12)), date(12), "A single day keeps the selected day")
+    }
+
     func testInsightsAskToClassifyUntilWorkIsMeasurable() {
         let unclassified = GoalongActivitySummary(period: .init(days: [day(10, from: 9 * 3600, minutes: 90)]),
                                                   previous: .init(days: []), calendar: calendar, now: date(20))
@@ -146,11 +178,14 @@ final class GoalongActivityInsightsTests: XCTestCase {
                      video.key: GoalongWorkAssignment(verdict: .other)], revision: store.revision, day: "2026-09-10")
         XCTAssertEqual(store.verdicts.assignment(for: docs.key)?.task, "Goalong")
         XCTAssertEqual(store.knownTasks, ["Goalong"])
-        store.merge([video.key: GoalongWorkAssignment(verdict: .work, task: "X")], revision: "stale", day: "2026-09-10")
+        XCTAssertTrue(store.merge([video.key: GoalongWorkAssignment(verdict: .work, task: "X")], revision: "stale", day: "2026-09-10").isEmpty,
+                      "Nothing is reported as classified for an older definition")
         XCTAssertEqual(store.verdicts.assignment(for: video.key)?.verdict, .other, "An answer for an older definition is ignored")
 
         store.correct(key: video.key, label: video, verdict: .work, task: "Veille", day: "2026-09-10")
-        store.merge([video.key: GoalongWorkAssignment(verdict: .other)], revision: store.revision, day: "2026-09-10")
+        let applied = store.merge([video.key: GoalongWorkAssignment(verdict: .other), docs.key: GoalongWorkAssignment(verdict: .other)],
+                                  revision: store.revision, day: "2026-09-10")
+        XCTAssertEqual(Array(applied.keys), [docs.key], "Only the verdicts actually stored are counted")
         XCTAssertEqual(store.verdicts.assignment(for: video.key)?.task, "Veille", "The user's correction always wins")
         XCTAssertEqual(store.examples.map(\.title), ["Bêtisier"])
         var status = stat()
@@ -167,6 +202,141 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertTrue(reloaded.examples.isEmpty)
     }
 
+    @MainActor func testUnreadableWorkFileIsKeptAsideNeverOverwritten() throws {
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("work-damaged-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path); try? fm.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("work-classification.json")
+        let label = GoalongWorkContext.Label(application: "Xcode", bundleIdentifier: "fixture.Xcode", host: nil, title: "Goalong")
+        for broken in ["{\"version\":2,\"entries\":{}}", "{tronqué"] {
+            try Data(broken.utf8).write(to: file)
+            let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+            XCTAssertNotNil(store.storageNotice)
+            let kept = try fm.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix("work-classification.damaged-") }
+            XCTAssertEqual(kept.count, 1)
+            XCTAssertEqual(try String(contentsOf: folder.appendingPathComponent(kept[0]), encoding: .utf8), broken)
+            store.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+            XCTAssertNil(store.lastError)
+            XCTAssertNil(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).storageNotice)
+            for name in try fm.contentsOfDirectory(atPath: folder.path) { try fm.removeItem(at: folder.appendingPathComponent(name)) }
+        }
+
+        // The file cannot be moved aside: nothing is written over it.
+        try Data("{tronqué".utf8).write(to: file)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let blocked = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        XCTAssertNotNil(blocked.storageNotice)
+        blocked.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+        XCTAssertNotNil(blocked.lastError)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "{tronqué")
+
+        // Once the file can be moved aside, the next change is saved without a relaunch.
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        let other = GoalongWorkContext.Label(application: "Mail", bundleIdentifier: "fixture.Mail", host: nil, title: "Boîte")
+        blocked.correct(key: other.key, label: other, verdict: .other, task: nil, day: "2026-09-10")
+        XCTAssertNil(blocked.lastError)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix("work-classification.damaged-") }.count, 1)
+        XCTAssertEqual(Set(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).corrections.map(\.key)),
+                       [label.key, other.key])
+        for name in try fm.contentsOfDirectory(atPath: folder.path) { try fm.removeItem(at: folder.appendingPathComponent(name)) }
+
+        // Deleted by the user, as the notice says: writing resumes.
+        try Data("{tronqué".utf8).write(to: file)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let deleted = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        try fm.removeItem(at: file)
+        deleted.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+        XCTAssertNil(deleted.lastError); XCTAssertNil(deleted.storageNotice)
+        XCTAssertEqual(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).corrections.map(\.key), [label.key])
+
+        // Repaired by the user: its corrections and its automatic switch stay, the new one is added.
+        // The agent classed the corrected context meanwhile, from an empty file: the correction still wins (B02-R2-01).
+        try Data("{tronqué".utf8).write(to: file)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let repaired = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        repaired.merge([label.key: GoalongWorkAssignment(verdict: .other, task: nil, byOwner: false)],
+                       revision: repaired.revision, day: "2026-09-11")
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        try fm.removeItem(at: file)
+        let source = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        source.correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+        source.automatic = false
+        repaired.correct(key: other.key, label: other, verdict: .other, task: nil, day: "2026-09-11")
+        XCTAssertNil(repaired.lastError); XCTAssertNil(repaired.storageNotice)
+        XCTAssertFalse(repaired.automatic)
+        XCTAssertEqual(repaired.verdicts.assignment(for: label.key)?.byOwner, true)
+        let reread = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        XCTAssertEqual(Set(reread.corrections.map(\.key)), [label.key, other.key])
+        XCTAssertEqual(reread.entry(for: label.key)?.verdict, .work); XCTAssertEqual(reread.entry(for: label.key)?.byOwner, true)
+        XCTAssertFalse(reread.automatic)
+        for name in try fm.contentsOfDirectory(atPath: folder.path) { try fm.removeItem(at: folder.appendingPathComponent(name)) }
+
+        // Switched while the file was unreadable: the user's newer choice stays after the repair.
+        try Data("{tronqué".utf8).write(to: file)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let switched = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        switched.automatic = false
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        try fm.removeItem(at: file)
+        GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+            .correct(key: label.key, label: label, verdict: .work, task: nil, day: "2026-09-10")
+        switched.correct(key: other.key, label: other, verdict: .other, task: nil, day: "2026-09-11")
+        XCTAssertNil(switched.lastError)
+        XCTAssertFalse(GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") }).automatic)
+    }
+
+    @MainActor func testFullHistoryClearErasesWorkCorrectionsAndTheirTitles() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        let bank = GoalongWorkContext.Label(application: "Browser", bundleIdentifier: "fixture.Browser",
+                                            host: "bank.example.org", title: "Relevé de compte")
+        store.correct(key: bank.key, label: bank, verdict: .other, task: nil, day: "2026-09-10")
+        store.automatic = false
+        let revision = store.revision
+        store.removeAll()
+        XCTAssertTrue(store.corrections.isEmpty); XCTAssertTrue(store.verdicts.isEmpty)
+        let reloaded = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        XCTAssertTrue(reloaded.corrections.isEmpty)
+        XCTAssertEqual(reloaded.revision, revision); XCTAssertFalse(reloaded.automatic)
+        XCTAssertFalse(try String(contentsOf: file, encoding: .utf8).contains("Relevé"), "No title stays on disk")
+
+        // Unreadable copies hold the same titles: the full clear erases them too.
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("work-clear-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path); try? fm.removeItem(at: folder) }
+        let saved = folder.appendingPathComponent("work-classification.json")
+        let titled = Data("{\"corrections\":[{\"label\":{\"title\":\"Relevé de compte\",\"host\":\"bank.example.org\"".utf8)
+        try titled.write(to: saved)
+        let asideStore = GoalongWorkStore(fileURL: saved, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        XCTAssertNotNil(asideStore.storageNotice)
+        asideStore.removeAll()
+        XCTAssertNil(asideStore.lastError); XCTAssertNil(asideStore.storageNotice)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: folder.path), ["work-classification.json"])
+        XCTAssertFalse(try String(contentsOf: saved, encoding: .utf8).contains("Relevé"))
+
+        // Left in place (folder read-only at launch), then deletable: the full clear removes it.
+        try titled.write(to: saved)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        let blocked = GoalongWorkStore(fileURL: saved, definition: { GoalongWorkDefinition(goals: "Goalong") })
+        blocked.removeAll()
+        XCTAssertNotNil(blocked.lastError, "A file that cannot be erased is reported")
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        blocked.removeAll()
+        XCTAssertNil(blocked.lastError); XCTAssertNil(blocked.storageNotice)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: folder.path), ["work-classification.json"])
+        XCTAssertFalse(try String(contentsOf: saved, encoding: .utf8).contains("Relevé"))
+
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/AppDelegate.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("if cutoff == nil {\n                    // Work corrections keep window titles"),
+                      "Only the full clear erases the work corrections")
+        XCTAssertTrue(source.contains("GoalongWorkStore.shared.removeAll()"))
+    }
+
     func testCSVExportHasOneRowPerDayAndUsageAndNeutralisesFormulas() {
         let hostile = day(10, from: 9 * 3600, minutes: 10, app: "=HYPERLINK(\"x\";\"y\")")
         let second = day(11, from: 9 * 3600, minutes: 30, app: "Editor", work: true)
@@ -176,6 +346,62 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertEqual(lines.count, 3)
         XCTAssertTrue(lines[1].hasPrefix("2026-09-10;application;\"'=HYPERLINK"), lines[1])
         XCTAssertTrue(lines[2].hasPrefix("2026-09-11;application;Editor;fixture.Editor;travail;1800;1800;0;0"), lines[2])
+    }
+
+    func testCSVExportKeepsOneRowForEveryDayWithoutUsage() {
+        // R5-historique-02: incomplete, unrecorded and empty days used to vanish from the file.
+        let active = day(10, from: 9 * 3600, minutes: 10, app: "Editor", work: true)
+        let incomplete = GoalongLocalAnalytics.build(events: [], day: date(11), now: date(13), calendar: calendar, incomplete: true)
+        let missing = GoalongLocalAnalytics.build(events: [], day: date(12), now: date(13), calendar: calendar)
+        let future = GoalongLocalAnalytics.build(events: [], day: date(14), now: date(13), calendar: calendar)
+        let csv = GoalongActivityExport.csv(period: .init(days: [active, incomplete, missing, future]), grouping: .sites,
+                                            calendar: calendar, now: date(13).addingTimeInterval(3600))
+        let lines = csv.split(separator: "\r\n").map(String.init)
+        XCTAssertEqual(lines.count, 4, csv)
+        XCTAssertTrue(lines[1].hasPrefix("2026-09-10;application;Editor;"), lines[1])
+        XCTAssertEqual(lines[2], "2026-09-11;jour;;;incomplet;;;;")
+        XCTAssertEqual(lines[3], "2026-09-12;jour;;;\(missing.state == .ready ? "sans activité;0;0;0;0" : "sans données;;;;")")
+        XCTAssertFalse(csv.contains("2026-09-14"), "A future day is not exported")
+    }
+
+    func testPageLeftOnTodayFollowsTheNewDayAtMidnight() {
+        // R5-historique-03: at 00:10 the page left open on « aujourd’hui » at 23:50 showed the old day.
+        let evening = date(10).addingTimeInterval(23 * 3600 + 50 * 60), after = date(11).addingTimeInterval(600)
+        var onToday = GoalongActivityNavigation(day: evening, now: evening, calendar: calendar)
+        XCTAssertFalse(onToday.followToday(now: evening.addingTimeInterval(60), calendar: calendar))
+        XCTAssertEqual(onToday.day, date(10))
+        XCTAssertTrue(onToday.followToday(now: after, calendar: calendar))
+        XCTAssertEqual(onToday.day, date(11))
+        XCTAssertFalse(onToday.followToday(now: after.addingTimeInterval(60), calendar: calendar), "Followed once")
+
+        var past = GoalongActivityNavigation(day: evening, now: evening, calendar: calendar)
+        past.selectDay(date(8), now: evening, calendar: calendar)
+        XCTAssertTrue(past.followToday(now: after, calendar: calendar))
+        XCTAssertEqual(past.day, date(8), "A past day chosen by the user stays")
+
+        // A week ending today keeps its period and moves too.
+        var week = GoalongActivityNavigation(day: evening, period: 7, now: evening, calendar: calendar)
+        week.followToday(now: after, calendar: calendar)
+        XCTAssertEqual(week.day, date(11)); XCTAssertEqual(week.period, 7)
+    }
+
+    func testNavigationRebuiltPageStillFollowsTodayAfterMidnight() {
+        // B05-R1-01: the page is rebuilt on each section change and used to learn the new day on
+        // return, so the shown day never moved. The navigation itself remembers the day it saw.
+        let evening = date(10).addingTimeInterval(23 * 3600 + 50 * 60), after = date(11).addingTimeInterval(600)
+        var navigation = GoalongActivityNavigation(day: evening, now: evening, calendar: calendar)
+        navigation.openDay(evening, now: evening, calendar: calendar)
+        // No call while the user is on Travail; the page reappears at 00:10.
+        XCTAssertTrue(navigation.followToday(now: after, calendar: calendar))
+        XCTAssertEqual(navigation.day, date(11))
+
+        // A day opened from a week keeps its way back, moved to the new week too.
+        var fromWeek = GoalongActivityNavigation(day: evening, period: 7, now: evening, calendar: calendar)
+        fromWeek.openDay(date(9), now: evening, calendar: calendar)
+        fromWeek.followToday(now: after, calendar: calendar)
+        XCTAssertEqual(fromWeek.day, date(9))
+        fromWeek.restorePeriod()
+        XCTAssertEqual(fromWeek.day, date(11)); XCTAssertEqual(fromWeek.period, 7)
     }
 
     private func mergedSegments(_ a: GoalongLocalAnalytics.Day, _ b: GoalongLocalAnalytics.Day) -> [GoalongLocalAnalytics.Segment] {

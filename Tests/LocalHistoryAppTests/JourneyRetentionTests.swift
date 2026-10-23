@@ -118,5 +118,17 @@ final class JourneyRetentionTests: XCTestCase {
         for file in files.values { XCTAssertTrue(FileManager.default.fileExists(atPath: file.path)) }
         XCTAssertNotNil(barrier.admission())
     }
+    func testEveryEntryPointUsesTheSameRetentionWording() {
+        var policy = HistoryRetentionPolicy.migratingLegacy(retentionDays: 0)
+        for kind in HistoryDataClass.allCases { policy.setDuration(RetentionDuration(days: nil), for: kind) }
+        policy.setDuration(RetentionDuration(days: 1), for: .detailedEvents)
+        let description = policy.retentionDescription
+        XCTAssertTrue(description.contains("Activité détaillée : 1 jour"))
+        XCTAssertTrue(description.contains("Sceaux d’intégrité : jusqu’à ce que je supprime"))
+        XCTAssertFalse(description.lowercased().contains("sans limite"))
+        XCTAssertEqual(HistoryRetentionPolicy.noLimitLabel, "Jusqu’à ce que je supprime")
+        XCTAssertEqual(HistoryRetentionPolicy.automaticCleanupSummary(enabled: false), "Jusqu’à suppression manuelle")
+        XCTAssertEqual(HistoryRetentionPolicy.automaticCleanupSummary(enabled: true), "Suppression automatique activée")
+    }
 }
 #endif

@@ -75,4 +75,16 @@ final class ScheduleTests: XCTestCase {
         var p = Preferences(); p.mode = .auto; p.rules = [ScheduleRule(weekdays:[2,4,6])]
         XCTAssertEqual(try JSONDecoder().decode(Preferences.self,from:JSONEncoder().encode(p)),p)
     }
+    func testMissingFieldsTakeDefaultsAndWrongTypesStillFail() throws {
+        let id = UUID()
+        let old = try JSONDecoder().decode(Preferences.self, from: Data("""
+        {"mode":"auto","rules":[{"id":"\(id.uuidString)","weekdays":[2,3],"startMinute":1260}]}
+        """.utf8))
+        XCTAssertEqual(old.mode, .auto); XCTAssertEqual(old.intensity, 1); XCTAssertEqual(old.brightness, 1); XCTAssertNil(old.pauseUntil)
+        XCTAssertEqual(old.rules, [ScheduleRule(id: id, enabled: true, weekdays: [2,3], startMinute: 1260, endMinute: 8*60)])
+        let empty = try JSONDecoder().decode(Preferences.self, from: Data("{}".utf8))
+        XCTAssertEqual(empty.mode, .off); XCTAssertEqual(empty.rules.count, 1)
+        XCTAssertThrowsError(try JSONDecoder().decode(Preferences.self, from: Data("{\"mode\":\"sepia\"}".utf8)))
+        XCTAssertThrowsError(try JSONDecoder().decode(Preferences.self, from: Data("{\"intensity\":\"fort\"}".utf8)))
+    }
 }

@@ -12,6 +12,27 @@ final class GoalongSystemSourcesTests: XCTestCase {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }; return url
     }
+    func testCallPartialStatusStaysForItsDayButNotTheNextDay() {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
+        let dayD = calendar.date(from: DateComponents(year: 2026, month: 10, day: 14, hour: 10))!
+        let laterD = calendar.date(byAdding: .hour, value: 8, to: dayD)!
+        let nextDay = calendar.date(byAdding: .day, value: 1, to: dayD)!
+        let degradedOn = calendar.startOfDay(for: dayD)
+        let clean = GoalongCallLane(status: .noData, intervals: [])
+        // Same day: a clean pass keeps the documented "partial for the day".
+        let same = GoalongCallPresenceMonitor.rolledOver(status: .partial, statusDay: degradedOn, structuralPartial: false, now: laterD, calendar: calendar)
+        XCTAssertEqual(same.status, .partial)
+        XCTAssertEqual(GoalongCallPresenceMonitor.todayLane(stored: clean, status: same.status, statusDay: same.day, day: laterD, calendar: calendar).status, .partial)
+        // Next day: no condition holds any more, so the day starts ready.
+        let rolled = GoalongCallPresenceMonitor.rolledOver(status: .partial, statusDay: degradedOn, structuralPartial: false, now: nextDay, calendar: calendar)
+        XCTAssertEqual(rolled.status, .ready); XCTAssertNil(rolled.day)
+        XCTAssertEqual(GoalongCallPresenceMonitor.todayLane(stored: clean, status: .partial, statusDay: degradedOn, day: nextDay, calendar: calendar).status, .noData)
+        let failed = GoalongCallPresenceMonitor.rolledOver(status: .failed("x"), statusDay: degradedOn, structuralPartial: false, now: nextDay, calendar: calendar)
+        XCTAssertEqual(failed.status, .ready)
+        // A listener that never installed is still a gap on the new day.
+        let structural = GoalongCallPresenceMonitor.rolledOver(status: .partial, statusDay: degradedOn, structuralPartial: true, now: nextDay, calendar: calendar)
+        XCTAssertEqual(structural.status, .partial); XCTAssertEqual(structural.day, calendar.startOfDay(for: nextDay))
+    }
     func testNoteRoundTripBoundAndDayDeletion() throws {
         let root = try root(), day = Date()
         XCTAssertNil(try GoalongDayNoteStore.get(root: root, day: day))
@@ -20,7 +41,10 @@ final class GoalongSystemSourcesTests: XCTestCase {
         XCTAssertThrowsError(try GoalongDayNoteStore.set(String(repeating: "x", count: 281), root: root, day: day))
         let file = root.appendingPathComponent("notes/\(GoalongSystemSourceFiles.dayKey(day)).json")
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
-        _ = try DerivedHistoryCleaner(rootDirectory: root, codexMemoryDirectory: root.appendingPathComponent("mirror")).prepareDeletion(days: [day]).execute()
+        let cleaner = DerivedHistoryCleaner(rootDirectory: root, codexMemoryDirectory: root.appendingPathComponent("mirror"))
+        _ = try cleaner.prepareDeletion(days: [day]).execute()
+        XCTAssertEqual(try GoalongDayNoteStore.get(root: root, day: day), "Travail hors du Mac")
+        _ = try cleaner.prepareDeletion(since: nil).execute()
         XCTAssertNil(try GoalongDayNoteStore.get(root: root, day: day))
     }
     func testSourceStoresRejectLinksWithoutReadingOrWritingTheirTargets() throws {

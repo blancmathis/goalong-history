@@ -8,9 +8,14 @@ context_room:
 ## Default state
 
 On a new install, Computer History, Apple Screen Time, AI conversations, ChatGPT analysis,
-external verification, automatic updates and launch at login are all off. The canonical state is
+external verification and launch at login are all off. The canonical state is
 `~/Library/Application Support/LocalHistory/capability-consent.json`, written atomically with
 mode `0600`. A missing, unreadable or future-version file fails closed to everything off.
+
+Automatic update checks are the exception: they do not depend on this file. Community builds check the
+signed Sparkle feed on GitHub once at launch and then hourly by default. The check sends no history
+data or system profile. GitHub receives ordinary connection metadata such as IP address and user
+agent. Users can turn off background checks in Réglages › Avancé and still check manually.
 
 ## Data Goalong may keep after consent
 
@@ -38,9 +43,10 @@ produce explicit bounded states.
 Exports contain only selected disclosure. Manual exports require an explicit action; the separately enabled website schedule uses its saved reviewed selection.
 Optional ChatGPT analysis is a separate consent: Goalong prepares a bounded context, starts the
 fixed local Codex `app-server`, and keeps only the bounded derived recap/proof. Disabling analysis
-stops the runtime but does not delete an already generated recap; deletion remains explicit.
+stops the runtime but does not delete an already generated recap. Clearing history (all of it,
+a period or chosen days) also erases the saved recaps of the cleared days, with their local proof package and encrypted response capsule.
 
-The retired commitment uploader and automatic update client remain excluded. The optional website
+The retired commitment uploader remains excluded. The Sparkle update check contacts only the signed release feed and sends no history data. The optional website
 sender is an explicit disclosure path, described below and in [`NETWORK.md`](NETWORK.md).
 
 The [selected website analysis](SITE-ANALYSIS.md) is separate from daily analysis: it
@@ -61,9 +67,9 @@ The default website payload contains no transcripts, captured event bodies, type
 consent remains required for every requested detail. Full options and limits belong to
 [`CLI.md`](CLI.md#website-export-and-account-submission).
 
-**Send reviewed data**, `send-site`, or the explicitly enabled website schedule sends the selected fields, using the specifically chosen
+**Envoyer cette journée** (the one-off send button), `send-site`, or the explicitly enabled website schedule sends the selected fields, using the specifically chosen
 upload-token file. The native sheet remembers the origin and token-file path, not the token value,
-and keeps scheduling off until the reviewed-preview activation button is used. The schedule runs only while the app is open, sends yesterday after the chosen hour, and stops on errors. It can reuse the selected devices, fields, domains and numbered parts of an already saved recap. It never repeats a one-off comment or a past contextual-session interpretation, and any active mask excludes recaps and domains. Disabling a native source stops later access; it
+and keeps scheduling off until the reviewed-preview activation button is used. The schedule runs only while the app is open, sends yesterday after the chosen hour, and stops on errors. It can reuse the selected devices, fields and domains; it never includes recap text or recap sections. It never repeats a one-off comment or a past contextual-session interpretation, and any active mask excludes domains. Disabling a native source stops later access; it
 does not retract data already submitted to the site. Manage website copies and sharing there.
 
 The native sender cannot grant a sharing audience. Existing website rules for circles, friends,

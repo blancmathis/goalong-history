@@ -18,7 +18,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         let token = root.appendingPathComponent("token")
         try Data("synthetic-upload-credential-only".utf8).write(to: token)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: token.path)
-        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: consent)
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: consent, hiddenWebsites: { { _ in false } }, hiddenApplications: { { _, _ in false } })
         let bytes = catalogBytes
         let model = GoalongWebsiteSharingModel(autoSender: scheduler, root: root,
             catalogLoader: { _, _, _ in try GoalongSiteSelectionCatalog(payload: bytes) },
@@ -32,7 +32,7 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
                 XCTAssertFalse(fingerprint.isEmpty)
                 onSend(data)
                 return Data(#"{"imported":1,"updated":0,"skipped":0,"verification":"unverified"}"#.utf8)
-            }, sourceConsent: consent)
+            }, sourceConsent: consent, hiddenWebsites: { { _ in false } }, hiddenApplications: { { _, _ in false } })
         return (model, token, defaults, suite)
     }
 
@@ -47,6 +47,33 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         await model.confirm(origin: "", tokenPath: "")
         XCTAssertTrue(model.error?.contains("Reliez") == true)
     }
+    @MainActor func testSitesHiddenInEveryShareAreNotListedPreselectedOrSent() async throws {
+        let suite = "goalong-hidden-sites-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let bytes = Data(#"{"days":[{"telemetry":{"timezone":"Europe/Paris","devices":[{"id":"mac","name":"Mac","kind":"computer","screenSeconds":60,"apps":[{"id":"editor","name":"Editeur","seconds":60}]}],"websites":{"rows":[{"domain":"secret.example","seconds":60},{"domain":"open.example","seconds":30}]}}}]}"#.utf8)
+        let hidden: () -> (String) -> Bool = { { SharingSubjectKey.normalizedHost($0) == "secret.example" } }
+        var exported: [GoalongSiteExportOptions] = []
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: { _ in true }, hiddenWebsites: hidden, hiddenApplications: { { _, _ in false } })
+        let model = GoalongWebsiteSharingModel(autoSender: scheduler, root: root,
+            catalogLoader: { _, _, _ in try GoalongSiteSelectionCatalog(payload: bytes) },
+            exporter: { _, _, options in exported.append(options); return Data(#"{"version":2,"source":"goalong-history","days":[{"date":"2026-09-14","title":"G","summary":"","outcomes":[],"activities":[],"telemetry":{"devices":[{"id":"d","name":"O","screenSeconds":null,"hourly":null,"apps":[{"id":"editor","name":"E","seconds":60}]}],"websites":null,"agent":null}}]}"#.utf8) },
+            sourceConsent: { _ in true }, hiddenWebsites: hidden, hiddenApplications: { { _, _ in false } })
+        model.draft.includeWebsites = true
+        await model.loadCatalog()
+        XCTAssertEqual(model.catalog?.websites.map(\.domain), ["open.example"])
+        XCTAssertEqual(model.draft.websiteDomains, ["open.example"])
+        // A selection restored from an older draft is filtered again before export.
+        model.draft.websiteDomains = ["secret.example", "open.example"]
+        await model.prepare(origin: "", tokenPath: "")
+        XCTAssertEqual(exported.last?.selectedWebsiteDomains, ["open.example"])
+        let daily = GoalongWebsiteAutoSender.removingHiddenWebsites(.init(deviceIDs: ["mac"], includeWebsites: true, selectedWebsiteDomains: ["secret.example", "open.example"]), isHidden: hidden())
+        XCTAssertEqual(daily.selectedWebsiteDomains, ["open.example"])
+    }
+
     @MainActor func testExplicitExclusionsSurviveReloadingTheSuggestedSelection() async throws {
         let (model, token, _, _) = try fixture()
         defer { try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
@@ -86,6 +113,19 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         XCTAssertNil(model.error)
         XCTAssertFalse(model.reviewed)
         XCTAssertFalse(model.autoSender.enabled)
+    }
+
+    func testSelectorCapAppliesToEachCheckboxToo() {
+        // B07-R2-01: a site could still be checked by hand past the 200-item export cap.
+        let ids = (0..<250).map { "site-\($0)" }
+        var selection = Set(ids.prefix(GoalongSharingSelector.selectionCap))
+        XCTAssertEqual(GoalongSharingSelector.roomLeft(selection: selection, itemIDs: ids), 0)
+        XCTAssertFalse(GoalongSharingSelector.canCheck("site-210", selection: selection, itemIDs: ids))
+        XCTAssertTrue(GoalongSharingSelector.canCheck("site-10", selection: selection, itemIDs: ids))
+        selection.insert("absent-from-this-day")
+        XCTAssertFalse(GoalongSharingSelector.canCheck("site-210", selection: selection, itemIDs: ids))
+        selection.remove("site-10")
+        XCTAssertTrue(GoalongSharingSelector.canCheck("site-210", selection: selection, itemIDs: ids))
     }
 
     func testPreviewDayUsesTheSavedTimezoneInsteadOfAnImplicitUTCDay() {
@@ -168,5 +208,21 @@ final class GoalongWebsiteSharingModelTests: XCTestCase {
         model.draft.includeHourly = true
         XCTAssertFalse(model.autoSender.enabled, "Editing a running scope must pause it until reviewed")
     }
+
+    @MainActor func testDateOnlyDraftEditDoesNotPauseTheDailyPlanButClearsThePreview() async throws {
+        let (model, token, _, _) = try fixture(onSend: { _ in XCTFail("Activating a plan must not send the example") })
+        defer { model.autoSender.forget(); try? FileManager.default.removeItem(at: token.deletingLastPathComponent()) }
+        await model.loadCatalog(); model.draft.deviceIDs = ["mac"]; model.draft.includeApplications = true; model.draft.applicationIDs = ["editor"]; model.draft.delivery = .daily; model.draft.timezone = "Europe/Paris"
+        await model.prepare(origin: "https://goalong.example", tokenPath: token.path)
+        model.reviewed = true
+        await model.confirm(origin: "https://goalong.example", tokenPath: token.path)
+        XCTAssertTrue(model.autoSender.enabled)
+        model.draft.date = model.draft.date.addingTimeInterval(-86_400)
+        XCTAssertTrue(model.autoSender.enabled, "Browsing another sample day must not pause the plan")
+        XCTAssertNil(model.preview)
+        model.draft.includeHourly.toggle()
+        XCTAssertFalse(model.autoSender.enabled)
+    }
 }
+
 #endif

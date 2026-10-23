@@ -46,3 +46,32 @@ for file in "$WORKFLOW" "$STABLE_WORKFLOW"; do
     echo 'Public releases must not force ad-hoc signing.' >&2; exit 1
   fi
 done
+
+# The local-signing path must give the app (only) its entitlements, and the verifier must check them.
+PUBLISH_LOCAL="$ROOT_DIR/scripts/publish_local_release.sh"
+/usr/bin/grep -Eq 'codesign "\$\{SIGN\[@\]\}" --identifier ai\.goalong\.localhistory --entitlements "\$ROOT/Distribution/GoalongHistory\.entitlements" "\$APP"$' "$PUBLISH_LOCAL"
+/usr/bin/grep -Fq 'com.apple.security.personal-information.calendars' "$ROOT_DIR/scripts/verify_local_bundle.sh"
+
+# A manual release builds main's exact commit, and the tag is created at that commit.
+/usr/bin/grep -Fq 'target_commitish: ${{ github.sha }}' "$STABLE_WORKFLOW"
+/usr/bin/grep -Fq 'Manual releases must run from main' "$STABLE_WORKFLOW"
+
+# Whole runs serialize so a deferred-delta job cannot cancel a pending main publication.
+/usr/bin/grep -Eq '^concurrency:$' "$WORKFLOW"
+/usr/bin/grep -Fq 'group: goalong-history-main-publication' "$WORKFLOW"
+
+# The monotonic check runs before the public immutable archive is created.
+MONOTONIC_LINE="$(/usr/bin/grep -n 'name: Require monotonic authenticated release state' "$WORKFLOW" | /usr/bin/head -n 1 | /usr/bin/cut -d: -f1)"
+ARCHIVE_LINE="$(/usr/bin/grep -n 'name: Publish immutable update archive' "$WORKFLOW" | /usr/bin/head -n 1 | /usr/bin/cut -d: -f1)"
+test -n "$MONOTONIC_LINE" && test -n "$ARCHIVE_LINE" && test "$MONOTONIC_LINE" -lt "$ARCHIVE_LINE"
+# Fast path: the final main/successor rechecks run before the rolling assets and manifest are replaced.
+PROMOTE="$ROOT_DIR/scripts/promote_prepared_release.py"
+RECHECK_LINE="$(/usr/bin/grep -n "require_successor(authenticated_state(WORK / 'current-public')" "$PROMOTE" | /usr/bin/head -n 1 | /usr/bin/cut -d: -f1)"
+ROLLING_LINE="$(/usr/bin/grep -n 'background.submit(rolling_release' "$PROMOTE" | /usr/bin/head -n 1 | /usr/bin/cut -d: -f1)"
+test -n "$RECHECK_LINE" && test -n "$ROLLING_LINE" && test "$RECHECK_LINE" -lt "$ROLLING_LINE"
+# Full path: main is rechecked before the rolling assets and manifest are replaced.
+MAIN_RECHECK_LINE="$(/usr/bin/grep -n 'name: Recheck main before the rolling assets' "$WORKFLOW" | /usr/bin/head -n 1 | /usr/bin/cut -d: -f1)"
+ROLLING_STEP_LINE="$(/usr/bin/grep -n 'name: Publish rolling GitHub release' "$WORKFLOW" | /usr/bin/head -n 1 | /usr/bin/cut -d: -f1)"
+test -n "$MAIN_RECHECK_LINE" && test -n "$ROLLING_STEP_LINE" && test "$MAIN_RECHECK_LINE" -lt "$ROLLING_STEP_LINE"
+/usr/bin/grep -Fq 'INPUT_VERSION: ${{ inputs.version }}' "$STABLE_WORKFLOW"
+echo "Release publication ordering policy tests passed."

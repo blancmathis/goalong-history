@@ -120,16 +120,73 @@
                     [.posixPermissions: 0o600],
                     ofItemAtPath: file.path
                 )
-                let handle = try FileHandle(forWritingTo: file)
+                let handle = try FileHandle(forUpdating: file)
                 defer { try? handle.close() }
-                try handle.seekToEnd()
+                let end = try handle.seekToEnd()
                 guard validateBeforeAppend() else { throw SemanticContextStoreError.suppressedOrEmpty }
-                try handle.write(contentsOf: data)
+                let offset = try repairTornTail(of: handle, end: end)
+                do {
+                    try handle.write(contentsOf: data)
+                } catch {
+                    // A failed (for example disk-full) append leaves no fragment behind.
+                    try? handle.truncate(atOffset: offset)
+                    throw error
+                }
                 if let identity {
                     remember(payload.reference, identity: identity)
                 }
                 return payload.reference
             }
+        }
+
+        /// A crash or a full disk can leave the file without its final newline. A tail that
+        /// decodes is a complete row and only gets its newline; an undecodable fragment is
+        /// cut so the next row starts on its own line. Returns the offset of the next append.
+        private func repairTornTail(of handle: FileHandle, end: UInt64) throws -> UInt64 {
+            guard end > 0 else { return 0 }
+            var last: UInt8 = 0
+            guard Darwin.pread(handle.fileDescriptor, &last, 1, off_t(end - 1)) == 1 else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            guard last != 0x0A else { return end }
+            let window = Int(min(end, UInt64(Self.maximumSemanticLineBytes + 1)))
+            let start = end - UInt64(window)
+            var tail = [UInt8](repeating: 0, count: window)
+            var filled = 0
+            while filled < window {
+                let count = tail.withUnsafeMutableBytes {
+                    Darwin.pread(
+                        handle.fileDescriptor,
+                        $0.baseAddress!.advanced(by: filled),
+                        window - filled,
+                        off_t(start) + off_t(filled)
+                    )
+                }
+                if count < 0 && errno == EINTR { continue }
+                guard count > 0 else { throw CocoaError(.fileReadUnknown) }
+                filled += count
+            }
+            let fragmentStart: UInt64
+            if let newline = tail.lastIndex(of: 0x0A) {
+                fragmentStart = start + UInt64(newline + 1)
+            } else if start == 0 {
+                fragmentStart = 0
+            } else {
+                // The fragment is longer than any valid row: keep it apart, never decode it.
+                try handle.write(contentsOf: Data([0x0A]))
+                return end + 1
+            }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let fragment = Data(tail[Int(fragmentStart - start)...])
+            if (try? decoder.decode(SemanticContextPayload.self, from: fragment)) != nil {
+                try handle.write(contentsOf: Data([0x0A]))
+                return end + 1
+            }
+            try handle.truncate(atOffset: fragmentStart)
+            try handle.seek(toOffset: fragmentStart)
+            Diagnostics.write("Semantic append removed a torn \(end - fragmentStart)-byte tail.")
+            return fragmentStart
         }
 
         func resetDeduplicationCache() {
@@ -139,45 +196,48 @@
             }
         }
 
+        /// Deletes every payload captured at or after `cutoff`. Only day files from the
+        /// day before the cutoff onward are read (one day of margin for a time-zone
+        /// change), each file is streamed, and an unreadable row in those files is
+        /// removed too: an explicit privacy clear never keeps plaintext it cannot classify.
+        /// One failing file does not stop the others; the first error is reported at the end.
         func deleteEvents(
             since cutoff: Date,
             completion: @escaping (Result<Int, Error>) -> Void
         ) {
             queue.async {
+                var deleted = 0
+                var unreadable = 0
+                var metrics = SemanticContextDeletionMetrics()
+                var firstError: Error?
                 do {
-                    let files = try self.semanticFiles()
-                    var deleted = 0
-                    let decoder = JSONDecoder()
-                    decoder.dateDecodingStrategy = .iso8601
-                    for file in files {
-                        let data = try Data(contentsOf: file)
-                        let lines = data.split(separator: 0x0A)
-                        var kept = Data()
-                        for line in lines {
-                            let payload = try decoder.decode(SemanticContextPayload.self, from: Data(line))
-                            if payload.capturedAt >= cutoff {
-                                deleted += 1
-                            } else {
-                                kept.append(line)
-                                kept.append(0x0A)
-                            }
-                        }
-                        if kept.isEmpty {
-                            try? FileManager.default.removeItem(at: file)
-                        } else {
-                            try kept.write(to: file, options: .atomic)
-                            try? FileManager.default.setAttributes(
-                                [.posixPermissions: 0o600],
-                                ofItemAtPath: file.path
+                    let firstKey = AppPaths.localDayString(for: cutoff.addingTimeInterval(-86_400))
+                    for file in try self.semanticFiles()
+                    where String(file.lastPathComponent.prefix(10)) >= firstKey {
+                        do {
+                            let outcome = try self.rewrite(
+                                file: file,
+                                metrics: &metrics,
+                                deletingUnreadableRows: true,
+                                shouldDelete: { $0.capturedAt >= cutoff }
                             )
+                            deleted += outcome.deleted
+                            unreadable += outcome.unreadable
+                        } catch {
+                            if firstError == nil { firstError = error }
                         }
                     }
-                    self.recentReferencesByIdentity.removeAll(keepingCapacity: false)
-                    self.recentIdentityOrder.removeAll(keepingCapacity: false)
-                    DispatchQueue.main.async { completion(.success(deleted)) }
                 } catch {
-                    DispatchQueue.main.async { completion(.failure(error)) }
+                    firstError = error
                 }
+                self.recentReferencesByIdentity.removeAll(keepingCapacity: false)
+                self.recentIdentityOrder.removeAll(keepingCapacity: false)
+                self.latestDeletionMetrics = metrics
+                if unreadable > 0 {
+                    Diagnostics.write("Semantic clear removed \(unreadable) unreadable row(s).")
+                }
+                let result: Result<Int, Error> = firstError.map { .failure($0) } ?? .success(deleted)
+                DispatchQueue.main.async { completion(result) }
             }
         }
 
@@ -221,9 +281,9 @@
                     for file in try self.semanticFiles(matching: days) {
                         deleted += try self.rewrite(
                             file: file,
-                            deleting: snapshotIDs,
-                            metrics: &metrics
-                        )
+                            metrics: &metrics,
+                            shouldDelete: { snapshotIDs.contains($0.id) }
+                        ).deleted
                     }
                     self.removeRecentReferences(withSnapshotIDs: snapshotIDs)
                     self.latestDeletionMetrics = metrics
@@ -311,11 +371,15 @@
             return files.sorted { $0.lastPathComponent < $1.lastPathComponent }
         }
 
+        /// Streams `file` into a 0600 sibling temporary without the deleted rows. Exact
+        /// (targeted) deletion refuses unreadable rows; a cutoff clear passes
+        /// `deletingUnreadableRows` so they are removed instead.
         private func rewrite(
             file: URL,
-            deleting snapshotIDs: Set<String>,
-            metrics: inout SemanticContextDeletionMetrics
-        ) throws -> Int {
+            metrics: inout SemanticContextDeletionMetrics,
+            deletingUnreadableRows: Bool = false,
+            shouldDelete: (SemanticContextPayload) -> Bool
+        ) throws -> (deleted: Int, unreadable: Int) {
             var initialStatus = stat()
             guard lstat(file.path, &initialStatus) == 0,
                 (initialStatus.st_mode & S_IFMT) == S_IFREG,
@@ -344,6 +408,7 @@
             )
             let newline = Data([0x0A])
             var deleted = 0
+            var unreadable = 0
             var retainedRows = 0
             var processingError: Error?
             let readMetrics = try reader.read(
@@ -354,11 +419,15 @@
                         SemanticContextPayload.self,
                         from: raw
                     ) else {
-                        processingError = SemanticContextStoreError
-                            .unclassifiableTargetedDeletionRow(file)
+                        if deletingUnreadableRows {
+                            unreadable += 1
+                        } else {
+                            processingError = SemanticContextStoreError
+                                .unclassifiableTargetedDeletionRow(file)
+                        }
                         return
                     }
-                    if snapshotIDs.contains(payload.id) {
+                    if shouldDelete(payload) {
                         deleted += 1
                     } else {
                         do {
@@ -371,8 +440,12 @@
                     }
                 },
                 onOversizedLine: { _, _ in
-                    processingError = SemanticContextStoreError
-                        .unclassifiableTargetedDeletionRow(file)
+                    if deletingUnreadableRows {
+                        unreadable += 1
+                    } else {
+                        processingError = SemanticContextStoreError
+                            .unclassifiableTargetedDeletionRow(file)
+                    }
                 }
             )
             if let processingError { throw processingError }
@@ -385,7 +458,7 @@
                 metrics.peakBufferedBytes,
                 readMetrics.peakBufferedBytes
             )
-            guard deleted > 0 else { return 0 }
+            guard deleted + unreadable > 0 else { return (0, 0) }
             try output.synchronize()
             try output.close()
 
@@ -412,7 +485,7 @@
                 _ = Darwin.fsync(directoryDescriptor)
                 _ = Darwin.close(directoryDescriptor)
             }
-            return deleted
+            return (deleted, unreadable)
         }
 
         private static func sameSnapshot(_ lhs: stat, _ rhs: stat) -> Bool {

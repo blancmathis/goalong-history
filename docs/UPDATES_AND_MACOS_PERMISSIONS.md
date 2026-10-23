@@ -3,10 +3,15 @@
 > Current build defaults and the key-preserving local publication workflow: [FREE-UPDATES.md](FREE-UPDATES.md). Normal source builds now include the committed public update key; no paid Apple membership or developer-key export is required.
 
 Goalong has one bundle identity, `ai.goalong.localhistory`. Local builds use a stable Apple
-Development identity when one is already available. The free public Community Build is ad-hoc
-signed and not notarized, so its designated requirement can change with the binary and macOS may
-request fresh Goalong permissions after replacement. The installer reports that consequence before
-replacing the app; history and settings remain preserved.
+Development identity when one is already available. The free public Community Build is
+signed with a pinned Apple Development identity (team 2L5SSLPX46, see
+`Distribution/release-signing.json` and [STABLE_RELEASE_IDENTITY.md](STABLE_RELEASE_IDENTITY.md)),
+not Apple-notarized and not sandboxed. Releases signed with the same pinned identity keep the same
+designated requirement, so macOS should not ask for Goalong permissions again after a normal
+update. The request can come back only on the one-time move from an older ad-hoc build, or if the
+signing identity changes in the future (for example to Developer ID). The installer reports that
+consequence before replacing the app; history and settings remain preserved. Permission continuity
+is still not a guarantee: always verify the capture state after an update.
 
 The app never assumes permission from a switch alone. It verifies functional Accessibility/input
 health and separately requires the corresponding Goalong capability consent. Replacing the app

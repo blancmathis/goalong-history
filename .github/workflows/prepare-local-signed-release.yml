@@ -21,12 +21,15 @@ jobs:
           python3 scripts/test_update_policy.py
           python3 scripts/test_permission_requirement_policy.py
           python3 scripts/test_release_publication_policy.py
+          python3 scripts/test_deferred_release_deltas.py
           bash scripts/test_public_install_safety.sh
           bash scripts/test_install_from_source_safety.sh
           bash scripts/test_update_verification.sh
+          bash scripts/test_verify_published_update_feed.sh
       - name: Test source and actual relaunch protocol
         run: |
-          xcrun swift test
+          mkdir -p "$RUNNER_TEMP/goalong-test-home"
+          GOALONG_TEST_HOME="$RUNNER_TEMP/goalong-test-home" CFFIXED_USER_HOME="$RUNNER_TEMP/goalong-test-home" xcrun swift test
           bash scripts/test_permission_relaunch.sh
           bash scripts/audit_privacy_boundaries.sh
       - name: Build universal staging app
@@ -35,7 +38,7 @@ jobs:
           LOCALHISTORY_BUILD_NUMBER: ${{ steps.version.outputs.build }}
           LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: 1
           LOCALHISTORY_CODESIGN_IDENTITY: '-'
-          LOCALHISTORY_APP_ENTITLEMENTS: Distribution/GoalongHistory.entitlements
+          LOCALHISTORY_APP_ENTITLEMENTS: Distribution/GoalongHistory.entitlements  # unused with identity "-"; publish_local_release.sh applies it when it signs
           LOCALHISTORY_RUN_TESTS: 0
           LOCALHISTORY_ARCHS: arm64 x86_64
           LOCALHISTORY_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY || vars.SPARKLE_PUBLIC_ED_KEY }}

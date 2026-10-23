@@ -30,7 +30,7 @@ JSON request. Contextual session analysis uses the same confined transport with 
 required; the exported draft is never automatically sent to the website.
 
 The optional website connector is a separate first-party HTTP path. Explicit `goalong send-site`, reviewed native send buttons, and the separately enabled schedule send selected saved data. `export-site` and the native preview stay offline; enabling a source or
-remembering a website does not enable scheduling. The opt-in schedule sends the previous day after the chosen hour only while the app runs, using the reviewed device/field/mask selection and one destination. Selected numbered parts of saved recaps and domains are eligible; an active mask excludes both. One-off comments and past contextual-session analyses are never repeated. A failed or uncertain attempt stops scheduling and is never retried automatically. Source consent is checked again immediately before sending. The exact command contract is in
+remembering a website does not enable scheduling. The opt-in schedule sends the previous day after the chosen hour only while the app runs, using the reviewed device/field/mask selection and one destination. Selected devices, fields and domains are eligible; an active mask excludes domains. Scheduled sends never include recap text or recap sections. One-off comments and past contextual-session analyses are never repeated. A failed or uncertain attempt stops scheduling and is never retried automatically. Source consent is checked again immediately before sending. The exact command contract is in
 [`CLI.md`](CLI.md#website-export-and-account-submission); the field and audience boundary is in
 [`PRIVACY.md`](PRIVACY.md#website-disclosure).
 
@@ -60,7 +60,7 @@ the exact catalog URL on `github.com`, without a query. Only one redirect, from 
 URL to `https://release-assets.githubusercontent.com` on port 443, is allowed. An
 omitted port means HTTPS port 443. A second redirect, another host, HTTP, another
 port, or a first request to the asset host is refused. The security inventory
-includes this sixth intentional external path.
+lists this path among its six declared network destinations (ambiance download, Jev, updates, website pairing, managed ChatGPT analysis, website submission).
 
 The owner's clarification of 2026-10-04 permits GitHub's own signed redirect query,
 preserved exactly as received. Goalong never constructs or changes a query string,
@@ -79,6 +79,27 @@ strictly `http://127.0.0.1:<port>/`, for the same catalog archives served locall
 That seam refuses every redirect and is absent from Release builds. Downloaded
 temporary files are deleted after installation, failure or cancellation. Personal
 audio remains at its original path and is never uploaded.
+
+### Jev activity classification — opt-in
+
+Jev classifies recent activity against the member's focus rules. It runs only after separate
+explicit consent, from `JevTransport.swift`. It sends one POST to the fixed endpoint
+`https://api.typesafe.ai/v1/systemone` with a Bearer key. The request holds only a bounded
+recent context: the body is at most `JevPayload.maximumRequestBytes` (1600 UTF-8 bytes) and
+the input is capped at 999 tokens. The session is ephemeral, with no cookie, cache or stored
+credential. Redirects are refused. Timeouts are 10 s per request and 12 s per resource.
+There is no retry. See [`JEV-MONITORING.md`](JEV-MONITORING.md).
+
+### Website pairing — explicit claim
+
+A `goalong-history://connect?site=<origin>#<code>` link starts pairing. Goalong first shows
+the website origin for native confirmation. After the member confirms, `GoalongSitePairing.swift`
+sends one POST to `<origin>/api/goalong/v1/native/pairing/claim`. The body holds only the
+43-character single-use code. The session is ephemeral, with no cookie, cache or stored
+credential, and redirects are refused. Timeouts are 25 s per request and 30 s per resource.
+The response is capped at 8 KiB. Goalong accepts only a token with scope `upload:private`
+for the same origin. It saves the token in a private `0700` folder as a `0600` file. A failed
+or expired claim is not retried.
 
 ## Honest limitation
 

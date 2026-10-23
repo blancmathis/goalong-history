@@ -49,7 +49,7 @@
         init(
             rootDirectory: URL,
             deviceID: String,
-            selectedDay: Date = Date(),
+            selectedDay: Date = GoalongToday.now,
             accessEnabled: Bool = true,
             refreshInterval: TimeInterval = AppleScreenTimeDashboardModel.defaultRefreshInterval,
             includesUnfilteredSummary: Bool = false,
@@ -67,7 +67,7 @@
                     )
                     self.collectionProvider = { repository.collect(for: $0) }
                 } catch {
-                    let message = String(describing: error)
+                    let message = GoalongUserFacingError.message(error)
                     self.collectionProvider = { _ in
                         Self.storageUnavailableCollection(message: message)
                     }
@@ -95,7 +95,7 @@
                 )
                 self.alert = AppleScreenTimeDashboardAlert(
                     title: "La configuration Temps d’écran n’a pas pu démarrer",
-                    message: String(describing: error)
+                    message: GoalongUserFacingError.message(error)
                 )
             }
         }
@@ -108,7 +108,7 @@
         var remoteDeviceCount: Int { availableDevices.filter { $0.id != currentMacDevice.id }.count }
         var hasRemoteDevices: Bool { remoteDeviceCount > 0 }
         var selectedDeviceIDs: Set<String> { Set(configuration.scope.selectedDeviceIDs) }
-        var selectedDayIsToday: Bool { Calendar.current.isDateInToday(selectedDay) }
+        var selectedDayIsToday: Bool { GoalongToday.isToday(selectedDay) }
         var needsFullDiskAccess: Bool { status.kind == .fullDiskAccessRequired }
 
         private static func storageUnavailableCollection(
@@ -256,6 +256,8 @@
             guard accessEnabled != enabled else { return }
             accessEnabled = enabled
             configuration.enabled = enabled
+            // Best effort: GoalongCapabilityConsentStore is the source of truth for access,
+            // `configuration.enabled` is only a mirror, so a failed write is not reported.
             try? store?.saveConfiguration(configuration)
             lifecycleGeneration &+= 1
             if enabled {
@@ -373,7 +375,7 @@
                         self.isBusy = false
                         self.alert = AppleScreenTimeDashboardAlert(
                             title: "Échec de l’export",
-                            message: String(describing: error)
+                            message: GoalongUserFacingError.message(error)
                         )
                     }
                 }
@@ -443,7 +445,7 @@
             } catch {
                 alert = AppleScreenTimeDashboardAlert(
                     title: "Les réglages Temps d’écran n’ont pas pu être enregistrés",
-                    message: String(describing: error)
+                    message: GoalongUserFacingError.message(error)
                 )
             }
         }

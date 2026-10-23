@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Carbon
 import CoreGraphics
 
 /// Read-only state. No screen pixels, camera, microphone or extra permission.
@@ -22,5 +23,15 @@ enum ForegroundSessionAvailability {
         let awake = displays.prefix(Int(count)).contains { CGDisplayIsActive($0) != 0 && CGDisplayIsAsleep($0) == 0 }
         return permitsCapture(session: CGSessionCopyCurrentDictionary() as? [String: Any], hasAwakeDisplay: awake)
     }
+}
+
+/// Host state that can close capture: screen lock, display sleep and Secure Input.
+/// Production uses `.live`; tests inject fixed values. Values are never cached.
+struct HostCaptureGate {
+    var sessionAvailable: () -> Bool
+    var secureInput: () -> Bool
+    static let live = HostCaptureGate(
+        sessionAvailable: { ForegroundSessionAvailability.isAvailable() },
+        secureInput: { IsSecureEventInputEnabled() })
 }
 #endif

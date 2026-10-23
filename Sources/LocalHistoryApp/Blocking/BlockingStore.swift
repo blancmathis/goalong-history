@@ -1,11 +1,16 @@
 #if os(macOS)
 import Darwin
 import Foundation
+import LocalHistoryCore
 
 /// All path components are opened without following links; operations remain relative to the held fd.
 struct BlockingStore {
     var directory: URL
-    static var standard: BlockingStore { BlockingStore(directory: AppPaths.realApplicationSupportDirectory.appendingPathComponent("Blocking", isDirectory: true)) }
+    static var standard: BlockingStore { standard(channel: .current, base: GoalongBuildChannel.applicationSupportBase) }
+    /// The channel's own Blocking folder: `LocalHistory-Dev/Blocking` in Goalong Dev, never the real stakes.
+    static func standard(channel: GoalongBuildChannel, base: URL) -> BlockingStore {
+        BlockingStore(directory: channel.dataRoot(base: base).appendingPathComponent("Blocking", isDirectory: true))
+    }
     enum Failure: Error { case unsafePath, unreadable, invalidDocument }
     /// How `loadRecovering` obtained its document.
     enum Recovery: Equatable { case none, previous, reset }
@@ -127,17 +132,29 @@ struct BlockingStore {
     }
 
     /// Read by uninstall.sh: end of the latest lock in Unix seconds, absent when nothing is locked.
-    func writeLockMarker(until: Date?) {
-        guard let directoryFD = try? openDirectory(create: until != nil) else { return }
+    /// Returns true only when the marker is durably in the wanted state, so the caller can retry a failure.
+    @discardableResult
+    func writeLockMarker(until: Date?) -> Bool {
+        let opened: Int32?
+        do { opened = try openDirectory(create: until != nil) } catch { return false }
+        // Without a Blocking folder there is no marker to remove.
+        guard let directoryFD = opened else { return until == nil }
         defer { close(directoryFD) }
-        guard let until else { unlinkat(directoryFD, Self.lockMarker, 0); return }
+        guard let until else {
+            return (unlinkat(directoryFD, Self.lockMarker, 0) == 0 || errno == ENOENT) && fsync(directoryFD) == 0
+        }
         let temporary = ".locked-until-" + UUID().uuidString
         let fd = openat(directoryFD, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { return }
+        guard fd >= 0 else { return false }
         defer { close(fd); unlinkat(directoryFD, temporary, 0) }
         let bytes = Array("\(Int(until.timeIntervalSince1970.rounded(.up)))\n".utf8)
-        guard write(fd, bytes, bytes.count) == bytes.count else { return }
-        renameat(directoryFD, temporary, directoryFD, Self.lockMarker)
+        var offset = 0
+        while offset < bytes.count {
+            let count = bytes.withUnsafeBytes { write(fd, $0.baseAddress!.advanced(by: offset), bytes.count - offset) }
+            guard count > 0 else { return false }
+            offset += count
+        }
+        return fsync(fd) == 0 && renameat(directoryFD, temporary, directoryFD, Self.lockMarker) == 0 && fsync(directoryFD) == 0
     }
 }
 
@@ -145,6 +162,12 @@ struct BlockingClockState: Codable, Equatable {
     var wall: Date
     var continuous: Double
     var boot: String
+    /// Wall minus continuous seconds at the last compensated jump (or the first sample of this boot).
+    /// Forward jumps are measured from it, not from the last refresh: small steps of 60 s or less
+    /// add up and are compensated once their sum passes 60 s. nil in documents of older builds.
+    var anchor: Double? = nil
+
+    var offset: Double { wall.timeIntervalSince1970 - continuous }
 }
 
 enum BlockingClock {
@@ -159,10 +182,21 @@ enum BlockingClock {
     }
     static func adjustment(previous: BlockingClockState, now: BlockingClockState) -> TimeInterval {
         if previous.boot == now.boot, now.continuous >= previous.continuous {
-            let jump = now.wall.timeIntervalSince(previous.wall) - (now.continuous - previous.continuous)
+            let jump = now.offset - (previous.anchor ?? previous.offset)
             return jump > 60 ? jump : 0
         }
         return min(0, now.wall.timeIntervalSince(previous.wall))
+    }
+    /// `now` with the anchor the next refresh measures from: kept while no jump was compensated in
+    /// this boot, moved to `now` after a compensation, a reboot or without any previous sample.
+    static func advanced(previous: BlockingClockState?, now: BlockingClockState, adjusted: TimeInterval) -> BlockingClockState {
+        var next = now
+        if let previous, adjusted == 0, previous.boot == now.boot, now.continuous >= previous.continuous {
+            next.anchor = previous.anchor ?? previous.offset
+        } else {
+            next.anchor = now.offset
+        }
+        return next
     }
 }
 #endif

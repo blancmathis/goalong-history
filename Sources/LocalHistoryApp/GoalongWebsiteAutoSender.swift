@@ -11,6 +11,8 @@ import LocalHistoryCore
     @Published private(set) var enabled = false
     @Published private(set) var status = "Synchronisation quotidienne désactivée"
     @Published private(set) var lastSuccess: String?
+    /// Why the plan stopped by itself. Nil when the plan runs, or when the user paused it.
+    @Published private(set) var pauseReason: String?
     private var timer: Timer?
     private var busy = false
     private let defaults: UserDefaults
@@ -33,8 +35,22 @@ import LocalHistoryCore
         var lastSuccess: String?
         var paused: Bool? = false
         var credentialFingerprint: String?
+        var pauseReason: String?
     }
     var savedConfiguration: Configuration? { configuration() }
+    private static let globalPauseStatus = "Pause globale : envoi suspendu, programmation conservée."
+    static let exclusionsChangedReason = "Exclusions modifiées : relisez la sélection avant de reprendre."
+    static let accessRefusedReason = "Synchronisation en pause : le site a refusé l’accès de ce Mac. Reliez-le avec « Relier mon Mac », puis relisez la sélection."
+    static let sharingRulesUnreadableReason = "Synchronisation arrêtée : les règles de partage sont illisibles. Vérifiez-les dans les réglages avant de reprendre."
+    static let reboundReason = "Compte relié de nouveau : relisez la sélection, puis reprenez l’envoi quotidien."
+    static let unreachableReason = "Synchronisation en pause : le site reste injoignable depuis ce Mac. Vérifiez votre connexion, puis relisez l’aperçu pour reprendre."
+    /// Fingerprint of an access the site refused (HTTP 401/403). The account card then offers to pair again.
+    static let refusedCredentialKey = "goalong.website.refusedCredentialFingerprint"
+    /// Waits before each new try when the site could not be reached. One more failure pauses the plan.
+    static let networkRetryDelays: [TimeInterval] = [5 * 60, 15 * 60, 30 * 60, 60 * 60]
+    /// Network failures for one day. In memory only: a restart allows a fresh try.
+    private var networkRetry: (day: String, failures: Int, notBefore: Date)?
+    private let sharingRulesReadable: () -> Bool
 
     static func sourcesAllowed(_ options: GoalongSiteExportOptions) -> Bool {
         GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)
@@ -46,11 +62,23 @@ import LocalHistoryCore
     init(defaults: UserDefaults = .standard, root: URL = AppPaths.applicationSupportDirectory,
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
          sender: ((Data, String, URL, String?) throws -> Data)? = nil,
-         sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) }) {
+         sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) },
+         hiddenWebsites: @escaping () -> (String) -> Bool = { SharingRulesStore().hiddenWebsiteFilter() },
+         hiddenApplications: @escaping () -> (String?, String) -> Bool = { SharingRulesStore().hiddenApplicationFilter() },
+         sharingRulesReadable: @escaping () -> Bool = { !SharingRulesStore().isDamaged }) {
+        self.sharingRulesReadable = sharingRulesReadable
+        self.hiddenWebsites = hiddenWebsites
+        self.hiddenApplications = hiddenApplications
         self.defaults = defaults; self.root = root; self.exporter = exporter; self.sender = sender
         self.sourceConsent = sourceConsent
-        let saved = configuration()
+        var saved = configuration()
         lastSuccess = saved?.lastSuccess
+        // Exclusions changed while the app was closed: pause with the reason, and keep it after a restart.
+        if var value = saved, value.policyVersion == 3, value.paused != true,
+           value.privacyRevision != GoalongPrivacyPolicy.load(in: root).revision {
+            value.paused = true; value.pauseReason = Self.exclusionsChangedReason
+            try? store(value); saved = value
+        }
         enabled = saved?.policyVersion == 3 && saved?.paused != true
             && saved?.privacyRevision == GoalongPrivacyPolicy.load(in: root).revision
         if let saved {
@@ -58,6 +86,8 @@ import LocalHistoryCore
                 status = "Ancienne synchronisation suspendue : relisez la sélection avant de la réactiver."
             } else if enabled {
                 status = "Activée · la veille à partir de \(Self.timeLabel(saved)), lorsque Goalong est ouvert."
+            } else if let reason = saved.pauseReason, saved.paused == true {
+                pauseReason = reason; status = reason
             } else { status = "Synchronisation en pause · vos choix sont conservés sur ce Mac." }
         }
     }
@@ -69,6 +99,26 @@ import LocalHistoryCore
     static func timeLabel(_ value: Configuration) -> String {
         String(format: "%02d:%02d", value.hour ?? 9, value.minute ?? 0) + " · " + (value.timeZoneIdentifier ?? TimeZone.current.identifier)
     }
+    private let hiddenWebsites: () -> (String) -> Bool
+    /// Sites hidden in every share never leave, even when an older plan still lists them.
+    /// Applications hidden in every share are dropped too (matched on their id, as the Screen Time id is the bundle id).
+    /// A nil list stays nil and an empty list stays empty: an empty list never means "all".
+    nonisolated static func removingHiddenWebsites(_ options: GoalongSiteExportOptions, isHidden: (String) -> Bool,
+                                                   isApplicationHidden: ((String?, String) -> Bool)? = nil) -> GoalongSiteExportOptions {
+        var value = options
+        value.selectedWebsiteDomains = options.selectedWebsiteDomains?.filter { !isHidden($0) }
+        if let isApplicationHidden {
+            value.selectedApplicationIDs = options.selectedApplicationIDs?.filter { !isApplicationHidden($0, $0) }
+        }
+        return value
+    }
+    private let hiddenApplications: () -> (String?, String) -> Bool
+    /// True when the options select no application and no site, so a send would carry an empty day.
+    nonisolated static func selectsNothing(_ options: GoalongSiteExportOptions) -> Bool {
+        !(options.includeApplications && !(options.selectedApplicationIDs ?? []).isEmpty)
+            && !(options.includeWebsites && !(options.selectedWebsiteDomains ?? []).isEmpty)
+    }
+    static let nothingSelectedMessage = "Les applications et sites choisis sont masqués dans tous les partages. Choisissez-en d’autres."
     static func dailyOptions(_ options: GoalongSiteExportOptions) throws -> GoalongSiteExportOptions {
         guard !options.deviceIDs.isEmpty, options.deviceIDs.count <= 12,
               Set(options.deviceIDs).count == options.deviceIDs.count else {
@@ -103,44 +153,82 @@ import LocalHistoryCore
         guard (0...23).contains(hour), (0...59).contains(minute), TimeZone(identifier: timeZoneIdentifier) != nil else {
             throw GoalongSiteExportError.invalid("Choisissez une heure et un fuseau horaire valides.")
         }
-        let selected = try Self.dailyOptions(options)
+        let daily = try Self.dailyOptions(options)
+        let selected = Self.removingHiddenWebsites(daily, isHidden: hiddenWebsites(), isApplicationHidden: hiddenApplications())
+        guard Self.selectsNothing(daily) || !Self.selectsNothing(selected) else { throw GoalongSiteExportError.invalid(Self.nothingSelectedMessage) }
         guard sourceConsent(selected) else { throw GoalongSiteExportError.invalid("Une source sélectionnée est désactivée dans les réglages.") }
         var value = Configuration(origin: origin, tokenPath: tokenPath, options: selected, hour: hour,
                                   minute: minute, timeZoneIdentifier: timeZoneIdentifier, credentialFingerprint: SHA256Digest.hashHex(Data(token.utf8)))
         value.privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
         guard !GoalongPrivacyPolicy.load(in: root).blocked else { throw GoalongSiteExportError.invalid("Les exclusions sont illisibles.") }
+        guard sharingRulesReadable() else { throw GoalongSiteExportError.invalid("Les règles de partage sont illisibles. Vérifiez-les dans les réglages, puis relisez l’aperçu.") }
         try store(value)
+        networkRetry = nil
         lastSuccess = nil
+        pauseReason = nil
         enabled = true
         status = "Activée · la veille après \(Self.timeLabel(value)). Nouveaux appareils, apps, domaines et récaps exclus."
         start()
     }
-    func stop() {
-        if var saved = configuration() { saved.paused = true; try? store(saved) }
+    /// A stop the app decided alone passes a `reason`; a user stop clears it.
+    func stop(reason: String? = nil) {
+        if var saved = configuration() { saved.paused = true; saved.pauseReason = reason; try? store(saved) }
         enabled = false
-        status = busy ? "En pause. Un envoi déjà commencé peut encore aboutir." : "Synchronisation en pause · vos choix sont conservés."
+        pauseReason = reason
+        status = reason ?? (busy ? "En pause. Un envoi déjà commencé peut encore aboutir." : "Synchronisation en pause · vos choix sont conservés.")
+    }
+    private func stopAutomatically(_ message: String) { networkRetry = nil; stop(reason: message) }
+    /// Records that the site refused this access, so the account card offers « Relier mon Mac ».
+    func markAccessRefused(fingerprint: String?) {
+        guard let fingerprint, !fingerprint.isEmpty else { return }
+        defaults.set(fingerprint, forKey: Self.refusedCredentialKey)
+    }
+    /// True when the site refused the access stored in this token file.
+    static func accessWasRefused(tokenPath: String, defaults: UserDefaults = .standard) -> Bool {
+        guard let refused = defaults.string(forKey: refusedCredentialKey), !tokenPath.isEmpty,
+              let token = try? GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath)) else { return false }
+        return SHA256Digest.hashHex(Data(token.utf8)) == refused
+    }
+    /// The same account was paired again: the plan follows the new access and waits for a review.
+    func rebind(tokenPath: String, credentialFingerprint: String) {
+        defaults.removeObject(forKey: Self.refusedCredentialKey)
+        guard var saved = configuration() else { return }
+        saved.tokenPath = tokenPath; saved.credentialFingerprint = credentialFingerprint
+        try? store(saved)
+        stopAutomatically(Self.reboundReason)
     }
     func forget() {
         stop()
+        networkRetry = nil
         defaults.removeObject(forKey: key)
         lastSuccess = nil
+        pauseReason = nil
     }
     func start() {
         guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.tick() }
         }
+        // Minute granularity: a few seconds of delay is fine and lets macOS coalesce wakeups.
+        timer?.tolerance = 15
     }
+    var hasTimer: Bool { timer != nil }
     func tick(now: Date = Date()) async {
+        // Cheap in-memory check first: a disabled plan must not read files every minute.
+        guard enabled else { return }
         let pause = GoalongGlobalPause.load(in: root)
         guard !pause.blocksActivity else {
-            if enabled { status = "Pause globale : envoi suspendu, programmation conservée." }
+            if enabled { status = Self.globalPauseStatus }
             return
+        }
+        // The pause ended: drop its message even when this tick sends nothing. Other statuses stay.
+        if status == Self.globalPauseStatus, enabled, let saved = configuration(), saved.policyVersion == 3, saved.paused != true {
+            status = "Activée · la veille à partir de \(Self.timeLabel(saved)), lorsque Goalong est ouvert."
         }
         guard !busy, enabled, var current = configuration(), current.policyVersion == 3, current.paused != true,
               let zone = TimeZone(identifier: current.timeZoneIdentifier ?? "") else { return }
         guard current.privacyRevision == GoalongPrivacyPolicy.load(in: root).revision else {
-            stop(); status = "Exclusions modifiées : vérifiez la sélection avant de reprendre."; return
+            stopAutomatically(Self.exclusionsChangedReason); return
         }
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
         let minutes = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
@@ -150,10 +238,17 @@ import LocalHistoryCore
         formatter.calendar = calendar; formatter.timeZone = zone
         let day = formatter.string(from: previous)
         guard current.lastAttempt != day else { return }
+        if let retry = networkRetry, retry.day == day, now < retry.notBefore { return }
+        let previousAttempt = current.lastAttempt
         do {
-            current.options = try Self.dailyOptions(current.options)
+            guard sharingRulesReadable() else { stopAutomatically(Self.sharingRulesUnreadableReason); return }
+            let daily = try Self.dailyOptions(current.options)
+            current.options = Self.removingHiddenWebsites(daily, isHidden: hiddenWebsites(), isApplicationHidden: hiddenApplications())
+            guard Self.selectsNothing(daily) || !Self.selectsNothing(current.options) else {
+                stopAutomatically("Synchronisation arrêtée : les applications et sites choisis sont désormais masqués."); return
+            }
             guard sourceConsent(current.options) else {
-                stop(); status = "Synchronisation arrêtée : une source est désactivée."; return
+                stopAutomatically("Synchronisation arrêtée : une source est désactivée."); return
             }
             // Persist before networking. An uncertain receipt never silently retries.
             current.lastAttempt = day
@@ -165,7 +260,7 @@ import LocalHistoryCore
             guard enabled, configuration()?.identifier == snapshot.identifier,
                   configuration()?.origin == snapshot.origin, configuration()?.tokenPath == snapshot.tokenPath else { return }
             guard sourceConsent(snapshot.options) else {
-                stop(); status = "Synchronisation arrêtée : une source est désactivée."; return
+                stopAutomatically("Synchronisation arrêtée : une source est désactivée."); return
             }
             try GoalongGlobalPause.revalidate(pause.revision, in: root)
             _ = try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: snapshot.privacyRevision)
@@ -182,12 +277,35 @@ import LocalHistoryCore
             current.lastSuccess = day
             try store(current)
             lastSuccess = day
+            networkRetry = nil
             status = "Journée du \(day) reçue · prochain envoi après \(Self.timeLabel(current))."
+        } catch GoalongSiteSubmissionError.unreachable {
+            // Nothing reached the site: try the same day again later, a few times.
+            restoreAttempt(previousAttempt, of: current)
+            let failures = (networkRetry?.day == day ? networkRetry?.failures ?? 0 : 0) + 1
+            guard failures <= Self.networkRetryDelays.count else { stopAutomatically(Self.unreachableReason); return }
+            let delay = Self.networkRetryDelays[failures - 1]
+            networkRetry = (day, failures, now.addingTimeInterval(delay))
+            status = "Site injoignable : rien n’a été envoyé. Nouvel essai dans \(Int(delay / 60)) min."
+        } catch is GoalongGlobalPause.PauseError {
+            // The global pause started during the export: nothing left. Keep the plan; the day goes after the pause.
+            restoreAttempt(previousAttempt, of: current)
+            status = Self.globalPauseStatus
+        } catch GoalongSiteSubmissionError.accessRefused {
+            SupportDiagnostics.shared.failure(GoalongSiteSubmissionError.accessRefused, component: .sharing)
+            markAccessRefused(fingerprint: current.credentialFingerprint)
+            stopAutomatically(Self.accessRefusedReason)
+            NotificationCenter.default.post(name: .goalongWebsiteAccessRefused, object: nil)
         } catch {
             SupportDiagnostics.shared.failure(error, component: .sharing)
-            stop()
-            status = "Synchronisation en pause : \(error). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre."
+            stopAutomatically("Synchronisation en pause : \(goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre.")
         }
+    }
+    /// Puts back the last attempt saved before the send, so the same day is tried again.
+    private func restoreAttempt(_ previous: String?, of attempt: Configuration) {
+        guard var saved = configuration(), saved.identifier == attempt.identifier else { return }
+        saved.lastAttempt = previous
+        try? store(saved)
     }
     deinit { timer?.invalidate() }
 }

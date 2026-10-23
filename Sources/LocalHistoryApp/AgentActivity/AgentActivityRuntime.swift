@@ -12,13 +12,26 @@
         let message: String
     }
 
+    /// `--uninstall-agent-integrations` (uninstall.sh). The hooks carry one Goalong marker shared by every
+    /// copy: Goalong Dev removing them would remove the installed Goalong's hooks. Returns false when refused.
+    enum AgentHookCommandLine {
+        static let devRefusal = "Goalong Dev leaves the agent hooks to the installed Goalong: nothing was removed."
+
+        @discardableResult
+        static func uninstallAll(channel: GoalongBuildChannel, uninstall: (AgentIntegrationKind) throws -> Void) -> Bool {
+            guard channel.allowsAgentHookChanges else { return false }
+            for kind in AgentIntegrationKind.allCases { try? uninstall(kind) }
+            return true
+        }
+    }
+
     enum AgentActivityRuntimeAccessError: LocalizedError {
         case unauthorizedSource(String)
 
         var errorDescription: String? {
             switch self {
             case .unauthorizedSource(let entryID):
-                return "The indexed source \(entryID) is not authorized by an active monitored folder."
+                return "La source indexée \(entryID) n’est autorisée par aucun dossier surveillé actif."
             }
         }
     }
@@ -35,12 +48,23 @@
         @Published private(set) var indexIsValid: Bool
         @Published var selectedDay: Date
         @Published var alert: AgentActivityAlert?
+        /// Read failures already shown in an alert. Main thread only. A source that stays
+        /// unreadable is retried by the scanner; it must not raise the same modal on each retry.
+        private var reportedScanFailures: Set<String> = []
+
+        /// Failures from this scan that were not already reported by the previous scan.
+        /// Reported failures are kept until a folder change, so backoff-skipped scans do not reset them.
+        static func newScanFailures(previous: Set<String>, current: [String]) -> [String] {
+            current.filter { !previous.contains($0) }
+        }
 
         let rootDirectory: URL
 
         private let store: AgentActivityStore
         private let scanner: AgentActivityScanner
         private let installer: AgentIntegrationInstaller
+        /// Goalong Dev never installs or removes agent hooks: they are shared with the installed Goalong.
+        let allowsHookChanges: Bool
         private let sourceDiscovery: () -> [AgentWatchedFolder]
         private let workQueue = DispatchQueue(
             label: "ai.goalong.localhistory.agent-activity",
@@ -81,9 +105,11 @@
             sourceDiscovery: @escaping () -> [AgentWatchedFolder] = {
                 AgentDefaultSourceDiscovery.discover()
             },
+            channel: GoalongBuildChannel = .current,
             onCaptured: @escaping ([AgentCaptureRecord]) -> Void
         ) throws {
             self.rootDirectory = rootDirectory
+            allowsHookChanges = channel.allowsAgentHookChanges
             self.onCaptured = onCaptured
             self.sourceDiscovery = sourceDiscovery
             store = try AgentActivityStore(rootDirectory: rootDirectory)
@@ -226,7 +252,7 @@
             panel.allowsMultipleSelection = true
             panel.canCreateDirectories = false
             panel.message = "Choisissez des dossiers contenant des conversations, sessions ou journaux d’agents."
-            panel.prompt = "Watch folders"
+            panel.prompt = "Surveiller"
             guard panel.runModal() == .OK else { return }
             addFolders(panel.urls)
         }
@@ -367,7 +393,21 @@
             save(next, successMessage: nil)
         }
 
+        /// Shown instead of changing the agents' shared hook files from Goalong Dev.
+        static let devHookChangeRefused = (
+            title: "Hooks gérés par Goalong installé",
+            message: "Goalong Dev ne modifie pas les hooks des agents : ils sont partagés avec Goalong installé. Installez-les ou retirez-les depuis Goalong installé."
+        )
+
+        /// False (and an alert) in Goalong Dev: the hooks belong to the installed Goalong.
+        private func hookChangeAllowed() -> Bool {
+            guard !allowsHookChanges else { return true }
+            alert = AgentActivityAlert(title: Self.devHookChangeRefused.title, message: Self.devHookChangeRefused.message)
+            return false
+        }
+
         func installIntegration(_ kind: AgentIntegrationKind) {
+            guard hookChangeAllowed() else { return }
             workQueue.async { [weak self] in
                 guard let self else { return }
                 do {
@@ -389,6 +429,7 @@
         }
 
         func uninstallIntegration(_ kind: AgentIntegrationKind) {
+            guard hookChangeAllowed() else { return }
             workQueue.async { [weak self] in
                 guard let self else { return }
                 do {
@@ -534,6 +575,8 @@
                     alert = AgentActivityAlert(title: "Sources mises à jour", message: successMessage)
                 }
                 rescheduleTimer()
+                // A folder change is an explicit action: show read errors again.
+                reportedScanFailures.removeAll()
                 // Newly enabled folders have no discovery cursor and will be fully discovered.
                 // Existing folders reuse their bounded index instead of being recursively rescanned.
                 scanNow(forceFullDiscovery: false)
@@ -641,12 +684,18 @@
                 }
                 if let bytes { self.storageBytes = bytes }
                 if let validIndex { self.indexIsValid = validIndex }
-                if let first = failures.first {
+                let newFailures = Self.newScanFailures(
+                    previous: self.reportedScanFailures,
+                    current: failures
+                )
+                // Union: a scan skipped by backoff reports nothing, which must not forget the failure.
+                self.reportedScanFailures.formUnion(failures)
+                if let first = newFailures.first {
                     self.alert = AgentActivityAlert(
                         title: "Certains fichiers d’agents n’ont pas pu être lus",
-                        message: failures.count == 1
+                        message: newFailures.count == 1
                             ? first
-                            : "\(first)\n\nEt \(failures.count - 1) autre(s) erreur(s) de lecture."
+                            : "\(first)\n\nEt \(newFailures.count - 1) autre(s) erreur(s) de lecture."
                     )
                 }
             }

@@ -1,5 +1,6 @@
 #if os(macOS)
     import SwiftUI
+    import LocalHistoryCore
 
     extension LocalHistoryOnboardingView {
         @ViewBuilder var page: some View {
@@ -73,7 +74,7 @@
                 Text(localRecordingDraft ? "Valider démarre le suivi local avec ces choix, après les accès macOS nécessaires. Aucun envoi." : "Le suivi ne démarrera pas. Vos choix restent modifiables.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 GoalongDisclosureGroup("Choisir des exclusions avant de commencer") {
-                    GoalongOnboardingExclusions(model: model).padding(.top, 12)
+                    GoalongOnboardingExclusions(model: model, website: $pendingWebsite).padding(.top, 12)
                 }.font(.system(size: 13))
                 if let note { GoalongNote(note, tone: .warning) }
             }
@@ -145,9 +146,11 @@
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Vous pouvez commencer").goalongPageTitle()
-                    Text(consents.isEnabled(.localComputerHistory)
+                    Text(pauseRevision >= 0 && GoalongGlobalPause.load().blocksActivity
+                         ? "Tout le suivi est suspendu : rien n’est enregistré pour l’instant. Reprenez-le pour que votre fil apparaisse dans Activité."
+                         : consents.isEnabled(.localComputerHistory)
                          ? "Votre fil apparaîtra dans Activité dès les premières minutes d’utilisation de ce Mac."
-                         : "L’enregistrement local est désactivé : Activité restera vide. Vous pourrez l’activer dans Réglages, Enregistrement local.")
+                         : "L’enregistrement local est désactivé : rien n’apparaîtra dans Activité. Vous pourrez l’activer dans Réglages, Enregistrement local.")
                         .font(.system(size: 14)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -168,7 +171,9 @@
                     Toggle(isOn: $launchAtLoginPreference) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Ouvrir Goalong à la connexion").font(.system(size: 13, weight: .medium))
-                            Text("Conseillé et sélectionné par défaut. Seules les sources que vous avez activées démarrent.")
+                            Text(launchAtLogin.heldByBlocking
+                                 ? LaunchAtLoginManager.heldMessage
+                                 : "Conseillé et sélectionné par défaut. Seules les sources que vous avez activées démarrent.")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }

@@ -2,6 +2,7 @@
     import AppKit
     import Combine
     import Foundation
+    import GoalongGuardCore
     import Sparkle
 
     enum SoftwareUpdatePresentationAction: Equatable {
@@ -125,8 +126,8 @@
         }
 
         var currentVersion: String {
-            (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
-                ?? "development"
+            // Through ProductIdentity: the test gallery shows a fixed version, not xctest's.
+            ProductIdentity.shortVersion ?? "development"
         }
 
         var canCheckForUpdates: Bool {
@@ -400,16 +401,24 @@
             recordCheckResult(.upToDate)
         }
 
-        private func recordCheckResult(_ result: SupportState, error: (any Error)? = nil) {
+        /// `foundVersion` is the version Sparkle just found; it wins over a stale ready version.
+        nonisolated static func checkResultValues(result: SupportState, foundVersion: String?, availableVersion: String?,
+                                      error: (any Error)? = nil) -> [SupportKey: SupportValue] {
+            var values: [SupportKey: SupportValue] = [.updateResult: .state(result)]
+            if let version = foundVersion ?? availableVersion, SupportSymbol.isSafe(version, for: .availableVersion) {
+                values[.availableVersion] = .symbol(version)
+            }
+            if let error { values.merge(SupportDiagnostics.errorValues(error)) { _, new in new } }
+            return values
+        }
+
+        private func recordCheckResult(_ result: SupportState, foundVersion: String? = nil, error: (any Error)? = nil) {
             lastCheckResult = result
             let now = Date()
             lastCheckedAt = now
             UserDefaults.standard.set(now, forKey: Self.lastCheckedKey)
-            var values: [SupportKey: SupportValue] = [.updateResult: .state(result)]
-            if let version = presentationState.availableVersion, SupportSymbol.isSafe(version, for: .availableVersion) {
-                values[.availableVersion] = .symbol(version)
-            }
-            if let error { values.merge(SupportDiagnostics.errorValues(error)) { _, new in new } }
+            let values = Self.checkResultValues(result: result, foundVersion: foundVersion,
+                                                availableVersion: presentationState.availableVersion, error: error)
             SupportDiagnostics.shared.record(.updateCheckFinished, component: .updates,
                                              level: result == .failed ? .warning : .info, values: values)
         }
@@ -484,10 +493,12 @@
             }
             SupportDiagnostics.shared.record(.updateChanged, component: .updates, values: values)
             isRelaunchingForUpdate = true
+            GoalongGuardFiles.writeLease(GuardLease.update, seconds: GuardLease.maximumDuration)
         }
 
         func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
             isRelaunchingForUpdate = false
+            GoalongGuardFiles.standard.removeLease()
             if !Self.isNoUpdateResult(error) {
                 SupportDiagnostics.shared.failure(error, component: .updates)
             }
@@ -502,7 +513,7 @@
             // Sparkle finds the appcast item before its standard user driver has prepared the
             // install alert. Remember the version here, but do not expose a clickable badge yet.
             markDetected(item)
-            recordCheckResult(.updateAvailable)
+            recordCheckResult(.updateAvailable, foundVersion: item.displayVersionString)
         }
 
         func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: any Error) {

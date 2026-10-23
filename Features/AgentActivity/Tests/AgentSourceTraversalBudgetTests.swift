@@ -459,7 +459,7 @@ final class AgentSourceTraversalBudgetTests: XCTestCase {
             at: observedAt.addingTimeInterval(1)
         )
         XCTAssertTrue(
-            invalidated.failures.contains { $0.contains("changed while it was being read") },
+            invalidated.failures.contains { $0.contains("a changé pendant la lecture") },
             invalidated.failures.joined(separator: "\n")
         )
         XCTAssertEqual(store.indexEntryCount(), 8)
@@ -526,7 +526,7 @@ final class AgentSourceTraversalBudgetTests: XCTestCase {
             at: observedAt.addingTimeInterval(1)
         )
         XCTAssertTrue(
-            invalidated.failures.contains { $0.contains("changed while it was being read") },
+            invalidated.failures.contains { $0.contains("a changé pendant la lecture") },
             invalidated.failures.joined(separator: "\n")
         )
         XCTAssertEqual(store.indexEntryCount(), 8)

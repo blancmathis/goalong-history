@@ -3,6 +3,7 @@ import AppKit
 import Combine
 import Foundation
 import LocalHistoryCore
+import LocalHistoryQueryCLI
 
 struct JevRecentCheck: Identifiable {
     let id = UUID()
@@ -44,6 +45,11 @@ struct JevRecentCheck: Identifiable {
     private var circuitReason: JevError?
     private var consecutiveFailures = 0
     @Published private(set) var breakStorageInvalid = false
+    /// The api-key file exists but could not be read; monitoring stays closed until it is saved again.
+    @Published private(set) var keyStorageInvalid = false
+    /// True only while `error` holds a transient transport failure that the next success may clear.
+    private var errorIsTransient = false
+    private let localRoot: URL
     private var sessionAvailable = true
     private var retryAfter = Date.distantPast
     private var settingsSignature = ""
@@ -56,25 +62,46 @@ struct JevRecentCheck: Identifiable {
             && UserDefaults.standard.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey)
     }
     init(scopePreferences: JevMonitoringPreferences? = nil, consents: GoalongCapabilityConsentStore? = nil,
-         sessionProvider: (() -> UUID?)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true) {
+         sessionProvider: (() -> UUID?)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true,
+         localRoot: URL? = nil) {
         self.scopePreferences = scopePreferences ?? .shared
         self.consents = consents ?? .shared
         self.sessionProvider = sessionProvider ?? { ConcentrationRuntime.shared.controller?.jevSessionID }
         self.inbox = inbox ?? .shared
+        self.localRoot = localRoot ?? AppPaths.applicationSupportDirectory
         scope = self.scopePreferences.scope
         guard loadLocalSettings else { return }
+        loadLocalFiles()
+    }
+    /// Reads the key and the break separately, so one unreadable file never hides the other.
+    /// Each read resets its own state first; a failed read keeps monitoring closed.
+    private func loadLocalFiles() {
+        var messages: [String] = []
+        apiKey = ""; hasKey = false; keyStorageInvalid = false
         do {
-            if let data = try JevLocalFiles.read("api-key"), let key = String(data: data, encoding: .utf8) {
+            if let data = try JevLocalFiles.read("api-key", root: localRoot), let key = String(data: data, encoding: .utf8) {
                 apiKey = key; hasKey = Self.validKey(key)
             }
-            if let data = try JevLocalFiles.read("break.json") {
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .monitoring)
+            keyStorageInvalid = true
+            messages.append("Clé API illisible : surveillance suspendue. Enregistrez-la à nouveau dans Gérer la connexion.")
+        }
+        do {
+            if let data = try JevLocalFiles.read("break.json", root: localRoot) {
                 let value = try JSONDecoder().decode(JevTimedBreak.self, from: data)
                 guard value.isValid else { throw JevError.invalidResponse }
                 timedBreak = value; remainingSeconds = value.remaining(at: Date())
             }
+            // No file: keep a break that is running in memory (its save may have failed);
+            // the countdown still ends it through endBreak().
+            breakStorageInvalid = false
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                self.error = "Réglages illisibles : surveillance suspendue."; breakStorageInvalid = true }
+            breakStorageInvalid = true
+            messages.append("Réglages illisibles : surveillance suspendue.")
+        }
+        if !messages.isEmpty { error = messages.joined(separator: " "); errorIsTransient = false }
     }
     func start() {
         guard !started else { return }; started = true
@@ -129,6 +156,7 @@ struct JevRecentCheck: Identifiable {
         if let issue = scopePreferences.error { return issue }
         if !scopePreferences.scope.permits(sessionActive: focusSessionID != nil) { return "En attente d’une séance" }
         if let issue = JevWorkContextStore.shared.error { return issue }
+        if keyStorageInvalid { return "Clé API illisible : surveillance suspendue" }
         if !hasKey { return "Configurez la connexion API pour activer la surveillance" }
         if circuitOpen { return circuitReason?.errorDescription ?? "Surveillance suspendue après erreur : vérifiez la connexion" }
         if GoalongGlobalPause.isPaused() { return "Arrêt de confidentialité : historique et surveillance suspendus" }
@@ -141,7 +169,7 @@ struct JevRecentCheck: Identifiable {
     func setEnabled(_ value: Bool) {
         if !value { JevWarningPanel.shared.hide(resetPosition: true) }
         if !consents.set(.jevMonitoring, enabled: value, surface: .settings) {
-            error = "Le choix de surveillance n’a pas pu être enregistré."
+            error = "Le choix de surveillance n’a pas pu être enregistré."; errorIsTransient = false
         }
         reconfigure()
     }
@@ -155,23 +183,25 @@ struct JevRecentCheck: Identifiable {
     }
     func saveKey(_ value: String) {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard Self.validKey(key) else { error = "La clé TypeSafe doit être une valeur ASCII sans espace (8 à 1 024 caractères)."; return }
+        guard Self.validKey(key) else {
+            error = "La clé API Jev doit être une valeur ASCII sans espace (8 à 1 024 caractères)."; errorIsTransient = false; return
+        }
         do {
-            try JevLocalFiles.write(Data(key.utf8), name: "api-key")
-            apiKey = key; hasKey = true; circuitOpen = false; circuitReason = nil; consecutiveFailures = 0; error = nil
+            try JevLocalFiles.write(Data(key.utf8), name: "api-key", root: localRoot)
+            apiKey = key; hasKey = true; keyStorageInvalid = false; circuitOpen = false; circuitReason = nil; consecutiveFailures = 0; error = nil
             reconfigure()
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                self.error = error.localizedDescription }
+                self.error = goalongUserMessage(error); errorIsTransient = false }
     }
     func removeKey() {
         cancelPending(); inbox.configure(enabled: false)
         do {
-            try JevLocalFiles.write(nil, name: "api-key")
-            apiKey = ""; hasKey = false; circuitOpen = false; error = nil
+            try JevLocalFiles.write(nil, name: "api-key", root: localRoot)
+            apiKey = ""; hasKey = false; keyStorageInvalid = false; circuitOpen = false; error = nil
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                self.error = error.localizedDescription; circuitOpen = true }
+                self.error = goalongUserMessage(error); errorIsTransient = false; circuitOpen = true }
         reconfigure()
     }
     private static func validKey(_ value: String) -> Bool {
@@ -186,25 +216,28 @@ struct JevRecentCheck: Identifiable {
         cancelPending(); inbox.configure(enabled: false)
         timedBreak = value; remainingSeconds = value.remaining(at: Date())
         do {
-            try JevLocalFiles.write(try JSONEncoder().encode(value), name: "break.json")
+            try JevLocalFiles.write(try JSONEncoder().encode(value), name: "break.json", root: localRoot)
             breakStorageInvalid = false; error = nil
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                breakStorageInvalid = true; self.error = error.localizedDescription }
+                breakStorageInvalid = true; self.error = goalongUserMessage(error); errorIsTransient = false }
         reconfigure()
     }
     func endBreak() {
         do {
-            try JevLocalFiles.write(nil, name: "break.json")
+            try JevLocalFiles.write(nil, name: "break.json", root: localRoot)
             timedBreak = nil; remainingSeconds = 0; breakStorageInvalid = false; error = nil
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                breakStorageInvalid = true; self.error = error.localizedDescription }
+                breakStorageInvalid = true; self.error = goalongUserMessage(error); errorIsTransient = false }
         reconfigure()
     }
     func retry() {
         circuitOpen = false; circuitReason = nil; consecutiveFailures = 0
-        retryAfter = .distantPast; error = nil; reconfigure()
+        retryAfter = .distantPast; error = nil; errorIsTransient = false
+        // Re-read both files so a repaired key or break file recovers without a restart.
+        loadLocalFiles()
+        reconfigure()
     }
     func dismissWarning() {
         streak.dismissWarning()
@@ -296,6 +329,8 @@ struct JevRecentCheck: Identifiable {
                     }
                 }
                 self.consecutiveFailures = 0
+                // A later success proves a 5xx/429/network failure is over; other errors stay.
+                if self.errorIsTransient { self.error = nil; self.errorIsTransient = false }
                 SupportDiagnostics.shared.recordIfChanged(.monitorCycle, component: .monitoring, values: [
                     .state: .state(.ready), .success: .flag(true)])
                 self.lastInputTokens = decision.inputTokens
@@ -322,12 +357,13 @@ struct JevRecentCheck: Identifiable {
                 self.error = (error as? JevError)?.errorDescription ?? "Connexion de surveillance indisponible. Aucun classement inventé."
                 self.status = self.error ?? "Service de surveillance indisponible"
                 self.consecutiveFailures += 1
+                self.errorIsTransient = true
                 // 30 s, 1 min, 2 min… up to 10 min: a failing service is not called every cycle.
                 let backoff = min(600, 30 * pow(2, Double(min(self.consecutiveFailures - 1, 5))))
                 if let error = error as? JevError {
                     switch error {
                     case .authentication, .budget, .paymentRequired:
-                        self.circuitOpen = true; self.circuitReason = error
+                        self.circuitOpen = true; self.circuitReason = error; self.errorIsTransient = false
                         SupportDiagnostics.shared.record(.monitorPaused, component: .monitoring, level: .warning,
                             values: [.state: .state(error == .paymentRequired ? .paymentRequired : error == .authentication ? .authentication : .blocked)])
                         self.reconfigure()

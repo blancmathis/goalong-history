@@ -144,7 +144,7 @@ import SwiftUI
                 GoalongNote(lockNote, symbol: "lock.fill", tone: .neutral)
             }
             if let error = controller.error {
-                GoalongNote(error, tone: .warning).onTapGesture { controller.error = nil }
+                BlockingNoteButton(note: GoalongNote(error, tone: .warning), hint: "Fermer l’erreur") { controller.error = nil }
             }
             part(list.mode == .block ? "Sites" : "Sites permis") {
                 VStack(alignment: .leading, spacing: 10) {
@@ -283,7 +283,8 @@ import SwiftUI
                         Button(list.program.isLocked(at: now) ? "Prolonger le verrou…" : "Verrouiller le programme…") { lockingProgram = true }
                             .buttonStyle(LHQuietButtonStyle())
                             .popover(isPresented: $lockingProgram) {
-                                BlockingProgramLock(current: list.program.lockedUntil, now: now) { date in
+                                BlockingProgramLock(current: list.program.lockedUntil, now: now,
+                                                    consent: controller.guardNeedsConsent) { date in
                                     controller.lockProgram(listID: list.id, until: date)
                                     lockingProgram = false
                                 }
@@ -309,7 +310,7 @@ import SwiftUI
     }
 
     private var programLine: String {
-        guard let first = list.program.ranges.first else { return "Pas de programme. Glissez sur la semaine pour en créer un." }
+        guard let first = list.program.ranges.first else { return "Pas de programme. Glissez sur la semaine, ou utilisez le bouton + d’un jour, pour en créer un." }
         let more = list.program.ranges.count > 1 ? " et \(list.program.ranges.count - 1) autre\(list.program.ranges.count > 2 ? "s" : "")" : ""
         return "Programme : \(BlockingFormat.weekdays(first.weekdays)) \(BlockingFormat.range(first))\(more)"
     }
@@ -434,7 +435,7 @@ import SwiftUI
 
     private func message(_ check: BlockingEditCheck, input: String? = nil, kind: String = "") -> String? {
         guard case .refused(let reason) = check else { return nil }
-        if let input, controller.error == nil, !reason.hasPrefix("Liste") { return "« \(input) » n’est pas \(kind)." }
+        if let input, controller.error != reason, !reason.hasPrefix("Liste") { return "« \(input) » n’est pas \(kind)." }
         return reason
     }
 
@@ -519,11 +520,25 @@ import SwiftUI
     let now: Date
     var onDone: () -> Void
 
+    /// The sheet's title: a locked list says why it can only get stricter.
+    nonisolated static func title(locked: Bool) -> String { locked ? "Liste verrouillée" : "Modifier la liste" }
+
     var body: some View {
         Group {
             if let list = controller.list(listID) {
-                ScrollView {
-                    BlockListEditor(controller: controller, list: list, now: now, onDone: onDone).padding(28)
+                VStack(spacing: 0) {
+                    HStack {
+                        Text(Self.title(locked: controller.isStricterOnly(listID)))
+                            .font(.system(size: 15, weight: .semibold)).foregroundStyle(LHTheme.text)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer()
+                        Button("Fermer", action: onDone).buttonStyle(LHQuietButtonStyle())
+                            .accessibilityIdentifier("blocking-list-close")
+                    }
+                    .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 4)
+                    ScrollView {
+                        BlockListEditor(controller: controller, list: list, now: now, onDone: onDone).padding(28)
+                    }
                 }
             } else {
                 Color.clear.onAppear(perform: onDone)
@@ -531,6 +546,7 @@ import SwiftUI
         }
         .frame(width: 600).frame(minHeight: 420, idealHeight: 640, maxHeight: 760)
         .background(LHTheme.pageBackground)
+        .background(Button("") { onDone() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
     }
 }
 
@@ -575,8 +591,7 @@ struct BlockingActionPicture: View {
             ZStack(alignment: .leading) {
                 if list.effectiveAction == .block {
                     tile.overlay {
-                        Path { path in path.move(to: CGPoint(x: 4, y: 14)); path.addLine(to: CGPoint(x: 14, y: 4)) }
-                            .stroke(LHTheme.text, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                        Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(LHTheme.text)
                     }
                 } else {
                     HStack(spacing: 4) {
@@ -610,19 +625,38 @@ struct BlockingActionPicture: View {
 struct BlockingProgramLock: View {
     let current: Date?
     let now: Date
+    /// Shows `GuardConsent.text` while the guard was never registered.
+    var consent = false
     var onLock: (Date) -> Void
-    @State private var until = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
+    @State private var until: Date
+
+    init(current: Date?, now: Date, consent: Bool = false, onLock: @escaping (Date) -> Void) {
+        self.current = current
+        self.now = now
+        self.consent = consent
+        self.onLock = onLock
+        _until = State(initialValue: Self.initialUntil(current: current, now: now))
+    }
+
+    /// Two weeks from now, never before the lock in place: the button must name the real end.
+    static func initialUntil(current: Date?, now: Date, calendar: Calendar = .current) -> Date {
+        max(current ?? now, calendar.date(byAdding: .day, value: 14, to: now) ?? now)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Verrouiller le programme").font(LHTheme.cardTitleFont)
             Text("Jusqu’à cette date, la liste et son programme peuvent seulement devenir plus stricts. Les plages programmées ne peuvent pas être arrêtées.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            if consent {
+                Text(GuardConsent.text)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            }
             DatePicker("Jusqu’au", selection: $until, in: max(now, current ?? now)..., displayedComponents: .date)
                 .datePickerStyle(.field)
             HStack {
                 Spacer()
-                Button("Verrouiller jusqu’au \(BlockingFormat.day(until))") { onLock(Calendar.current.startOfDay(for: until).addingTimeInterval(86_399)) }
+                Button("Verrouiller jusqu’au \(BlockingFormat.day(until))") { onLock(BlockingWallClock.endOfDay(until)) }
             }
         }
         .padding(18).frame(width: 340)
@@ -645,8 +679,15 @@ struct BlockingIconCluster: View {
     var size: CGFloat = 22
     var limit = 5
 
+    /// Each app or host once, in list order: several rules can share a host and lists can share an app.
+    static func items(for lists: [BlockList]) -> [BlockingItem] {
+        var seen = Set<BlockingItem>()
+        return lists.flatMap { list in list.apps.map(BlockingItem.app) + list.sites.map { .site($0.host) } }
+            .filter { seen.insert($0).inserted }
+    }
+
     var body: some View {
-        let items = lists.flatMap { list in list.apps.map(BlockingItem.app) + list.sites.map { .site($0.host) } }
+        let items = Self.items(for: lists)
         if items.isEmpty {
             RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
                 .strokeBorder(LHTheme.controlBorder, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
@@ -665,7 +706,7 @@ struct BlockingIconStack: View {
 
     var body: some View {
         HStack(spacing: max(2, size * 0.14)) {
-            ForEach(items, id: \.self) { item in icon(item) }
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in icon(item) }
             if overflow > 0 {
                 Text("+\(overflow)").font(.system(size: max(10, size * 0.5), weight: .medium).monospacedDigit())
                     .foregroundStyle(LHTheme.secondaryText).fixedSize().padding(.leading, 2)

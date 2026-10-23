@@ -38,7 +38,7 @@ if [[ -n "$LOCAL_DIST" ]]; then
   test "$(/usr/libexec/PlistBuddy -c 'Print :GoalongSourceRevision' "$INFO")" = "$(git rev-parse "$REVISION^{tree}")"
   bash scripts/verify_release_identity.sh "$APP"
   LOCALHISTORY_APP_PATH="$APP" LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 bash scripts/verify_local_bundle.sh
-  for executable in 'Goalong History' goalong goalong-relauncher; do
+  for executable in 'Goalong History' goalong goalong-relauncher goalong-blocking-guard; do
     lipo "$APP/Contents/MacOS/$executable" -verify_arch arm64 x86_64
   done
 else
@@ -88,7 +88,9 @@ codesign "${SIGN[@]}" "$FRAMEWORK/Versions/B/Updater.app"
 codesign "${SIGN[@]}" "$FRAMEWORK"
 codesign "${SIGN[@]}" --identifier ai.goalong.localhistory "$APP/Contents/MacOS/goalong"
 codesign "${SIGN[@]}" --identifier ai.goalong.localhistory.relauncher "$APP/Contents/MacOS/goalong-relauncher"
-codesign "${SIGN[@]}" --identifier ai.goalong.localhistory "$APP"
+codesign "${SIGN[@]}" --identifier ai.goalong.localhistory.blocking-guard "$APP/Contents/MacOS/goalong-blocking-guard"
+# Only the app bundle carries entitlements (as in build_app_core.sh); nested code gets none.
+codesign "${SIGN[@]}" --identifier ai.goalong.localhistory --entitlements "$ROOT/Distribution/GoalongHistory.entitlements" "$APP"
 bash scripts/verify_release_identity.sh "$APP"
 LOCALHISTORY_APP_PATH="$APP" LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 bash scripts/verify_local_bundle.sh
 fi

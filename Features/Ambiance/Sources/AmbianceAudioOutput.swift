@@ -2,14 +2,18 @@ import AVFoundation
 import Foundation
 import OndeDSP
 
-/// The sole device-audio boundary. Created by Play; no input, permission,
-/// observer or timer. The DSP owner outlives this graph and its render callback.
+/// The sole device-audio boundary. Created by Play; no input, permission or timer.
+/// One observer of the engine's configuration change exists only while audio plays.
+/// The DSP owner outlives this graph and its render callback.
 final class AmbianceAudioOutput {
     private var engine: AVAudioEngine?
     private var source: AVAudioSourceNode?
     private var player: AVAudioPlayerNode?
     private var file: AVAudioFile?
     private var finish: (() -> Void)?
+    /// Called on the main queue when the audio device changed and the engine stopped itself.
+    var interrupted: (() -> Void)?
+    private var configurationObserver: NSObjectProtocol?
     private var looping = false
     private var stopped = false
 
@@ -57,7 +61,16 @@ final class AmbianceAudioOutput {
         engine.prepare()
         try engine.start()
         player?.play()
+        // A device change (headphones, AirPods, sample rate) stops the engine silently: tell the owner.
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+            guard let self, !self.stopped else { return }
+            self.interrupted?()
+        }
     }
+    var engineForTesting: AVAudioEngine? { engine }
+    /// Lets tests post the device-change notification without naming the audio API outside this file.
+    static let configurationChangeForTesting = Notification.Name.AVAudioEngineConfigurationChange
     private func scheduleFile() {
         guard let player, let file, !stopped else { return }
         player.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
@@ -70,7 +83,9 @@ final class AmbianceAudioOutput {
     }
     func stop() {
         guard !stopped else { return }
-        stopped = true; finish = nil
+        stopped = true; finish = nil; interrupted = nil
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+        configurationObserver = nil
         // stop synchronizes rendering before the runtime frees the DSP/mappings.
         engine?.stop(); player?.stop()
         if let source { engine?.detach(source) }

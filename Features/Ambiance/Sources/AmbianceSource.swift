@@ -2,7 +2,13 @@ import Foundation
 import OndeCore
 
 public struct AmbianceSource: Identifiable, Equatable {
-    public enum Kind: Equatable { case focus, relax, texture, ownFile }
+    public enum Kind: Equatable, CaseIterable {
+        case focus, relax, texture, ownFile
+        /// The one French name of each kind, used by the Ambiance page and the menu-bar panel.
+        public var displayName: String {
+            switch self { case .focus: return "Concentration"; case .relax: return "Détente"; case .texture: return "Texture"; case .ownFile: return "Ma musique" }
+        }
+    }
     public let id: String
     public let title: String
     public let kind: Kind
@@ -16,7 +22,7 @@ public struct AmbianceSource: Identifiable, Equatable {
     }
     static let compositionTitles = [
         "ambre": "Ambre", "canopee": "Canopée", "meridien": "Méridien", "sillage": "Sillage",
-        "filigrane": "Filigrane", "confluence": "Confluence", "sanctuaire": "Sanctuaire", "gravite": "Gravité", "orbit": "Orbit", "sonar": "Sonar",
+        "filigrane": "Filigrane", "confluence": "Confluence", "sanctuaire": "Sanctuaire", "gravite": "Gravité", "orbit": "Orbite", "sonar": "Sonar",
         "lagoon": "Lagon", "stillwater": "Eau calme", "hearth": "Foyer", "reverie": "Rêverie", "driftwood": "Bois flotté",
     ]
     static let textures = [("rain", "Pluie douce"), ("ocean", "Marée"), ("brown", "Velours brun"), ("pink", "Air rose"), ("aube", "Aube")]
@@ -37,11 +43,14 @@ public struct AmbianceDiagnostics: Equatable {
 }
 
 public enum AmbianceError: Error, LocalizedError {
-    case invalidPack(String), cancelled, unavailable, disabled, audioBoundary, networkBoundary
+    case invalidPack(String), cancelled, unavailable, disabled, audioBoundary, networkBoundary, network, tooSlow, serverUnavailable
     public var errorDescription: String? {
         switch self {
         case .invalidPack(let detail): return "Pack invalide : \(detail)"
         case .cancelled: return "Téléchargement annulé."
+        case .network: return "Connexion impossible. Vérifiez Internet puis réessayez."
+        case .tooSlow: return "Téléchargement trop lent. Réessayez avec une connexion plus rapide."
+        case .serverUnavailable: return "Le pack est indisponible pour le moment. Réessayez plus tard."
         case .unavailable: return "Cette source est indisponible. Installez son pack ou retrouvez le fichier."
         case .disabled: return "Le module Ambiance est désactivé."
         case .audioBoundary: return "La lecture audio attend la revue de la frontière de sécurité de Goalong."

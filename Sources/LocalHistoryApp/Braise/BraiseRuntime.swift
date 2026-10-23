@@ -109,6 +109,8 @@ import SwiftUI
     init(controller: BraiseController, onOpen: @escaping () -> Void, onDisable: @escaping () -> Void) {
         self.controller = controller; self.onOpen = onOpen; self.onDisable = onDisable
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        // Own Control Centre key, distinct from Goalong's item and from Goalong Dev's.
+        item.autosaveName = GoalongDevChannelMarks.autosaveName("goalong-braise")
         super.init()
         item.button?.target = self; item.button?.action = #selector(clicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])

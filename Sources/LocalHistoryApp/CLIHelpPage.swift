@@ -35,8 +35,8 @@
                     ) {
                         StatusPill(
                             title: statusTitle,
-                            symbol: cliIsReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
-                            tint: cliIsReady ? LHTheme.success : LHTheme.warning
+                            symbol: statusSymbol,
+                            tint: statusTint
                         )
                     }
 
@@ -59,9 +59,7 @@
 
         private var readinessBanner: some View {
             GoalongBanner(symbol: "terminal", title: readinessTitle,
-                          detail: cliIsReady
-                              ? "Le lien pointe vers cette version installée de Goalong. Chaque requête se termine après sa réponse, sans processus supplémentaire."
-                              : installationReport.detail) {
+                          detail: readinessDetail) {
                 Button {
                     installationReport = GoalongCLIInstallation.inspect()
                 } label: {
@@ -173,7 +171,7 @@
                     evidenceRow(
                         symbol: "curlybraces",
                         title: "JSON clair",
-                        detail: "Données et erreurs sont en JSON structuré. L’aide est en texte ; `help --json` décrit le contrat machine."
+                        detail: "Données et erreurs sont en JSON structuré. L’aide est en texte ; « goalong help --json » décrit le contrat machine."
                     )
                     evidenceRow(
                         symbol: "lock.shield",
@@ -209,23 +207,50 @@
             }
         }
 
-        private var cliIsReady: Bool {
-            installationReport.state == .ready
-        }
-
         private var statusTitle: String {
             switch installationReport.state {
             case .ready: return "Commande prête"
             case .missing: return "Commande absente"
             case .conflict: return "Conflit de commande"
+            case .development: return "Commande de Goalong installé"
+            }
+        }
+
+        // Goalong Dev never owns the command: a normal state, shown neutral rather than as a warning.
+        private var statusTint: Color {
+            switch installationReport.state {
+            case .ready: return LHTheme.success
+            case .development: return LHTheme.secondaryText
+            case .missing, .conflict: return LHTheme.warning
+            }
+        }
+
+        private var statusSymbol: String {
+            switch installationReport.state {
+            case .ready: return "checkmark.circle.fill"
+            case .development: return "info.circle.fill"
+            case .missing, .conflict: return "exclamationmark.triangle.fill"
             }
         }
 
         private var readinessTitle: String {
             switch installationReport.state {
             case .ready: return "Vérifiée pour le Terminal"
-            case .missing: return "Le lien de la commande est absent"
+            case .missing: return "Réinstallez Goalong"
             case .conflict: return "Le lien de la commande n’est pas fiable"
+            case .development: return "La commande goalong sert Goalong installé"
+            }
+        }
+
+        private var readinessDetail: String {
+            switch installationReport.state {
+            case .ready:
+                return "Le lien pointe vers cette version installée de Goalong. Chaque requête se termine après sa réponse, sans processus supplémentaire."
+            case .development:
+                guard let path = installationReport.developmentCLIPath else { return installationReport.detail }
+                return installationReport.detail + " Exécutable de Goalong Dev : " + path
+            case .missing, .conflict:
+                return installationReport.detail
             }
         }
 

@@ -4,6 +4,7 @@
     import Carbon
     import AppleSystemScreenTime
     import Foundation
+    import GoalongGuardCore
     import LocalHistoryCore
     import LocalHistoryQueryCLI
 
@@ -11,7 +12,7 @@
         private let calendar: Calendar
         private var lastRunDay: Date?
 
-        init(calendar: Calendar = .current) {
+        init(calendar: Calendar = .autoupdatingCurrent) {
             self.calendar = calendar
         }
 
@@ -20,6 +21,23 @@
             guard lastRunDay != day else { return false }
             lastRunDay = day
             return true
+        }
+    }
+
+    /// When to capture the tail of the active Screen Time day. Completed days are never re-read,
+    /// so the last refresh must happen while the day is still the active one.
+    enum ScreenTimeMidnightSchedule {
+        static let lead: TimeInterval = 15
+
+        /// A moment just before the next local midnight. Inside the last `lead` seconds it targets the following midnight.
+        static func fireDate(after now: Date, calendar: Calendar = .autoupdatingCurrent, lead: TimeInterval = lead) -> Date? {
+            let components = DateComponents(hour: 0, minute: 0, second: 0)
+            guard var midnight = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) else { return nil }
+            if midnight.addingTimeInterval(-lead) <= now {
+                guard let following = calendar.nextDate(after: midnight, matching: components, matchingPolicy: .nextTime) else { return nil }
+                midnight = following
+            }
+            return midnight.addingTimeInterval(-lead)
         }
     }
 
@@ -58,7 +76,9 @@
                         UserDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
                         controller.show(section: .settings)
                         self.dashboardViewModel.settingsPane = .website
-                        NotificationCenter.default.post(name: .goalongWebsiteConnected, object: nil)
+                        // A share link only reveals the picker: the credential did not change, so a
+                        // plan running in an open sheet must not be paused.
+                        NotificationCenter.default.post(name: url.host == "share" ? .goalongWebsiteShareRequested : .goalongWebsiteConnected, object: nil)
                     }
                 }
             }
@@ -73,7 +93,7 @@
         private var captureState: CaptureState!
         private var store: JSONLStore!
         private var integrityStateStore: IntegrityStateStore!
-        private var deviceIdentity: DeviceIdentity!
+        private var deviceIdentityStartup: DeviceIdentityStartup!
         private var integrityJournal: IntegrityJournal!
         private var minuteSealer: MinuteSealer!
         private var clearingCallPresence = false
@@ -87,6 +107,8 @@
         private var developerActivityRuntime: GoalongDeveloperRuntime?
         private var screenTimeRepository: AppleSystemScreenTimeRepository?
         private var screenTimeArchiveTimer: Timer?
+        private var screenTimeMidnightTimer: Timer?
+        private var screenTimeClockObservers: [NSObjectProtocol] = []
         private var screenTimeArchiveRefreshInFlight = false
         private var readOnlyQueryServer: GoalongReadOnlyQueryServer?
         private var dashboardWindowController: DashboardWindowController!
@@ -107,8 +129,25 @@
 
         private var runtimeStarted = false
         private var userQuitConfirmed = false
+        /// Set when an installer or uninstaller asked us to stop with SIGTERM.
+        private var terminatingForSignal = false
+        /// Sender of the quit that was accepted (set only on the paths that really terminate).
+        private var acceptedQuitSenderID: String?
+        /// When macOS last announced a power off. Counts only for `powerOffWindow`: a logout cancelled by
+        /// another app must not leave SIGTERM honoured for the rest of the block.
+        private var powerOffAt: Date?
+        private var powerOffObserver: NSObjectProtocol?
+        /// The blocking confirmation (password) approved this quit: the guard does not reopen Goalong.
+        private var blockingQuitApproved = false
+        private var terminationSignalSource: DispatchSourceSignal?
         private var quitAlertIsVisible = false
         private let continuityPreferences = BackgroundContinuityPreferences()
+
+        /// Local recording is stopped by the privacy stop or by an unreadable config.json
+        /// (its exclusions are unknown, so nothing may be captured with defaults).
+        private var localRecordingHalted: Bool {
+            GoalongGlobalPause.isPaused() || configManager?.isFailClosed == true
+        }
 
         private var hasEnabledBackgroundSources: Bool {
             guard let capabilityConsents else { return false }
@@ -123,16 +162,38 @@
 
         @MainActor private func startApplication() {
             guard !anotherInstanceIsRunning() else {
+                // Single-instance rule: this copy never opens the stores. Bring the running one forward.
+                NSRunningApplication.runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier)
+                    .first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }?
+                    .activate()
+                NSApplication.shared.terminate(nil)
+                return
+            }
+
+            // Goalong Dev never runs on a LocalHistory-Dev cloned by the old make dev (real device key and tokens).
+            if case .legacy(let found) = GoalongDevDataGuard.check(channel: .current, root: AppPaths.applicationSupportDirectory) {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = GoalongDevDataGuard.refusalTitle
+                alert.informativeText = GoalongDevDataGuard.refusalMessage(found)
+                alert.runModal()
                 NSApplication.shared.terminate(nil)
                 return
             }
 
             runtimeStarted = true
+            // A guard token always belongs to the process that wrote it (spec K).
+            GoalongGuardFiles.standard.clearTokens()
+            installTerminationSignalHandler()
             let buildIdentity = BuildIdentityReader.current()
-            SupportDiagnostics.shared.start(version: buildIdentity.displayVersion, build: buildIdentity.buildNumber)
             LegacyInstallationMigrator.run()
+            // The journal lives under the data root: create it first, or a fresh install's first writes fail
+            // and mark every report incomplete. A failure here is reported again by the prepare below.
+            _ = try? AppPaths.prepare()
+            SupportDiagnostics.shared.start(version: buildIdentity.displayVersion, build: buildIdentity.buildNumber)
             NSApplication.shared.setActivationPolicy(.accessory)
-            GoalongWebsiteAutoSender.shared.start()
+            // Goalong Dev: no daily send unless make dev SERVER=on.
+            if GoalongBuildChannel.current.allowsServerTraffic { GoalongWebsiteAutoSender.shared.start() }
             SoftwareUpdateManager.shared.start()
 
             do {
@@ -157,7 +218,7 @@
                 }
                 configManager = ConfigManager()
                 capabilityConsents = GoalongCapabilityConsentStore.shared
-                developerActivityRuntime = GoalongDeveloperRuntime()
+                if !configManager.isFailClosed { developerActivityRuntime = GoalongDeveloperRuntime() }
                 permissions = PermissionManager.shared
                 captureHealthStore = CaptureHealthStore(permissions: permissions)
                 semanticContextStore = SemanticContextStore()
@@ -165,16 +226,32 @@
                 retentionStore = HistoryRetentionStore(
                     legacyRetentionDays: configManager.config.retentionDays
                 )
-                captureState = CaptureState()
+                let launchConfig: ConfigManager = configManager
+                captureState = CaptureState(isGloballyPaused: {
+                    GoalongGlobalPause.isPaused() || launchConfig.isFailClosed
+                })
                 store = try JSONLStore(retentionDays: configManager.config.retentionDays)
                 integrityStateStore = IntegrityStateStore()
-                deviceIdentity = try DeviceIdentity()
-                screenTimeRepository = try GoalongScreenTimeRepositoryProvider.repository(
-                    rootDirectory: AppPaths.screenTimeDirectory,
-                    deviceID: deviceIdentity.info.deviceID
-                )
+                // An unreadable keychain key never stops the app: it records without sealing.
+                deviceIdentityStartup = DeviceIdentityStartup.resolve()
+                if let status = deviceIdentityStartup.unavailableStatus {
+                    if let error = deviceIdentityStartup.unavailableError {
+                        SupportDiagnostics.shared.failure(error, component: .app)
+                    }
+                    DeviceTrustState.shared.setSealingSuspended(status: status)
+                }
+                if let screenTimeDeviceID = knownDeviceID {
+                    screenTimeRepository = try GoalongScreenTimeRepositoryProvider.repository(
+                        rootDirectory: AppPaths.screenTimeDirectory,
+                        deviceID: screenTimeDeviceID
+                    )
+                }
                 integrityJournal = IntegrityJournal(stateStore: integrityStateStore)
-                minuteSealer = MinuteSealer(stateStore: integrityStateStore, identity: deviceIdentity)
+                minuteSealer = MinuteSealer(
+                    stateStore: integrityStateStore, identity: deviceIdentityStartup.identity)
+                if deviceIdentityStartup.isDegraded {
+                    minuteSealer.suspendSigning(reason: "Signing identity unavailable (Keychain)")
+                }
                 minuteSealer.setUploader(nil)
                 recorder = EventRecorder(
                     store: store,
@@ -210,7 +287,7 @@
                 agentActivityRuntime = try AgentActivityRuntime(
                     rootDirectory: AppPaths.agentActivityDirectory,
                     executableURL: executableURL,
-                    performInitialDiscovery: capabilityConsents.isEnabled(.aiConversations) && !GoalongGlobalPause.isPaused(),
+                    performInitialDiscovery: capabilityConsents.isEnabled(.aiConversations) && !localRecordingHalted,
                     onCaptured: { _ in }
                 )
 
@@ -220,7 +297,8 @@
                     configManager: configManager,
                     sharingRulesStore: sharingRulesStore,
                     agentActivityRuntime: agentActivityRuntime,
-                    deviceInfo: deviceIdentity.info,
+                    deviceInfo: deviceIdentityStartup.info,
+                    onRetryKeychain: { [weak self] in self?.retryDeviceIdentity() },
                     eventTapStatus: { [weak self] in self?.eventTapMonitor.isRunning ?? false },
                     currentSuppression: { [weak self] in self?.contextMonitor.latestSnapshot?.suppressionReason },
                     captureHealthSnapshot: { [unowned self] in self.captureHealthStore.snapshot },
@@ -238,9 +316,16 @@
                     },
                     onDeleteTargetedDetails: { [weak self] request, completion in
                         self?.deleteTargetedDetails(request, completion: completion)
-                    }
+                    },
+                    onReloadConfiguration: { [weak self] in self?.reloadConfiguration() ?? false },
+                    onResetConfiguration: { [weak self] in try self?.resetConfiguration() }
                 )
                 dashboardWindowController = DashboardWindowController(viewModel: dashboardViewModel)
+                // The share sheet lives on the dashboard: bring it back when the member sends with it closed.
+                dashboardViewModel.profileStudio.onNeedsPresentation = { [weak self] in
+                    guard let controller = self?.dashboardWindowController else { return }
+                    controller.show(section: controller.viewModel.selectedSection)
+                }
 
                 applicationMenuController = ApplicationMenuController(
                     onOpenSettings: { [weak self] in
@@ -276,7 +361,8 @@
                     onOpenShare: { [weak self] in self?.dashboardWindowController.show(section: .share) },
                     onTogglePause: { [weak self] in self?.toggleManualPause() },
                     onRequestPermissions: { [weak self] in self?.requestPermissionsAndExplain() },
-                    onReloadConfig: { [weak self] in self?.reloadConfiguration() },
+                    onReloadConfig: { [weak self] in self?.reloadConfiguration() ?? false },
+                    onRetryKeychain: { [weak self] in self?.retryDeviceIdentity() },
                     onQuit: { [weak self] in self?.requestUserQuit() }
                 )
             } catch {
@@ -294,6 +380,10 @@
                 BlockingRuntime.shared.start(monitor: contextMonitor)
                 ConcentrationRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .concentration) }
                 ConcentrationRuntime.shared.onMenuBarText = { [weak self] text in self?.menuBarController?.setFocusTitle(text) }
+                let ambiance = dashboardViewModel.ambianceModule
+                ConcentrationRuntime.shared.audio = AmbianceFocusSessionAudio(
+                    controller: { GoalongModuleStore.shared.isEnabled(.ambiance) ? ambiance.controller : nil },
+                    lastSource: { ambiance.settings.lastSource })
                 ConcentrationRuntime.shared.start(monitor: contextMonitor)
                 BraiseRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .braise) }
                 BraiseRuntime.shared.start()
@@ -304,6 +394,7 @@
                     health: { [weak self] in self?.captureHealthStore.assessment.state ?? .paused },
                     suppression: { [weak self] in self?.contextMonitor.latestSnapshot?.suppressionReason },
                     localHistoryEnabled: { [weak self] in self?.capabilityConsents.isEnabled(.localComputerHistory) == true },
+                    configUnreadable: { [weak self] in self?.configManager.isFailClosed == true },
                     loadDay: { now in
                         let verdicts = GoalongWorkStore.shared.verdicts
                         return try await GoalongAnalyticsReader.shared.readToday(
@@ -314,6 +405,11 @@
                     onOpenSection: { [weak self] section in
                         self?.menuBarController.closePanel()
                         self?.dashboardWindowController.show(section: section)
+                    },
+                    onOpenSettingsPane: { [weak self] pane in
+                        self?.menuBarController.closePanel()
+                        self?.dashboardViewModel.openSettingsPane(pane)
+                        self?.dashboardWindowController.show(section: .settings)
                     },
                     onOpenDay: { [weak self] in
                         self?.menuBarController.closePanel()
@@ -327,7 +423,7 @@
             eventTapMonitor.concentrationInputSink = { date, count in MainActor.assumeIsolated { ConcentrationRuntime.shared.noteInput(at: date, count: count) } }
             applyCapabilityConsents(recordTransition: false)
             BackgroundContinuityController.shared.start(hasEnabledSources: hasEnabledBackgroundSources)
-            ChatGPTRecapRuntime.shared.configure(deviceID: deviceIdentity.info.deviceID)
+            ChatGPTRecapRuntime.shared.configure(deviceID: knownDeviceID ?? "")
             installCapabilityConsentObserver()
 
             retentionPolicyObserver = NotificationCenter.default.addObserver(
@@ -341,8 +437,22 @@
             }
 
             installWorkspaceObservers()
-            showDashboardOnFirstConsentLaunch()
-            if PermissionRecovery.consumeSetupReturn() || CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
+            let resumedSetup = PermissionRecovery.consumeSetupReturn()
+            if GoalongGuardFiles.isGuardRelaunch {
+                // Reopened by the blocking guard after a kill: quiet, no window (spec K §6).
+                Diagnostics.write("Goalong reopened by its blocking guard")
+            } else if !resumedSetup { showDashboardOnFirstConsentLaunch() }
+            if GoalongGuardFiles.isGuardRelaunch {
+                UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
+            } else if resumedSetup {
+                // The activation toggles live in the Recording pane, not on the Settings home.
+                if let capability = PermissionRecovery.resumedCapability,
+                   PermissionRecovery.resumeDestination(for: capability) != nil {
+                    dashboardViewModel.openRecordingSettings()
+                }
+                dashboardWindowController?.show(section: .settings)
+                PermissionRecovery.expireResumedCapability(after: 30)
+            } else if CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
                 dashboardWindowController?.show(section: .settings)
             } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || UserDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
                 UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
@@ -393,6 +503,7 @@
             guard let controller = BlockingRuntime.shared.controller else { return true }
             controller.refresh(enforceLast: false)
             if controller.quitIsLocked {
+                NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
                 alert.messageText = "Un blocage est verrouillé"
                 alert.informativeText = "Goalong reste ouvert jusqu’à la fin du verrou. Vous pouvez fermer la fenêtre."
@@ -427,10 +538,94 @@
                 case .refused(let reason): failure.informativeText = reason
                 case .ok: break
                 }
-                failure.addButton(withTitle: "OK"); failure.runModal(); return false
+                failure.addButton(withTitle: "OK"); NSApplication.shared.activate(ignoringOtherApps: true); failure.runModal(); return false
             }
             return !consumeAuthorization || controller.consumeQuitAuthorization()
             }
+        }
+
+        /// Turns SIGTERM (installer, uninstaller) into a normal quit so the full shutdown sequence runs:
+        /// flush, seal the minute, close the journal. During a severe block SIGTERM is ignored unless the
+        /// session ends; a kill -9 is answered by the blocking guard (spec K), which reopens Goalong.
+        private func installTerminationSignalHandler() {
+            guard terminationSignalSource == nil else { return }
+            signal(SIGTERM, SIG_IGN)
+            powerOffObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
+            ) { [weak self] _ in self?.powerOffAt = Date() }
+            TerminationSignalSender.install()
+            let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+            source.setEventHandler { [weak self] in
+                // Let the SA_SIGINFO handler record the sender first (it runs on signal delivery).
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    guard let self else { return }
+                    let honoured = MainActor.assumeIsolated {
+                        Self.honoursTerminationSignal(
+                            controller: BlockingRuntime.shared.controller,
+                            sessionEnding: Self.isPowerOffRecent(self.powerOffAt, now: Date()),
+                            senderPID: TerminationSignalSender.take(),
+                            installOverride: GoalongGuardFiles.overrideActive())
+                    }
+                    guard honoured else {
+                        Diagnostics.write("SIGTERM ignored during a severe block")
+                        return
+                    }
+                    self.terminatingForSignal = true
+                    NSApplication.shared.terminate(nil)
+                }
+            }
+            source.resume()
+            terminationSignalSource = source
+        }
+
+        /// The blocking-quit confirmation protects the user's own Quit. It never applies to logout,
+        /// restarts, updates, or an external SIGTERM (the process is being replaced).
+        static func shouldConfirmBlockingQuit(systemQuit: Bool, restarting: Bool, relaunchingForUpdate: Bool,
+                                              externalSignal: Bool) -> Bool {
+            !systemQuit && !restarting && !relaunchingForUpdate && !externalSignal
+        }
+
+        static func exitReason(relaunchingForUpdate: Bool, restarting: Bool, externalSignal: Bool, userQuit: Bool,
+                               sessionEnd: Bool = false) -> String {
+            relaunchingForUpdate ? "update" : restarting ? "permission_restart" : sessionEnd ? "session_end"
+                : externalSignal ? "signal_terminate" : userQuit ? "user_quit" : "system_or_application_exit"
+        }
+
+        /// SIGTERM ends Goalong except during a severe block. There it is honoured only when the session
+        /// ends (a recent power-off notice), when launchd sends it (pid 1: system shutdown, `sudo reboot`),
+        /// or when an installer runs with the documented override. Otherwise the kill -9 path answers.
+        static func honoursTerminationSignal(severeBlock: Bool, sessionEnding: Bool, senderPID: Int32? = nil,
+                                             installOverride: Bool = false) -> Bool {
+            !severeBlock || sessionEnding || senderPID == 1 || installOverride
+        }
+
+        /// The SIGTERM decision with the live controller: refresh first, so a block that started since the
+        /// last sample counts, then read `severeUntil`.
+        @MainActor static func honoursTerminationSignal(controller: BlockingController?, sessionEnding: Bool,
+                                                        senderPID: Int32?, installOverride: Bool) -> Bool {
+            var severe = false
+            if let controller {
+                controller.refresh(enforceLast: false)
+                severe = controller.severeUntil != nil
+            }
+            return honoursTerminationSignal(severeBlock: severe, sessionEnding: sessionEnding, senderPID: senderPID,
+                                            installOverride: installOverride)
+        }
+
+        /// A power-off notice counts this long: a cancelled logout or shutdown must not open a lasting hole.
+        static let powerOffWindow: TimeInterval = 120
+        static func isPowerOffRecent(_ at: Date?, now: Date) -> Bool {
+            guard let at else { return false }
+            return now >= at && now.timeIntervalSince(at) <= powerOffWindow
+        }
+
+        /// The token that tells the guard not to reopen Goalong. Only loginwindow (or a recent power-off
+        /// notice) means a session end; System Settings, the Dock or an unknown sender never do. A user quit
+        /// counts when the member confirmed it, including a password-approved external quit.
+        static func guardReleaseReason(senderBundleID: String?, userQuit: Bool, blockingQuitApproved: Bool,
+                                       powerOffRecent: Bool) -> String? {
+            let sessionEnd = senderBundleID == "com.apple.loginwindow" || powerOffRecent
+            return sessionEnd ? GuardRelease.sessionEnd : (userQuit || blockingQuitApproved) ? GuardRelease.userQuit : nil
         }
 
         func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -445,9 +640,15 @@
                 guard confirmUserQuitIfNeeded() else { return .terminateCancel }
                 userQuitConfirmed = true
             }
-            if !systemQuit, !PermissionRecovery.isRestarting, !SoftwareUpdateManager.shared.isRelaunchingForUpdate {
+            if Self.shouldConfirmBlockingQuit(
+                systemQuit: systemQuit, restarting: PermissionRecovery.isRestarting,
+                relaunchingForUpdate: SoftwareUpdateManager.shared.isRelaunchingForUpdate,
+                externalSignal: terminatingForSignal) {
                 guard confirmBlockingQuitIfNeeded(consumeAuthorization: true) else { return .terminateCancel }
+                blockingQuitApproved = true
             }
+            // Every path below terminates (or replies later for the same quit): remember who asked.
+            acceptedQuitSenderID = senderID
             guard event?.eventClass == AEEventClass(kCoreEventClass), event?.eventID == AEEventID(kAEQuitApplication),
                   PermissionRecovery.shouldAssistSettingsQuit(senderBundleID: senderID,
                     pendingSetup: PermissionRecovery.pendingSetup() != nil, alreadyRestarting: PermissionRecovery.isRestarting) else {
@@ -474,11 +675,16 @@
                 UserDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
                 UserDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
-            MainActor.assumeIsolated { BraiseRuntime.shared.shutdown() }
+            MainActor.assumeIsolated { ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown() }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
+            flushCurrentScreenTimeDay()
             screenTimeArchiveTimer?.invalidate()
             screenTimeArchiveTimer = nil
+            screenTimeMidnightTimer?.invalidate()
+            screenTimeMidnightTimer = nil
+            for observer in screenTimeClockObservers { NotificationCenter.default.removeObserver(observer) }
+            screenTimeClockObservers = []
             if let capabilityConsentObserver {
                 NotificationCenter.default.removeObserver(capabilityConsentObserver)
             }
@@ -506,9 +712,22 @@
                 minuteSealer?.stopAndSeal()
             }
             recorder?.close()
-            let reason = SoftwareUpdateManager.shared.isRelaunchingForUpdate ? "update"
-                : PermissionRecovery.isRestarting ? "permission_restart"
-                : userQuitConfirmed ? "user_quit" : "system_or_application_exit"
+            let powerOffRecent = Self.isPowerOffRecent(powerOffAt, now: Date())
+            let release = Self.guardReleaseReason(senderBundleID: acceptedQuitSenderID, userQuit: userQuitConfirmed,
+                                                  blockingQuitApproved: blockingQuitApproved, powerOffRecent: powerOffRecent)
+            let sessionEnd = release == GuardRelease.sessionEnd
+            let reason = Self.exitReason(
+                relaunchingForUpdate: SoftwareUpdateManager.shared.isRelaunchingForUpdate,
+                restarting: PermissionRecovery.isRestarting, externalSignal: terminatingForSignal, userQuit: userQuitConfirmed,
+                sessionEnd: sessionEnd)
+            if let release {
+                let files = GoalongGuardFiles.standard
+                // Only while a guard may be armed: nothing to write for a member without a severe block.
+                if GoalongGuardFiles.guardMayBeArmed(files) {
+                    files.writeRelease(GuardRelease(pid: getpid(), reason: release, writtenAt: Date().timeIntervalSince1970,
+                                                    bootTime: GuardSystem.bootTime(), bootSession: GuardSystem.bootSession()))
+                }
+            }
             BackgroundContinuityController.shared.stop(reason: reason)
 
             let center = NSWorkspace.shared.notificationCenter
@@ -530,7 +749,7 @@
         }
 
         private func toggleManualPause() {
-            guard !GoalongGlobalPause.isPaused() else { dashboardWindowController.show(section: .settings); return }
+            guard !localRecordingHalted else { dashboardWindowController.show(section: .settings); return }
             if !capabilityConsents.isEnabled(.localComputerHistory) {
                 // A menu action must not broaden capture or bypass the guided source choice.
                 dashboardWindowController.show(section: .settings)
@@ -544,6 +763,8 @@
                 recorder.record(
                     kind: .recordingResumed, message: "Recording resumed from the Goalong History interface")
                 contextMonitor.resetAndSample()
+                // After a launch-restored pause the tap is not running: start it now, not at the next watchdog tick.
+                checkPermissionsAndStartTap()
             } else {
                 recorder.record(kind: .recordingPaused, message: "Recording paused from the Goalong History interface")
                 recorder.flush()
@@ -567,11 +788,34 @@
             return applied
         }
 
-        private func reloadConfiguration() {
-            configManager.reload()
+        /// Returns false when config.json could not be read; the previous state stays.
+        private func reloadConfiguration() -> Bool {
+            let wasFailClosed = configManager.isFailClosed
+            let succeeded = (try? configManager.reload()) != nil
+            if succeeded { configurationDidRecover(wasFailClosed: wasFailClosed) }
+            menuBarController?.updateStatus()
+            return succeeded
+        }
+
+        /// Keeps the unreadable config.json aside, writes defaults and restarts recording.
+        private func resetConfiguration() throws -> String? {
+            let wasFailClosed = configManager.isFailClosed
+            let backup = try configManager.resetToDefaults()
+            configurationDidRecover(wasFailClosed: wasFailClosed)
+            menuBarController?.updateStatus()
+            return backup
+        }
+
+        private func configurationDidRecover(wasFailClosed: Bool) {
+            if wasFailClosed {
+                // Restore the runtime the user had (consents, manual pause), as at launch.
+                if developerActivityRuntime == nil { developerActivityRuntime = GoalongDeveloperRuntime() }
+                applyCapabilityConsents(recordTransition: false)
+            }
             configureCallPresence()
             contextMonitor.resetAndSample()
             configureUploader(for: configManager.config)
+            dashboardViewModel?.configurationDidChange()
         }
 
         private func configureUploader(for config: RecorderConfig) {
@@ -676,6 +920,7 @@
                     ) { [self] semanticResult in
                         switch semanticResult {
                         case .failure(let error):
+                            derivedPlan.executeAfterSemanticFailure()
                             completeHistoryClear(
                                 .failure(error),
                                 suspension: suspension,
@@ -731,6 +976,44 @@
             }
         }
 
+        /// The device ID known at this launch: the resolved one, else the last persisted one.
+        private var knownDeviceID: String? {
+            deviceIdentityStartup.isDegraded
+                ? DeviceIdentity.lastPersistedDeviceID() : deviceIdentityStartup.info.deviceID
+        }
+
+        /// Retries the keychain load off the main thread; resumes sealing on success.
+        private func retryDeviceIdentity() {
+            guard deviceIdentityStartup.isDegraded, DeviceTrustState.shared.beginRetry() else { return }
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let result = Result { try DeviceIdentity.shared(attempts: 1) }
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    switch result {
+                    case .success(let identity):
+                        self.deviceIdentityStartup = DeviceIdentityStartup(
+                            identity: identity, info: identity.info, unavailableStatus: nil)
+                        if self.screenTimeRepository == nil {
+                            do {
+                                self.screenTimeRepository = try GoalongScreenTimeRepositoryProvider.repository(
+                                    rootDirectory: AppPaths.screenTimeDirectory,
+                                    deviceID: identity.info.deviceID)
+                            } catch {
+                                Diagnostics.write("Screen Time repository unavailable after keychain retry: \(error)")
+                            }
+                        }
+                        self.minuteSealer.resumeSigning(with: identity)
+                        self.dashboardViewModel.updateDeviceInfo(identity.info)
+                        ChatGPTRecapRuntime.shared.configure(deviceID: identity.info.deviceID)
+                        DeviceTrustState.shared.setSealingSuspended(status: nil)
+                    case .failure(let error):
+                        Diagnostics.write("Keychain identity retry failed: \(error)")
+                        DeviceTrustState.shared.markRetryFailed()
+                    }
+                }
+            }
+        }
+
         private func deleteDetailsAfterDerivedWritersDrain(
             since cutoff: Date?,
             suspension: DerivedHistoryWriteBarrier.Suspension,
@@ -766,6 +1049,9 @@
                         semanticContextStore.deleteEvents(since: cutoff) { [self] semanticResult in
                             switch semanticResult {
                             case .failure(let error):
+                                // Raw events are gone: still remove the derived views of the
+                                // period, then report the semantic failure (a retry is idempotent).
+                                derivedPlan.executeAfterSemanticFailure()
                                 completeHistoryClear(
                                     .failure(error),
                                     suspension: suspension,
@@ -797,6 +1083,11 @@
                         semanticContextStore.deleteAll { [self] semanticResult in
                             switch semanticResult {
                             case .failure(let error):
+                                derivedPlan.executeAfterSemanticFailure()
+                                MainActor.assumeIsolated {
+                                    GoalongWorkAgent.shared.cancel()
+                                    GoalongWorkStore.shared.removeAll()
+                                }
                                 completeHistoryClear(
                                     .failure(error),
                                     suspension: suspension,
@@ -828,6 +1119,13 @@
         ) {
             do {
                 let derived = try derivedPlan.execute()
+                if cutoff == nil {
+                    // Work corrections keep window titles and carry no date: a full clear erases them too.
+                    MainActor.assumeIsolated {
+                        GoalongWorkAgent.shared.cancel()
+                        GoalongWorkStore.shared.removeAll()
+                    }
+                }
                 recorder.record(
                     kind: .historyCleared,
                     message: cutoff == nil
@@ -878,6 +1176,7 @@
             clearingCallPresence = false
             configureCallPresence()
             ActivityAnalysisRuntime.shared.refreshAfterHistoryClear()
+            ChatGPTRecapRuntime.shared.refreshAfterHistoryClear()
             Task { @MainActor in GoalongActivitySummaryBackfill.shared.start() }
             completion(completedResult)
         }
@@ -949,7 +1248,8 @@
             permissionTimer?.invalidate()
             let interval = PermissionWatchdogPolicy.interval(
                 status: permissions.snapshot,
-                eventTapRunning: eventTapMonitor.isRunning
+                eventTapRunning: eventTapMonitor.isRunning,
+                captureIntended: captureState.isCapturing
             )
             let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
                 self?.checkPermissionsAndStartTap(forceRefresh: true)
@@ -962,7 +1262,7 @@
         private var permissionRefreshPending = false
 
         private func checkPermissionsAndStartTap(forceRefresh: Bool = false) {
-            guard capabilityConsents.isEnabled(.localComputerHistory), !GoalongGlobalPause.isPaused() else {
+            guard capabilityConsents.isEnabled(.localComputerHistory), !localRecordingHalted else {
                 permissionTimer?.invalidate()
                 permissionTimer = nil
                 eventTapMonitor.stop()
@@ -1037,7 +1337,7 @@
         }
 
         private func configureCallPresence() {
-            GoalongCallPresenceMonitor.shared.configure(enabled: !clearingCallPresence && capabilityConsents.isEnabled(.localComputerHistory) && !captureState.isManuallyPaused, config: configManager.config)
+            GoalongCallPresenceMonitor.shared.configure(enabled: !clearingCallPresence && capabilityConsents.isEnabled(.localComputerHistory) && !captureState.isManuallyPaused && !configManager.isFailClosed, config: configManager.config)
         }
 
         private func installCapabilityConsentObserver() {
@@ -1060,7 +1360,7 @@
         }
 
         private func applyCapabilityConsents(recordTransition: Bool) {
-            let localCaptureEnabled = capabilityConsents.isEnabled(.localComputerHistory) && !GoalongGlobalPause.isPaused()
+            let localCaptureEnabled = capabilityConsents.isEnabled(.localComputerHistory) && !localRecordingHalted
             if localCaptureEnabled && !localCaptureRuntimeActive {
                 let wasActive = localCaptureRuntimeActive
                 localCaptureRuntimeActive = true
@@ -1097,7 +1397,7 @@
                                 && capabilityConsents.isEnabled(.remoteVerification)
                                 ? (configManager.config.verificationServerURL ?? "none")
                                 : "disabled",
-                            "device_trust_tier": deviceIdentity.info.trustTier,
+                            "device_trust_tier": deviceIdentityStartup.info.trustTier,
                             "raw_text_capture": "disabled",
                             "interface_version":
                                 (Bundle.main.object(
@@ -1127,7 +1427,7 @@
                 }
             }
 
-            if capabilityConsents.isEnabled(.aiConversations) && !GoalongGlobalPause.isPaused() {
+            if capabilityConsents.isEnabled(.aiConversations) && !localRecordingHalted {
                 agentActivityRuntime.start()
             } else {
                 agentActivityRuntime.stop()
@@ -1139,7 +1439,7 @@
             configureReadOnlyQueryServer()
 
             let analysisEnabled = GoalongBuildCapabilities.permitsRemoteAnalysis
-                && capabilityConsents.isEnabled(.chatGPTAnalysis) && !GoalongGlobalPause.isPaused()
+                && capabilityConsents.isEnabled(.chatGPTAnalysis) && !localRecordingHalted
             if analysisEnabled {
                 ChatGPTRecapRuntime.shared.start()
             } else {
@@ -1201,9 +1501,8 @@
                 readOnlyQueryServer = server
             } catch {
                 server.stop()
-                Diagnostics.write(
-                    "Screen Time CLI broker stayed off because it could not start safely: \(error)"
-                )
+                // The CLI broker stayed off: record a structured, shareable failure.
+                SupportDiagnostics.shared.failure(error, component: .app)
             }
         }
 
@@ -1212,7 +1511,9 @@
         private func configureScreenTimeDailyArchive() {
             screenTimeArchiveTimer?.invalidate()
             screenTimeArchiveTimer = nil
-            guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(), screenTimeRepository != nil else {
+            screenTimeMidnightTimer?.invalidate()
+            screenTimeMidnightTimer = nil
+            guard capabilityConsents.isEnabled(.appleScreenTime), !localRecordingHalted, screenTimeRepository != nil else {
                 return
             }
 
@@ -1224,10 +1525,48 @@
             timer.tolerance = 60
             RunLoop.main.add(timer, forMode: .common)
             screenTimeArchiveTimer = timer
+            installScreenTimeClockObservers()
+            scheduleScreenTimeMidnightRefresh()
+        }
+
+        /// One last refresh just before midnight, re-armed after it fires, after a day or time zone change and after wake.
+        private func scheduleScreenTimeMidnightRefresh() {
+            screenTimeMidnightTimer?.invalidate()
+            screenTimeMidnightTimer = nil
+            guard screenTimeArchiveTimer != nil, let fireDate = ScreenTimeMidnightSchedule.fireDate(after: Date()) else { return }
+            let timer = Timer(fire: fireDate, interval: 0, repeats: false) { [weak self] _ in
+                self?.refreshCurrentScreenTimeDay()
+                self?.scheduleScreenTimeMidnightRefresh()
+            }
+            timer.tolerance = 0
+            RunLoop.main.add(timer, forMode: .common)
+            screenTimeMidnightTimer = timer
+        }
+
+        private func installScreenTimeClockObservers() {
+            guard screenTimeClockObservers.isEmpty else { return }
+            for name in [Notification.Name.NSCalendarDayChanged, .NSSystemTimeZoneDidChange, .NSSystemClockDidChange] {
+                screenTimeClockObservers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: nil, queue: .main
+                ) { [weak self] _ in self?.scheduleScreenTimeMidnightRefresh() })
+            }
+        }
+
+        /// Sleep and quit can end the day's last refresh window: collect the active day now, bounded to a few seconds.
+        private func flushCurrentScreenTimeDay(timeout: TimeInterval = 2.5) {
+            guard capabilityConsents?.isEnabled(.appleScreenTime) == true, !localRecordingHalted,
+                  let screenTimeRepository else { return }
+            let finished = DispatchGroup()
+            finished.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = screenTimeRepository.collect(for: Date())
+                finished.leave()
+            }
+            _ = finished.wait(timeout: .now() + timeout)
         }
 
         private func refreshCurrentScreenTimeDay() {
-            guard capabilityConsents.isEnabled(.appleScreenTime), !GoalongGlobalPause.isPaused(),
+            guard capabilityConsents.isEnabled(.appleScreenTime), !localRecordingHalted,
                   let screenTimeRepository,
                   !screenTimeArchiveRefreshInFlight
             else { return }
@@ -1317,6 +1656,7 @@
                     self.captureState.setSystemAwake(false)
                     self.contextMonitor.invalidatePresence()
                     self.recorder.flush()
+                    self.flushCurrentScreenTimeDay()
                 }
             )
 
@@ -1332,6 +1672,7 @@
                     self.contextMonitor.resetAndSample()
                     self.checkPermissionsAndStartTap(forceRefresh: true)
                     self.refreshCurrentScreenTimeDay()
+                    self.scheduleScreenTimeMidnightRefresh()
                 }
             )
 
@@ -1370,7 +1711,7 @@
             let currentPID = ProcessInfo.processInfo.processIdentifier
             return
                 NSRunningApplication
-                .runningApplications(withBundleIdentifier: "ai.goalong.localhistory")
+                .runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier)
                 .contains { $0.processIdentifier != currentPID && !$0.isTerminated }
         }
 

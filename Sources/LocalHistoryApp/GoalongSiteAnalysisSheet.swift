@@ -133,7 +133,7 @@ final class GoalongSiteAnalysisModel: ObservableObject {
                 let workspace = try Self.makeWorkingDirectory()
                 directory = workspace
                 guard DispatchQueue.main.sync(execute: { self.operationID == id && self.consent() }) else {
-                    throw CodexAppServerError.generationFailed("Analysis cancelled.")
+                    throw CodexAppServerError.generationFailed("Analyse annulée.")
                 }
                 let session = try self.makeSession()
                 try self.attach(session, for: id)
@@ -209,7 +209,7 @@ final class GoalongSiteAnalysisModel: ObservableObject {
         guard activeOperationID == id else {
             sessionLock.unlock()
             session.close()
-            throw CodexAppServerError.generationFailed("Analysis cancelled.")
+            throw CodexAppServerError.generationFailed("Analyse annulée.")
         }
         activeSession = session
         sessionLock.unlock()

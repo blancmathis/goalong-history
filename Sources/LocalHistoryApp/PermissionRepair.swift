@@ -6,7 +6,7 @@ import SwiftUI
 /// A narrowly scoped, user-confirmed recovery. Never resets All, other apps,
 /// modifies TCC databases, resigns a bundle, or enables a permission by itself.
 enum PermissionRepair {
-    static let bundleIdentifier = "ai.goalong.localhistory"
+    static let bundleIdentifier = ProductIdentity.bundleIdentifier
     static func service(for status: SourceAccessStatus) -> String? {
         switch status {
         case .accessibility: return "Accessibility"

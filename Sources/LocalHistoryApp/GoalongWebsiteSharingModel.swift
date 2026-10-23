@@ -7,7 +7,7 @@ import LocalHistoryQueryCLI
 struct GoalongWebsiteShareDraft: Equatable, Codable {
     enum Delivery: String, CaseIterable, Codable { case once, daily }
     var delivery: Delivery = .once
-    var date = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+    var date = Calendar.current.date(byAdding: .day, value: -1, to: GoalongToday.now) ?? GoalongToday.now
     var deviceIDs = Set<String>()
     var applicationIDs = Set<String>()
     var anonymousApplicationIDs = Set<String>()
@@ -78,7 +78,9 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
                 if draft.websiteDomains != oldValue.websiteDomains { needsWebsiteSuggestion = false }
             }
             invalidate()
-            if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled { autoSender.stop(); status = "Synchronisation mise en pause pendant la modification. Relisez puis confirmez vos nouveaux choix." }
+            // Browsing another sample day only changes the preview; it does not change what the plan sends.
+            var samePlanOldValue = oldValue; samePlanOldValue.date = draft.date
+            if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled && samePlanOldValue != draft { autoSender.stop(); status = "Synchronisation mise en pause pendant la modification. Relisez puis confirmez vos nouveaux choix." }
         }
     }
     @Published private(set) var catalog: GoalongSiteSelectionCatalog?
@@ -94,6 +96,12 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     private var userChangedSelection = false
     private var needsWebsiteSuggestion = true
     let autoSender: GoalongWebsiteAutoSender
+    private let hiddenWebsites: () -> (String) -> Bool
+    private let hiddenApplications: () -> (String?, String) -> Bool
+    private let sharingRulesReadable: () -> Bool
+    /// The `includeWebsites` value the catalog on screen was loaded with. The model's own
+    /// fallback change must not trigger another load that would erase its explanation.
+    private var loadedIncludeWebsites: Bool?
     private let root: URL
     private let catalogLoader: (URL, String, Bool) throws -> GoalongSiteSelectionCatalog
     private let exporter: (URL, String, GoalongSiteExportOptions) throws -> Data
@@ -104,7 +112,13 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
          catalogLoader: @escaping (URL, String, Bool) throws -> GoalongSiteSelectionCatalog = { try GoalongQueryCLI.siteSelectionCatalog(rootDirectory: $0, day: $1, includeWebsites: $2) },
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
          sender: ((Data, String, URL, String) throws -> Data)? = nil,
-         sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) }) {
+         sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) },
+         hiddenWebsites: @escaping () -> (String) -> Bool = { SharingRulesStore().hiddenWebsiteFilter() },
+         hiddenApplications: @escaping () -> (String?, String) -> Bool = { SharingRulesStore().hiddenApplicationFilter() },
+         sharingRulesReadable: @escaping () -> Bool = { !SharingRulesStore().isDamaged }) {
+        self.sharingRulesReadable = sharingRulesReadable
+        self.hiddenWebsites = hiddenWebsites
+        self.hiddenApplications = hiddenApplications
         let autoSender = autoSender ?? .shared
         self.autoSender = autoSender; self.root = root; self.catalogLoader = catalogLoader
         self.exporter = exporter; self.sender = sender; self.sourceConsent = sourceConsent
@@ -156,13 +170,15 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         } catch { /* Delivery succeeded; failure to remember must not duplicate a send. */ }
     }
+    /// French plural: 0 and 1 are singular.
+    static func frCount(_ n: Int, _ singular: String, _ plural: String) -> String { "\(n) \(n > 1 ? plural : singular)" }
     private func readableError(_ error: Error) -> String {
         let message = String(describing: error)
         if message.contains("Apple Screen Time is off") { return "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer." }
         if message.contains("No saved Screen Time") { return "Aucune donnée Apple enregistrée pour cette journée. Choisissez une autre date ou actualisez l’historique." }
         if message.contains("Computer History is off") { return "Activez l’historique de ce Mac pour inclure les sites, ou désactivez Sites web." }
         if message.contains("Website details are unavailable") { return "Les sites ne sont pas disponibles pour cette date. Les applications restent utilisables sans les sites." }
-        return "Lecture locale indisponible : " + message
+        return "Lecture locale indisponible : " + goalongUserMessage(error)
     }
     var selectionHint: String? {
         if loading { return "Lecture de la journée…" }
@@ -172,6 +188,11 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     func invalidate() { preview = nil; reviewed = false; error = nil; status = nil }
     func connectionChanged() { generation = UUID(); invalidate(); autoSender.stop() }
     func cancelPreparation() { generation = UUID(); loading = false; invalidate() }
+    /// Called when `draft.includeWebsites` changes. A change the model made itself (fallback) reloads nothing.
+    func includeWebsitesChanged() async {
+        if loadedIncludeWebsites == draft.includeWebsites { return }
+        await loadCatalog()
+    }
 
     func loadCatalog() async {
         guard !GoalongGlobalPause.isPaused(in: root) else { error = "Pause globale : lecture suspendue."; return }
@@ -180,11 +201,22 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         loading = true; error = nil
         // Previously selected IDs are kept, never expanded by newly discovered rows.
         do {
-            let value = try await Task.detached(priority: .userInitiated) { try loader(root, snapshot.day, snapshot.includeWebsites) }.value
+            let loaded = try await Task.detached(priority: .userInitiated) { try loader(root, snapshot.day, snapshot.includeWebsites) }.value
             guard generation == ticket, draft.day == snapshot.day, draft.includeWebsites == snapshot.includeWebsites else { return }
+            // Sites and applications hidden in every share are neither listed nor preselected.
+            let hiddenSite = hiddenWebsites(), hiddenApp = hiddenApplications()
+            let value = loaded.removingWebsites(where: hiddenSite).removingApplications(where: { hiddenApp($0, $1) })
             catalog = value
+            loadedIncludeWebsites = snapshot.includeWebsites
             configuringPresentation = true
             defer { configuringPresentation = false }
+            // A restored plan can still list subjects hidden since: drop them so the draft matches what is visible.
+            let visibleApps = Set(value.devices.flatMap { $0.applications.map(\.id) })
+            let allApps = Set(loaded.devices.flatMap { $0.applications.map(\.id) })
+            let prunedSites = draft.websiteDomains.filter { !hiddenSite($0) }
+            let prunedApps = draft.applicationIDs.filter { visibleApps.contains($0) || (!allApps.contains($0) && !hiddenApp($0, $0)) }
+            if prunedSites != draft.websiteDomains { draft.websiteDomains = prunedSites }
+            if prunedApps != draft.applicationIDs { draft.applicationIDs = prunedApps }
             if needsInitialSuggestion && !userChangedSelection {
                 draft.deviceIDs = Set(value.devices.prefix(12).map(\.id))
                 draft.includeApplications = true
@@ -208,7 +240,8 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             guard generation == ticket else { return }
             if snapshot.includeWebsites, let fallback = try? await Task.detached(priority: .userInitiated, operation: { try loader(root, snapshot.day, false) }).value {
                 guard generation == ticket else { return }
-                catalog = fallback
+                catalog = fallback.removingApplications(where: { hiddenApplications()($0, $1) })
+                loadedIncludeWebsites = false
                 configuringPresentation = true
                 draft.includeWebsites = false
                 configuringPresentation = false
@@ -229,7 +262,16 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         }
         let snapshot = draft, target = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let ticket = UUID(); generation = ticket
-        let options = snapshot.options
+        guard sharingRulesReadable() else {
+            error = "Les règles de partage sont illisibles. Vérifiez-les dans les réglages avant de préparer l’aperçu."; return
+        }
+        let hiddenApp = hiddenApplications()
+        let catalogNames = Dictionary(catalog.devices.flatMap { $0.applications }.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        var options = GoalongWebsiteAutoSender.removingHiddenWebsites(snapshot.options, isHidden: hiddenWebsites(),
+                                                                       isApplicationHidden: hiddenApp)
+        // The catalog also knows the display names, so a rule keyed on the name still applies.
+        options.selectedApplicationIDs = options.selectedApplicationIDs?.filter { !hiddenApp($0, catalogNames[$0] ?? $0) }
+        if GoalongWebsiteAutoSender.selectsNothing(options) { error = GoalongWebsiteAutoSender.nothingSelectedMessage; return }
         if snapshot.delivery == .daily && catalog.timezone != snapshot.timezone {
             error = "Le fuseau du planning ne correspond pas à cette journée. Choisissez une journée enregistrée dans le fuseau courant avant d’activer la synchronisation."
             return
@@ -257,7 +299,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             }
             preview = Preview(payload: bytes, draft: snapshot, origin: target, tokenPath: tokenPath,
                               credentialFingerprint: fingerprint, createdAt: Date(), privacyRevision: privacyRevision, pauseRevision: pause.revision)
-        } catch { self.error = "Aperçu non préparé : \(error)" }
+        } catch { self.error = "Aperçu non préparé : \(goalongUserMessage(error))" }
     }
     func confirm(origin: String, tokenPath: String) async {
         guard !busy, reviewed, let approved = preview else { return }
@@ -297,9 +339,16 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
                 let object = try JSONSerialization.jsonObject(with: receipt) as? [String: Any] ?? [:]
                 preview = nil; reviewed = false
                 rememberSelection()
-                status = "Reçu par Goalong : \(object["imported"] ?? 0) ajout, \(object["updated"] ?? 0) mise à jour, \(object["skipped"] ?? 0) inchangé. Aucun envoi quotidien n’a été activé."
+                func count(_ key: String) -> Int { (object[key] as? NSNumber)?.intValue ?? 0 }
+                status = "Reçu par Goalong : \(Self.frCount(count("imported"), "ajout", "ajouts")), \(Self.frCount(count("updated"), "mise à jour", "mises à jour")), \(Self.frCount(count("skipped"), "inchangé", "inchangés")). Aucun envoi quotidien n’a été activé."
             }
-        } catch { self.error = "Envoi non confirmé : \(error)" }
+        } catch {
+            if case GoalongSiteSubmissionError.accessRefused = error {
+                autoSender.markAccessRefused(fingerprint: approved.credentialFingerprint)
+                NotificationCenter.default.post(name: .goalongWebsiteAccessRefused, object: nil)
+            }
+            self.error = "Envoi non confirmé : \(goalongUserMessage(error))"
+        }
     }
 }
 #endif

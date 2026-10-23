@@ -59,9 +59,30 @@ public struct GoalongSiteExportOptions: Codable {
 
 public enum GoalongSiteExportError: Error, CustomStringConvertible {
     case invalid(String)
+    /// English text for the CLI and logs, French text for the app UI.
+    case localized(String, french: String)
     public var description: String {
-        switch self { case .invalid(let message): return message }
+        switch self { case .invalid(let message), .localized(let message, _): return message }
     }
+    public var userMessage: String {
+        switch self { case .invalid(let message): return message; case .localized(_, let french): return french }
+    }
+}
+
+/// Text safe to show in the French UI. Curated errors keep their own wording; system errors
+/// (URLError, DecodingError, NSError) never leak raw "Error Domain=..." text. Raw errors
+/// still go to SupportDiagnostics at the call sites.
+public func goalongUserMessage(_ error: Error) -> String {
+    if let curated = error as? GoalongSiteExportError { return curated.userMessage }
+    if let localized = error as? LocalizedError, let text = localized.errorDescription, !text.isEmpty { return text }
+    if error is URLError {
+        return "Le site n’a pas pu être joint. Vérifiez votre connexion, puis réessayez."
+    }
+    if error is DecodingError || (error as NSError).domain == NSCocoaErrorDomain && (3840...3851).contains((error as NSError).code) {
+        return "Réponse inattendue du site. Vérifiez l’historique d’import avant de réessayer."
+    }
+    let text = (error as NSError).localizedDescription
+    return text.contains("Error Domain=") ? "Une erreur inattendue est survenue. Réessayez." : text
 }
 
 /// Deliberately emits only the website's public exchange fields. Local proof metadata and
@@ -78,14 +99,14 @@ public enum GoalongSiteExport {
         }
         guard let zone = TimeZone(identifier: record.timeZoneIdentifier),
               let stored = record.collection.storedExport else {
-            throw GoalongSiteExportError.invalid("The stored Screen Time day has no valid timezone or data.")
+            throw GoalongSiteExportError.localized("The stored Screen Time day has no valid timezone or data.", french: "Les données enregistrées de cette journée sont inutilisables. Choisissez une autre date ou actualisez l’historique.")
         }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         guard let interval = calendar.dateInterval(of: .day, for: record.dayStart),
               interval.start == record.dayStart, interval.end == record.dayEnd,
               interval.duration <= 90_000, record.dayStart <= now else {
-            throw GoalongSiteExportError.invalid("The stored day boundaries do not match its timezone.")
+            throw GoalongSiteExportError.localized("The stored day boundaries do not match its timezone.", french: "Les limites de cette journée ne correspondent pas à son fuseau horaire. Choisissez une autre date ou actualisez l’historique.")
         }
         try AppleScreenTimeValidator.validate(stored.envelope)
         let reports = stored.envelope.reports.filter {
@@ -94,11 +115,11 @@ public enum GoalongSiteExport {
         let available = Set(reports.map { $0.device.id })
         guard Set(options.deviceIDs).count == options.deviceIDs.count,
               Set(options.deviceIDs).isSubset(of: available) else {
-            throw GoalongSiteExportError.invalid("A selected device is absent or duplicated. Use goalong screen-time DAY to inspect device IDs.")
+            throw GoalongSiteExportError.localized("A selected device is absent or duplicated. Use goalong screen-time DAY to inspect device IDs.", french: "Un appareil choisi n’est pas disponible pour cette journée. Actualisez ou ajustez la sélection.")
         }
         let selected = reports.filter { options.deviceIDs.isEmpty || options.deviceIDs.contains($0.device.id) }
         guard !selected.isEmpty, selected.count <= 12 else {
-            throw GoalongSiteExportError.invalid("Select between one and twelve recorded physical devices.")
+            throw GoalongSiteExportError.localized("Select between one and twelve recorded physical devices.", french: "Choisissez entre un et douze appareils enregistrés.")
         }
         let scope = AppleScreenTimeScope(mode: .selectedDevices, selectedDeviceIDs: selected.map { $0.device.id })
         let summary = AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: scope)
@@ -129,7 +150,7 @@ public enum GoalongSiteExport {
                     && privacy.domains.isEmpty
             }
             let mayIncludeTotal = options.strictSelection != true && !privacy.hasExclusions
-            guard apps.count <= 200 else { throw GoalongSiteExportError.invalid("This device exceeds 200 applications; export totals or select fewer details.") }
+            guard apps.count <= 200 else { throw GoalongSiteExportError.localized("This device exceeds 200 applications; export totals or select fewer details.", french: "Cet appareil compte plus de 200 applications. Décochez Détails des applications ou choisissez-en moins.") }
             var result: [String: Any] = [
                 "id": options.includeDeviceNames == false
                     ? "device-" + SHA256Digest.hashHex(Data(report.device.id.utf8))
@@ -171,7 +192,7 @@ public enum GoalongSiteExport {
                 }
                 return !$0.sourceUsage.contains { privacy.excludes(appID: $0.bundleIdentifier, name: $0.applicationName) }
             }
-            guard websites.count <= 200 else { throw GoalongSiteExportError.invalid("This day exceeds 200 domains; export without website details.") }
+            guard websites.count <= 200 else { throw GoalongSiteExportError.localized("This day exceeds 200 domains; export without website details.", french: "Cette journée compte plus de 200 sites. Décochez Détails des sites ou choisissez-en moins.") }
             let rows: [[String: Any]] = try websites.compactMap { website in
                 guard let publicHost = GoalongPublicDomain.normalized(website.host) else { return nil }
                 return ["domain": publicHost, "browser": "Navigateurs sur ce Mac",
@@ -183,7 +204,7 @@ public enum GoalongSiteExport {
         }
         let summaryText = options.includeRecap && masks.isEmpty ? options.recapText ?? recap ?? "" : ""
         guard summaryText.utf16.count <= 3000 else {
-            throw GoalongSiteExportError.invalid("The saved recap exceeds the 3000-character site limit; prepare a shorter explicit analysis or omit --include-recap.")
+            throw GoalongSiteExportError.localized("The saved recap exceeds the 3000-character site limit; prepare a shorter explicit analysis or omit --include-recap.", french: "Le récap enregistré dépasse 3 000 caractères. Préparez une analyse plus courte ou décochez le récap.")
         }
         let formatter = DateFormatter()
         formatter.calendar = calendar
@@ -210,14 +231,14 @@ public enum GoalongSiteExport {
         ]]]
         var data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])
         if options.structuredReport { return try GoalongProductivityExport.payload(fromSelectedSiteExport: data) }
-        guard data.count <= 2 * 1024 * 1024 else { throw GoalongSiteExportError.invalid("The website export exceeds 2 MiB.") }
+        guard data.count <= 2 * 1024 * 1024 else { throw GoalongSiteExportError.localized("The website export exceeds 2 MiB.", french: "L’envoi dépasse 2 Mio. Décochez des détails ou choisissez moins d’éléments.") }
         data.append(0x0A)
         return data
     }
 
     private static func seconds(_ value: Double) throws -> Int {
         guard value.isFinite, value >= 0, value <= 90_000 else {
-            throw GoalongSiteExportError.invalid("An activity duration is outside the supported calendar-day range.")
+            throw GoalongSiteExportError.localized("An activity duration is outside the supported calendar-day range.", french: "Une durée d’activité dépasse la journée. Actualisez l’historique, puis réessayez.")
         }
         return Int(value.rounded())
     }
@@ -225,7 +246,7 @@ public enum GoalongSiteExport {
     private static func text(_ value: String, maximum: Int) throws -> String {
         let result = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !result.isEmpty, result.utf16.count <= maximum else {
-            throw GoalongSiteExportError.invalid("An activity label exceeds the website exchange limit.")
+            throw GoalongSiteExportError.localized("An activity label exceeds the website exchange limit.", french: "Un nom d’activité est trop long pour être envoyé au site.")
         }
         return result
     }

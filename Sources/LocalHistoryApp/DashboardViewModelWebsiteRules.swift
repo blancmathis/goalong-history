@@ -9,10 +9,24 @@
                     && !URLRedactor.domain(host, matches: configuredIncludedDomains))
         }
 
+        /// The configured exclusion that covers `host` through a parent domain (suffix match), if any.
+        /// An entry equal to the host itself is not a parent: the switch can remove that one.
+        static func excludingParentDomain(for host: String, excluded: [String]) -> String? {
+            let normalized = SharingSubjectKey.normalizedHost(host)
+            return excluded.first {
+                SharingSubjectKey.normalizedHost($0) != normalized
+                    && URLRedactor.domain(host, matches: [$0])
+            }
+        }
+
+        func excludingParentDomain(for host: String) -> String? {
+            Self.excludingParentDomain(for: host, excluded: configuredExcludedDomains)
+        }
+
         func isApplicationExcludedFromCapture(_ bundleIdentifier: String) -> Bool {
             let normalized = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalized.isEmpty else { return false }
-            if normalized.caseInsensitiveCompare(ProductIdentity.bundleIdentifier) == .orderedSame {
+            if ProductIdentity.isGoalong(normalized) {
                 return true
             }
             return configuredExcludedApplications.contains {
@@ -32,6 +46,16 @@
 
             var domains = configuredExcludedDomains
             if enabled {
+                // A parent rule covers every subdomain. Never widen capture silently, never no-op silently.
+                if let parent = Self.excludingParentDomain(for: host, excluded: domains) {
+                    alert = DashboardAlert(
+                        kind: .information,
+                        title: "Ce site est exclu par une règle plus large",
+                        message:
+                            "La règle « \(parent) » couvre aussi \(normalized). Modifiez-la dans Réglages pour réautoriser ce site."
+                    )
+                    return
+                }
                 domains.removeAll {
                     SharingSubjectKey.normalizedHost($0) == normalized
                 }
@@ -69,7 +93,7 @@
             guard let bundleIdentifier else { return }
             let normalized = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalized.isEmpty else { return }
-            guard normalized.caseInsensitiveCompare(ProductIdentity.bundleIdentifier) != .orderedSame else {
+            guard !ProductIdentity.isGoalong(normalized) else {
                 return
             }
             guard canEditMonitoringRules() else { return }

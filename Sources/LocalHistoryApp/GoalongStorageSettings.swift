@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import LocalHistoryCore
 import Foundation
 
 @MainActor struct GoalongStorageSettings: View {
@@ -54,11 +55,13 @@ import Foundation
         }
         .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls() }
         .onAppear(perform: refresh)
-        .sheet(isPresented: $retention, onDismiss: refresh) { GoalongRetentionSheet().goalongControls() }
+        .sheet(isPresented: $retention, onDismiss: refresh) {
+            HistoryRetentionSettingsSheet(legacyRetentionDays: model.appliedSettings.retentionDays).goalongControls()
+        }
     }
     private func refresh() {
         let store = HistoryRetentionStore(legacyRetentionDays: model.appliedSettings.retentionDays)
-        retentionSummary = store.isAutomaticCleanupEnabled ? "Nettoyage automatique activé" : "Jusqu’à suppression manuelle"
+        retentionSummary = HistoryRetentionPolicy.automaticCleanupSummary(enabled: store.isAutomaticCleanupEnabled)
     }
 }
 
@@ -67,17 +70,15 @@ import Foundation
     @State private var advancedShare = false
     @State private var siteAnalysis = false
     @State private var health = false
-    @StateObject private var profileWindow = GoalongProfileWindow()
-    @State private var prepared: Data?
     var body: some View {
         GoalongSettingsGroup(title: "Actions distinctes des envois quotidiens") {
             Button("Exporter un fichier signé…") { model.selectSection(.share) }.buttonStyle(LHSecondaryButtonStyle())
-            Button("Partager un récap relu…") { prepared = nil; advancedShare = true }.buttonStyle(LHSecondaryButtonStyle())
-            Button("Comprendre mon travail") { profileWindow.show { prepared = $0; advancedShare = true } }.buttonStyle(LHSecondaryButtonStyle())
+            Button("Partager un récap relu…") { advancedShare = true }.buttonStyle(LHSecondaryButtonStyle())
+            Button("Comprendre mon travail") { model.profileStudio.show() }.buttonStyle(LHSecondaryButtonStyle())
             Button("Analyser une demande du site…") { siteAnalysis = true }.buttonStyle(LHSecondaryButtonStyle())
             Button("Importer Apple Santé…") { health = true }.buttonStyle(LHSecondaryButtonStyle())
         }
-        .sheet(isPresented: $advancedShare) { GoalongWebsiteConnectionSheet(preparedAnalysis: prepared).goalongControls() }
+        .sheet(isPresented: $advancedShare) { GoalongWebsiteConnectionSheet().goalongControls() }
         .sheet(isPresented: $siteAnalysis) { GoalongSiteAnalysisSheet().goalongControls() }
         .sheet(isPresented: $health) { GoalongHealthImportSheet().goalongControls() }
     }

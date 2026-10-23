@@ -8,14 +8,14 @@ public enum GoalongProductivityExport {
         guard let input = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               input["version"] as? Int == 2,
               let days = input["days"] as? [[String: Any]] else {
-            throw GoalongSiteExportError.invalid("Prepare a Goalong website v2 export first.")
+            throw GoalongSiteExportError.localized("Prepare a Goalong website v2 export first.", french: "Préparez d’abord un aperçu de l’envoi.")
         }
         let converted: [[String: Any]] = try days.map { day in
             guard let date = day["date"] as? String,
                   let telemetry = day["telemetry"] as? [String: Any],
                   let timezone = telemetry["timezone"] as? String,
                   let devices = telemetry["devices"] as? [[String: Any]] else {
-                throw GoalongSiteExportError.invalid("The selected export has no device measurements.")
+                throw GoalongSiteExportError.localized("The selected export has no device measurements.", french: "Les appareils choisis n’ont aucune mesure pour cette journée.")
             }
             var budgets = [[String: Any]](), activities = [[String: Any]]()
             for device in devices {
@@ -51,7 +51,7 @@ public enum GoalongProductivityExport {
                     add(max(0, total - accounted), app: nil, appID: "remainder")
                 }
             }
-            guard budgets.count <= 200 else { throw GoalongSiteExportError.invalid("Select fewer devices or applications: structured reports allow 200 duration sources per day.") }
+            guard budgets.count <= 200 else { throw GoalongSiteExportError.localized("Select fewer devices or applications: structured reports allow 200 duration sources per day.", french: "Choisissez moins d’appareils ou d’applications : 200 sources de durée au maximum par jour.") }
             let completed = telemetry["state"] as? String == "completed"
             let complete = completed && !devices.isEmpty && devices.allSatisfy { $0["coverage"] as? String == "complete" }
             let summary = day["summary"] as? String ?? ""
@@ -65,7 +65,7 @@ public enum GoalongProductivityExport {
         }
         let output: [String: Any] = ["version": 3, "source": ["kind": "goalong-history", "instance_id": "native-analysis"], "days": converted]
         let result = try JSONSerialization.data(withJSONObject: output, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])
-        guard result.count <= 2 * 1024 * 1024 else { throw GoalongSiteExportError.invalid("The selected report exceeds 2 MiB.") }
+        guard result.count <= 2 * 1024 * 1024 else { throw GoalongSiteExportError.localized("The selected report exceeds 2 MiB.", french: "Le rapport choisi dépasse 2 Mio. Choisissez moins d’éléments.") }
         return result + Data("\n".utf8)
     }
 }

@@ -20,7 +20,7 @@ import AgentActivity
     @State private var previewText: String?
     @State private var previewBusy = false
     @State private var previewGeneration = UUID()
-    @State private var sampleText = "Hi Charlie — travail sur le projet"
+    @State private var sampleText = "Bonjour Charlie — travail sur le projet"
     @State private var loaded = false
     @State private var catalogLoading = true
     @State private var catalogError: String?
@@ -151,12 +151,16 @@ import AgentActivity
                 }.font(.system(size: 13))
             }
             if selection.computer || selection.screenTime { applicationChoices }
-            if selection.screenTime && catalogLoading { ProgressView("Lecture des appareils…").font(.system(size: 13)) }
-            if selection.screenTime, let catalogError {
+            if needsDevices && catalogLoading { ProgressView("Lecture des appareils…").font(.system(size: 13)) }
+            if needsDevices, let catalogError {
                 Label(catalogError, systemImage: "info.circle").font(.system(size: 13)).foregroundStyle(.secondary)
             }
-            if selection.screenTime, let catalog = localCatalog {
+            if needsDevices, let catalog = localCatalog {
                 GoalongSettingsGroup(title: "Appareils Apple") {
+                    if catalog.devices.isEmpty {
+                        Text("Aucun appareil Apple pour cette date. Désactivez « Autres appareils Apple » ou « Temps d’écran Apple ».")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
                     ForEach(catalog.devices) { device in
                         Toggle(device.name, isOn: Binding(get: { scope.wrappedValue.deviceIDs?.contains(device.id) ?? true }, set: { enabled in
                             var value = scope.wrappedValue
@@ -170,6 +174,7 @@ import AgentActivity
             if selection.conversations { conversationChoices }
         }
     }
+    private var needsDevices: Bool { selection.screenTime || selection.systemSources?.otherDevices == true }
     private var applicationChoices: some View {
         GoalongSettingsGroup(title: "Applications autorisées") {
             HStack {
@@ -235,7 +240,7 @@ import AgentActivity
             }
             ForEach(rules) { rule in GoalongReplacementRow(rule: rule) { selection.replacements?.removeAll { $0.id == rule.wrappedValue.id } } }
             if rules.wrappedValue.isEmpty {
-                Text("Exemple : Hi Charlie → Projet A").font(.system(size: 14)).foregroundStyle(.secondary).padding(.vertical, 16)
+                Text("Exemple : Bonjour Charlie → Projet A").font(.system(size: 14)).foregroundStyle(.secondary).padding(.vertical, 16)
             }
             GoalongSettingsGroup(title: "Tester vos remplacements") {
                 TextField("Texte d’exemple", text: $sampleText, axis: .vertical).textFieldStyle(GoalongFieldStyle()).lineLimit(2...4)
@@ -246,7 +251,13 @@ import AgentActivity
         }
     }
     private var transformedExample: String {
-        (try? GoalongTextTransformer(rules.wrappedValue).apply(sampleText)) ?? "Vérifiez les règles de remplacement."
+        Self.exampleResult(rules: rules.wrappedValue, sample: sampleText)
+    }
+    /// A rule with an empty search is ignored by the transformer, so it counts as no rule.
+    nonisolated static func exampleResult(rules: [GoalongTextReplacement], sample: String) -> String {
+        if rules.allSatisfy({ $0.search.isEmpty }) { return "Aucun remplacement défini." }
+        guard let result = try? GoalongTextTransformer(rules).apply(sample) else { return "Vérifiez les règles de remplacement." }
+        return result == sample ? "Aucun texte remplacé dans cet exemple." : result
     }
     private var instructions: some View {
         GoalongSettingsGroup(title: "Comment rédiger le bilan") {
@@ -391,7 +402,7 @@ import AgentActivity
     }
     private func preparePreview() {
         do {
-            let next = try finalized(), date = model.selectedDay, device = model.deviceID
+            let next = try finalized(), date = model.selectedDay, device = model.knownDeviceID ?? ""
             let ticket = UUID(); previewGeneration = ticket; previewBusy = true; error = nil
             previewTask?.cancel()
             previewTask = Task {

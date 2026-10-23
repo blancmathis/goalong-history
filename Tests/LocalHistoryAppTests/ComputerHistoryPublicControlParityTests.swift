@@ -71,7 +71,8 @@
             )
 
             XCTAssertTrue(computerHistory.contains("Supprimer cet élément…"))
-            XCTAssertTrue(computerHistory.contains("uniquement ses événements exacts"))
+            XCTAssertTrue(computerHistory.contains("supprime ses événements exacts"))
+            XCTAssertTrue(computerHistory.contains("La note du jour, les sceaux"))
             XCTAssertTrue(computerHistory.contains("Journal original"))
             XCTAssertTrue(computerHistory.contains("Enregistré sur ce Mac"))
             XCTAssertTrue(computerHistory.contains("Historique local conservé"))
@@ -81,6 +82,17 @@
             XCTAssertTrue(computerHistory.contains("@StateObject private var timelineModel"))
             XCTAssertTrue(timeline.contains("Supprimer la session…"))
             XCTAssertTrue(privacy.contains("Dernière session d’application"))
+            // Every session-delete alert states the whole-day derived erasure.
+            let explorer = try String(
+                contentsOf: repositoryRoot
+                    .appendingPathComponent("Sources/LocalHistoryApp/ActivityPageExplorer.swift"),
+                encoding: .utf8
+            )
+            for copy in [explorer, privacy] {
+                XCTAssertTrue(copy.contains("les appels et l’activité de développement de ce jour sont aussi effacés"))
+                XCTAssertTrue(copy.contains("La note du jour, les sceaux"))
+            }
+            XCTAssertFalse(explorer.contains("Seuls les événements locaux de cette session"))
             XCTAssertTrue(activity.contains("openSourceJSON: model.revealTodayJSON"))
             XCTAssertTrue(activity.contains("snapshotGeneration: model.snapshotGeneration"))
             XCTAssertTrue(activity.contains("isSnapshotLoading: model.isRefreshing"))
@@ -515,6 +527,87 @@
             XCTAssertEqual(groups[1].appChangeCount, 0)
             XCTAssertEqual(groups[1].recordedEventCount, 11)
             XCTAssertEqual(groups[1].inputEventCount, 7)
+        }
+
+        func testTenMinuteGroupDoesNotExtendPastNow() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+            let day = try XCTUnwrap(
+                calendar.date(from: DateComponents(year: 2026, month: 8, day: 27))
+            )
+            let end = calendar.date(bySettingHour: 14, minute: 9, second: 50, of: day) ?? day
+            let session = makeSession(
+                id: "live",
+                start: date(hour: 14, minute: 5, day: day, calendar: calendar),
+                end: end,
+                appName: "Xcode",
+                bundleIdentifier: "com.apple.dt.Xcode",
+                eventCount: 3,
+                inputEventCount: 1
+            )
+            let now = end.addingTimeInterval(5)
+            let groups = ComputerHistoryTenMinuteGroup.build(
+                sessions: [session], day: day, calendar: calendar, now: now
+            )
+            XCTAssertEqual(groups.count, 1)
+            XCTAssertLessThanOrEqual(try XCTUnwrap(groups[0].sessions.map(\.end).max()), now)
+        }
+
+        func testInspectorLabelsAreFrenchAndPluralised() {
+            for kind in EventKind.allCases {
+                let label = ActivityEventLabels.kind(kind)
+                XCTAssertFalse(label.isEmpty)
+                XCTAssertNotEqual(label, kind.rawValue)
+            }
+            XCTAssertEqual(ActivityEventLabels.reason(.privateBrowserWindow), "Fenêtre privée")
+            XCTAssertTrue(ActivityEventLabels.loadIssueWarning(count: 1).hasPrefix("1 ligne locale n’a pas"))
+            XCTAssertTrue(ActivityEventLabels.loadIssueWarning(count: 3).hasPrefix("3 lignes locales"))
+            XCTAssertEqual(MenuBarController.deletedItemsMessage(1), "1 élément détaillé supprimé.")
+            XCTAssertEqual(MenuBarController.deletedItemsMessage(0), "0 élément détaillé supprimé.")
+            XCTAssertEqual(MenuBarController.deletedItemsMessage(2), "2 éléments détaillés supprimés.")
+        }
+
+        func testInspectorDetailsAreFrenchSearchableAndWellFormed() {
+            func event(_ kind: EventKind, message: String? = nil, keyboard: KeyboardSnapshot? = nil,
+                       metadata: [String: String]? = nil, reason: SuppressionReason? = nil) -> HistoryEvent {
+                HistoryEvent(schemaVersion: 4, sessionID: "s", timestamp: Date(), kind: kind,
+                             keyboard: keyboard, suppressionReason: reason, message: message, metadata: metadata)
+            }
+            let typing = ActivityEventLabels.detail(event(.typingBurst))
+            XCTAssertEqual(typing, "Frappe : nombre de touches inconnu, durée inconnue ; contenu non reconstitué")
+            let shortcut = ActivityEventLabels.detail(event(
+                .keyboardShortcut, keyboard: KeyboardSnapshot(category: "shortcut", key: "c", modifiers: ["cmd"], isRepeat: false)))
+            XCTAssertEqual(shortcut, "Raccourci : cmd+c")
+            XCTAssertNil(ActivityEventLabels.detail(event(.recorderStarted, message: "Goalong History started")))
+            XCTAssertEqual(
+                ActivityEventLabels.detail(event(.recorderHealth, message: "Input observation gap", metadata: ["observation_gap": "true"])),
+                "Lacune d’observation : des actions ont pu ne pas être enregistrées.")
+            let terms = ActivityEventLabels.searchTerms(event(.scrollBurst, reason: .privateBrowserWindow)).joined(separator: " ").lowercased()
+            XCTAssertTrue(terms.contains("défilement"))
+            XCTAssertTrue(terms.contains("fenêtre privée"))
+        }
+
+        func testSourceInaccessibleIsFrenchForTheInterface() {
+            let error = ActivityAnalysisCycleError.sourceInaccessible("Derived analysis kept views because 2 unreadable row(s)")
+            XCTAssertEqual(error.frenchDescription, "Goalong n’a pas pu lire les données locales de cette journée.")
+            XCTAssertTrue(error.localizedDescription.contains("row(s)"))
+        }
+
+        func testCycleErrorsHaveFrenchDescriptionAndEnglishLogText() {
+            let error = ActivityAnalysisCycleError.sourceChangedDuringRead
+            XCTAssertTrue(error.frenchDescription.hasPrefix("Le journal source a changé"))
+            XCTAssertTrue(error.localizedDescription.hasPrefix("The source journal changed"))
+            XCTAssertEqual(
+                ComputerHistoryPageModel.displayMessage(for: error), error.frenchDescription)
+            for refreshError in [ActivityAnalysisRefreshError.temporarilySuspended, .invalidatedByHistoryClear, .runtimeUnavailable] {
+                XCTAssertEqual(ComputerHistoryPageModel.displayMessage(for: refreshError), refreshError.frenchDescription)
+                XCTAssertTrue(refreshError.localizedDescription.first?.isASCII == true)
+            }
+        }
+
+        func testInspectorFilterTitlesAreFrench() {
+            // B06-R2-03
+            XCTAssertEqual(ActivityEventInspectorFilter.allCases.map(\.title), ["Tout", "Actions", "Lacunes", "Texte"])
         }
 
         func testComputerHistorySortsAppsByUsageThenName() throws {

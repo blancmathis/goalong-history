@@ -50,10 +50,17 @@ struct BlockingMatchExplanation: Equatable {
 
 enum BlockingRules {
     static let neverBlocked: Set<String> = [
-        "ai.goalong.localhistory", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow",
+        "ai.goalong.localhistory", "ai.goalong.localhistory.dev", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow",
         "com.apple.systemuiserver", "com.apple.controlcenter", "com.apple.notificationcenterui",
         "com.apple.Spotlight", "com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.ScreenSaver.Engine",
     ]
+    private static let neverBlockedLowercased = Set(neverBlocked.map { $0.lowercased() })
+    /// Bundle IDs are case-insensitive (Launch Services): an imported list or a JEV target with another case
+    /// must never block Goalong, Goalong Dev or the system apps above.
+    static func isNeverBlocked(_ bundleIdentifier: String?) -> Bool {
+        guard let bundleIdentifier else { return false }
+        return neverBlockedLowercased.contains(bundleIdentifier.lowercased()) || ProductIdentity.isGoalong(bundleIdentifier)
+    }
     /// Browsers the blocker knows even when it cannot read their address, so it fails closed on them.
     /// Apps that only show web content (Electron apps, Mail) are not browsers: app rules apply.
     static let otherBrowsers: Set<String> = [
@@ -69,7 +76,7 @@ enum BlockingRules {
     }
 
     static func exempt(_ target: BlockingObservation) -> Bool {
-        !target.regular || neverBlocked.contains(target.bundleIdentifier)
+        !target.regular || isNeverBlocked(target.bundleIdentifier)
             || target.pid == ProcessInfo.processInfo.processIdentifier
     }
 

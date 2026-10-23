@@ -15,7 +15,7 @@ Un clic ouvre une fenêtre qui :
 
 Rien n’est envoyé automatiquement : l’utilisateur choisit le destinataire. Il n’existe ni collecteur, ni compte support, ni SDK de télémétrie.
 
-Un interrupteur arrête la conservation des événements (déconseillé : le rapport ne décrit alors que l’instant présent). L’effacement ne touche qu’au journal technique.
+Un interrupteur arrête la conservation des événements (déconseillé : plus aucun nouvel événement n’est conservé). Les journaux déjà conservés restent dans le rapport jusqu’à leur expiration (7 jours au plus) ou jusqu’à **Effacer les journaux**. L’effacement ne touche qu’au journal technique.
 
 ## Contenu autorisé
 

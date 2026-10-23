@@ -56,9 +56,9 @@ jobs:
           path: qa/brand-motion/
           if-no-files-found: ignore
           retention-days: 7
-      - name: Build and test on macOS
-        run: swift test
-
+      # The full `swift test` runs once per push in macos.yml (build-test-package, which also runs on
+      # this branch); this job only
+      # owns the motion checks above, so the suite no longer runs twice.
       - name: Record successful exact-checkout gate
         run: python3 scripts/write_gate_receipt.py
       - name: Retain exact-checkout gate receipt

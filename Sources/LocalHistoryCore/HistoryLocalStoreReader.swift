@@ -56,6 +56,9 @@ public struct DailyWebsiteUsageLoadResult {
     public let peakStreamBufferBytes: Int
     public let peakEstimatedRetainedBytes: Int64
     public let issues: [HistoryLoadIssue]
+    /// Rows that could not be decoded and were left out of the totals. A few
+    /// torn rows keep the day usable; many mean the source is unavailable.
+    public let skippedMalformedRowCount: Int
 
     public init(
         day: Date,
@@ -66,8 +69,10 @@ public struct DailyWebsiteUsageLoadResult {
         sourceEventCount: Int,
         peakStreamBufferBytes: Int,
         peakEstimatedRetainedBytes: Int64,
-        issues: [HistoryLoadIssue]
+        issues: [HistoryLoadIssue],
+        skippedMalformedRowCount: Int = 0
     ) {
+        self.skippedMalformedRowCount = max(0, skippedMalformedRowCount)
         self.day = day
         self.state = state
         self.websites = websites
@@ -764,7 +769,12 @@ private final class HistoryPinnedSourceDirectory {
                 )
             }
             files.append(
-                HistoryPinnedSourceFile(directory: self, name: name)
+                HistoryPinnedSourceFile(
+                    directory: self,
+                    name: name,
+                    firstWrite: Date(timespec: entryStat.st_birthtimespec),
+                    lastWrite: Date(timespec: entryStat.st_mtimespec)
+                )
             )
         }
         guard isStable() else {
@@ -816,6 +826,9 @@ private final class HistoryPinnedSourceDirectory {
 private struct HistoryPinnedSourceFile {
     let directory: HistoryPinnedSourceDirectory
     let name: String
+    /// Birth and modification times seen at listing; nil when unknown.
+    var firstWrite: Date? = nil
+    var lastWrite: Date? = nil
 
     var url: URL {
         directory.url.appendingPathComponent(name, isDirectory: false)
@@ -1181,7 +1194,11 @@ package struct HistoryJSONLinesStreamReader {
 /// It never asks for Accessibility/Input Monitoring and never mutates recorder files.
 public struct HistoryLocalStoreReader {
     private static let maximumCaptureHealthBytes = 1 * 1_024 * 1_024
+    /// Same ceiling as the current-day memory index; larger memory or semantic
+    /// JSON files are reported as load issues instead of being read whole.
+    private static let maximumJSONFileBytes = 16 * 1_024 * 1_024
     private static let maximumComputerHistoryIssues = 256
+    private static let maximumSkippedMalformedRows = 16
     private static let maximumSourceSearchDirectoryEntries = 8_192
     private static let maximumSourceSearchFiles = 4_096
 
@@ -1268,6 +1285,7 @@ public struct HistoryLocalStoreReader {
         var sourceBoundExceeded = false
         var sourceChanged = false
         var sourceUnavailable = false
+        var skippedMalformedRowCount = 0
         var eventFiles: [HistoryPinnedSourceFile] = []
         var pinnedRoot: HistoryPinnedSourceDirectory?
         var pinnedEvents: HistoryPinnedSourceDirectory?
@@ -1368,12 +1386,17 @@ public struct HistoryLocalStoreReader {
                                 onObservedEvent?(event)
                                 accumulator.ingest(event)
                             } catch {
-                                sourceUnavailable = true
+                                // A torn row (for example after a crash during an append) must
+                                // not hide the other rows. Heavy corruption still fails closed.
+                                skippedMalformedRowCount += 1
                                 appendIssue(
                                     path: sourceFile.url.path,
                                     line: lineNumber,
-                                    message: "Could not decode daily website source row: \(error)"
+                                    message: "Skipped an undecodable daily website source row."
                                 )
+                                if skippedMalformedRowCount > Self.maximumSkippedMalformedRows {
+                                    sourceUnavailable = true
+                                }
                             }
                         }
                     },
@@ -1474,8 +1497,50 @@ public struct HistoryLocalStoreReader {
             sourceEventCount: accumulator.sourceEventCount,
             peakStreamBufferBytes: peakStreamBufferBytes,
             peakEstimatedRetainedBytes: accumulator.peakEstimatedRetainedBytes,
+            issues: issues,
+            skippedMalformedRowCount: skippedMalformedRowCount
+        )
+    }
+
+    /// Loads only the stored memories, without events or semantic snapshots.
+    /// Callers that only list memories avoid decoding the event journals.
+    public func loadMemories() -> HistoryLoadedData {
+        var issues: [HistoryLoadIssue] = []
+        let memories = loadMemoryFiles(start: nil, end: nil, issues: &issues)
+        return HistoryLoadedData(
+            events: [],
+            memories: memories.sorted { $0.start < $1.start },
+            semanticSnapshots: [:],
+            captureHealth: nil,
             issues: issues
         )
+    }
+
+    private func loadMemoryFiles(
+        start: Date?,
+        end: Date?,
+        issues: inout [HistoryLoadIssue]
+    ) -> [ActivityMemory] {
+        loadJSONFiles(
+            ActivityMemory.self,
+            from: files(
+                in: memoriesDirectory,
+                extensions: ["json"],
+                intersecting: start,
+                end: end
+            )
+                + files(
+                    in: analysisDirectory,
+                    extensions: ["memory.json"],
+                    intersecting: start,
+                    end: end
+                ),
+            issues: &issues
+        ).filter { memory in
+            if let start, memory.end < start { return false }
+            if let end, memory.start > end { return false }
+            return true
+        }
     }
 
     public func load(
@@ -1496,26 +1561,7 @@ public struct HistoryLocalStoreReader {
             timestamp: { $0.timestamp },
             issues: &issues
         )
-        let memories = loadJSONFiles(
-            ActivityMemory.self,
-            from: files(
-                in: memoriesDirectory,
-                extensions: ["json"],
-                intersecting: start,
-                end: end
-            )
-                + files(
-                    in: analysisDirectory,
-                    extensions: ["memory.json"],
-                    intersecting: start,
-                    end: end
-                ),
-            issues: &issues
-        ).filter { memory in
-            if let start, memory.end < start { return false }
-            if let end, memory.start > end { return false }
-            return true
-        }
+        let memories = loadMemoryFiles(start: start, end: end, issues: &issues)
         let semanticRows =
             loadJSONLines(
                 SemanticContextPayload.self,
@@ -1583,6 +1629,22 @@ public struct HistoryLocalStoreReader {
         )
     }
 
+    /// Presence times of the raw journal in the range (see
+    /// `ComputerHistorySearchService.presenceTimes(in:)`), sorted.
+    package func loadPresenceTimestamps(start: Date, end: Date) -> [Date] {
+        var issues: [HistoryLoadIssue] = []
+        return ComputerHistorySearchService.presenceTimes(
+            in: loadJSONLines(
+                HistoryEvent.self,
+                from: files(in: eventsDirectory, extensions: ["jsonl"], intersecting: start, end: end),
+                start: start,
+                end: end,
+                timestamp: { $0.timestamp },
+                issues: &issues
+            )
+        )
+    }
+
     /// Streams a half-open source interval and retains only events that can
     /// influence Computer History. Callers reconstructing multiple days should
     /// invoke this once per day so peak memory is bounded by one day's useful
@@ -1636,7 +1698,9 @@ public struct HistoryLocalStoreReader {
         calendar: Calendar = .current
     ) -> CurrentComputerHistoryMemoryLoad {
         let dayStart = calendar.startOfDay(for: day)
-        let components = calendar.dateComponents([.year, .month, .day], from: dayStart)
+        var civil = Calendar(identifier: .gregorian)
+        civil.timeZone = calendar.timeZone
+        let components = civil.dateComponents([.year, .month, .day], from: dayStart)
         guard let year = components.year, let month = components.month, let day = components.day else {
             return CurrentComputerHistoryMemoryLoad(
                 memory: nil,
@@ -1668,12 +1732,8 @@ public struct HistoryLocalStoreReader {
                 parent: sourceRoot,
                 name: "events"
             )
-            guard let memoryFile = try memoryDirectory.matchingFiles(
-                extensions: ["json"]
-            ).first(where: { $0.name == memoryName }),
-                let eventFile = try eventDirectory.matchingFiles(
-                    extensions: ["jsonl"]
-                ).first(where: { $0.name == eventName })
+            guard let memoryFile = try memoryDirectory.regularFile(named: memoryName),
+                let eventFile = try eventDirectory.regularFile(named: eventName)
             else {
                 return CurrentComputerHistoryMemoryLoad(
                     memory: nil,
@@ -2093,8 +2153,9 @@ public struct HistoryLocalStoreReader {
             )
             eventFiles = try eventsSource.matchingFiles(extensions: ["jsonl"])
                 .filter { file in
-                    guard let interval = localDayInterval(from: file.name) else { return true }
-                    return interval.end > start && interval.start < endExclusive
+                    dailyFile(
+                        named: file.name, firstWrite: file.firstWrite, lastWrite: file.lastWrite,
+                        mayIntersect: start, endExclusive)
                 }
             pinnedSourceRoot = sourceRoot
             pinnedEventsDirectory = eventsSource
@@ -2272,8 +2333,9 @@ public struct HistoryLocalStoreReader {
                 semanticFiles = try semanticSource.matchingFiles(
                     extensions: ["jsonl", "json"]
                 ).filter { file in
-                    guard let interval = localDayInterval(from: file.name) else { return true }
-                    return interval.end > start && interval.start < endExclusive
+                    dailyFile(
+                        named: file.name, firstWrite: file.firstWrite, lastWrite: file.lastWrite,
+                        mayIntersect: start, endExclusive)
                 }
                 pinnedSemanticDirectory = semanticSource
             } catch HistoryPinnedDirectoryError.absent {
@@ -2682,8 +2744,9 @@ public struct HistoryLocalStoreReader {
                 maximumMatchingFiles: Self.maximumSourceSearchFiles,
                 shouldContinue: hasTimeRemaining
             ).filter { file in
-                guard let interval = localDayInterval(from: file.name) else { return true }
-                return interval.end > start && interval.start < endExclusive
+                dailyFile(
+                    named: file.name, firstWrite: file.firstWrite, lastWrite: file.lastWrite,
+                    mayIntersect: start, endExclusive)
             }
             semanticSourceDirectory = directory
         } catch HistoryPinnedDirectoryError.absent {
@@ -2709,8 +2772,9 @@ public struct HistoryLocalStoreReader {
                 maximumMatchingFiles: Self.maximumSourceSearchFiles,
                 shouldContinue: hasTimeRemaining
             ).filter { file in
-                guard let interval = localDayInterval(from: file.name) else { return true }
-                return interval.end > start && interval.start < endExclusive
+                dailyFile(
+                    named: file.name, firstWrite: file.firstWrite, lastWrite: file.lastWrite,
+                    mayIntersect: start, endExclusive)
             }
             eventSourceDirectory = directory
         } catch {
@@ -3298,22 +3362,49 @@ public struct HistoryLocalStoreReader {
             )
         else { return [] }
         return rows.filter { url in
-            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            let values = try? url.resourceValues(
+                forKeys: [.isRegularFileKey, .creationDateKey, .contentModificationDateKey])
+            guard values?.isRegularFile == true else {
                 return false
             }
             let name = url.lastPathComponent.lowercased()
             guard extensions.contains(where: { suffix in name.hasSuffix(".\(suffix)") }) else {
                 return false
             }
-            guard let interval = localDayInterval(from: name) else {
-                // Unknown legacy names remain readable; only proven-disjoint daily
-                // files may be skipped without decoding their contents.
-                return true
-            }
-            if let start, interval.end <= start { return false }
-            if let end, interval.start > end { return false }
-            return true
+            // Unknown legacy names remain readable; only proven-disjoint daily
+            // files may be skipped without decoding their contents.
+            return dailyFile(
+                named: name, firstWrite: values?.creationDate, lastWrite: values?.contentModificationDate,
+                mayIntersect: start ?? .distantPast, end.map { $0.addingTimeInterval(0.001) } ?? .distantFuture)
         }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    /// A daily file is named after the writer's local day. Read from another time zone, that
+    /// name maps to an interval up to 26 hours away from the hours it really holds (UTC−12 to
+    /// UTC+14). A file whose name falls just outside the window is still read when its own
+    /// write times reach into the window; row timestamps keep the final filter exact.
+    /// Same-zone neighbours are not read: their writes stop (or start) at the day boundary.
+    private func dailyFile(
+        named fileName: String,
+        firstWrite: Date?,
+        lastWrite: Date?,
+        mayIntersect start: Date,
+        _ endExclusive: Date
+    ) -> Bool {
+        guard let interval = localDayInterval(from: fileName) else { return true }
+        if interval.end > start && interval.start < endExclusive { return true }
+        let reach: TimeInterval = 26 * 3_600
+        guard interval.end.addingTimeInterval(reach) > start,
+            interval.start.addingTimeInterval(-reach) < endExclusive
+        else { return false }
+        // The margin ignores late flushes into a closed day and early rows of the next one.
+        let margin: TimeInterval = 3_600
+        if interval.end <= start {
+            guard let lastWrite else { return false }
+            return lastWrite >= start.addingTimeInterval(margin)
+        }
+        guard let firstWrite, let lastWrite, firstWrite <= lastWrite else { return false }
+        return firstWrite.addingTimeInterval(margin) <= endExclusive
     }
 
     private func localDayInterval(from fileName: String) -> DateInterval? {
@@ -3416,7 +3507,11 @@ public struct HistoryLocalStoreReader {
     ) -> [T] {
         files.compactMap { file in
             do {
-                return try decoder().decode(T.self, from: Data(contentsOf: file))
+                let raw = try readBoundedFile(
+                    file,
+                    maximumBytes: Self.maximumJSONFileBytes
+                )
+                return try decoder().decode(T.self, from: raw)
             } catch {
                 issues.append(
                     HistoryLoadIssue(
@@ -3474,4 +3569,10 @@ public struct HistoryLocalStoreReader {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
+}
+
+extension Date {
+    fileprivate init(timespec value: timespec) {
+        self.init(timeIntervalSince1970: Double(value.tv_sec) + Double(value.tv_nsec) / 1_000_000_000)
+    }
 }

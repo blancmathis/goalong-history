@@ -68,6 +68,29 @@ for forbidden_entitlement in \
   fi
 done
 
+# A certificate-signed app runs under Hardened Runtime, so it must carry the Calendar
+# entitlement or EventKit access is denied silently. Ad-hoc builds have neither.
+SIGNATURE_DETAILS="$(/usr/bin/codesign -d --verbose=4 "$APP_PATH" 2>&1)"
+if ! /usr/bin/grep -Fq 'Signature=adhoc' <<<"$SIGNATURE_DETAILS"; then
+  if ! /usr/bin/grep -Eq 'flags=0x[0-9a-f]+\(.*runtime' <<<"$SIGNATURE_DETAILS"; then
+    echo "The signed app is missing the Hardened Runtime flag." >&2
+    exit 1
+  fi
+  if ! /usr/bin/python3 - "$ENTITLEMENTS" <<'PY'
+import plistlib, sys
+data = open(sys.argv[1], 'rb').read()
+try:
+    entitlements = plistlib.loads(data)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if entitlements.get('com.apple.security.personal-information.calendars') is True else 1)
+PY
+  then
+    echo "The signed app is missing the com.apple.security.personal-information.calendars entitlement." >&2
+    exit 1
+  fi
+fi
+
 /usr/bin/strings "$BINARY" >"$STRINGS"
 for forbidden_marker in \
   'The commitment endpoint URL is invalid.'; do
@@ -87,6 +110,24 @@ if [[ -f "$ROOT_DIR/Sources/GoalongRelauncher/main.swift" ]]; then
   /usr/bin/codesign --verify --strict --verbose=2 "$RELAUNCHER"
   RELAUNCHER_DETAILS="$(/usr/bin/codesign -d --verbose=4 "$RELAUNCHER" 2>&1)"
   /usr/bin/grep -Fxq "Identifier=$EXPECTED_BUNDLE_ID.relauncher" <<< "$RELAUNCHER_DETAILS"
+fi
+
+GUARD="$APP_PATH/Contents/MacOS/goalong-blocking-guard"
+GUARD_PLIST="$APP_PATH/Contents/Library/LaunchAgents/$EXPECTED_BUNDLE_ID.blocking-guard.plist"
+if [[ -f "$ROOT_DIR/Sources/GoalongGuard/main.swift" ]]; then
+  test -x "$GUARD"
+  test ! -L "$GUARD"
+  /usr/bin/codesign --verify --strict --verbose=2 "$GUARD"
+  /usr/bin/grep -Fxq "Identifier=$EXPECTED_BUNDLE_ID.blocking-guard" <<< "$(/usr/bin/codesign -d --verbose=4 "$GUARD" 2>&1)"
+  /usr/bin/plutil -lint "$GUARD_PLIST" >/dev/null
+  test "$(/usr/libexec/PlistBuddy -c 'Print :Label' "$GUARD_PLIST")" == "$EXPECTED_BUNDLE_ID.blocking-guard"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :BundleProgram' "$GUARD_PLIST")" == "Contents/MacOS/goalong-blocking-guard"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :KeepAlive:SuccessfulExit' "$GUARD_PLIST")" == false
+  test "$(/usr/libexec/PlistBuddy -c 'Print :ThrottleInterval' "$GUARD_PLIST")" -ge 10
+  if [[ "$(/bin/ls "$APP_PATH/Contents/Library/LaunchAgents" | /usr/bin/wc -l | /usr/bin/tr -d ' ')" != 1 ]]; then
+    echo "The bundle must embed exactly one launch agent: the blocking guard." >&2
+    exit 1
+  fi
 fi
 
 LOCALHISTORY_AUDIT_BINARY="$BINARY" "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"

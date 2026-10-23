@@ -8,7 +8,7 @@ Maquette validée par le propriétaire : `/Users/mathisblanc/Documents/ChatGPT/b
 - Le titre minuteur à côté du logo (`setFocusTitle`) reste tel quel.
 - Rafraîchir le modèle à l'ouverture du panneau et chaque seconde tant qu'il est ouvert (minuteur), pas en arrière-plan.
 - Le panneau ne contourne jamais une règle : liste verrouillée (Difficile, garant, séance) → `requestStopBlocking` ouvre la même friction que l'app (fenêtre de l'app, section Blocage, si pas d'API directe).
-- Module désactivé (Ambiance, Concentration ou Blocage) : la section montre une ligne « Activer … » qui ouvre la page de l'app correspondante.
+- Module désactivé : Ambiance, Blocage et Concentration montrent une ligne « Activer dans Réglages » qui ouvre Réglages › Modules (Concentration : « Séances libres ou Pomodoro, avec blocage. »). `startFocus` sur un module désactivé ouvre aussi Réglages › Modules. Le panneau n'active jamais un module lui-même.
 
 ## Contrat vue ↔ modèle
 Fichier modèle : `Sources/LocalHistoryApp/MenuBar/MenuBarPanelModel.swift` (Codex).

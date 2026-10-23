@@ -93,4 +93,17 @@ final class ActivityMemoryTests: XCTestCase {
         XCTAssertTrue(markdown.contains("sources: seq 7"))
         XCTAssertTrue(markdown.contains("Foreground presence does not prove"))
     }
+
+    func testAccentedFrenchRequestPrefixesAreRecognized() {
+        for line in [
+            "Crée une page de connexion",
+            "Résume ce document",
+            "Implémente le cache",
+            "cree une page",
+            "Create a login page",
+        ] {
+            XCTAssertTrue(ActivityMemoryUtilities.looksLikeRequestOrIntent(line), line)
+        }
+        XCTAssertFalse(ActivityMemoryUtilities.looksLikeRequestOrIntent("Tableau de bord"))
+    }
 }

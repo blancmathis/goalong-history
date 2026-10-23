@@ -15,6 +15,8 @@
         case server(String)
         case loginFailed(String)
         case accountNotChatGPT(String)
+        case signedOut
+        case homeBusy
         case generationFailed(String)
 
         var errorDescription: String? {
@@ -42,6 +44,10 @@
             case .accountNotChatGPT(let mode):
                 return
                     "Goalong n’utilise pas les identifiants \(Self.boundedDetail(mode)) actifs, car ils peuvent être facturés comme un usage de l’API. Connectez-vous plutôt avec ChatGPT."
+            case .signedOut:
+                return "Vous n’êtes pas connecté à ChatGPT. Connectez-vous, puis réessayez."
+            case .homeBusy:
+                return "Une autre analyse utilise déjà la connexion Codex de Goalong. Réessayez dans un instant."
             case .generationFailed(let message):
                 return message.isEmpty
                     ? "L’analyse n’a pas abouti."
@@ -54,6 +60,59 @@
                 ActivitySemanticTextSanitizer.redact(value) ?? "",
                 maximumBytes: 4_096
             )
+        }
+    }
+
+    /// One process-wide lease per Codex home. Two Codex processes on the same directory would
+    /// rewrite each other's `config.toml` (different permission profiles) and prune each other's
+    /// live state, so a session holds the lease from `prepareCodexHome` until its process has
+    /// exited and the exit prune has run.
+    final class CodexHomeLease {
+        private static let condition = NSCondition()
+        private static var held = Set<String>()
+
+        private let key: String
+        private let lock = NSLock()
+        private var released = false
+
+        private init(key: String) { self.key = key }
+
+        static func acquire(for directory: URL, waiting timeout: TimeInterval) throws -> CodexHomeLease {
+            let key = canonicalKey(for: directory)
+            let deadline = Date().addingTimeInterval(max(0, timeout))
+            condition.lock()
+            defer { condition.unlock() }
+            while held.contains(key) {
+                guard condition.wait(until: deadline) else { throw CodexAppServerError.homeBusy }
+            }
+            held.insert(key)
+            return CodexHomeLease(key: key)
+        }
+
+        /// Resolves symlinks of the nearest existing ancestor, so the key is the same before and
+        /// after the directory is created (`/var` versus `/private/var`).
+        private static func canonicalKey(for directory: URL) -> String {
+            var existing = directory.standardizedFileURL
+            var suffix: [String] = []
+            while !FileManager.default.fileExists(atPath: existing.path), existing.pathComponents.count > 1 {
+                suffix.insert(existing.lastPathComponent, at: 0)
+                existing.deleteLastPathComponent()
+            }
+            var resolved = existing.resolvingSymlinksInPath()
+            for component in suffix { resolved.appendPathComponent(component) }
+            return resolved.path
+        }
+
+        func release() {
+            lock.lock()
+            let alreadyReleased = released
+            released = true
+            lock.unlock()
+            guard !alreadyReleased else { return }
+            Self.condition.lock()
+            Self.held.remove(key)
+            Self.condition.broadcast()
+            Self.condition.unlock()
         }
     }
 
@@ -96,12 +155,12 @@
             limits: CodexAppServerLimits = .production
         ) throws -> Data {
             guard JSONSerialization.isValidJSONObject(object) else {
-                throw CodexAppServerError.malformedResponse("client attempted to send invalid JSON")
+                throw CodexAppServerError.malformedResponse("Goalong a tenté d’envoyer un JSON invalide.")
             }
             var data = try JSONSerialization.data(withJSONObject: object, options: [])
             guard data.count <= limits.maximumProtocolLineBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "an outgoing JSON line exceeded \(limits.maximumProtocolLineBytes) bytes"
+                    "une ligne JSON envoyée dépasse \(limits.maximumProtocolLineBytes) octets."
                 )
             }
             data.append(0x0A)
@@ -184,7 +243,7 @@
             guard message.keys.contains("id") else { return nil }
             guard let id = strictIntegerID(from: message["id"]) else {
                 throw CodexAppServerError.malformedResponse(
-                    "a JSON-RPC response id was not a strict integer"
+                    "l’identifiant d’une réponse JSON-RPC n’est pas un entier."
                 )
             }
             return id
@@ -193,12 +252,12 @@
         static func notificationMethod(in message: [String: Any]) throws -> String {
             guard try responseID(in: message) == nil else {
                 throw CodexAppServerError.malformedResponse(
-                    "an unmatched JSON-RPC response was received"
+                    "une réponse JSON-RPC ne correspond à aucune demande."
                 )
             }
             guard let method = message["method"] as? String, !method.isEmpty else {
                 throw CodexAppServerError.malformedResponse(
-                    "a JSON-RPC notification method was missing"
+                    "la méthode d’une notification JSON-RPC est absente."
                 )
             }
             return method
@@ -243,7 +302,7 @@
             guard !data.isEmpty else { return }
             guard data.count <= limits.maximumBufferedStdoutBytes - outputBuffer.count else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "stdout buffered more than \(limits.maximumBufferedStdoutBytes) bytes"
+                    "la sortie de Codex dépasse \(limits.maximumBufferedStdoutBytes) octets en attente."
                 )
             }
             outputBuffer.append(data)
@@ -277,7 +336,7 @@
             {
                 guard outputBuffer.distance(from: lineStart, to: newline) <= limits.maximumProtocolLineBytes else {
                     throw CodexAppServerError.protocolLimitExceeded(
-                        "a JSON line exceeded \(limits.maximumProtocolLineBytes) bytes"
+                        "une ligne JSON dépasse \(limits.maximumProtocolLineBytes) octets."
                     )
                 }
                 lineStart = outputBuffer.index(after: newline)
@@ -287,7 +346,7 @@
                     <= limits.maximumProtocolLineBytes
             else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "a JSON line exceeded \(limits.maximumProtocolLineBytes) bytes without a newline"
+                    "une ligne JSON dépasse \(limits.maximumProtocolLineBytes) octets sans fin de ligne."
                 )
             }
         }
@@ -295,14 +354,14 @@
         private mutating func decode(_ line: Data) throws -> [String: Any] {
             guard messageCount < limits.maximumMessages else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "more than \(limits.maximumMessages) JSON messages were received"
+                    "plus de \(limits.maximumMessages) messages JSON ont été reçus."
                 )
             }
             messageCount += 1
             do {
                 let value = try JSONSerialization.jsonObject(with: line, options: [])
                 guard let dictionary = value as? [String: Any] else {
-                    throw CodexAppServerError.malformedResponse("a JSON line was not an object")
+                    throw CodexAppServerError.malformedResponse("une ligne JSON n’est pas un objet.")
                 }
                 return dictionary
             } catch let error as CodexAppServerError {
@@ -313,7 +372,7 @@
                     maximumBytes: limits.maximumErrorBytes
                 )
                 throw CodexAppServerError.malformedResponse(
-                    "\(error.localizedDescription): \(preview)"
+                    "une ligne JSON est illisible : \(preview)"
                 )
             }
         }
@@ -323,7 +382,7 @@
                 byteCount <= limits.maximumBlankLineBytes - blankLineBytes
             else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "blank JSONL records exceeded their configured work budget"
+                    "trop de lignes vides ont été reçues."
                 )
             }
             blankLineCount += 1
@@ -351,12 +410,12 @@
             let encoded = try JSONSerialization.data(withJSONObject: message, options: [])
             guard entries.count < limits.maximumDeferredMessages else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "more than \(limits.maximumDeferredMessages) unmatched messages were deferred"
+                    "plus de \(limits.maximumDeferredMessages) messages en attente sans demande correspondante."
                 )
             }
             guard encoded.count <= limits.maximumDeferredBytes - byteCount else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "deferred messages exceeded \(limits.maximumDeferredBytes) bytes"
+                    "les messages en attente dépassent \(limits.maximumDeferredBytes) octets."
                 )
             }
             entries.append(Entry(message: message, byteCount: encoded.count))
@@ -392,7 +451,7 @@
             let deltaBytes = delta.utf8.count
             guard deltaBytes <= limits.maximumRecapCandidateBytes - streamedBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "streamed recap output exceeded \(limits.maximumRecapCandidateBytes) bytes"
+                    "le bilan reçu en flux dépasse \(limits.maximumRecapCandidateBytes) octets."
                 )
             }
             streamed.append(delta)
@@ -402,7 +461,7 @@
         mutating func setFinalText(_ text: String) throws {
             guard text.utf8.count <= limits.maximumRecapCandidateBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "final recap output exceeded \(limits.maximumRecapCandidateBytes) bytes"
+                    "le bilan final dépasse \(limits.maximumRecapCandidateBytes) octets."
                 )
             }
             finalText = text
@@ -411,7 +470,7 @@
         func completedMarkdown() throws -> String {
             let trimmed = (finalText ?? streamed).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
+                throw CodexAppServerError.generationFailed("Codex a renvoyé une réponse vide.")
             }
 
             let markdown: String
@@ -428,11 +487,11 @@
             guard let redactedMarkdown = ActivitySemanticTextSanitizer.redact(markdown),
                 !redactedMarkdown.isEmpty
             else {
-                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
+                throw CodexAppServerError.generationFailed("Codex a renvoyé une réponse vide.")
             }
             guard redactedMarkdown.utf8.count <= limits.maximumRecapMarkdownBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "recap Markdown exceeded \(limits.maximumRecapMarkdownBytes) bytes"
+                    "le texte du bilan dépasse \(limits.maximumRecapMarkdownBytes) octets."
                 )
             }
             return redactedMarkdown
@@ -441,11 +500,11 @@
         func completedAssessment() throws -> ChatGPTDailyAssessment {
             let raw = finalText ?? streamed
             guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw CodexAppServerError.generationFailed("Codex returned an empty answer.")
+                throw CodexAppServerError.generationFailed("Codex a renvoyé une réponse vide.")
             }
             guard raw.utf8.count <= limits.maximumRecapMarkdownBytes else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "daily assessment output exceeded \(limits.maximumRecapMarkdownBytes) bytes"
+                    "le bilan quotidien dépasse \(limits.maximumRecapMarkdownBytes) octets."
                 )
             }
             return try ChatGPTDailyAssessment.decode(raw)
@@ -476,12 +535,12 @@
         ) throws {
             guard (0...100).contains(productivityScore), (0...100).contains(confidenceScore) else {
                 throw CodexAppServerError.malformedResponse(
-                    "daily assessment scores must be between 0 and 100"
+                    "les notes du bilan doivent être comprises entre 0 et 100."
                 )
             }
             guard summaryLines.count == Self.requiredSummaryLineCount else {
                 throw CodexAppServerError.malformedResponse(
-                    "daily assessment must contain exactly five summary lines"
+                    "le bilan doit contenir exactement cinq lignes."
                 )
             }
             let sanitized = summaryLines.map { raw -> String in
@@ -493,7 +552,7 @@
             }
             guard sanitized.allSatisfy({ !$0.isEmpty }) else {
                 throw CodexAppServerError.malformedResponse(
-                    "daily assessment summary lines must not be empty"
+                    "une ligne du bilan est vide."
                 )
             }
             self.productivityScore = productivityScore
@@ -506,7 +565,7 @@
 
         static func decode(_ raw: String) throws -> ChatGPTDailyAssessment {
             guard let data = raw.data(using: .utf8) else {
-                throw CodexAppServerError.malformedResponse("daily assessment was not UTF-8")
+                throw CodexAppServerError.malformedResponse("le bilan n’est pas un texte UTF-8 valide.")
             }
             do {
                 let decoded = try JSONDecoder().decode(Unvalidated.self, from: data)
@@ -520,7 +579,7 @@
                 throw error
             } catch {
                 throw CodexAppServerError.malformedResponse(
-                    "daily assessment did not match the required JSON schema"
+                    "le bilan ne respecte pas le format attendu."
                 )
             }
         }
@@ -703,7 +762,8 @@
             executableURL: URL,
             codexHomeURL: URL = AppPaths.chatGPTCodexHomeDirectory,
             limits: CodexAppServerLimits = .production,
-            siteAnalysisOnly: Bool = false
+            siteAnalysisOnly: Bool = false,
+            homeLeaseWait: TimeInterval = 5
         ) throws {
             let pauseAdmission = try GoalongGlobalPause.admit()
             self.limits = limits
@@ -713,16 +773,27 @@
             guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
                 throw CodexAppServerError.executableUnavailable
             }
-            try Self.prepareCodexHome(at: codexHomeURL, siteAnalysisOnly: siteAnalysisOnly)
+            let lease = try CodexHomeLease.acquire(for: codexHomeURL, waiting: homeLeaseWait)
+            do {
+                try Self.prepareCodexHome(at: codexHomeURL, siteAnalysisOnly: siteAnalysisOnly)
+            } catch {
+                lease.release()
+                throw error
+            }
 
             process.executableURL = executableURL
             process.arguments = ["app-server"]
             process.standardInput = inputPipe
             process.standardOutput = outputPipe
             process.standardError = errorPipe
-            try CodexAppServerTimedWriter.prepareNonBlocking(
-                inputPipe.fileHandleForWriting.fileDescriptor
-            )
+            do {
+                try CodexAppServerTimedWriter.prepareNonBlocking(
+                    inputPipe.fileHandleForWriting.fileDescriptor
+                )
+            } catch {
+                lease.release()
+                throw error
+            }
 
             process.environment = Self.codexEnvironment(
                 inheriting: ProcessInfo.processInfo.environment,
@@ -730,6 +801,7 @@
             )
             process.terminationHandler = { _ in
                 try? Self.pruneEphemeralCodexArtifacts(at: codexHomeURL)
+                lease.release()
             }
 
             errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -747,6 +819,7 @@
                 try process.run()
             } catch {
                 errorPipe.fileHandleForReading.readabilityHandler = nil
+                lease.release()
                 throw CodexAppServerError.launchFailed(error.localizedDescription)
             }
 
@@ -770,11 +843,11 @@
                         ],
                     ],
                     timeout: 15,
-                    operation: "initializing the local agent"
+                    operation: "initialisation de l’agent local"
                 )
                 guard let reportedHome = initialization["codexHome"] as? String else {
                     throw CodexAppServerError.malformedResponse(
-                        "this Codex version does not report codexHome; update the Codex CLI"
+                        "Cette version de Codex n’indique pas son dossier ; mettez à jour Codex (ligne de commande)."
                     )
                 }
                 let expectedHome = codexHomeURL.standardizedFileURL.resolvingSymlinksInPath()
@@ -782,13 +855,13 @@
                     .standardizedFileURL.resolvingSymlinksInPath()
                 guard expectedHome == actualHome else {
                     throw CodexAppServerError.launchFailed(
-                        "Codex ignored Goalong's isolated CODEX_HOME directory."
+                        "Codex n’a pas utilisé le dossier isolé de Goalong."
                     )
                 }
                 try send(
                     ["method": "initialized", "params": [:] as [String: Any]],
                     deadline: Date().addingTimeInterval(15),
-                    operation: "acknowledging app-server initialization"
+                    operation: "confirmation de l’initialisation"
                 )
             } catch {
                 close()
@@ -806,12 +879,12 @@
                 method: "account/read",
                 params: ["refreshToken": refreshToken],
                 timeout: 20,
-                operation: "checking the ChatGPT account"
+                operation: "vérification du compte ChatGPT"
             )
             guard let rawAccount = result["account"] else { return nil }
             guard !(rawAccount is NSNull), let account = rawAccount as? [String: Any] else { return nil }
             guard let type = account["type"] as? String else {
-                throw CodexAppServerError.malformedResponse("account.type is missing")
+                throw CodexAppServerError.malformedResponse("le type de compte est absent.")
             }
             return CodexAccount(
                 type: type,
@@ -829,13 +902,13 @@
                     "appBrand": "chatgpt",
                 ],
                 timeout: 20,
-                operation: "starting ChatGPT sign-in"
+                operation: "démarrage de la connexion à ChatGPT"
             )
             guard let loginID = result["loginId"] as? String, !loginID.isEmpty,
                 let rawURL = result["authUrl"] as? String,
                 let authorizationURL = URL(string: rawURL)
             else {
-                throw CodexAppServerError.malformedResponse("the ChatGPT login URL is missing")
+                throw CodexAppServerError.malformedResponse("l’adresse de connexion à ChatGPT est absente.")
             }
             return CodexLoginStart(loginID: loginID, authorizationURL: authorizationURL)
         }
@@ -843,7 +916,7 @@
         func waitForChatGPTLogin(loginID: String, timeout: TimeInterval = 600) throws -> CodexAccount {
             let message = try waitForMessage(
                 timeout: timeout,
-                operation: "waiting for ChatGPT sign-in"
+                operation: "attente de la connexion à ChatGPT"
             ) { message in
                 guard message["method"] as? String == "account/login/completed",
                     let params = message["params"] as? [String: Any]
@@ -852,13 +925,13 @@
             }
 
             guard let params = message["params"] as? [String: Any] else {
-                throw CodexAppServerError.malformedResponse("login completion parameters are missing")
+                throw CodexAppServerError.malformedResponse("la fin de la connexion ne contient pas les informations attendues.")
             }
             guard params["success"] as? Bool == true else {
                 throw CodexAppServerError.loginFailed(params["error"] as? String ?? "")
             }
             guard let account = try readAccount(refreshToken: false), account.isManagedChatGPT else {
-                throw CodexAppServerError.loginFailed("Codex did not report a managed ChatGPT account after login.")
+                throw CodexAppServerError.loginFailed("Codex n’a pas confirmé de compte ChatGPT géré après la connexion.")
             }
             return account
         }
@@ -868,7 +941,7 @@
                 method: "account/logout",
                 params: [:],
                 timeout: 20,
-                operation: "disconnecting ChatGPT"
+                operation: "déconnexion de ChatGPT"
             )
         }
 
@@ -903,32 +976,43 @@
         /// Labels contexts against the user's work definition. The prompt was built from
         /// contexts already filtered by the current exclusions, whose revision must not change
         /// before sending.
-        func generateWorkClassification(prompt: String, privacyRevision: String,
+        func generateWorkClassification(prompt: String, privacyRevision: String, selectionRevision: String? = nil,
                                         workingDirectory: URL) throws -> GoalongWorkClassification.Response {
             try GoalongWorkClassification.parse(generateSelectedAnalysisJSON(prompt: prompt,
                 schema: GoalongWorkClassification.outputSchema, workingDirectory: workingDirectory,
-                maximumResponseBytes: 128 * 1024, filteredForPrivacyRevision: privacyRevision))
+                maximumResponseBytes: 128 * 1024, filteredForPrivacyRevision: privacyRevision,
+                filteredForSelectionRevision: selectionRevision))
         }
 
         private func generateSelectedAnalysisJSON(prompt: String, schema: [String: Any], workingDirectory: URL,
                                                   maximumResponseBytes: Int = 32 * 1024,
-                                                  filteredForPrivacyRevision: String? = nil) throws -> Data {
+                                                  filteredForPrivacyRevision: String? = nil,
+                                                  filteredForSelectionRevision: String? = nil) throws -> Data {
             let pauseTicket = try GoalongGlobalPause.admit()
             let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
             if let filteredForPrivacyRevision, filteredForPrivacyRevision != privacyRevision {
                 throw CodexAppServerError.generationFailed("Les exclusions ont changé. L’analyse a été arrêtée avant l’envoi.")
             }
+            func requireSameSelection() throws {
+                guard let filteredForSelectionRevision,
+                      GoalongAnalysisSelection.load().revision != filteredForSelectionRevision else { return }
+                throw CodexAppServerError.generationFailed("Les choix d’analyse ont changé. Aucun contexte n’a été transmis.")
+            }
+            try requireSameSelection()
             guard filteredForPrivacyRevision != nil || !GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).hasExclusions else {
-                throw CodexAppServerError.generationFailed("Les exclusions bloquent cette analyse de texte. Utilisez le bilan par applications dans Connexions.")
+                throw CodexAppServerError.generationFailed("Les exclusions bloquent cette analyse de texte. Retirez-les dans Réglages → Apps et sites pour la lancer.")
             }
             guard siteAnalysisOnly else {
-                throw CodexAppServerError.generationFailed("Site analysis requires its isolated Codex connection.")
+                throw CodexAppServerError.generationFailed("L’analyse de sites exige sa connexion Codex isolée.")
             }
             guard try FileManager.default.contentsOfDirectory(atPath: workingDirectory.path).isEmpty else {
-                throw CodexAppServerError.generationFailed("The isolated analysis workspace must be empty.")
+                throw CodexAppServerError.generationFailed("Le dossier de travail isolé de l’analyse doit être vide.")
             }
-            guard let account = try readAccount(refreshToken: true), account.isManagedChatGPT else {
-                throw CodexAppServerError.accountNotChatGPT("non-ChatGPT")
+            guard let account = try readAccount(refreshToken: true) else {
+                throw CodexAppServerError.signedOut
+            }
+            guard account.isManagedChatGPT else {
+                throw CodexAppServerError.accountNotChatGPT(account.type)
             }
             try requireDailyAssessmentModel()
             let started = try request(
@@ -947,17 +1031,17 @@
                     "config": ["model_reasoning_effort": CodexDailyAssessmentContract.reasoningEffort],
                 ],
                 timeout: CodexDailyAssessmentContract.threadStartTimeout,
-                operation: "starting the selected-data analysis"
+                operation: "démarrage de l’analyse des données choisies"
             )
             guard let thread = started["thread"] as? [String: Any],
                 let threadID = thread["id"] as? String, !threadID.isEmpty
             else {
-                throw CodexAppServerError.malformedResponse("thread.id is missing")
+                throw CodexAppServerError.malformedResponse("l’identifiant du fil d’analyse est absent.")
             }
             guard thread["ephemeral"] as? Bool == true else {
                 _ = try? request(method: "thread/delete", params: ["threadId": threadID],
-                                 timeout: 15, operation: "removing the unexpected persistent analysis")
-                throw CodexAppServerError.generationFailed("Codex did not create a temporary analysis thread.")
+                                 timeout: 15, operation: "suppression de l’analyse persistante inattendue")
+                throw CodexAppServerError.generationFailed("Codex n’a pas créé de fil d’analyse temporaire.")
             }
             guard started["model"] as? String == CodexDailyAssessmentContract.model,
                 started["reasoningEffort"] as? String == CodexDailyAssessmentContract.reasoningEffort,
@@ -968,11 +1052,12 @@
                 let roots = started["runtimeWorkspaceRoots"] as? [String],
                 Self.workspaceRootsAreConfined(roots, to: workingDirectory)
             else {
-                throw CodexAppServerError.generationFailed("Codex did not confirm the restricted analysis settings. Update Codex before trying again.")
+                throw CodexAppServerError.generationFailed("Codex n’a pas confirmé les réglages restreints de l’analyse. Mettez Codex à jour, puis réessayez.")
             }
             guard GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacyRevision else {
                 throw CodexAppServerError.generationFailed("Les exclusions ont changé. L’analyse a été arrêtée avant l’envoi.")
             }
+            try requireSameSelection()
             try GoalongGlobalPause.revalidate(pauseTicket)
             let turnResponse = try request(
                 method: "turn/start",
@@ -987,26 +1072,26 @@
                     "outputSchema": schema,
                 ],
                 timeout: CodexDailyAssessmentContract.turnStartTimeout,
-                operation: "sending the reviewed selection to ChatGPT"
+                operation: "envoi de la sélection vérifiée à ChatGPT"
             )
             guard let initialTurn = turnResponse["turn"] as? [String: Any],
                 let turnID = initialTurn["id"] as? String, !turnID.isEmpty
             else {
-                throw CodexAppServerError.malformedResponse("The analysis turn identifier is missing.")
+                throw CodexAppServerError.malformedResponse("L’identifiant du tour d’analyse est absent.")
             }
             try Self.validateSiteAnalysisItems(in: initialTurn)
             let deadline = Date().addingTimeInterval(CodexDailyAssessmentContract.generationTimeout)
             var finalText: String?
             var streamedBytes = 0
             while Date() < deadline {
-                let message = try nextDeferredOrMessage(deadline: deadline, operation: "analyzing the reviewed selection")
+                let message = try nextDeferredOrMessage(deadline: deadline, operation: "analyse de la sélection vérifiée")
                 let method = try CodexAppServerMessageRouter.notificationMethod(in: message)
                 let params = message["params"] as? [String: Any] ?? [:]
                 if let eventThread = params["threadId"] as? String, eventThread != threadID {
-                    throw CodexAppServerError.malformedResponse("An event belonged to another analysis thread.")
+                    throw CodexAppServerError.malformedResponse("Un événement appartenait à un autre fil d’analyse.")
                 }
                 if let eventTurn = params["turnId"] as? String, eventTurn != turnID {
-                    throw CodexAppServerError.malformedResponse("An event belonged to another analysis turn.")
+                    throw CodexAppServerError.malformedResponse("Un événement appartenait à un autre tour d’analyse.")
                 }
                 switch method {
                 case "item/started", "item/completed":
@@ -1014,40 +1099,45 @@
                         let type = item["type"] as? String,
                         ["agentMessage", "reasoning", "userMessage"].contains(type)
                     else {
-                        throw CodexAppServerError.generationFailed("An unexpected tool or activity was requested. The analysis was stopped; no draft was saved.")
+                        throw CodexAppServerError.generationFailed("Un outil ou une activité inattendus ont été demandés. L’analyse a été arrêtée ; aucun brouillon n’a été enregistré.")
                     }
                     if method == "item/completed", type == "agentMessage",
                         let content = item["text"] as? String,
                         item["phase"] == nil || item["phase"] as? String == "final_answer"
                     {
                         guard content.utf8.count <= maximumResponseBytes else {
-                            throw CodexAppServerError.protocolLimitExceeded("The analysis response exceeded 32 KiB.")
+                            throw CodexAppServerError.protocolLimitExceeded("La réponse de l’analyse dépasse \(maximumResponseBytes / 1024) Kio.")
                         }
                         finalText = content
                     }
                 case "item/agentMessage/delta":
                     streamedBytes += (params["delta"] as? String)?.utf8.count ?? 0
                     guard streamedBytes <= maximumResponseBytes * 2 else {
-                        throw CodexAppServerError.protocolLimitExceeded("The analysis stream exceeded 64 KiB.")
+                        throw CodexAppServerError.protocolLimitExceeded("Le flux de l’analyse dépasse \(maximumResponseBytes * 2 / 1024) Kio.")
                     }
                 case "error":
-                    throw CodexAppServerError.generationFailed("ChatGPT could not complete the analysis. Check the connection and account usage, then try again.")
+                    if params["willRetry"] as? Bool == true {
+                        // Codex reconnects the stream itself and may replay the deltas.
+                        streamedBytes = 0
+                        continue
+                    }
+                    throw CodexAppServerError.generationFailed("ChatGPT n’a pas pu terminer l’analyse. Vérifiez la connexion et l’usage du compte, puis réessayez.")
                 case "turn/completed":
                     guard let turn = params["turn"] as? [String: Any],
                         turn["id"] as? String == turnID,
                         turn["status"] as? String == "completed", let finalText
                     else {
-                        throw CodexAppServerError.generationFailed("The analysis did not produce a complete draft.")
+                        throw CodexAppServerError.generationFailed("L’analyse n’a pas produit de brouillon complet.")
                     }
                     try Self.validateSiteAnalysisItems(in: turn)
                     return Data(finalText.utf8)
                 default:
                     if method.hasPrefix("item/") && !method.hasPrefix("item/reasoning/") {
-                        throw CodexAppServerError.generationFailed("An unexpected analysis capability was used. The analysis was stopped.")
+                        throw CodexAppServerError.generationFailed("Une capacité d’analyse inattendue a été utilisée. L’analyse a été arrêtée.")
                     }
                 }
             }
-            throw CodexAppServerError.timeout("analyzing the reviewed selection")
+            throw CodexAppServerError.timeout("analyse de la sélection vérifiée")
         }
 
         private static let siteAnalysisOutputSchema: [String: Any] = [
@@ -1087,7 +1177,7 @@
                 guard let type = $0["type"] as? String else { return false }
                 return ["agentMessage", "reasoning", "userMessage"].contains(type)
             }) else {
-                throw CodexAppServerError.generationFailed("An unexpected tool or activity was requested. The analysis was stopped; no draft was saved.")
+                throw CodexAppServerError.generationFailed("Un outil ou une activité inattendus ont été demandés. L’analyse a été arrêtée ; aucun brouillon n’a été enregistré.")
             }
         }
 
@@ -1100,7 +1190,7 @@
             let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
             let selectionRevision = GoalongAnalysisSelection.load().revision
             guard let account = try readAccount(refreshToken: true) else {
-                throw CodexAppServerError.accountNotChatGPT("signed-out")
+                throw CodexAppServerError.signedOut
             }
             guard account.isManagedChatGPT else {
                 throw CodexAppServerError.accountNotChatGPT(account.type)
@@ -1125,54 +1215,54 @@
                     ],
                 ],
                 timeout: CodexDailyAssessmentContract.threadStartTimeout,
-                operation: "starting the recap agent"
+                operation: "démarrage de l’agent du bilan"
             )
             guard let thread = started["thread"] as? [String: Any],
                 let threadID = thread["id"] as? String,
                 !threadID.isEmpty
             else {
-                throw CodexAppServerError.malformedResponse("thread.id is missing")
+                throw CodexAppServerError.malformedResponse("l’identifiant du fil d’analyse est absent.")
             }
             guard thread["ephemeral"] as? Bool == true else {
                 _ = try? request(
                     method: "thread/delete",
                     params: ["threadId": threadID],
                     timeout: 15,
-                    operation: "removing the unexpected persistent recap thread"
+                    operation: "suppression du fil de bilan persistant inattendu"
                 )
                 throw CodexAppServerError.malformedResponse(
-                    "Codex did not create an ephemeral thread; update the Codex CLI"
+                    "Codex n’a pas créé de fil éphémère ; mettez à jour Codex (ligne de commande)."
                 )
             }
             guard started["model"] as? String == CodexDailyAssessmentContract.model else {
                 throw CodexAppServerError.generationFailed(
-                    "Codex did not start GPT-5.6 Luna. Goalong will not silently use another model."
+                    "Codex n’a pas démarré GPT-5.6 Luna. Goalong n’utilisera pas un autre modèle sans vous le dire."
                 )
             }
             guard started["reasoningEffort"] as? String == CodexDailyAssessmentContract.reasoningEffort else {
                 throw CodexAppServerError.generationFailed(
-                    "Codex did not start GPT-5.6 Luna with High reasoning. Goalong will not silently use another effort."
+                    "Codex n’a pas démarré GPT-5.6 Luna avec un raisonnement élevé. Goalong n’utilisera pas un autre niveau sans vous le dire."
                 )
             }
             guard let activeProfile = started["activePermissionProfile"] as? [String: Any],
                 activeProfile["id"] as? String == Self.recapPermissionProfile
             else {
                 throw CodexAppServerError.malformedResponse(
-                    "Codex did not activate Goalong's restricted recap permission profile; update the Codex CLI"
+                    "Codex n’a pas activé le profil d’autorisations restreint de Goalong ; mettez à jour Codex (ligne de commande)."
                 )
             }
             guard let startedWorkingDirectory = started["cwd"] as? String,
                 Self.pathsMatchExactly([startedWorkingDirectory], expected: [workingDirectory])
             else {
                 throw CodexAppServerError.malformedResponse(
-                    "Codex did not start the recap inside Goalong's temporary workspace"
+                    "Codex n’a pas démarré le bilan dans le dossier de travail temporaire de Goalong."
                 )
             }
             guard let roots = started["runtimeWorkspaceRoots"] as? [String],
                 Self.workspaceRootsAreConfined(roots, to: workingDirectory)
             else {
                 throw CodexAppServerError.malformedResponse(
-                    "Codex did not confine the recap to Goalong's temporary workspace"
+                    "Codex n’a pas confiné le bilan au dossier de travail temporaire de Goalong."
                 )
             }
 
@@ -1195,7 +1285,7 @@
                     "outputSchema": CodexDailyAssessmentContract.outputSchema,
                 ],
                 timeout: CodexDailyAssessmentContract.turnStartTimeout,
-                operation: "starting the recap turn"
+                operation: "démarrage du tour de bilan"
             )
             let turnID = (startedTurn["turn"] as? [String: Any])?["id"] as? String
                 ?? startedTurn["turnId"] as? String
@@ -1208,7 +1298,7 @@
             while Date() < deadline {
                 let message = try nextDeferredOrMessage(
                     deadline: deadline,
-                    operation: "generating the recap"
+                    operation: "génération du bilan"
                 )
                 let method = try CodexAppServerMessageRouter.notificationMethod(in: message)
                 let params = message["params"] as? [String: Any] ?? [:]
@@ -1232,6 +1322,7 @@
                         }
                     }
                 case "error":
+                    if params["willRetry"] as? Bool == true { break }
                     if let error = params["error"] as? [String: Any] {
                         failureMessage = (error["message"] as? String).map {
                             CodexAppServerLimits.boundedUTF8(
@@ -1242,7 +1333,7 @@
                     }
                 case "turn/completed":
                     guard let turn = params["turn"] as? [String: Any] else {
-                        throw CodexAppServerError.malformedResponse("turn completion is missing")
+                        throw CodexAppServerError.malformedResponse("la fin du tour d’analyse est absente.")
                     }
                     let status = turn["status"] as? String ?? "unknown"
                     if status == "completed" {
@@ -1255,7 +1346,7 @@
                     }
                     let error = turn["error"] as? [String: Any]
                     let message = CodexAppServerLimits.boundedUTF8(
-                        error?["message"] as? String ?? failureMessage ?? status,
+                        error?["message"] as? String ?? failureMessage ?? "le tour s’est terminé avec l’état « \(status) ».",
                         maximumBytes: limits.maximumErrorBytes
                     )
                     throw CodexAppServerError.generationFailed(message)
@@ -1263,7 +1354,7 @@
                     break
                 }
             }
-            throw CodexAppServerError.timeout("generating the recap")
+            throw CodexAppServerError.timeout("génération du bilan")
         }
 
         private func requireDailyAssessmentModel() throws {
@@ -1279,10 +1370,10 @@
                     method: "model/list",
                     params: params,
                     timeout: 20,
-                    operation: "checking GPT-5.6 Luna availability"
+                    operation: "vérification de la disponibilité de GPT-5.6 Luna"
                 )
                 guard let models = result["data"] as? [[String: Any]] else {
-                    throw CodexAppServerError.malformedResponse("model/list data is missing")
+                    throw CodexAppServerError.malformedResponse("la liste des modèles est absente.")
                 }
                 if let model = models.first(where: {
                     ($0["model"] as? String) == CodexDailyAssessmentContract.model
@@ -1292,7 +1383,7 @@
                         ($0["reasoningEffort"] as? String) == CodexDailyAssessmentContract.reasoningEffort
                     }) else {
                         throw CodexAppServerError.generationFailed(
-                            "GPT-5.6 Luna is available, but High reasoning is not enabled for this account."
+                            "GPT-5.6 Luna est disponible, mais le raisonnement élevé n’est pas activé pour ce compte."
                         )
                     }
                     return
@@ -1302,7 +1393,7 @@
             } while cursor != nil && pageCount < 10
 
             throw CodexAppServerError.generationFailed(
-                "GPT-5.6 Luna is not available for this ChatGPT account. Goalong did not fall back to another model."
+                "GPT-5.6 Luna n’est pas disponible pour ce compte ChatGPT. Goalong n’a pas basculé vers un autre modèle."
             )
         }
 
@@ -1344,7 +1435,7 @@
                 if let responseID = try CodexAppServerMessageRouter.responseID(in: message) {
                     guard responseID == id else {
                         throw CodexAppServerError.malformedResponse(
-                            "an unmatched JSON-RPC response was received"
+                            "une réponse JSON-RPC ne correspond à aucune demande."
                         )
                     }
                     return try responseResult(message, method: method)
@@ -1409,16 +1500,19 @@
 
                 let remaining = deadline.timeIntervalSinceNow
                 guard remaining > 0 else { throw CodexAppServerError.timeout(operation) }
-                let timeoutMilliseconds = Int32(min(remaining * 1_000, Double(Int32.max)))
+                // Short slices: closing the pipe from another thread does not wake a blocked poll.
+                let timeoutMilliseconds = Int32(min(remaining * 1_000, 200))
+                closeLock.lock()
+                let isClosed = closed
+                closeLock.unlock()
+                if isClosed { throw CodexAppServerError.processExited(stderrText()) }
                 var descriptor = pollfd(
                     fd: outputPipe.fileHandleForReading.fileDescriptor,
                     events: Int16(POLLIN | POLLHUP | POLLERR),
                     revents: 0
                 )
                 let pollResult = Darwin.poll(&descriptor, 1, timeoutMilliseconds)
-                if pollResult == 0 {
-                    throw CodexAppServerError.timeout(operation)
-                }
+                if pollResult == 0 { continue }
                 if pollResult < 0 {
                     if errno == EINTR { continue }
                     throw CodexAppServerError.processExited(stderrText())
@@ -1465,14 +1559,14 @@
         ) throws -> [String: Any] {
             if let error = message["error"] as? [String: Any] {
                 let detail = CodexAppServerLimits.boundedUTF8(
-                    error["message"] as? String ?? "Unknown JSON-RPC error",
+                    error["message"] as? String ?? "erreur inconnue.",
                     maximumBytes: limits.maximumErrorBytes
                 )
                 throw CodexAppServerError.server(detail)
             }
             guard let result = message["result"] as? [String: Any] else {
                 if message["result"] is NSNull { return [:] }
-                throw CodexAppServerError.malformedResponse("result for \(method) is missing")
+                throw CodexAppServerError.malformedResponse("le résultat de \(method) est absent.")
             }
             return result
         }

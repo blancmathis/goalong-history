@@ -1,10 +1,13 @@
 #if os(macOS)
     import Foundation
+    import LocalHistoryCore
 
     enum GoalongCLIInstallationState: String, Equatable {
         case ready
         case missing
         case conflict
+        /// Goalong Dev: ~/.local/bin/goalong belongs to the installed Goalong and is never repointed from here.
+        case development
     }
 
     struct GoalongCLIInstallationReport: Equatable {
@@ -12,6 +15,8 @@
         let linkPath: String
         let resolvedTargetPath: String?
         let detail: String
+        /// Goalong Dev only: its own CLI inside its bundle, which reads LocalHistory-Dev.
+        var developmentCLIPath: String? = nil
     }
 
     enum GoalongCLIInstallation {
@@ -23,9 +28,28 @@
         static func inspect(
             linkURL: URL = defaultLinkURL,
             expectedExecutableURL: URL? = Bundle.main.executableURL,
-            fileManager: FileManager = .default
+            fileManager: FileManager = .default,
+            isDevelopment: Bool = GoalongBuildChannel.current.isDevelopment
         ) -> GoalongCLIInstallationReport {
             let linkPath = linkURL.standardizedFileURL.path
+            // Goalong Dev: the command serves the installed Goalong (its real data). Comparing it with the
+            // Dev executable would always report a conflict, and "reinstall" would break the real command.
+            if isDevelopment {
+                let target = (try? fileManager.destinationOfSymbolicLink(atPath: linkPath)).map { raw in
+                    URL(fileURLWithPath: raw, relativeTo: linkURL.deletingLastPathComponent())
+                        .standardizedFileURL.resolvingSymlinksInPath().path
+                }
+                let devCLI = expectedExecutableURL.map {
+                    $0.deletingLastPathComponent().appendingPathComponent("goalong", isDirectory: false).path
+                }
+                return GoalongCLIInstallationReport(
+                    state: .development,
+                    linkPath: linkPath,
+                    resolvedTargetPath: target,
+                    detail: "Dans Goalong Dev, la commande goalong et les instructions copiées servent Goalong installé et ses vraies données. Pour les données de Goalong Dev, utilisez son propre exécutable. Ne réinstallez pas le lien depuis Goalong Dev.",
+                    developmentCLIPath: devCLI
+                )
+            }
             let rawDestination: String
             do {
                 rawDestination = try fileManager.destinationOfSymbolicLink(atPath: linkPath)
@@ -42,7 +66,7 @@
                     state: .missing,
                     linkPath: linkPath,
                     resolvedTargetPath: nil,
-                    detail: "Le lien de la commande goalong est absent. Réinstallez Goalong pour le créer en toute sécurité."
+                    detail: "Cela recrée en toute sécurité le lien de la commande goalong dans le Terminal."
                 )
             }
 

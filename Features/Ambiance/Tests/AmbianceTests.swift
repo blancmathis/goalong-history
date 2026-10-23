@@ -50,13 +50,13 @@ final class AmbianceTests: XCTestCase {
         XCTAssertEqual(AmbianceSettings(defaults: store).ownFiles, ["/missing/member.wav"])
         XCTAssertEqual(AmbianceSettings(defaults: store).lastSource, "ambre")
     }
-    @MainActor func testOwnFilesAndMissingFileStayListedWithoutCopying() throws {
+    @MainActor func testOwnFilesAndMissingFileStayListedWithoutCopying() async throws {
         let support = try root(), input = try root(), settings = AmbianceSettings(defaults: defaults())
         settings.isEnabled = true
         let file = input.appendingPathComponent("mon son.wav")
         try Data([1, 2, 3]).write(to: file)
         let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
-        controller.addOwnFiles([input, file])
+        await controller.addOwnFiles([input, file])?.value
         XCTAssertEqual(settings.ownFiles, [file.resolvingSymlinksInPath().path])
         XCTAssertTrue(try XCTUnwrap(controller.sources.first { $0.kind == .ownFile }).isAvailable)
         try FileManager.default.removeItem(at: file); controller.refresh()
@@ -79,16 +79,119 @@ final class AmbianceTests: XCTestCase {
         XCTAssertFalse(controller.diagnostics.runtimeCreated)
         XCTAssertEqual(controller.diagnostics.mappedBytes, 0)
     }
-    @MainActor func testFolderImportIncludesNestedAlbumWithoutCopying() throws {
+    @MainActor func testFolderImportIncludesNestedAlbumWithoutCopying() async throws {
         let support = try root(), album = try root().appendingPathComponent("Artiste/Album")
         try FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
         let file = album.appendingPathComponent("morceau.flac")
         try Data([1, 2]).write(to: file)
         let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
         let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
-        controller.addOwnFiles([album.deletingLastPathComponent().deletingLastPathComponent()])
+        await controller.addOwnFiles([album.deletingLastPathComponent().deletingLastPathComponent()])?.value
         XCTAssertEqual(settings.ownFiles, [file.resolvingSymlinksInPath().path])
         XCTAssertFalse(FileManager.default.fileExists(atPath: support.appendingPathComponent("Ambiance").path))
+    }
+    @MainActor func testFolderImportIsCappedAndNeverDuplicates() async throws {
+        let support = try root(), folder = try root()
+        let total = AmbianceController.ownFilesLimit + 5
+        for index in 0..<total { try Data([1]).write(to: folder.appendingPathComponent(String(format: "morceau-%04d.flac", index))) }
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        await controller.addOwnFiles([folder])?.value
+        XCTAssertEqual(settings.ownFiles.count, AmbianceController.ownFilesLimit)
+        XCTAssertNotNil(controller.importNotice)
+        let first = settings.ownFiles
+        await controller.addOwnFiles([folder])?.value
+        XCTAssertEqual(settings.ownFiles, first, "Importing the same folder again changes nothing")
+        XCTAssertEqual(Set(settings.ownFiles).count, settings.ownFiles.count)
+    }
+    func testCollectAudioFilesReportsTruncationReason() throws {
+        let folder = try root()
+        for index in 0..<4 { try Data([1]).write(to: folder.appendingPathComponent("a\(index).wav")) }
+        XCTAssertEqual(AmbianceController.collectAudioFiles([folder], existing: [], visitedLimit: 2).truncated, .walkCapped)
+        XCTAssertEqual(AmbianceController.collectAudioFiles([folder], existing: [], limit: 1).truncated, .listFull)
+        XCTAssertNil(AmbianceController.collectAudioFiles([folder], existing: []).truncated)
+    }
+    @MainActor func testMergeNoticeMatchesTruncationReason() throws {
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { try! self.root() }, controller = try XCTUnwrap(module.controller)
+        controller.merge((paths: [], truncated: .walkCapped))
+        XCTAssertEqual(controller.importNotice, "Dossier trop volumineux : seule une partie a été parcourue.")
+        controller.merge((paths: [], truncated: .listFull))
+        XCTAssertEqual(controller.importNotice, "La liste est pleine (\(AmbianceController.ownFilesLimit) fichiers).")
+    }
+    @MainActor func testShutdownCancelsFolderImport() async throws {
+        let support = try root(), folder = try root()
+        try Data([1]).write(to: folder.appendingPathComponent("a.wav"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        let task = controller.addOwnFiles([folder])
+        controller.shutdown()
+        await task?.value
+        XCTAssertTrue(settings.ownFiles.isEmpty)
+    }
+    @MainActor func testTwoBackToBackFolderImportsBothMerge() async throws {
+        let support = try root(), a = try root(), b = try root()
+        try Data([1]).write(to: a.appendingPathComponent("a.wav"))
+        try Data([1]).write(to: b.appendingPathComponent("b.wav"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        let first = controller.addOwnFiles([a]), second = controller.addOwnFiles([b])
+        await first?.value; await second?.value
+        XCTAssertEqual(settings.ownFiles.map { URL(fileURLWithPath: $0).lastPathComponent }.sorted(), ["a.wav", "b.wav"])
+    }
+    @MainActor func testShutdownCancelsEveryConcurrentFolderImport() async throws {
+        let support = try root(), a = try root(), b = try root()
+        try Data([1]).write(to: a.appendingPathComponent("a.wav"))
+        try Data([1]).write(to: b.appendingPathComponent("b.wav"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        let first = controller.addOwnFiles([a]), second = controller.addOwnFiles([b])
+        controller.shutdown()
+        await first?.value; await second?.value
+        XCTAssertTrue(settings.ownFiles.isEmpty)
+    }
+    func testNetworkErrorsAreNotReportedAsInvalidPack() {
+        for error in [AmbianceError.network, .serverUnavailable] {
+            let text = error.localizedDescription
+            XCTAssertFalse(text.contains("Pack invalide"), text)
+            XCTAssertFalse(text.contains("http"), text)
+        }
+        XCTAssertTrue(AmbianceError.network.localizedDescription.contains("Connexion"))
+        XCTAssertTrue(AmbianceError.invalidPack("taille incorrecte").localizedDescription.contains("taille incorrecte"))
+    }
+    func testErrorBodyOf404IsServerUnavailableNotWrongSize() {
+        let notFound = AmbiancePackDownloader.progressFailure(status: 404, written: 9, expected: 9, packBytes: 5000)
+        XCTAssertEqual(notFound?.localizedDescription, AmbianceError.serverUnavailable.localizedDescription)
+        let wrongSize = AmbiancePackDownloader.progressFailure(status: 200, written: 9, expected: 9, packBytes: 5000)
+        XCTAssertTrue(wrongSize?.localizedDescription.contains("taille incorrecte") == true)
+        XCTAssertNil(AmbiancePackDownloader.progressFailure(status: 200, written: 10, expected: 5000, packBytes: 5000))
+    }
+    func testRemoveOrphansKeepsPacksAndDoesNotFollowSymlinks() throws {
+        let support = try root(), outside = try root()
+        let store = AmbiancePackStore(supportDirectory: support)
+        let fm = FileManager.default
+        try fm.createDirectory(at: store.root, withIntermediateDirectories: true)
+        let install = store.root.appendingPathComponent(".install-orchestra-\(UUID().uuidString)")
+        let stale = store.root.appendingPathComponent(".stale-textures-\(UUID().uuidString)")
+        for dir in [install, stale, store.root.appendingPathComponent("orchestra")] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data([1]).write(to: dir.appendingPathComponent("f"))
+        }
+        try Data([1]).write(to: outside.appendingPathComponent("keep"))
+        try fm.createSymbolicLink(at: store.root.appendingPathComponent(".install-textures-\(UUID().uuidString)"), withDestinationURL: outside)
+        XCTAssertEqual(store.removeOrphans(), 3)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: store.root.path), ["orchestra"])
+        XCTAssertTrue(fm.fileExists(atPath: outside.appendingPathComponent("keep").path))
+    }
+    @MainActor func testFolderImportIsDiscardedWhenModuleTurnsOffMeanwhile() async throws {
+        let support = try root(), folder = try root()
+        try Data([1]).write(to: folder.appendingPathComponent("a.wav"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        let task = controller.addOwnFiles([folder])
+        settings.isEnabled = false
+        await task?.value
+        XCTAssertTrue(settings.ownFiles.isEmpty)
     }
     @MainActor func testLocalDownloadAndRemovePublishCorrectPackState() async throws {
         guard ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_PACK_DIR"] != nil else { throw XCTSkip("Local dev archives required") }
@@ -129,6 +232,34 @@ final class AmbianceTests: XCTestCase {
         XCTAssertFalse(store.isInstalled(fixture.pack))
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.directory(fixture.pack).path))
     }
+    func testInvalidLeftoverFolderIsReplacedByReinstall() throws {
+        let support = try root(), fixture = try fixtureArchive(), store = AmbiancePackStore(supportDirectory: support)
+        try store.install(fixture.pack, archive: fixture.url)
+        let folder = store.directory(fixture.pack)
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("manifest.json"))
+        XCTAssertFalse(store.isInstalled(fixture.pack))
+        XCTAssertTrue(store.hasLeftovers(fixture.pack))
+        try store.install(fixture.pack, archive: fixture.url)
+        XCTAssertTrue(store.isInstalled(fixture.pack))
+        XCTAssertFalse(store.hasLeftovers(fixture.pack))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.root.path), ["orchestra"])
+        // A receipt that no longer matches the catalog is also repaired.
+        let receipt = folder.appendingPathComponent(".installed.json")
+        try Data(#"{"id":"orchestra","sha256":"old","bytes":1,"files":["LICENSE.txt"]}"#.utf8).write(to: receipt)
+        XCTAssertFalse(store.isInstalled(fixture.pack))
+        try store.install(fixture.pack, archive: fixture.url)
+        XCTAssertTrue(store.isInstalled(fixture.pack))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.root.path), ["orchestra"])
+    }
+    func testSymlinkedPackFolderIsNeverReplacedNorFollowed() throws {
+        let support = try root(), outside = try root(), fixture = try fixtureArchive()
+        let store = AmbiancePackStore(supportDirectory: support)
+        try FileManager.default.createDirectory(at: store.root, withIntermediateDirectories: true)
+        let marker = outside.appendingPathComponent("keep.txt"); try Data([1]).write(to: marker)
+        try FileManager.default.createSymbolicLink(at: store.directory(fixture.pack), withDestinationURL: outside)
+        XCTAssertThrowsError(try store.install(fixture.pack, archive: fixture.url))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+    }
     func testUnsafeTarEntriesLeaveNoPublishedOrStagingDirectory() throws {
         for (name, type) in [("../outside", UInt8(48)), ("note.wav", UInt8(50))] {
             let support = try root(), fixture = try fixtureArchive(extraName: name, type: type)
@@ -147,6 +278,47 @@ final class AmbianceTests: XCTestCase {
         do { try await task.value; XCTFail("Cancelled install must fail") } catch {}
         XCTAssertFalse(store.isInstalled(fixture.pack))
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.root.path))
+    }
+    /// An orchestra folder that passes the catalog receipt check but holds an invalid manifest:
+    /// play() reaches the off-main preparation and then fails, with no device audio.
+    @MainActor private func controllerWithBrokenOrchestra() throws -> AmbianceController {
+        let support = try root(), fixture = try fixtureArchive(), store = AmbiancePackStore(supportDirectory: support)
+        try store.install(fixture.pack, archive: fixture.url)
+        let catalog = try XCTUnwrap(AmbiancePackCatalog.packs.first { $0.id == "orchestra" })
+        let receipt: [String: Any] = ["id": catalog.id, "sha256": catalog.sha256, "bytes": catalog.bytes,
+                                      "files": ["LICENSE.txt", "manifest.json"]]
+        try JSONSerialization.data(withJSONObject: receipt).write(to: store.directory(catalog).appendingPathComponent(".installed.json"))
+        let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
+        let controller = try XCTUnwrap(AmbianceModule(settings: settings) { support }.controller)
+        XCTAssertTrue(controller.sources.contains { $0.kind == .focus && $0.isAvailable })
+        return controller
+    }
+    @MainActor func testOrchestraPlayShowsLoadingThenFailsHonestly() async throws {
+        let controller = try controllerWithBrokenOrchestra()
+        let source = try XCTUnwrap(controller.sources.first { $0.kind == .focus })
+        controller.play(source)
+        XCTAssertEqual(controller.state, .loading, "Preparation runs off the main actor")
+        for _ in 0..<200 where controller.state == .loading { try await Task.sleep(nanoseconds: 10_000_000) }
+        guard case .error = controller.state else { return XCTFail("Invalid bank must end in an error, got \(controller.state)") }
+        XCTAssertFalse(controller.diagnostics.runtimeCreated)
+    }
+    @MainActor func testStopDuringOrchestraLoadingStaysIdle() async throws {
+        let controller = try controllerWithBrokenOrchestra()
+        let source = try XCTUnwrap(controller.sources.first { $0.kind == .focus })
+        controller.play(source); controller.stop()
+        XCTAssertEqual(controller.state, .idle)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(controller.state, .idle, "A stale load must not publish an error or start audio")
+        XCTAssertFalse(controller.diagnostics.runtimeCreated)
+    }
+    @MainActor func testSecondPlayDuringLoadingSupersedesTheFirst() async throws {
+        let controller = try controllerWithBrokenOrchestra()
+        let focus = controller.sources.filter { $0.kind == .focus }
+        controller.play(focus[0]); controller.play(focus[1])
+        XCTAssertEqual(controller.state, .loading)
+        for _ in 0..<200 where controller.state == .loading { try await Task.sleep(nanoseconds: 10_000_000) }
+        guard case .error = controller.state else { return XCTFail("Only the second play reports, got \(controller.state)") }
+        XCTAssertFalse(controller.diagnostics.runtimeCreated)
     }
     private func installedOrchestra() throws -> (AmbiancePackStore, AmbiancePack) {
         guard let folder = ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_PACK_DIR"] else {

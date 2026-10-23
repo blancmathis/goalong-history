@@ -44,16 +44,26 @@ case "$DEVELOPMENT_BUILD" in
     ;;
   *) echo "LOCALHISTORY_DEVELOPMENT_BUILD must be 0 or 1." >&2; exit 1 ;;
 esac
-# The make dev channel (data mode, DEV icon) exists only in development bundles; releases carry no key.
+# The make dev channel (Goalong Dev: data mode, source, DEV icon) exists only in development
+# bundles; releases carry no key.
 DEV_DATA_MODE="${LOCALHISTORY_DEV_DATA_MODE:-}"
 DEV_ICON_SOURCE="${LOCALHISTORY_DEV_ICON_SOURCE:-}"
+DEV_SERVER="${LOCALHISTORY_DEV_SERVER:-}"
+DEV_SOURCE_BRANCH="${LOCALHISTORY_DEV_SOURCE_BRANCH:-}"
+DEV_SOURCE_COMMIT="${LOCALHISTORY_DEV_SOURCE_COMMIT:-}"
+# One exact SwiftPM scratch path (make dev reuses the worktree's .build); single architecture only.
+SCRATCH_PATH="${LOCALHISTORY_SCRATCH_PATH:-}"
 if [[ "$DEVELOPMENT_BUILD" == 1 ]]; then
   case "$DEV_DATA_MODE" in
-    isolated|real) ;;
-    *) echo "Development bundles require LOCALHISTORY_DEV_DATA_MODE=isolated or real." >&2; exit 1 ;;
+    clone|keep|fresh|none) ;;  # none: make dev NO_LAUNCH=1 prepared no data
+    *) echo "Development bundles require LOCALHISTORY_DEV_DATA_MODE=clone, keep, fresh or none." >&2; exit 1 ;;
   esac
-elif [[ -n "$DEV_DATA_MODE" || -n "$DEV_ICON_SOURCE" ]]; then
-  echo "LOCALHISTORY_DEV_DATA_MODE and LOCALHISTORY_DEV_ICON_SOURCE are reserved for development bundles." >&2
+  case "$DEV_SERVER" in
+    ''|off|on) ;;
+    *) echo "LOCALHISTORY_DEV_SERVER must be on or off." >&2; exit 1 ;;
+  esac
+elif [[ -n "$DEV_DATA_MODE$DEV_ICON_SOURCE$DEV_SERVER$DEV_SOURCE_BRANCH$DEV_SOURCE_COMMIT$SCRATCH_PATH" ]]; then
+  echo "LOCALHISTORY_DEV_* and LOCALHISTORY_SCRATCH_PATH are reserved for development bundles." >&2
   exit 1
 fi
 
@@ -130,10 +140,19 @@ if [[ "$RUN_TESTS" == "1" ]]; then
   /usr/bin/python3 "$ROOT_DIR/scripts/test_site_submission_policy.py"
 fi
 
+scratch_for_arch() {
+  if [[ -n "$SCRATCH_PATH" ]]; then echo "$SCRATCH_PATH"; else echo "${SCRATCH_ROOT:-$WORK_DIR}/build-$1"; fi
+}
+if [[ -n "$SCRATCH_PATH" && "$ARCHS" == *" "* ]]; then
+  echo "LOCALHISTORY_SCRATCH_PATH supports a single architecture." >&2
+  exit 1
+fi
+
 build_arch() {
   local arch="$1"
   local started="$(date +%s)"
-  local scratch="${SCRATCH_ROOT:-$WORK_DIR}/build-$arch"
+  local scratch
+  scratch="$(scratch_for_arch "$arch")"
   local logs="${SCRATCH_ROOT:-$WORK_DIR}/logs"
   mkdir -p "$logs"
   local log="$logs/build-$arch.log"
@@ -175,6 +194,9 @@ build_arch() {
   local helper_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-relauncher --arch "$arch" --scratch-path "$scratch")
   (cd "$ROOT_DIR" && "${helper_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
   cp "$bin_dir/goalong-relauncher" "$WORK_DIR/goalong-relauncher-$arch"
+  local guard_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-blocking-guard --arch "$arch" --scratch-path "$scratch")
+  (cd "$ROOT_DIR" && "${guard_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
+  cp "$bin_dir/goalong-blocking-guard" "$WORK_DIR/goalong-blocking-guard-$arch"
   python3 - "$OUTPUT_DIR/build-$arch-timing.json" "$started" "$arch" <<'PY'
 import json,sys,time
 from pathlib import Path
@@ -224,11 +246,15 @@ HELPER_BINARIES=()
 for arch in $ARCHS; do HELPER_BINARIES+=("$WORK_DIR/goalong-relauncher-$arch"); done
 lipo -create "${HELPER_BINARIES[@]}" -output "$CONTENTS/MacOS/goalong-relauncher"
 chmod 755 "$CONTENTS/MacOS/goalong-relauncher"
+GUARD_BINARIES=()
+for arch in $ARCHS; do GUARD_BINARIES+=("$WORK_DIR/goalong-blocking-guard-$arch"); done
+lipo -create "${GUARD_BINARIES[@]}" -output "$CONTENTS/MacOS/goalong-blocking-guard"
+chmod 755 "$CONTENTS/MacOS/goalong-blocking-guard"
 chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 chmod 755 "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
 # Embed the exact SwiftPM artifact. No replacement framework or unpinned download is used.
-SPARKLE_FRAMEWORK="$(find "${SCRATCH_ROOT:-$WORK_DIR}/build-${ARCHS%% *}/artifacts" -type d -name Sparkle.framework -path '*/artifacts/sparkle/Sparkle/*' -print -quit)"
+SPARKLE_FRAMEWORK="$(find "$(scratch_for_arch "${ARCHS%% *}")/artifacts" -type d -name Sparkle.framework -path '*/artifacts/sparkle/Sparkle/*' -print -quit)"
 if [[ -z "$SPARKLE_FRAMEWORK" ]]; then
   echo "The pinned Sparkle.framework artifact is missing." >&2
   exit 1
@@ -340,9 +366,47 @@ if [[ "$DEVELOPMENT_BUILD" == 1 ]]; then
   /usr/bin/plutil -insert GoalongDevelopmentBuild -bool YES "$CONTENTS/Info.plist"
   /usr/bin/plutil -insert GoalongBuildChannel -string dev "$CONTENTS/Info.plist"
   /usr/bin/plutil -insert GoalongDevDataMode -string "$DEV_DATA_MODE" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongDevSourceBranch -string "${DEV_SOURCE_BRANCH:-unknown}" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongDevSourceCommit -string "${DEV_SOURCE_COMMIT:-unknown}" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongDevBuiltAt -string "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongDevServer -bool "$([[ "$DEV_SERVER" == on ]] && echo YES || echo NO)" "$CONTENTS/Info.plist"
+  # Goalong Dev never claims goalong-history:// links: they always open the installed Goalong.
+  /usr/bin/plutil -remove CFBundleURLTypes "$CONTENTS/Info.plist"
 fi
 /usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --configure-info "$CONTENTS/Info.plist"
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
+
+# Spec K: the blocking guard agent. The app registers it with SMAppService only when the member
+# starts a severe block; launchd keeps it alive (never faster than every 10 s) until it exits 0.
+GUARD_LABEL="$BUNDLE_ID.blocking-guard"
+mkdir -p "$CONTENTS/Library/LaunchAgents"
+cat > "$CONTENTS/Library/LaunchAgents/$GUARD_LABEL.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$GUARD_LABEL</string>
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/goalong-blocking-guard</string>
+    <key>AssociatedBundleIdentifiers</key>
+    <array><string>$BUNDLE_ID</string></array>
+    <key>KeepAlive</key>
+    <dict><key>SuccessfulExit</key><false/></dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>MachServices</key>
+    <dict><key>$GUARD_LABEL</key><true/></dict>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>ProcessType</key>
+    <string>Standard</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>
+PLIST
+plutil -lint "$CONTENTS/Library/LaunchAgents/$GUARD_LABEL.plist" >/dev/null
 
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
   # Hardened Runtime library validation rejects ad-hoc signed dynamic frameworks
@@ -370,6 +434,7 @@ codesign "${SIGN_ARGS[@]}" "$SPARKLE_VERSION_DIR/Updater.app"
 codesign "${SIGN_ARGS[@]}" "$CONTENTS/Frameworks/Sparkle.framework"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID" "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID.relauncher" "$CONTENTS/MacOS/goalong-relauncher"
+codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID.blocking-guard" "$CONTENTS/MacOS/goalong-blocking-guard"
 
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then

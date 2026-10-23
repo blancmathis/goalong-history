@@ -322,7 +322,7 @@ final class OpenCodeSQLiteReadOnlyTests: XCTestCase {
 
         XCTAssertTrue(
             result.failures.contains { failure in
-                failure.contains("configured maximum is 1048576")
+                failure.contains("le maximum configuré est 1048576")
             },
             result.failures.joined(separator: "\n")
         )

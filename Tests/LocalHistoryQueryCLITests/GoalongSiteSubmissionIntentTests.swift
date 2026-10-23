@@ -24,6 +24,22 @@ final class GoalongSiteSubmissionIntentTests: XCTestCase {
         }
     }
 
+    func testSubmissionErrorsReachTheUIInFrenchAndStayEnglishForTheCLI() throws {
+        for status in [301, 401, 403, 409, 413, 429, 500] {
+            XCTAssertThrowsError(try GoalongSiteSubmission.validatedResponse(Data(), status: status)) {
+                let text = goalongUserMessage($0)
+                XCTAssertFalse(text.isEmpty)
+                for english in ["website", "Upload", "token", "The "] { XCTAssertFalse(text.contains(english), "\(status): \(text)") }
+                XCTAssertNotEqual(String(describing: $0), text)
+                XCTAssertTrue(String(describing: $0).range(of: "website|upload|import", options: [.regularExpression, .caseInsensitive]) != nil)
+                if status == 401 { XCTAssertTrue(text.contains("Relier mon Mac")) }
+            }
+        }
+        XCTAssertThrowsError(try GoalongSiteSubmission.tokenFileURL(path: "relative")) {
+            XCTAssertFalse(goalongUserMessage($0).contains("absolute local path"))
+        }
+    }
+
     func testAnExplicitRetryRetainsItsOriginalOperationAndBytes() throws {
         let endpoint = try GoalongSiteSubmission.endpoint(origin: "https://example.invalid")
         let payload = Data("reviewed-selection".utf8)
@@ -42,6 +58,21 @@ final class GoalongSiteSubmissionIntentTests: XCTestCase {
         let source = try String(contentsOf: path, encoding: .utf8)
         XCTAssertTrue(source.contains("session.dataTask(with: requestForNewSubmission(payload: payload, endpoint: destination, token: token)).resume()"))
         XCTAssertFalse(source.contains("session.dataTask(with: request(payload:"))
+    }
+    func testOnlyFailuresBeforeTheSiteAreSafeToRetryAndRefusedAccessIsTyped() {
+        for code in [NSURLErrorNotConnectedToInternet, NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost] {
+            XCTAssertEqual(GoalongSiteSubmissionError.classify(URLError(URLError.Code(rawValue: code))), .unreachable)
+        }
+        for code in [NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorCancelled, NSURLErrorSecureConnectionFailed] {
+            XCTAssertNil(GoalongSiteSubmissionError.classify(URLError(URLError.Code(rawValue: code))), "\(code) may mean the site received the import")
+        }
+        XCTAssertNil(GoalongSiteSubmissionError.classify(GoalongSiteExportError.invalid("x")))
+        for status in [401, 403] {
+            XCTAssertThrowsError(try GoalongSiteSubmission.validatedResponse(Data(), status: status)) {
+                XCTAssertEqual($0 as? GoalongSiteSubmissionError, .accessRefused)
+            }
+        }
+        XCTAssertFalse(goalongUserMessage(GoalongSiteSubmissionError.unreachable).contains("website"))
     }
 }
 #endif

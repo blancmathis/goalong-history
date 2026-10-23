@@ -126,12 +126,28 @@ private final class BlockingFreezePanel: NSPanel {
     }
 
     func updateProtection(locked: Bool) -> BlockingProtectionState {
-        if locked, currentLoginStatus() != .enabled, currentLoginStatus() != .requiresApproval, !requestedLogin {
+        // Goalong Dev: no login item, and no status read. The installed Goalong keeps the real protection.
+        guard GoalongLoginItemGate.isAllowed else { return BlockingProtectionState() }
+        let preferences = BackgroundContinuityPreferences()
+        let before = currentLoginStatus()
+        let forced = preferences.blockingForcedLogin
+        switch BackgroundContinuityPreferences.blockingLoginAction(
+            locked: locked, registered: before == .enabled || before == .requiresApproval, requested: requestedLogin,
+            forced: forced, consentEnabled: forced && GoalongCapabilityConsentStore.shared.isEnabled(.launchAtLogin)) {
+        case .register:
             requestedLogin = true
-            do { try SMAppService.mainApp.register() }
+            do { try GoalongLoginItemGate.perform { try SMAppService.mainApp.register() }; preferences.blockingForcedLogin = true }
             catch { loginError = "Démarrage à la connexion indisponible : \(error.localizedDescription)" }
             loginStatus = nil
-        } else if !locked { requestedLogin = false }
+        case .release:
+            // The lock is over: give the member back the choice they made (off).
+            try? GoalongLoginItemGate.perform { try SMAppService.mainApp.unregister() }
+            preferences.blockingForcedLogin = false
+            loginStatus = nil
+        case .none:
+            if !locked && forced { preferences.blockingForcedLogin = false }
+        }
+        if !locked { requestedLogin = false }
         var result = BlockingProtectionState()
         let status = currentLoginStatus()
         result.launchAtLogin = status == .enabled
@@ -283,13 +299,19 @@ private final class BlockingFreezePanel: NSPanel {
             panel.setFrame(screen.frame, display: true); panel.orderFrontRegardless(); shields.append(panel)
         }
     }
+    /// The Goalong family is never blocked: a freeze in one Goalong never hides the other one.
+    nonisolated static func hidesBehindKeptApps(_ bundleIdentifier: String?, kept: Set<String>) -> Bool {
+        guard let bundleIdentifier else { return true }
+        return !kept.contains(bundleIdentifier) && !ProductIdentity.isGoalong(bundleIdentifier)
+    }
     private func openAllowed(_ app: BlockAppRule) {
         guard freeze?.allowedApps.contains(where: { $0.bundleIdentifier == app.bundleIdentifier }) == true,
               let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) else { return }
         // Kept apps come forward alone: every other app is hidden, so nothing else shows above the shield.
         let kept = Set(freeze?.allowedApps.map(\.bundleIdentifier) ?? [])
         for other in NSWorkspace.shared.runningApplications where other.activationPolicy == .regular
-            && other.processIdentifier != ProcessInfo.processInfo.processIdentifier && !kept.contains(other.bundleIdentifier ?? "") {
+            && other.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            && Self.hidesBehindKeptApps(other.bundleIdentifier, kept: kept) {
             other.hide()
         }
         let config = NSWorkspace.OpenConfiguration(); config.activates = true

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AppleScreenTimeStoreError: Error, CustomStringConvertible {
+public enum AppleScreenTimeStoreError: Error, CustomStringConvertible, LocalizedError {
     case noImportForInterval
     case invalidFile
 
@@ -10,6 +10,16 @@ public enum AppleScreenTimeStoreError: Error, CustomStringConvertible {
             return "No Apple Screen Time import covers the selected interval."
         case .invalidFile:
             return "The selected file is not a valid Apple Screen Time export."
+        }
+    }
+
+    /// French text for alerts. `description` stays English for logs.
+    public var errorDescription: String? {
+        switch self {
+        case .noImportForInterval:
+            return "Aucun import de temps d’écran Apple ne couvre la période choisie."
+        case .invalidFile:
+            return "Le fichier choisi n’est pas un export de temps d’écran Apple valide."
         }
     }
 }

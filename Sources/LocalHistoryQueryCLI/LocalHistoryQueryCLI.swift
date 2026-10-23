@@ -10,6 +10,7 @@ private struct GoalongCLIErrorEnvelope: Encodable {
     let status = "error"
     let error: String
     let usage = "goalong help"
+    var hint: String? = nil
 }
 
 private struct GoalongCLIVersionEnvelope: Encodable {
@@ -79,6 +80,74 @@ private struct QueryEnvelope: Encodable {
     let rootDirectory: String
     let result: HistoryQueryResult
     let loadIssues: [HistoryLoadIssue]
+    /// Present when the command read a bounded interval instead of every stored day.
+    var window: GoalongQueryWindow? = nil
+}
+
+/// The interval an unbounded history command actually read.
+struct GoalongQueryWindow: Encodable, Equatable {
+    let start: Date
+    let end: Date
+    /// True when the caller gave no bound and the default window applied.
+    let isDefault: Bool
+    /// True when an explicit range was shortened to `maximumDays`.
+    let isClamped: Bool
+    let maximumDays: Int
+
+    static let defaultDays = 7
+    static let maximumDays = 31
+
+    var limitation: String {
+        let formatter = ISO8601DateFormatter()
+        let range = "\(formatter.string(from: start)) to \(formatter.string(from: end))"
+        if isClamped {
+            return "Only \(Self.maximumDays) days are read per query; the range was shortened to \(range). Use --start and --end to read another period."
+        }
+        if isDefault {
+            return "Only the last \(Self.defaultDays) days were read (\(range)). Use --start and --end to read another period of up to \(Self.maximumDays) days."
+        }
+        return "Only the requested period was read (\(range)); events outside it are not searched."
+    }
+
+    /// Resolves optional bounds to a bounded interval. No bound means the last
+    /// `defaultDays` local days; a longer range is shortened to `maximumDays`.
+    static func resolve(
+        start: Date?,
+        end: Date?,
+        endDay: Date? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) throws -> GoalongQueryWindow {
+        let resolvedEnd = end ?? now
+        let defaulted = start == nil
+        let resolvedStart: Date
+        if let start {
+            resolvedStart = start
+        } else {
+            let today = calendar.startOfDay(for: endDay ?? resolvedEnd)
+            resolvedStart = calendar.date(byAdding: .day, value: -(defaultDays - 1), to: today) ?? today
+        }
+        // A bare-day `--end` is the next midnight; compare the start with the day itself.
+        if let endDay, calendar.startOfDay(for: resolvedStart) > endDay {
+            throw CLIError.usage("--start must not be after --end")
+        }
+        guard resolvedStart <= resolvedEnd else {
+            throw CLIError.usage("--start must not be after --end")
+        }
+        let earliest = calendar.date(
+            byAdding: .day,
+            value: -maximumDays,
+            to: resolvedEnd
+        ) ?? resolvedStart
+        let clamped = resolvedStart < earliest
+        return GoalongQueryWindow(
+            start: clamped ? earliest : resolvedStart,
+            end: resolvedEnd,
+            isDefault: defaulted,
+            isClamped: clamped,
+            maximumDays: maximumDays
+        )
+    }
 }
 
 private struct SummaryEnvelope: Encodable {
@@ -464,7 +533,7 @@ private struct ComputerHistoryReconstruction {
     let limitations: [String]
 }
 
-private enum CLIError: Error, CustomStringConvertible {
+enum CLIError: Error, CustomStringConvertible, LocalizedError {
     case usage(String)
     case invalidDate(String)
     case invalidInteger(String)
@@ -478,6 +547,32 @@ private enum CLIError: Error, CustomStringConvertible {
         case .invalidInteger(let value): return "Invalid integer: \(value)"
         case .missingHealth: return "capture-health.json is not available"
         case .unsafeSource(let value): return value
+        }
+    }
+
+    /// French text for the app, which shows these errors to people. The CLI keeps `description`.
+    var errorDescription: String? {
+        switch self {
+        case .unsafeSource(let value):
+            if value.hasPrefix("Apple Screen Time is off") { return "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer." }
+            if value.hasPrefix("No saved Screen Time") { return "Aucune donnée Apple enregistrée pour cette journée. Choisissez une autre date ou actualisez l’historique." }
+            if value.hasPrefix("Computer History is off") { return "Activez l’historique de ce Mac pour inclure les sites, ou désactivez Sites web." }
+            if value.hasPrefix("Website details are unavailable") { return "Les sites ne sont pas disponibles pour cette date. Les applications restent utilisables sans les sites." }
+            if value.hasPrefix("Saved ChatGPT analysis access is off") { return "Activez l’accès aux analyses ChatGPT enregistrées pour inclure un récap, ou décochez le récap." }
+            if value.hasPrefix("No saved recap exists") { return "Aucun récap enregistré pour cette journée. Décochez le récap ou choisissez une autre date." }
+            if value.hasPrefix("The saved recap belongs") || value.hasPrefix("The saved record does not match") { return "Les données enregistrées ne correspondent pas à la journée demandée. Choisissez une autre date." }
+            if value.hasPrefix("The saved day uses a different timezone") { return "Cette journée a été enregistrée dans un autre fuseau horaire. Exportez sans les sites." }
+            if value.hasPrefix("Enable Computer History and use its current timezone") { return "Activez l’historique de ce Mac avec son fuseau horaire actuel pour exporter le rythme." }
+            if value.hasPrefix("Rhythm is not calculable") { return "Le rythme n’est pas calculable. Sélectionnez des applications de projet ou décochez le rythme." }
+            if value.hasPrefix("Rename the project") { return "Renommez le projet avant l’export : son nom contient une application masquée." }
+            if value.hasPrefix("Select fewer details") { return "L’export dépasse 2 Mio. Sélectionnez moins de détails." }
+            if value.hasPrefix("Enable the explicitly selected Computer History") { return "Activez les sources de l’historique de ce Mac choisies avant de lire leurs preuves." }
+            if value.hasPrefix("Conversation source authorization changed") { return "L’autorisation de la source de conversations a changé pendant la lecture. Réessayez." }
+            // Messages already written in French keep their precise text.
+            if value.unicodeScalars.contains(where: { "àâçéèêëîïôùûœ’".unicodeScalars.contains($0) }) { return value }
+            return "Une source nécessaire n’est pas activée. Vérifiez les réglages d’Enregistrement."
+        case .missingHealth: return "Les données de santé ne sont pas disponibles."
+        case .invalidDate, .invalidInteger, .usage: return "Une valeur n’est pas valide. Vérifiez la sélection, puis réessayez."
         }
     }
 }
@@ -509,8 +604,7 @@ public enum GoalongQueryCLI {
         do {
             try run(arguments: rawArguments)
         } catch {
-            let payload = GoalongCLIErrorEnvelope(error: String(describing: error))
-            if let data = try? encodedJSON(payload) {
+            if let data = errorEnvelopeData(for: error) {
                 FileHandle.standardError.write(data)
             } else {
                 FileHandle.standardError.write(Data("{\"status\":\"error\"}\n".utf8))
@@ -519,7 +613,30 @@ public enum GoalongQueryCLI {
         }
     }
 
-    private static func run(arguments rawArguments: [String]) throws {
+    /// Readable English text for errors whose `String(describing:)` would be a bare case name.
+    static func errorMessage(for error: Error) -> String {
+        if let pause = error as? GoalongGlobalPause.PauseError {
+            switch pause {
+            case .active: return "Global pause is active; this command reads nothing until Goalong is resumed."
+            case .changed: return "The global pause changed; retry after Goalong is resumed."
+            case .unreadable: return "The pause setting is unreadable; Goalong stays paused for safety."
+            case .writeFailed: return "The pause change could not be saved."
+            }
+        }
+        if let failure = error as? GoalongContextualRhythm.Failure, case .invalid(let message) = failure { return message }
+        return String(describing: error)
+    }
+
+    /// The stderr envelope. `error` stays a bare code for focus errors; advice goes in `hint`.
+    static func errorEnvelopeData(for error: Error) -> Data? {
+        var payload = GoalongCLIErrorEnvelope(error: errorMessage(for: error))
+        if let focus = error as? GoalongFocusError, focus == .outcomeUnknown {
+            payload.hint = "Goalong did not answer in time and may have applied the request; run `goalong focus status` before retrying"
+        }
+        return try? encodedJSON(payload)
+    }
+
+    static func run(arguments rawArguments: [String]) throws {
         var arguments = Arguments(values: rawArguments)
         let root = arguments.removeOption("--root").map(expandedURL) ?? defaultRoot
         guard let command = arguments.popFirst() else { throw CLIError.usage("Missing command") }
@@ -567,21 +684,32 @@ public enum GoalongQueryCLI {
 
         case "recent":
             let minutes = try integer(arguments.removeOption("--minutes") ?? "60")
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(
-                start: Date().addingTimeInterval(-TimeInterval(max(1, minutes) * 60)),
-                end: Date()
-            )
+            guard (1...10_080).contains(minutes) else {
+                throw CLIError.usage("--minutes must be between 1 and 10080")
+            }
+            let actionsOnly = arguments.removeFlag("--actions-only")
+            let gapsOnly = arguments.removeFlag("--gaps-only")
+            let semanticOnly = arguments.removeFlag("--semantic-only")
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("recent accepts --minutes N and the optional --actions-only, --gaps-only, --semantic-only flags")
+            }
+            let now = Date()
+            let since = now.addingTimeInterval(-TimeInterval(minutes) * 60)
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(start: since, end: now)
             let service = service(from: loaded)
             let result = service.recent(
-                since: Date().addingTimeInterval(-TimeInterval(max(1, minutes) * 60)),
-                actionsOnly: arguments.removeFlag("--actions-only"),
-                gapsOnly: arguments.removeFlag("--gaps-only"),
-                semanticOnly: arguments.removeFlag("--semantic-only")
+                since: since,
+                actionsOnly: actionsOnly,
+                gapsOnly: gapsOnly,
+                semanticOnly: semanticOnly
             )
             try printQuery(result, loaded: loaded, root: root)
 
         case "day", "summary":
             let raw = arguments.popFirst() ?? "today"
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("Use \(command) [today|yesterday|YYYY-MM-DD]")
+            }
             let start = try day(raw)
             let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!.addingTimeInterval(-0.001)
             let loaded = HistoryLocalStoreReader(rootDirectory: root).load(start: start, end: end)
@@ -619,9 +747,9 @@ public enum GoalongQueryCLI {
             }
 
         case "computer-history", "computer-history-context":
+            let rawTokens = command == "computer-history-context" ? arguments.removeOption("--tokens") : nil
             let tokenBudget = try integer(
-                arguments.removeOption("--tokens")
-                    ?? String(ComputerHistoryAgentContextRenderer.defaultTokenBudget)
+                rawTokens ?? String(ComputerHistoryAgentContextRenderer.defaultTokenBudget)
             )
             let requestedStart = arguments.removeOption("--start-utc")
             let requestedEnd = arguments.removeOption("--end-utc")
@@ -828,7 +956,7 @@ public enum GoalongQueryCLI {
                 throw CLIError.usage("analysis-evidence --start-utc ISO-8601Z --end-utc ISO-8601Z [--include-rich-context] [--include-conversations --conversations-from YYYY-MM-DD] [--conversations-only]")
             }
             guard (!onlyConversations || !rich), (conversations || onlyConversations || from == nil) else { throw CLIError.usage("--conversations-from requires --include-conversations or --conversations-only; rich context requires Computer History.") }
-            guard onlyConversations || (capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory") && (!rich || UserDefaults(suiteName: "ai.goalong.localhistory")?.bool(forKey: "activityAnalysis.richContextEnabled") == true)) else {
+            guard onlyConversations || (capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory") && (!rich || UserDefaults(suiteName: GoalongBundleIdentity.current)?.bool(forKey: "activityAnalysis.richContextEnabled") == true)) else {
                 throw CLIError.unsafeSource("Enable the explicitly selected Computer History sources before reading their evidence.")
             }
             let start = try parseTimestamp(rawStart), end = try parseTimestamp(rawEnd)
@@ -882,7 +1010,7 @@ public enum GoalongQueryCLI {
             let tokenPath = command == "send-site" ? arguments.removeOption("--token-file") : nil
             let raw = arguments.popFirst() ?? "yesterday"
             guard arguments.values.isEmpty, selectedDeviceIDs.count <= 12 else {
-                throw CLIError.usage("Use \(command) DAY [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap]; send-site also requires --url and --token-file.")
+                throw CLIError.usage("Use \(command) DAY [--devices ID,ID] [--include-apps] [--include-hourly] [--include-websites] [--include-recap] [--structured] [--mask-apps A,B] [--rhythm-project P] [--rhythm-apps A,B] [--rhythm-timeline] [--rhythm-times]; send-site also requires --url and --token-file.")
             }
             if command == "send-site" {
                 guard let origin, let tokenPath else {
@@ -1143,11 +1271,26 @@ public enum GoalongQueryCLI {
                 try? FileManager.default.setAttributes(
                     [.posixPermissions: 0o600], ofItemAtPath: destination.path
                 )
-                let persisted = try readStableRegularFile(
-                    destination,
-                    maximumBytes: Int64(GoalongProofArchive.maximumArchiveBytes)
-                )
-                let persistedReport = try GoalongProofPackageVerifier.verify(archive: persisted)
+                let persistedReport: AnalysisProofVerificationReport
+                let persisted: Data
+                do {
+                    persisted = try readStableRegularFile(
+                        destination,
+                        maximumBytes: Int64(GoalongProofArchive.maximumArchiveBytes)
+                    )
+                    persistedReport = try GoalongProofPackageVerifier.verify(archive: persisted)
+                } catch {
+                    try? FileManager.default.removeItem(at: destination)
+                    throw error
+                }
+                guard persistedReport.isLocallyValid else {
+                    // This invocation created the file (the exists guard ran before the write).
+                    try? FileManager.default.removeItem(at: destination)
+                    throw CLIError.usage(
+                        "The exported package failed self-verification and was removed: "
+                            + persistedReport.issues.joined(separator: ", ")
+                    )
+                }
                 try printJSON(
                     AnalysisProofExportEnvelope(
                         rootDirectory: root.path,
@@ -1156,21 +1299,8 @@ public enum GoalongQueryCLI {
                         packageBytes: persisted.count,
                         packageSHA256: GoalongProofDigest.sha256(persisted),
                         report: persistedReport,
-                        status: persistedReport.isLocallyValid ? "locallyValid" : "invalid",
-                        error: persistedReport.isLocallyValid ? nil : persistedReport.issues.joined(separator: ", ")
-                    )
-                )
-            } catch {
-                try printJSON(
-                    AnalysisProofExportEnvelope(
-                        rootDirectory: root.path,
-                        requestedDay: dayString,
-                        packagePath: nil,
-                        packageBytes: 0,
-                        packageSHA256: "",
-                        report: nil,
-                        status: "unavailableOrInvalid",
-                        error: String(describing: error)
+                        status: "locallyValid",
+                        error: nil
                     )
                 )
             }
@@ -1350,9 +1480,15 @@ public enum GoalongQueryCLI {
             )
 
         case "search", "app", "site":
+            let start = try arguments.removeOption("--start").map(parseTimestamp)
+            let endBound = try arguments.removeOption("--end").map { try parseEndBound($0) }
             guard !arguments.values.isEmpty else { throw CLIError.usage("\(command) requires a query") }
             let query = arguments.values.joined(separator: " ")
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
+            let window = try GoalongQueryWindow.resolve(start: start, end: endBound?.end, endDay: endBound?.day)
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(
+                start: window.start,
+                end: window.end
+            )
             let service = service(from: loaded)
             let result: HistoryQueryResult
             switch command {
@@ -1360,25 +1496,53 @@ public enum GoalongQueryCLI {
             case "app": result = service.application(query)
             default: result = service.site(query)
             }
-            try printQuery(result, loaded: loaded, root: root)
+            try printQuery(result, loaded: loaded, root: root, window: window)
 
         case "gaps":
             let start = try arguments.removeOption("--start").map(parseTimestamp)
-            let end = try arguments.removeOption("--end").map(parseTimestamp)
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(start: start, end: end)
+            let endBound = try arguments.removeOption("--end").map { try parseEndBound($0) }
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("gaps accepts only --start ISO_OR_DAY and --end ISO_OR_DAY")
+            }
+            let window = try GoalongQueryWindow.resolve(start: start, end: endBound?.end, endDay: endBound?.day)
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).load(
+                start: window.start,
+                end: window.end
+            )
             try printQuery(
-                service(from: loaded).gaps(start: start, end: end),
+                service(from: loaded).gaps(start: window.start, end: window.end),
                 loaded: loaded,
-                root: root
+                root: root,
+                window: window
             )
 
         case "memories":
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
-            try printQuery(service(from: loaded).availableMemories(), loaded: loaded, root: root)
+            guard arguments.values.isEmpty else {
+                throw CLIError.usage("memories does not accept arguments")
+            }
+            let loaded = HistoryLocalStoreReader(rootDirectory: root).loadMemories()
+            try printQuery(
+                service(from: loaded).availableMemories(),
+                loaded: loaded,
+                root: root,
+                extraLimitation: "Memories are listed without reading event journals, so event coverage counts are zero."
+            )
 
         case "sources":
-            guard let identifier = arguments.popFirst() else { throw CLIError.usage("sources requires a memory ID") }
-            let loaded = HistoryLocalStoreReader(rootDirectory: root).load()
+            guard let identifier = arguments.popFirst(), arguments.values.isEmpty else {
+                throw CLIError.usage("sources requires one memory ID")
+            }
+            // Read the memory list first, then only the events of that memory's interval.
+            let memoriesOnly = HistoryLocalStoreReader(rootDirectory: root).loadMemories()
+            let loaded: HistoryLoadedData
+            if let memory = memoriesOnly.memories.first(where: { $0.id == identifier }) {
+                loaded = HistoryLocalStoreReader(rootDirectory: root).load(
+                    start: memory.start,
+                    end: memory.end
+                )
+            } else {
+                loaded = memoriesOnly
+            }
             try printQuery(
                 service(from: loaded).sources(forMemoryID: identifier),
                 loaded: loaded,
@@ -2325,7 +2489,7 @@ public enum GoalongQueryCLI {
         )
     }
 
-    private static func encodedScreenTime(
+    static func encodedScreenTime(
         day: Date,
         macOnly: Bool,
         selectedDeviceIDs: [String],
@@ -2351,7 +2515,11 @@ public enum GoalongQueryCLI {
         )
         let scope: AppleScreenTimeScope
         if macOnly {
-            scope = .macOnly
+            // Match the dashboard: "this Mac" is the current Mac only, not every Mac in the account.
+            scope = AppleScreenTimeScope(
+                mode: .selectedDevices,
+                selectedDeviceIDs: [currentMac.id]
+            )
         } else if !selectedDeviceIDs.isEmpty {
             scope = AppleScreenTimeScope(
                 mode: .selectedDevices,
@@ -2376,7 +2544,7 @@ public enum GoalongQueryCLI {
                 day: localDayString(day),
                 generatedAt: Date(),
                 freshness: screenTimeFreshness(for: collection.storageState),
-                scope: scope.mode.rawValue,
+                scope: macOnly ? AppleScreenTimeScope.macOnly.mode.rawValue : scope.mode.rawValue,
                 sourceAssurance: summary?.provenance.sourceAssurance.rawValue,
                 status: ScreenTimeStatusEnvelope(
                     kind: collection.status.kind.rawValue,
@@ -2539,6 +2707,9 @@ public enum GoalongQueryCLI {
         let statusMessage: String = {
             switch loaded.state {
             case .ready:
+                if loaded.skippedMalformedRowCount > 0 {
+                    return "Website usage loaded from the original local day journal, without \(loaded.skippedMalformedRowCount) undecodable row(s); totals may be slightly low."
+                }
                 return total == 0
                     ? "No public website was observed in the local journal for this day."
                     : "Complete ranked website usage loaded from the original local day journal."
@@ -3442,7 +3613,7 @@ public enum GoalongQueryCLI {
         return FileManager.default.isReadableFile(atPath: entry.reference.path)
     }
 
-    private static func agentEntryPriority(
+    static func agentEntryPriority(
         _ entry: AgentSourceIndexEntry,
         dayStart: Date,
         dayEnd: Date,
@@ -3468,8 +3639,9 @@ public enum GoalongQueryCLI {
                 entry.conversationStartedAt, entry.conversationEndedAt,
                 entry.sourceCreatedAt, entry.sourceModifiedAt, liveModifiedAt,
             ].compactMap({ $0 }).map { abs($0.timeIntervalSince(midpoint)) }.min()
-            ?? TimeInterval.greatestFiniteMagnitude
-        let boundedDistance = min(Int64(nearest.rounded()), 99_999_999)
+            ?? 99_999_999
+        // Clamp in Double: Int64(Double) traps on out-of-range values.
+        let boundedDistance = Int64(min(nearest, 99_999_999).rounded())
         score += 99_999_999 - boundedDistance
         return score
     }
@@ -3724,13 +3896,27 @@ public enum GoalongQueryCLI {
     private static func printQuery(
         _ result: HistoryQueryResult,
         loaded: HistoryLoadedData,
-        root: URL
+        root: URL,
+        window: GoalongQueryWindow? = nil,
+        extraLimitation: String? = nil
     ) throws {
+        let notes = [window?.limitation, extraLimitation].compactMap { $0 }
+        let reported = notes.isEmpty
+            ? result
+            : HistoryQueryResult(
+                schemaVersion: result.schemaVersion,
+                generatedAt: result.generatedAt,
+                queryDescription: result.queryDescription,
+                hits: result.hits,
+                coverage: result.coverage,
+                limitations: result.limitations + notes
+            )
         try printJSON(
             QueryEnvelope(
                 rootDirectory: root.path,
-                result: result,
-                loadIssues: loaded.issues
+                result: reported,
+                loadIssues: loaded.issues,
+                window: window
             )
         )
     }
@@ -3849,6 +4035,19 @@ public enum GoalongQueryCLI {
     private static func parseTimestamp(_ raw: String) throws -> Date {
         if let value = fractionalISO.date(from: raw) ?? basicISO.date(from: raw) { return value }
         return try day(raw)
+    }
+
+    /// A bare day given to `--end` covers that whole day (up to `now`); ISO timestamps are unchanged.
+    static func parseEndTimestamp(_ raw: String, now: Date = Date()) throws -> Date {
+        try parseEndBound(raw, now: now).end
+    }
+
+    /// Like `parseEndTimestamp`, and also returns the local start of the day for a bare day.
+    static func parseEndBound(_ raw: String, now: Date = Date()) throws -> (end: Date, day: Date?) {
+        if let value = fractionalISO.date(from: raw) ?? basicISO.date(from: raw) { return (value, nil) }
+        let start = try day(raw)
+        let next = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
+        return (max(start, min(next, now)), start)
     }
 
     private static func expandedURL(_ raw: String) -> URL {

@@ -6,11 +6,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEST_ROOT="$(mktemp -d /tmp/goalong-relaunch-e2e.XXXXXX)"
 export TEST_ROOT ROOT
 python3 - <<'PY'
-import os, pathlib, plistlib
+import os, pathlib, plistlib, re
 root=pathlib.Path(os.environ['ROOT']); target=pathlib.Path(os.environ['TEST_ROOT'])
 identifier='ai.goalong.relaunch-fixture.'+target.name.split('.')[-1]
 for source,name in [('Sources/LocalHistoryApp/PermissionRecovery.swift','PermissionRecovery.swift'),('Sources/GoalongRelauncher/main.swift','helper.swift')]:
- (target/name).write_text((root/source).read_text().replace('ai.goalong.localhistory',identifier))
+ # The guard module is not linked: main.swift stubs the few guard calls.
+ text=re.sub(r'(?m)^[ \t]*import GoalongGuardCore\n','',(root/source).read_text())
+ (target/name).write_text(text.replace('ai.goalong.localhistory',identifier))
 app=target/'Goalong Relaunch Fixture.app'; (app/'Contents/MacOS').mkdir(parents=True)
 (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':identifier,'CFBundleName':'Goalong Relaunch Fixture','CFBundleExecutable':'fixture','CFBundlePackageType':'APPL','LSUIElement':True,'NSPrincipalClass':'NSApplication'}))
 (target/'main.swift').write_text(r'''import AppKit
@@ -26,6 +28,16 @@ enum PermissionRecoveryLedger {
     static func activePermission() -> SourceAccessStatus? { nil }
     static func record(_ action: Action, for permission: SourceAccessStatus) {}
 }
+// Guard leases have unit coverage too. The fixture must not write the real guard files.
+enum GuardLease { static let permissionRestart = "permission_restart" }
+struct FixtureGuardFiles { @discardableResult func removeLease() -> Bool { true } }
+enum GoalongGuardFiles {
+    static var standard: FixtureGuardFiles { FixtureGuardFiles() }
+    static func writeLease(_ reason: String, seconds: TimeInterval) {}
+}
+enum ProductIdentity { static let bundleIdentifier = "ai.goalong.localhistory" }
+enum DashboardSection { case settings }
+enum SettingsPane { case recording }
 
 let base = Bundle.main.bundleURL.deletingLastPathComponent()
 let events = base.appendingPathComponent("events.jsonl")
@@ -68,7 +80,7 @@ let app = NSApplication.shared
 let delegate = Fixture(); app.delegate = delegate
 app.setActivationPolicy(.accessory)
 app.run()
-''')
+'''.replace('ai.goalong.localhistory',identifier))
 PY
 xcrun swiftc -swift-version 5 "$TEST_ROOT/PermissionRecovery.swift" "$TEST_ROOT/main.swift" -o "$TEST_ROOT/Goalong Relaunch Fixture.app/Contents/MacOS/fixture"
 xcrun swiftc -swift-version 5 "$TEST_ROOT/helper.swift" -o "$TEST_ROOT/Goalong Relaunch Fixture.app/Contents/MacOS/goalong-relauncher"

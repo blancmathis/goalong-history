@@ -109,9 +109,8 @@ public enum GoalongProofArchive {
     }
 
     public static func extract(_ archive: Data) throws -> [String: Data] {
-        guard archive.count <= maximumArchiveBytes, archive.count >= 22 else {
-            throw GoalongProofArchiveError.tooLarge
-        }
+        guard archive.count <= maximumArchiveBytes else { throw GoalongProofArchiveError.tooLarge }
+        guard archive.count >= 22 else { throw GoalongProofArchiveError.malformedZIP }
         let eocd = archive.count - 22
         guard readUInt32(archive, at: eocd) == 0x0605_4B50,
             readUInt16(archive, at: eocd + 4) == 0,
@@ -346,7 +345,10 @@ public enum GoalongProofPackageVerifier {
         issues.append(contentsOf: bindingIssues)
         let bindingsValid = bindingIssues.isEmpty
 
-        let runStates = run.payload.flatMap(statusesFromRunPayload)
+        // Only a fully valid package (run, definition and bindings) makes the signer's own claims worth showing, and even then they
+        // are self-declared. Provider, external-receipt and App Attest states are independent checks
+        // whose artifacts this verifier does not parse, so they are never copied from the payload.
+        let runStates = run.valid && definition.valid && bindingsValid ? run.payload.flatMap(statusesFromRunPayload) : nil
         return AnalysisProofVerificationReport(
             isLocallyValid: hashesValid && run.valid && definition.valid && contextValid && bindingsValid,
             runSignature: run.valid ? "valid" : "invalid",
@@ -356,9 +358,9 @@ public enum GoalongProofPackageVerifier {
             sourceCommitments: contextValid ? "valid" : "invalid",
             chainContinuity: runStates?.previous == nil ? "new_chain" : "signed_previous_digest_present",
             activityAnchors: runStates?.anchors ?? "not_present",
-            providerObservation: runStates?.provider ?? "unknown",
-            externalReceipt: runStates?.external ?? "not_present",
-            appAttest: runStates?.appAttest ?? "not_present",
+            providerObservation: "unknown",
+            externalReceipt: "not_present",
+            appAttest: "not_present",
             privacyMode: runStates?.privacy ?? "unknown",
             issues: issues,
             limitation:

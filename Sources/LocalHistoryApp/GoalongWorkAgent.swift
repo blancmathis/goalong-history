@@ -48,10 +48,54 @@ extension GoalongWorkSharingFilter {
         guard permitsVisibleContext(label), let transformer else { return nil }
         return (try? transformer.apply(text, maximumCharacters: 2_000)).map { String($0.prefix(240)) }
     }
+
+    static let maskingFailure = GoalongWorkClassification.Failure.invalid(
+        "Les remplacements de noms n’ont pas pu être appliqués. Rien n’a été envoyé.")
+
+    /// Free text (definition, note, task names) with the name replacements applied. Fails closed.
+    func text(_ value: String, maximumCharacters: Int = 4_000) throws -> String {
+        guard let transformer, let masked = try? transformer.apply(String(value.prefix(maximumCharacters)),
+                                                                   maximumCharacters: maximumCharacters * 2) else {
+            throw Self.maskingFailure
+        }
+        return masked
+    }
+
+    /// The definition as the agent may read it. Its revision is not used: callers keep the original one.
+    func definition(_ value: GoalongWorkDefinition) throws -> GoalongWorkDefinition {
+        GoalongWorkDefinition(goals: try text(value.goals), applications: try text(value.applications),
+                              content: try text(value.content), notWork: try text(value.notWork))
+    }
+
+    /// The owner's corrections, filtered with today's exclusions, scope and replacements:
+    /// a correction the current choices refuse stays on the Mac. The newest are kept.
+    func examples(_ corrections: [GoalongWorkStore.Correction]) throws -> [GoalongWorkClassification.Example] {
+        var result: [GoalongWorkClassification.Example] = []
+        for correction in corrections.reversed() where result.count < GoalongWorkClassification.maximumExamples {
+            guard let label = label(correction.label) else { continue }
+            let task = try correction.task.map { try text($0) }
+            result.append(GoalongWorkClassification.Example(label: label,
+                assignment: GoalongWorkAssignment(verdict: correction.verdict, task: task, byOwner: true)))
+        }
+        return result.reversed()
+    }
+
+    /// Verdicts whose task names (shown in the timeline) carry the name replacements.
+    func verdicts(_ value: GoalongWorkVerdicts, cache: inout [String: String]) throws -> GoalongWorkVerdicts {
+        var result = value
+        for (key, assignment) in value.contexts {
+            guard let task = assignment.task else { continue }
+            if cache[task] == nil { cache[task] = try text(task) }
+            result.contexts[key]?.task = cache[task]
+        }
+        return result
+    }
 }
 
 /// Runs the user's definition over the contexts of a day through the connected ChatGPT
 /// account (isolated, tool-less Codex thread). Unknown contexts are sent longest first; automatic unclear verdicts may receive bounded daily reassessment.
+struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
+
 @MainActor final class GoalongWorkAgent: ObservableObject {
     static let shared = GoalongWorkAgent()
 
@@ -76,6 +120,8 @@ extension GoalongWorkSharingFilter {
     @Published private(set) var lastRun: Date?
 
     private var attempts: [Date: (date: Date, failed: Bool)] = [:]
+    /// An automatic request (a new definition) arrived during a run: run again once it ends.
+    private var rerunRequested = false
     private var task: Task<Void, Never>?
     private var session: CodexAppServerSession?
     private var operation = UUID()
@@ -101,7 +147,8 @@ extension GoalongWorkSharingFilter {
     /// Called by Activité with the days on screen, never on a timer: today at most every
     /// 15 minutes, another day once per launch, and nothing while a daily report runs.
     func classifyIfNeeded(_ days: [GoalongLocalAnalytics.Day], now: Date = Date()) {
-        guard store.automatic, !isRunning, readiness == .ready, !ChatGPTRecapRuntime.shared.isGenerating else { return }
+        guard store.automatic, !isRunning, readiness == .ready, !ChatGPTRecapRuntime.shared.isBusyWithCodex else { return }
+        if rerunRequested { runPendingRerun(); return }
         let calendar = Calendar.current
         for day in days.reversed() where day.state == .ready && day.seconds(.unclassified) >= 120 {
             let today = calendar.isDate(day.date, inSameDayAs: now)
@@ -114,6 +161,13 @@ extension GoalongWorkSharingFilter {
         }
     }
 
+    /// The day a manual "Classer maintenant" targets: the day itself for a one-day view, otherwise the
+    /// most recent ready day of the period that still has unclassified time (same filter as `classifyIfNeeded`).
+    nonisolated static func manualTarget(days: [GoalongLocalAnalytics.Day], fallback: Date) -> Date {
+        guard days.count > 1 else { return fallback }
+        return days.last(where: { $0.state == .ready && $0.seconds(.unclassified) >= 120 })?.date ?? fallback
+    }
+
     /// The day note goes to the agent only when the reviewed recap shares it, and never beside an exclusion.
     static func sharedDayNote(root: URL, day: Date, selection: GoalongAnalysisSelection, policy: GoalongPrivacyPolicy) -> String? {
         guard selection.isValid(for: policy), selection.systemSources?.dayNote == true, !policy.hasExclusions else { return nil }
@@ -121,14 +175,24 @@ extension GoalongWorkSharingFilter {
     }
 
     func classify(day: Date, userInitiated: Bool = true, dayNote: String? = nil) {
-        guard !isRunning else { return }
+        guard !isRunning else {
+            if !userInitiated { rerunRequested = true }
+            return
+        }
         let state = readiness
         guard state == .ready else {
             if userInitiated { lastError = state.message }
             return
         }
-        if userInitiated, ChatGPTRecapRuntime.shared.isGenerating {
-            lastError = "Un bilan quotidien est en cours. Réessayez dans quelques minutes."
+        if !userInitiated, ChatGPTRecapRuntime.shared.isBusyWithCodex {
+            // Codex is in use by a recap, an account check or a connection: retry quietly later.
+            rerunRequested = true
+            return
+        }
+        if userInitiated, ChatGPTRecapRuntime.shared.isBusyWithCodex {
+            lastError = ChatGPTRecapRuntime.shared.isGenerating
+                ? "Un bilan quotidien est en cours. Réessayez dans quelques minutes."
+                : "La connexion ChatGPT est en cours d’utilisation. Réessayez dans un instant."
             return
         }
         let calendar = Calendar.current
@@ -139,15 +203,16 @@ extension GoalongWorkSharingFilter {
         let definition = store.definition, revision = store.revision, root = self.root
         let policy = GoalongPrivacyPolicy.load(in: root), selection = GoalongAnalysisSelection.load(root: root)
         let filter = GoalongWorkSharingFilter(policy: policy, selection: selection)
+        let selectionRevision = selection.revision
         let note = dayNote ?? Self.sharedDayNote(root: root, day: start, selection: selection, policy: policy)
         let dayName = Self.dayString(start, calendar: calendar)
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let observation = await Task.detached(priority: .utility) {
+                let observation = await Self.detachedForwardingCancellation(priority: .utility) {
                     GoalongWorkClassification.observe(root: root, day: start, calendar: calendar,
                                                       shouldContinue: { !Task.isCancelled })
-                }.value
+                }
                 guard operation == id else { return }
                 guard let observation else {
                     throw GoalongWorkClassification.Failure.invalid("La journée n’a pas pu être lue entièrement. Réessayez ; rien n’a été envoyé.")
@@ -160,10 +225,10 @@ extension GoalongWorkSharingFilter {
                     return
                 }
                 let reasks = Set(pending.keys.filter { store.verdicts.contexts[$0]?.verdict == .unclear })
-                let rawExcerpts = await Task.detached(priority: .utility) {
+                let rawExcerpts = await Self.detachedForwardingCancellation(priority: .utility) {
                     GoalongWorkReassessment.excerpts(root: root, day: start, keys: reasks, calendar: calendar,
                         permits: filter.permitsVisibleContext, shouldContinue: { !Task.isCancelled })
-                }.value
+                }
                 guard operation == id else { return }
                 var excerpts: [String: String] = [:]
                 for (key, text) in rawExcerpts {
@@ -175,57 +240,115 @@ extension GoalongWorkSharingFilter {
                 guard let executable = CodexExecutableLocator.locate() else { throw CodexAppServerError.executableUnavailable }
                 try ChatGPTSecureStorage.prepareDirectory(AppPaths.chatGPTDirectory)
                 // The connected ChatGPT account, under the strict tool-less, network-less profile.
-                let session = try CodexAppServerSession(executableURL: executable,
-                    codexHomeURL: AppPaths.chatGPTCodexHomeDirectory, siteAnalysisOnly: true)
+                // Built off the main actor: the launch and the initialize handshake can block for seconds.
+                guard let session = try await Self.makeOffMain({
+                    try CodexAppServerSession(executableURL: executable,
+                        codexHomeURL: AppPaths.chatGPTCodexHomeDirectory, siteAnalysisOnly: true, homeLeaseWait: 0)
+                }, isStale: { [weak self] in self?.operation != id }, close: { $0.close() }) else { return }
                 self.session = session
                 defer { session.close(); if operation == id { self.session = nil } }
+                // Name replacements apply to everything the agent reads, not only the contexts.
+                let sharedDefinition = try filter.definition(definition)
+                let sharedNote = try note.map { try filter.text($0) }
+                var maskedTasks: [String: String] = [:]
                 var classified = 0, work = 0
                 for (index, batch) in batches.enumerated() {
-                    guard operation == id, readiness == .ready, store.revision == revision else {
+                    // Every batch leaves with the exclusions and « Données pour ChatGPT » choices it was filtered with.
+                    guard operation == id, readiness == .ready, store.revision == revision,
+                          GoalongPrivacyPolicy.load(in: root).revision == policy.revision,
+                          GoalongAnalysisSelection.load(root: root).revision == selectionRevision else {
                         throw GoalongWorkClassification.Failure.invalid("La définition ou une autorisation a changé : classement arrêté.")
                     }
                     progress = batches.count > 1
                         ? "L’agent classe \(batch.count) contextes (\(index + 1)/\(batches.count))…"
                         : "L’agent classe \(batch.count) contexte\(batch.count > 1 ? "s" : "")…"
+                    let knownTasks = try store.knownTasks.prefix(GoalongWorkClassification.maximumKnownTasks).map {
+                        try maskedTasks[$0] ?? filter.text($0)
+                    }
                     let request = GoalongWorkClassification.request(date: dayName, definition: definition, pending: pending,
-                        batch: batch, day: observation.day, verdicts: store.verdicts, knownTasks: store.knownTasks,
-                        examples: store.examples, calendar: calendar, contextExcerpts: excerpts, dayNote: note)
-                    let prompt = GoalongWorkClassification.prompt(request, definition: definition)
+                        batch: batch, day: observation.day, verdicts: try filter.verdicts(store.verdicts, cache: &maskedTasks),
+                        knownTasks: knownTasks, examples: try filter.examples(store.corrections), calendar: calendar,
+                        contextExcerpts: excerpts, dayNote: sharedNote)
+                    let prompt = GoalongWorkClassification.prompt(request, definition: sharedDefinition)
                     let privacyRevision = filter.policy.revision
                     guard store.markAsked(batch, revision: revision, day: dayName) else { throw GoalongWorkClassification.Failure.invalid("La tentative n’a pas pu être enregistrée. Rien n’a été envoyé.") }
                     let response = try await Task.detached(priority: .userInitiated) {
                         let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory()
                         defer { try? FileManager.default.removeItem(at: directory) }
                         return try session.generateWorkClassification(prompt: prompt, privacyRevision: privacyRevision,
-                                                                      workingDirectory: directory)
+                                                                      selectionRevision: selectionRevision, workingDirectory: directory)
                     }.value
                     guard operation == id else { return }
                     let assignments = try GoalongWorkClassification.apply(response, to: request)
-                    store.merge(assignments, revision: revision, day: dayName)
-                    classified += assignments.count
-                    work += assignments.values.filter { $0.verdict == .work }.count
+                    guard store.revision == revision else {
+                        throw GoalongWorkClassification.Failure.invalid("La définition ou une autorisation a changé : classement arrêté.")
+                    }
+                    let applied = store.merge(assignments, revision: revision, day: dayName)
+                    classified += applied.count
+                    work += applied.values.filter { $0.verdict == .work }.count
                 }
                 let rest = pending.keys.count - keys.count
                 finish(id, outcome: "\(classified) contexte\(classified > 1 ? "s" : "") classé\(classified > 1 ? "s" : "") le \(GoalongUIFormat.day(start)), dont \(work) de travail."
                     + (rest > 0 ? " \(rest) autre\(rest > 1 ? "s" : "") au prochain passage." : ""))
             } catch {
                 guard operation == id else { return }
+                if !userInitiated, Self.isHomeBusy(error) {
+                    // Lost a race for the Codex home: not a failure, no backoff, try again later.
+                    attempts[start] = nil; rerunRequested = true
+                    runningDay = nil; progress = nil
+                    return
+                }
                 attempts[start] = (Date(), true)
                 SupportDiagnostics.shared.failure(error, component: .analysis)
                 lastError = (error as? LocalizedError)?.errorDescription ?? "Le classement n’a pas abouti. Réessayez."
                 runningDay = nil; progress = nil
+                // An expired session: show « non connecté » instead of the cached connected state.
+                if case CodexAppServerError.signedOut = error { ChatGPTRecapRuntime.shared.refreshAccount() }
+                if store.revision != revision { attempts[start] = nil }
+                runPendingRerun()
             }
         }
     }
 
+    /// Runs a blocking job off the main actor and forwards a cancellation of the caller to it
+    /// (a detached task does not inherit it, so its `shouldContinue` checks would never stop).
+    nonisolated static func detachedForwardingCancellation<T: Sendable>(priority: TaskPriority,
+                                                                         _ body: @escaping @Sendable () -> T) async -> T {
+        let scan = Task.detached(priority: priority, operation: body)
+        return await withTaskCancellationHandler(operation: { await scan.value }, onCancel: { scan.cancel() })
+    }
+
+    /// Builds a session off the main actor. A run that became stale or cancelled meanwhile closes it and gets nil.
+    static func makeOffMain<S>(_ make: @escaping @Sendable () throws -> S, isStale: @MainActor () -> Bool,
+                               close: (S) -> Void) async throws -> S? {
+        let built = try await Task.detached(priority: .userInitiated) { UncheckedSendable(value: try make()) }.value
+        if Task.isCancelled || isStale() { close(built.value); return nil }
+        return built.value
+    }
+
     func cancel() {
         operation = UUID(); task?.cancel(); session?.close(); session = nil
-        runningDay = nil; progress = nil
+        runningDay = nil; progress = nil; rerunRequested = false
     }
 
     private func finish(_ id: UUID, outcome: String) {
         guard operation == id else { return }
         lastOutcome = outcome; lastRun = Date(); runningDay = nil; progress = nil
+        runPendingRerun()
+    }
+
+    /// Starts the run asked for while another one was going, through the usual guards.
+    private func runPendingRerun() {
+        guard rerunRequested, !isRunning, !ChatGPTRecapRuntime.shared.isBusyWithCodex else { return }
+        rerunRequested = false
+        attempts[Calendar.current.startOfDay(for: Date())] = nil
+        guard store.automatic else { return }
+        classify(day: Date(), userInitiated: false)
+    }
+
+    nonisolated static func isHomeBusy(_ error: Error) -> Bool {
+        if case CodexAppServerError.homeBusy = error { return true }
+        return false
     }
 
     static func dayString(_ date: Date, calendar: Calendar = .current) -> String {

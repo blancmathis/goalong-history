@@ -22,7 +22,7 @@ final class JevMonitoringUXTests: XCTestCase {
         }
         XCTAssertTrue(try source("SettingsPage.swift").contains("JevMonitoringPage(onOpenRecording:"))
         let model = try source("DashboardViewModel.swift")
-        XCTAssertTrue(model.contains("if section == .monitoring {\n                selectSection(.settings)\n                settingsPane = .jev"))
+        XCTAssertTrue(model.contains("if section == .monitoring {\n                openSettingsPane(.jev)"))
     }
 
     func testActivationRequiresSetupButDeactivationNeverDoes() {
@@ -40,7 +40,8 @@ final class JevMonitoringUXTests: XCTestCase {
         let page = try source("JevMonitoringPage.swift")
         XCTAssertTrue(page.contains("Label(monitor.status"))
         XCTAssertTrue(page.contains("confirming = true"))
-        XCTAssertTrue(page.contains("Autoriser les envois à TypeSafe"))
+        XCTAssertFalse(page.contains("Autoriser les envois à TypeSafe"))
+        XCTAssertTrue(page.contains("Autoriser les envois à Jev"))
         XCTAssertTrue(page.contains("monitor.setEnabled(false)"))
         XCTAssertTrue(page.contains(".sheet(isPresented: $showingConnection)"))
         XCTAssertFalse(page.contains("monitor.start()"))
@@ -48,7 +49,7 @@ final class JevMonitoringUXTests: XCTestCase {
         let connection = try source("JevConnectionSheet.swift")
         XCTAssertTrue(connection.contains("SecureField("))
         XCTAssertFalse(connection.contains("monitor.setEnabled(true)"))
-        XCTAssertTrue(connection.contains("if monitor.error == nil { key = \"\"; dismiss() }"))
+        XCTAssertTrue(connection.contains("if keyError == nil { key = \"\"; dismiss() }"))
         XCTAssertTrue(connection.contains("isPresented: $confirmingRemoval"))
     }
 
@@ -59,6 +60,30 @@ final class JevMonitoringUXTests: XCTestCase {
         XCTAssertTrue(try source("Concentration/ConcentrationHubPage.swift").contains(".environment(\\.openJevSettings) { model.selectSection(.monitoring) }"))
         XCTAssertTrue(try source("AppDelegate.swift").contains("onOpenMonitoring: { [weak self] in self?.dashboardWindowController.show(section: .monitoring) }"))
         XCTAssertTrue(try source("JevControls.swift").contains("Ouvrir la surveillance…"))
+    }
+
+    func testBatchU07CopyAndControlsStayInTheViews() throws {
+        let history = try source("ComputerHistoryPage.swift")
+        XCTAssertFalse(history.contains("\"Aucune activité enregistrée\""))
+        XCTAssertTrue(history.contains("|| model.isAnalysisPartial\n"), "A partial analysis keeps its summary")
+        XCTAssertTrue(history.contains(".frame(width: 190)"))
+        let rules = try source("UsageRulesList.swift")
+        XCTAssertTrue(rules.contains("DashboardFormatters.duration"))
+        XCTAssertTrue(rules.contains("ruleColumnWidth: CGFloat = 176"))
+        let controls = try source("GoalongControls.swift")
+        XCTAssertTrue(controls.contains("LHTheme.switchTrackHover : LHTheme.switchTrack"))
+        XCTAssertFalse(controls.contains("LHTheme.pressedBackground : LHTheme.switchTrack"))
+        XCTAssertTrue(controls.contains(".opacity(isOn && !isEnabled ? 0.6 : 1)"), "Disabled off track stays opaque")
+        let share = try source("SharePage.swift")
+        XCTAssertTrue(share.contains("avant de créer le fichier."))
+        XCTAssertFalse(share.contains("paquet") || share.contains("chaîne d’intégrité"))
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let focus = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryCore/JevFocus.swift"), encoding: .utf8)
+        XCTAssertFalse(focus.contains("Crédit Jev"))
+        XCTAssertTrue(focus.contains("Rechargez le compte TypeSafe"))
+        XCTAssertTrue(try source("SupportReport.swift").contains("Rechargez le compte TypeSafe"))
+        XCTAssertTrue(try source("JevConnectionSheet.swift").contains("Text(\"Clé API\")"))
     }
 
     private func source(_ name: String) throws -> String {

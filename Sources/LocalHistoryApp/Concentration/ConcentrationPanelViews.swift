@@ -62,13 +62,15 @@ import SwiftUI
                              intent: controller.currentSession?.intent, endsAt: controller.phase?.endsAt,
                              fallback: content.text)
         case .sessionReview:
-            let session = controller.sessions.first { $0.id == content.sessionID }
+            // The finished session may sit in yesterday's file after midnight: keep the value `finish` saw.
+            let session = controller.reviewedSession.flatMap { $0.id == content.sessionID ? $0 : nil }
+                ?? controller.sessions.first { $0.id == content.sessionID }
             FocusReviewPanelView(intent: session?.intent ?? "", seconds: session.map { FocusPanelMath.workSeconds($0) } ?? 0,
-                                 facts: controller.sessionFacts,
+                                 facts: controller.sessionFacts, initialNote: session?.note,
                                  onAnswer: { outcome, note in
                                      guard let id = content.sessionID else { return }
                                      do { try controller.recordOutcome(sessionID: id, outcome: outcome, note: note) }
-                                     catch { controller.error = FocusUIError.message(error) }
+                                     catch { controller.reportPanelError(FocusUIError.message(error)) }
                                  },
                                  onClose: { controller.dismissPanel() })
         case .morning, .evening:
@@ -87,7 +89,7 @@ import SwiftUI
 
 extension ConcentrationPanelView {
     private func exit(_ action: () throws -> Void) {
-        do { try action() } catch { controller.error = FocusCommitmentFormat.exitError(error) }
+        do { try action() } catch { controller.reportPanelError(FocusCommitmentFormat.exitError(error)) }
     }
 }
 
@@ -153,7 +155,14 @@ struct FocusReviewPanelView: View {
     let facts: FocusFacts
     var onAnswer: (FocusSession.Outcome?, String?) -> Void
     var onClose: () -> Void
-    @State private var note = ""
+    @State private var note: String
+
+    /// Starts from the note already saved (for example by `goalong session stop --note`), so an answer keeps it.
+    init(intent: String, seconds: TimeInterval, facts: FocusFacts, initialNote: String? = nil,
+         onAnswer: @escaping (FocusSession.Outcome?, String?) -> Void, onClose: @escaping () -> Void) {
+        self.intent = intent; self.seconds = seconds; self.facts = facts; self.onAnswer = onAnswer; self.onClose = onClose
+        _note = State(initialValue: initialNote ?? "")
+    }
 
     var body: some View {
         FocusPanelSurface {
@@ -174,8 +183,10 @@ struct FocusReviewPanelView: View {
                     .accessibilityLabel("Fermer sans répondre")
                 }
                 FocusFactsView(facts: facts)
-                TextField("Une note, si vous voulez", text: $note)
+                TextField("", text: $note)
                     .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("Une note, si vous voulez", isEmpty: note.isEmpty)
+                    .accessibilityLabel("Note")
                     .onChange(of: note) { value in if value.count > 140 { note = String(value.prefix(140)) } }
                     .accessibilityIdentifier("concentration-review-note")
                 HStack(spacing: 8) {
@@ -306,6 +317,8 @@ struct FocusLimitPanelView: View {
     @State private var error: String?
     @State private var commitTomorrow: Bool
     @State private var tomorrowDraft: FocusCommitmentDraft
+    /// A review already saved: it can be edited down to nothing.
+    private let hasSavedReview: Bool
 
     /// Renders pin the clock; the app reads it when the sheet opens.
     private let now: Date
@@ -316,6 +329,7 @@ struct FocusLimitPanelView: View {
         self.now = now
         self.plan = plan
         self.onClose = onClose
+        self.hasSavedReview = review != nil
         var initial: [UUID: Choice] = [:]
         for item in plan.items {
             if let answer = review?.items.first(where: { $0.id == item.id }) {
@@ -377,8 +391,10 @@ struct FocusLimitPanelView: View {
             }
             FocusReviewCommitmentPart(controller: controller, day: plan.day, commit: $commitTomorrow, draft: $tomorrowDraft, now: now)
             GoalongFormField(title: "Demain, je commence par") {
-                TextField("La première chose à faire demain", text: $tomorrowFirst)
+                TextField("", text: $tomorrowFirst)
                     .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("La première chose à faire demain", isEmpty: tomorrowFirst.isEmpty)
+                    .accessibilityLabel("Demain, je commence par")
                     .accessibilityIdentifier("concentration-tomorrow-first")
             }
             GoalongFormField(title: "Note", detail: "Facultative, jusqu’à 500 caractères.") {
@@ -391,6 +407,9 @@ struct FocusLimitPanelView: View {
                 Spacer()
                 Button("Annuler", action: onClose).keyboardShortcut(.cancelAction)
                 Button("Enregistrer le bilan", action: save).buttonStyle(LHPrimaryButtonStyle())
+                    .disabled(!Self.hasAnswer(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commit: commitTomorrow, existing: hasSavedReview))
+                    .help(Self.hasAnswer(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commit: commitTomorrow)
+                          ? "" : "Répondez pour au moins une tâche, ou écrivez une note.")
                     .accessibilityIdentifier("concentration-save-review")
             }
         }
@@ -398,9 +417,12 @@ struct FocusLimitPanelView: View {
         .background(LHTheme.pageBackground)
     }
 
-    private func save() {
-        let tomorrow = BlockingController.dayKey(Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date())
-        let reviewItems: [FocusReview.Item] = items.compactMap { item in
+    /// Builds the review the sheet saves. « Demain » is the day after the reviewed plan, as setReview computes it,
+    /// even when the sheet is saved after midnight.
+    static func review(of plan: FocusPlan, choices: [UUID: Choice], tomorrowFirst: String, note: String,
+                       controller: ConcentrationController) throws -> FocusReview {
+        let tomorrow = try controller.dayAfter(plan.day)
+        let reviewItems: [FocusReview.Item] = plan.items.filter { $0.status != .dropped }.compactMap { item in
             switch choices[item.id] ?? .unset {
             case .unset: return nil
             case .done: return .init(id: item.id, outcome: .done, toDay: nil)
@@ -413,9 +435,22 @@ struct FocusLimitPanelView: View {
         }
         let first = tomorrowFirst.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        let review = FocusReview(day: plan.day, items: reviewItems,
-                                 tomorrowFirst: first.isEmpty ? nil : String(first.prefix(140)),
-                                 note: text.isEmpty ? nil : String(text.prefix(500)))
+        return FocusReview(day: plan.day, items: reviewItems,
+                           tomorrowFirst: first.isEmpty ? nil : String(first.prefix(140)),
+                           note: text.isEmpty ? nil : String(text.prefix(500)))
+    }
+
+    /// A review with no answer, no first task, no note and no commitment says nothing: it cannot be saved.
+    static func hasAnswer(choices: [UUID: Choice], tomorrowFirst: String, note: String, commit: Bool,
+                          existing: Bool = false) -> Bool {
+        existing || choices.values.contains { $0 != .unset } || commit
+            || !tomorrowFirst.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func save() {
+        guard let review = try? Self.review(of: plan, choices: choices, tomorrowFirst: tomorrowFirst, note: note, controller: controller)
+        else { self.error = FocusUIError.message(FocusFailure.invalidArgument); return }
         if commitTomorrow, !controller.commitmentCards.contains(where: { $0.commitment.period == tomorrowDraft.period }) {
             guard tomorrowDraft.complete else { self.error = "Donnez le nom de la tâche de demain."; return }
             do {
@@ -423,7 +458,9 @@ struct FocusLimitPanelView: View {
                                              task: tomorrowDraft.trimmedTask, stake: tomorrowDraft.stake)
             } catch { self.error = FocusCommitmentFormat.error(error); return }
         }
-        do { try controller.setReview(review); onClose() } catch { self.error = FocusUIError.message(error) }
+        do { try controller.setReview(review); onClose() }
+        catch FocusFailure.planFull { self.error = "Le plan de demain compte déjà dix tâches." }
+        catch { self.error = FocusUIError.message(error) }
     }
 }
 

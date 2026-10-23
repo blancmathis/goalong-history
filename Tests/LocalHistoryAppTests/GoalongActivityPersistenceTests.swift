@@ -37,15 +37,125 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         let saved = try GoalongActivityDayStore(root: root).read(day: day)
         XCTAssertEqual(saved.activeSeconds, 120); XCTAssertEqual(saved.origin, .summary)
     }
-    func testRetentionKeepsJournalIfSummaryCannotBeSavedOrJournalIsInvalid() throws {
-        for blockedSummary in [true, false] {
+    func testRetentionKeepsJournalIfSummaryCannotBeSaved() throws {
+        let root = try root(), file = try writeEvents(root: root)
+        try Data("blocked".utf8).write(to: root.appendingPathComponent("activity-days"))
+        let store = retention(root: root); try store.updateDetailedRetention(fromLegacyDays: 1)
+        store.applyCleanup(now: day.addingTimeInterval(10 * 86400))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    }
+    func testRetentionStillExpiresJournalWithNothingToSummarizeOrUnreadableContent() throws {
+        // R4-donnees-01: a journal with only health rows (.noSource) or a corrupt line
+        // (.incomplete) used to stay on disk forever.
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        for content in ["health", "corrupt"] {
             let root = try root(), file = try writeEvents(root: root)
-            if blockedSummary {
-                try Data("blocked".utf8).write(to: root.appendingPathComponent("activity-days"))
+            if content == "health" {
+                var bytes = Data()
+                for kind in [EventKind.permissionStatus, .recorderHealth] {
+                    bytes.append(try encoder.encode(HistoryEvent(sessionID: "fixture", timestamp: day.addingTimeInterval(60), kind: kind)))
+                    bytes.append(10)
+                }
+                try bytes.write(to: file)
             } else { try Data("invalid JSON\n".utf8).write(to: file) }
+            let expected: GoalongActivityDayStore.Preservation = content == "health" ? .nothingToSummarize : .unreadable
+            XCTAssertEqual(try GoalongActivityDayStore(root: root).preserveBeforePurge(day: day, now: day.addingTimeInterval(10 * 86400)), expected, content)
             let store = retention(root: root); try store.updateDetailedRetention(fromLegacyDays: 1)
             store.applyCleanup(now: day.addingTimeInterval(10 * 86400))
-            XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), content)
+            XCTAssertThrowsError(try GoalongActivityDayStore(root: root).read(day: day), content)
+        }
+    }
+    func testSummaryFromAnotherTimeZoneSurvivesWithoutJournalAndIsNeverRecounted() throws {
+        // R4-donnees-02 / R4-historique-01: a summary written in Paris, read from Tokyo.
+        var paris = Calendar(identifier: .gregorian); paris.timeZone = TimeZone(identifier: "Europe/Paris")!
+        var tokyo = paris; tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        let parisDay = paris.date(from: DateComponents(year: 2026, month: 8, day: 10))!
+        let tokyoDay = tokyo.date(from: DateComponents(year: 2026, month: 8, day: 10))!
+        let root = try root()
+        let journal = root.appendingPathComponent("events/2026-08-10.jsonl")
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var bytes = Data()
+        for seconds in [0.0, 60, 120] {
+            bytes.append(try encoder.encode(HistoryEvent(sessionID: "fixture", timestamp: parisDay.addingTimeInterval(3 * 3600 + seconds),
+                kind: .heartbeat, app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1))))
+            bytes.append(10)
+        }
+        try bytes.write(to: journal)
+        let store = GoalongActivityDayStore(root: root)
+        let later = parisDay.addingTimeInterval(10 * 86400)
+        XCTAssertEqual(try store.preserveBeforePurge(day: parisDay, now: later, calendar: paris), .summarized)
+        let summary = root.appendingPathComponent("activity-days/2026-08-10.json")
+        let saved = try Data(contentsOf: summary)
+
+        // Journal still present: Tokyo recounts the day but never replaces the settled summary.
+        _ = store.load(day: tokyoDay, now: later, calendar: tokyo)
+        try store.backfill(now: later, calendar: tokyo)
+        XCTAssertEqual(try store.preserveBeforePurge(day: tokyoDay, now: later, calendar: tokyo), .summarized)
+        XCTAssertEqual(try Data(contentsOf: summary), saved)
+
+        // Journal purged: the Paris summary is still the account of 10 August, on Tokyo's date.
+        try FileManager.default.removeItem(at: journal)
+        let restored = try store.read(day: tokyoDay, calendar: tokyo)
+        XCTAssertEqual(restored.date, tokyoDay)
+        XCTAssertEqual(restored.origin, .summary)
+        XCTAssertEqual(restored.activeSeconds, 120)
+        XCTAssertTrue(store.hasForeignTimeZoneSummary(day: tokyoDay, calendar: tokyo))
+        XCTAssertFalse(store.hasForeignTimeZoneSummary(day: parisDay, calendar: paris))
+    }
+    func testRetentionKeepsValidJournalWhenEventsFolderCannotBeListedCompletely() throws {
+        // B01-R1-01: a linked *.jsonl entry makes every day load incomplete. That is an access
+        // problem, not a defect of this journal: it must never expire without a summary.
+        let root = try root(), file = try writeEvents(root: root)
+        let target = root.appendingPathComponent("outside.txt")
+        try Data("do-not-delete\n".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("events/2020-01-03.jsonl"), withDestinationURL: target)
+        let later = day.addingTimeInterval(10 * 86400)
+        XCTAssertEqual(GoalongLocalAnalytics.loadReportingDefect(root: root, day: day, now: later).defect, .access)
+        XCTAssertThrowsError(try GoalongActivityDayStore(root: root).preserveBeforePurge(day: day, now: later))
+        let store = retention(root: root); try store.updateDetailedRetention(fromLegacyDays: 1)
+        store.applyCleanup(now: later)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        // Once events/ is readable again, the day is summarized before its journal goes.
+        try FileManager.default.removeItem(at: root.appendingPathComponent("events/2020-01-03.jsonl"))
+        store.applyCleanup(now: later)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertEqual(try GoalongActivityDayStore(root: root).read(day: day).activeSeconds, 120)
+    }
+    func testForeignSummaryOfAClockChangeDayIsReadAndNeverRecounted() throws {
+        // B01-R1-02: Paris has 25 h on 2026-10-25 and 23 h on 2026-03-29; New York has 24 h on both.
+        var paris = Calendar(identifier: .gregorian); paris.timeZone = TimeZone(identifier: "Europe/Paris")!
+        var newYork = paris; newYork.timeZone = TimeZone(identifier: "America/New_York")!
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        for (month, date) in [(10, 25), (3, 29)] {
+            let parisDay = paris.date(from: DateComponents(year: 2026, month: month, day: date))!
+            let localDay = newYork.date(from: DateComponents(year: 2026, month: month, day: date))!
+            let root = try root(), key = GoalongActivityDayStore.dayKey(parisDay, calendar: paris)
+            let journal = root.appendingPathComponent("events/\(key).jsonl")
+            var bytes = Data()
+            for seconds in [0.0, 60, 120] {
+                bytes.append(try encoder.encode(HistoryEvent(sessionID: "fixture", timestamp: parisDay.addingTimeInterval(3 * 3600 + seconds),
+                    kind: .heartbeat, app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1))))
+                bytes.append(10)
+            }
+            try bytes.write(to: journal)
+            let store = GoalongActivityDayStore(root: root), later = parisDay.addingTimeInterval(10 * 86400)
+            XCTAssertEqual(try store.preserveBeforePurge(day: parisDay, now: later, calendar: paris), .summarized, key)
+            let summary = root.appendingPathComponent("activity-days/\(key).json")
+            let saved = try Data(contentsOf: summary)
+            XCTAssertTrue(store.hasForeignTimeZoneSummary(day: localDay, calendar: newYork), key)
+            _ = store.load(day: localDay, now: later, calendar: newYork)
+            try store.backfill(now: later, calendar: newYork)
+            XCTAssertEqual(try store.preserveBeforePurge(day: localDay, now: later, calendar: newYork), .summarized, key)
+            XCTAssertEqual(try Data(contentsOf: summary), saved, key)
+            try FileManager.default.removeItem(at: journal)
+            let restored = try store.read(day: localDay, calendar: newYork)
+            let localEnd = newYork.date(byAdding: .day, value: 1, to: localDay)!
+            XCTAssertEqual(restored.date, localDay, key); XCTAssertEqual(restored.end, localEnd, key)
+            XCTAssertEqual(restored.activeSeconds, 120, key); XCTAssertEqual(restored.breakdown.totalSeconds, 120, key)
+            XCTAssertEqual(restored.segments.first?.start, localDay, key); XCTAssertEqual(restored.segments.last?.end, localEnd, key)
+            XCTAssertTrue(zip(restored.segments, restored.segments.dropFirst()).allSatisfy { $0.end == $1.start }, key)
+            XCTAssertNotEqual(store.load(day: localDay, now: later, calendar: newYork).dayReason, .purgedWithoutSummary, key)
         }
     }
     func testTargetedDayDeletionInvalidatesSummaryAndClearingRemovesDirectory() throws {
@@ -57,7 +167,9 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         XCTAssertEqual(deleted.activitySummaryFiles, 1)
         XCTAssertThrowsError(try store.read(day: day))
         try store.preserveBeforePurge(day: day, now: day.addingTimeInterval(86400))
-        XCTAssertEqual(try cleaner.delete(since: nil).activitySummaryFiles, 1)
+        // R5-historique-01: the content-free purge marker goes with a full history clear too.
+        try Data("purged\n".utf8).write(to: root.appendingPathComponent("activity-days/2026-08-09" + GoalongActivityDayStore.purgeMarkerSuffix))
+        XCTAssertEqual(try cleaner.delete(since: nil).activitySummaryFiles, 2)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("activity-days").path))
     }
     func testCacheRevisionChangesWhenSummaryAloneIsDeleted() throws {
@@ -90,8 +202,54 @@ final class GoalongActivityPersistenceTests: XCTestCase {
                 .init(directory: root.appendingPathComponent("events"), dataClass: .detailedEvents, allowedSuffixes: [".jsonl"]),
                 .init(directory: root.appendingPathComponent("activity-days"), dataClass: .detailedEvents,
                     allowedSuffixes: [GoalongActivityCheckpointStore.suffix]),
-                .init(directory: root.appendingPathComponent("activity-days"), dataClass: .activitySummaries, allowedSuffixes: [".json"])
+                .init(directory: root.appendingPathComponent("activity-days"), dataClass: .activitySummaries,
+                    allowedSuffixes: GoalongActivityDayStore.summaryRetentionSuffixes)
             ], prepare: {}))
+    }
+
+    func testLiveRetentionStorageExpiresPurgeMarkersWithSummaries() {
+        // B05-R2-01: the helper above declares its own suffixes; this guards the production list.
+        let markerName = "2026-08-10" + GoalongActivityDayStore.purgeMarkerSuffix
+        let activityDays = HistoryRetentionStorage.live.artifactDirectories.filter {
+            $0.directory.lastPathComponent == GoalongActivityDayStore.directoryName
+        }
+        XCTAssertTrue(activityDays.contains { $0.dataClass == .activitySummaries && $0.recognizes(markerName) })
+        XCTAssertTrue(activityDays.contains { $0.dataClass == .activitySummaries && $0.recognizes("2026-08-10.json") })
+        XCTAssertFalse(activityDays.contains { $0.dataClass == .detailedEvents && $0.recognizes(markerName) })
+    }
+
+    func testPurgeMarkerExpiresWithTheDaySummaries() throws {
+        // B05-R1-02: « Détail effacé » used to outlive the chosen summary duration forever.
+        let calendar = Calendar.current
+        func marker(_ root: URL, _ date: Date) -> URL {
+            root.appendingPathComponent("activity-days/" + GoalongActivityDayStore.dayKey(date, calendar: calendar)
+                + GoalongActivityDayStore.purgeMarkerSuffix)
+        }
+        func policy(summaryDays: Int) -> HistoryRetentionPolicy {
+            .init(detailedEvents: .init(days: 1), semanticSnapshots: .init(days: 1), memories: .indefinite,
+                  analysisCaches: .indefinite, minuteSeals: .indefinite, anchorReceipts: .indefinite,
+                  activitySummaries: .init(days: summaryDays))
+        }
+        // An old marker expires with the summaries; a recent one stays.
+        let root = try root(), recent = calendar.date(byAdding: .day, value: 150, to: day)!
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("activity-days"), withIntermediateDirectories: true)
+        for date in [day, recent] { try Data("purged\n".utf8).write(to: marker(root, date)) }
+        let store = checkpointRetention(root: root, days: 1)
+        try store.activate(policy(summaryDays: 90))
+        store.applyCleanup(now: calendar.date(byAdding: .day, value: 200, to: day)!)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker(root, day).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker(root, recent).path))
+
+        // A journal with nothing to summarize past the summary duration leaves no marker behind.
+        let other = try self.root(), journal = try writeEvents(root: other)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        try (try encoder.encode(HistoryEvent(sessionID: "fixture", timestamp: day.addingTimeInterval(60), kind: .recorderHealth))
+            + Data([10])).write(to: journal)
+        let short = checkpointRetention(root: other, days: 1)
+        try short.activate(policy(summaryDays: 5))
+        short.applyCleanup(now: day.addingTimeInterval(10 * 86400))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker(other, day).path))
     }
 
     func testCheckpointExpiresWithDetailedEventsWhileSummaryRemains() throws {
@@ -130,6 +288,20 @@ final class GoalongActivityPersistenceTests: XCTestCase {
             XCTAssertThrowsError(try store.read(day: day))
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("activity-days").path))
+    }
+
+    @MainActor func testActivityPageShowsPauseStateInsteadOfARetryableError() async throws {
+        // R4-historique-03: during the global pause, Activité showed « Impossible de lire » + Réessayer.
+        let root = try root(); _ = try writeEvents(root: root)
+        _ = try GoalongGlobalPause.setPaused(true, in: root)
+        let model = GoalongAnalyticsModel(root: root)
+        await model.load(day: day, count: 1)
+        XCTAssertTrue(model.paused)
+        XCTAssertNil(model.error)
+        XCTAssertFalse(model.busy)
+        _ = try GoalongGlobalPause.setPaused(false, in: root)
+        await model.load(day: day, count: 1, force: true)
+        XCTAssertFalse(model.paused)
     }
 
     func testGlobalPauseAndInvalidPausePreventCheckpointReadsAndWrites() throws {

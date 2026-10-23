@@ -22,6 +22,23 @@ public struct GoalongSiteSelectionCatalog: Sendable {
     public let websites: [Website]
     public let timezone: String
 
+    private init(devices: [Device], websites: [Website], timezone: String) {
+        self.devices = devices; self.websites = websites; self.timezone = timezone
+    }
+
+    /// A copy without the websites the caller must never offer or send.
+    public func removingWebsites(where isHidden: (String) -> Bool) -> GoalongSiteSelectionCatalog {
+        .init(devices: devices, websites: websites.filter { !isHidden($0.domain) }, timezone: timezone)
+    }
+
+    /// A copy without the applications the caller must never offer or send (arguments: id, name).
+    public func removingApplications(where isHidden: (String, String) -> Bool) -> GoalongSiteSelectionCatalog {
+        .init(devices: devices.map {
+            Device(id: $0.id, name: $0.name, kind: $0.kind, screenSeconds: $0.screenSeconds,
+                   applications: $0.applications.filter { !isHidden($0.id, $0.name) })
+        }, websites: websites, timezone: timezone)
+    }
+
     public init(payload: Data) throws {
         guard let root = try JSONSerialization.jsonObject(with: payload) as? [String: Any],
               let day = (root["days"] as? [[String: Any]])?.first,

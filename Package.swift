@@ -16,6 +16,7 @@ var appDependencies: [Target.Dependency] = [
     "AppleSystemScreenTime",
     "AgentActivity",
     "LocalHistoryQueryCLI",
+    "GoalongGuardCore",
     .product(name: "Sparkle", package: "Sparkle"),
 ]
 let appExcludes: [String] = [
@@ -38,6 +39,8 @@ let package = Package(
         .library(name: "BraiseCore", targets: ["BraiseCore"]),
         .library(name: "Ambiance", targets: ["Ambiance"]),
         .executable(name: "goalong-relauncher", targets: ["GoalongRelauncher"]),
+        .executable(name: "goalong-blocking-guard", targets: ["GoalongGuard"]),
+        .executable(name: "goalong-guard-test-host", targets: ["GoalongGuardTestHost"]),
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
         .library(name: "AppleSystemScreenTime", targets: ["AppleSystemScreenTime"]),
         .library(name: "AgentActivity", targets: ["AgentActivity"]),
@@ -48,15 +51,33 @@ let package = Package(
     dependencies: packageDependencies,
     targets: [
         .target(name: "BraiseCore", path: "Features/Braise/Sources"),
-        .testTarget(name: "BraiseCoreTests", dependencies: ["BraiseCore"], path: "Features/Braise/Tests"),
+        .testTarget(name: "BraiseCoreTests", dependencies: ["BraiseCore", "GoalongHeadlessTestSupport"], path: "Features/Braise/Tests"),
         // Size over speed: keeps Ambiance under its 1 MB binary budget for ~0.1 % of one core.
         .target(name: "OndeDSP", path: "Features/Ambiance/Engine/OndeDSP", publicHeadersPath: "include",
                 cSettings: [.unsafeFlags(["-Os"], .when(configuration: .release))]),
         .target(name: "OndeCore", dependencies: ["OndeDSP"], path: "Features/Ambiance/Engine/OndeCore",
                 exclude: ["GenerativeRenderer.swift", "TransitionRenderer.swift", "PlaybackSelection.swift"]),
         .target(name: "Ambiance", dependencies: ["OndeCore", "OndeDSP"], path: "Features/Ambiance/Sources"),
-        .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore"], path: "Features/Ambiance/Tests"),
+        .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore", "GoalongHeadlessTestSupport"], path: "Features/Ambiance/Tests"),
         .executableTarget(name: "GoalongRelauncher", path: "Sources/GoalongRelauncher"),
+        // Kill protection during a severe block (spec K): pure logic shared by the guard and the app.
+        .target(name: "GoalongGuardCore", path: "Sources/GoalongGuardCore"),
+        .executableTarget(
+            name: "GoalongGuard",
+            dependencies: ["GoalongGuardCore"],
+            path: "Sources/GoalongGuard",
+            linkerSettings: [
+                .linkedFramework("AppKit", .when(platforms: [.macOS])),
+                .linkedFramework("Security", .when(platforms: [.macOS])),
+            ]
+        ),
+        // Only for scripts/test_guard_launchd.sh (opt-in); never embedded in Goalong.
+        .executableTarget(name: "GoalongGuardTestHost", path: "Sources/GoalongGuardTestHost"),
+        .testTarget(
+            name: "GoalongGuardCoreTests",
+            dependencies: ["GoalongGuardCore", "LocalHistoryCore"],
+            path: "Tests/GoalongGuardCoreTests"
+        ),
         .target(
             name: "AppleScreenTime",
             path: "Features/AppleScreenTime/Sources"
@@ -129,31 +150,37 @@ let package = Package(
                 ]
             } ?? []
         ),
+        // Test-only ObjC hook: windows invisible, no activation, no LaunchServices opens (see its header).
+        .target(
+            name: "GoalongHeadlessTestSupport",
+            path: "Tests/GoalongHeadlessTestSupport",
+            linkerSettings: [.linkedFramework("AppKit", .when(platforms: [.macOS]))]
+        ),
         .testTarget(
             name: "LocalHistoryCoreTests",
-            dependencies: ["LocalHistoryCore"],
+            dependencies: ["LocalHistoryCore", "GoalongHeadlessTestSupport"],
             path: "Tests/LocalHistoryCoreTests"
         ),
         .testTarget(
             name: "AppleScreenTimeTests",
-            dependencies: ["AppleScreenTime"],
+            dependencies: ["AppleScreenTime", "GoalongHeadlessTestSupport"],
             path: "Features/AppleScreenTime/Tests"
         ),
         .testTarget(
             name: "AgentActivityTests",
-            dependencies: ["AgentActivity"],
+            dependencies: ["AgentActivity", "GoalongHeadlessTestSupport"],
             path: "Features/AgentActivity/Tests"
         ),
         .testTarget(
             name: "LocalHistoryAppTests",
-            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "Ambiance", "BraiseCore"],
+            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "Ambiance", "BraiseCore", "GoalongHeadlessTestSupport"],
             path: "Tests/LocalHistoryAppTests",
             exclude: appTestExcludes,
             swiftSettings: appSwiftSettings
         ),
         .testTarget(
             name: "LocalHistoryQueryCLITests",
-            dependencies: ["LocalHistoryQueryCLI", "AppleScreenTime", "AppleSystemScreenTime", "BraiseCore"],
+            dependencies: ["LocalHistoryQueryCLI", "AppleScreenTime", "AppleSystemScreenTime", "BraiseCore", "GoalongHeadlessTestSupport"],
             path: "Tests/LocalHistoryQueryCLITests"
         ),
     ],

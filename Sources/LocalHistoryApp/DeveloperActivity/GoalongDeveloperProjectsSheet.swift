@@ -8,6 +8,7 @@ import SwiftUI
     @Environment(\.dismiss) private var dismiss
     @StateObject private var developer = GoalongDeveloperModel()
     @State private var problem: String?
+    @State private var revision = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,7 +53,8 @@ import SwiftUI
             }
         }
         .frame(minWidth: 560, idealWidth: 620, minHeight: 380, idealHeight: 480)
-        .task { await developer.refresh(day: Date()) }
+        .background(Button("") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
+        .task(id: revision) { await developer.refresh(day: Date()) }
         .accessibilityIdentifier("developer-projects-sheet")
     }
 
@@ -81,7 +83,7 @@ import SwiftUI
     private func remove(_ project: GoalongDeveloperProject) { attempt { try developer.removeProject(id: project.id) } }
 
     private func attempt(_ change: () throws -> Void) {
-        do { try change(); problem = nil }
+        do { try change(); problem = nil; revision += 1 }
         catch GoalongDeveloperFileIO.Failure.tooLarge { problem = "Limite atteinte : 64 projets au plus." }
         catch GoalongDeveloperFileIO.Failure.invalid { problem = "Ce dossier n’est pas un dépôt Git." }
         catch { problem = "Ce choix n’a pas pu être enregistré." }

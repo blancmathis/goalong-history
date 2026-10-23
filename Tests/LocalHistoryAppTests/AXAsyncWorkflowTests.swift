@@ -6,6 +6,8 @@ import XCTest
 @testable import LocalHistoryApp
 
 final class AXAsyncWorkflowTests: XCTestCase {
+    private let consent = TestConsentFlag()
+    private lazy var dataRoot: URL = hermeticDataRoot()
     private final class Identity: MinuteSealSigningIdentity {
         let info = DeviceIdentityInfo(deviceID: "ax-fixture", publicKeyBase64: Data("key".utf8).base64EncodedString(),
                                       trustTier: "test", algorithm: "test-signature")
@@ -30,7 +32,7 @@ final class AXAsyncWorkflowTests: XCTestCase {
         let recorder = EventRecorder(store: store,
             integrityJournal: IntegrityJournal(stateStore: integrity, saltBytes: { Data(repeating: 7, count: $0) }),
             minuteSealer: sealer, beforePersist: beforePersist, clock: { date }, sessionID: "fixture-session",
-            eventIdentifier: { ordinal += 1; return "event-\(ordinal)" })
+            eventIdentifier: { ordinal += 1; return "event-\(ordinal)" }, dataRoot: dataRoot)
         let permissions = PermissionManager(statusProbe: { Self.healthy })
         var config = RecorderConfig.default
         config.captureClicks = true; config.captureScroll = true; config.captureKeyboardActivity = true
@@ -46,14 +48,16 @@ final class AXAsyncWorkflowTests: XCTestCase {
     private func input() -> ContextReadParameters {
         let app = ForegroundAXApplication(pid: 42, name: "Fixture", bundleIdentifier: "test.native")
         var config = RecorderConfig.default; config.captureElementLabels = true; config.captureWindowTitles = true
-        let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory) // same policy ContextProvider revalidates
+        let root = dataRoot
+        let privacy = GoalongPrivacyPolicyCache.read(in: root)
         return ContextReadParameters(foregroundApplication: app, applications: [42: app], config: config,
             accessibilityAvailable: true, blockingAXTrusted: true, sessionAvailable: true, idleSeconds: 1,
-            privacy: privacy, pauseRevision: try? GoalongGlobalPause.admit())
+            privacy: privacy, pauseRevision: try? GoalongGlobalPause.admit(in: root))
     }
     private func monitor(_ rig: Rig, provider: ContextProvider) -> EventTapMonitor {
         let context = ContextMonitor(provider: provider, recorder: rig.recorder, state: rig.state, configManager: rig.config,
-            permissions: rig.permissions, captureHealth: rig.health, semanticContextStore: rig.semantic, memoryStore: rig.memory)
+            permissions: rig.permissions, captureHealth: rig.health, semanticContextStore: rig.semantic, memoryStore: rig.memory,
+            hostGate: .testOpen)
         var ordinal = 0
         return EventTapMonitor(recorder: rig.recorder, contextMonitor: context, contextProvider: provider,
             state: rig.state, configManager: rig.config, captureHealth: rig.health,
@@ -68,11 +72,7 @@ final class AXAsyncWorkflowTests: XCTestCase {
         return try data.split(separator: 10).map { try decoder.decode(HistoryEvent.self, from: Data($0)) }
     }
     private func richConsent(_ enabled: Bool) {
-        let key = ActivityAnalysisPreferences.richContextEnabledKey, previous = UserDefaults.standard.object(forKey: key)
-        UserDefaults.standard.set(enabled, forKey: key)
-        addTeardownBlock {
-            if let previous { UserDefaults.standard.set(previous, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
-        }
+        consent.value = enabled
     }
 
     func testActualInputReducersProduceIdenticalJSONLAndHashChainWithBothBackends() throws {
@@ -175,7 +175,7 @@ final class AXAsyncWorkflowTests: XCTestCase {
         let context = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: parameters).snapshot })
         let evidence = AXContextEvidence(snapshot: context, boundary: AXReadBoundary(window: tree.window, pid: 42))
         var reads = 0
-        let runtime = ActivityAnalysisRuntime(client: tree.client, applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { pid, chars, nodes in
+        let runtime = ActivityAnalysisRuntime(client: tree.client, hostGate: .testOpen, richContextEnabled: { [consent] in consent.value }, applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { pid, chars, nodes in
             XCTAssertFalse(Thread.isMainThread); reads += 1
             if reads == 1 { oldEntered.fulfill(); XCTAssertEqual(oldRelease.wait(timeout: .now() + 3), .success) }
             else { newEntered.fulfill(); XCTAssertEqual(newRelease.wait(timeout: .now() + 3), .success) }
@@ -239,7 +239,7 @@ final class AXAsyncWorkflowTests: XCTestCase {
             if name == "AXRole" { entered.fulfill(); XCTAssertEqual(release.wait(timeout: .now() + 3), .success) }
         }
         var validations = 0
-        let sampler = JevVisibleContextSampler(inbox: inbox, client: tree.client, read: { _, _ in
+        let sampler = JevVisibleContextSampler(inbox: inbox, client: tree.client, hostGate: .testOpen, richContextEnabled: { [consent] in consent.value }, read: { _, _ in
             _ = AXReader.string(tree.window, attribute: "AXRole" as CFString)
             return AXReader.string(tree.focus, attribute: "AXValue" as CFString)
         }, onTerminal: { XCTAssertTrue(Thread.isMainThread); terminal.fulfill() })

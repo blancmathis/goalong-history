@@ -25,6 +25,18 @@ final class AmbianceAudioNetworkTests: XCTestCase {
         XCTAssertTrue(AmbiancePackDownloader.allows(URL(string: asset.absoluteString + "?sig=github-signed")!, pack: pack, redirect: true))
     }
 
+    /// R4-concentration-09: a 83 MB pack fits the resource timeout at about 200 kbit/s, and a timeout after
+    /// some bytes says "too slow". A timeout before the first byte (blocked or silent server) says "connection failed".
+    func testSlowLinkGetsTimeAndATooSlowMessage() throws {
+        let largest = try XCTUnwrap(AmbiancePackCatalog.packs.map(\.bytes).max())
+        XCTAssertEqual(AmbiancePackDownloader.requestTimeout, 60)
+        XCTAssertGreaterThanOrEqual(AmbiancePackDownloader.resourceTimeout * 200_000 / 8, Double(largest))
+        XCTAssertEqual(AmbiancePackDownloader.transportFailure(URLError(.timedOut), bytesReceived: 1).errorDescription, AmbianceError.tooSlow.errorDescription)
+        XCTAssertEqual(AmbiancePackDownloader.transportFailure(URLError(.timedOut), bytesReceived: 0).errorDescription, AmbianceError.network.errorDescription)
+        XCTAssertEqual(AmbiancePackDownloader.transportFailure(URLError(.notConnectedToInternet), bytesReceived: 1).errorDescription, AmbianceError.network.errorDescription)
+        XCTAssertEqual(AmbianceError.tooSlow.errorDescription, "Téléchargement trop lent. Réessayez avec une connexion plus rapide.")
+    }
+
     func testSignedRedirectPreservesURLAndDropsForwardedHeaders() throws {
         let pack = try XCTUnwrap(AmbiancePackCatalog.packs.first)
         let signed = try XCTUnwrap(URL(string: "https://release-assets.githubusercontent.com:443/asset?sig=a%2Bb%2Fc%3D&jwt=x.y.z&key=1&key=2&empty=&plus=+"))
@@ -115,11 +127,12 @@ final class AmbianceAudioNetworkTests: XCTestCase {
             let module = AmbianceModule(settings: settings) { support }
             let controller = try XCTUnwrap(module.controller)
             let done = expectation(description: mode)
-            var completed = false
+            var completed = false, cancelRequested = false
             let token = controller.$packs.sink { packs in
                 guard let status = packs.first(where: { $0.id == pack.id })?.status, !completed else { return }
                 switch status {
                 case .installed, .failed: completed = true; done.fulfill()
+                case .notInstalled where mode == "slow" && cancelRequested: completed = true; done.fulfill()
                 default: break
                 }
             }
@@ -128,13 +141,18 @@ final class AmbianceAudioNetworkTests: XCTestCase {
             controller.download(pack.id)
             if mode == "slow" {
                 try await Task.sleep(nanoseconds: 100_000_000)
+                cancelRequested = true
                 controller.cancelDownload(pack.id)
             }
             await fulfillment(of: [done], timeout: 45)
             token.cancel()
             let store = AmbiancePackStore(supportDirectory: support)
             XCTAssertEqual(store.isInstalled(pack), mode == "good", mode)
-            if mode != "good" {
+            if mode == "slow" {
+                // A user cancel is not a failure.
+                XCTAssertEqual(controller.packs.first?.status, .notInstalled)
+                XCTAssertFalse(FileManager.default.fileExists(atPath: store.root.path), mode)
+            } else if mode != "good" {
                 if case .failed = controller.packs.first?.status {} else { XCTFail("Expected failure for \(mode)") }
                 XCTAssertFalse(FileManager.default.fileExists(atPath: store.root.path), mode)
             }

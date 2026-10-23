@@ -854,14 +854,14 @@
             XCTAssertThrowsError(
                 try oversized.append(Data((String(repeating: "x", count: 33) + "\n").utf8))
             ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("JSON line exceeded 32 bytes"))
+                XCTAssertTrue(error.localizedDescription.contains("ligne JSON dépasse 32 octets"))
             }
 
             var unterminated = CodexAppServerMessageDecoder(limits: limits)
             try unterminated.append(Data(String(repeating: "x", count: 32).utf8))
             XCTAssertEqual(unterminated.outputBuffer.count, 32)
             XCTAssertThrowsError(try unterminated.append(Data("x".utf8))) { error in
-                XCTAssertTrue(error.localizedDescription.contains("without a newline"))
+                XCTAssertTrue(error.localizedDescription.contains("sans fin de ligne"))
             }
 
             var validAtEOF = CodexAppServerMessageDecoder(limits: limits)
@@ -876,7 +876,7 @@
             var blankFlood = CodexAppServerMessageDecoder(limits: blankLimits)
             try blankFlood.append(Data("\n\n\n".utf8))
             XCTAssertThrowsError(try blankFlood.popMessage()) { error in
-                XCTAssertTrue(error.localizedDescription.contains("blank JSONL records"))
+                XCTAssertTrue(error.localizedDescription.contains("trop de lignes vides"))
             }
             XCTAssertEqual(blankFlood.blankLineCount, 2)
             XCTAssertEqual(blankFlood.blankLineBytes, 2)
@@ -893,7 +893,7 @@
             XCTAssertNotNil(try decoder.popMessage())
             XCTAssertNotNil(try decoder.popMessage())
             XCTAssertThrowsError(try decoder.popMessage()) { error in
-                XCTAssertTrue(error.localizedDescription.contains("more than 2 JSON messages"))
+                XCTAssertTrue(error.localizedDescription.contains("plus de 2 messages JSON"))
             }
 
             var queue = CodexAppServerDeferredMessageQueue(limits: limits)
@@ -919,7 +919,7 @@
             XCTAssertThrowsError(
                 try CodexAppServerMessageRouter.notificationMethod(in: ["id": 2])
             ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("unmatched JSON-RPC response"))
+                XCTAssertTrue(error.localizedDescription.contains("ne correspond à aucune demande"))
             }
             XCTAssertEqual(
                 try CodexAppServerMessageRouter.notificationMethod(in: ["method": "turn/completed"]),
@@ -2071,6 +2071,171 @@
             XCTAssertFalse(runtime.hasAutomaticBoundaryFallbackForTesting)
         }
 
+        func testWakeDoesNotBypassAutomaticRetryCap() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-wake-cap")
+            defer { try? FileManager.default.removeItem(at: container) }
+            var factoryCalls = 0
+            var delayedItems: [DispatchWorkItem] = []
+            var retryItems: [DispatchWorkItem] = []
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(
+                    rootDirectory: container.appendingPathComponent("history", isDirectory: true)
+                ),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { URL(fileURLWithPath: "/usr/bin/true") },
+                sessionFactory: { _ in factoryCalls += 1; throw CodexAppServerError.malformedResponse("bad") },
+                directoryOpener: { _ in },
+                fileRevealer: { _ in },
+                delayedAutomaticScheduler: { delayedItems.append($0) },
+                automaticRetryScheduler: { _, item in retryItems.append(item) },
+                automaticBoundaryFallbackScheduler: { _, _ in },
+                analysisConsentProvider: { true },
+                analysisSelectionProvider: {
+                    var value = GoalongAnalysisSelection(); value.version = 1; value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                    return value
+                }
+            )
+            runtime.configure(deviceID: "wake-cap-device")
+            runtime.automaticRecapsEnabled = true
+            runtime.start(checkPreviousDayImmediately: false)
+            defer { runtime.stop() }
+            func wake() {
+                runtime.handleWakeOrDayChangeForTesting()
+                let items = delayedItems; delayedItems = []
+                items.forEach { $0.perform() }
+                let deadline = Date().addingTimeInterval(5)
+                while runtime.isGenerating, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            wake()
+            XCTAssertEqual(factoryCalls, 1)
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 1)
+            // A retry is pending: a wake starts no extra run.
+            wake()
+            XCTAssertEqual(factoryCalls, 1)
+            // Exhaust the cap through the retry items.
+            for _ in 0..<3 {
+                let item = retryItems.removeLast()
+                item.perform()
+                let deadline = Date().addingTimeInterval(5)
+                while runtime.isGenerating, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 3)
+            let calls = factoryCalls
+            wake(); wake()
+            XCTAssertEqual(factoryCalls, calls)
+        }
+
+        func testReenablingAfterSkippedRetryRunsAgain() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-reenable")
+            defer { try? FileManager.default.removeItem(at: container) }
+            var factoryCalls = 0
+            var delayedItems: [DispatchWorkItem] = []
+            var retryItems: [DispatchWorkItem] = []
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(
+                    rootDirectory: container.appendingPathComponent("history", isDirectory: true)
+                ),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { URL(fileURLWithPath: "/usr/bin/true") },
+                sessionFactory: { _ in factoryCalls += 1; throw CodexAppServerError.malformedResponse("bad") },
+                directoryOpener: { _ in },
+                fileRevealer: { _ in },
+                delayedAutomaticScheduler: { delayedItems.append($0) },
+                automaticRetryScheduler: { _, item in retryItems.append(item) },
+                automaticBoundaryFallbackScheduler: { _, _ in },
+                analysisConsentProvider: { true },
+                analysisSelectionProvider: {
+                    var value = GoalongAnalysisSelection(); value.version = 1; value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                    return value
+                }
+            )
+            runtime.configure(deviceID: "reenable-device")
+            runtime.automaticRecapsEnabled = true
+            runtime.start(checkPreviousDayImmediately: false)
+            defer { runtime.stop() }
+            func settle() {
+                let deadline = Date().addingTimeInterval(5)
+                while runtime.isGenerating, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            runtime.handleWakeOrDayChangeForTesting()
+            let items = delayedItems; delayedItems = []
+            items.forEach { $0.perform() }
+            settle()
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 1)
+            XCTAssertEqual(retryItems.count, 1)
+            runtime.automaticRecapsEnabled = false
+            retryItems.removeLast().perform()
+            settle()
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 1)
+            // Re-enabling must run the check again: a new attempt is counted.
+            runtime.automaticRecapsEnabled = true
+            let waitUntil = Date().addingTimeInterval(5)
+            while runtime.automaticRetryAttemptForTesting < 2, Date() < waitUntil { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            settle()
+            XCTAssertEqual(runtime.automaticRetryAttemptForTesting, 2)
+        }
+
+        func testWakeOrDayChangeReArmsTimersAndChecksYesterday() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-recap-wake")
+            defer { try? FileManager.default.removeItem(at: container) }
+            var fallbackItems: [DispatchWorkItem] = []
+            var delayedItems: [DispatchWorkItem] = []
+            var consent = true
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(
+                    rootDirectory: container.appendingPathComponent("history", isDirectory: true)
+                ),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { nil },
+                sessionFactory: { _ in throw NSError(domain: "ChatGPTRecapTests", code: 103) },
+                directoryOpener: { _ in },
+                fileRevealer: { _ in },
+                delayedAutomaticScheduler: { delayedItems.append($0) },
+                automaticRetryScheduler: { _, _ in },
+                automaticBoundaryFallbackScheduler: { _, workItem in fallbackItems.append(workItem) },
+                analysisConsentProvider: { consent },
+                analysisSelectionProvider: {
+                    var value = GoalongAnalysisSelection(); value.version = 1; value.revision = "test-approved"; value.reviewed = true; value.computer = true
+                    value.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                    return value
+                }
+            )
+            runtime.configure(deviceID: "wake-test-device")
+            runtime.automaticRecapsEnabled = true
+            runtime.start(checkPreviousDayImmediately: false)
+            defer { runtime.stop() }
+            XCTAssertTrue(runtime.observesSystemClockForTesting)
+            XCTAssertEqual(fallbackItems.count, 1)
+            XCTAssertTrue(delayedItems.isEmpty)
+
+            runtime.handleWakeOrDayChangeForTesting()
+            XCTAssertEqual(fallbackItems.count, 2, "the fallback is re-armed on wall time")
+            XCTAssertTrue(fallbackItems[0].isCancelled)
+            XCTAssertEqual(delayedItems.count, 1)
+
+            // Consent withdrawn meanwhile: the delayed check does nothing.
+            consent = false
+            delayedItems[0].perform()
+            XCTAssertNotEqual(runtime.connectionState, .codexUnavailable)
+
+            // With consent, the check tries to recap yesterday (here Codex is absent).
+            consent = true
+            runtime.handleWakeOrDayChangeForTesting()
+            XCTAssertEqual(delayedItems.count, 2)
+            delayedItems[1].perform()
+            XCTAssertEqual(runtime.connectionState, .codexUnavailable)
+
+            runtime.stop()
+            XCTAssertFalse(runtime.observesSystemClockForTesting)
+            runtime.handleWakeOrDayChangeForTesting()
+            XCTAssertEqual(delayedItems.count, 2, "a stopped runtime ignores wake events")
+        }
+
         func testAutomaticRecapCannotStartWithoutGoalongConsent() throws {
             let container = try makeTemporaryDirectory(prefix: "goalong-recap-no-consent")
             defer { try? FileManager.default.removeItem(at: container) }
@@ -2402,7 +2567,7 @@
                     rootDirectory: container
                 )
             ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("could not be read safely"))
+                XCTAssertTrue(error.localizedDescription.contains("n’a pas pu être lue de façon sûre"))
             }
 
             let oversizedDay = symlinkDay.addingTimeInterval(86_400)
@@ -2421,7 +2586,7 @@
                     rootDirectory: container
                 )
             ) { error in
-                XCTAssertTrue(error.localizedDescription.contains("could not be read safely"))
+                XCTAssertTrue(error.localizedDescription.contains("n’a pas pu être lue de façon sûre"))
             }
         }
 

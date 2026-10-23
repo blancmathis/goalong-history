@@ -701,6 +701,37 @@
             )
         }
 
+        func testTapDisabledIsKeptWhenTheRingIsFull() {
+            let queue = EventTapIngressBuffer(capacity: 2)
+            let start = Date(timeIntervalSince1970: 1_800_000_000)
+            XCTAssertTrue(queue.enqueue(click(at: start)))
+            XCTAssertFalse(queue.enqueue(click(at: start.addingTimeInterval(0.01))))
+            let disabled = EventTapPendingInput(kind: .tapDisabled, observedAt: start.addingTimeInterval(0.02))
+            XCTAssertFalse(queue.enqueue(disabled), "The drain already scheduled will see it")
+            XCTAssertFalse(queue.enqueue(EventTapPendingInput(kind: .tapDisabled, observedAt: start.addingTimeInterval(0.03))))
+            XCTAssertEqual(queue.metrics.droppedCount, 0)
+            XCTAssertEqual(queue.metrics.currentDepth, 3)
+            let control = queue.popFirst()
+            XCTAssertEqual(control?.kind, .tapDisabled)
+            XCTAssertEqual(control?.occurrences, 2)
+            XCTAssertEqual(queue.popFirst()?.kind, .leftMouseDown)
+            XCTAssertTrue(queue.finishDrainPass(), "Data still pending keeps the drain token")
+            XCTAssertEqual(queue.popFirst()?.kind, .leftMouseDown)
+            XCTAssertFalse(queue.finishDrainPass())
+
+            // Discarding queued data never discards a pending disable.
+            let idle = EventTapIngressBuffer(capacity: 1)
+            XCTAssertTrue(idle.enqueue(click(at: start)))
+            XCTAssertEqual(idle.popFirst()?.kind, .leftMouseDown)
+            XCTAssertFalse(idle.finishDrainPass())
+            XCTAssertTrue(idle.enqueue(click(at: start.addingTimeInterval(1))))
+            _ = idle.discardPending()
+            XCTAssertTrue(idle.enqueue(click(at: start.addingTimeInterval(2))))
+            XCTAssertFalse(idle.enqueue(disabled))
+            XCTAssertEqual(idle.discardPending(), 1)
+            XCTAssertEqual(idle.popFirst()?.kind, .tapDisabled, "Discarding data keeps the disable")
+        }
+
         private func click(at date: Date) -> EventTapPendingInput {
             EventTapPendingInput(
                 kind: .leftMouseDown,

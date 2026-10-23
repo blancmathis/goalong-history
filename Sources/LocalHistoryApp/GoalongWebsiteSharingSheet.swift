@@ -79,7 +79,7 @@ import LocalHistoryQueryCLI
         .interactiveDismissDisabled(model.busy)
         .task { if model.catalog == nil { await model.loadCatalog() } }
         .onChange(of: model.draft.date) { _ in Task { await model.loadCatalog() } }
-        .onChange(of: model.draft.includeWebsites) { _ in Task { await model.loadCatalog() } }
+        .onChange(of: model.draft.includeWebsites) { _ in Task { await model.includeWebsitesChanged() } }
         .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in model.connectionChanged() }
         .onChange(of: origin) { _ in model.connectionChanged() }
         .onChange(of: tokenPath) { _ in model.connectionChanged() }
@@ -100,7 +100,7 @@ import LocalHistoryQueryCLI
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(connected ? "Règles du site" : "Relier mon compte") { openSite(fragment: connected ? "privacy" : "settings") }
+                Button(connected ? "Règles du site" : "Relier mon Mac") { openSite(fragment: connected ? "privacy" : "settings") }
                     .buttonStyle(LHSecondaryButtonStyle())
             }
             if connected {
@@ -136,7 +136,7 @@ import LocalHistoryQueryCLI
     private var selection: some View {
         VStack(alignment: .leading, spacing: 18) {
             DatePicker(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer", selection: $model.draft.date,
-                       in: ...Date(), displayedComponents: .date).datePickerStyle(.field)
+                       in: ...GoalongToday.now, displayedComponents: .date).datePickerStyle(.field)
                 .accessibilityIdentifier("sharing-selected-date")
             if model.loading {
                 ProgressView("Lecture sur ce Mac…").font(.system(size: 13))
@@ -267,7 +267,7 @@ import LocalHistoryQueryCLI
                     .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("sharing-preview")
                     .disabled(model.busy || model.loading || model.catalog == nil || model.draft.validationMessage != nil )
             } else if !connected || model.preview?.credentialFingerprint.isEmpty == true {
-                Button("Relier mon compte") { openSite(fragment: "settings") }.buttonStyle(LHPrimaryButtonStyle())
+                Button("Relier mon Mac") { openSite(fragment: "settings") }.buttonStyle(LHPrimaryButtonStyle())
             } else {
                 Button(model.draft.delivery == .daily ? "Activer l’envoi quotidien" : "Envoyer cette journée") {
                     if model.draft.delivery == .once { model.reviewed = true }
@@ -291,23 +291,42 @@ struct GoalongSharingSelector: View {
     let symbol: String
     let items: [Item]
     @Binding var selection: Set<String>
+    /// An export carries at most 200 applications or domains.
+    static let selectionCap = 200
     @State private var search = ""
     private var absent: [String] { selection.subtracting(Set(items.map(\.id))).sorted() }
+    private var present: Set<String> { selection.intersection(Set(items.map(\.id))) }
+    private var roomLeft: Int { Self.roomLeft(selection: selection, itemIDs: items.map(\.id)) }
+    /// Same cap for the bulk button and for each checkbox: the export refuses more.
+    static func roomLeft(selection: Set<String>, itemIDs: [String]) -> Int {
+        max(0, selectionCap - selection.intersection(itemIDs).count)
+    }
+    static func canCheck(_ id: String, selection: Set<String>, itemIDs: [String]) -> Bool {
+        selection.contains(id) || roomLeft(selection: selection, itemIDs: itemIDs) > 0
+    }
+    private var uncheckedResults: [Item] { visible.filter { !selection.contains($0.id) } }
     private var visible: [Item] { items.filter { search.isEmpty || $0.title.localizedStandardContains(search) } }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(title).font(.callout.weight(.semibold))
                 Spacer()
-                Text("\(selection.intersection(Set(items.map(\.id))).count) / \(items.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                Text("\(present.count) / \(items.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }
             if items.count > 4 {
                 GoalongSearchField("Rechercher…", text: $search, accessibilityLabel: "Rechercher dans \(title)")
             }
             HStack(spacing: 12) {
-                Button("Sélectionner les résultats") { selection.formUnion(visible.map(\.id)) }.disabled(visible.isEmpty)
+                Button("Sélectionner les résultats") {
+                    selection.formUnion(uncheckedResults.map(\.id).prefix(roomLeft))
+                }.disabled(uncheckedResults.isEmpty || roomLeft == 0)
                 Button("Tout décocher") { selection.removeAll() }.disabled(selection.isEmpty)
             }.buttonStyle(LHQuietButtonStyle()).font(.caption)
+            if uncheckedResults.count > roomLeft {
+                let left = uncheckedResults.count - roomLeft
+                Text("\(Self.selectionCap) éléments au plus par envoi : \(left) \(left > 1 ? "résultats ne pourront pas être cochés" : "résultat ne pourra pas être coché").")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if !absent.isEmpty {
                 GoalongDisclosureGroup("\(absent.count) choix enregistrés absents de cette journée") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -332,7 +351,7 @@ struct GoalongSharingSelector: View {
                     LazyVStack(spacing: 0) {
                         ForEach(visible) { item in
                             Toggle(isOn: Binding(get: { selection.contains(item.id) }, set: {
-                                if $0 { selection.insert(item.id) } else { selection.remove(item.id) }
+                                if !$0 { selection.remove(item.id) } else if roomLeft > 0 { selection.insert(item.id) }
                             })) {
                                 HStack(spacing: 10) {
                                     Image(systemName: item.symbol ?? symbol).foregroundStyle(.secondary).frame(width: 20)
@@ -342,7 +361,9 @@ struct GoalongSharingSelector: View {
                                     }
                                     Spacer(minLength: 0)
                                 }
-                            }.toggleStyle(.goalongCheckbox).padding(.vertical, 8).padding(.horizontal, 9)
+                            }.toggleStyle(.goalongCheckbox)
+                                .disabled(!Self.canCheck(item.id, selection: selection, itemIDs: items.map(\.id)))
+                                .padding(.vertical, 8).padding(.horizontal, 9)
                                 .background(selection.contains(item.id) ? LHTheme.accent.opacity(0.07) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                                 .accessibilityLabel("\(title) : \(item.title)")
                         }

@@ -1,11 +1,17 @@
 #if os(macOS)
 import Darwin
 import Foundation
+import LocalHistoryCore
+import LocalHistoryQueryCLI
 
 /// Owner-only, no-follow traversal and fd-relative atomic writes, like BlockingStore.
 struct FocusStore {
     var directory: URL
-    static var standard: Self { Self(directory: AppPaths.realApplicationSupportDirectory.appendingPathComponent("Focus")) }
+    static var standard: Self { standard(channel: .current, base: GoalongBuildChannel.applicationSupportBase) }
+    /// The channel's own Focus folder: `LocalHistory-Dev/Focus` in Goalong Dev, never the real stakes.
+    static func standard(channel: GoalongBuildChannel, base: URL) -> Self {
+        Self(directory: channel.dataRoot(base: base).appendingPathComponent("Focus"))
+    }
     static let maximumBytes = 2 * 1024 * 1024
     private func openDirectory(_ area: String?, create: Bool) throws -> Int32? {
         let path = area.map { directory.appendingPathComponent($0) } ?? directory
@@ -78,6 +84,65 @@ struct FocusStore {
     func saveSessions(_ sessions: [FocusSession], day: String) throws {
         guard FocusValidation.day(day), sessions.count <= 200, Set(sessions.map(\.id)).count == sessions.count, sessions.allSatisfy(\.valid) else { throw FocusFailure.invalidArgument }
         try save(sessions, area: "sessions", name: day + ".json")
+    }
+    /// A stop that could not be saved with the session file. Lives in the store root, apart from the failing sessions folder.
+    struct PendingStopTombstone: Codable, Equatable { var sessionID: UUID; var day: String; var end: Date; var reason: FocusSession.Event.Reason }
+    func pendingStopTombstone() throws -> PendingStopTombstone? {
+        guard let value = try load(PendingStopTombstone.self, area: nil, name: "pending-stop.json") else { return nil }
+        guard FocusValidation.day(value.day) else { throw FocusFailure.storageFailed }; return value
+    }
+    func savePendingStopTombstone(_ value: PendingStopTombstone) throws { try save(value, area: nil, name: "pending-stop.json") }
+    func clearPendingStopTombstone() throws {
+        guard let fd = try openDirectory(nil, create: false) else { return }; defer { close(fd) }
+        guard unlinkat(fd, "pending-stop.json", 0) == 0 || errno == ENOENT, fsync(fd) == 0 else { throw FocusFailure.storageFailed }
+    }
+    /// One-time, idempotent: day files named with a pre-Gregorian key (Buddhist, Japanese, ROC...) move to the Gregorian name.
+    /// Sessions and reviews whose target already exists are left alone; a plan is merged into it. Every `toDay` is re-keyed too.
+    func migrateLegacyDays(calendar: Calendar, now: Date) throws {
+        guard calendar.identifier != .gregorian else { return }
+        func target(_ day: String) -> String? { GoalongFocusCalendar.gregorianKey(fromLegacy: day, calendar: calendar, now: now) }
+        for day in try sessionDays() {
+            guard let new = target(day), try load([FocusSession].self, area: "sessions", name: new + ".json") == nil,
+                  let value = try load([FocusSession].self, area: "sessions", name: day + ".json") else { continue }
+            try save(value, area: "sessions", name: new + ".json"); try remove(area: "sessions", name: day + ".json")
+        }
+        // `toDay` may point to a day after today, so the window reaches a week ahead. Gregorian keys stay as they are.
+        func retarget(_ day: String?) -> String? { day.flatMap { GoalongFocusCalendar.gregorianKey(fromLegacy: $0, calendar: calendar, now: now.addingTimeInterval(7 * 86_400)) } }
+        // Every plan and review, whatever its file name: a Gregorian-named file can still hold a legacy `toDay`.
+        for day in try planDays() {
+            guard var value = try load(FocusPlan.self, area: "plans", name: day + ".json") else { continue }
+            var changed = false
+            for i in value.items.indices { if let new = retarget(value.items[i].toDay) { value.items[i].toDay = new; changed = true } }
+            if changed { try save(value, area: "plans", name: day + ".json") }
+        }
+        for day in try days(area: "reviews") {
+            guard var value = try load(FocusReview.self, area: "reviews", name: day + ".json") else { continue }
+            var changed = false
+            for i in value.items.indices { if let new = retarget(value.items[i].toDay) { value.items[i].toDay = new; changed = true } }
+            if changed { try save(value, area: "reviews", name: day + ".json") }
+        }
+        for day in try planDays() {
+            guard let new = target(day), var value = try load(FocusPlan.self, area: "plans", name: day + ".json") else { continue }
+            if var existing = try load(FocusPlan.self, area: "plans", name: new + ".json") {
+                // A legacy file left beside its Gregorian twin: bring over the items the twin lacks, then drop it.
+                let known = Set(existing.items.map(\.id)), extra = value.items.filter { !known.contains($0.id) }
+                existing.items += extra
+                guard existing.valid else { continue }
+                if !extra.isEmpty { try save(existing, area: "plans", name: new + ".json") }
+            } else {
+                value.day = new; try save(value, area: "plans", name: new + ".json")
+            }
+            try remove(area: "plans", name: day + ".json")
+        }
+        for day in try days(area: "reviews") {
+            guard let new = target(day), try load(FocusReview.self, area: "reviews", name: new + ".json") == nil,
+                  var value = try load(FocusReview.self, area: "reviews", name: day + ".json") else { continue }
+            value.day = new; try save(value, area: "reviews", name: new + ".json"); try remove(area: "reviews", name: day + ".json")
+        }
+    }
+    private func remove(area: String, name: String) throws {
+        guard let fd = try openDirectory(area, create: false) else { return }; defer { close(fd) }
+        guard unlinkat(fd, name, 0) == 0 || errno == ENOENT, fsync(fd) == 0 else { throw FocusFailure.storageFailed }
     }
     func sessionDays() throws -> [String] { try days(area: "sessions") }
     func planDays() throws -> [String] { try days(area: "plans") }

@@ -22,6 +22,28 @@ final class HistoryQueryTests: XCTestCase {
         XCTAssertEqual(hit.suppressionReason, SuppressionReason.excludedApplication.rawValue)
     }
 
+    func testApplicationQueryDoesNotMatchSuppressedEventsOfAnExcludedApplication() {
+        let suppressed = fixtureEvent(
+            id: "gap", sequence: 1, offset: 0, kind: .captureSuppressed,
+            app: fixtureApp("SecretApp"), suppression: .excludedApplication,
+            message: "Application excluded"
+        )
+        let normal = fixtureEvent(
+            id: "normal", sequence: 2, offset: 10, kind: .applicationActivated,
+            app: fixtureApp("OtherApp")
+        )
+        let visible = fixtureEvent(
+            id: "visible", sequence: 3, offset: 20, kind: .applicationActivated,
+            app: fixtureApp("SecretApp")
+        )
+        let service = HistoryQueryService(events: [suppressed, normal, visible])
+        let secret = service.application("SecretApp")
+        XCTAssertEqual(secret.hits.map(\.id), ["visible"])
+        XCTAssertEqual(secret.coverage.suppressedEventCount, 1)
+        XCTAssertEqual(service.application("OtherApp").hits.map(\.id), ["normal"])
+        XCTAssertEqual(service.gaps().hits.map(\.id), ["gap"])
+    }
+
     func testSemanticSearchUsesSeparatePayloadAndCarriesProvenance() {
         let payload = fixtureSemanticPayload(text: "Please review project Atlas architecture")
         let event = fixtureEvent(

@@ -195,6 +195,16 @@ final class BlockingTimerTests: XCTestCase {
         XCTAssertGreaterThan(frame.minY, screen.midY + 300)
     }
 
+    /// R4-blocage-06: VoiceOver reads « il reste … », with no adjective to agree.
+    func testSpokenLabelsAgree() {
+        func label(_ kind: BlockingVisibleTimer.Kind, _ seconds: TimeInterval) -> String {
+            BlockingVisibleTimer(kind: kind, listID: chess.id, listName: "Échecs", remaining: seconds).accessibilityLabel
+        }
+        XCTAssertEqual(label(.quota, 60), "Blocage, Échecs : il reste 1 minute de quota")
+        XCTAssertEqual(label(.slowDownAllowance, 300), "Ralentissement Échecs : il reste 5 minutes de temps accordé")
+        XCTAssertEqual(label(.breakTime, 61), "Pause du blocage Échecs : il reste 1 minute 1 seconde")
+    }
+
     /// The panel takes the host's fitting size: a zero size would hide the capsule for good.
     @MainActor func testHUDHostMeasuresTheCapsule() {
         let timer = BlockingVisibleTimer(kind: .quota, listID: chess.id, listName: "Échecs", remaining: 247)

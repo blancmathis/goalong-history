@@ -3,6 +3,8 @@ import Foundation
 
 public enum GoalongFocusError: String, Error, CustomStringConvertible {
     case appNotRunning, moduleDisabled, invalidArgument, locked, notFound, storageFailed, tooManyWatchers
+    /// Client side only: the request reached the app but no answer came back in time.
+    case outcomeUnknown
     public var description: String { rawValue }
 }
 public struct GoalongFocusRequest: Codable, Equatable {
@@ -137,6 +139,7 @@ public enum GoalongFocusCLI {
     public static func execute(_ request: GoalongFocusRequest, root: URL) throws -> Data {
         do { return try GoalongReadOnlyQueryBroker.requestFocus(rootDirectory: root, request: request) }
         catch GoalongFocusError.appNotRunning where request.command == "focus status" { return unavailable }
+        catch GoalongFocusError.outcomeUnknown where request.command == "focus status" { return unavailable }
     }
     public static let unavailable = Data("{\"schema\":1,\"state\":\"unavailable\"}".utf8)
     public static func watch(root: URL, emit: (Data) -> Void, shouldContinue: () -> Bool = { true }, retry: () -> Void = { Thread.sleep(forTimeInterval: 5) }) throws {
@@ -150,7 +153,7 @@ public enum GoalongFocusCLI {
                 let envelope = try JSONDecoder().decode(GoalongFocusWatchBatch.self, from: data)
                 for value in envelope.lines { emit(value) }
                 cursor = envelope.cursor; wasUnavailable = false
-            } catch GoalongFocusError.appNotRunning {
+            } catch let error as GoalongFocusError where error == .appNotRunning || error == .outcomeUnknown {
                 if !wasUnavailable { emit(unavailable); wasUnavailable = true }; cursor = nil; retry()
             }
         }

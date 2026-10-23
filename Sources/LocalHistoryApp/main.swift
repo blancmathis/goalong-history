@@ -54,6 +54,8 @@
     }
 
     if CommandLine.arguments.contains("--unregister-login-item") {
+        // Goalong Dev owns no login item: never touch the installed Goalong's one.
+        guard GoalongLoginItemGate.isAllowed else { exit(0) }
         switch SMAppService.mainApp.status {
         case .enabled, .requiresApproval:
             try? SMAppService.mainApp.unregister()
@@ -61,6 +63,22 @@
             break
         @unknown default:
             try? SMAppService.mainApp.unregister()
+        }
+        exit(0)
+    }
+
+    if CommandLine.arguments.contains(GuardUnregisterCommand.argument) {
+        GuardUnregisterCommand.run()
+    }
+
+    // Called by uninstall.sh before it deletes the bundles: removes Goalong's hooks from the
+    // agents' configuration files. Best effort; only entries with Goalong's marker are touched.
+    if CommandLine.arguments.contains("--uninstall-agent-integrations") {
+        let installer = AgentIntegrationInstaller(
+            executableURL: URL(fileURLWithPath: CommandLine.arguments[0])
+        )
+        if !AgentHookCommandLine.uninstallAll(channel: .current, uninstall: { try installer.uninstall($0) }) {
+            FileHandle.standardError.write(Data((AgentHookCommandLine.devRefusal + "\n").utf8))
         }
         exit(0)
     }

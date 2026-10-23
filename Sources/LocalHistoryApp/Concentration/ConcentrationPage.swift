@@ -6,12 +6,13 @@ import SwiftUI
 /// engagements of the day and the week, today's sessions, then the settings, folded.
 @MainActor struct ConcentrationPage: View {
     @ObservedObject private var runtime = ConcentrationRuntime.shared
+    @ObservedObject private var modules = GoalongModuleStore.shared
 
     var body: some View {
         if let controller = runtime.controller {
             ConcentrationPageContent(controller: controller)
         } else {
-            if runtime.error == nil {
+            if !modules.isEnabled(.concentration) || runtime.error == nil {
                 GoalongModuleOffNote(module: .concentration, text: "Séances, Pomodoro, plan du jour et bilan. Le module est désactivé.")
             } else {
                 Text("Concentration n’a pas pu démarrer. Vos données restent intactes.")
@@ -29,6 +30,7 @@ import SwiftUI
     var now: Date?
     var measures: [FocusItemMeasure]?
     @ObservedObject private var modules = GoalongModuleStore.shared
+    @ObservedObject private var runtime = ConcentrationRuntime.shared
     @State private var draft: FocusComposerDraft
     @State private var reviewing = false
     @State private var editingCommitment: FocusCommitmentEditRequest?
@@ -42,6 +44,11 @@ import SwiftUI
         self.measures = measures
         _draft = State(initialValue: draft)
         _settingsOpen = State(initialValue: settingsOpen)
+    }
+
+    /// R3-028: background measurement failures, kept apart from `runtime.error` (a start failure).
+    static func measurementNote(_ error: String?) -> String? {
+        error == nil ? nil : "Les minutes mesurées n’ont pas pu être mises à jour."
     }
 
     var body: some View {
@@ -62,7 +69,13 @@ import SwiftUI
                         if let error = controller.error {
                             GoalongNote(FocusUIError.message(raw: error), tone: .warning)
                                 .onTapGesture { controller.error = nil }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("Masquer ce message")
+                                .accessibilityAction(named: "Masquer") { controller.error = nil }
                                 .accessibilityIdentifier("concentration-error")
+                        }
+                        if modules.isEnabled(.concentration), let note = Self.measurementNote(runtime.measurementError) {
+                            GoalongNote(note, tone: .warning).accessibilityIdentifier("concentration-measurement-error")
                         }
                         FocusPlanSection(controller: controller, now: now, measures: measures ?? controller.itemMeasures,
                                          draft: $draft, addFocused: $addFocused, onReview: { reviewing = true })
@@ -248,8 +261,9 @@ struct FocusComposerDraft: Equatable {
         LHCard {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 10) {
-                    TextField("Je fais…", text: $draft.intent)
+                    TextField("", text: $draft.intent)
                         .textFieldStyle(GoalongFieldStyle())
+                        .goalongPlaceholder("Je fais…", isEmpty: draft.intent.isEmpty, font: .system(size: 17, weight: .medium))
                         .font(.system(size: 17, weight: .medium))
                         .onSubmit { if !intent.isEmpty { begin() } }
                         .accessibilityLabel("Ce que vous faites pendant la séance")
@@ -272,7 +286,7 @@ struct FocusComposerDraft: Equatable {
                             $0 == .free ? "Libre" : "Pomodoro"
                         }
                         if draft.kind == .free { freeOptions } else { pomodoroOptions }
-                        FocusSessionThread(model: preview, now: nil)
+                        FocusSessionThread(model: preview, now: nil, showsEnd: plannedEnd == nil)
                             .accessibilityLabel(previewDescription)
                     }
                 }
@@ -282,6 +296,11 @@ struct FocusComposerDraft: Equatable {
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 HStack {
+                    if intent.isEmpty {
+                        Text("Dites ce que vous faites pour commencer.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .accessibilityIdentifier("concentration-start-hint")
+                    }
                     Spacer()
                     Button {
                         if draft.lock && draft.canLock && !chosenLists.isEmpty { confirmingLock = true } else { begin() }
@@ -298,7 +317,8 @@ struct FocusComposerDraft: Equatable {
             Button("Annuler", role: .cancel) {}
             Button("Verrouiller") { begin() }
         } message: {
-            Text("Pendant le travail, ni la séance ni le blocage ne pourront être arrêtés ou passés avant la fin de la phase. Quitter Goalong ou redémarrer ne les arrête pas.")
+            Text(GuardConsent.message("Pendant le travail, ni la séance ni le blocage ne pourront être arrêtés ou passés avant la fin de la phase. Quitter Goalong ou redémarrer ne les arrête pas.",
+                                      needed: BlockingRuntime.shared.controller?.guardNeedsConsent ?? false))
         }
     }
 
@@ -395,7 +415,8 @@ struct FocusComposerDraft: Equatable {
         guard !intent.isEmpty else { return }
         let ids = chosenLists
         do {
-            try controller.startSession(intent: intent, mode: draft.mode, planItemId: draft.planItemId, blockListIds: ids,
+            controller.refresh()  // a new day replaces the plan before the link is checked
+            try controller.startSession(intent: intent, mode: draft.mode, planItemId: controller.openPlanItemID(draft.planItemId), blockListIds: ids,
                                         blockDuringBreaks: draft.kind == .pomodoro && draft.blockDuringBreaks,
                                         lock: draft.lock && draft.canLock && !ids.isEmpty)
             draft.remember()
@@ -453,7 +474,8 @@ struct FocusPlanChip: View {
     var live = true
 
     private var phase: FocusPhase { controller.phase ?? FocusPhases.phase(session, at: now) }
-    private var locked: Bool { controller.hasLockedBlock }
+    /// Only a block owned by this session locks its card; a commitment stake does not (R1-011).
+    var locked: Bool { controller.hasLockedSessionBlock }
     private var lists: [BlockList] { session.blockListIds.compactMap { id in controller.blockLists.first { $0.id == id } } }
 
     var body: some View {
@@ -547,6 +569,8 @@ struct FocusSessionThread: View {
     /// `nil` draws a preview: no present, every phase to come.
     var now: Date?
     var locked = false
+    /// A preview whose end the start button already states leaves it off the thread.
+    var showsEnd = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -597,7 +621,7 @@ struct FocusSessionThread: View {
                 Text(BlockingFormat.time(model.start))
                 Spacer()
                 if locked { Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold)) }
-                Text(model.openEnded ? "sans fin" : BlockingFormat.time(model.end))
+                if showsEnd { Text(model.openEnded ? "sans fin" : BlockingFormat.time(model.end)) }
             }
             .font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
         }
@@ -722,8 +746,10 @@ struct FocusThreadModel: Equatable {
             Image(systemName: "text.quote").font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 20).accessibilityHidden(true)
             if editingIntention {
-                TextField("L’important aujourd’hui", text: $intention)
+                TextField("", text: $intention)
                     .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("L’important aujourd’hui", isEmpty: intention.isEmpty)
+                    .accessibilityLabel("L’important aujourd’hui")
                     .onSubmit(saveIntention)
                 Button("Enregistrer", action: saveIntention)
             } else if let value = plan.intention, !value.isEmpty {
@@ -772,7 +798,7 @@ struct FocusThreadModel: Equatable {
             }
             Menu {
                 if item.status == .open {
-                    Button("Déplacer à demain") { act { try controller.movePlanItem(item.id, day: plan.day, to: tomorrow) } }
+                    Button("Déplacer à demain") { moveToTomorrow(item) }
                     Button("Abandonner") { act { try controller.setItemStatus(item.id, day: plan.day, status: .dropped) } }
                 } else if item.status != .moved {
                     Button("Rouvrir") { reopen(item) }
@@ -808,7 +834,7 @@ struct FocusThreadModel: Equatable {
         let measured = value?.measuredMinutes ?? value.map(\.sessionMinutes)
         if let estimate = item.estimateMinutes {
             VStack(alignment: .trailing, spacing: 4) {
-                Text(measured.map { "mesuré \(Int($0.rounded())) · prévu \(estimate) min" } ?? "prévu \(estimate) min")
+                Text(FocusPlanMeasureText.line(measured: measured, estimate: estimate))
                     .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                 if let measured {
                     BlockingMeter(fraction: measured / Double(estimate)).frame(width: 120)
@@ -816,7 +842,7 @@ struct FocusThreadModel: Equatable {
             }
             .help(value?.measuredMinutes == nil && measured != nil ? "Temps de séance seulement : la mesure du projet est indisponible." : "")
         } else if let measured, measured >= 1 {
-            Text("mesuré \(Int(measured.rounded())) min").font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+            Text(FocusPlanMeasureText.line(measured: measured, estimate: nil)).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
         }
     }
 
@@ -825,17 +851,23 @@ struct FocusThreadModel: Equatable {
             HStack(spacing: 8) {
                 Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 20).accessibilityHidden(true)
-                TextField(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", text: $newTitle)
+                TextField("", text: $newTitle)
                     .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", isEmpty: newTitle.isEmpty)
                     .focused(addFocused)
                     .onSubmit(add)
                     .accessibilityIdentifier("concentration-add-item")
-                TextField("Projet", text: $newProject)
-                    .textFieldStyle(GoalongFieldStyle()).frame(width: 120)
+                TextField("", text: $newProject)
+                    .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("Projet", isEmpty: newProject.isEmpty)
+                    .frame(width: 120)
+                    .accessibilityLabel("Projet")
                     .onSubmit(add)
                     .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
-                TextField("min", text: $newEstimate)
-                    .textFieldStyle(GoalongFieldStyle()).frame(width: 64)
+                TextField("", text: $newEstimate)
+                    .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("min", isEmpty: newEstimate.isEmpty)
+                    .frame(width: 64)
                     .onSubmit(add)
                     .help("Estimation, facultative : de 5 à 600 minutes.")
                     .accessibilityLabel("Estimation en minutes")
@@ -845,11 +877,11 @@ struct FocusThreadModel: Equatable {
                         .help("Vos estimations : ×\(FocusUIFormat.decimal(ratio)). Médiane du temps mesuré sur le temps prévu, sur vos 20 dernières tâches estimées.")
                 }
                 Button("Ajouter", action: add)
-                    .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty || plan.items.count >= 10)
+                    .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty || plan.items.count >= FocusPlan.maximumItems)
             }
             if let addError {
                 Text(addError).font(.system(size: 12)).foregroundStyle(LHTheme.warning).padding(.leading, 28)
-            } else if plan.items.count >= 10 {
+            } else if plan.items.count >= FocusPlan.maximumItems {
                 Text("Le plan compte déjà dix tâches.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.leading, 28)
             }
         }
@@ -857,7 +889,7 @@ struct FocusThreadModel: Equatable {
     }
 
     private var tomorrow: String {
-        BlockingController.dayKey(Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now)
+        (try? controller.dayAfter(plan.day)) ?? plan.day
     }
 
     private func reviewLine(_ review: FocusReview) -> String {
@@ -868,6 +900,8 @@ struct FocusThreadModel: Equatable {
     private func add() {
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
+        // Entrée in any field takes the same path as the button, which is off on a full plan.
+        guard plan.items.count < FocusPlan.maximumItems else { addError = FocusUIError.message(FocusFailure.planFull); return }
         var estimate: Int?
         let rawEstimate = newEstimate.trimmingCharacters(in: .whitespaces)
         if !rawEstimate.isEmpty {
@@ -885,15 +919,19 @@ struct FocusThreadModel: Equatable {
         }
     }
 
+    private func moveToTomorrow(_ item: FocusPlanItem) {
+        do { try controller.movePlanItem(item.id, day: plan.day, to: tomorrow) }
+        catch FocusFailure.planFull { controller.error = "Le plan de demain compte déjà dix tâches." }
+        catch { controller.error = FocusUIError.message(error) }
+    }
+
     private func setDone(_ item: FocusPlanItem, _ done: Bool) {
         if done { act { try controller.setItemStatus(item.id, day: plan.day, status: .done) } } else { reopen(item) }
     }
 
     private func reopen(_ item: FocusPlanItem) {
-        var next = plan
-        guard let index = next.items.firstIndex(where: { $0.id == item.id }) else { return }
-        next.items[index].status = .open; next.items[index].toDay = nil
-        act { try controller.setPlan(next) }
+        guard plan.items.contains(where: { $0.id == item.id }) else { return }
+        act { try controller.reopenPlanItem(item.id, day: plan.day) }
     }
 
     private func remove(_ item: FocusPlanItem) {
@@ -1017,11 +1055,11 @@ struct FocusThreadModel: Equatable {
                         .accessibilityAddTraits(.isHeader)
                     LHCard(padding: 0) {
                         VStack(spacing: 0) {
-                            limitRow("Travail par jour", detail: nil, text: $daily, placeholder: "—", width: 64)
+                            limitRow("Travail par jour", detail: nil, text: $daily, placeholder: "Aucune limite", width: 104)
                             GoalongRowDivider(inset: LHTheme.cardInset)
                             limitRow("Travail par semaine",
-                                     detail: "Au-delà d’environ 50 h par semaine, la production par heure baisse (Pencavel, 2014).",
-                                     text: $weekly, placeholder: "—", width: 64)
+                                     detail: "Au-delà d’environ 50 h par semaine, la production par heure baisse.",
+                                     text: $weekly, placeholder: "Aucune limite", width: 104)
                             GoalongRowDivider(inset: LHTheme.cardInset)
                             endRow
                         }
@@ -1029,7 +1067,7 @@ struct FocusThreadModel: Equatable {
                     if let limitError {
                         Text(limitError).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                     }
-                    Text("Vide = pas de limite. Goalong prévient une fois, sans jamais bloquer le travail. Le travail suit votre définition ; sans définition, le temps actif.")
+                    Text("Sans valeur, pas de limite. Goalong prévient une fois, sans jamais bloquer le travail. Le travail suit votre définition ; sans définition, le temps actif.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1109,8 +1147,10 @@ struct FocusThreadModel: Equatable {
         HStack(alignment: .center, spacing: 12) {
             labels(title, detail)
             Spacer(minLength: 12)
-            TextField(placeholder, text: text)
-                .textFieldStyle(GoalongFieldStyle()).frame(width: width)
+            TextField("", text: text)
+                .textFieldStyle(GoalongFieldStyle())
+                .goalongPlaceholder(placeholder, isEmpty: text.wrappedValue.isEmpty, alignment: .trailing)
+                .frame(width: width)
                 .multilineTextAlignment(.trailing)
                 .onSubmit(commitLimits)
                 .onChange(of: text.wrappedValue) { _ in commitLimits() }
@@ -1123,12 +1163,14 @@ struct FocusThreadModel: Equatable {
     private var endRow: some View {
         let weekdays = controller.settings.limits.weekdays
         return HStack(alignment: .center, spacing: 12) {
-            labels("Fin de journée", "Prévient à cette heure, ces jours-là.")
+            labels("Fin de journée", controller.settings.limits.endMinute != nil
+                   ? "Prévient à cette heure, ces jours-là." : "Choisissez d’abord une heure de fin.")
             Spacer(minLength: 12)
             HStack(spacing: 3) {
                 ForEach(1...7, id: \.self) { day in
                     let on = weekdays.contains(day)
                     Button {
+                        guard controller.settings.limits.endMinute != nil else { return }
                         var next = controller.settings
                         if on { next.limits.weekdays.remove(day) } else { next.limits.weekdays.insert(day) }
                         if next.limits.endMinute != nil, next.limits.weekdays.isEmpty { return }
@@ -1141,14 +1183,18 @@ struct FocusThreadModel: Equatable {
                                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .disabled(controller.settings.limits.endMinute == nil)
+                    // Not `.disabled`: the system dims a disabled letter until it cannot be read.
+                    .help(controller.settings.limits.endMinute == nil ? "Choisissez d’abord une heure de fin." : "")
                     .accessibilityLabel(BlockingFormat.weekdayShort[day - 1])
                     .accessibilityAddTraits(on ? .isSelected : [])
                 }
             }
-            .opacity(controller.settings.limits.endMinute == nil ? 0.5 : 1)
-            TextField("hh:mm", text: $end)
-                .textFieldStyle(GoalongFieldStyle()).frame(width: 72)
+            .opacity(controller.settings.limits.endMinute == nil ? 0.85 : 1)
+            .accessibilityHint(controller.settings.limits.endMinute == nil ? "Indisponible : choisissez d’abord une heure de fin." : "")
+            TextField("", text: $end)
+                .textFieldStyle(GoalongFieldStyle())
+                .goalongPlaceholder("hh:mm", isEmpty: end.isEmpty, alignment: .trailing)
+                .frame(width: 72)
                 .multilineTextAlignment(.trailing)
                 .onSubmit(commitLimits)
                 .onChange(of: end) { _ in commitLimits() }
@@ -1266,7 +1312,8 @@ enum FocusUIError {
         case .locked: return "Le blocage de cette phase est verrouillé jusqu’à sa fin."
         case .invalidArgument: return "Vérifiez le texte et les durées."
         case .notFound: return "Cet élément n’existe plus."
-        case .storageFailed: return "Enregistrement impossible. Les données déjà enregistrées restent intactes."
+        case .planFull: return "Le plan compte déjà dix tâches."
+        case .storageFailed: return "Enregistrement impossible. Les données déjà enregistrées restent intactes ; Goalong réessaie chaque minute."
         case .moduleDisabled: return "Activez Blocage dans Réglages › Modules pour bloquer pendant une séance."
         case .appNotRunning: return "Goalong ne répond pas."
         case nil: return raw.count < 120 && !raw.contains("Error") ? raw : "L’action n’a pas abouti."

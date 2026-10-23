@@ -98,6 +98,8 @@
         private let captureHealth: CaptureHealthStore?
         private let persistenceFailureHandler: ((String, Error) -> Void)?
         private let writerQueueCapacity: Int
+        /// Pause and privacy-policy root. Production uses the app data root; tests inject a temporary one.
+        private let dataRoot: URL
         private let isMainThread: () -> Bool
         private let beforePersist: ((HistoryEvent) -> Void)?
         private let clock: () -> Date
@@ -144,8 +146,10 @@
             sessionID: String = UUID().uuidString,
             eventIdentifier: @escaping () -> String = { UUID().uuidString },
             captureClock: AXCaptureClock = AXCaptureClock(),
-            captureMetrics: ((AXOperationMetric) -> Void)? = nil
+            captureMetrics: ((AXOperationMetric) -> Void)? = nil,
+            dataRoot: URL = AppPaths.applicationSupportDirectory
         ) {
+            self.dataRoot = dataRoot
             precondition((2...512).contains(writerQueueCapacity))
             precondition(!storageRetryDelays.isEmpty)
             self.clock = clock
@@ -166,12 +170,13 @@
 
             // A seal is not allowed to become durable before every raw event already
             // handed to it has crossed the event-journal durability barrier.
-            minuteSealer.setDurabilityBarrier { [weak store, weak integrityJournal] in
-                guard let store, let integrityJournal else {
-                    throw EventRecorderPersistenceError.recorderClosed
-                }
-                try store.flushAndWait()
-                try integrityJournal.checkpointPersistedEvents()
+            // It runs on the writer queue, so no event can be appended and committed between
+            // the sync and the checkpoint: the checkpoint never gets ahead of synced rows.
+            // Writer-queue code only hands roots to the sealer asynchronously, so this
+            // sealer-to-writer wait cannot deadlock.
+            minuteSealer.setDurabilityBarrier { [weak self] in
+                guard let self else { throw EventRecorderPersistenceError.recorderClosed }
+                try self.flushAndWait()
             }
 
             do {
@@ -199,10 +204,10 @@
             timestamp: Date = Date(),
             identifier: String? = nil
         ) -> Bool {
-            guard !GoalongGlobalPause.isPaused() else { return false }
-            let pauseRevision = context?.globalPauseRevision ?? GoalongGlobalPause.load().revision
+            guard !GoalongGlobalPause.isPaused(in: dataRoot) else { return false }
+            let pauseRevision = context?.globalPauseRevision ?? GoalongGlobalPause.load(in: dataRoot).revision
             let policyStamp = context?.privacyRevision
-                ?? GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory).revision
+                ?? GoalongPrivacyPolicyCache.read(in: dataRoot).revision
             let usageMetadata = Self.metadataForObservation(context: context, kind: kind,
                 timestamp: timestamp, metadata: metadata, inputOrigin: inputOrigin)
             let base = HistoryEvent(
@@ -516,11 +521,11 @@
             _ base: HistoryEvent, isObservationGap: Bool, privacyRevision: String?,
             globalPauseRevision: String?, isStorageGap: Bool
         ) -> Bool {
-            guard !GoalongGlobalPause.isPaused() else { return false }
+            guard !GoalongGlobalPause.isPaused(in: dataRoot) else { return false }
             beforePersist?(base)
-            guard !GoalongGlobalPause.isPaused() else { return false }
+            guard !GoalongGlobalPause.isPaused(in: dataRoot) else { return false }
             if let globalPauseRevision {
-                do { try GoalongGlobalPause.revalidate(globalPauseRevision) } catch {
+                do { try GoalongGlobalPause.revalidate(globalPauseRevision, in: dataRoot) } catch {
                     SupportDiagnostics.shared.failure(error, component: .capture)
                 return false }
             }
@@ -537,7 +542,7 @@
                 return false
             }
 
-            let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory)
+            let privacy = GoalongPrivacyPolicyCache.read(in: dataRoot)
             let protected = privacy.eventForPersistence(base, expectedRevision: privacyRevision)
             let event = integrityJournal.prepare(protected)
             let outcome: JSONLAppendOutcome

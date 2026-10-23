@@ -46,7 +46,7 @@ struct JevActivationAvailability: Equatable {
         .sheet(isPresented: $showingConnection) { JevConnectionSheet().goalongControls() }
         .alert("Activer la surveillance du travail ?", isPresented: $confirming) {
             Button("Annuler", role: .cancel) {}
-            Button("Autoriser les envois à TypeSafe") { monitor.setEnabled(true) }
+            Button("Autoriser les envois à Jev") { monitor.setEnabled(true) }
         } message: {
             Text("Toutes les 15 secondes avec activité observable, Goalong transmet les critères de travail et exemples hors travail enregistrés, ainsi qu’un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Une détection suffisamment fiable affiche un rappel, sans attendre une deuxième fenêtre. Les autres sources restent inchangées.")
         }
@@ -130,9 +130,9 @@ struct JevActivationAvailability: Equatable {
     private var connectionRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(monitor.hasKey ? "Clé TypeSafe enregistrée" : "Connexion API nécessaire")
+                Text(monitor.hasKey ? "Clé API Jev enregistrée" : "Connexion API nécessaire")
                     .font(.system(size: 13, weight: .medium))
-                Text(monitor.hasKey ? "Usage facturé par TypeSafe." : "Votre clé API reste sur ce Mac. L’API TypeSafe est payante.")
+                Text(monitor.hasKey ? "Usage facturé par TypeSafe, le fournisseur de Jev." : "Votre clé API reste sur ce Mac. L’API de Jev est payante (TypeSafe).")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 8)

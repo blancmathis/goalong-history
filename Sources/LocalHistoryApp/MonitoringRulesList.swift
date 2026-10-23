@@ -207,7 +207,7 @@
                         help: "This app has no stable bundle identifier, so Goalong cannot save a persistent app rule."
                     )
                 }
-                if bundleIdentifier.caseInsensitiveCompare(ProductIdentity.bundleIdentifier) == .orderedSame {
+                if ProductIdentity.isGoalong(bundleIdentifier) {
                     return MonitoringState(
                         enabled: false,
                         editable: false,
@@ -225,6 +225,13 @@
                         enabled: true,
                         editable: false,
                         help: "Ce site n’a pas d’adresse stable : Goalong ne peut pas lui associer une règle permanente."
+                    )
+                }
+                if let parent = model.excludingParentDomain(for: host) {
+                    return MonitoringState(
+                        enabled: false,
+                        editable: false,
+                        help: "Exclu par la règle « \(parent) » : modifiez-la dans Réglages."
                     )
                 }
                 return MonitoringState(

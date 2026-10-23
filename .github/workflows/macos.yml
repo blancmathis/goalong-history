@@ -2,7 +2,7 @@ name: macOS quality gate
 
 on:
   push:
-    branches: [main]
+    branches: [main, motion/integration-20260917]
   pull_request:
   workflow_dispatch:
 
@@ -43,11 +43,14 @@ jobs:
           bash scripts/test_public_install_safety.sh
           bash scripts/test_install_from_source_safety.sh
           bash scripts/test_install_cli_link.sh
+          bash scripts/test_uninstall_and_quit.sh
           bash scripts/test_release_signing_policy.sh
+          bash scripts/test_verify_published_update_feed.sh
           xcrun swiftc -typecheck scripts/verify_update_archive.swift
           python3 scripts/test_update_policy.py
           python3 scripts/test_permission_requirement_policy.py
           python3 scripts/test_release_publication_policy.py
+          python3 scripts/test_deferred_release_deltas.py
           python3 scripts/test_background_continuity.py
           python3 scripts/test_prepare_presigned_release.py
           python3 scripts/test_site_submission_policy.py
@@ -62,20 +65,44 @@ jobs:
 
       - name: Tests
         shell: bash
+        env:
+          GOALONG_TEST_HOME: ${{ runner.temp }}/goalong-test-home
+          CFFIXED_USER_HOME: ${{ runner.temp }}/goalong-test-home
         run: |
           set -euo pipefail
-          LOG="$(mktemp)"
+          mkdir -p "$GOALONG_TEST_HOME"
+          LOG="$RUNNER_TEMP/swift-test.log"
           set +e
           xcrun swift test 2>&1 | tee "$LOG"
           STATUS=${PIPESTATUS[0]}
           set -e
           if [[ $STATUS -ne 0 ]]; then
             if grep -Eq "AppAttestManager\.swift:[0-9]+:[0-9]+: (error|fatal error):|error: no such module 'DeviceCheck'|error: cannot find 'DCAppAttestService'" "$LOG"; then
-              xcrun swift test -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST
-            else
-              exit "$STATUS"
+              xcrun swift test -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST 2>&1 | tee "$LOG"
+              STATUS=${PIPESTATUS[0]}
             fi
+            [[ $STATUS -eq 0 ]] || exit "$STATUS"
           fi
+          # Skipped-test report (also in the job summary). Report only on CI: the hosted runner
+          # can skip host-dependent tests (display, WindowServer, Keychain) that this Mac does not.
+          # `make test` on the owner's Mac is strict.
+          python3 scripts/skip_report.py "$LOG" --report-only
+
+      - name: Skipped-test report and leaked-preference script self tests
+        run: |
+          bash scripts/test_skip_report.sh
+          bash scripts/test_clean_leaked_test_prefs.sh
+          bash scripts/test_run_swift_tests.sh
+          bash scripts/test_headless_signal_cleanup.sh
+
+      - name: Isolated-HOME recording and navigation tests
+        run: ./scripts/test_isolated_home.sh --skip-build
+
+      - name: Goalong Dev control tests (no build, no launch)
+        run: bash scripts/test_dev_app.sh
+
+      - name: Release and Goalong Dev identity refusals (skips without the signing key)
+        run: bash scripts/test_stable_release_identity.sh
 
       - name: Exercise full-row disclosure interactions
         timeout-minutes: 2
@@ -83,6 +110,18 @@ jobs:
           mkdir -p qa/local-analytics
           GOALONG_FOCUS_UI_TESTS=1 GOALONG_FOCUS_UI_SNAPSHOT="$PWD/qa/local-analytics/disclosures-expanded.png" \
             swift test --skip-build --filter GoalongDisclosureInteractionTests
+
+      - name: Exercise the blocking activation regression
+        timeout-minutes: 3
+        run: |
+          LOG="$(mktemp)"
+          GOALONG_BLOCKING_UI_TESTS=1 HOME="$(mktemp -d /tmp/goalong-test-XXXX)" \
+            swift test --skip-build --filter BlockingActivationRegressionTests 2>&1 | tee "$LOG"
+          # A skipped test must fail the gate, so the env opt-in cannot quietly switch it off.
+          if grep -q "skipped" "$LOG" || ! grep -q "Executed 1 test, with 0 failures" "$LOG"; then
+            echo "BlockingActivationRegressionTests did not run" >&2
+            exit 1
+          fi
 
       - name: Render local analytics with synthetic data
         run: |

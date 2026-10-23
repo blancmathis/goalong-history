@@ -61,15 +61,14 @@ import SwiftUI
                                               })
                     }
                     if let error = controller.error, editingList == nil {
-                        GoalongNote(error, tone: .warning)
-                            .onTapGesture { controller.error = nil }
+                        BlockingNoteButton(note: GoalongNote(error, tone: .warning), hint: "Fermer l’erreur") { controller.error = nil }
                             .accessibilityIdentifier("blocking-error")
                     }
                     // Lists are made in Distractions; with none yet, the composer only offers the whole Mac.
                     if controller.lists.isEmpty {
-                        GoalongNote("Aucune liste pour l’instant. Créez-en une dans Distractions, ou avec « Nouvelle liste… ».",
-                                    symbol: "list.bullet")
-                            .onTapGesture(perform: onOpenLists)
+                        BlockingNoteButton(note: GoalongNote("Aucune liste pour l’instant. Créez-en une dans Distractions, ou avec « Nouvelle liste… ».",
+                                                             symbol: "list.bullet"),
+                                           hint: "Ouvrir Distractions", action: onOpenLists)
                     }
                     if !frozen {
                         if blocking && !composing {
@@ -82,7 +81,7 @@ import SwiftUI
                     }
                     if !controller.lists.isEmpty {
                         GoalongSection(title: "Semaine",
-                                       subtitle: "Glissez sur un jour pour programmer un blocage. Cliquez une plage pour la changer.") {
+                                       subtitle: "Glissez sur un jour, ou utilisez son bouton +, pour programmer un blocage. Cliquez une plage pour la changer.") {
                             BlockingWeekEditor(controller: controller, now: now)
                         }
                     }
@@ -118,6 +117,20 @@ import SwiftUI
     private func unlockText(_ origin: BlockSession.Origin, end: Date) -> String {
         if case .program = origin { return "Cette plage du programme s’arrête pour aujourd’hui. Elle revient la prochaine fois." }
         return "Le blocage s’arrête maintenant, avant \(BlockingFormat.endTime(end))."
+    }
+}
+
+/// A note that acts on click. A real button, so VoiceOver announces it and the keyboard reaches it.
+struct BlockingNoteButton: View {
+    let note: GoalongNote
+    let hint: String
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) { note.contentShape(Rectangle()) }
+            .buttonStyle(.plain)
+            .help(hint)
+            .accessibilityHint(hint)
     }
 }
 
@@ -210,13 +223,18 @@ struct BlockingStopRequest: Identifiable {
 
     /// « Xcode ouvert » for a block started by a trigger app; nil for a block with an end.
     private func triggerApps(_ block: BlockingActiveBlock) -> String? {
+        guard let shown = triggerNames(block) else { return nil }
+        guard !shown.isEmpty else { return "App de travail ouverte" }
+        return shown.prefix(2).joined(separator: ", ") + (shown.count > 1 ? " ouverts" : " ouvert")
+    }
+
+    /// The trigger apps that hold the block (running ones first); nil for a block with an end.
+    private func triggerNames(_ block: BlockingActiveBlock) -> [String]? {
         guard case .trigger(let id) = block.origin else { return nil }
         let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
         let apps = controller.list(id)?.triggers?.apps ?? []
         let names = apps.filter { running.contains($0.bundleIdentifier) }.map(\.name)
-        let shown = names.isEmpty ? apps.map(\.name) : names
-        guard !shown.isEmpty else { return "App de travail ouverte" }
-        return shown.prefix(2).joined(separator: ", ") + (shown.count > 1 ? " ouverts" : " ouvert")
+        return names.isEmpty ? apps.map(\.name) : names
     }
 
     @ViewBuilder private var attemptsLine: some View {
@@ -265,7 +283,7 @@ struct BlockingStopRequest: Identifiable {
             }
             switch block.lock {
             case .free:
-                if case .manual = block.origin {
+                if block.origin.stopsFromPage {
                     Button("Arrêter") { controller.stop(block.id) }.accessibilityIdentifier("blocking-stop")
                 }
             case .typing:
@@ -306,8 +324,8 @@ struct BlockingStopRequest: Identifiable {
             BlockingIconCluster(lists: lists, size: 18, limit: 5)
             VStack(alignment: .leading, spacing: 2) {
                 Text(lists.map(\.name).joined(separator: ", ")).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text(triggerApps(block).map { "Bloqué tant que \($0)" }
-                     ?? "\(block.lock == .free ? "Bloqué" : block.lock.title) jusqu’à \(BlockingFormat.endTime(block.end))")
+                Text(triggerNames(block).map { "\(BlockingFormat.verb(lists)) \(BlockingFormat.triggerPhrase($0))" }
+                     ?? "\(block.lock == .free ? BlockingFormat.verb(lists) : block.lock.title) jusqu’à \(BlockingFormat.endTime(block.end))")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 12)
@@ -398,16 +416,22 @@ struct BlockingMeter: View {
     @State private var selected: Set<UUID> = []
     @State private var wholeMac = false
     @State private var span: Span = .minutes(60)
-    @State private var until = Calendar.current.date(byAdding: .hour, value: 2, to: Date()) ?? Date()
+    @State private var until = Calendar.current.date(byAdding: .hour, value: 2, to: GoalongToday.now) ?? GoalongToday.now
     @State private var lock: BlockLock = .free
     @State private var freezeMode: BlockFreeze.Mode = .shield
     @State private var kept: [BlockAppRule] = []
     @State private var confirmingLock = false
     @State private var confirmingFreeze = false
+    /// The plan the open alert promises: a click on it keeps this end (R5-regressions-01).
+    @State private var pending: BlockingNowPlan?
+    /// The freeze the open alert promises, read at the click that opened it (B01-R2-01).
+    @State private var pendingFreezePromise: BlockingFreezePromise?
+    /// That click: the alert writes its end time against it.
+    @State private var pendingFreezeAt = GoalongToday.now
     @State private var picking = false
     /// « Plus tard »: a one-time block that starts by itself.
     @State private var later = false
-    @State private var startAt = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date()
+    @State private var startAt = Calendar.current.date(byAdding: .hour, value: 1, to: GoalongToday.now) ?? GoalongToday.now
 
     init(controller: BlockingController, now: Date, later: Bool = false, lock: BlockLock = .free) {
         self.controller = controller
@@ -419,23 +443,72 @@ struct BlockingMeter: View {
 
     /// Lists only: the whole Mac always starts now.
     private var scheduling: Bool { later && !wholeMac }
-    private var begin: Date { scheduling ? max(startAt, now) : now }
 
-    private var end: Date {
-        switch span {
-        case .minutes(let value): return begin.addingTimeInterval(TimeInterval(value * 60))
-        case .until:
-            // A time earlier than the start means the next day.
-            let parts = Calendar.current.dateComponents([.hour, .minute], from: until)
-            let day = Calendar.current.date(bySettingHour: parts.hour ?? 0, minute: parts.minute ?? 0, second: 0, of: begin) ?? begin
-            return day > begin ? day : day.addingTimeInterval(86_400)
-        }
+    /// The page's `now` moves every 30 s only: it draws the labels; a click reads the clock again.
+    private func plan(at date: Date) -> BlockingNowPlan {
+        if case .minutes(let value) = span { return BlockingNowPlan(later: scheduling, startAt: startAt, minutes: value, now: date) }
+        return BlockingNowPlan(later: scheduling, startAt: startAt, until: until, now: date)
+    }
+    private var begin: Date { plan(at: now).start }
+    /// A « Plus tard » start time already past starts now: the button must say so.
+    private var startsLater: Bool { plan(at: now).startsLater }
+    private var end: Date { plan(at: now).end }
+
+    /// What the freeze button promises: the end the engine will store, or its 5 min minimum.
+    private var freezePromise: BlockingFreezePromise { BlockingFreezePromise(end: end, now: now) }
+
+    private var startHint: String? {
+        BlockingProtectionDetails.startHint(wholeMac: wholeMac, frozen: controller.freeze != nil, hasLists: !controller.lists.isEmpty,
+                                            anySelected: !selected.isDisjoint(with: controller.lists.map(\.id)),
+                                            needsPassword: lock == .password && !controller.hasPassword)
     }
 
     private var actionTitle: String {
-        if wholeMac { return "Geler jusqu’à \(BlockingFormat.endTime(end))…" }
-        if scheduling { return "Programmer \(BlockingFormat.moment(begin, now: now))" }
-        return "Bloquer jusqu’à \(BlockingFormat.endTime(end))"
+        if wholeMac { return "Geler \(freezePromise.phrase(now: now))…" }
+        return plan(at: now).actionTitle()
+    }
+
+    /// The plan a click on the main button promises. A duration counts from the click. A « Jusqu’à… »
+    /// time keeps the day the button showed: a time reached since the last tick is refused, never
+    /// moved to the next day.
+    private func promised(at date: Date) -> BlockingNowPlan? {
+        if case .minutes = span { return plan(at: date) }
+        return plan(at: now).confirmed(at: date)
+    }
+
+    /// The freeze the alert promises, read when it opened.
+    private var pendingFreeze: BlockingFreezePromise { pendingFreezePromise ?? freezePromise }
+
+    /// Why a click came too late, in the words of the chosen span: a duration has no end time to change.
+    nonisolated static func refusal(_ span: Span, freeze: Bool) -> String {
+        switch (span, freeze) {
+        case (.minutes, false): return "Ce blocage serait déjà fini. Relancez-le."
+        case (.until, false): return "L’heure de fin est passée. Choisissez une autre heure."
+        case (.minutes, true): return "Le gel durerait moins de 5 min. Relancez-le."
+        case (.until, true): return "Le gel durerait moins de 5 min. Choisissez une autre heure."
+        }
+    }
+
+    private func refuseEndPassed(freeze: Bool = false) {
+        controller.error = Self.refusal(span, freeze: freeze)
+    }
+
+    private func confirm() {
+        let date = Date()
+        if wholeMac {
+            // The freeze promises what the button showed; its 5 min minimum covers an end time just reached.
+            let shown: BlockingNowPlan
+            if case .minutes = span { shown = plan(at: date) } else { shown = plan(at: now) }
+            pending = shown
+            // Promised from the click, not the page tick (up to 30 s old), with time to read the alert.
+            pendingFreezePromise = BlockingFreezePromise.alert(end: shown.end, click: date)
+            pendingFreezeAt = date
+            confirmingFreeze = true
+            return
+        }
+        guard let shown = promised(at: date) else { return refuseEndPassed() }
+        pending = shown
+        if lock.protectsLists { confirmingLock = true } else { start(shown) }
     }
 
     var body: some View {
@@ -515,10 +588,12 @@ struct BlockingMeter: View {
                     }
                     HStack {
                         Spacer()
-                        Button {
-                            if wholeMac { confirmingFreeze = true } else if lock.protectsLists { confirmingLock = true } else { start() }
-                        } label: {
-                            Label(actionTitle, systemImage: wholeMac ? "snowflake" : (scheduling ? "calendar" : lock.symbol))
+                        if let hint = startHint {
+                            Text(hint).font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
+                                .accessibilityIdentifier("blocking-start-hint")
+                        }
+                        Button { confirm() } label: {
+                            Label(actionTitle, systemImage: wholeMac ? "snowflake" : (startsLater ? "calendar" : lock.symbol))
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
                         .disabled(wholeMac ? controller.freeze != nil
@@ -528,33 +603,37 @@ struct BlockingMeter: View {
                 }
             }
             .onAppear { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
-            .alert(lock == .password ? "Protéger par mot de passe jusqu’à \(BlockingFormat.endTime(end)) ?"
-                                     : "Verrouiller jusqu’à \(BlockingFormat.endTime(end)) ?", isPresented: $confirmingLock) {
+            .alert((pending ?? plan(at: now)).lockTitle(lock), isPresented: $confirmingLock) {
                 Button("Annuler", role: .cancel) {}
-                Button(lock == .password ? "Protéger" : "Verrouiller") { start() }
+                Button(lock == .password ? "Protéger" : "Verrouiller") { if let pending { start(pending) } }
             } message: {
-                Text(lock == .password
-                     ? "Sans le mot de passe, ce blocage va jusqu’à \(BlockingFormat.endTime(end)). Ses listes peuvent seulement devenir plus strictes, et quitter Goalong demande le mot de passe."
-                     : "Personne ne pourra arrêter ce blocage avant \(BlockingFormat.endTime(end)), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas.")
+                Text(GuardConsent.message((pending ?? plan(at: now)).lockMessage(lock), needed: controller.guardNeedsConsent))
             }
-            .alert("Geler le Mac jusqu’à \(BlockingFormat.endTime(end)) ?", isPresented: $confirmingFreeze) {
+            .alert("Geler le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
                 Button("Annuler", role: .cancel) {}
                 Button("Geler") {
+                    // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
+                    guard let end = pendingFreeze.end(at: Date()) else { return refuseEndPassed(freeze: true) }
                     controller.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
                     wholeMac = false
                 }
             } message: {
-                Text("Jusqu’à \(BlockingFormat.endTime(end)), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.")
+                Text(GuardConsent.message("\(pendingFreeze.phrase(now: pendingFreezeAt).capitalizedFirst), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
+                                          needed: controller.guardNeedsConsent))
             }
         }
     }
 
-    private func start() {
+    /// Keeps the promised end and reads the clock for the start only: a start time that has just passed
+    /// starts the block now. An end already reached is refused, never moved to the next day.
+    private func start(_ promised: BlockingNowPlan) {
         let ids = controller.lists.map(\.id).filter(selected.contains)
-        if scheduling {
-            if controller.schedule(listIDs: ids, start: begin, end: end, lock: lock) != nil { later = false }
+        guard let plan = promised.confirmed(at: Date()) else { return refuseEndPassed() }
+        if plan.startsLater {
+            if controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) != nil { later = false }
         } else {
-            controller.start(listIDs: ids, until: end, lock: lock)
+            controller.start(listIDs: ids, until: plan.end, lock: lock)
+            later = false
         }
     }
 
@@ -566,6 +645,102 @@ struct BlockingMeter: View {
             content().frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+}
+
+/// The composer's start and end, from one clock reading. A start time already past starts now.
+struct BlockingNowPlan: Equatable {
+    var start: Date
+    var end: Date
+    var now: Date
+    var startsLater: Bool { start > now }
+
+    init(later: Bool, startAt: Date, minutes: Int, now: Date) {
+        self.now = now
+        start = later ? max(startAt, now) : now
+        end = start.addingTimeInterval(TimeInterval(minutes * 60))
+    }
+
+    /// « Jusqu’à… »: a time not after the start means the next day.
+    init(later: Bool, startAt: Date, until: Date, now: Date, calendar: Calendar = .current) {
+        self.now = now
+        start = later ? max(startAt, now) : now
+        let parts = calendar.dateComponents([.hour, .minute], from: until)
+        end = BlockingWallClock.next(hour: parts.hour ?? 0, minute: parts.minute ?? 0, after: start, calendar: calendar)
+    }
+
+    /// The plan at the click that confirms it: the promised end stays, only the start reads the clock.
+    /// Nil when that end is passed or less than a minute away (R5-regressions-01).
+    func confirmed(at date: Date) -> BlockingNowPlan? {
+        var plan = self
+        plan.start = startsLater ? max(start, date) : date
+        plan.now = date
+        return plan.end.timeIntervalSince(plan.start) >= 60 ? plan : nil
+    }
+
+    /// « Programmer » only while the start is still ahead: a start time already past starts now.
+    func actionTitle(calendar: Calendar = .current) -> String {
+        startsLater ? "Programmer \(BlockingFormat.moment(start, now: now, calendar: calendar))"
+                    : "Bloquer \(BlockingFormat.until(end, now: now, calendar: calendar))"
+    }
+
+    /// The lock alert says the day: « Verrouiller jusqu’à demain à 2:00 ? », « Verrouiller samedi de 10:00 à 12:00 ? ».
+    func lockTitle(_ lock: BlockLock, calendar: Calendar = .current) -> String {
+        let when = startsLater ? BlockingFormat.period(from: start, to: end, now: now, calendar: calendar)
+                               : BlockingFormat.until(end, now: now, calendar: calendar)
+        return (lock == .password ? "Protéger par mot de passe " : "Verrouiller ") + when + " ?"
+    }
+
+    func lockMessage(_ lock: BlockLock, calendar: Calendar = .current) -> String {
+        let deadline = BlockingFormat.deadline(end, now: now, calendar: calendar)
+        let until = BlockingFormat.untilPhrase(deadline)
+        return lock == .password
+            ? "Sans le mot de passe, ce blocage va \(until). Ses listes peuvent seulement devenir plus strictes, et quitter Goalong demande le mot de passe."
+            : "Personne ne pourra arrêter ce blocage avant \(deadline), ni le modifier sauf pour le rendre plus strict. Quitter Goalong ou redémarrer ne l’arrête pas."
+    }
+}
+
+/// What the freeze alert promises. The engine stores at least 5 min from its own clock: an end time it
+/// would push back is promised as « pendant 5 min », counted from the click, so the freeze never ends later
+/// than the alert said.
+enum BlockingFreezePromise: Equatable {
+    case until(Date)
+    case minimum
+
+    static let minimumSeconds: TimeInterval = 5 * 60
+    /// Time left to read the alert before « Geler »: an end closer than 5 min + this is promised as the minimum.
+    static let readingSeconds: TimeInterval = 60
+
+    /// `margin` keeps an end time the engine could still take, but not after a read of the alert, out of `.until`.
+    init(end: Date, now: Date, margin: TimeInterval = 0) {
+        let bounded = BlockingWallClock.freezeEnd(end, now: now)
+        let tight = bounded < now.addingTimeInterval(Self.minimumSeconds + margin)
+        self = bounded > end || tight ? .minimum : .until(bounded)
+    }
+
+    /// What the alert promises, read at the click on the button that opens it (B01-R2-01).
+    static func alert(end: Date, click: Date) -> BlockingFreezePromise {
+        BlockingFreezePromise(end: end, now: click, margin: readingSeconds)
+    }
+
+    /// The end for a click at `date`; nil when the engine would move the promised end later.
+    func end(at date: Date) -> Date? {
+        switch self {
+        case .minimum: return date.addingTimeInterval(Self.minimumSeconds)
+        case .until(let end): return end.timeIntervalSince(date) >= Self.minimumSeconds ? end : nil
+        }
+    }
+
+    /// « jusqu’à 12:30 », « pendant 5 min ».
+    func phrase(now: Date, calendar: Calendar = .current) -> String {
+        switch self {
+        case .minimum: return "pendant \(BlockingFormat.duration(minutes: Int(Self.minimumSeconds / 60)))"
+        case .until(let end): return BlockingFormat.until(end, now: now, calendar: calendar)
+        }
+    }
+}
+
+private extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }
 
 /// « Tout le Mac » next to the lists: the freeze, drawn as a small covered screen.
@@ -637,6 +812,8 @@ struct BlockingLockExplainer: View {
 
     var body: some View {
         let ok = controller.siteBlockingAvailable
+        // A rounded rectangle like the other controls: a capsule drew square stubs at its two ends.
+        let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
         Button { open.toggle() } label: {
             HStack(spacing: 6) {
                 Image(systemName: ok ? "shield.lefthalf.filled" : "exclamationmark.triangle")
@@ -645,18 +822,20 @@ struct BlockingLockExplainer: View {
                         : "Sites non couverts")
                     .font(.system(size: 12, weight: .medium))
             }
+            .fixedSize()
             .foregroundStyle(ok ? LHTheme.secondaryText : LHTheme.warning)
             .padding(.horizontal, 10).frame(height: 26)
-            .background(Capsule().fill(LHTheme.controlBackground).overlay(Capsule().strokeBorder(LHTheme.controlBorder)))
-            .contentShape(Capsule())
+            .background(shape.fill(LHTheme.controlBackground))
+            .overlay(shape.strokeBorder(LHTheme.controlBorder))
+            .contentShape(shape)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("blocking-protection")
-        .popover(isPresented: $open, arrowEdge: .bottom) {
+        .background(Color.clear.popover(isPresented: $open, arrowEdge: .bottom) {
             BlockingProtectionDetails(controller: controller)
                 .padding(18).frame(width: 440)
                 .goalongControls()
-        }
+        })
     }
 }
 
@@ -683,8 +862,21 @@ struct BlockingLockExplainer: View {
                 passwordRow
                 GoalongRowDivider()
                 statusRow(symbol: "shield.lefthalf.filled", title: "Niveau",
-                          ok: controller.protection.level == .strict,
-                          value: controller.protection.level == .strict ? "Renforcé" : "Standard")
+                          ok: Self.levelIsSettled(controller.protection),
+                          value: Self.levelLabel(controller.protection))
+                if let help = Self.levelHelp(controller.protection) {
+                    Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 32).padding(.bottom, 8)
+                        .accessibilityIdentifier("blocking-level-help")
+                }
+            }
+            if controller.canRemoveGuard {
+                // Without any lock, running, planned or weekly: the member may take the background service away.
+                Button("Retirer le service de protection") { controller.removeGuardService() }
+                    .buttonStyle(LHQuietButtonStyle())
+                    .accessibilityIdentifier("blocking-remove-guard")
             }
             GoalongDisclosureGroup("Ce qui reste contournable") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -706,6 +898,40 @@ struct BlockingLockExplainer: View {
                     .goalongControls()
             }
         }
+    }
+
+    /// « Renforcé » only while the kill guard answers; otherwise what stops it, never an alert (spec K §6).
+    static func levelLabel(_ protection: BlockingProtectionState) -> String {
+        if protection.level == .strict { return "Renforcé" }
+        switch protection.guardian {
+        case .awaitingApproval: return "À autoriser dans Réglages › Général › Ouverture"
+        case .failed: return "Indisponible"
+        case .running, .notInstalled: return "Standard"
+        }
+    }
+
+    /// Why the guard is unavailable, under « Niveau »: its own words, never an alert (R5-garde-01).
+    static func levelHelp(_ protection: BlockingProtectionState) -> String? {
+        guard protection.level != .strict, case .failed(let reason) = protection.guardian else { return nil }
+        return reason
+    }
+
+    /// « Standard » is a normal level, not something missing: only a guard waiting or failed keeps the dashed circle.
+    static func levelIsSettled(_ protection: BlockingProtectionState) -> Bool {
+        if protection.level == .strict { return true }
+        switch protection.guardian {
+        case .awaitingApproval, .failed: return false
+        case .running, .notInstalled: return true
+        }
+    }
+
+    /// Why the start button is off, or nil when it is on.
+    static func startHint(wholeMac: Bool, frozen: Bool, hasLists: Bool, anySelected: Bool, needsPassword: Bool) -> String? {
+        if wholeMac { return frozen ? "Le Mac est déjà gelé." : nil }
+        if !hasLists { return "Créez d’abord une liste." }
+        if !anySelected { return "Choisissez au moins une liste." }
+        if needsPassword { return "Choisissez d’abord un mot de passe de blocage." }
+        return nil
     }
 
     /// The blocking password: set it here, or with the « Mot de passe » lock when first chosen.

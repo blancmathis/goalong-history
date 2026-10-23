@@ -215,12 +215,19 @@ struct GoalongUsageTimelineChart: View {
 struct GoalongDailyClassChart: View {
     let period: GoalongLocalAnalytics.Period
     let dateRange: ClosedRange<Date>
+    /// The same per-day average the headline shows (`GoalongActivitySummary.averageActivePerDay`).
+    var average: TimeInterval? = nil
+    var averageExcludesToday = false
     var onDay: (Date) -> Void = { _ in }
     private let height: CGFloat = 200
 
+    /// The average rule needs at least two averaged days, and uses the headline's own figure.
+    static func averageLine(for summary: GoalongActivitySummary) -> (value: TimeInterval, excludesToday: Bool)? {
+        guard summary.averagedDays.count >= 2, let value = summary.averageActivePerDay else { return nil }
+        return (value, summary.averageExcludesToday)
+    }
+
     var body: some View {
-        let observed = period.observedDays
-        let average = observed.isEmpty ? 0 : period.activeSeconds / Double(observed.count)
         let scale = GoalongAnalyticsChartScale(maximumSeconds: period.days.map(\.activeSeconds).max() ?? 0)
         VStack(alignment: .leading, spacing: 10) {
             Chart {
@@ -244,18 +251,18 @@ struct GoalongDailyClassChart: View {
                             .accessibilityLabel("\(GoalongSummaryFormat.shortDate(day.date)), zéro minute active observée")
                     }
                 }
-                if observed.count >= 2 {
+                if let average {
                     RuleMark(y: .value("Moyenne", average / scale.unitSeconds))
                         .foregroundStyle(LHTheme.text.opacity(0.7))
                         .lineStyle(StrokeStyle(lineWidth: 1))
                         .annotation(position: .top, alignment: .trailing) {
                             // A patch of page behind the label keeps it readable where bars pass the average.
-                            Text("Moyenne \(GoalongAnalyticsFormatting.duration(average))")
+                            Text("Moyenne\(averageExcludesToday ? " (sans aujourd’hui)" : "") \(GoalongAnalyticsFormatting.duration(average))")
                                 .font(.system(size: 11, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                                 .padding(.horizontal, 5).padding(.vertical, 2)
                                 .background(LHTheme.pageBackground.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
                         }
-                        .accessibilityLabel("Moyenne des jours observés")
+                        .accessibilityLabel(averageExcludesToday ? "Moyenne des jours observés, sans aujourd’hui" : "Moyenne des jours observés")
                         .accessibilityValue(GoalongAnalyticsFormatting.duration(average))
                 }
             }

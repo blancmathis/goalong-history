@@ -12,6 +12,14 @@ struct GoalongActivitySummary {
         let previous: TimeInterval
         let label: String
         var delta: TimeInterval { current - previous }
+
+        /// The headline line for a comparison of at least a minute. Over several days the figures
+        /// are per-day averages, so the line says « par jour ».
+        func headlineLine(isDay: Bool) -> String? {
+            guard abs(delta) >= 60 else { return nil }
+            let reference = label.hasPrefix("les ") ? "aux " + label.dropFirst(4) : "à " + label
+            return "\(delta > 0 ? "+" : "−")\(GoalongActivitySummary.duration(abs(delta))) de temps actif \(isDay ? "" : "par jour ")par rapport \(reference)"
+        }
     }
 
     struct Insight: Identifiable, Equatable {

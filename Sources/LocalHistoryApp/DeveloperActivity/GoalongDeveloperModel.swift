@@ -67,6 +67,7 @@ actor GoalongDeveloperReader {
                 else if !git.isEmpty && git.allSatisfy({ $0.status == .unsupported }) { status = .unsupported }
                 else { status = .noData }
                 if case .failed(let reason) = files.status { status = .failed(reason) }
+                else if case .failed(let reason)? = GoalongDeveloperMonitorStatus.current(root: root) { status = .failed("Suivi des fichiers interrompu : " + reason) }
             } catch is CancellationError { throw CancellationError() }
             catch { status = .failed("Les projets sélectionnés sont illisibles.") }
         }
@@ -113,8 +114,17 @@ actor GoalongDeveloperReader {
         for path in suggestion.observationRoots { try addProject(URL(fileURLWithPath: path), name: suggestion.name) }
     }
     func removeProject(id: String) throws {
-        let store = GoalongDeveloperStore(root: root); try store.remove(projectID: id); selectedProjects = try store.configuration().projects; value = nil
+        let store = GoalongDeveloperStore(root: root); try store.remove(projectID: id); selectedProjects = try store.configuration().projects
     }
-    var suggestions: [GoalongDeveloperProject] { value?.suggestions ?? [] }
+    #if DEBUG
+    func setValueForTesting(_ value: GoalongDeveloperDay?) { self.value = value }
+    #endif
+    /// Followed roots never show up as suggestions, even before the next refresh.
+    var suggestions: [GoalongDeveloperProject] {
+        let followed = Set(selectedProjects.flatMap { [$0.id, $0.rootPath] + $0.observationRoots })
+        return (value?.suggestions ?? []).filter { suggestion in
+            !followed.contains(suggestion.id) && !([suggestion.rootPath] + suggestion.observationRoots).contains(where: followed.contains)
+        }
+    }
 }
 #endif

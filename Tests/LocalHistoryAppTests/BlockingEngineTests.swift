@@ -35,9 +35,20 @@ final class BlockingEngineTests: XCTestCase {
         for value in ["youtube.com/shortsx", "notyoutube.com/shorts", "youtube.com.evil.org/shorts"] { XCTAssertFalse(BlockingRules.matches(rule, url: value), value) }
     }
     func testNeverBlockedInventoryAndNonRegular() {
-        XCTAssertEqual(BlockingRules.neverBlocked, Set(["ai.goalong.localhistory", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow", "com.apple.systemuiserver", "com.apple.controlcenter", "com.apple.notificationcenterui", "com.apple.Spotlight", "com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.ScreenSaver.Engine"]))
+        XCTAssertEqual(BlockingRules.neverBlocked, Set(["ai.goalong.localhistory", "ai.goalong.localhistory.dev", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow", "com.apple.systemuiserver", "com.apple.controlcenter", "com.apple.notificationcenterui", "com.apple.Spotlight", "com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.ScreenSaver.Engine"]))
         for id in BlockingRules.neverBlocked { var t = target(date()); t.bundleIdentifier = id; XCTAssertTrue(BlockingRules.exempt(t)) }
         var t = target(date()); t.regular = false; XCTAssertTrue(BlockingRules.exempt(t))
+    }
+    /// Bundle IDs are case-insensitive: another case must not make Goalong, Goalong Dev or Finder blockable.
+    func testNeverBlockedIgnoresCase() {
+        for id in ["AI.Goalong.LocalHistory.DEV", "ai.goalong.LOCALHISTORY", "COM.APPLE.FINDER", "com.apple.spotlight"] {
+            XCTAssertTrue(BlockingRules.isNeverBlocked(id), id)
+            var t = target(date()); t.bundleIdentifier = id; XCTAssertTrue(BlockingRules.exempt(t), id)
+        }
+        XCTAssertFalse(BlockingRules.isNeverBlocked("com.apple.Safari"))
+        XCTAssertFalse(BlockingRules.isNeverBlocked(nil))
+        let list = BlockList(name: "L")
+        XCTAssertFalse(BlockingRules.validTriggers(.init(apps: [.init(bundleIdentifier: "AI.GOALONG.LOCALHISTORY.DEV", name: "Dev")]), list: list))
     }
     func testWebContentAppsAreAppsNotBrowsers() {
         XCTAssertTrue(BlockingRules.isKnownBrowser("org.mozilla.firefox", configured: []))
@@ -196,6 +207,84 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(c.snapshot.usage?.quotaSecondsUsed[list.id], 5)
         XCTAssertEqual(c.snapshot.usage?.day, "2026-10-06")
     }
+    @MainActor func testFirstQuotaSampleAfterMidnightKeepsYesterdayInHistory() {
+        var now = date(5, 23, 59).addingTimeInterval(56)
+        let list = BlockList(name: "Quota", sites: [BlockSiteRule(pattern: "youtube.com")], quotaMinutesPerDay: 30)
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
+        now = now.addingTimeInterval(1); c.observe(target(now))
+        now = now.addingTimeInterval(2); c.observe(target(now))
+        XCTAssertEqual(c.snapshot.usage?.quotaSecondsUsed[list.id], 2)
+        // 00:00:00.5, 4.5 s after the last refresh: the sample itself must archive yesterday.
+        now = now.addingTimeInterval(1.5); c.observe(target(now))
+        XCTAssertEqual(c.snapshot.usage?.day, "2026-10-06")
+        XCTAssertEqual(c.snapshot.usageHistory?["2026-10-05"]?.quotaSecondsUsed[list.id], 2)
+        XCTAssertEqual(c.frictionCounts(day: "2026-10-05").quotaSecondsUsed[list.id], 2)
+    }
+    @MainActor func testFreezeAlertEndIsTheEndTheEngineStores() {
+        let now = date(); let c = BlockingController(clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        XCTAssertEqual(BlockingWallClock.freezeEnd(now.addingTimeInterval(120), now: now), now.addingTimeInterval(300))
+        XCTAssertEqual(BlockingWallClock.freezeEnd(now.addingTimeInterval(1_800), now: now), now.addingTimeInterval(1_800))
+        XCTAssertEqual(BlockingWallClock.freezeEnd(now.addingTimeInterval(30 * 3_600), now: now), now.addingTimeInterval(24 * 3_600))
+        c.startFreeze(until: now.addingTimeInterval(120), mode: .shield, allowedApps: [])
+        XCTAssertEqual(c.freeze?.end, BlockingWallClock.freezeEnd(now.addingTimeInterval(120), now: now))
+    }
+    func testWallClockArithmeticHoldsOnDSTDays() {
+        func at(_ m: Int, _ d: Int, _ h: Int, _ min: Int = 0, _ s: Int = 0) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: m, day: d, hour: h, minute: min, second: s))!
+        }
+        XCTAssertEqual(BlockingWallClock.next(hour: 8, minute: 0, after: at(3, 28, 22), calendar: calendar), at(3, 29, 8))
+        XCTAssertEqual(BlockingWallClock.next(hour: 8, minute: 0, after: at(10, 24, 22), calendar: calendar), at(10, 25, 8))
+        XCTAssertEqual(BlockingWallClock.next(hour: 23, minute: 0, after: at(10, 25, 22), calendar: calendar), at(10, 25, 23))
+        for day in [(3, 29), (10, 25)] {
+            XCTAssertEqual(BlockingWallClock.endOfDay(at(day.0, day.1, 12), calendar: calendar), at(day.0, day.1, 23, 59, 59))
+            for minute in [600, 720] {
+                XCTAssertEqual(BlockingWallClock.minuteOfDay(BlockingWallClock.wallTime(minute, on: at(day.0, day.1, 12), calendar: calendar), calendar: calendar), minute)
+            }
+        }
+    }
+    func testPageStopsFreeManualTriggerAndProgramBlocksOnly() {
+        let id = UUID()
+        XCTAssertTrue(BlockSession.Origin.manual.stopsFromPage)
+        XCTAssertTrue(BlockSession.Origin.trigger(id).stopsFromPage)
+        XCTAssertTrue(BlockSession.Origin.program(id).stopsFromPage)
+        XCTAssertFalse(BlockSession.Origin.commitment(id).stopsFromPage)
+        XCTAssertFalse(BlockSession.Origin.focus.stopsFromPage)
+    }
+    func testProgramLockSheetNeverProposesAnEndBeforeTheCurrentLock() {
+        let now = date()
+        XCTAssertEqual(BlockingProgramLock.initialUntil(current: nil, now: now, calendar: calendar), calendar.date(byAdding: .day, value: 14, to: now))
+        let later = now.addingTimeInterval(30 * 86_400)
+        XCTAssertEqual(BlockingProgramLock.initialUntil(current: later, now: now, calendar: calendar), later)
+    }
+    func testSecondaryLineReadsAsASentenceAndSaysRalentiForSlowDown() {
+        var slow = BlockList(name: "Lent"); slow.action = .slowDown
+        let hard = BlockList(name: "Dur")
+        XCTAssertEqual(BlockingFormat.verb([slow]), "Ralenti")
+        XCTAssertEqual(BlockingFormat.verb([slow, hard]), "Bloqué")
+        XCTAssertEqual(BlockingFormat.verb([]), "Bloqué")
+        XCTAssertEqual(BlockingFormat.triggerPhrase(["Xcode"]), "tant que Xcode est ouvert")
+        XCTAssertEqual(BlockingFormat.triggerPhrase(["Xcode", "Figma", "Slack"]), "tant que Xcode, Figma sont ouverts")
+        XCTAssertEqual(BlockingFormat.triggerPhrase([]), "tant qu’une app de travail est ouverte")
+    }
+    @MainActor func testLockedRefusalsNameThePasswordBlock() throws {
+        let now = date()
+        var list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")], quotaMinutesPerDay: 30, breaks: BlockBreaks(count: 1, minutes: 5))
+        list.program.ranges = [.init(weekdays: [1], startMinute: 600, endMinute: 660)]
+        let credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        for (lock, prefix) in [(BlockLock.password, "Pendant un blocage par mot de passe, "), (.locked, "Pendant un verrou, ")] {
+            let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now }, calendar: calendar)
+            c.start(listIDs: [list.id], until: now.addingTimeInterval(3600), lock: lock)
+            XCTAssertFalse(c.activeBlocks.isEmpty)
+            var quota = list; quota.quotaMinutesPerDay = 60
+            var breaks = list; breaks.breaks = BlockBreaks(count: 2, minutes: 5)
+            var program = list; program.program.ranges = []
+            for next in [quota, breaks, program] {
+                guard case .refused(let reason) = c.editCheck(next) else { XCTFail("\(lock) must refuse"); continue }
+                XCTAssertTrue(reason.hasPrefix(prefix), reason)
+            }
+        }
+    }
     @MainActor func testUnreadableAddressFailsClosedInPrivateAndNormalWindows() {
         for privateWindow in [true, false] {
             var now = date(); let backend = FakeBlockingBackend()
@@ -208,6 +297,25 @@ final class BlockingEngineTests: XCTestCase {
             backend.accessibilityAvailable = false; c.refresh(); XCTAssertFalse(c.siteBlockingAvailable)
             XCTAssertNil(c.snapshot.usage?.quotaSecondsUsed[list.id])
         }
+    }
+    /// Aside regression: an activation (address not read yet) left an unreadable clock behind when the
+    /// member switched away before the first read; every later activation then covered the browser at once.
+    @MainActor func testActivationDoesNotReuseAnEarlierUnreadableClock() {
+        var now = date(); let backend = FakeBlockingBackend()
+        let list = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "x.com")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(7200), lock: .free)
+        func activate() { var t = target(now, url: nil); t.isActivation = true; c.observe(t) }
+        activate()
+        now = now.addingTimeInterval(1); c.observe(BlockingObservation(bundleIdentifier: "com.apple.finder", pid: 43000, windowFrame: nil,
+            isBrowser: false, url: nil, privateWindow: false, at: now))
+        now = now.addingTimeInterval(1800); activate(); c.refresh()
+        XCTAssertEqual(backend.siteBlocks, 0); XCTAssertNil(backend.lastReason)
+        var t = target(now, url: "https://wikipedia.org/a"); c.observe(t)
+        XCTAssertEqual(backend.siteBlocks, 0); XCTAssertNil(backend.lastReason)
+        // A truly unreadable address still covers the browser after 3 s of reads.
+        t.url = nil; for _ in 0..<4 { c.observe(t); now = now.addingTimeInterval(1); t.at = now }
+        guard case .unsupportedBrowser = backend.lastReason else { return XCTFail("expected whole-browser cover") }
     }
     /// A private window follows the lists, counts the quota, and no address of it reaches the Blocking folder.
     @MainActor func testPrivateWindowFollowsListsAndWritesNoAddress() throws {
@@ -284,6 +392,37 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(c.freeze?.end, date().addingTimeInterval(10800))
         XCTAssertTrue(c.activeBlocks.contains { if case .program = $0.origin { return true }; return false })
     }
+    /// K3-kill-04: small forward steps (60 s or less each) add up and are compensated once their sum
+    /// passes 60 s; a step back then forth nets to nothing.
+    @MainActor func testSmallForwardClockStepsAddUpAndAreCompensated() {
+        var now = date(), uptime = 1000.0
+        let list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, continuous: { uptime }, boot: { "boot" })
+        let end = now.addingTimeInterval(7200)
+        c.start(listIDs: [list.id], until: end, lock: .locked)
+        c.refresh()
+        for _ in 0..<10 { now = now.addingTimeInterval(15 + 59); uptime += 15; c.refresh() }
+        XCTAssertEqual(c.snapshot.sessions[0].end.timeIntervalSince(end), 590, accuracy: 0.001)
+        // Back one hour, then forward one hour: the real time spent is what counts.
+        now = now.addingTimeInterval(-3600); uptime += 15; c.refresh()
+        now = now.addingTimeInterval(3615); uptime += 15; c.refresh()
+        XCTAssertEqual(c.snapshot.sessions[0].end.timeIntervalSince(end), 590, accuracy: 0.001)
+    }
+    func testClockAnchorIsKeptUntilACompensation() {
+        let first = BlockingClockState(wall: date(), continuous: 100, boot: "b")
+        let anchored = BlockingClock.advanced(previous: nil, now: first, adjusted: 0)
+        XCTAssertEqual(anchored.anchor, first.offset)
+        let step = BlockingClockState(wall: date().addingTimeInterval(90), continuous: 140, boot: "b")
+        XCTAssertEqual(BlockingClock.adjustment(previous: anchored, now: step), 0)
+        let kept = BlockingClock.advanced(previous: anchored, now: step, adjusted: 0)
+        XCTAssertEqual(kept.anchor, first.offset)
+        // 50 s ahead after the first step, 120 s after the second: compensated from the anchor, not from `step`.
+        let next = BlockingClockState(wall: date().addingTimeInterval(200), continuous: 180, boot: "b")
+        XCTAssertEqual(BlockingClock.adjustment(previous: kept, now: next), 120)
+        XCTAssertEqual(BlockingClock.advanced(previous: kept, now: next, adjusted: 120).anchor, next.offset)
+        let rebooted = BlockingClockState(wall: date(), continuous: 5, boot: "c")
+        XCTAssertEqual(BlockingClock.advanced(previous: kept, now: rebooted, adjusted: 0).anchor, rebooted.offset)
+    }
     func testRebootBackwardsPreservesRemainingAndContinuousSleep() {
         let old = BlockingClockState(wall: date(), continuous: 100, boot: "old")
         XCTAssertEqual(BlockingClock.adjustment(previous: old, now: BlockingClockState(wall: date().addingTimeInterval(-3600), continuous: 1, boot: "new")), -3600)
@@ -304,6 +443,90 @@ final class BlockingEngineTests: XCTestCase {
         c.delete(list.id); XCTAssertEqual(c.lists.count, 1)
         clockNow = now.addingTimeInterval(3601); c.refresh()
         XCTAssertFalse(c.hasLocks); XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
+    /// R2-019: day keys written under a Buddhist or Japanese calendar are re-keyed to Gregorian once, counters kept.
+    @MainActor func testLegacyCalendarDayKeysAreRekeyedOnLoad() throws {
+        let now = date(15), list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        for (identifier, today, yesterday) in [(Calendar.Identifier.buddhist, "2569-10-15", "2569-10-14"), (.japanese, "0008-10-15", "0008-10-14"), (.indian, "1948-07-23", "1948-07-22")] {
+            var legacy = Calendar(identifier: identifier); legacy.timeZone = calendar.timeZone
+            var usage = BlockDayUsage(day: today); usage.quotaSecondsUsed[list.id] = 120; usage.breaksTaken[list.id] = 1
+            var past = BlockDayUsage(day: yesterday); past.quotaSecondsUsed[list.id] = 300
+            let store = try temporaryStore()
+            try store.save(BlockingDocument(lists: [list], usage: usage, usageHistory: [yesterday: past]))
+            for _ in 0..<2 {  // the second launch changes nothing
+                let c = BlockingController(clock: { now }, store: store, calendarProvider: { legacy }, continuous: { now.timeIntervalSince1970 })
+                XCTAssertEqual(c.frictionCounts(day: "2026-10-15").quotaSecondsUsed[list.id], 120, "\(identifier)")
+                XCTAssertEqual(c.frictionCounts(day: "2026-10-15").breaksTaken[list.id], 1)
+                XCTAssertEqual(c.frictionCounts(day: "2026-10-14").quotaSecondsUsed[list.id], 300, "\(identifier)")
+                let saved = try store.load()
+                XCTAssertEqual(saved.usage?.day, "2026-10-15"); XCTAssertEqual(Set(saved.usageHistory?.keys ?? [:].keys), ["2026-10-14"])
+                XCTAssertEqual(saved.usageHistory?["2026-10-14"]?.day, "2026-10-14")
+            }
+        }
+    }
+    /// R2-076: the « + » button and the drag build their draft the same way, without needing a drag.
+    @MainActor func testNewRangeDraftForADay() throws {
+        let list = UUID()
+        let draft = try XCTUnwrap(BlockingWeekEditor.newDraft(day: 1, start: BlockingWeekEditor.defaultStart,
+                                                              end: BlockingWeekEditor.defaultEnd, firstList: list))
+        XCTAssertNil(draft.existing); XCTAssertEqual(draft.days, [1]); XCTAssertEqual(draft.listIDs, [list])
+        XCTAssertEqual(draft.start, 540); XCTAssertEqual(draft.end, 600)
+        XCTAssertEqual(BlockingWeekEditor.newDraft(day: 2, start: 1_380, end: 1_440, firstList: list)?.end, 1_440)
+        XCTAssertNil(BlockingWeekEditor.newDraft(day: 1, start: 540, end: 600, firstList: nil), "no list, no draft")
+    }
+    /// R2-065: the icon cluster lists each app or host once, so ids stay unique and "+N" counts unique items.
+    func testIconClusterDeduplicatesItems() {
+        let mail = BlockAppRule(bundleIdentifier: "com.apple.mail", name: "Mail")
+        let one = BlockList(name: "A", sites: [.init(pattern: "youtube.com"), .init(pattern: "youtube.com/shorts")], apps: [mail])
+        let two = BlockList(name: "B", sites: [.init(pattern: "youtube.com")], apps: [mail])
+        XCTAssertEqual(BlockingIconCluster.items(for: [one, two]), [.app(mail), .site("youtube.com")])
+    }
+    /// R2-075: a failed marker write is retried on the next refresh, then not repeated.
+    @MainActor func testFailedLockMarkerWriteIsRetried() throws {
+        let store = try temporaryStore(), now = date(), list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        try store.save(BlockingDocument(lists: [list], sessions: [BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(3600), lock: .locked)]))
+        let marker = store.directory.appendingPathComponent("locked-until")
+        try FileManager.default.createDirectory(at: marker, withIntermediateDirectories: false)  // makes the rename fail
+        var clockNow = now
+        let c = BlockingController(clock: { clockNow }, store: store, continuous: { clockNow.timeIntervalSince1970 })
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path, isDirectory: &isDirectory)); XCTAssertTrue(isDirectory.boolValue)
+        try FileManager.default.removeItem(at: marker)
+        c.refresh()
+        let expected = "\(Int(now.timeIntervalSince1970) + 3600)\n"
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), expected)
+        try Data("sentinel".utf8).write(to: marker); c.refresh()
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "sentinel", "a successful write is not repeated")
+        // An unlink failure when the lock ends also retries.
+        try FileManager.default.removeItem(at: marker)
+        try FileManager.default.createDirectory(at: marker, withIntermediateDirectories: false)
+        try Data("x".utf8).write(to: marker.appendingPathComponent("f"))
+        clockNow = now.addingTimeInterval(3601); c.refresh()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        try FileManager.default.removeItem(at: marker); c.refresh()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
+    /// A click on a block opens the editor of that block, with its own hours; while a free, all-day range is
+    /// blocking right now, the hours can still be changed and the range deleted (a free block freezes nothing).
+    @MainActor func testClickingABlockEditsItsHoursAndCanDeleteIt() throws {
+        let now = date()
+        let weekdays = Set(1...7)
+        let range = BlockProgramRange(weekdays: weekdays, startMinute: 0, endMinute: 1_440)
+        var list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        list.program = BlockProgram(ranges: [range])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        XCTAssertFalse(c.activeBlocks.isEmpty, "the all-day free range blocks right now, as in the report")
+        XCTAssertFalse(c.isStricterOnly(list.id), "a free block must not freeze its list")
+        let draft = try XCTUnwrap(BlockingWeekEditor.editDraft(listID: list.id, rangeID: range.id, controller: c))
+        XCTAssertEqual(draft.existing, range.id, "a click on a block edits it, it does not draw a new range")
+        XCTAssertEqual([draft.start, draft.end], [0, 1_440]); XCTAssertEqual(draft.days, weekdays)
+        var changed = try XCTUnwrap(c.list(list.id))
+        changed.program.ranges[0].startMinute = 540; changed.program.ranges[0].endMinute = 1_020
+        c.save(changed); XCTAssertNil(c.error); XCTAssertEqual(c.list(list.id)?.program.ranges.first?.startMinute, 540)
+        XCTAssertEqual(c.list(list.id)?.program.ranges.first?.endMinute, 1_020)
+        var removed = try XCTUnwrap(c.list(list.id)); removed.program.ranges.removeAll()
+        c.save(removed); XCTAssertNil(c.error); XCTAssertEqual(c.list(list.id)?.program.ranges.count, 0)
+        XCTAssertNil(BlockingWeekEditor.editDraft(listID: list.id, rangeID: range.id, controller: c), "a deleted range has no editor")
     }
     @MainActor func testDamagedStoreIsNeverALockAndAcceptsEdits() throws {
         let store = try temporaryStore(), now = date()
@@ -661,6 +884,300 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertTrue(lane.contains("provider.requestBlocking")); XCTAssertTrue(lane.contains("finish(nil)"))
         for forbidden in ["recorder.record", "JevIngress.", "ActivityAnalysisRuntime.", "setLatest("] { XCTAssertFalse(lane.contains(forbidden)) }
     }
+
+    @MainActor func testLoginItemNoticeDoesNotTurnSavedEditsIntoRefusals() throws {
+        let now = date()
+        var list = BlockList(name: "Programme", sites: [.init(pattern: "youtube.com")])
+        list.program.ranges = [.init(weekdays: [2], startMinute: 600, endMinute: 900)]
+        for component in [BlockingProtectionState.Component.awaitingApproval, .failed("Démarrage à la connexion indisponible.")] {
+            let backend = FakeBlockingBackend(); backend.protectionComponent = component
+            let c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar)
+            XCTAssertNotNil(c.error, "the login-item notice stays visible")
+            XCTAssertEqual(c.addKeyword("match", to: list.id), .allowed)
+            XCTAssertEqual(c.addException("youtube.com/@cours", to: list.id), .allowed)
+            XCTAssertEqual(c.lists.first?.keywords, ["match"])
+            XCTAssertEqual(c.lists.first?.exceptions, [.init(pattern: "youtube.com/@cours")])
+            XCTAssertNoThrow(try c.addDistraction(XCTUnwrap(JevDistractionTarget.site(host: "reddit.com")), to: list.id))
+            XCTAssertTrue(c.lists.first?.sites.contains(.init(pattern: "reddit.com")) == true)
+            XCTAssertNotNil(c.error, "the login-item notice stays visible")
+            // A genuine refusal is still reported.
+            XCTAssertNotEqual(c.addKeyword("x", to: list.id), .allowed)
+        }
+    }
+
+    @MainActor func testLockedListStillRefusesLooserEditsWithLoginItemNotice() throws {
+        let now = date(); var list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")]); list.keywords = ["match"]
+        let backend = FakeBlockingBackend(); backend.protectionComponent = .awaitingApproval
+        let c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar)
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(3600), lock: .locked)
+        XCTAssertFalse(c.activeBlocks.isEmpty)
+        guard case .refused = c.removeKeyword("match", from: list.id) else { return XCTFail("a looser edit must be refused") }
+        XCTAssertEqual(c.addKeyword("direct", to: list.id), .allowed)
+    }
+    private func zone(_ id: String) -> Calendar {
+        var result = Calendar(identifier: .gregorian); result.timeZone = TimeZone(identifier: id)!; return result
+    }
+    /// R1-228: a zone change holds a locked window in progress, then future programs follow the new zone.
+    @MainActor func testZoneChangeHoldsTheActiveLockedProgramAndMovesFutureStarts() {
+        var current = zone("Europe/Paris"), now = date(5, 10)
+        var list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        list.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 540, endMinute: 720, lock: .locked)])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendarProvider: { current },
+                                   continuous: { now.timeIntervalSince1970 })
+        XCTAssertEqual(c.activeBlocks.first?.end, date(5, 12))
+        current = zone("America/New_York"); c.refresh()   // 04:00 in New York
+        XCTAssertEqual(c.activeBlocks.first?.end, date(5, 12), "the locked window keeps its Paris end")
+        XCTAssertEqual(c.activeBlocks.first?.lock, .locked)
+        now = date(5, 11, 59); c.refresh(); XCTAssertFalse(c.activeBlocks.isEmpty)
+        now = date(5, 12, 1); c.refresh(); XCTAssertTrue(c.activeBlocks.isEmpty)
+        XCTAssertEqual(c.nextProgramStart?.date, date(5, 15), "09:00 in New York")
+        XCTAssertEqual(c.nextProgramStart?.date, BlockingSchedule.nextStart(of: list.program, after: now, calendar: current))
+        now = date(5, 15, 1); c.refresh(); XCTAssertEqual(c.activeBlocks.first?.end, date(5, 18))
+    }
+    /// R1-228: moving east keeps the usage day in progress until its old midnight, then follows the new zone.
+    @MainActor func testZoneChangeKeepsTheQuotaDayUntilItsOldMidnight() {
+        var current = zone("America/New_York")
+        var now = zone("America/New_York").date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 20))!
+        let list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")], quotaMinutesPerDay: 20)
+        let document = BlockingDocument(lists: [list], usage: BlockDayUsage(day: "2026-10-05", quotaSecondsUsed: [list.id: 600]))
+        let c = BlockingController(document: document, clock: { now }, calendarProvider: { current }, continuous: { now.timeIntervalSince1970 })
+        XCTAssertEqual(c.frictionUsage?.quotaSecondsUsed[list.id], 600)
+        current = zone("Europe/Paris"); c.refresh()   // 02:00 on Tuesday in Paris
+        XCTAssertEqual(c.frictionUsage?.day, "2026-10-05"); XCTAssertEqual(c.frictionUsage?.quotaSecondsUsed[list.id], 600)
+        now = date(6, 5, 59); c.refresh()
+        XCTAssertEqual(c.frictionUsage?.day, "2026-10-05"); XCTAssertEqual(c.frictionUsage?.quotaSecondsUsed[list.id], 600)
+        now = date(6, 6, 1); c.refresh()
+        XCTAssertEqual(c.frictionUsage?.day, "2026-10-06"); XCTAssertNil(c.frictionUsage?.quotaSecondsUsed[list.id])
+        XCTAssertEqual(c.snapshot.usageHistory?["2026-10-05"]?.quotaSecondsUsed[list.id], 600)
+        now = date(7, 0, 1); c.refresh(); XCTAssertEqual(c.frictionUsage?.day, "2026-10-07", "Paris midnight now")
+    }
+    /// R1-228: the running controller re-reads the zone on the system notification, without waiting for a timer.
+    @MainActor func testZoneChangeNotificationRecomputesTheNextStart() {
+        var current = zone("Europe/Paris"); let now = date(5, 6)
+        var list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        list.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 540, endMinute: 720)])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendarProvider: { current },
+                                   continuous: { now.timeIntervalSince1970 }, runsTimers: true)
+        defer { c.shutdown() }
+        XCTAssertEqual(c.nextProgramStart?.date, date(5, 9))
+        current = zone("America/New_York")
+        NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+        XCTAssertEqual(c.nextProgramStart?.date, date(5, 15))
+    }
+    /// R2-088: a program due during sleep starts on wake without waiting for the next timer tick.
+    @MainActor func testWakeNotificationStartsAProgramDueDuringSleep() {
+        var now = date(5, 8)
+        var list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        list.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 540, endMinute: 720)])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, calendar: calendar,
+                                   continuous: { now.timeIntervalSince1970 }, runsTimers: true)
+        defer { c.shutdown() }
+        XCTAssertTrue(c.activeBlocks.isEmpty)
+        now = date(5, 9, 30)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertFalse(c.activeBlocks.isEmpty); XCTAssertTrue(c.needsObservation); XCTAssertTrue(c.hasTimer)
+    }
+
+    /// R4-blocage-02: a range added to several lists is checked on every list before the first write.
+    @MainActor func testRangeOnSeveralListsIsAllOrNone() {
+        let now = date()
+        let a = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        var b = BlockList(name: "Réseaux", sites: [BlockSiteRule(pattern: "x.com")])
+        b.reason = String(repeating: "a", count: 200)
+        var locked = BlockList(name: "Travail", sites: [BlockSiteRule(pattern: "reddit.com")])
+        locked.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 600, endMinute: 900)], lockedUntil: now.addingTimeInterval(3600))
+        let c = BlockingController(document: BlockingDocument(lists: [a, b, locked]), clock: { now }, calendar: calendar,
+                                   continuous: { now.timeIntervalSince1970 })
+        func adding(_ list: BlockList) -> BlockList {
+            var next = list; next.program.ranges.append(BlockProgramRange(weekdays: [2], startMinute: 540, endMinute: 600)); return next
+        }
+        let refused = c.saveAll([adding(a), adding(b)])
+        XCTAssertEqual(refused?.hasPrefix("« Réseaux » : "), true)
+        XCTAssertEqual(c.list(a.id)?.program.ranges.count, 0, "nothing written when one list refuses")
+        XCTAssertEqual(c.list(b.id)?.program.ranges.count, 0)
+        // A refused change of a locked range returns its reason: the popover stays open on it.
+        var shorter = locked; shorter.program.ranges[0].endMinute = 840
+        XCTAssertNotNil(c.save(shorter))
+        XCTAssertEqual(c.list(locked.id)?.program.ranges.first?.endMinute, 900)
+        // Without the refused list, every chosen list gets its own copy of the range.
+        let valid = BlockingController(document: BlockingDocument(lists: [a, locked]), clock: { now }, calendar: calendar,
+                                       continuous: { now.timeIntervalSince1970 })
+        XCTAssertNil(valid.saveAll([adding(a), adding(locked)]))
+        XCTAssertEqual(valid.list(a.id)?.program.ranges.count, 1); XCTAssertEqual(valid.list(locked.id)?.program.ranges.count, 2)
+    }
+
+    /// R4-blocage-03: the composer reads the clock when it starts; a start time already past starts now.
+    func testNowPlanUsesTheClockOfTheStart() {
+        let now = date()
+        let past = BlockingNowPlan(later: true, startAt: now.addingTimeInterval(-10), minutes: 30, now: now)
+        XCTAssertFalse(past.startsLater); XCTAssertEqual(past.start, now)
+        XCTAssertEqual(past.end.timeIntervalSince(now), 30 * 60, "the full duration from this second")
+        let later = BlockingNowPlan(later: true, startAt: now.addingTimeInterval(3_600), minutes: 60, now: now)
+        XCTAssertTrue(later.startsLater); XCTAssertEqual(later.end, now.addingTimeInterval(7_200))
+        let until = BlockingNowPlan(later: false, startAt: now, until: date(5, 9), now: now, calendar: calendar)
+        XCTAssertEqual(until.end, date(6, 9), "an earlier time of day means tomorrow")
+    }
+
+    /// R5-regressions-01: a click keeps the end the button and the alert promised. A « Jusqu’à 12:00 »
+    /// shown at 11:58:40 and clicked at 12:00:05 is refused, never a 24 h lock.
+    func testConfirmedPlanKeepsThePromisedEnd() throws {
+        let shown = date(5, 11, 58).addingTimeInterval(40)
+        let until = BlockingNowPlan(later: false, startAt: shown, until: date(5, 12), now: shown, calendar: calendar)
+        XCTAssertEqual(until.end, date(5, 12))
+        XCTAssertNil(until.confirmed(at: date(5, 12).addingTimeInterval(5)), "the end is passed: refused, not tomorrow")
+        XCTAssertNil(until.confirmed(at: date(5, 11, 59).addingTimeInterval(30)), "less than a minute left")
+        let soon = try XCTUnwrap(until.confirmed(at: date(5, 11, 59)))
+        XCTAssertEqual(soon.start, date(5, 11, 59)); XCTAssertEqual(soon.end, date(5, 12)); XCTAssertFalse(soon.startsLater)
+        // A duration alert left open 10 min ends when it said, not 10 min later.
+        let duration = BlockingNowPlan(later: false, startAt: date(5, 10), minutes: 30, now: date(5, 10))
+        let late = try XCTUnwrap(duration.confirmed(at: date(5, 10, 10)))
+        XCTAssertEqual(late.start, date(5, 10, 10)); XCTAssertEqual(late.end, date(5, 10, 30))
+        // A later start stays ahead; once passed during the alert, the block starts at the click.
+        let later = BlockingNowPlan(later: true, startAt: date(5, 11), minutes: 60, now: date(5, 10))
+        XCTAssertEqual(try XCTUnwrap(later.confirmed(at: date(5, 10, 5))).start, date(5, 11))
+        let passed = try XCTUnwrap(later.confirmed(at: date(5, 11, 5)))
+        XCTAssertEqual(passed.start, date(5, 11, 5)); XCTAssertFalse(passed.startsLater); XCTAssertEqual(passed.end, date(5, 12))
+    }
+
+    /// B01-R1-02: the freeze never ends later than its alert said. An end the engine would push back to its
+    /// 5 min minimum is promised as « pendant 5 min » from the click; a promised end too close by then is refused.
+    func testFreezeNeverEndsAfterItsAlert() throws {
+        let tick = date(5, 11, 58).addingTimeInterval(40)
+        let raised = BlockingFreezePromise(end: date(5, 12), now: tick)
+        XCTAssertEqual(raised, .minimum)
+        XCTAssertEqual(raised.phrase(now: tick), "pendant 5 min")
+        let click = date(5, 12, 0).addingTimeInterval(10)
+        XCTAssertEqual(raised.end(at: click), click.addingTimeInterval(300), "5 min from the click, as the alert said")
+        // A « 25 min » alert left open 21 min: 4 min left, the engine would make it 5. Refused.
+        let duration = BlockingFreezePromise(end: date(5, 10, 25), now: date(5, 10))
+        XCTAssertEqual(duration, .until(date(5, 10, 25)))
+        XCTAssertEqual(duration.end(at: date(5, 10, 10)), date(5, 10, 25))
+        XCTAssertEqual(duration.end(at: date(5, 10, 20)), date(5, 10, 25), "exactly 5 min left: the engine keeps it")
+        XCTAssertNil(duration.end(at: date(5, 10, 21)))
+        XCTAssertEqual(BlockingFreezePromise(end: date(5, 12).addingTimeInterval(30 * 3_600), now: date(5, 12)),
+                       .until(date(6, 12)), "the 24 h cap is promised as such")
+    }
+
+    /// B01-R2-01: the freeze alert reads its promise at the click, not at the page tick, and leaves time to
+    /// read it. « Jusqu’à 12:05 » drawn at 11:59:50, opened at 12:00:15: never a promise « Geler » can only refuse.
+    func testFreezeAlertPromisesFromTheClick() throws {
+        let tick = date(5, 11, 59).addingTimeInterval(50)
+        XCTAssertEqual(BlockingFreezePromise(end: date(5, 12, 5), now: tick), .until(date(5, 12, 5)), "the button, at the tick")
+        let click = date(5, 12).addingTimeInterval(15)
+        let alert = BlockingFreezePromise.alert(end: date(5, 12, 5), click: click)
+        XCTAssertEqual(alert, .minimum)
+        XCTAssertEqual(alert.phrase(now: click), "pendant 5 min")
+        let freeze = click.addingTimeInterval(40)
+        XCTAssertEqual(alert.end(at: freeze), freeze.addingTimeInterval(300))
+        // Less than 6 min from the click: promised as the minimum; 6 min or more keeps the end time.
+        XCTAssertEqual(BlockingFreezePromise.alert(end: click.addingTimeInterval(359), click: click), .minimum)
+        let far = BlockingFreezePromise.alert(end: date(5, 12, 7), click: click)
+        XCTAssertEqual(far, .until(date(5, 12, 7)))
+        XCTAssertEqual(far.end(at: click.addingTimeInterval(60)), date(5, 12, 7), "a read of one minute still freezes")
+    }
+
+    /// B01-R1-03: a late click is refused in the words of the chosen span.
+    func testLateClickRefusalSpeaksOfTheChosenSpan() {
+        XCTAssertEqual(BlockingNowComposer.refusal(.minutes(30), freeze: false), "Ce blocage serait déjà fini. Relancez-le.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.until, freeze: false), "L’heure de fin est passée. Choisissez une autre heure.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.minutes(25), freeze: true), "Le gel durerait moins de 5 min. Relancez-le.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.until, freeze: true), "Le gel durerait moins de 5 min. Choisissez une autre heure.")
+    }
+
+    /// R5-blocage-01: a free session inside a locked block speaks with the locked block's lock and end.
+    @MainActor func testVeilSpeaksForTheStrongestBlock() {
+        let now = date(); let backend = FakeBlockingBackend()
+        let list = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "youtube.com")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(15 * 60), lock: .free)
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(3 * 3_600), lock: .locked)
+        XCTAssertEqual(c.activeBlocks.count, 2); XCTAssertEqual(c.activeBlocks.first?.lock, .free, "the free session comes first")
+        XCTAssertEqual(c.rulingBlock(for: list.id)?.lock, .locked)
+        c.observe(target(now))
+        XCTAssertEqual(backend.lastPresentation?.lock, .locked)
+        XCTAssertEqual(backend.lastPresentation?.end, now.addingTimeInterval(3 * 3_600))
+    }
+
+    /// R5-regressions-02: a range on several lists is one write; the previous generation is the state before it.
+    @MainActor func testSeveralListsAreWrittenInOneGeneration() throws {
+        let store = try temporaryStore(), now = date()
+        let a = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        let b = BlockList(name: "Réseaux", sites: [BlockSiteRule(pattern: "x.com")])
+        try store.save(BlockingDocument(lists: [a, b]))
+        let c = BlockingController(clock: { now }, store: store, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        let before = try store.load()
+        func adding(_ list: BlockList) -> BlockList {
+            var next = list; next.program.ranges.append(BlockProgramRange(weekdays: [2], startMinute: 540, endMinute: 600)); return next
+        }
+        XCTAssertNil(c.saveAll([adding(a), adding(b)]))
+        let saved = try store.load()
+        XCTAssertEqual(saved.lists.map(\.program.ranges.count), [1, 1])
+        try Data("bad-json".utf8).write(to: store.directory.appendingPathComponent("blocking.json"))
+        XCTAssertEqual(try store.loadRecovering().document.lists, before.lists, "no generation holds one list without the other")
+    }
+
+    /// R4-blocage-01: the lock alert says the day of the end, and both ends of a later block.
+    func testLockAlertSaysTheDay() {
+        let now = date(5, 10) // Monday
+        func t(_ d: Date) -> String { BlockingFormat.time(d) }
+        XCTAssertEqual(BlockingFormat.deadline(date(5, 12), now: now, calendar: calendar), t(date(5, 12)))
+        XCTAssertEqual(BlockingFormat.deadline(date(6, 0), now: now, calendar: calendar), "minuit")
+        XCTAssertEqual(BlockingFormat.deadline(date(6, 2), now: now, calendar: calendar), "demain à \(t(date(6, 2)))")
+        XCTAssertEqual(BlockingFormat.deadline(date(10, 12), now: now, calendar: calendar), "samedi à \(t(date(10, 12)))")
+        XCTAssertEqual(BlockingFormat.deadline(date(11, 0), now: now, calendar: calendar), "samedi à minuit")
+        let saturday = BlockingNowPlan(later: true, startAt: date(10, 10), minutes: 120, now: now)
+        XCTAssertEqual(saturday.lockTitle(.locked, calendar: calendar), "Verrouiller samedi de \(t(date(10, 10))) à \(t(date(10, 12))) ?")
+        XCTAssertTrue(saturday.lockMessage(.locked, calendar: calendar).contains("avant samedi à \(t(date(10, 12)))"))
+        let overnight = BlockingNowPlan(later: false, startAt: now, minutes: 20 * 60, now: now)
+        XCTAssertEqual(overnight.lockTitle(.password, calendar: calendar), "Protéger par mot de passe jusqu’à demain à \(t(date(6, 6))) ?")
+        XCTAssertEqual(BlockingFormat.period(from: date(5, 22), to: date(6, 2), now: now, calendar: calendar),
+                       "d’aujourd’hui \(t(date(5, 22))) à demain \(t(date(6, 2)))")
+        XCTAssertEqual(BlockingFormat.period(from: date(6, 22), to: date(8, 0), now: now, calendar: calendar),
+                       "de demain \(t(date(6, 22))) à mercredi minuit")
+    }
+
+    /// B06-R1-01: a date beyond a week takes its article: « le », « jusqu’au », « avant le », « du … au ».
+    func testFarDatesTakeTheArticle() throws {
+        let now = date(5, 10) // Monday
+        func t(_ d: Date) -> String { BlockingFormat.time(d) }
+        let far = date(19, 12)
+        let (day, month) = ("19", "oct.")
+        let first = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: 9)))
+        XCTAssertEqual(BlockingFormat.moment(first, now: now, calendar: calendar), "le 1er nov. à \(t(first))")
+        XCTAssertEqual(BlockingFormat.moment(far, now: now, calendar: calendar), "le \(day) \(month) à \(t(far))")
+        XCTAssertEqual(BlockingFormat.until(far, now: now, calendar: calendar), "jusqu’au \(day) \(month) à \(t(far))")
+        XCTAssertEqual(BlockingFormat.until(date(6, 2), now: now, calendar: calendar), "jusqu’à demain à \(t(date(6, 2)))")
+        let later = BlockingNowPlan(later: true, startAt: date(19, 10), minutes: 120, now: now)
+        XCTAssertEqual(later.lockTitle(.locked, calendar: calendar), "Verrouiller le \(day) \(month) de \(t(date(19, 10))) à \(t(far)) ?")
+        XCTAssertTrue(later.lockMessage(.locked, calendar: calendar).contains("avant le \(day) \(month) à \(t(far))"))
+        let long = BlockingNowPlan(later: false, startAt: now, minutes: 14 * 1_440 + 120, now: now)
+        XCTAssertTrue(long.lockTitle(.password, calendar: calendar).hasPrefix("Protéger par mot de passe jusqu’au "))
+        XCTAssertTrue(long.lockMessage(.password, calendar: calendar).contains("va jusqu’au "))
+        let overnight = BlockingNowPlan(later: true, startAt: date(19, 22), minutes: 240, now: now)
+        XCTAssertTrue(overnight.lockTitle(.locked, calendar: calendar).hasPrefix("Verrouiller du \(day) \(month) \(t(date(19, 22))) au "))
+        XCTAssertFalse(overnight.lockTitle(.locked, calendar: calendar).contains(" à "))
+    }
+
+    /// B06-R1-02: once the « Plus tard » time has passed, the button says the block starts now.
+    func testActionTitleFollowsTheClock() {
+        let now = date(5, 10)
+        func t(_ d: Date) -> String { BlockingFormat.time(d) }
+        let ahead = BlockingNowPlan(later: true, startAt: date(5, 11), minutes: 60, now: now)
+        XCTAssertEqual(ahead.actionTitle(calendar: calendar), "Programmer aujourd’hui à \(t(date(5, 11)))")
+        let passed = BlockingNowPlan(later: true, startAt: now.addingTimeInterval(-300), minutes: 60, now: now)
+        XCTAssertEqual(passed.actionTitle(calendar: calendar), "Bloquer jusqu’à \(t(date(5, 11)))")
+    }
+
+    /// R4-blocage-05 and 07: a range ending at 24:00 reads 24:00; long durations keep their minutes.
+    func testRangeLabelAndLongRemaining() {
+        XCTAssertEqual(BlockingFormat.rangeLabel(name: "Vidéo", weekday: 1, start: 1_320, end: 1_440, lock: .locked),
+                       "Vidéo, lundi, 22:00 à 24:00, verrouillé")
+        XCTAssertEqual(BlockingFormat.rangeLabel(name: "Vidéo", weekday: 7, start: 540, end: 600, lock: .free), "Vidéo, dimanche, 9:00 à 10:00")
+        XCTAssertEqual(BlockingFormat.remaining(86_400), "1 jour")
+        XCTAssertEqual(BlockingFormat.remaining(86_400 + 2_400), "1 jour 40 min")
+        XCTAssertEqual(BlockingFormat.remaining(86_400 + 3 * 3_600 + 2_400), "1 jour 3 h 40")
+        XCTAssertEqual(BlockingFormat.remaining(2 * 86_400 + 3 * 3_600), "2 jours 3 h")
+    }
 }
 
 private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
@@ -679,15 +1196,20 @@ private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
     var siteBlocks = 0
     var appBlocks = 0
     var lastReason: BlockingVeilPresentation.Reason?
+    var lastPresentation: BlockingVeilPresentation?
     var protectionRequired = false
+    var protectionComponent: BlockingProtectionState.Component?
     func updateProtection(locked: Bool) -> BlockingProtectionState {
         protectionRequired = locked
         var result = BlockingProtectionState()
         if locked && loginFailure { result.component = .failed("Démarrage à la connexion indisponible.") }
+        if locked, let protectionComponent { result.component = protectionComponent }
         return result
     }
     func blockApp(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) { appBlocks += 1 }
-    func blockSite(_ target: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) { siteBlocks += 1; lastReason = presentation.reason }
+    func blockSite(_ target: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) {
+        siteBlocks += 1; lastReason = presentation.reason; lastPresentation = presentation
+    }
     func clearSite() { clearSites += 1 }
     func updateFreeze(_ freeze: BlockFreeze?) {}
     func returnToShield() {}

@@ -383,6 +383,8 @@ $CODEX_HOME/memories/extensions/goalong/
 ```
 
 or to `~/.codex/memories/extensions/goalong/` when `CODEX_HOME` is not configured.
+Goalong Dev (`make dev`) writes this mirror to `LocalHistory-Dev/codex-memory-mirror/`
+instead, so its retention and deletions never touch the real Codex mirror.
 The compact Goalong JSON remains authoritative and deliberately omits its regenerable
 Markdown body. The Markdown is regenerated from that structure and rewritten only when
 its bytes change; it is not another authoritative history store.
@@ -402,6 +404,9 @@ cleanup. Explicit deletion preflights exact owned filenames across all derived c
 before unlinking. It does not target seals, receipts, Screen Time, Agent Activity, or
 unrelated files.
 
+The Computer History page no longer shows episode cards, so it offers no per-item delete
+action; targeted deletion is reached from the last application session (Activity explorer
+and Privacy page). The single-item path below stays in code without a UI entry point.
 For a single Computer History item, Goalong reconstructs the complete episode provenance
 from the original bounded day source because compact memory may retain only 16
 representative event references. A read-only preflight must find every selected event ID
@@ -442,8 +447,12 @@ snapshot or a window too small to prove the exact newest requested days fails cl
 The recent-memory result is typed as `memories`, `isComplete`, and bounded `issues`.
 Readable last-known-good memories may still support an answer when one candidate is bad,
 but the answer and UI label that coverage as incomplete and do not treat absence as
-exhaustive. The build/runtime write paths require complete prior context before mutating
-any derived output. Memory directories are pinned as capabilities, files are opened
+exhaustive. The build/runtime write paths require a stable prior snapshot before mutating
+any derived output: an interrupted, changed or over-budget listing still fails closed.
+A single corrupt, oversized or non-regular prior day inside a stable listing is skipped
+and named in the diagnostics ("prior context is partial"), so one bad file cannot stop
+every later analysis. A memory written in another time zone still loads when its stored
+day start is within 15 hours of the day named by its file. Memory directories are pinned as capabilities, files are opened
 relative to them with no-follow descriptors, and root, ancestor, directory, and file
 identities are revalidated. A legacy-format read migrates only through compare-and-swap;
 all in-process Computer History mutations are serialized, and the temporary file plus
@@ -566,18 +575,18 @@ not watch every older non-contributing journal it examined, so an append to such
 file may remain unseen until a watched file or the directory changes, the cache is
 discarded, or the lookup is otherwise rebuilt.
 
-The Share preview/export path has a separate direct, read-only JSONL contract. It streams
+The Share export path has a separate direct, read-only JSONL contract. It streams
 only event roots referenced by the selected seals, with production limits of 384 MiB per
 source, 2 MiB per line, 2,880 retained seals, 131,072 required roots, 256 MiB of referenced
 events retained for an export, and a process-local summary cache capped at 32 MiB across
 two days. Boundary-seal and receipt lookup is separately bounded to 4,096 auxiliary files,
 262,144 decoded rows, and 256 MiB of auxiliary sources. An
-unchanged warm preview rereads zero event bytes; a verified append scans only the suffix.
+unchanged warm export rereads zero event bytes; a verified append scans only the suffix.
 A replacement, truncation, deletion, unstable or malformed source, exhausted limit, or
-cancellation cannot publish or cache a partial result. Leaving the Share tab cancels its
-active preview but deliberately retains the bounded cache. Actually hiding the dashboard
-cancels preview and export work, clears rendered segments, and asynchronously discards the
-Share cache; the next preview is therefore a bounded cold scan. The standalone Share
+cancellation cannot publish or cache a partial result. Leaving the Share tab
+deliberately retains the bounded cache. Actually hiding the dashboard
+cancels export work and asynchronously discards the
+Share cache; the next export is therefore a bounded cold scan. The standalone Share
 window also performs initial loading and export work off the main thread, asks for the
 destination before building, and suppresses cancelled or late results. No Share cache is
 persisted. Duplicate committed field names fail closed during seal/event verification,

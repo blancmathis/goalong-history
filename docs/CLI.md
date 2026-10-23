@@ -1,8 +1,8 @@
 # Goalong CLI
 
-The app bundle includes a bounded local `goalong` command for users and local agents. Original source histories stay read-only. Declared Goalong-side writes are the active-day Screen Time refresh, an explicitly requested proof export and `import-health`, which retains only selected compact Health days. `send-site` is a separate explicit network operation that submits selected saved data to the user's website account. The installer creates the stable link `~/.local/bin/goalong` when that directory is safe and writable. It never replaces an unrelated command already present there.
+The app bundle includes a bounded local `goalong` command for users and local agents. Original source histories stay read-only. Declared Goalong-side writes are the active-day Screen Time refresh, an explicitly requested proof export and `import-health`, which retains only selected compact Health days. `send-site` is a separate explicit network operation that submits selected saved data to the user's website account. The installer creates the stable link `~/.local/bin/goalong` when that directory is safe and writable. It never replaces an unrelated command already present there. `uninstall.sh` removes that link only when it points into a Goalong bundle.
 
-The **Goalong CLI** card in **Settings** opens a short human guide and one complete agent brief that can be copied to the clipboard and pasted as-is into a local agent.
+**Réglages → Avancé → Terminal et agents** opens a short human guide and one complete agent brief that can be copied to the clipboard and pasted as-is into a local agent.
 
 ```bash
 goalong help
@@ -48,7 +48,11 @@ goalong memories
 goalong sources MEMORY_ID
 ```
 
-Data commands emit sorted JSON on stdout. `help` emits human-readable text; use `help --json` or `capabilities` for the canonical machine-readable command contract. Failures emit sorted JSON on stderr and exit nonzero, so agents must check the exit status before parsing stdout. Dates accept `today`, `yesterday`, or an explicit local `YYYY-MM-DD` value. Missing recaps return `status: "notGenerated"`; missing or protected Screen Time data returns the exact Apple-source status rather than an empty success claim.
+Data commands emit sorted JSON on stdout. `help` emits human-readable text; use `help --json` or `capabilities` for the canonical machine-readable command contract. Failures emit sorted JSON on stderr and exit nonzero, so agents must check the exit status before parsing stdout. `export-proof` follows this rule too: a refused or failed export writes JSON on stderr, exits nonzero and leaves no unverified package. `verify-proof`, `verify-share`, `verify-recap` and `daily-recap` are report-style: they return validity in the stdout `status` field (for example `invalid` or `inaccessibleOrInvalid`) and exit 0 unless the arguments are invalid. `--tokens` is accepted only by `computer-history-context` and `ai-conversations`. Dates accept `today`, `yesterday`, or an explicit local `YYYY-MM-DD` value. Missing recaps return `status: "notGenerated"`; missing or protected Screen Time data returns the exact Apple-source status rather than an empty success claim.
+
+`search`, `app`, `site` and `gaps` read the last 7 local days by default, so one call never decodes the whole retention horizon. Pass `--start` and `--end` (ISO-8601 or a day) to read another period. A day passed to `--end` includes that whole day (up to now for today). Without `--start`, the default window is the 7 local days ending with that day, and a `--start` day after the `--end` day is a usage error; an ISO timestamp is used as given; a range longer than 31 days is shortened to its last 31 days. The JSON `window` field and a `limitations` entry state the interval that was actually read. `memories` lists the stored memories without reading event journals, and `sources` reads only the events of the memory it inspects. `recent --minutes` accepts 1 to 10080. History commands reject unknown or extra arguments with a usage error.
+
+The history commands (`recent`, `day`, `summary`, `search`, `app`, `site`, `gaps`, `memories`, `sources`, `websites`) read data already stored on this Mac. Computer History consent and the global pause stop collection, not these local reads (`analysis-evidence` is stricter, see below). `export-site --include-websites` is stricter because it prepares data to leave the Mac, so it also requires consent.
 
 `status` is a bounded metadata-only diagnostic covering Computer History, stored and active-day Screen Time availability, the lightweight AI-conversation index, saved recaps, Goalong consent, freshness and explicit errors. It never opens provider conversation bodies or Apple data stores. Screen Time `queryReady` means only that the owner-local broker can answer; an agent must inspect `status` and `sourceAssurance` from an explicit Screen Time query before claiming parity with Apple Settings. The command intentionally does not start Codex to test ChatGPT credentials; when analysis consent is enabled it reports that live account connectivity still needs an in-app check.
 
@@ -78,13 +82,13 @@ Normal queries do not start a daemon, mutate Goalong settings, refresh an AI rec
 
 ### Website export and account submission
 
-The native **Settings → Goalong website → Connect website** sheet provides the same flow: choose the website and upload-token file, choose a day and optional details, prepare an offline preview, optionally narrow the device selection, then press **Send reviewed data**. A downloaded token with permissions other than 0600 triggers a native confirmation with **Protéger ce fichier** and **Annuler**. Only after that explicit confirmation does Goalong use `fchmod` on the reviewed owner-owned regular file descriptor to restrict it to 0600; symlinks, other owners and replaced files are rejected. This graphical flow needs no Terminal command. Its expandable exact JSON preview shows the actual snapshot that will be sent. Editing the day or selected data invalidates that preview. The origin and chosen token-file path are remembered. Scheduling stays off unless explicitly enabled after review. Saved recap parts can be loaded locally, or generated by a separate explicit action through the existing recap agent.
+The native **Réglages → Envoi à Goalong → Choisir et voir l’aperçu** sheet provides the same flow: choose the website and upload-token file, choose a day and optional details, prepare an offline preview, optionally narrow the device selection, then press **Envoyer cette journée**. A downloaded token with permissions other than 0600 triggers a native confirmation with **Protéger ce fichier** and **Annuler**. Only after that explicit confirmation does Goalong use `fchmod` on the reviewed owner-owned regular file descriptor to restrict it to 0600; symlinks, other owners and replaced files are rejected. This graphical flow needs no Terminal command. Its expandable exact JSON preview shows the actual snapshot that will be sent. Editing the day or selected data invalidates that preview. The origin and chosen token-file path are remembered. Scheduling stays off unless explicitly enabled after review. Saved recap parts can be loaded locally, or generated by a separate explicit action through the existing recap agent.
 
 If the macOS file picker is unavailable, expand **Autre méthode : coller le chemin du fichier**, paste the downloaded file's absolute path (or `~/Downloads/...`), and press **Valider ce fichier**. This reads only that explicitly named local file through the same owner, type, symlink, permission-protection and token validation checks. It never searches a directory and never accepts a remote URL or raw token in this field.
 
 Release verification on 8 September 2026 covered the native macOS picker in the installed application: the selected file could be opened, explicit protection changed the synthetic token file from 0644 to 0600, and the offline preview matched the CLI export. Narrowing the device selection invalidated the old preview and produced the reduced snapshot. The test file was forgotten and removed afterwards. No network submission was attempted with that non-authorizing test token.
 
-The separately exercised path-entry alternative remains available. Its synthetic preview and loopback submission checks establish that fallback's behavior. Real imports to the private website have also passed through a temporary QA relay, but a direct authenticated upload from the installed sheet remains a separate release check. The installed Apple Development build retained the owner's history, source permissions and observed input callbacks; it is distinct from the public ad-hoc Community Build.
+The separately exercised path-entry alternative remains available. Its synthetic preview and loopback submission checks establish that fallback's behavior. Real imports to the private website have also passed through a temporary QA relay, but a direct authenticated upload from the installed sheet remains a separate release check. The installed Apple Development build retained the owner's history, source permissions and observed input callbacks; it is the same pinned identity as the public Community Build.
 
 `export-site DAY` emits the website's version-2 exchange JSON on stdout. The command reads an existing normalized Screen Time archive only, even for today: it does not refresh Apple data, start Goalong, open a provider conversation, save a second archive, or access the network. The Screen Time source must remain enabled. A missing record fails with an actionable error. It defaults to yesterday and every physical device in that saved record; `--devices ID,ID` narrows the export (maximum twelve devices). Use `goalong screen-time DAY` to inspect device IDs.
 
@@ -123,7 +127,7 @@ goalong health 2026-09-07
 
 `import-health` is an explicit local-write command: it saves compact selected days under Goalong's `health/` directory (0700), with individual files in 0600. It replaces only matching Health dates, without copying the original XML or changing screen-time archives. `health` reads one saved day without refreshing or sending data. Inspect stdout before passing the exported JSON to the website's universal upload CLI.
 
-The native **Settings → Goalong website → Importer Apple Santé…** sheet offers the file picker, dates, groups, source selection, readable daily preview, local save, protected JSON export and separately consented website send. Changing the selection invalidates its preview. Existing health imports can be reopened by date and moved to the Mac Trash individually. They remain local until explicitly removed; the general history retention window does not purge these deliberately saved Health days. Removing a local day does not remove the original Apple export or a previously uploaded website copy. Reopened files are validated against the compact Health contract before preview or sending. The original XML path is not stored in preferences.
+The native **Réglages → Avancé → Outils de partage et analyses → Importer Apple Santé…** sheet offers the file picker, dates, groups, source selection, readable daily preview, local save, protected JSON export and separately consented website send. Changing the selection invalidates its preview. Existing health imports can be reopened by date and moved to the Mac Trash individually. They remain local until explicitly removed; the general history retention window does not purge these deliberately saved Health days. Removing a local day does not remove the original Apple export or a previously uploaded website copy. Reopened files are validated against the compact Health contract before preview or sending. The original XML path is not stored in preferences.
 
 Metrics include sleep and stages, heart-rate sample mean/min/max, resting/walking heart rate, SDNN, respiratory rate, oxygen saturation, VO2 max, steps, movement distance, active energy, exercise/standing time, flights and workouts. Sleep is a union of intervals split at local midnight (including daylight-saving transitions). Means describe available samples, not a time-weighted full-day heart rate. Unknown data is omitted rather than made zero. One source is selected per group and day (largest sample count, deterministic name tie-break); the UI allows explicit source selection. Duplicate records and overlapping cumulative measurements are not added together. Cross-midnight cumulative measurements are omitted with a warning rather than proportionally invented.
 
@@ -133,7 +137,7 @@ Workouts remain distinct from daily activity totals: their distance, calories an
 
 `goalong export-site DAY --structured` conserve les mêmes choix de confidentialité que l’export classique et produit le format Goalong version 3. Ajouter `--include-apps` donne les noms et budgets d’applications sélectionnés ; aucun contexte n’est inféré à partir du seul nom. Les catégories restent inconnues et les durées cumulatives ne reçoivent pas d’horaires inventés.
 
-Dans l’app, **Settings → Goalong website → Structured report for productivity** produit le même aperçu avant l’envoi. Un agent peut ensuite qualifier le fichier préparé en suivant le [guide du site](https://goalong.spry-crumb-3668.chatgpt.site/assets/productivity-agent-guide.md). La collecte brute et les conversations restent locales ; leur éventuelle analyse par un fournisseur externe demande son autorisation distincte. Les règles de partage du site restent applicables après un envoi explicitement autorisé.
+Dans l’app, **Réglages → Avancé → Outils de partage et analyses → Partager un récap relu… → Rapport structuré de productivité** produit le même aperçu avant l’envoi. Un agent peut ensuite qualifier le fichier préparé en suivant le [guide du site](https://goalong.spry-crumb-3668.chatgpt.site/assets/productivity-agent-guide.md). La collecte brute et les conversations restent locales ; leur éventuelle analyse par un fournisseur externe demande son autorisation distincte. Les règles de partage du site restent applicables après un envoi explicitement autorisé.
 
 ## Session rhythm and pre-transmission choices
 
@@ -150,13 +154,13 @@ The native connection sheet exposes these choices and the exact resulting JSON b
 
 **Charger le récap de cette journée** offers saved recap sections with none selected by default; a separate button starts the existing recap-generation flow. Selected parts and an optional personal comment appear in the exact preview. Any active mask removes recap text, domains and session context before serialization.
 
-The optional reviewed schedule retains selected devices, fields, masks and a chosen hour. It can reuse selected numbered sections of an already saved recap on later days; missing sections cause refusal and require review. It never repeats a one-off comment or an old contextual session. Masks exclude recaps and domains. It sends yesterday only while the app is running, persists the attempt before networking, rechecks source consent, and stops on any failure. Disabling does not retract an in-flight request or copies already received. No new model call is scheduled by the connector.
+The optional reviewed schedule retains selected devices, fields, masks and a chosen hour. Scheduled sends never include recap text or recap sections, only devices, fields and domains. It never repeats a one-off comment or an old contextual session. An active mask excludes domains. It sends yesterday only while the app is running, persists the attempt before networking, rechecks source consent, and stops on any failure. Disabling does not retract an in-flight request or copies already received. No new model call is scheduled by the connector.
 
 ## Private profile analyses
 
-`analysis-evidence` exports explicitly selected timestamped Computer History events without starting an agent or sending to Goalong. Use `goalong analysis-evidence --start-utc 2026-09-08T08:00:00Z --end-utc 2026-09-08T09:00:00Z`. `--include-rich-context` additionally requires the app’s rich-context setting. Suppressed and secure observations are excluded; incomplete or over-budget reads fail. This is a private source file, not a website import. Add `--include-conversations --conversations-from YYYY-MM-DD` to read selected Conversation History sources over prior days, or `--conversations-only` to omit Computer History entirely. Conversation consent and enabled watched folders are checked before and after direct reads. Up to 31 days are accepted, with bounded pagination and explicit partial-context notes. Conversation bounds select active conversations; source-provided individual message timestamps are preserved (including milliseconds). When absent, the selection window remains explicitly marked as unknown message time. Some providers include older context; a message timestamp is a point event, not work duration. Only user messages and final assistant answers enter the private evidence; source locators, internal instructions, reasoning and tools are omitted.
+`analysis-evidence` exports explicitly selected timestamped Computer History events without starting an agent or sending to Goalong. Use `goalong analysis-evidence --start-utc 2026-09-08T08:00:00Z --end-utc 2026-09-08T09:00:00Z`. `--include-rich-context` additionally requires the app’s rich-context setting. Suppressed and secure observations and globally excluded apps and sites are excluded. The Computer History part refuses while the global pause is active (exit status nonzero, readable message in the stderr `error` field) and fails when the exclusions file cannot be read; incomplete or over-budget reads fail. This is a private source file, not a website import. Add `--include-conversations --conversations-from YYYY-MM-DD` to read selected Conversation History sources over prior days, or `--conversations-only` to omit Computer History entirely. Conversation consent and enabled watched folders are checked before and after direct reads. Up to 31 days are accepted, with bounded pagination and explicit partial-context notes. Conversation bounds select active conversations; source-provided individual message timestamps are preserved (including milliseconds). When absent, the selection window remains explicitly marked as unknown message time. Some providers include older context; a message timestamp is a point event, not work duration. Only user messages and final assistant answers enter the private evidence; source locators, internal instructions, reasoning and tools are omitted.
 
-Prepare the request with the universal website CLI’s `analysis-prepare --file --policy --modules --output [--include-conversations]`, or with Settings → Goalong website → Comprendre mon travail. The [agent guide](../../site/assets/productivity-agent-guide.md#analyses-du-profil-avec-choix-privés) owns the interoperable selection, privacy and export workflow.
+Prepare the request with the universal website CLI’s `analysis-prepare --file --policy --modules --output [--include-conversations]`, or with Réglages → Avancé → Outils de partage et analyses → Comprendre mon travail. The [agent guide](../../site/assets/productivity-agent-guide.md#analyses-du-profil-avec-choix-privés) owns the interoperable selection, privacy and export workflow.
 
 - `goalong analysis-prompt --request FILE` renders only the protected context and fixed instructions. Keep the private request file locally; give the generated prompt to the external agent.
 - `goalong analysis-review --request FILE --file RESPONSE` validates request binding, evidence references, selected modules, lengths and status, then reapplies literal privacy rules.
@@ -212,7 +216,9 @@ goalong friction yesterday
 explicit date. `--block` may repeat. Exactly one of `--minutes`, `--open` and `--pomodoro` is required.
 Pomodoro defaults to 25/5/15/4, optionally takes work/short/long/every-N, and accepts `--cycles 1…16`.
 `--block-during-breaks` also blocks break phases; only work phases receive `--lock`. An open free
-session cannot lock. Ambiance uses the no-op audio adapter until its separate module merges.
+session cannot lock. `--ambiance` plays an installed Focus source (the last one played, else the
+first) during work phases and stops it at breaks and at the end. It plays nothing when the Ambiance
+module is off, no Focus pack is installed or you already play a source; it never downloads.
 
 `session skip` and `session stop` fail with `locked` while the session's current work block is
 locked, including clock-extended locks. A free open session renews a short free Blocking lease.
@@ -268,6 +274,7 @@ and `usesActiveTime`; daily/end-time warnings are once per day, weekly warnings 
 They warn without refusing a session. Changes are made through the module settings/controller.
 
 `block-lists` returns `{schema:1,lists:[{id,name,mode,action,locked}]}` using only the Blocking module.
+`locked` means the list is stricter-only: frozen by a non-free active block (« Difficile », password, locked) or by a program lock.
 `friction DAY` returns the selected `BlockDayUsage`: `day` and optional per-list `slowDownShown`,
 `renounced`, `continued` counters. UUID-keyed dictionaries use Swift Codable's alternating key/value
 array encoding. Up to 366 historical usage days are retained in Blocking's existing schema-1 store.
@@ -275,8 +282,10 @@ A missing count means zero. Concentration can be off for both of these reads.
 
 All commands return JSON on stdout. `focus watch` is NDJSON; errors are sorted JSON on stderr with
 nonzero exit status and `error` equal to `appNotRunning`, `moduleDisabled`, `invalidArgument`,
-`locked`, `notFound`, `storageFailed`, or `tooManyWatchers`. Only unavailable `focus status`/`watch`
-use the stable success object above. `--file -` reads stdin; every JSON input is bounded to 64 KiB.
+`locked`, `notFound`, `storageFailed`, `tooManyWatchers`, or `outcomeUnknown`. `appNotRunning` means the
+socket could not be reached, so nothing was sent. `outcomeUnknown` means the request was sent but no answer came
+within 10 seconds (or the connection dropped): the app may have applied it, so run `focus status` before retrying. For `outcomeUnknown` the stderr JSON also carries a `hint` string with this advice; `error` is always the bare code.
+Only unavailable `focus status`/`watch` use the stable success object above. `--file -` reads stdin; every JSON input is bounded to 64 KiB.
 Text control characters are rejected. A disabled module answers `moduleDisabled` before creating
 its controller, store, timer, observer or panel. Local module writes require the member's explicit
 instruction; plans, intentions and limits are never inferred by an agent.
@@ -320,7 +329,7 @@ items in the period's plans. Work uses observed work; without a definition it us
 concealed and unclassified time remains in `unmeasuredMinutes`; it is never invented as work.
 
 `--stake LIST_ID` may repeat (1…200 distinct IDs). Adding or changing a stake requires Blocking
-and existing lists. `--until HH:mm` defaults to `12:00`; `23:59` means all day. The list's own
+and existing lists. `--until HH:mm` defaults to `12:00`; `23:59` means all day. `00:00` is refused: it is already past at settle time. The list's own
 block/Ralentir action, quotas and allowed breaks remain in force. No work limit refuses a goal;
 `limitHours` supplies a neutral warning when a work/task target exceeds a chosen limit.
 
@@ -357,7 +366,7 @@ intersecting that local-day range; series and reserve totals still use all retai
 Each annotated commitment adds `progress`, `series`, `jokersLeft`, `canUseJoker`, `canDeclare`,
 `exitUntil`, `limitHours`, `editMode` (`free`/`harderOnly`/`locked`) and `editUntil`. Successful delete returns `{schema:1,deleted:true,period}`.
 Errors use the same JSON stderr/exit contract: `appNotRunning`, `moduleDisabled`,
-`invalidArgument`, `locked`, `notFound`, `storageFailed`. No command launches the app.
+`invalidArgument`, `locked`, `notFound`, `storageFailed`, `outcomeUnknown`. No command launches the app.
 # Braise
 
 Le module filtre rouge dispose des commandes `goalong braise enable|disable|status|probe|show`,

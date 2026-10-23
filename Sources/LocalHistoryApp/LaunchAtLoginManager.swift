@@ -17,8 +17,11 @@
         @Published private(set) var isChanging = false
         @Published private(set) var message: String?
 
+        private var reading = false
+        private var generation = 0
+
         init() {
-            refresh()
+            state = Self.state(for: SMAppService.mainApp.status)
         }
 
         var isEnabled: Bool {
@@ -59,28 +62,54 @@
             }
         }
 
-        func refresh() {
-            switch SMAppService.mainApp.status {
-            case .enabled:
-                state = .enabled
-            case .requiresApproval:
-                state = .requiresApproval
-            case .notRegistered:
-                state = .disabled
-            case .notFound:
-                state = .unavailable
-            @unknown default:
-                state = .unavailable
+        nonisolated static func state(for status: SMAppService.Status) -> State {
+            switch status {
+            case .enabled: return .enabled
+            case .requiresApproval: return .requiresApproval
+            case .notRegistered: return .disabled
+            case .notFound: return .unavailable
+            @unknown default: return .unavailable
             }
+        }
+
+        /// `SMAppService.status` is a synchronous XPC round trip: read it off the main thread,
+        /// one read at a time, and drop a result older than a change made meanwhile.
+        func refresh() {
+            guard !reading else { return }
+            reading = true
+            let started = generation
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let next = Self.state(for: SMAppService.mainApp.status)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.reading = false
+                    if self.generation == started { self.state = next }
+                }
+            }
+        }
+
+        /// A user action needs the result now (the caller reads `requiresApproval` right after).
+        private func readNow() {
+            generation += 1
+            state = Self.state(for: SMAppService.mainApp.status)
+        }
+
+        /// Same rule as Settings: a locked block keeps Goalong at login until it ends.
+        var heldByBlocking: Bool {
+            isRegistered && BlockingRuntime.shared.controller?.hasLocks == true
         }
 
         @discardableResult
         func setEnabled(_ enabled: Bool) -> Bool {
+            guard GoalongLoginItemGate.isAllowed else {
+                message = "Goalong Dev ne gère pas l’ouverture à la connexion : c’est le rôle de Goalong installé."
+                return false
+            }
             isChanging = true
             message = nil
             defer {
                 isChanging = false
-                refresh()
+                readNow()
             }
 
             do {
@@ -111,10 +140,10 @@
             }
         }
 
-        var suggestedOnboardingPreference: Bool {
+        func suggestedOnboardingPreference(defaults: UserDefaults = .standard) -> Bool {
             let consent = GoalongCapabilityConsentStore.shared.document.consent(for: .launchAtLogin)
             return BackgroundContinuityPreferences.suggestedLoginPreference(
-                storedPreference: UserDefaults.standard.object(forKey: "launchAtLoginPreference") as? Bool,
+                storedPreference: defaults.object(forKey: "launchAtLoginPreference") as? Bool,
                 consentEnabled: consent.enabled,
                 consentWasRecorded: consent.changedAt != nil,
                 systemEnabled: isRegistered
@@ -130,8 +159,21 @@
             // Save explicit opt-outs even when the previous consent was already off.
             // Never re-register in refresh(), after a wake, or merely after an update.
             UserDefaults.standard.set(enabled, forKey: "launchAtLoginPreference")
+            let preferences = BackgroundContinuityPreferences()
+            if BackgroundContinuityPreferences.keepsLoginItem(enabled: enabled, registered: isRegistered,
+                                                              lockActive: BlockingRuntime.shared.controller?.hasLocks == true) {
+                // Never escape a lock by a reboot. Blocage removes the item when the lock ends.
+                preferences.blockingForcedLogin = true
+                message = Self.heldMessage
+                return true
+            }
+            // An explicit choice belongs to the member: Blocage must not undo it later.
+            preferences.blockingForcedLogin = false
             return setEnabled(enabled)
         }
+
+        static let heldMessage = "Un blocage verrouillé est en cours : Goalong reste ouvert à la connexion jusqu’à la fin."
+
 
         func openLoginItemsSettings() {
             SMAppService.openSystemSettingsLoginItems()

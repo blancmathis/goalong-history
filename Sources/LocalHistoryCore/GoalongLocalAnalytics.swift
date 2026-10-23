@@ -480,16 +480,42 @@ public enum GoalongLocalAnalytics {
 
     public static func load(root: URL, day: Date, now: Date = Date(), calendar: Calendar = .current,
                             shouldContinue: () -> Bool = { true }) -> Day {
+        loadReportingDefect(root: root, day: day, now: now, calendar: calendar, shouldContinue: shouldContinue).day
+    }
+
+    /// Why a loaded day is incomplete.
+    public enum Defect: Equatable, Sendable {
+        /// The journals' own content: a corrupt or oversized line, or the evidence budget. Permanent while they stay unchanged.
+        case content
+        /// Reading stopped or could not see the whole source: cancelled, a source changed, or events/ not fully accessible.
+        case access
+    }
+
+    /// `load`, plus the reason when the day is incomplete (nil otherwise).
+    public static func loadReportingDefect(root: URL, day: Date, now: Date = Date(), calendar: Calendar = .current,
+                                           shouldContinue: () -> Bool = { true }) -> (day: Day, defect: Defect?) {
         let start = calendar.startOfDay(for: day)
         let end = min(calendar.date(byAdding: .day, value: 1, to: start) ?? start, now)
         guard end > start, shouldContinue() else {
-            return build(events: [], day: day, now: now, calendar: calendar)
+            return (build(events: [], day: day, now: now, calendar: calendar), nil)
         }
         let loaded = HistoryLocalStoreReader(rootDirectory: root).loadLocalAnalyticsEvidence(
             start: start, endExclusive: end, shouldContinue: shouldContinue)
         let metrics = loaded.metrics
-        return build(events: loaded.events, day: day, now: now, calendar: calendar,
-            incomplete: metrics.wasCancelled || metrics.sourceChangedDuringRead || metrics.sourceAccessWasIncomplete
-                || metrics.evidenceBudgetExceeded || !loaded.issues.isEmpty)
+        let incomplete = metrics.wasCancelled || metrics.sourceChangedDuringRead || metrics.sourceAccessWasIncomplete
+            || metrics.evidenceBudgetExceeded || !loaded.issues.isEmpty
+        let result = build(events: loaded.events, day: day, now: now, calendar: calendar, incomplete: incomplete)
+        guard result.state == .incomplete else { return (result, nil) }
+        // Content issues carry the journal line; access, listing and change issues do not. A
+        // neighbouring journal read for its early or late rows (time-zone change) can be corrupt
+        // while this day's own journal is sound: its defect is not this day's, so it stays `.access`.
+        let ownJournal = GoalongActivityDayStore.dayKey(start, calendar: calendar) + ".jsonl"
+        let content = !metrics.wasCancelled && !metrics.sourceChangedDuringRead
+            && (metrics.evidenceBudgetExceeded || loaded.issues.contains { issue in
+                let file = URL(fileURLWithPath: issue.path)
+                return issue.line != nil && file.lastPathComponent == ownJournal
+                    && file.deletingLastPathComponent().lastPathComponent == "events"
+            })
+        return (result, content ? .content : .access)
     }
 }

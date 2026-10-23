@@ -293,19 +293,6 @@
         }
     }
 
-    struct ShareSegment: Identifiable {
-        let id: String
-        let anchorSequences: [UInt64]
-        let start: Date
-        let end: Date
-        let appSummary: String
-        let categorySummary: String
-        let canRevealDetails: Bool
-        var level: ShareLevel
-
-        var minuteCount: Int { anchorSequences.count }
-    }
-
     struct DashboardSettingsDraft: Equatable {
         var captureClicks: Bool
         var captureScroll: Bool

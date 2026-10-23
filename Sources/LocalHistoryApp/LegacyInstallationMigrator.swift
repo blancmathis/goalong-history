@@ -1,31 +1,16 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import LocalHistoryCore
     import ServiceManagement
 
     enum LegacyInstallationMigrator {
-        private static let bundleIdentifier = "ai.goalong.localhistory"
+        private static let bundleIdentifier = GoalongBundleIdentity.release
 
         static func run() {
             // Local iteration shares the production identity/data, never installation cleanup.
             guard Bundle.main.object(forInfoDictionaryKey: "GoalongDevelopmentBuild") as? Bool != true else { return }
             migrateOnboardingState()
-
-            let currentPID = ProcessInfo.processInfo.processIdentifier
-            let otherInstances = NSRunningApplication
-                .runningApplications(withBundleIdentifier: bundleIdentifier)
-                .filter { $0.processIdentifier != currentPID && !$0.isTerminated }
-
-            for application in otherInstances {
-                _ = application.terminate()
-            }
-
-            if !otherInstances.isEmpty {
-                let deadline = Date().addingTimeInterval(1.2)
-                while Date() < deadline, otherInstances.contains(where: { !$0.isTerminated }) {
-                    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-                }
-            }
 
             removeLegacyLaunchAgent()
             removeLegacyApplicationCopiesIfSafe()

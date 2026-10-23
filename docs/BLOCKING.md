@@ -21,8 +21,9 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 - `UserDefaults` key `goalong.module.blocking.enabled`, default `false`. Read through
   `GoalongModuleStore` (`Sources/LocalHistoryApp/GoalongModules.swift`), cheap, never starts anything.
 - Off: no `BlockingController`, no timer, no observer, no window, no file under `Blocking/`, no
-  permission request, no system component. The sidebar entry is hidden.
-- On: the sidebar shows « Blocage » after « Surveillance temps réel ». Turning the module on creates
+  permission request, no system component. There is no sidebar entry: Concentration › Programme
+  stays visible and only offers the switch.
+- On: Concentration › Programme can start blocks and programs. Turning the module on creates
   the controller and reads the store; nothing is blocked until the member starts a block or a
   program.
 - Off is refused while anything is locked (locked session, locked program, freeze). Off with nothing
@@ -47,7 +48,7 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 | Mode block / allowlist | « Bloquer ces éléments » / « Tout bloquer sauf ces éléments » |
 | Manual session | Blocage (« Bloquer maintenant ») |
 | Weekly windows | Programme |
-| Lock kinds | Libre / Difficile / Verrouillé |
+| Lock kinds | Libre / Difficile / Mot de passe / Verrouillé |
 | Program lock | « Programme verrouillé jusqu'au … » |
 | Quota | « X min par jour » |
 | Breaks | « Pauses » |
@@ -83,9 +84,9 @@ and rewritten. A store error refuses edits; it is never a lock and never stops �
   boundary (`/shorts`, `/shorts/x`, not `/shortsx`).
 - `BlockAppRule`: `bundleIdentifier`, `name`.
 - `BlockProgram`: `ranges: [BlockProgramRange]` (`id`, `weekdays: Set<Int>` ISO 1 = Monday … 7,
-  `startMinute`, `endMinute` in 0…1440; `end <= start` means it ends the next day), `lockedUntil:
-  Date?`.
-- `BlockSession`: `id`, `listIDs`, `start`, `end`, `lock` (`free` | `typing` | `locked`),
+  `startMinute`, `endMinute` in 0…1440; `end <= start` means it ends the next day, `lock:
+  BlockLock?` — absent = `free`, read through `effectiveLock`), `lockedUntil: Date?`.
+- `BlockSession`: `id`, `listIDs`, `start`, `end`, `lock` (`free` | `typing` | `password` | `locked`),
   `origin` (`manual` | `program(rangeID)`).
 - `BlockDayUsage`: per local day, per list: quota seconds used, breaks taken, current break end.
 - `BlockFreeze`: `start`, `end`, `mode` (`shield` | `lockScreen`), `allowedApps: [BlockAppRule]`.
@@ -138,9 +139,21 @@ before the lock. A break cannot start inside a freeze.
 **Program lock.** While `program.lockedUntil > now`, the list can only get stricter: adding sites or
 apps, adding or lengthening ranges, lowering the quota, removing breaks are allowed; removing,
 shortening, raising the quota, adding breaks, changing the mode, deleting the list are refused.
-Program sessions of a locked program are `locked`; of an unlocked program, `free`.
 
-A locked manual session also makes its lists stricter-only until its end.
+**Range lock.** Each program range carries its own lock (`BlockProgramRange.lock`, chosen in the
+range popover under « Arrêt »). A window of the range blocks with that lock: `free` stops with
+« Arrêter » for today, `typing` asks for the typed text, `password` for the blocking password, and
+`locked` cannot be stopped before the window ends. A `password` range without a valid password
+counts as `locked`. While `program.lockedUntil > now`, every window of the program is `locked`,
+whatever its range lock. Choosing `password` needs a blocking password set first.
+
+**Range lock can only rise.** While the list is stricter-only, saving a program is refused if any
+minute covered at a given lock strength (`typing` < `password` < `locked`) would lose that coverage:
+a range keeps or raises its lock, never lowers it (« le verrou d’une plage peut seulement monter »).
+Lengthening a range or adding a range at any lock stays allowed.
+
+Any block in progress whose lock is not `free` (manual session or program window, `typing`,
+`password` or `locked`) also makes its lists stricter-only until its end.
 During either lock, adding keywords and removing exceptions are allowed; removing keywords or
 adding/widening exceptions is refused in French. Replacing an exception is removal plus addition
 and is refused even when the replacement narrows its scope. The same protection applies to
@@ -158,6 +171,15 @@ if the wall clock jumps forward more than 60 s beyond the elapsed continuous tim
 end forward by the jump. Persist the last seen wall time every minute; after a reboot, a wall clock
 earlier than the last seen time keeps the remaining durations. Documented limit: across a reboot a
 forward clock change cannot be detected by the app alone.
+
+**Time zone.** Blocking follows a time-zone change while the app runs (system notification, or
+the next refresh). A protected program window in progress (any lock except « Libre ») is held at
+its current end, like after a clock jump, so the change cannot end it early. The usage day in
+progress (quotas, breaks, attempts, earned time) keeps its key until its old midnight, so a quota
+never resets early; the day can only get longer. After that, future programs, the next usage day
+and the timers use the new zone. This hold lives in memory: if Goalong restarts during the old
+day, it uses the new zone at once. Braise, Concentration and the Screen Time archive also follow
+the new zone; the menu bar uses it at its next refresh.
 
 ## Ralentir (friction)
 
@@ -205,15 +227,16 @@ the delay, lowering `continueMinutes` are allowed (stricter).
 - The sink receives `BlockingObservation`: bundle id, pid, window frame (AX, screen coordinates),
   browser flag, URL (host + path only) when readable, private-window flag, at, and a set of
   configured, folded keywords matched in this sample's title. It never contains a raw title.
-- Private windows are never read: the provider only reports the flag. The private check runs for
-  every app that may show a page (known browser, configured browser or web content) before any
-  address read. An unknown app with a private window counts as a browser only when it shows an
-  address field, found without reading its value. Exclusions of Computer History
+- Private windows follow the same site, exception, keyword and quota rules as any window. The
+  blocking reader reads their address (host + path) and, while keywords are active, their title,
+  in memory only, for one sample. The private flag stays on the observation, so the recorder, Jev,
+  analytics and diagnostics never keep them, and `blocking.json` keeps only `[list UUID: count]`.
+  Unknown apps go through the normal address read in every window. Exclusions of Computer History
   do not hide URLs from the blocking sink (they are privacy choices for history), but the URL never
   reaches the recorder.
-- Keyword title reading happens only in the blocking reader, after the private-window check,
-  while at least one currently active list has keywords. Upcoming lists alone do not enable it.
-  No keyword title read happens in private windows or without active keywords. The raw title is
+- Keyword title reading happens only in the blocking reader, while at least one currently active
+  list has keywords. Upcoming lists alone do not enable it. No keyword title read happens without
+  active keywords; private windows are read like other windows. The raw title is
   consumed within one read, never cached, compared in `BlockingObservation`, recorded, logged,
   or sent to Jev, analytics or diagnostics. Matching evidence contains configured rules only and
   is recomputed each sample. A pending tab action rechecks its matching keywords before closing.
@@ -221,8 +244,8 @@ the delay, lowering `continueMinutes` are allowed (stricter).
   descriptions and chrome labels to detect private markers, even without keywords and in private
   windows. These labels are discarded. Without keywords its 30-second flag cache is unchanged;
   with keywords the flag is recomputed before every sample. Thus the literal prohibition of
-  **all** `AXTitle` reads without keywords or in private windows is not met by this existing
-  classifier; the new keyword path adds no title read in either case.
+  **all** `AXTitle` reads without keywords is not met by this existing classifier; the keyword
+  path adds no title read without active keywords.
 
 App launches and activations also arrive through the existing `NSWorkspace` notification path in
 `AccessibilityEventMonitor`; reuse it, do not add another one.
@@ -237,8 +260,8 @@ App launches and activations also arrive through the existing `NSWorkspace` noti
   the window (level `.floating`). Then stop the page: press the browser's « Fermer l'onglet » menu
   item through AX (fallback: `⌘W` posted to that pid). The veil stays 1.5 s after the tab changes,
   then fades.
-- **Private window during a site block**: covered with the site veil (« Navigation privée »), tab
-  closed the same way.
+- **Private window during a site block**: the same site, exception, keyword and quota rules apply.
+  A private window whose address stays unreadable falls under the unsupported-browser rule below.
 - **Unsupported browser**: a known browser (the configured browser list plus
   `BlockingRules.otherBrowsers`) whose URL stays unreadable for 3 s while a site block is active is
   treated as blocked (« Navigateur non pris en charge »). An app that only shows web content
@@ -248,7 +271,11 @@ App launches and activations also arrive through the existing `NSWorkspace` noti
   (`siteBlockingAvailable == false`) and every known browser is treated as unsupported.
 - **Persistence**: on launch, the controller restores sessions, usage and freeze before the first
   window appears. Launch at login is required while anything is locked: the controller registers
-  `SMAppService.mainApp` if needed and shows its state.
+  `SMAppService.mainApp` if needed and shows its state. While a locked block runs, turning launch
+  at login off (Settings, onboarding, Braise) records the choice but keeps the item. When nothing
+  needs it any more, Blocage removes an item it registered or kept itself if the member's choice
+  is off (`blockingForcedLoginItem`). It never removes an item the member turned on, and it never
+  re-registers, during the same lock, an item removed in System Settings.
 - **Quit**: while anything is locked, « Quitter Goalong » explains it cannot quit and offers to
   close the window. (A forced quit is covered by the Strict level.)
 
@@ -309,7 +336,7 @@ before Developer ID and recovery tests on a dedicated Mac.
   `BlockingEditCheck`. Additions normalize and deduplicate; refusals preserve the list.
 - Pure explanation: `BlockingController.explain(url:title:list:) -> BlockingMatchExplanation`
   with `blocked`, a typed `reason` and a French `message`. It evaluates one list's matching rules,
-  without sessions, quota, breaks or the private/unreadable-browser fallback. It consumes an
+  without sessions, quota, breaks or the unreadable-browser fallback. It consumes an
   optional title for that call only. Runtime `activeKeywords` enables the sink's title reads.
 - Sessions: `start(listIDs:until:lock:)`, `stop(_:typed:)`, `typingChallenge(for:)`,
   `takeBreak(listID:)`, `endBreak(listID:)`.
@@ -372,15 +399,15 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
 - The page API and design-owned views are preserved. Schema 1 gains optional `clock`,
   `heldPrograms` (locked program windows extended after a clock jump), and `programSkips`
   (a free program stopped for its current window); old schema-1 files remain readable.
-- An unreadable/invalid store preserves the last good in-process state and refuses all edits,
-  module-off and ordinary quit. Scheduled deadlines still end normally; an initially unreadable
+- An unreadable/invalid store preserves the last good in-process state and refuses edits only.
+  It is never a lock: module-off and « Quitter » stay available. Scheduled deadlines still end normally; an initially unreadable
   store reports an error because missing rules cannot be reconstructed. No store is created while
   the module is off or an enabled module is completely empty.
 - Locked allowlists can only shrink by set inclusion (replacing one allowed rule with another is
   refused); quotas can decrease or be removed (no quota means immediate blocking). Removing a
   program lock is refused. A freeze cannot be replaced or shortened while it runs.
-- Breaks end at local midnight; usage and break counters reset then. Private/unreadable browser
-  URLs fail closed during an eligible site block, including while a quota remains, because no
+- Breaks end at local midnight; usage and break counters reset then. Unreadable browser
+  URLs (private or not) fail closed during an eligible site block, including while a quota remains, because no
   address can establish eligible quota accounting. Explicit browser internal pages stay allowed.
 - Program times use civil calendar times: a missing DST time advances to the next valid time;
   a repeated time uses its first occurrence. Touching/overlapping windows are merged.
@@ -420,8 +447,9 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
    window, offscreen tabs, very quick app/window switches and page execution before tab closure
    can escape. Quota gaps after missed/stale samples are not invented; eligible accounting is
    capped at 15 seconds per interval and can undercount when the process is stalled.
-4. Browser identity/private-mode detection and AX URL/menu exposure are best effort. Undetected
-   wrappers, spoofed AX metadata, unreadable private markers, disabled Accessibility, a rejected
+4. Browser identity and AX URL/menu exposure are best effort (private-mode detection only
+   decides what history drops). Undetected
+   wrappers, spoofed AX metadata, disabled Accessibility, a rejected
    AX/Command-W operation, remapped shortcuts, full-screen Spaces/window ordering and an unknown
    browser without a usable window frame can defeat site enforcement. Missing Accessibility is
    shown and known browsers are covered; it does not grant the app power to stop network traffic.
@@ -512,8 +540,9 @@ Only a confirmed backend presentation records an attempt. A continuous veil or r
 reenforcement is one event. Leaving and returning to a blocked target (or a fresh app activation)
 can record another event; the same list + normalized host/app bundle identifier within 10 seconds
 is deduplicated, even across day boundaries. A path change on the same continuously blocked host
-does not create another target. Private/unreadable addresses use the browser bundle identifier
-for in-memory deduplication, without reading or retaining a private address. Slow-down presentations
+does not create another target. Unreadable addresses use the browser bundle identifier
+for in-memory deduplication. A readable private address is deduplicated by host like any other,
+in memory only, and never retained. Slow-down presentations
 keep their existing counters; a firm quota-exhaustion block can count as a blocked attempt.
 
 Only `[list UUID: count]` is persisted as `BlockDayUsage.blocked`, alongside the existing local

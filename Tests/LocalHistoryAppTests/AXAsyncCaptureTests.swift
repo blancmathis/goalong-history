@@ -11,7 +11,7 @@ final class AXAsyncCaptureTests: XCTestCase {
         var config = RecorderConfig.default
         config.captureWindowTitles = true; config.captureElementLabels = true
         configure(&config)
-        let privacy = GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory) // same policy ContextProvider revalidates
+        let privacy = GoalongPrivacyPolicyCache.read(in: hermeticDataRoot())
         return ContextReadParameters(foregroundApplication: app, applications: [42: app], config: config,
             accessibilityAvailable: true, blockingAXTrusted: true, sessionAvailable: true, idleSeconds: 1,
             privacy: privacy, pauseRevision: "initial")
@@ -80,6 +80,34 @@ final class AXAsyncCaptureTests: XCTestCase {
         for forbidden in ["AXFocusedApplication", "AXFocusedUIElement", "AXValue", "AXSelectedText"] {
             XCTAssertFalse(tree.reads.contains(forbidden), forbidden)
         }
+    }
+
+    func testPrivateWindowOptInIsHonoredWhenBlockingRuns() {
+        for backend in [ContextProvider.Backend.background, .legacy] {
+            let tree = ScriptedAXTree(browser: true)
+            let input = input(bundle: "com.apple.Safari") { $0.capturePrivateBrowsing = true }
+            tree.attributes[Int(CFHash(tree.window))]?["AXTitle"] = "Private Browsing" as CFString
+            let provider = ContextProvider(client: tree.client, backend: backend, parameters: { input })
+            let done = expectation(description: "history read with the opt-in")
+            var seen = false
+            provider.requestCapture(blockingSink: { seen = $0.privateWindow }) { snapshot in
+                XCTAssertNotEqual(snapshot?.suppressionReason, .privateBrowserWindow, "\(backend)")
+                XCTAssertNotNil(snapshot?.window, "\(backend)")
+                done.fulfill()
+            }
+            wait(for: [done], timeout: 3)
+            XCTAssertTrue(seen, "\(backend)")
+        }
+    }
+
+    func testBlockingPrivateAppFollowsTheOptInAndUsesTheAppName() {
+        let suppressed = input(bundle: "com.apple.Safari")
+        let observation = BlockingObservation(bundleIdentifier: "com.apple.Safari", pid: 42, windowFrame: .zero,
+                                              isBrowser: true, url: nil, privateWindow: true, at: Date())
+        XCTAssertEqual(suppressed.blockingPrivateApp(for: observation)?.name, "Fixture")
+        XCTAssertNil(input(bundle: "com.apple.Safari") { $0.capturePrivateBrowsing = true }.blockingPrivateApp(for: observation))
+        var normal = observation; normal.privateWindow = false
+        XCTAssertNil(suppressed.blockingPrivateApp(for: normal))
     }
 
     func testBlockingStillCompletesWhenHistoryRPCIsHeldAndMainContinues() {

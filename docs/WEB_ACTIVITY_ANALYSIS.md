@@ -39,7 +39,7 @@ A normalized domain can always:
 
 - reveal its name;
 - reveal only its local category;
-- remain hidden in every selective share.
+- remain hidden in every selective share: the signed file and the Goalong website send (a hidden site is not listed, not preselected and not sent, including by an existing daily plan).
 
 This does not alter local historical data.
 

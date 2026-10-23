@@ -526,28 +526,17 @@ enum ComputerHistoryResourceResolver {
             .contains { identity.contains($0) }
     }
 
-    private static func extractLocalPaths(from text: String) -> [String] {
+    static func extractLocalPaths(from text: String) -> [String] {
         guard !text.isEmpty else { return [] }
+        let edgeCharacters = CharacterSet(charactersIn: " .,:;()[]{}")
         var output: [String] = []
         for expression in localPathExpressions {
             let range = NSRange(text.startIndex..., in: text)
             for match in expression.matches(in: text, range: range) {
                 guard let swiftRange = Range(match.range, in: text) else { continue }
-                var value = String(text[swiftRange])
-                    .trimmingCharacters(in: CharacterSet(charactersIn: " .,:;()[]{}"))
-                let valueRange = NSRange(value.startIndex..., in: value)
-                if let extensionMatch = recognizedFileExtension.firstMatch(
-                    in: value,
-                    range: valueRange
-                ), extensionMatch.range.location != NSNotFound,
-                    extensionMatch.range.upperBound < valueRange.upperBound,
-                    let extensionRange = Range(extensionMatch.range, in: value)
-                {
-                    let suffix = value[extensionRange.upperBound...]
-                    if suffix.first?.isWhitespace == true {
-                        value = String(value[..<extensionRange.upperBound])
-                    }
-                }
+                var value = truncatedAtProse(
+                    String(text[swiftRange]).trimmingCharacters(in: edgeCharacters)
+                ).trimmingCharacters(in: edgeCharacters)
                 if value.hasPrefix("file://"),
                     let parsed = Foundation.URL(string: value)
                 {
@@ -561,5 +550,32 @@ enum ComputerHistoryResourceResolver {
             }
         }
         return ComputerHistorySupport.distinct(output)
+    }
+
+    /// The path patterns accept spaces ("Application Support", "My Notes.md"),
+    /// so a match can run on into the sentence after the path. Cut it after
+    /// the first known extension that ends a word ("notes.md, and review" or
+    /// "My Notes.md is open"). Without such an extension, cut at the first
+    /// clause separator ("app, then ran tests", "~/app — -zsh").
+    private static func truncatedAtProse(_ value: String) -> String {
+        let fullRange = NSRange(value.startIndex..., in: value)
+        for match in recognizedFileExtension.matches(in: value, range: fullRange) {
+            guard let range = Range(match.range, in: value) else { continue }
+            let suffix = value[range.upperBound...]
+            guard let next = suffix.first else { return value }
+            let endsWord: Bool
+            if next.isWhitespace {
+                endsWord = true
+            } else if ",;:)]}".contains(next) {
+                endsWord = suffix.dropFirst().first.map(\.isWhitespace) ?? true
+            } else {
+                endsWord = false
+            }
+            if endsWord { return String(value[..<range.upperBound]) }
+        }
+        let firstSeparator = [", ", "; ", " — ", " – "]
+            .compactMap { value.range(of: $0)?.lowerBound }
+            .min()
+        return firstSeparator.map { String(value[..<$0]) } ?? value
     }
 }

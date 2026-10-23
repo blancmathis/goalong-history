@@ -34,13 +34,51 @@
             case .paused:
                 return "L’enregistrement est volontairement en pause. L’historique existant reste consultable."
             case .excludedPrivateOrSecure:
-                return "Le suivi détaillé est volontairement masqué pour la fenêtre active, selon vos exclusions."
+                return "Le suivi détaillé est volontairement masqué : app ou site exclu, navigation privée ou saisie sécurisée active (mot de passe, terminal). L’enregistrement reprend automatiquement."
             case .healthyButIdle:
                 return "Tout fonctionne ; aucune interaction n’a été reçue depuis quelques minutes."
             case .awaitingInputEvidence:
                 return "La capture est prête ; elle sera confirmée dès la première interaction réelle (clic ou frappe)."
             case .storageUnavailable:
                 return "L’historique ne peut pas être écrit (disque plein ?). L’enregistrement reprendra tout seul dès que possible."
+            }
+        }
+    }
+
+    extension SuppressionReason {
+        var frenchLabel: String {
+            switch self {
+            case .privateBrowserWindow: return "fenêtre privée"
+            case .excludedApplication: return "app exclue"
+            case .excludedDomain: return "site exclu"
+            case .secureInput: return "saisie sécurisée"
+            case .sessionUnavailable: return "session indisponible"
+            case .manualPause: return "pause manuelle"
+            case .accessibilityUnavailable: return "Accessibilité indisponible"
+            }
+        }
+    }
+
+    extension CaptureEventTapLifecycle {
+        var frenchLabel: String {
+            switch self {
+            case .neverAttempted: return "jamais essayée"
+            case .creationFailed: return "création impossible"
+            case .createdDisabled: return "créée, désactivée"
+            case .createdEnabled: return "active"
+            }
+        }
+    }
+
+    extension BuildSignatureKind {
+        var frenchLabel: String {
+            switch self {
+            case .adHoc: return "signature locale"
+            case .appleDevelopment: return "développement Apple"
+            case .developerID: return "Developer ID"
+            case .appStore: return "App Store"
+            case .other: return "autre signature"
+            case .unsigned: return "non signée"
             }
         }
     }

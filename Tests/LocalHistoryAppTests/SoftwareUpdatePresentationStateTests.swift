@@ -159,5 +159,14 @@
 
             XCTAssertEqual(state, SoftwareUpdatePresentationState())
         }
+
+        func testUpdateAvailableCheckResultCarriesTheFoundVersion() {
+            let fresh = SoftwareUpdateManager.checkResultValues(result: .updateAvailable, foundVersion: "5000.0.7", availableVersion: nil)
+            XCTAssertEqual(fresh[.availableVersion], .symbol("5000.0.7"))
+            let stale = SoftwareUpdateManager.checkResultValues(result: .updateAvailable, foundVersion: "5000.0.7", availableVersion: "5000.0.6")
+            XCTAssertEqual(stale[.availableVersion], .symbol("5000.0.7"))
+            let upToDate = SoftwareUpdateManager.checkResultValues(result: .upToDate, foundVersion: nil, availableVersion: nil)
+            XCTAssertNil(upToDate[.availableVersion])
+        }
     }
 #endif

@@ -6,22 +6,26 @@ import SwiftUI
     @ObservedObject private var monitor = JevMonitor.shared
     @State private var key = ""
     @State private var confirmingRemoval = false
+    /// Only errors from saving or removing the key. The shared monitor error also holds network errors.
+    @State private var keyError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Connexion à TypeSafe").font(LHTheme.sheetTitleFont)
+            Text("Connexion à Jev").font(LHTheme.sheetTitleFont)
                 .accessibilityAddTraits(.isHeader)
-            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API TypeSafe pour utiliser la surveillance temps réel.")
+            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API Jev pour utiliser la surveillance temps réel.")
                 .font(.callout).foregroundStyle(.secondary)
-            SecureField("Clé API TypeSafe", text: $key)
+            Text("Clé API").font(.callout.weight(.medium))
+            SecureField("Clé API Jev", text: $key, prompt: Text("Collez votre clé").foregroundColor(LHTheme.placeholder))
+                .labelsHidden()
                 .textFieldStyle(GoalongFieldStyle()).accessibilityIdentifier("jev-api-key")
-            Text("L’usage de l’API est facturé par TypeSafe. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. La surveillance reste soumise à votre choix d’activation sur sa page.")
+            Text("L’usage de l’API est facturé par TypeSafe, le fournisseur de Jev. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. La surveillance reste soumise à votre choix d’activation sur sa page.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Label("Clé conservée dans un fichier privé (0600), jamais dans l’historique ni les journaux de diagnostic.", systemImage: "lock")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let error = monitor.error {
+            if let error = keyError {
                 Text(error).font(.callout).foregroundStyle(LHTheme.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -37,7 +41,8 @@ import SwiftUI
                 Button("Enregistrer") {
                     monitor.saveKey(key)
                     // Do not discard the typed value when validation or storage failed.
-                    if monitor.error == nil { key = ""; dismiss() }
+                    keyError = monitor.error
+                    if keyError == nil { key = ""; dismiss() }
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
                 .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -47,9 +52,9 @@ import SwiftUI
         .padding(26).frame(width: 510, alignment: .leading)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .onDisappear { key = "" }
-        .alert("Supprimer la clé TypeSafe ?", isPresented: $confirmingRemoval) {
+        .alert("Supprimer la clé Jev ?", isPresented: $confirmingRemoval) {
             Button("Annuler", role: .cancel) {}
-            Button("Supprimer la clé", role: .destructive) { monitor.removeKey() }
+            Button("Supprimer la clé", role: .destructive) { monitor.removeKey(); keyError = monitor.error }
         } message: {
             Text("La surveillance ne pourra plus rien analyser sans une nouvelle clé. Votre historique et vos autres réglages restent inchangés.")
         }

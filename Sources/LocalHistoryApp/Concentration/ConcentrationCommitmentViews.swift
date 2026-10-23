@@ -131,7 +131,7 @@ enum FocusCommitmentFormat {
     static func editUntil(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
         if calendar.isDate(date, inSameDayAs: now) { return "jusqu’à \(BlockingFormat.time(date))" }
         if date == calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) { return "jusqu’à minuit" }
-        return "jusqu’à \(BlockingFormat.moment(date, now: now, calendar: calendar))"
+        return BlockingFormat.untilPhrase(BlockingFormat.moment(date, now: now, calendar: calendar))
     }
 
     /// « Pris à 8:50 », « Pris dimanche à 21:40 ».
@@ -359,10 +359,15 @@ struct FocusCommitmentEditRequest: Identifiable {
         }
     }
 
+    static func emptyText(for kind: FocusCommitmentPeriod.Kind) -> String {
+        kind == .day ? "Un objectif pour aujourd’hui, que Goalong mesure. Ajoutez un enjeu si vous voulez."
+                     : "Un objectif pour la semaine, que Goalong mesure. Ajoutez un enjeu si vous voulez."
+    }
+
     @ViewBuilder private var empty: some View {
         VStack(alignment: .leading, spacing: 10) {
             FocusCommitmentGauge(empty: true)
-            Text("Un objectif que Goalong mesure, avec un enjeu si vous voulez.")
+            Text(Self.emptyText(for: currentPeriod.kind))
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
         }
         Button("Prendre un engagement") { onCreate(currentPeriod) }

@@ -106,7 +106,7 @@ struct GoalongActivityGaps: Equatable {
         case .observationGap: return "Le Mac a signalé un trou dans la collecte, par exemple après un ralentissement."
         case .sessionUnavailable: return "Écran de connexion, économiseur d’écran ou autre utilisateur."
         case .secureInput: return "Un champ de mot de passe était actif : rien n’est lu pendant ce temps."
-        case .excludedApplication, .excludedDomain: return "Exclu dans Réglages › Confidentialité."
+        case .excludedApplication, .excludedDomain: return "Exclu dans Réglages › \(SettingsPane.applications.title)."
         case .accessibility: return "Sans l’accès Accessibilité, Goalong ne voit pas la fenêtre au premier plan."
         default: return nil
         }
@@ -182,6 +182,15 @@ struct GoalongActivityTextureSection: View {
 
 /// One source of the page, as « Couverture et sources » lists it: what it is, its state, one action.
 struct GoalongSourceRow: Identifiable {
+    /// State of the Mac's own source: off without consent, blocked while macOS access is missing.
+    static func macState(consentEnabled: Bool, runtime: RuntimeStateKind) -> State {
+        guard consentEnabled else { return .off }
+        switch runtime {
+        case .permissionsMissing, .inputTapUnavailable: return .needsPermission
+        default: return .ready
+        }
+    }
+
     enum State {
         case ready, partial, off, needsPermission, unavailable, noData, failed
         var word: String {

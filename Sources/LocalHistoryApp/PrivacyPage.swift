@@ -26,6 +26,9 @@
                                     .frame(width: 28, height: 28)
                             }
                             .buttonStyle(LHSecondaryButtonStyle())
+                            .disabled(model.isRefreshing)
+                            .help("Actualiser")
+                            .accessibilityLabel("Actualiser")
                         }
                     }
 
@@ -258,6 +261,19 @@
                             Button("Ouvrir la configuration guidée") { model.requestPermissions() }
                                 .buttonStyle(LHPrimaryButtonStyle())
                         }
+                    } else if let health = model.runtime.captureHealth, health.state == .inputTapUnavailable {
+                        HStack {
+                            Label(health.state.frenchDetail, systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(LHTheme.warning)
+                            Spacer()
+                            Button("Ouvrir la Surveillance de l’entrée") { model.openInputMonitoringSettings() }
+                                .buttonStyle(LHPrimaryButtonStyle())
+                        }
+                    } else if let health = model.runtime.captureHealth, [.paused, .storageUnavailable].contains(health.state) {
+                        Label(health.state.frenchDetail, systemImage: health.state == .paused ? "pause.circle" : "externaldrive.badge.exclamationmark")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LHTheme.warning)
                     } else if model.runtime.captureHealth?.captureProven != true {
                         HStack {
                             Label(
@@ -317,19 +333,19 @@
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "AX : \(snapshot.lastAXContextSuccessAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.rawValue ?? "aucun") à \(snapshot.lastSuppressionAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
+                        "Accessibilité : \(snapshot.lastAXContextSuccessAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.frenchLabel ?? "aucun") à \(snapshot.lastSuppressionAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
                     )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "Autorisations : interrupteur AX \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé") · test AX \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué") · Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée") · capture \(snapshot.eventTapLifecycle.rawValue)"
+                        "Autorisations : interrupteur Accessibilité \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé") · test Accessibilité \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué") · Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée") · capture \(snapshot.eventTapLifecycle.frenchLabel)"
                     )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "Version : \(snapshot.build.signatureKind.rawValue) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans CDHash") · saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
+                        "Version : \(snapshot.build.signatureKind.frenchLabel) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans empreinte de code") · saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
                     )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -361,7 +377,7 @@
                 protectionCard(
                     symbol: "key.fill",
                     title: "Mots de passe et champs sécurisés",
-                    message: "La saisie sécurisée masque l’activité clavier. Vérifiez les exclusions des gestionnaires de mots de passe dans Enregistrement.",
+                    message: "La saisie sécurisée masque l’activité clavier. Vérifiez les exclusions des gestionnaires de mots de passe dans Réglages › \(SettingsPane.applications.title).",
                     tint: LHTheme.success
                 )
                 protectionCard(
@@ -431,12 +447,14 @@
                     )
 
                     HStack(spacing: 13) {
-                        Image(systemName: "checkmark.shield.fill")
+                        let suspended = model.deviceTrustTier == "unavailable"
+                        let tint = suspended ? LHTheme.warning : LHTheme.success
+                        Image(systemName: suspended ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
                             .font(.system(size: 23, weight: .semibold))
-                            .foregroundStyle(LHTheme.success)
+                            .foregroundStyle(tint)
                             .frame(width: 48, height: 48)
                             .background(
-                                LHTheme.success.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous)
                             )
                         VStack(alignment: .leading, spacing: 4) {
                             Text(model.deviceProtectionTitle)
@@ -447,11 +465,36 @@
                         }
                     }
 
+                    ForEach(model.trustNotices, id: \.self) { notice in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(LHTheme.warning)
+                                Text(notice)
+                                    .font(.system(size: 12, weight: .medium))
+                                Spacer()
+                                if notice == DeviceTrustState.shared.sealingSuspendedNotice {
+                                    Button("Réessayer") { model.onRetryKeychain() }
+                                        .disabled(DeviceTrustState.shared.isRetryInFlight)
+                                } else {
+                                    Button("Compris") { DeviceTrustState.acknowledgeRotation() }
+                                }
+                            }
+                            if notice == DeviceTrustState.shared.sealingSuspendedNotice,
+                                let feedback = DeviceTrustState.shared.retryFeedback
+                            {
+                                Text(feedback)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Identifiant de l’appareil")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
-                        Text(model.deviceID)
+                        Text(model.knownDeviceID ?? "Indisponible (Trousseau inaccessible)")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -480,7 +523,7 @@
                         Text("Supprimer l’activité locale et les souvenirs dérivés")
                             .font(.system(size: 14, weight: .semibold))
                         Text(
-                            "Supprimer l’activité retire aussi son contexte, ses analyses et ses vues dérivées. L’index des conversations IA, le Temps d’écran, les engagements et les reçus sont conservés."
+                            "Supprimer l’activité retire aussi son contexte, ses analyses et ses vues dérivées, ainsi que les appels et l’activité de développement des jours concernés (journée entière). La note du jour n’est effacée qu’avec toute l’activité. L’index des conversations IA, le Temps d’écran, les engagements et les reçus sont conservés."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -515,7 +558,7 @@
                 Alert(
                     title: Text("Supprimer la dernière session d’application ?"),
                     message: Text(
-                        "Goalong supprimera uniquement les événements locaux de \(session.appName) entre \(DashboardFormatters.shortTime.string(from: session.start)) et \(DashboardFormatters.shortTime.string(from: session.end)), ainsi que les instantanés liés. Sceaux, reçus, Temps d’écran et conversations IA sont conservés."
+                        "Goalong supprimera les événements locaux de \(session.appName) entre \(DashboardFormatters.shortTime.string(from: session.start)) et \(DashboardFormatters.shortTime.string(from: session.end)) et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
                     ),
                     primaryButton: .destructive(Text("Supprimer la session")) {
                         model.deleteActivitySession(session)
@@ -650,7 +693,8 @@
         }
 
         var message: String {
-            "Les événements détaillés de la période, leur contexte et toutes les analyses qui en dérivent seront définitivement supprimés de ce Mac. L’index des conversations IA, le Temps d’écran, les sceaux cryptographiques et les reçus sont conservés."
+            (self == .all ? "Les verdicts et corrections de « Mon travail » sont aussi effacés. " : "")
+                + "Les événements détaillés de la période, leur contexte et toutes les analyses qui en dérivent seront définitivement supprimés de ce Mac, ainsi que les appels et l’activité de développement des jours concernés (journée entière). La note du jour n’est effacée qu’avec toute l’activité. L’index des conversations IA, le Temps d’écran, les sceaux cryptographiques et les reçus sont conservés."
         }
     }
 #endif

@@ -12,6 +12,40 @@ import LocalHistoryCore
         model.result = try GoalongProfileAnalysis.apply(GoalongProfileAnalysis.parseResult(JSONSerialization.data(withJSONObject: output)), to: request)
         return model
     }
+    func testReopeningWithAnotherDayRebuildsOnlyAnIdleStudio() {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
+        let a = Date(timeIntervalSince1970: 1_791_000_000), b = a.addingTimeInterval(86_400)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: nil, idle: true, calendar: calendar), .front)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: a.addingTimeInterval(60), idle: false, calendar: calendar), .front)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: b, idle: true, calendar: calendar), .rebuild)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: nil, requestedDay: b, idle: true, calendar: calendar), .rebuild)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: a, requestedDay: b, idle: false, calendar: calendar), .keepWork)
+    }
+    func testReopeningWithAnotherModeNeverSilentlyKeepsALoadedWindow() {
+        let day = Date(timeIntervalSince1970: 1_791_000_000)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: day, requestedDay: nil, idle: false, shownLocalOnly: true, requestedLocalOnly: false), .modeMismatch)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: day, requestedDay: nil, idle: true, shownLocalOnly: true, requestedLocalOnly: false), .rebuild)
+        XCTAssertEqual(GoalongProfileWindow.reopen(shownDay: day, requestedDay: nil, idle: false, shownLocalOnly: true, requestedLocalOnly: true), .front)
+    }
+    func testReceiveAsksForThePresentationOnce() {
+        let host = GoalongProfileStudioHost(currentRevision: { "r" }); var calls = 0
+        host.onNeedsPresentation = { calls += 1 }
+        host.receive(Data("p".utf8))
+        XCTAssertEqual(calls, 1); XCTAssertNotNil(host.pending)
+    }
+    func testProfileShareSurvivesTheOpeningPaneAndCapturesTheRevisionAtSendTime() {
+        var revision = "r1"
+        let host = GoalongProfileStudioHost(currentRevision: { revision })
+        revision = "r2"
+        host.receive(Data("projection".utf8))
+        revision = "r3"
+        XCTAssertEqual(host.pending, GoalongProfileStudioHost.Share(data: Data("projection".utf8), privacyRevision: "r2"))
+    }
+    func testOneHostOwnsOneWindowForEveryCaller() {
+        let host = GoalongProfileStudioHost()
+        XCTAssertTrue(host.window === host.window)
+        XCTAssertNil(host.pending)
+    }
     func testLocalResultDoesNotImplicitlySelectAnyCardOrAuthorizeSend() throws {
         let model = try populated()
         XCTAssertTrue(model.selectedItems.isEmpty)
@@ -48,6 +82,20 @@ import LocalHistoryCore
         let model = try populated(); model.consent = true; model.selectedItems = ["i1"]; model.reviewed = true
         model.invalidate()
         XCTAssertNil(model.request); XCTAssertNil(model.result); XCTAssertFalse(model.consent); XCTAssertFalse(model.reviewed); XCTAssertTrue(model.selectedItems.isEmpty)
+    }
+    func testPolicyOrPauseChangeAfterLoadBlocksTheSend() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-studio-guard-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let revisions = (privacy: GoalongPrivacyPolicy.load(in: root).revision, pause: try GoalongGlobalPause.admit(in: root))
+        XCTAssertNoThrow(try GoalongProfileStudioModel.revalidate(native: true, revisions: revisions, root: root))
+        XCTAssertNoThrow(try GoalongProfileStudioModel.revalidate(native: false, revisions: nil, root: root))
+        XCTAssertThrowsError(try GoalongProfileStudioModel.revalidate(native: true, revisions: nil, root: root))
+        var policy = GoalongPrivacyPolicy(); policy.applications = ["x": "X"]; try policy.save(in: root)
+        XCTAssertThrowsError(try GoalongProfileStudioModel.revalidate(native: true, revisions: revisions, root: root))
+        let fresh = (privacy: GoalongPrivacyPolicy.load(in: root).revision, pause: revisions.pause)
+        XCTAssertNoThrow(try GoalongProfileStudioModel.revalidate(native: true, revisions: fresh, root: root))
+        try GoalongGlobalPause.setPaused(true, in: root)
+        XCTAssertThrowsError(try GoalongProfileStudioModel.revalidate(native: true, revisions: fresh, root: root))
     }
 }
 #endif

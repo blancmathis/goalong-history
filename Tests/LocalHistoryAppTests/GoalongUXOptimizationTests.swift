@@ -69,6 +69,69 @@ final class GoalongUXOptimizationTests: XCTestCase {
         XCTAssertNil(Notice.kind(localEnabled: true, globallyPaused: false, dashboardVisible: true, runtime: .recording))
         XCTAssertNil(Notice.kind(localEnabled: true, globallyPaused: false, dashboardVisible: true, runtime: .inputTapUnavailable),
                      "Waiting for the first input is transient, not a failure")
+        XCTAssertNil(Notice.kind(localEnabled: true, globallyPaused: false, dashboardVisible: true, runtime: .inputTapUnavailable,
+                                 captureHealth: .awaitingInputEvidence), "Waiting for the first input is transient, not a failure")
+        XCTAssertEqual(Notice.kind(localEnabled: true, globallyPaused: false, dashboardVisible: true, runtime: .inputTapUnavailable,
+                                   captureHealth: .inputTapUnavailable), .input, "A failed input tap says so on the page (UI-parcours-02)")
+    }
+
+    func testActivityShowsOneRecordingBannerAtATime() {
+        typealias Coverage = GoalongRecordingCoverageNotice
+        XCTAssertTrue(Coverage.showsOnActivity(recording: nil, globallyPaused: false))
+        for kind: GoalongRecordingStateNotice.Kind in [.off, .paused, .permissions, .input] {
+            XCTAssertFalse(Coverage.showsOnActivity(recording: kind, globallyPaused: false), "\(kind) outranks the details choice")
+        }
+        XCTAssertFalse(Coverage.showsOnActivity(recording: nil, globallyPaused: true))
+    }
+
+    func testEmptyTodayNamesTheStoppedRecordingInsteadOfAReadError() {
+        typealias Empty = GoalongActivityEmptyCopy
+        func today(_ recording: GoalongRecordingStateNotice.Kind?, events: Int = 0, incomplete: Int = 0) -> Empty.Copy {
+            Empty.copy(isDay: true, isToday: true, eventCount: events, incompleteDays: incomplete, purged: false, recording: recording)
+        }
+        let off = today(.off, incomplete: 1)
+        XCTAssertEqual(off.title, "Aucune activité enregistrée aujourd’hui", "UI-sombre-03: never « Lecture incomplète » while recording is off")
+        XCTAssertTrue(off.message.contains("désactivé"))
+        XCTAssertFalse(off.offersHistory)
+        let permissions = today(.permissions)
+        XCTAssertFalse(permissions.message.contains("premières minutes"), "UI-sombre-02: no promise while nothing is recorded")
+        XCTAssertTrue(today(.paused).message.contains("pause"))
+        XCTAssertEqual(today(nil).title, "Pas encore d’activité aujourd’hui")
+        XCTAssertEqual(today(.input).title, "Pas encore d’activité aujourd’hui", "Input loss alone does not stop recording")
+        XCTAssertEqual(today(nil, incomplete: 1).title, "Lecture incomplète")
+        XCTAssertEqual(today(.off, events: 3).title, "Les premières traces sont reçues")
+        let past = Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 1, purged: false, recording: .off)
+        XCTAssertEqual(past.title, "Lecture incomplète", "A past day keeps its own reading state")
+        XCTAssertEqual(Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false, recording: nil).title,
+                       "Pas encore d’enregistrement")
+        XCTAssertEqual(Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: true, recording: .off).title,
+                       "Détail effacé")
+    }
+
+    func testUnknownWorkIsSaidInWordsNotAsADash() {
+        XCTAssertNil(GoalongActivityHeadline.workFigure(known: false, seconds: 0), "UI-clair-02: no giant « — »")
+        XCTAssertNil(GoalongActivityHeadline.workFigure(known: true, seconds: nil))
+        XCTAssertEqual(GoalongActivityHeadline.workFigure(known: true, seconds: 4680), GoalongAnalyticsFormatting.duration(4680))
+        XCTAssertFalse(GoalongActivityHeadline.unknownWork.contains("—"))
+    }
+
+    func testMonthWeaveNamesEveryRow() {
+        // 2026-09-28 is a Monday.
+        let monday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 28))!
+        let tuesday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 29))!
+        XCTAssertEqual(GoalongThreadWeave.label(monday, dense: true, isFirst: false, calendar: calendar), "lun. 28")
+        XCTAssertEqual(GoalongThreadWeave.label(tuesday, dense: true, isFirst: false, calendar: calendar), "29",
+                       "UI-clair-04: no blank row label")
+        XCTAssertEqual(GoalongThreadWeave.label(tuesday, dense: true, isFirst: true, calendar: calendar), "mar. 29")
+        XCTAssertEqual(GoalongThreadWeave.label(tuesday, dense: false, isFirst: false, calendar: calendar), "mar. 29")
+        let first = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1))!
+        XCTAssertEqual(GoalongThreadWeave.label(first, dense: true, isFirst: false, calendar: calendar), "1 oct.")
+    }
+
+    func testSidebarStatusForAFailedInputTapFitsTheSidebar() {
+        let title = RuntimePresentation(state: .inputTapUnavailable, accessibilityGranted: true, inputMonitoringGranted: false,
+            eventTapRunning: false, verificationEnabled: false, verificationServer: nil, captureHealth: nil).displayTitle
+        XCTAssertLessThanOrEqual(title.count, 18, "UI-parcours-02: the sidebar row is not truncated")
     }
 
     // MARK: - Navigation
@@ -113,6 +176,45 @@ final class GoalongUXOptimizationTests: XCTestCase {
     }
 
     // MARK: - French presentation
+
+    func testSecureInputDetailDoesNotBlameOnlyTheUsersExclusions() {
+        let detail = CaptureHealthState.excludedPrivateOrSecure.frenchDetail
+        XCTAssertFalse(detail.contains("selon vos exclusions"))
+        XCTAssertTrue(detail.contains("sécurisée") && detail.contains("privée"))
+    }
+
+    @MainActor func testExclusionsShortcutOpensTheApplicationsPane() throws {
+        let model = try isolatedModel()
+        model.openApplicationsSettings()
+        XCTAssertEqual(model.selectedSection, .settings)
+        XCTAssertEqual(model.settingsPane, .applications)
+        XCTAssertEqual(SettingsPane.applications.title, "Apps et sites")
+    }
+
+    @MainActor func testTargetedDeletionMessagesAreFrenchAndNeverRawErrors() async throws {
+        let request = TargetedHistoryDeletionRequest.computerHistoryEpisode(id: "episode", day: Date())
+        let success = try isolatedModel(deleteTargeted: { _, done in done(.success(3)) })
+        success.deleteTargetedDetails(request, successMessage: "Supprimé.")
+        try await waitForAlert(success)
+        XCTAssertEqual(success.alert?.message, "Supprimé. 3 éléments locaux supprimés.")
+        XCTAssertFalse(success.alert?.message.contains("Removed") ?? true)
+
+        let failure = try isolatedModel(deleteTargeted: { _, done in done(.failure(TargetedHistoryDeletionError.selectionExceedsLimit(10, 5))) })
+        failure.deleteTargetedDetails(request, successMessage: "Supprimé.")
+        try await waitForAlert(failure)
+        XCTAssertEqual(failure.alert?.message, TargetedHistoryDeletionError.selectionExceedsLimit(10, 5).errorDescription)
+        XCTAssertFalse(failure.alert?.message.contains("selectionExceedsLimit") ?? true)
+
+        let wide = try isolatedModel(deleteDetails: { _, done in done(.failure(TargetedHistoryDeletionError.sourceIncomplete)) })
+        wide.deleteDetails(since: nil)
+        try await waitForAlert(wide)
+        XCTAssertEqual(wide.alert?.message, TargetedHistoryDeletionError.sourceIncomplete.errorDescription)
+    }
+
+    @MainActor private func waitForAlert(_ model: DashboardViewModel) async throws {
+        for _ in 0..<100 where model.alert == nil { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertNotNil(model.alert)
+    }
 
     func testEveryCaptureHealthStateHasAFrenchExplanation() {
         for state in CaptureHealthState.allCases {
@@ -164,7 +266,10 @@ final class GoalongUXOptimizationTests: XCTestCase {
         XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "tous les appareils · 2 applications · sans sites")
     }
 
-    private func isolatedModel() throws -> DashboardViewModel {
+    private func isolatedModel(
+        deleteDetails: @escaping DashboardViewModel.DeleteDetails = { _, done in done(.success(0)) },
+        deleteTargeted: @escaping DashboardViewModel.DeleteTargetedDetails = { _, done in done(.success(0)) }
+    ) throws -> DashboardViewModel {
         guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
             throw XCTSkip("Navigation tests build a dashboard model only inside an isolated test HOME")
         }
@@ -178,8 +283,8 @@ final class GoalongUXOptimizationTests: XCTestCase {
             deviceInfo: DeviceIdentityInfo(deviceID: "ux-fixture", publicKeyBase64: "", trustTier: "test", algorithm: "test"),
             eventTapStatus: { false }, currentSuppression: { nil }, captureHealthSnapshot: { health.snapshot },
             onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
-            onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
-            onDeleteTargetedDetails: { _, done in done(.success(0)) })
+            onSaveConfiguration: { try config.save($0) }, onDeleteDetails: deleteDetails,
+            onDeleteTargetedDetails: deleteTargeted)
     }
 }
 #endif

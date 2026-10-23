@@ -20,6 +20,16 @@ public struct ScheduleRule: Codable, Equatable, Identifiable {
         self.startMinute = max(0, min(1439, startMinute))
         self.endMinute = max(0, min(1439, endMinute))
     }
+    private enum CodingKeys: String, CodingKey { case id, enabled, weekdays, startMinute, endMinute }
+    /// A missing field takes its default: an older or newer file keeps its schedule.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self), d = ScheduleRule()
+        self.init(id: try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(),
+                  enabled: try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled,
+                  weekdays: try c.decodeIfPresent(Set<Int>.self, forKey: .weekdays) ?? d.weekdays,
+                  startMinute: try c.decodeIfPresent(Int.self, forKey: .startMinute) ?? d.startMinute,
+                  endMinute: try c.decodeIfPresent(Int.self, forKey: .endMinute) ?? d.endMinute)
+    }
     public var crossesMidnight: Bool { endMinute < startMinute }
     public var isValid: Bool { !weekdays.isEmpty && startMinute != endMinute && (0..<1440).contains(startMinute) && (0..<1440).contains(endMinute) }
     public static func clock(_ minute: Int) -> String { String(format: "%02d:%02d", minute / 60, minute % 60) }
@@ -84,6 +94,18 @@ public struct Preferences: Codable, Equatable {
     public var rules: [ScheduleRule] = [ScheduleRule()]
     public var pauseUntil: Date? = nil
     public init() {}
+    private enum CodingKeys: String, CodingKey { case version, mode, intensity, brightness, rules, pauseUntil }
+    /// A missing field takes its default, so an older or newer settings file still opens.
+    /// A field of the wrong type still fails: the store then keeps the file aside.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? version
+        mode = try c.decodeIfPresent(FilterMode.self, forKey: .mode) ?? mode
+        intensity = try c.decodeIfPresent(Double.self, forKey: .intensity) ?? intensity
+        brightness = try c.decodeIfPresent(Double.self, forKey: .brightness) ?? brightness
+        rules = try c.decodeIfPresent([ScheduleRule].self, forKey: .rules) ?? rules
+        pauseUntil = try c.decodeIfPresent(Date.self, forKey: .pauseUntil)
+    }
     public mutating func sanitize() {
         intensity = intensity.isFinite ? max(0, min(1, intensity)) : 1
         brightness = brightness.isFinite ? max(0.2, min(1, brightness)) : 1

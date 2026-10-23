@@ -245,12 +245,15 @@ def publish():
     if reference['type'] != 'commit' or reference['sha'] != main:
         raise RuntimeError('Immutable tag does not point at the exact main commit')
     stamp('immutable_release_public')
-    background = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    rolling = background.submit(rolling_release, admission, main)
+    # Final rechecks come BEFORE any rolling mutation: latest-main's DMG, ZIP and
+    # release-manifest.json (the version authority) must never advertise a build that the
+    # feed then refuses, or later builds would resolve a version the feed cannot accept.
     if remote_main() != main:
         raise RuntimeError('Main moved before the feed replacement; refusing to write the feed.')
     info = plistlib.loads((DIST / APP / 'Contents/Info.plist').read_bytes())
     require_successor(authenticated_state(WORK / 'current-public'), info)
+    background = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    rolling = background.submit(rolling_release, admission, main)
     run('gh', 'release', 'upload', ROLLING, str(DIST / 'community-appcast.xml'), '--repo', REPO, '--clobber')
     stamp('feed_uploaded')
     # Read the uploaded feed through the GitHub API: the public download URL can serve the

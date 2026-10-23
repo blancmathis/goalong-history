@@ -17,6 +17,13 @@ import SwiftUI
     @State private var confirmingConsent = false
     @State private var confirmingForget = false
     @State private var classifyWhenConnected = false
+    #if DEBUG
+    /// Test gallery only: the review opens already loaded, this task unfolded (the page shows it closed).
+    static var galleryReviewFocusTask: String?
+    private static var reviewFocusTask: String? { galleryReviewFocusTask }
+    #else
+    private static var reviewFocusTask: String? { nil }
+    #endif
 
     var body: some View {
         ScrollView {
@@ -26,7 +33,8 @@ import SwiftUI
                 JevWorkContextControls(purpose: .workDefinition)
                 if !work.definition.isEmpty {
                     agentCard
-                    GoalongWorkReviewCard(review: review)
+                    GoalongWorkReviewCard(review: review, focusTask: Self.reviewFocusTask,
+                                          loadsOnAppear: Self.reviewFocusTask != nil)
                 }
                 GoalongDisclosureGroup("Comment fonctionne le classement ?") { explanation.padding(.top, 10) }
                     .font(.system(size: 13))
@@ -146,13 +154,23 @@ import SwiftUI
                 if case .codexUnavailable = runtime.connectionState {
                     Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHSecondaryButtonStyle())
                 } else if case .checking = runtime.connectionState {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button(runtime.isConnecting ? "Connexion…" : "Connecter ChatGPT") {
-                        classifyWhenConnected = true
-                        runtime.connectChatGPT()
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        if runtime.isConnecting {
+                            Button("Annuler") { classifyWhenConnected = false; runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
+                        }
                     }
-                        .buttonStyle(LHPrimaryButtonStyle()).disabled(runtime.isConnecting)
+                } else {
+                    HStack(spacing: 10) {
+                        if runtime.isConnecting {
+                            Button("Annuler") { classifyWhenConnected = false; runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
+                        }
+                        Button(runtime.isConnecting ? "Connexion…" : "Connecter ChatGPT") {
+                            classifyWhenConnected = true
+                            runtime.connectChatGPT()
+                        }
+                            .buttonStyle(LHPrimaryButtonStyle()).disabled(runtime.isConnecting)
+                    }
                 }
             case .historyOff:
                 Button("Ouvrir les réglages") { model.openRecordingSettings() }.buttonStyle(LHSecondaryButtonStyle())
@@ -189,12 +207,20 @@ import SwiftUI
     @Published private(set) var error: String?
     @Published private(set) var loadedDay: Date?
     private var operation = UUID()
+    /// Loads not finished yet, in every review (the test gallery waits for zero before a capture).
+    private(set) static var loadsInFlight = 0
+    #if DEBUG
+    /// Test gallery only: rows of the last load that finished, in any review.
+    static var lastLoadedRowCount: Int?
+    #endif
 
     func load(day: Date, root: URL = AppPaths.applicationSupportDirectory) {
         let id = UUID(); operation = id
         let start = Calendar.current.startOfDay(for: day)
         loading = true; error = nil
+        Self.loadsInFlight += 1
         Task {
+            defer { Self.loadsInFlight -= 1 }
             let observation = await Task.detached(priority: .userInitiated) {
                 GoalongWorkClassification.observe(root: root, day: start, shouldContinue: { !Task.isCancelled })
             }.value
@@ -212,6 +238,9 @@ import SwiftUI
                 guard value >= 5, let label = observation.labels[key] else { return nil }
                 return Row(id: key, label: label, seconds: value)
             }.sorted { $0.seconds == $1.seconds ? $0.id < $1.id : $0.seconds > $1.seconds }
+            #if DEBUG
+            Self.lastLoadedRowCount = rows.count
+            #endif
         }
     }
 }
@@ -238,7 +267,7 @@ import SwiftUI
 
     /// Opened from Activité, the review starts on the day shown there, already loaded,
     /// with the task the user clicked first and unfolded.
-    init(review: GoalongWorkReviewModel, day: Date = Date(), focusTask: String? = nil, loadsOnAppear: Bool = false) {
+    init(review: GoalongWorkReviewModel, day: Date = GoalongToday.now, focusTask: String? = nil, loadsOnAppear: Bool = false) {
         _review = ObservedObject(wrappedValue: review)
         _day = State(initialValue: day)
         _expanded = State(initialValue: focusTask.map { ["task|" + $0] } ?? [])
@@ -286,6 +315,10 @@ import SwiftUI
                                   message: "Aucune activité attribuable n’a été observée. Choisissez un autre jour avec le sélecteur ci-dessus.")
             }
             ForEach(groups) { group in groupView(group) }
+            if let notice = work.storageNotice {
+                Label(notice, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let error = work.lastError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
             }
@@ -420,6 +453,7 @@ struct GoalongWorkReviewRequest: Identifiable {
         .onChange(of: agent.isRunning) { running in
             if !running, let day = review.loadedDay { review.load(day: day) }
         }
+        .background(Button("") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
         .accessibilityIdentifier("work-review-sheet")
     }
 }

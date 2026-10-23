@@ -1,5 +1,6 @@
 #if os(macOS)
 import XCTest
+import LocalHistoryCore
 @testable import LocalHistoryApp
 
 final class JevMonitoringScopeTests: XCTestCase {
@@ -49,6 +50,40 @@ final class JevMonitoringScopeTests: XCTestCase {
         monitor.setScope(.always)
         XCTAssertTrue(consents.isEnabled(.jevMonitoring)); XCTAssertFalse(consents.isEnabled(.localComputerHistory))
         XCTAssertFalse(inbox.isEnabled)
+    }
+    @MainActor func testUnreadableKeyIsReportedAsKeyAndRetryRereadsFiles() throws {
+        let root = URL(fileURLWithPath: "/private/tmp/jev-files-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let consents = GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("consents.json"))
+        try JevLocalFiles.write(Data("valid-key-123".utf8), name: "api-key", root: root)
+        let pause = try XCTUnwrap(JevTimedBreak(minutes: 30, now: Date()))
+        try JevLocalFiles.write(try JSONEncoder().encode(pause), name: "break.json", root: root)
+        let keyPath = root.appendingPathComponent("jev/api-key").path
+        XCTAssertEqual(chmod(keyPath, 0o644), 0)
+        let monitor = JevMonitor(scopePreferences: JevMonitoringPreferences(defaults: defaults()), consents: consents,
+                                 sessionProvider: { nil }, inbox: JevIngress(notificationCenter: NotificationCenter()),
+                                 localRoot: root)
+        XCTAssertTrue(monitor.keyStorageInvalid); XCTAssertFalse(monitor.hasKey)
+        XCTAssertFalse(monitor.breakStorageInvalid, "A bad key file must not be shown as a broken break timer")
+        XCTAssertEqual(monitor.timedBreak, pause)
+        XCTAssertTrue(monitor.error?.contains("Clé API illisible") == true)
+        XCTAssertEqual(chmod(keyPath, 0o600), 0)
+        monitor.retry()
+        XCTAssertFalse(monitor.keyStorageInvalid); XCTAssertTrue(monitor.hasKey)
+        XCTAssertEqual(monitor.timedBreak, pause); XCTAssertFalse(monitor.breakStorageInvalid)
+
+        let corruptRoot = root.appendingPathComponent("corrupt")
+        try FileManager.default.createDirectory(at: corruptRoot, withIntermediateDirectories: true)
+        try JevLocalFiles.write(Data("valid-key-123".utf8), name: "api-key", root: corruptRoot)
+        try JevLocalFiles.write(Data("not json".utf8), name: "break.json", root: corruptRoot)
+        let corrupt = JevMonitor(scopePreferences: JevMonitoringPreferences(defaults: defaults()), consents: consents,
+                                 sessionProvider: { nil }, inbox: JevIngress(notificationCenter: NotificationCenter()),
+                                 localRoot: corruptRoot)
+        XCTAssertTrue(corrupt.breakStorageInvalid); XCTAssertTrue(corrupt.hasKey); XCTAssertFalse(corrupt.keyStorageInvalid)
+    }
+    func testRejectedKeyPointsToTheSettingsPaneThatExists() {
+        XCTAssertTrue(JevError.authentication.errorDescription?.contains("Réglages › Jev → Gérer la connexion") == true)
     }
 }
 #endif

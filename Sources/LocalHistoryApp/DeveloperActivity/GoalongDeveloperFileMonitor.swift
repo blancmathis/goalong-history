@@ -20,8 +20,21 @@ final class GoalongDeveloperFileMonitor {
     private var estimated = false
     private var dirty = false
     private var wroteBucket = false
-    private(set) var status: GoalongDeveloperLaneStatus = .disabled
+    private var savedEvent: UInt64?
+    private var ownRoots: [String] = []
+    private(set) var status: GoalongDeveloperLaneStatus = .disabled {
+        didSet { GoalongDeveloperMonitorStatus.publish(status, root: store.root) }
+    }
     init(root: URL) { store = GoalongDeveloperStore(root: root) }
+    /// Every spelling of the app's data folders: our own journal writes must never count as activity.
+    static func ownDataRoots(_ roots: [URL]) -> [String] {
+        Array(Set(roots.flatMap { url -> [String] in
+            let standard = url.standardizedFileURL.path
+            var forms = [standard, url.resolvingSymlinksInPath().standardizedFileURL.path]
+            if let real = realpath(standard, nil) { forms.append(String(cString: real)); free(real) }
+            return forms
+        })).sorted()
+    }
     deinit { stop() }
     func start(replayHistory: Bool = true) {
         queue.sync {
@@ -33,7 +46,8 @@ final class GoalongDeveloperFileMonitor {
                 let cursor = try store.cursor()
                 since = replayHistory && cursor?.projectSignature == signature ? cursor!.lastEventID : FSEventsGetCurrentEventId()
                 replaying = replayHistory && cursor?.projectSignature == signature
-                lastEvent = since
+                lastEvent = since; savedEvent = nil
+                ownRoots = Self.ownDataRoots([store.root, AppPaths.applicationSupportDirectory, GoalongBuildChannel.realDataRoot])
                 var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
                 let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
                 let callback: FSEventStreamCallback = { _, info, count, paths, flags, ids in
@@ -105,6 +119,7 @@ final class GoalongDeveloperFileMonitor {
             }
             guard flags[index] & UInt32(kFSEventStreamEventFlagItemIsFile) != 0, flags[index] & changedMask != 0 else { continue }
             let path = paths[index]
+            guard !ownRoots.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else { continue }
             guard let matched = roots.filter({ path.hasPrefix($0.1 + "/") }).max(by: { $0.1.count < $1.1.count }) else { continue }
             let project = matched.0
             let relative = String(path.dropFirst(matched.1.count + 1))
@@ -124,13 +139,24 @@ final class GoalongDeveloperFileMonitor {
                 let existing = Dictionary(uniqueKeysWithValues: store.read(day: start).buckets.filter { $0.start == start }.map { ($0.projectID, $0) })
                 let rows = files.map { id, values in
                     GoalongFileModificationBucket(projectID: id, start: start, modifiedFiles: min(10_000, max(values.count, existing[id]?.modifiedFiles ?? 0)), estimated: estimated || (existing[id]?.estimated ?? false), lastEventID: lastEvent)
+                }.filter { row in
+                    // Only changed counts are written: repeated snapshots would fill the 2 MB day file.
+                    existing[row.projectID].map { $0.modifiedFiles != row.modifiedFiles || $0.estimated != row.estimated } ?? true
                 }
-                try GoalongGlobalPause.revalidate(pause, in: store.root)
-                try store.append(rows, day: start)
+                if !rows.isEmpty {
+                    try GoalongGlobalPause.revalidate(pause, in: store.root)
+                    try store.append(rows, day: start)
+                }
                 dirty = false; wroteBucket = true
             }
-            try GoalongGlobalPause.revalidate(pause, in: store.root)
-            try store.saveCursor(.init(projectSignature: signature, lastEventID: lastEvent))
+            if savedEvent != lastEvent {
+                try GoalongGlobalPause.revalidate(pause, in: store.root)
+                try store.saveCursor(.init(projectSignature: signature, lastEventID: lastEvent))
+                savedEvent = lastEvent
+            }
+            if case .failed = status, stream != nil { status = .ready }
+        } catch GoalongDeveloperFileIO.Failure.tooLarge {
+            status = .failed("La limite quotidienne des compteurs de fichiers est atteinte.")
         } catch { status = .failed("Les compteurs de fichiers n’ont pas été enregistrés.") }
     }
 }

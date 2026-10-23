@@ -123,8 +123,15 @@ enum SupportReportStore {
         panel.title = "Enregistrer une copie du diagnostic"
         panel.nameFieldStringValue = url.lastPathComponent
         panel.allowedContentTypes = [.json]; panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let destination = panel.url,
-              let data = try? SupportDiagnostics.readPrivateFile(url, maximum: 16 * 1_024 * 1_024) else { return }
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        let data: Data
+        do {
+            data = try SupportDiagnostics.readPrivateFile(url, maximum: Self.maximumReportBytes)
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .support)
+            feedback = "Le rapport n’est plus disponible. Cliquez sur « Actualiser le rapport » puis réessayez."
+            return
+        }
         do {
             try SupportReportWriter.write(data, to: destination)
             feedback = "Copie enregistrée."
@@ -135,13 +142,19 @@ enum SupportReportStore {
         }
     }
 
+    private nonisolated static let maximumReportBytes = 16 * 1_024 * 1_024
+
     func revealReport() {
         guard case .ready(let url, _, _, _) = phase else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    func markIssue() {
-        SupportDiagnostics.shared.record(.userMarkedIssue, component: .support)
+    func markIssue(journal: SupportDiagnostics = .shared) {
+        guard journal.isEnabled else {
+            feedback = "Le journal technique est désactivé : activez-le dans Réglages › Aide et diagnostic pour ajouter un repère."
+            return
+        }
+        journal.record(.userMarkedIssue, component: .support)
         feedback = "Repère ajouté à \(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)). Reproduisez le problème puis cliquez sur « Actualiser le rapport »."
     }
 
@@ -221,6 +234,7 @@ struct SupportRequestView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Ce que Goalong a détecté").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
             LHCard(padding: 16) {
+                VStack(alignment: .leading, spacing: 0) {
                 switch controller.phase {
                 case .idle, .preparing:
                     HStack(spacing: 10) {
@@ -242,6 +256,8 @@ struct SupportRequestView: View {
                     }
                     .accessibilityIdentifier("support-findings")
                 }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -266,6 +282,7 @@ struct SupportRequestView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -278,15 +295,22 @@ struct SupportRequestView: View {
         }
     }
 
+    /// Why the e-mail button is disabled: the report is still being prepared, or it failed.
+    var emailHint: String {
+        if case .failed = controller.phase { return "Réessayez d’abord de préparer le rapport." }
+        return "Disponible quand le rapport est prêt."
+    }
+
     private var actions: some View {
         let ready: URL? = { if case .ready(let url, _, _, _) = controller.phase { return url }; return nil }()
         return HStack(spacing: 10) {
             Menu {
                 Button("Ajouter un repère maintenant") { controller.markIssue() }
+                    .disabled(!SupportDiagnostics.shared.isEnabled)
                 Button("Actualiser le rapport") { controller.prepare() }
                 Divider()
                 Button("Enregistrer une copie…") { controller.saveCopy() }.disabled(ready == nil)
-            } label: { Text("Plus") }
+            } label: { Text("Autres options") }
             .menuStyle(.borderlessButton).fixedSize()
             .accessibilityIdentifier("support-more")
             Spacer()
@@ -296,6 +320,11 @@ struct SupportRequestView: View {
                 }
                 .buttonStyle(LHSecondaryButtonStyle())
                 .accessibilityIdentifier("support-share")
+            }
+            if ready == nil {
+                Text(emailHint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("support-email-hint")
             }
             Button {
                 controller.sendByEmail()

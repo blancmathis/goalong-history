@@ -10,6 +10,10 @@
         @AppStorage("goalongOnboardingStep") var step: SetupStep = .privacy
         @State var launchAtLoginPreference = true
         @State var note: String?
+        /// Site typed in the exclusions field but not yet added.
+        @State var pendingWebsite = ""
+        /// Bumped when the global pause changes so the « Prêt » text follows it.
+        @State var pauseRevision = 0
         @State var visibleTextDraft = true
         @State var localRecordingDraft = true
         @State private var showingLocalActivation = false
@@ -17,6 +21,7 @@
         @State private var loadedProposal = false
         @State var showingRetention = false
         @AppStorage("goalongOnboardingPrivacyReviewedV1") var privacyReviewed = false
+        @Environment(\.goalongDefaults) private var defaults
         @State var checkingSources: Set<GoalongCapability> = []
 
         var body: some View {
@@ -24,11 +29,18 @@
                 sidebar.frame(width: 208)
                 Rectangle().fill(LHTheme.separator).frame(width: 1)
                 VStack(spacing: 0) {
+                    GoalongGlobalPauseBanner(model: model)
                     ScrollView {
                         page
                             .frame(maxWidth: 680, alignment: .leading)
                             .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 32)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                    .overlay(alignment: .bottom) {
+                        // A soft fade tells the reader that the list goes on under the footer.
+                        LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: 28).allowsHitTesting(false).accessibilityHidden(true)
                     }
                     Rectangle().fill(LHTheme.separator).frame(height: 1)
                     footer
@@ -43,19 +55,20 @@
                     .environment(\.goalongRecordingModel, model)
                     .goalongControls()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pauseRevision += 1 }
             .onAppear {
                 if step == .welcome || !privacyReviewed { step = .privacy }
                 if !loadedProposal {
-                    let previouslyReviewed = GoalongRecordingSetup.hasReviewedChoices()
+                    let previouslyReviewed = GoalongRecordingSetup.hasReviewedChoices(defaults: defaults)
                     let proposed = GoalongRecordingSetup.proposal(from: model.appliedSettings,
-                        visibleText: ActivityAnalysisPreferences.richContextEnabled)
+                        visibleText: defaults.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey), defaults: defaults)
                     model.settingsDraft = proposed.settings
                     visibleTextDraft = proposed.visibleText
                     localRecordingDraft = previouslyReviewed ? consents.isEnabled(.localComputerHistory) : true
                     loadedProposal = true
                 }
                 launchAtLogin.refresh()
-                launchAtLoginPreference = launchAtLogin.suggestedOnboardingPreference
+                launchAtLoginPreference = launchAtLogin.suggestedOnboardingPreference(defaults: defaults)
             }
         }
 
@@ -121,6 +134,11 @@
                     if step == .ready { finishSetup() }
                     else {
                         if step == .privacy {
+                            // Return in the exclusion field can reach this default button: never drop the typed site.
+                            if GoalongOnboardingExclusionEdit.commitPendingWebsite(&pendingWebsite, to: &model.settingsDraft) == .invalid {
+                                note = "Le site saisi dans les exclusions n’est pas valide (exemple : exemple.fr). Corrigez-le ou videz le champ."
+                                return
+                            }
                             let choices = GoalongRecordingSetup.Proposal(settings: model.settingsDraft,
                                 visibleText: visibleTextDraft)
                             guard model.applyRecordingSetup(choices) else {
@@ -162,7 +180,7 @@
                 note = "Autorisez le démarrage dans les réglages macOS, ou désactivez cette option pour continuer."
                 return
             }
-            UserDefaults.standard.set(launchAtLoginPreference, forKey: "launchAtLoginPreference")
+            defaults.set(launchAtLoginPreference, forKey: "launchAtLoginPreference")
             model.selectSection(.overview)
             model.dismissWelcome()
             step = .privacy

@@ -73,7 +73,19 @@ final class BlockingPlusTests: XCTestCase {
         c.observe(target(now, url: "allowed.org"))
         now = now.addingTimeInterval(1); c.observe(target(now))
         XCTAssertEqual(c.attemptsToday[list.id], 2)
-        XCTAssertEqual(backend.lastFeedback?.attemptLine, "2ᵉ tentative aujourd’hui")
+        XCTAssertEqual(backend.lastFeedback?.attemptLine, "2e tentative aujourd’hui")
+    }
+    @MainActor func testFirstAttemptAfterMidnightKeepsYesterdayInHistory() {
+        var now = date(8, 23, 59).addingTimeInterval(56)
+        let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org"), .init(pattern: "example.net")])
+        let backend = PlusBackend(), c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
+        now = now.addingTimeInterval(1); c.observe(target(now)); XCTAssertEqual(c.attemptsToday[list.id], 1)
+        // 00:00:01, less than 5 s after the last refresh: the attempt itself must archive yesterday.
+        now = now.addingTimeInterval(4); c.observe(target(now, url: "example.net/a"))
+        XCTAssertEqual(c.snapshot.usage?.day, "2026-10-09")
+        XCTAssertEqual(c.snapshot.usage?.blocked?[list.id], 1)
+        XCTAssertEqual(c.snapshot.usageHistory?["2026-10-08"]?.blocked?[list.id], 1)
     }
     @MainActor func testContinuousVeilIsOneAttemptAndDifferentHostsCountSeparately() {
         var now = date(); let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org")], reason: "Mon projet.")
@@ -144,13 +156,13 @@ final class BlockingPlusTests: XCTestCase {
     @MainActor func testTriggerQuitIsDetectedByExistingControllerTimer() async {
         var running: Set<String> = [editor.bundleIdentifier]
         let list = BlockList(name: "Sites", triggers: .init(apps: [editor]))
-        let c = BlockingController(document: .init(lists: [list]), runsTimers: true, runningApps: { running })
+        let c = BlockingController(document: .init(lists: [list]), runsTimers: true, appTriggerPollSeconds: 0.05, runningApps: { running })
         defer { c.shutdown() }
         XCTAssertTrue(c.hasTimer); XCTAssertEqual(c.activeBlocks.count, 1)
         let ended = expectation(description: "last triggering app quit")
         let subscription = c.$activeBlocks.dropFirst().filter(\.isEmpty).prefix(1).sink { _ in ended.fulfill() }
         running.removeAll()
-        await fulfillment(of: [ended], timeout: 5.5)
+        await fulfillment(of: [ended], timeout: 3)
         withExtendedLifetime(subscription) {}
         XCTAssertTrue(c.activeBlocks.isEmpty)
     }

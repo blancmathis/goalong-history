@@ -19,6 +19,30 @@
             }
         }
 
+        func testSnapshotStaysConsistentWhileConsentTogglesOnAnotherThread() throws {
+            let root = try makeTemporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("capability-consent.json"))
+            let done = expectation(description: "readers finished")
+            done.expectedFulfillmentCount = 4
+            for _ in 0..<4 {
+                DispatchQueue.global().async {
+                    for _ in 0..<2_000 {
+                        let snapshot = store.snapshot
+                        XCTAssertEqual(snapshot.isEnabled(.appleScreenTime), snapshot.isEnabled(.appleScreenTime))
+                        _ = store.isEnabled(.appleScreenTime)
+                    }
+                    done.fulfill()
+                }
+            }
+            for index in 0..<200 {
+                XCTAssertTrue(store.set(.appleScreenTime, enabled: index % 2 == 0, surface: .onboarding))
+            }
+            wait(for: [done], timeout: 30)
+            XCTAssertFalse(store.isEnabled(.appleScreenTime))
+            XCTAssertEqual(store.snapshot, store.document)
+        }
+
         func testConsentIsExplicitAtomicAndMode600() throws {
             let root = try makeTemporaryDirectory()
             defer { try? FileManager.default.removeItem(at: root) }

@@ -41,6 +41,8 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
         for query in [
             "Ou j en etais avant ma pause ?",
             "Où en étais-je avant ma dernière pause ?",
+            "Où j'en étais ?",
+            "Où j’en étais avant ma pause ?",
         ] {
             let answer = ComputerHistorySearchService(memories: [memory]).ask(
                 query,
@@ -54,6 +56,142 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
                 "Resume questions should not trigger the expensive raw lexical pass"
             )
         }
+    }
+
+    func testResumeQuestionAfterALongIdlePeriodNamesTheLatestWork() {
+        let textEdit = fixtureApp("TextEdit")
+        let typing = KeyboardSnapshot(
+            category: "text_activity",
+            key: nil,
+            modifiers: [],
+            isRepeat: false
+        )
+        let events = [
+            fixtureEvent(
+                id: "morning-work",
+                sequence: 1,
+                offset: 0,
+                kind: .typingBurst,
+                app: textEdit,
+                windowTitle: "Proposition commerciale.md",
+                host: nil,
+                keyboard: typing
+            ),
+            fixtureEvent(
+                id: "afternoon-work",
+                sequence: 2,
+                offset: 60 * 60,
+                kind: .typingBurst,
+                app: textEdit,
+                windowTitle: "Rapport Q3.md",
+                host: nil,
+                keyboard: typing
+            ),
+        ]
+        let memory = ComputerHistoryEngine.analyze(
+            events: events,
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+
+        let answer = ComputerHistorySearchService(memories: [memory]).ask(
+            "Où en étais-je avant ma pause ?",
+            now: fixtureStart.addingTimeInterval(4 * 60 * 60)
+        )
+
+        XCTAssertTrue(answer.answer.contains("Rapport Q3"), answer.answer)
+        XCTAssertFalse(answer.answer.contains("Proposition commerciale"))
+    }
+
+    func testResumeBreakNeedsRawJournalIdleNotOnlyAStaleMemory() throws {
+        let textEdit = fixtureApp("TextEdit")
+        let typing = KeyboardSnapshot(
+            category: "text_activity",
+            key: nil,
+            modifiers: [],
+            isRepeat: false
+        )
+        let memory = ComputerHistoryEngine.analyze(
+            events: [
+                fixtureEvent(
+                    id: "before-lunch", sequence: 1, offset: 0, kind: .typingBurst,
+                    app: textEdit, windowTitle: "Proposition commerciale.md", host: nil,
+                    keyboard: typing
+                ),
+                fixtureEvent(
+                    id: "after-lunch", sequence: 2, offset: 60 * 60, kind: .typingBurst,
+                    app: textEdit, windowTitle: "Rapport Q3.md", host: nil,
+                    keyboard: typing
+                ),
+            ],
+            day: fixtureStart,
+            calendar: utcCalendar
+        )
+        let lastEnd = try XCTUnwrap(memory.episodes.map(\.end).max())
+        var sequence: UInt64 = 10
+        // Default capture settings: only heartbeats (with idle_seconds) and
+        // lock events, no click or keyboard events.
+        func heartbeat(at time: Date, idle: TimeInterval) -> HistoryEvent {
+            sequence += 1
+            return fixtureEvent(
+                id: "hb-\(sequence)", sequence: sequence,
+                offset: time.timeIntervalSince(fixtureStart), kind: .heartbeat,
+                app: textEdit, windowTitle: "Rapport Q3.md", host: nil,
+                metadata: ForegroundUsageObservation(
+                    observedAt: time, idleSeconds: idle, isForegroundVisible: true
+                ).metadata(at: time)
+            )
+        }
+        func heartbeats(from: TimeInterval, to: TimeInterval, idle: (Date) -> TimeInterval)
+            -> [HistoryEvent]
+        {
+            stride(from: from, through: to, by: 30).map {
+                let time = lastEnd.addingTimeInterval($0)
+                return heartbeat(at: time, idle: idle(time))
+            }
+        }
+        func ask(_ journal: [HistoryEvent]?, now: TimeInterval) -> String {
+            ComputerHistorySearchService(memories: [memory]).ask(
+                "je faisais quoi avant ma pause ?",
+                now: lastEnd.addingTimeInterval(now),
+                presence: journal.map { ComputerHistorySearchService.presenceTimes(in: $0) }
+            ).answer
+        }
+
+        // Stale memory 12 min old while the user keeps working: no break.
+        let working = ask(heartbeats(from: 30, to: 12 * 60) { _ in 2 }, now: 12 * 60)
+        XCTAssertTrue(working.contains("Proposition commerciale"), working)
+        // 15 min of idle heartbeats on an unlocked screen: the break is real.
+        let idle = ask(
+            heartbeats(from: 30, to: 15 * 60) { $0.timeIntervalSince(lastEnd) },
+            now: 15 * 60
+        )
+        XCTAssertTrue(idle.contains("Rapport Q3"), idle)
+        // Locked for 15 min, then back and active (heartbeats resume).
+        let locked =
+            [
+                fixtureEvent(
+                    id: "lock", sequence: 2, offset: lastEnd.timeIntervalSince(fixtureStart) + 60,
+                    kind: .sessionLocked, app: nil, windowTitle: nil, host: nil
+                ),
+                fixtureEvent(
+                    id: "unlock", sequence: 3,
+                    offset: lastEnd.timeIntervalSince(fixtureStart) + 16 * 60,
+                    kind: .sessionUnlocked, app: nil, windowTitle: nil, host: nil
+                ),
+            ] + heartbeats(from: 30, to: 60) { _ in 1 }
+            + heartbeats(from: 16 * 60, to: 17 * 60) { _ in 1 }
+        let afterLock = ask(locked, now: 17 * 60)
+        XCTAssertTrue(afterLock.contains("Rapport Q3"), afterLock)
+        // Mac off: no events at all after the last episode.
+        let off = ask([], now: 15 * 60)
+        XCTAssertTrue(off.contains("Rapport Q3"), off)
+        // No journal available (nil): the elapsed time alone decides.
+        let noJournal = ask(nil, now: 15 * 60)
+        XCTAssertTrue(noJournal.contains("Rapport Q3"), noJournal)
+
+        XCTAssertTrue(ComputerHistorySearchService.isResumeQuery("Où en étais-je avant ma pause ?"))
+        XCTAssertFalse(ComputerHistorySearchService.isResumeQuery("Où est le rapport Q3 ?"))
     }
 
     func testFrenchResourceQuestionFindsTheProposalDocument() {
@@ -116,7 +254,20 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
     }
 
     func testFrenchTodaySummaryAvoidsTheRawJournalPass() {
-        let query = "Sur quoi ai-je travaillé aujourd'hui ?"
+        for query in [
+            "Sur quoi ai-je travaillé aujourd'hui ?",
+            "Sur quoi j'ai travaillé aujourd’hui ?",
+        ] {
+            assertTodaySummaryAvoidsTheRawJournalPass(query)
+        }
+        XCTAssertFalse(
+            ComputerHistorySearchService.shouldSearchRawSources(
+                for: "Sur quoi j'ai travaillé hier ?"
+            )
+        )
+    }
+
+    private func assertTodaySummaryAvoidsTheRawJournalPass(_ query: String) {
         let textEdit = fixtureApp("TextEdit")
         let event = fixtureEvent(
             id: "today-summary",
@@ -149,6 +300,154 @@ final class ComputerHistoryFrenchQueryTests: XCTestCase {
         )
         XCTAssertTrue(answer.answer.contains(memory.executiveSummary))
         XCTAssertFalse(answer.answer.contains("Most relevant observed history"))
+    }
+
+    func testDayWordsMatchWholeWordsOnly() throws {
+        let calendar = utcCalendar
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 30, hour: 18))
+        )
+        let today = calendar.startOfDay(for: now)
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        func interval(_ query: String) -> DateInterval? {
+            ComputerHistorySearchService.explicitTemporalInterval(
+                for: query,
+                now: now,
+                calendar: calendar
+            )
+        }
+
+        for query in [
+            "Où est le fichier de la proposition ?",
+            "mes cahiers",
+            "file hierarchy",
+            "hierarchy diagram",
+        ] {
+            XCTAssertNil(interval(query), query)
+        }
+        for query in ["Qu'ai-je fait hier ?", "fichier ouvert hier", "Hier ?", "le plan d'hier"] {
+            XCTAssertEqual(interval(query)?.start, yesterday, query)
+            XCTAssertEqual(interval(query)?.end, today, query)
+        }
+        let dayBefore = try XCTUnwrap(calendar.date(byAdding: .day, value: -2, to: today))
+        for query in [
+            "Qu'ai-je fait avant-hier ?", "avant hier", "the day before yesterday",
+        ] {
+            XCTAssertEqual(interval(query)?.start, dayBefore, query)
+            XCTAssertEqual(interval(query)?.end, yesterday, query)
+        }
+        let dayBeforeRanged = try XCTUnwrap(interval("avant-hier de 14h à 16h"))
+        XCTAssertEqual(dayBeforeRanged.start, dayBefore.addingTimeInterval(14 * 3600))
+        XCTAssertEqual(dayBeforeRanged.end, dayBefore.addingTimeInterval(16 * 3600))
+        XCTAssertEqual(interval("avant ma pause hier")?.start, yesterday)
+        for query in ["fichiers ouverts aujourd'hui", "fichiers ouverts aujourd’hui"] {
+            XCTAssertEqual(interval(query)?.start, today, query)
+        }
+        let ranged = try XCTUnwrap(interval("fichier ouvert aujourd'hui de 14h à 16h"))
+        XCTAssertEqual(ranged.start, today.addingTimeInterval(14 * 3600))
+        XCTAssertEqual(ranged.end, today.addingTimeInterval(16 * 3600))
+        let week = try XCTUnwrap(calendar.dateInterval(of: .weekOfYear, for: now))
+        XCTAssertEqual(interval("fichiers de cette semaine")?.start, week.start)
+    }
+
+    func testClockRangesNeedATimeMarkerAndAcceptTypographicDashes() throws {
+        let calendar = utcCalendar
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 30, hour: 18))
+        )
+        let today = calendar.startOfDay(for: now)
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        func interval(_ query: String) -> DateInterval? {
+            ComputerHistorySearchService.explicitTemporalInterval(
+                for: query,
+                now: now,
+                calendar: calendar
+            )
+        }
+
+        for query in [
+            "comparaison méthode 1 et 2",
+            "mode 3 a 4",
+            "upgrade from 5 to 6",
+            "entre 2 et 3 fichiers",
+        ] {
+            XCTAssertNil(interval(query), query)
+        }
+        XCTAssertEqual(interval("hier, entre 2 et 3 fichiers")?.start, yesterday)
+        XCTAssertEqual(interval("hier, entre 2 et 3 fichiers")?.end, today)
+
+        for query in ["Qu'ai-je fait hier 14h–16h ?", "hier 14h—16h", "hier de 14h à 16h"] {
+            let ranged = try XCTUnwrap(interval(query), query)
+            XCTAssertEqual(ranged.start, yesterday.addingTimeInterval(14 * 3600), query)
+            XCTAssertEqual(ranged.end, yesterday.addingTimeInterval(16 * 3600), query)
+        }
+        let morning = try XCTUnwrap(interval("from 9 to 11am"))
+        XCTAssertEqual(morning.start, today.addingTimeInterval(9 * 3600))
+        XCTAssertEqual(morning.end, today.addingTimeInterval(11 * 3600))
+        let french = try XCTUnwrap(interval("de 9 à 11h"))
+        XCTAssertEqual(french.start, today.addingTimeInterval(9 * 3600))
+        XCTAssertEqual(french.end, today.addingTimeInterval(11 * 3600))
+    }
+
+    func testWorkflowAnswerListsEachSuggestionOnce() {
+        func suggestion(_ id: String, confidence: Double) -> ComputerHistorySuggestion {
+            ComputerHistorySuggestion(
+                id: id,
+                kind: .automation,
+                title: "Suggestion \(id)",
+                rationale: "Repeated workflow",
+                suggestedPrompt: "Automate it",
+                workflowID: nil,
+                episodeIDs: [],
+                confidence: confidence
+            )
+        }
+        let memories = (0..<14).map { day -> ComputerHistoryDayMemory in
+            let dayStart = fixtureStart.addingTimeInterval(TimeInterval(day) * 86_400)
+            var suggestions = [suggestion("recurring", confidence: 0.98)]
+            if day == 13 {
+                suggestions += [
+                    suggestion("second", confidence: 0.7),
+                    suggestion("third", confidence: 0.6),
+                ]
+            }
+            return ComputerHistoryDayMemory(
+                dayStart: dayStart,
+                dayEnd: dayStart.addingTimeInterval(86_399),
+                generatedAt: dayStart.addingTimeInterval(86_400),
+                title: "Day \(day)",
+                executiveSummary: "Day \(day)",
+                episodes: [],
+                resources: [],
+                workflowPatterns: [],
+                suggestions: suggestions,
+                coverage: ComputerHistoryCoverage(
+                    sourceEventCount: 0,
+                    actionEventCount: 0,
+                    semanticSnapshotCount: 0,
+                    linkedInteractionCount: 0,
+                    interactionsWithBeforeAndAfterContext: 0,
+                    resourceCount: 0,
+                    episodeCount: 0,
+                    suppressedEventCount: 0,
+                    firstSourceSequence: nil,
+                    lastSourceSequence: nil,
+                    lastSourceEventHash: nil
+                ),
+                markdown: ""
+            )
+        }
+
+        let answer = ComputerHistorySearchService(memories: memories).ask(
+            "Quelles automatisations proposer ?",
+            now: fixtureStart.addingTimeInterval(15 * 86_400),
+            maximumHits: 12
+        )
+
+        XCTAssertEqual(
+            answer.hits.map(\.id),
+            ["suggestion:recurring", "suggestion:second", "suggestion:third"]
+        )
     }
 
     private var utcCalendar: Calendar {

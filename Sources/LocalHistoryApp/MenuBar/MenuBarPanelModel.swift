@@ -9,6 +9,41 @@ import LocalHistoryCore
     enum Tracking: Equatable { case active, paused(since: Date?), attention(String) }
     @Published var tracking: Tracking = .attention("Chargement")
     @Published var trackingDetail = "Chargement de l’état du suivi…"
+    /// Title shown above the detail when the tracking needs attention, so the cause is never lost to truncation.
+    var attentionTitle: String? { if case .attention(let title) = tracking { return title }; return nil }
+    /// A one-tap repair that goes with the attention message or the unavailable-focus message.
+    enum PanelFix {
+        case permissions, modules, recording, app
+        var label: String {
+            switch self {
+            case .permissions: return "Réparer…"
+            case .modules: return "Activer dans Réglages"
+            case .recording: return "Ouvrir Réglages"
+            case .app: return "Ouvrir Goalong"
+            }
+        }
+    }
+    @Published var attentionFix: PanelFix?
+    @Published var focusUnavailableFix: PanelFix?
+    func perform(_ fix: PanelFix) {
+        switch fix {
+        case .permissions: onOpenSettingsPane(.permissions)
+        case .modules: openModulesSettings()
+        case .recording: onOpenSettingsPane(.recording)
+        case .app: openApp()
+        }
+    }
+    /// Consent is off: the header action opens Réglages instead of pausing.
+    @Published var consentOff = false
+    /// Global pause is on: the header action opens Réglages, where the pause is lifted.
+    @Published var globalPaused = false
+    /// Header button label. During the global pause it says it opens Réglages.
+    var headerActionLabel: String {
+        if globalPaused { return "\(GoalongGlobalPauseText.resume)…" }
+        if consentOff { return "Configurer l’enregistrement…" }
+        if case .paused = tracking { return "Reprendre le suivi" }
+        return "Mettre le suivi en pause"
+    }
 
     struct DaySegment: Identifiable {
         let id: Int
@@ -18,6 +53,8 @@ import LocalHistoryCore
         enum Kind { case work, other, unclassified }
     }
     @Published var workSeconds: TimeInterval = 0
+    /// Same rule as the Activity headline: work is unknown (« — »), never zero, until most active time is classified.
+    @Published var workKnown = false
     @Published var otherSeconds: TimeInterval = 0
     @Published var segments: [DaySegment] = []
     @Published var nowFraction: Double = 0
@@ -34,6 +71,7 @@ import LocalHistoryCore
         var isPaused: Bool
     }
     @Published var focusAvailable = false
+    @Published var concentrationEnabled = false
     @Published var focusUnavailableReason: String?
     @Published var focusKind: FocusKind = .pomodoro
     @Published var focusMinutes = 25
@@ -75,6 +113,7 @@ import LocalHistoryCore
     private let health: () -> CaptureHealthState
     private let suppression: () -> SuppressionReason?
     private let localHistoryEnabled: () -> Bool
+    private let configUnreadable: () -> Bool
     private let globalPause: () -> GoalongGlobalPause
     private let clock: () -> Date
     private let calendar: Calendar
@@ -82,6 +121,7 @@ import LocalHistoryCore
     private let playAmbiance: @MainActor (AmbianceController, AmbianceSource) -> Void
     private let onTogglePause: () -> Void
     private let onOpenSection: (DashboardSection) -> Void
+    private let onOpenSettingsPane: (SettingsPane) -> Void
     private let onOpenDay: () -> Void
     private let onShowClassicMenu: () -> Void
     private var pausedSince: Date?
@@ -95,18 +135,22 @@ import LocalHistoryCore
          health: @escaping () -> CaptureHealthState = { .ready },
          suppression: @escaping () -> SuppressionReason? = { nil },
          localHistoryEnabled: @escaping () -> Bool = { true },
+         configUnreadable: @escaping () -> Bool = { false },
          globalPause: @escaping () -> GoalongGlobalPause = { GoalongGlobalPause.load() },
-         clock: @escaping () -> Date = Date.init, calendar: Calendar = .current,
+         clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
          loadDay: ((Date) async throws -> GoalongLocalAnalytics.Day)? = nil,
          playAmbiance: @escaping @MainActor (AmbianceController, AmbianceSource) -> Void = { $0.play($1) },
          onTogglePause: @escaping () -> Void, onOpenSection: @escaping (DashboardSection) -> Void,
+         onOpenSettingsPane: ((SettingsPane) -> Void)? = nil,
          onOpenDay: @escaping () -> Void, onShowClassicMenu: @escaping () -> Void) {
         self.state = state; self.modules = modules; self.concentration = concentration
         self.ambianceModule = ambianceModule; self.blocking = blocking
         self.health = health; self.suppression = suppression; self.localHistoryEnabled = localHistoryEnabled
+        self.configUnreadable = configUnreadable
         self.globalPause = globalPause; self.clock = clock; self.calendar = calendar; self.loadDay = loadDay
         self.playAmbiance = playAmbiance
         self.onTogglePause = onTogglePause; self.onOpenSection = onOpenSection
+        self.onOpenSettingsPane = onOpenSettingsPane ?? { _ in onOpenSection(.settings) }
         self.onOpenDay = onOpenDay; self.onShowClassicMenu = onShowClassicMenu
     }
 
@@ -117,7 +161,7 @@ import LocalHistoryCore
         nowFraction = fraction(now)
         if displayedDay != day {
             stopRefreshing(); displayedDay = day
-            workSeconds = 0; otherSeconds = 0; segments = []
+            workSeconds = 0; workKnown = false; otherSeconds = 0; segments = []
         }
         guard dayTask == nil, let loadDay else { return }
         let generation = dayGeneration
@@ -131,7 +175,7 @@ import LocalHistoryCore
             } catch {
                 guard let self, !Task.isCancelled, self.dayGeneration == generation else { return }
                 self.dayTask = nil
-                self.workSeconds = 0; self.otherSeconds = 0; self.segments = []
+                self.workSeconds = 0; self.workKnown = false; self.otherSeconds = 0; self.segments = []
                 self.trackingDetail += " · Journée indisponible"
             }
         }
@@ -150,17 +194,29 @@ import LocalHistoryCore
 
     private func refreshTracking() {
         let pause = globalPause()
-        if pause.blocksActivity || state.isManuallyPaused {
+        consentOff = !pause.blocksActivity && !localHistoryEnabled()
+        globalPaused = pause.blocksActivity
+        attentionFix = nil
+        // Same order as the classic menu: global pause, then consent (consent off also sets the manual pause), then manual pause.
+        if pause.blocksActivity {
             if case .paused = tracking {} else { pausedSince = nil }
-            tracking = .paused(since: pause.blocksActivity ? pause.changedAt : pausedSince)
-            trackingDetail = pause.blocksActivity ? "Sources et envois suspendus" : "Enregistrement local en pause"
+            tracking = .paused(since: pause.changedAt); trackingDetail = "Sources et envois suspendus"
+        } else if configUnreadable() {
+            pausedSince = nil
+            tracking = .attention("Réglages illisibles")
+            trackingDetail = ConfigManager.failClosedNotice
         } else if !localHistoryEnabled() {
+            pausedSince = nil
             tracking = .attention("Enregistrement désactivé")
             trackingDetail = "Activez l’enregistrement dans Réglages"
+        } else if state.isManuallyPaused {
+            if case .paused = tracking {} else { pausedSince = nil }
+            tracking = .paused(since: pausedSince); trackingDetail = "Enregistrement local en pause"
         } else if [.storageUnavailable, .permissionRequired, .permissionAppearsEnabledButStaleForBuild,
                    .accessibilityContextUnavailable, .inputTapUnavailable, .awaitingInputEvidence].contains(health()) {
             let health = health()
             tracking = .attention(health.frenchTitle); trackingDetail = health.frenchDetail
+            if health != .storageUnavailable && health != .awaitingInputEvidence { attentionFix = .permissions }
         } else if !state.isCapturing || suppression() == .sessionUnavailable {
             tracking = .attention("Session Mac inactive"); trackingDetail = "Le Mac est verrouillé, en veille ou indisponible"
         } else if suppression() == .accessibilityUnavailable {
@@ -180,6 +236,8 @@ import LocalHistoryCore
 
     func applyDay(_ day: GoalongLocalAnalytics.Day) {
         workSeconds = day.seconds(.work); otherSeconds = day.seconds(.other)
+        let active = day.activeSeconds
+        workKnown = workSeconds > 0 || (active > 0 && (workSeconds + otherSeconds) / active >= 0.5)
         segments = day.segments.enumerated().compactMap { index, segment in
             let kind: DaySegment.Kind
             switch segment.kind {
@@ -206,12 +264,16 @@ import LocalHistoryCore
 
     private func refreshFocus() {
         let enabled = modules.isEnabled(.concentration)
+        concentrationEnabled = enabled
         let observing = state.isCapturing && localHistoryEnabled() && !globalPause().blocksActivity
         let controller = enabled ? concentration() : nil
         focusAvailable = enabled && observing && controller != nil
-        focusUnavailableReason = !enabled ? "Activez Concentration dans l’app."
+        focusUnavailableReason = !enabled ? "Activez Concentration dans Réglages."
+            : !localHistoryEnabled() ? "Activez l’enregistrement dans Réglages."
             : !observing ? "Reprenez le suivi pour lancer une séance."
             : controller == nil ? "Concentration indisponible. Ouvrez l’app." : nil
+        focusUnavailableFix = !enabled ? .modules : !localHistoryEnabled() ? .recording
+            : (observing && controller == nil) ? .app : nil
         guard let controller else { focusRun = nil; return }
         controller.refresh()
         guard let session = controller.currentSession, let phase = controller.phase, phase.kind != .ended else {
@@ -235,7 +297,7 @@ import LocalHistoryCore
 
     func startFocus() {
         refreshRuntimeState()
-        guard modules.isEnabled(.concentration) else { onOpenSection(.concentration); return }
+        guard modules.isEnabled(.concentration) else { openModulesSettings(); return }
         guard focusAvailable, let controller = concentration(), controller.currentSession == nil else { return }
         var mode = FocusMode()
         switch focusKind {
@@ -313,7 +375,12 @@ import LocalHistoryCore
         playAmbiance(controller, source); refreshAmbiance()
     }
 
-    func enableAmbiance() { onOpenSection(.ambiance) }
+    /// Modules are switched on by the member in Réglages › Modules: enabling one can start a runtime or ask for a permission.
+    func openModulesSettings() { onOpenSettingsPane(.modules) }
+
+    func enableAmbiance() {
+        if modules.isEnabled(.ambiance) { onOpenSection(.ambiance) } else { openModulesSettings() }
+    }
 
     private func refreshBlocking() {
         blockingEnabled = modules.isEnabled(.blocking)

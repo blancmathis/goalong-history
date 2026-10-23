@@ -50,7 +50,7 @@
                 HistoryRetentionArtifactDirectory(
                     directory: AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongActivityDayStore.directoryName),
                     dataClass: .activitySummaries,
-                    allowedSuffixes: [".json"]
+                    allowedSuffixes: GoalongActivityDayStore.summaryRetentionSuffixes
                 ),
                 HistoryRetentionArtifactDirectory(
                     directory: AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongActivityDayStore.directoryName),
@@ -272,7 +272,12 @@
                     if decision.artifact.dataClass == .detailedEvents,
                         file.deletingLastPathComponent().lastPathComponent == "events" {
                         let root = file.deletingLastPathComponent().deletingLastPathComponent()
-                        try GoalongActivityDayStore(root: root).preserveBeforePurge(day: decision.artifact.start, now: now)
+                        // A journal with nothing to summarize, or one that stays unreadable, still
+                        // expires: retention must never keep detailed data past the chosen duration.
+                        if try GoalongActivityDayStore(root: root).preserveBeforePurge(day: decision.artifact.start, now: now)
+                            == .unreadable {
+                            diagnose("Retention cleanup expires an unreadable journal without a day summary at \(file.path)")
+                        }
                     }
                     guard activationMatchesCurrentPolicy() else { return }
                     try Self.unlinkRegularFile(at: file)
@@ -280,10 +285,14 @@
                     if decision.artifact.dataClass == .detailedEvents,
                        file.deletingLastPathComponent().lastPathComponent == "events",
                        let cutoff = policy.activitySummaries.cutoff(relativeTo: now), decision.artifact.end < cutoff {
-                        let summary = file.deletingLastPathComponent().deletingLastPathComponent()
-                            .appendingPathComponent("activity-days/" + String(file.lastPathComponent.prefix(10)) + ".json")
-                        if isManagedRegularArtifact(summary), activationMatchesCurrentPolicy() {
-                            try Self.unlinkRegularFile(at: summary)
+                        let days = file.deletingLastPathComponent().deletingLastPathComponent()
+                            .appendingPathComponent(GoalongActivityDayStore.directoryName)
+                        // The summary, or the marker just left in its place, expires with the journal.
+                        for suffix in GoalongActivityDayStore.summaryRetentionSuffixes.sorted() {
+                            let summary = days.appendingPathComponent(String(file.lastPathComponent.prefix(10)) + suffix)
+                            if isManagedRegularArtifact(summary), activationMatchesCurrentPolicy() {
+                                try Self.unlinkRegularFile(at: summary)
+                            }
                         }
                     }
                 } catch {
@@ -326,7 +335,7 @@
             )
         }
 
-        private func storedArtifacts() -> [HistoryStoredArtifact] {
+        func storedArtifacts() -> [HistoryStoredArtifact] {
             var output: [HistoryStoredArtifact] = []
             for definition in storage.artifactDirectories {
                 guard let files = try? fileManager.contentsOfDirectory(
@@ -379,7 +388,20 @@
                 of: #"^\d{4}-\d{2}-\d{2}$"#,
                 options: .regularExpression
             ) != nil else { return nil }
-            return dayFormatter.date(from: dayString)
+            // Built with the zone in force now, not the one at launch: a time-zone change while
+            // the app runs must not shift a YYYY-MM-DD artifact to another local day.
+            let fields = dayString.split(separator: "-").compactMap { Int($0) }
+            guard fields.count == 3 else { return nil }
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = Calendar.current.timeZone
+            guard let date = calendar.date(
+                from: DateComponents(year: fields[0], month: fields[1], day: fields[2])
+            ) else { return nil }
+            let check = calendar.dateComponents([.year, .month, .day], from: date)
+            guard check.year == fields[0], check.month == fields[1], check.day == fields[2] else {
+                return nil
+            }
+            return date
         }
 
         private static func itemExists(at url: URL) -> Bool {
@@ -439,16 +461,6 @@
                 self.policy = policy
             }
         }
-
-        private static let dayFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = .current
-            formatter.dateFormat = "yyyy-MM-dd"
-            formatter.isLenient = false
-            return formatter
-        }()
 
         private static let encoder: JSONEncoder = {
             let encoder = JSONEncoder()

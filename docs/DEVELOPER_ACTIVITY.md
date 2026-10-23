@@ -62,9 +62,11 @@ partiel. Les mesures réelles sur un dépôt ancien peuvent donc être des borne
 
 `GoalongDeveloperFileMonitor` observe les seules racines choisies par FSEvents (latence 30 s,
 queue utility). Il ignore `.git`, `.build`, `node_modules`, `DerivedData`, `dist`, `build`, caches
-et `.DS_Store`. Les chemins sont hachés uniquement dans une table transitoire, plafonnée à
+et `.DS_Store`, ainsi que les dossiers de données de Goalong (ses propres écritures ne comptent
+jamais, même si un projet suivi les contient). Les chemins sont hachés uniquement dans une table transitoire, plafonnée à
 10 000 fichiers par tranche de cinq minutes. Les snapshots successifs d'une tranche se
-remplacent lors de la lecture : on ne somme pas plusieurs écritures du même compteur. La somme
+remplacent lors de la lecture : on ne somme pas plusieurs écritures du même compteur. Seuls les compteurs qui changent sont réécrits, pour ne pas
+remplir la limite de 2 Mo du fichier du jour. La somme
 journalière compte les fichiers distincts *par tranche*, pas les fichiers uniques de la journée.
 Le watermark n'avance qu'après l'écriture des compteurs. Le runtime réagit au consentement,
 aux projets et à la pause globale. Une reprise de pause ignore les changements pendant la pause.
@@ -83,7 +85,10 @@ suppression explicite, cet ensemble est invalidé pour ne pas reconstituer les c
   sans overview, la valeur vide garde le jour demandé. `addProject` accepte une URL ou
   un `GoalongDeveloperProject` suggéré. Fichiers : `DeveloperActivity/GoalongDeveloperModel.swift`
   et `LocalHistoryCore/GoalongDeveloperModels.swift`.
-- `GoalongDeveloperRuntime.status` et `stop()` : état/cycle de vie du moniteur ;
+- `GoalongDeveloperRuntime.status` et `stop()` : état/cycle de vie du moniteur. Un échec du
+  moniteur (démarrage, écriture, limite du jour) passe dans `developerStatus` sous la forme
+  « Suivi des fichiers interrompu : … » via `GoalongDeveloperMonitorStatus` ; une écriture réussie
+  le remet à `ready` ;
   `GoalongDeveloperStore.configuration()`, `add`, `remove`, `read`, `cursor` : sélection/compteurs locaux.
 - `GoalongDeveloperDay` : `t3`, `agents`, `git`, `files`, `developerStatus`, projets/suggestions.
 - `T3CodeDay` : statut, projets du jour, projets découverts, fingerprints source/schéma,

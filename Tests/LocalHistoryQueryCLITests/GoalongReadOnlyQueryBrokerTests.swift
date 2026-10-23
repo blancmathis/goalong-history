@@ -4,6 +4,7 @@
     import XCTest
     import AppleScreenTime
     import AppleSystemScreenTime
+    import LocalHistoryCore
     @testable import LocalHistoryQueryCLI
 
     final class GoalongReadOnlyQueryBrokerTests: XCTestCase {
@@ -834,6 +835,88 @@
             XCTAssertEqual(actual, expected)
             XCTAssertEqual(rangeBuildCount, 1)
             XCTAssertEqual(receivedDays, ["2026-09-01", "2026-09-02", "2026-09-03"])
+        }
+
+        func testFocusTimeoutAfterConnectIsOutcomeUnknownAndMissingListenerIsAppNotRunning() throws {
+            let root = try temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let request = GoalongFocusRequest(command: "session stop")
+            XCTAssertThrowsError(try GoalongReadOnlyQueryBroker.requestFocus(rootDirectory: root, request: request)) {
+                XCTAssertEqual($0 as? GoalongFocusError, .appNotRunning)
+            }
+            let server = GoalongReadOnlyQueryServer(
+                rootDirectory: root,
+                screenTimeHandler: { _, _, _ in Data() },
+                focusHandler: { _ in
+                    Thread.sleep(forTimeInterval: 2.5)
+                    return Data("{}".utf8)
+                }
+            )
+            try server.start()
+            defer { server.stop() }
+            XCTAssertThrowsError(
+                try GoalongReadOnlyQueryBroker.requestFocus(rootDirectory: root, request: request, timeoutSeconds: 1)
+            ) {
+                XCTAssertEqual($0 as? GoalongFocusError, .outcomeUnknown)
+                XCTAssertEqual(String(describing: $0), "outcomeUnknown")
+            }
+        }
+
+        func testFocusLongSocketPathWithoutRuntimeDirectoryIsAppNotRunning() throws {
+            var root = try temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            root.appendPathComponent(String(repeating: "long-directory-name-", count: 5), isDirectory: true)
+            XCTAssertGreaterThan(GoalongReadOnlyQueryBroker.socketURL(rootDirectory: root).path.utf8.count, 104)
+            XCTAssertThrowsError(
+                try GoalongReadOnlyQueryBroker.requestFocus(rootDirectory: root, request: GoalongFocusRequest(command: "session stop"))
+            ) { XCTAssertEqual($0 as? GoalongFocusError, .appNotRunning) }
+        }
+
+        func testErrorEnvelopeKeepsBareFocusCodeAndReadablePauseMessage() throws {
+            func decoded(_ error: Error) throws -> [String: Any] {
+                let data = try XCTUnwrap(GoalongQueryCLI.errorEnvelopeData(for: error))
+                return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            }
+            let unknown = try decoded(GoalongFocusError.outcomeUnknown)
+            XCTAssertEqual(unknown["error"] as? String, "outcomeUnknown")
+            XCTAssertTrue((unknown["hint"] as? String)?.contains("focus status") == true)
+            let locked = try decoded(GoalongFocusError.locked)
+            XCTAssertEqual(locked["error"] as? String, "locked")
+            XCTAssertNil(locked["hint"])
+            let pause = try decoded(GoalongGlobalPause.PauseError.active)
+            XCTAssertNotEqual(pause["error"] as? String, "active")
+            XCTAssertTrue((pause["error"] as? String)?.contains("Global pause") == true)
+        }
+
+        func testBrokerWorksWhenSocketPathExceedsSunPath() throws {
+            var root = try temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            root.appendPathComponent(String(repeating: "long-directory-name-", count: 5), isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            XCTAssertGreaterThan(
+                GoalongReadOnlyQueryBroker.socketURL(rootDirectory: root).path.utf8.count, 104
+            )
+            let server = GoalongReadOnlyQueryServer(
+                rootDirectory: root,
+                screenTimeHandler: { _, _, _ in Data("{\"ok\":true}".utf8) }
+            )
+            try server.start()
+            defer { server.stop() }
+            XCTAssertTrue(GoalongReadOnlyQueryBroker.isRunning(rootDirectory: root))
+            let data = try GoalongReadOnlyQueryBroker.requestScreenTime(
+                rootDirectory: root, day: "2026-09-01", macOnly: true
+            )
+            XCTAssertEqual(data, Data("{\"ok\":true}".utf8))
+            server.stop()
+            XCTAssertFalse(FileManager.default.fileExists(
+                atPath: GoalongReadOnlyQueryBroker.socketURL(rootDirectory: root).path))
+        }
+
+        func testShortSocketPathStillUsesTheAbsolutePath() throws {
+            let root = try temporaryRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let endpoint = try GoalongReadOnlyQueryBroker.endpoint(rootDirectory: root)
+            XCTAssertNil(endpoint.directoryDescriptor)
         }
 
         private func temporaryRoot() throws -> URL {

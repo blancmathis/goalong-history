@@ -21,7 +21,7 @@ public enum AppleScreenTimeDeviceKind: String, Codable, CaseIterable, Hashable, 
         case .appleTV: return "Apple TV"
         case .homePod: return "HomePod"
         case .visionPro: return "Apple Vision Pro"
-        case .unknown: return "Apple device"
+        case .unknown: return "Appareil Apple"
         }
     }
 }
@@ -103,6 +103,20 @@ public struct AppleScreenTimeScope: Codable, Equatable, Sendable {
     }
 }
 
+/// Generic device names, French (shown) and English (stored by older versions). Used only to spot a placeholder name.
+public enum AppleScreenTimeGenericDeviceName {
+    public static let appleDevice = "Appareil Apple"
+    public static let iPhoneOrIPad = "iPhone ou iPad"
+
+    public static func isAppleDevice(_ lowercasedName: String) -> Bool {
+        lowercasedName == "apple device" || lowercasedName == "appareil apple"
+    }
+
+    public static func isIPhoneOrIPad(_ lowercasedName: String) -> Bool {
+        lowercasedName.contains("iphone or ipad") || lowercasedName.contains("iphone ou ipad")
+    }
+}
+
 public enum AppleScreenTimeShareLevel: String, Codable, CaseIterable, Hashable, Sendable {
     case totalsOnly
     case perDevice
@@ -110,9 +124,9 @@ public enum AppleScreenTimeShareLevel: String, Codable, CaseIterable, Hashable, 
 
     public var displayName: String {
         switch self {
-        case .totalsOnly: return "Totals only"
-        case .perDevice: return "Per-device totals"
-        case .applications: return "Devices and applications"
+        case .totalsOnly: return "Totaux seulement"
+        case .perDevice: return "Totaux par appareil"
+        case .applications: return "Appareils et applications"
         }
     }
 }
@@ -151,7 +165,7 @@ public struct AppleScreenTimeApplicationUsage: Codable, Equatable, Hashable, Ide
     }
 
     public var resolvedName: String {
-        displayName ?? bundleIdentifier ?? "Unknown application"
+        displayName ?? bundleIdentifier ?? "Application inconnue"
     }
 }
 

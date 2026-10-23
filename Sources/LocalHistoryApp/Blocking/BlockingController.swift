@@ -2,7 +2,9 @@
 import AppKit
 import Combine
 import Foundation
+import GoalongGuardCore
 import LocalHistoryCore
+import LocalHistoryQueryCLI
 
 /// Owns the module while it is on. Created by `BlockingRuntime` only when
 /// `goalong.module.blocking.enabled` is true; destroyed when it is turned off.
@@ -34,10 +36,19 @@ import LocalHistoryCore
     private let clock: () -> Date
     private let store: BlockingStore?
     private let backend: BlockingEnforcementBackend?
-    private let calendar: Calendar
+    /// Fixed copy of `calendarProvider()`. `followTimeZone` swaps it after a zone change, once it has held
+    /// the locked windows in progress and the usage day in progress (docs/BLOCKING.md, « Time zone »).
+    private var calendar: Calendar
+    private let calendarProvider: () -> Calendar
+    /// Usage day kept across a zone change until its old midnight, so quotas and breaks never reset early.
+    private var usageDayCarry: (day: String, start: Date, end: Date)?
+    private var systemObservers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
     private let continuous: () -> Double
     private let boot: () -> String
     private let runsTimers: Bool
+    /// How often the timer re-reads the running apps while an app trigger exists. Tests shorten it.
+    private let appTriggerPollSeconds: TimeInterval
     private let runningApps: () -> Set<String>
     private var suppressedTriggers: Set<UUID> = []
     private var lastAttemptAt: [String: Date] = [:]
@@ -50,12 +61,17 @@ import LocalHistoryCore
     private var storeFailed = false
     /// Last end written for uninstall.sh; `.none` until the first refresh writes it.
     private var lockMarker: Date?? = .none
+    /// Last end written to `guard-until` (spec K); a deleted file is rewritten while a severe block runs.
+    private var guardMarker: Date?? = .none
+    private let guardClient: GoalongGuardClienting?
     private var lastGood: BlockingDocument?
     private var lastObservation: BlockingObservation?
     private var unreadableSince: [Int32: Date] = [:]
     var onObservationRequirementChanged: ((Bool) -> Void)?
     /// Called after each refresh, sample or allowance: the timer capsule re-reads `timerInput`.
     var onTimerInputChanged: (() -> Void)?
+    /// True while the running Concentration session blocks this list, breaks included.
+    var focusSessionUsesList: (UUID) -> Bool = { _ in false }
     private var observing = false
     private var quitAuthorization: (blocks: Set<BlockingActiveBlock>, expires: Date)?
     var hasTimer: Bool { timer != nil }
@@ -79,15 +95,20 @@ import LocalHistoryCore
 
     init(document: BlockingDocument = BlockingDocument(), clock: @escaping () -> Date = Date.init,
          store: BlockingStore? = nil, backend: BlockingEnforcementBackend? = nil,
-         calendar: Calendar = .current, continuous: @escaping () -> Double = BlockingClock.continuous,
+         calendar: Calendar = .autoupdatingCurrent, calendarProvider: (() -> Calendar)? = nil, continuous: @escaping () -> Double = BlockingClock.continuous,
          boot: @escaping () -> String = BlockingClock.bootID, runsTimers: Bool = false,
+         appTriggerPollSeconds: TimeInterval = 5,
+         guardClient: GoalongGuardClienting? = nil,
          runningApps: @escaping () -> Set<String> = {
              Set(NSWorkspace.shared.runningApplications.filter { !$0.isTerminated }.compactMap(\.bundleIdentifier))
          }) {
         self.document = document; self.lists = document.lists; self.freeze = document.freeze
-        self.clock = clock; self.store = store; self.backend = backend; self.calendar = calendar
-        self.continuous = continuous; self.boot = boot; self.runsTimers = runsTimers
+        self.clock = clock; self.store = store; self.backend = backend
+        let provider = calendarProvider ?? { calendar }
+        self.calendarProvider = provider; self.calendar = Self.frozen(provider())
+        self.continuous = continuous; self.boot = boot; self.runsTimers = runsTimers; self.appTriggerPollSeconds = appTriggerPollSeconds
         self.runningApps = runningApps
+        self.guardClient = guardClient
         if let store {
             do {
                 let loaded = try store.loadRecovering()
@@ -98,6 +119,9 @@ import LocalHistoryCore
                 case .reset: self.error = "Le fichier de blocage et sa copie de secours étaient illisibles : Goalong repart sans listes. Les fichiers abîmés restent dans son dossier."
                 }
             } catch { failStore() }
+        }
+        if migrateLegacyDayKeys(), let store, !storeFailed {
+            do { try store.save(self.document) } catch { failStore() }
         }
         lastGood = self.document
         lastClock = self.document.clock
@@ -113,9 +137,24 @@ import LocalHistoryCore
                     && BlockingRules.wouldBlock(target, list: list)
             }
         }
+        guardClient?.onChange = { [weak self] in self?.refresh(enforceLast: false) }
         backend?.siteActionStillRequired = { [weak self] in self?.siteActionStillRequired($0) == true }
         backend?.siteActionDeadline = { [weak self] in self?.siteActionDeadline($0) }
         backend?.onBlockPresented = { [weak self] target, id in self?.recordBlockedPresentation(target, listID: id) }
+        if runsTimers {
+            for name in [Notification.Name.NSSystemTimeZoneDidChange, .NSCalendarDayChanged, Notification.Name("NSSystemClockDidChangeNotification")] {
+                systemObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    if name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
+                    MainActor.assumeIsolated { self?.refresh() }
+                })
+            }
+            // Timers do not fire during sleep: refresh on wake so a program or session due meanwhile starts at once.
+            for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+                workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.refresh() }
+                })
+            }
+        }
         refresh()
     }
 
@@ -130,6 +169,8 @@ import LocalHistoryCore
             }
         }
         timer?.invalidate(); timer = nil
+        systemObservers.forEach(NotificationCenter.default.removeObserver); systemObservers.removeAll()
+        workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); workspaceObservers.removeAll()
         onObservationRequirementChanged?(false); onObservationRequirementChanged = nil
         onTimerInputChanged = nil
         clearFriction(); frictionAllowances.removeAll()
@@ -146,6 +187,39 @@ import LocalHistoryCore
             + document.sessions.filter { effectiveLock($0.lock).protectsLists }.map(\.end)
             + lists.compactMap { $0.program.lockedUntil } + [freeze?.end].compactMap { $0 }
         return ends.filter { $0 > now }.max()
+    }
+
+    /// End of the latest severe block already running: a locked or password block, a started locked
+    /// session, a locked program or a freeze. Only then does the guard reopen a killed Goalong (spec K §2).
+    /// Unlike `lockedUntil`, a locked session that has not started yet arms nothing.
+    var severeUntil: Date? {
+        let now = clock()
+        let ends = activeBlocks.filter { $0.lock.protectsLists && $0.start <= now }.map(\.end)
+            + document.sessions.filter { $0.start <= now && effectiveLock($0.lock).protectsLists }.map(\.end)
+            + lists.compactMap { $0.program.lockedUntil } + [freeze?.end].compactMap { $0 }
+        return ends.filter { $0 > now }.max()
+    }
+    /// Confirmations that can arm the guard first add `GuardConsent.text`.
+    var guardNeedsConsent: Bool { guardClient?.needsConsent ?? false }
+    /// « Retirer le service de protection »: hidden while any lock is running or planned, a weekly locked or
+    /// password range included. A planned locked block was confirmed with the service in place: at its start
+    /// the service would come back, with its macOS notification, and no new consent sentence (R5-garde-02).
+    var canRemoveGuard: Bool {
+        guardClient?.canRemove == true && lockedUntil == nil
+            && !lists.contains { $0.program.ranges.contains { effectiveLock($0.effectiveLock).protectsLists } }
+    }
+    func removeGuardService() {
+        refresh(enforceLast: false)
+        guard canRemoveGuard else { return }
+        guardClient?.removeService()
+    }
+
+    /// True when `guard-until` must be written: memo out of date, or the file differs from `wanted`
+    /// (read back while a severe block runs; a cheap stat otherwise).
+    static func guardMarkerNeedsWrite(memo: Date??, wanted: Date?, files: GuardFiles, now: Date) -> Bool {
+        guard memo == .some(wanted) else { return true }
+        guard let wanted else { return files.markerExists() }
+        return files.readMarker(now: now) != .date(wanted)
     }
 
     /// A password cannot override an overlapping hard lock or a freeze.
@@ -212,19 +286,19 @@ import LocalHistoryCore
             }
         }
         if (next.quotaMinutesPerDay ?? 0) > (current.quotaMinutesPerDay ?? 0) {
-            return .refused("Pendant un verrou, le temps permis peut seulement baisser.")
+            return .refused(prefix + "le temps permis peut seulement baisser.")
         }
         if let breaks = next.breaks {
             let old = current.breaks ?? BlockBreaks(count: 0, minutes: 0)
             if breaks.count > old.count || breaks.minutes > old.minutes {
-                return .refused("Pendant un verrou, les pauses peuvent seulement diminuer.")
+                return .refused(prefix + "les pauses peuvent seulement diminuer.")
             }
         }
         if current.program.isLocked(at: clock()), (next.program.lockedUntil ?? .distantPast) < (current.program.lockedUntil ?? .distantPast) {
             return .refused("Le verrou du programme ne peut pas être raccourci.")
         }
         let oldMinutes = Self.programCoverage(current.program), newMinutes = Self.programCoverage(next.program)
-        if !oldMinutes.isSubset(of: newMinutes) { return .refused("Pendant un verrou, le programme peut seulement s’allonger.") }
+        if !oldMinutes.isSubset(of: newMinutes) { return .refused(prefix + "le programme peut seulement s’allonger.") }
         for lock in BlockLock.allCases where lock != .free {
             let old = Self.programCoverage(BlockProgram(ranges: current.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
             let new = Self.programCoverage(BlockProgram(ranges: next.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
@@ -233,36 +307,58 @@ import LocalHistoryCore
         return .allowed
     }
 
-    func save(_ value: BlockList) {
-        guard admitEdit() else { return }
+    /// Returns this save's own refusal, never an unrelated banner such as the login-item notice.
+    @discardableResult func save(_ value: BlockList) -> String? {
+        guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
+        let next: BlockList
+        switch normalized(value) {
+        case .failure(let refusal): error = refusal.reason; return refusal.reason
+        case .success(let value): next = value
+        }
+        var candidate = document
+        candidate.lists.removeAll { $0.id == next.id }; candidate.lists.append(next)
+        guard BlockingRules.validate(candidate) else { error = "Vérifiez la liste, les horaires, le quota et les pauses."; return error }
+        apply(next)
+        commit()
+        return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
+    }
+
+    private struct EditRefusal: Error { var reason: String }
+
+    /// One list checked and cleaned up (reason, sites, exceptions, keywords), without writing anything.
+    private func normalized(_ value: BlockList) -> Result<BlockList, EditRefusal> {
+        func refuse(_ reason: String) -> Result<BlockList, EditRefusal> { .failure(EditRefusal(reason: reason)) }
         var next = value
         if let reason = next.reason {
             let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.isEmpty || BlockingRules.normalizeReason(trimmed) != nil else {
-                error = "La raison doit contenir de 1 à 140 caractères."; return
+                return refuse("La raison doit contenir de 1 à 140 caractères.")
             }
             next.reason = trimmed.isEmpty ? nil : trimmed
         }
-        if case .refused(let reason) = editCheck(next) { error = reason; return }
+        if case .refused(let reason) = editCheck(next) { return refuse(reason) }
         guard !next.program.ranges.contains(where: { $0.effectiveLock == .password }) || hasPassword
             || document.lists.first(where: { $0.id == next.id })?.program.ranges == next.program.ranges else {
-            error = "Définissez d’abord le mot de passe de blocage."; return
+            return refuse("Définissez d’abord le mot de passe de blocage.")
         }
-        guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse de site invalide."; return }
+        guard next.sites.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { return refuse("Adresse de site invalide.") }
         next.sites = Array(Set(next.sites.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
         if let exceptions = next.exceptions {
-            guard exceptions.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { error = "Adresse d’exception invalide."; return }
+            guard exceptions.allSatisfy({ BlockingRules.normalize($0.pattern) != nil }) else { return refuse("Adresse d’exception invalide.") }
             next.exceptions = Array(Set(exceptions.compactMap { BlockingRules.normalize($0.pattern).map { BlockSiteRule(pattern: $0) } })).sorted { $0.pattern < $1.pattern }
         }
         if let keywords = next.keywords {
-            guard keywords.allSatisfy({ BlockingRules.normalizeKeyword($0) != nil }) else { error = "Chaque mot-clé doit contenir de 2 à 40 caractères."; return }
+            guard keywords.allSatisfy({ BlockingRules.normalizeKeyword($0) != nil }) else { return refuse("Chaque mot-clé doit contenir de 2 à 40 caractères.") }
             var seen = Set<String>()
             next.keywords = keywords.compactMap(BlockingRules.normalizeKeyword).filter { seen.insert(BlockingRules.foldKeyword($0)).inserted }.sorted()
         }
-        var candidate = document
-        candidate.lists.removeAll { $0.id == next.id }; candidate.lists.append(next)
-        guard BlockingRules.validate(candidate) else { error = "Vérifiez la liste, les horaires, le quota et les pauses."; return }
-        if case .refused(let reason) = editCheck(next) { error = reason; return }
+        // Sites and keywords are cleaned up: the cleaned list must still pass the stricter-only rules.
+        if case .refused(let reason) = editCheck(next) { return refuse(reason) }
+        return .success(next)
+    }
+
+    /// Puts a checked list in the document, without writing. A new action or delay resets its friction.
+    private func apply(_ next: BlockList) {
         if let index = document.lists.firstIndex(where: { $0.id == next.id }) {
             let old = document.lists[index]
             if old.effectiveAction != next.effectiveAction || old.delaySeconds != next.delaySeconds || old.allowanceMinutes != next.allowanceMinutes {
@@ -273,7 +369,28 @@ import LocalHistoryCore
         } else {
             document.lists.append(next)
         }
+    }
+
+    /// Saves several lists all or none: every list, then the whole document, is checked, then one write
+    /// holds every list. A failed write leaves the document as it was. A refusal names its list.
+    @discardableResult func saveAll(_ values: [BlockList]) -> String? {
+        guard values.count > 1 else { return values.first.flatMap { save($0) } }
+        guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
+        func named(_ value: BlockList, _ reason: String) -> String { "« \(value.name) » : \(reason)" }
+        var candidate = document
+        var prepared: [BlockList] = []
+        for value in values {
+            switch normalized(value) {
+            case .failure(let refusal): error = named(value, refusal.reason); return error
+            case .success(let next):
+                prepared.append(next)
+                candidate.lists.removeAll { $0.id == next.id }; candidate.lists.append(next)
+            }
+        }
+        guard BlockingRules.validate(candidate) else { error = "Vérifiez les listes, les horaires, le quota et les pauses."; return error }
+        for next in prepared { apply(next) }
         commit()
+        return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
     }
 
     @discardableResult func addException(_ input: String, to listID: UUID) -> BlockingEditCheck {
@@ -329,7 +446,7 @@ import LocalHistoryCore
               stop.at <= clock() else { return [:] }
         let eligible = lists.filter { $0.earn != nil && $0.quotaMinutesPerDay != nil }
         guard !eligible.isEmpty else { return [:] }
-        let day = Self.dayKey(stop.at, calendar: calendar), today = Self.dayKey(clock(), calendar: calendar)
+        let day = usageDay(at: stop.at), today = usageDay(at: clock())
         var usage = day == today ? todayUsage() : document.usageHistory?[day] ?? BlockDayUsage(day: day)
         guard !(usage.earnedSessionIDs ?? []).contains(session.id) else { return [:] }
         guard (usage.earnedSessionIDs ?? []).count < 4096 else { throw FocusFailure.invalidArgument }
@@ -360,8 +477,7 @@ import LocalHistoryCore
         edit(&next)
         let check = editCheck(next)
         guard check == .allowed else { return check }
-        save(next)
-        return error.map(BlockingEditCheck.refused) ?? .allowed
+        return save(next).map(BlockingEditCheck.refused) ?? .allowed
     }
     nonisolated static func explain(url: String?, title: String? = nil, list: BlockList) -> BlockingMatchExplanation {
         BlockingRules.explain(url: url, title: title, list: list)
@@ -377,20 +493,21 @@ import LocalHistoryCore
         case .site:
             if !next.sites.contains(where: { $0.pattern == target.value }) { next.sites.append(.init(pattern: target.value)) }
         case .app:
-            guard !BlockingRules.neverBlocked.contains(target.value) else { throw BlockingListAdditionFailure.invalidTarget }
+            guard !BlockingRules.isNeverBlocked(target.value) else { throw BlockingListAdditionFailure.invalidTarget }
             if !next.apps.contains(where: { $0.bundleIdentifier == target.value }) {
                 next.apps.append(.init(bundleIdentifier: target.value, name: target.name))
             }
         }
         if case .refused(let reason) = editCheck(next) { throw BlockingListAdditionFailure.refused(reason) }
-        save(next)
+        let refusal = save(next)
         guard !storeFailed else { throw BlockingListAdditionFailure.storageFailed }
-        guard error == nil else { throw BlockingListAdditionFailure.refused(error!) }
+        if let refusal { throw BlockingListAdditionFailure.refused(refusal) }
     }
 
     func delete(_ id: UUID) {
         guard admitEdit() else { return }
         if isStricterOnly(id) { error = "Une liste verrouillée ne peut pas être supprimée."; return }
+        if focusSessionUsesList(id) { error = "La séance de concentration en cours bloque cette liste. Arrêtez la séance pour la supprimer."; return }
         if document.sessions.contains(where: { $0.start > clock() && $0.lock != .free && $0.listIDs.contains(id) }) {
             error = "Annulez d’abord le blocage programmé avec son défi ou son mot de passe."; return
         }
@@ -646,8 +763,7 @@ import LocalHistoryCore
             guard verifyPassword(password) == .ok else { return }
         }
         usage.breaksTaken[listID] = taken + 1
-        let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: clock()))!
-        usage.breakEnds[listID] = min(midnight, clock().addingTimeInterval(TimeInterval(breaks.minutes * 60)))
+        usage.breakEnds[listID] = min(usageDayBounds(at: clock()).end, clock().addingTimeInterval(TimeInterval(breaks.minutes * 60)))
         document.usage = usage
         commit()
     }
@@ -667,7 +783,7 @@ import LocalHistoryCore
         guard freeze == nil else { error = "Le gel en cours ne peut pas être remplacé."; return }
         if mode == .lockScreen, backend?.canLockScreen == false { error = "Le verrouillage de session nécessite l’accessibilité. Choisissez le bouclier."; return }
         let now = clock()
-        let bounded = min(max(end, now.addingTimeInterval(5 * 60)), now.addingTimeInterval(24 * 3_600))
+        let bounded = BlockingWallClock.freezeEnd(end, now: now)
         document.freeze = BlockFreeze(start: now, end: bounded, mode: mode, allowedApps: allowedApps)
         commit()
     }
@@ -683,7 +799,7 @@ import LocalHistoryCore
             let children = (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
             for url in children where url.pathExtension == "app" {
                 guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier,
-                      !BlockingRules.neverBlocked.contains(id), seen.insert(id).inserted else { continue }
+                      !BlockingRules.isNeverBlocked(id), seen.insert(id).inserted else { continue }
                 let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
                     ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
                     ?? url.deletingPathExtension().lastPathComponent
@@ -701,13 +817,16 @@ import LocalHistoryCore
         if let store, !storeFailed {
             do { _ = try store.load() } catch { restoreStore(store) }
         }
-        let currentClock = BlockingClockState(wall: now, continuous: continuous(), boot: boot())
+        var currentClock = BlockingClockState(wall: now, continuous: continuous(), boot: boot())
+        var jump: TimeInterval = 0
         if let previous = lastClock {
-            let jump = BlockingClock.adjustment(previous: previous, now: currentClock)
+            jump = BlockingClock.adjustment(previous: previous, now: currentClock)
             if jump != 0 { extendLocks(by: jump, at: previous.wall) }
         }
+        currentClock = BlockingClock.advanced(previous: lastClock, now: currentClock, adjusted: jump)
         lastClock = currentClock
         document.clock = currentClock
+        followTimeZone(at: now)
         let triggersChanged = synchronizeAppTriggers(at: now)
         if !storeFailed, let store, (triggersChanged || now.timeIntervalSince(lastSavedAt) >= 60), hasPersistedWork {
             do { try store.save(document); lastGood = document; lastSavedAt = now } catch { failStore() }
@@ -719,11 +838,6 @@ import LocalHistoryCore
         // Publish only real changes: the page must not redraw on every sample.
         if lists != document.lists { lists = document.lists }
         if freeze != document.freeze { freeze = document.freeze }
-        if let previous = document.usage, previous.day != Self.dayKey(now, calendar: calendar) {
-            document.usageHistory = document.usageHistory ?? [:]
-            document.usageHistory?[previous.day] = previous
-            for day in (document.usageHistory?.keys.sorted().dropLast(366)) ?? [] { document.usageHistory?[day] = nil }
-        }
         let usage = todayUsage()
         if frictionUsage != usage { frictionUsage = usage }
         if attemptsToday != usage.blocked ?? [:] { attemptsToday = usage.blocked ?? [:] }
@@ -752,7 +866,18 @@ import LocalHistoryCore
         let needsPassword = blocks.contains { $0.lock == .password }
         if quitRequiresPassword != needsPassword { quitRequiresPassword = needsPassword }
         if let store, !storeFailed, lockMarker != .some(lockedUntil) {
-            lockMarker = .some(lockedUntil); store.writeLockMarker(until: lockedUntil)
+            // Memoize only a durable write: a failure retries on the next refresh, or uninstall.sh would miss the lock.
+            if store.writeLockMarker(until: lockedUntil) { lockMarker = .some(lockedUntil) }
+        }
+        let severe = severeUntil
+        if let store, !storeFailed {
+            let files = GoalongGuardFiles.files(for: store.directory)
+            let wanted = severe.map { GuardFiles.markerEnd($0, now: now) }
+            // The memo alone is not enough: a deleted, modified or planted marker is put right on every
+            // refresh. The guard accepts any end from the healthy app, so a forged value must not stay.
+            if Self.guardMarkerNeedsWrite(memo: guardMarker, wanted: wanted, files: files, now: now) {
+                if files.writeMarker(until: wanted) { guardMarker = .some(wanted) }
+            }
         }
         let next = nextStart(after: now)
         if nextProgramStart?.listID != next?.listID || nextProgramStart?.date != next?.date { nextProgramStart = next }
@@ -760,9 +885,14 @@ import LocalHistoryCore
         if siteBlockingAvailable != available { siteBlockingAvailable = available }
         let support = backend?.browsers ?? []
         if browsers != support { browsers = support }
+        var state = backend?.updateProtection(locked: requiresLaunchAtLogin) ?? protection
+        if let guardClient {
+            // After the marker: the guard reads it when pinged. Never an error message for the guard.
+            state.guardian = storeFailed ? .notInstalled : guardClient.update(severeUntil: severe)
+        }
+        state.level = state.guardian == .running ? .strict : .standard
+        if protection != state { protection = state }
         if let backend {
-            let state = backend.updateProtection(locked: requiresLaunchAtLogin)
-            if protection != state { protection = state }
             if !storeFailed {
                 let message: String?
                 switch protection.component {
@@ -781,7 +911,8 @@ import LocalHistoryCore
             onObservationRequirementChanged?(need)
         }
         scheduleTimer(at: now)
-        if enforceLast, var target = lastObservation { target.at = now; target.isActivation = false; enforce(target) }
+        // An activation carries no address read; replaying it must not count as an unreadable read.
+        if enforceLast, var target = lastObservation { target.at = now; target.isActivation = target.isActivation && target.url == nil; enforce(target) }
         onTimerInputChanged?()
     }
 
@@ -852,7 +983,7 @@ import LocalHistoryCore
         if let end = freeze?.end { boundaries.append(end) }
         if let start = nextProgramStart?.date { boundaries += [start, start.addingTimeInterval(-60)] }
         if !activeBlocks.isEmpty || freeze != nil || needsObservation || hasLocks { boundaries.append(now.addingTimeInterval(15)) }
-        if hasAppTriggers { boundaries.append(now.addingTimeInterval(5)) }
+        if hasAppTriggers { boundaries.append(now.addingTimeInterval(appTriggerPollSeconds)) }
         guard let next = boundaries.filter({ $0 > now }).min() else { return }
         let value = Timer(timeInterval: max(0.05, next.timeIntervalSince(now)), repeats: false) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
@@ -867,23 +998,57 @@ import LocalHistoryCore
         document.heldPrograms = (document.heldPrograms ?? []).filter { $0.end > oldWall }.map { value in
             var value = value; if jump < 0 { value.start = value.start.addingTimeInterval(jump) }; value.end = value.end.addingTimeInterval(jump); return value
         }
-        for index in document.lists.indices {
-            let list = document.lists[index]
-            for window in BlockingSchedule.windows(of: list.program, at: oldWall, calendar: calendar)
-                where window.start <= oldWall && window.end > oldWall {
-                let lock = list.program.isLocked(at: oldWall) ? BlockLock.locked
-                    : effectiveLock(list.program.ranges.first { $0.id == window.rangeID }?.effectiveLock ?? .free)
-                guard lock.protectsLists, document.programSkips?[window.rangeID].map({ $0 > oldWall }) != true,
-                      document.heldPrograms?.contains(where: { $0.id == window.rangeID }) != true else { continue }
-                document.heldPrograms = (document.heldPrograms ?? []) + [BlockSession(id: window.rangeID, listIDs: [list.id], start: window.start.addingTimeInterval(min(0, jump)),
-                    end: window.end.addingTimeInterval(jump), lock: lock, origin: .program(window.rangeID))]
-            }
-            if list.program.isLocked(at: oldWall) { document.lists[index].program.lockedUntil = list.program.lockedUntil?.addingTimeInterval(jump) }
+        holdProgramWindows(at: oldWall, jump: jump)
+        for index in document.lists.indices where document.lists[index].program.isLocked(at: oldWall) {
+            document.lists[index].program.lockedUntil = document.lists[index].program.lockedUntil?.addingTimeInterval(jump)
         }
         if let until = document.passwordLock?.retryAfter, until > oldWall {
             document.passwordLock?.retryAfter = until.addingTimeInterval(jump)
         }
         if var freeze = document.freeze { if jump < 0 { freeze.start = freeze.start.addingTimeInterval(jump) }; freeze.end = freeze.end.addingTimeInterval(jump); document.freeze = freeze }
+    }
+    /// Turns each protected program window in progress at `wall` into a held session, so a later
+    /// recomputation (clock jump, zone change) cannot end it early.
+    private func holdProgramWindows(at wall: Date, jump: Double) {
+        for list in document.lists {
+            for window in BlockingSchedule.windows(of: list.program, at: wall, calendar: calendar)
+                where window.start <= wall && window.end > wall {
+                let lock = list.program.isLocked(at: wall) ? BlockLock.locked
+                    : effectiveLock(list.program.ranges.first { $0.id == window.rangeID }?.effectiveLock ?? .free)
+                guard lock.protectsLists, document.programSkips?[window.rangeID].map({ $0 > wall }) != true,
+                      document.heldPrograms?.contains(where: { $0.id == window.rangeID }) != true else { continue }
+                document.heldPrograms = (document.heldPrograms ?? []) + [BlockSession(id: window.rangeID, listIDs: [list.id], start: window.start.addingTimeInterval(min(0, jump)),
+                    end: window.end.addingTimeInterval(jump), lock: lock, origin: .program(window.rangeID))]
+            }
+        }
+    }
+    /// After a zone change: hold the locked windows and the usage day in progress, then use the new zone
+    /// for everything else (future programs, the next day, timers).
+    private func followTimeZone(at now: Date) {
+        if let carry = usageDayCarry, carry.end <= now { usageDayCarry = nil }
+        let next = Self.frozen(calendarProvider())
+        guard next.timeZone.identifier != calendar.timeZone.identifier else { return }
+        holdProgramWindows(at: now, jump: 0)
+        let bounds = usageDayBounds(at: now)
+        usageDayCarry = (usageDay(at: now), bounds.start, bounds.end)
+        calendar = next
+    }
+    private func usageDay(at date: Date) -> String {
+        if let carry = usageDayCarry, carry.start <= date, date < carry.end { return carry.day }
+        return Self.dayKey(date, calendar: calendar)
+    }
+    private func usageDayBounds(at date: Date) -> (start: Date, end: Date) {
+        if let carry = usageDayCarry, carry.start <= date, date < carry.end { return (carry.start, carry.end) }
+        let start = calendar.startOfDay(for: date)
+        return (start, calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400))
+    }
+    /// A plain copy: `Calendar.autoupdatingCurrent` would change under the controller without notice.
+    nonisolated static func frozen(_ value: Calendar) -> Calendar {
+        var copy = Calendar(identifier: value.identifier)
+        copy.timeZone = TimeZone(identifier: value.timeZone.identifier) ?? value.timeZone
+        copy.locale = value.locale; copy.firstWeekday = value.firstWeekday
+        copy.minimumDaysInFirstWeek = value.minimumDaysInFirstWeek
+        return copy
     }
 
     func observe(_ target: BlockingObservation) {
@@ -898,12 +1063,12 @@ import LocalHistoryCore
            previous.titleKeywordMatches == target.titleKeywordMatches,
            previous.windowIdentity == target.windowIdentity, previous.sessionAvailable, target.sessionAvailable,
            previous.idleSeconds <= 120, target.idleSeconds <= 120 {
-            let from = max(previous.at, calendar.startOfDay(for: target.at))
+            let from = max(previous.at, usageDayBounds(at: target.at).start)
             let seconds = min(15, max(0, target.at.timeIntervalSince(from)))
             var usage = todayUsage()
             for list in lists where list.quotaMinutesPerDay != nil && BlockingRules.wouldBlock(previous, list: list) {
-                guard let block = activeBlocks.first(where: { $0.listIDs.contains(list.id) }),
-                      block.start <= previous.at, usage.breakEnds[list.id].map({ $0 > previous.at }) != true else { continue }
+                guard activeBlocks.contains(where: { $0.listIDs.contains(list.id) && $0.start <= previous.at }),
+                      usage.breakEnds[list.id].map({ $0 > previous.at }) != true else { continue }
                 usage.quotaSecondsUsed[list.id] = min(BlockingRules.effectiveQuotaSeconds(list, usage: usage)!, (usage.quotaSecondsUsed[list.id] ?? 0) + seconds)
             }
             if document.usage != usage && !usage.quotaSecondsUsed.isEmpty {
@@ -926,14 +1091,17 @@ import LocalHistoryCore
         let blockedSite = false
         var slowCandidates: [(BlockList, BlockingActiveBlock)] = []
         for list in lists.sorted(by: { $0.effectiveAction == .block && $1.effectiveAction != .block }) {
-            guard let block = activeBlocks.first(where: { $0.listIDs.contains(list.id) }) else { continue }
+            guard let block = rulingBlock(for: list.id) else { continue }
             let usage = todayUsage()
             if usage.breakEnds[list.id].map({ $0 > target.at }) == true { continue }
             if target.isBrowser, !target.isForeground,
                !list.apps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { continue }
             let siteRules = target.isBrowser && BlockingRules.hasSites(list)
             var special: BlockingVeilPresentation.Reason?
-            if siteRules && !target.isInternalPage && target.url == nil {
+            // An activation reads no address (by design), so it is not an unreadable read: it starts
+            // a fresh 3 s window instead of reusing one left over from an earlier visit.
+            if siteRules && target.isActivation && target.url == nil { unreadableSince[target.pid] = nil }
+            else if siteRules && !target.isInternalPage && target.url == nil {
                 let first = unreadableSince[target.pid] ?? target.at; unreadableSince[target.pid] = first
                 if !siteBlockingAvailable || target.at.timeIntervalSince(first) >= 3 { special = .unsupportedBrowser(NSRunningApplication(processIdentifier: target.pid)?.localizedName ?? target.bundleIdentifier) }
             } else { unreadableSince[target.pid] = nil }
@@ -968,6 +1136,13 @@ import LocalHistoryCore
             showFriction(target, list: list)
         } else if frictionTarget?.isBrowser == true { clearFriction() }
         else if let current = friction, !activeBlocks.contains(where: { $0.listIDs.contains(current.listID) }) { clearFriction() }
+    }
+
+    /// The block a veil speaks for when several cover one list (a free session inside a locked range):
+    /// the strongest lock, then the latest end, as on the page and in `siteActionDeadline` (R5-blocage-01).
+    func rulingBlock(for listID: UUID) -> BlockingActiveBlock? {
+        activeBlocks.filter { $0.listIDs.contains(listID) }
+            .max { ($0.lock.strength, $0.end) < ($1.lock.strength, $1.end) }
     }
 
     /// Final action admission reads current main-owned rules without a disk read,
@@ -1081,9 +1256,41 @@ import LocalHistoryCore
         if blocks != activeBlocks { activeBlocks = blocks }
     }
 
+    /// Before R1-231 day keys followed the system calendar (Buddhist « 2569-10-15 », Japanese « 0008-10-15 »).
+    /// Re-keys them to the Gregorian key of the same day, once: Gregorian keys are left alone, so a second pass changes nothing.
+    /// Returns whether the document changed.
+    private func migrateLegacyDayKeys() -> Bool {
+        guard calendar.identifier != .gregorian else { return false }
+        let now = clock()
+        func gregorian(_ key: String) -> String? { GoalongFocusCalendar.gregorianKey(fromLegacy: key, calendar: calendar, now: now) }
+        var changed = false
+        if var usage = document.usage, let key = gregorian(usage.day) {
+            usage.day = key; document.usage = usage; changed = true
+        }
+        if let history = document.usageHistory {
+            var next: [String: BlockDayUsage] = [:]
+            for (key, value) in history where gregorian(key) == nil { next[key] = value }
+            for (key, value) in history.sorted(by: { $0.key < $1.key }) {
+                guard let new = gregorian(key) else { continue }
+                changed = true
+                var usage = value; usage.day = new
+                if next[new] == nil { next[new] = usage }
+            }
+            if changed { document.usageHistory = next }
+        }
+        return changed
+    }
+
+    /// Every write path reads today's usage here, so a previous day is archived before it can be replaced.
     private func todayUsage() -> BlockDayUsage {
-        let day = Self.dayKey(clock(), calendar: calendar)
+        let day = usageDay(at: clock())
         if let usage = document.usage, usage.day == day { return usage }
+        if let previous = document.usage {
+            document.usageHistory = document.usageHistory ?? [:]
+            document.usageHistory?[previous.day] = previous
+            for key in (document.usageHistory?.keys.sorted().dropLast(366)) ?? [] { document.usageHistory?[key] = nil }
+            document.usage = nil
+        }
         return document.usageHistory?[day] ?? BlockDayUsage(day: day)
     }
 
@@ -1135,9 +1342,10 @@ import LocalHistoryCore
         return minutes
     }
 
-    nonisolated static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    /// Gregorian `yyyy-MM-dd` in the calendar's time zone, the same key as commitments and limits,
+    /// whatever calendar the member chose in System Settings.
+    nonisolated static func dayKey(_ date: Date, calendar: Calendar = .autoupdatingCurrent) -> String {
+        GoalongFocusCalendar.dayKey(date, calendar: calendar)
     }
 }
 /// Holds the controller only while the module is on.
@@ -1165,7 +1373,11 @@ import LocalHistoryCore
     }
     func apply(enabled: Bool) {
         if enabled, controller == nil {
-            let value = BlockingController(store: .standard, backend: StandardBlockingBackend(), runsTimers: true)
+            let guardClient = GoalongGuardClient.standard()
+            let value = BlockingController(store: .standard, backend: StandardBlockingBackend(), runsTimers: true,
+                                           guardClient: guardClient)
+            // From now on this process may lower or remove `guard-until` (an installed copy only).
+            if guardClient != nil { GoalongGuardFiles.reportHealth() }
             controller = value
             value.onObservationRequirementChanged = { [weak self] needed in self?.monitor?.setBlockingObservationEnabled(needed) }
             let hud = BlockingTimerHUD { [weak value] in value?.timerInput }
@@ -1174,6 +1386,7 @@ import LocalHistoryCore
             hud.update()
             monitor?.blockingSink = { [weak value] target in value?.observe(target) }
             monitor?.blockingKeywords = { [weak value] in value?.activeKeywords ?? [] }
+            value.focusSessionUsesList = { id in ConcentrationRuntime.shared.controller?.currentSession?.blockListIds.contains(id) == true }
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
             controller.refresh(enforceLast: false)

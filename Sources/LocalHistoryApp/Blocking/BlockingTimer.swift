@@ -43,9 +43,10 @@ struct BlockingVisibleTimer: Equatable {
     var accessibilityLabel: String {
         let left = Self.spoken(seconds)
         switch kind {
-        case .quota: return "Blocage, \(listName) : \(left) de quota restantes" + (counting ? "" : ", décompte en pause")
-        case .breakTime: return "Pause du blocage \(listName) : \(left) restantes"
-        case .slowDownAllowance: return "Ralentissement \(listName) : \(left) accordées restantes"
+        // « Il reste … »: no adjective to agree with « 1 minute » or « 1 heure 5 secondes ».
+        case .quota: return "Blocage, \(listName) : il reste \(left) de quota" + (counting ? "" : ", décompte en pause")
+        case .breakTime: return "Pause du blocage \(listName) : il reste \(left)"
+        case .slowDownAllowance: return "Ralentissement \(listName) : il reste \(left) de temps accordé"
         case .upcomingStart: return "Blocage \(listName) dans \(left)"
         }
     }

@@ -25,7 +25,12 @@
     /// Stores only the bounded generated response. Source conversations and the
     /// complete context prompt remain hash-only and are never copied here.
     final class AnalysisEvidenceCapsuleStore {
-        static let service = "goalong.evidence.v1"
+        /// Keys live in the shared login keychain under service + execution ID. Goalong Dev uses its own
+        /// service: a dev clear or 30-day purge must never delete (or prompt for) a key of the installed Goalong.
+        static func keychainService(for channel: GoalongBuildChannel) -> String {
+            channel.isDevelopment ? "goalong.evidence.v1.dev" : "goalong.evidence.v1"
+        }
+        static let service = keychainService(for: .current)
         static let retentionDays = 30
         static let maximumPlaintextBytes = 64 * 1_024
         static let maximumCapsuleOverheadBytes = 8 * 1_024
@@ -125,6 +130,8 @@
                 throw AnalysisEvidenceCapsuleError.keychainFailure(status)
             }
             guard removedOrAbsent else { throw AnalysisEvidenceCapsuleError.keychainFailure(errSecItemNotFound) }
+            // No capsule directory means no capsule file: nothing left to remove.
+            guard FileManager.default.fileExists(atPath: directory.path) else { return }
             try ChatGPTSecureStorage.removeRegularFileIfPresent(
                 at: capsuleURL(executionID: executionID)
             )

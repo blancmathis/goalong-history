@@ -20,7 +20,7 @@ Automatic daily analysis, website sharing permissions, OpenRouter billing or the
 ## Use the feature
 
 1. On the website, choose a day and the fields to analyse, review them, and download the ChatGPT request JSON.
-2. In Goalong History, open **Settings → Goalong website → Analyser une demande du site**. Enable the optional **ChatGPT analysis** capability if it is off.
+2. In Goalong History, open **Réglages → Avancé → Outils de partage et analyses → Analyser une demande du site**. Enable the optional **ChatGPT analysis** capability if it is off.
 3. Use **Choisir la demande…** to select that JSON file. Read the date, timezone and exact data preview.
 4. Use **Se connecter à ChatGPT** and complete the official account login. Codex must be installed and support the required restricted analysis settings and model.
 5. Check the consent for the displayed data, then choose **Analyser avec ChatGPT**. Review and edit the title, summary and outcomes.

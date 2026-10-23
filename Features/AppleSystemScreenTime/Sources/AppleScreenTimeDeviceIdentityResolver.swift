@@ -167,7 +167,7 @@
         ) -> AppleScreenTimeDeviceKind {
             let values = [model, name, operatingSystem]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-            if values.contains(where: { $0.contains("iphone or ipad") }) { return .unknown }
+            if values.contains(where: { AppleScreenTimeGenericDeviceName.isIPhoneOrIPad($0) }) { return .unknown }
             if values.contains(where: { $0.hasPrefix("iphone") || $0 == "ios-phone" }) { return .iPhone }
             if values.contains(where: { $0.hasPrefix("ipad") || $0 == "ipados" }) { return .iPad }
             if values.contains(where: { $0.hasPrefix("ipod") }) { return .iPod }
@@ -302,13 +302,13 @@
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let base: String
             if inferredKind != .unknown {
-                base = first.isEmpty || first.lowercased() == "apple device"
+                base = first.isEmpty || AppleScreenTimeGenericDeviceName.isAppleDevice(first.lowercased())
                     ? inferredKind.displayName
                     : first
-            } else if first.lowercased().contains("iphone or ipad") {
-                base = "iPhone or iPad"
+            } else if AppleScreenTimeGenericDeviceName.isIPhoneOrIPad(first.lowercased()) {
+                base = AppleScreenTimeGenericDeviceName.iPhoneOrIPad
             } else {
-                base = "Apple device"
+                base = AppleScreenTimeGenericDeviceName.appleDevice
             }
             return AppleScreenTimeDevice(
                 id: device.id,

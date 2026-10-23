@@ -19,7 +19,17 @@ public struct AmbianceRenderMeasure {
     private var bank: OrchestraBank.Loaded?
     private var output: AmbianceAudioOutput?
     public private(set) var copiedSampleBytes = 0
-    public init(source: AmbianceSource, orchestraDirectory: URL) throws {
+    /// Set before startOutput; called when the audio device changed and playback stopped.
+    var onInterrupted: (() -> Void)?
+    /// A verified bank and its DSP, built off the main actor. One owner: either `init(prepared:)` or `discard()`.
+    struct PreparedOrchestra: @unchecked Sendable {
+        fileprivate let core: OpaquePointer
+        fileprivate let bank: OrchestraBank.Loaded
+        /// Destroys the DSP first, then the mappings, when the result is no longer wanted.
+        func discard() { onde_dsp_destroy(core) }
+    }
+    /// Hashes and maps the samples: pure I/O, safe to run on any thread, cancellable.
+    nonisolated static func prepareOrchestra(source: AmbianceSource, orchestraDirectory: URL) throws -> PreparedOrchestra {
         guard let profile = source.profile else { throw AmbianceError.unavailable }
         let configuration = try profile.configuration.validated()
         guard let candidate = onde_dsp_create(44_100, profile.mode.dspMode, configuration.seed) else { throw AmbianceError.unavailable }
@@ -29,8 +39,14 @@ public struct AmbianceRenderMeasure {
                 onde_dsp_set(candidate, GenerativeSettings.dspIndex(index), Float(value))
             }
             onde_dsp_set(candidate, Int32(ONDE_GAIN), 1)
-            core = candidate; bank = loaded; copiedSampleBytes = loaded.copiedBytes
+            return PreparedOrchestra(core: candidate, bank: loaded)
         } catch { onde_dsp_destroy(candidate); throw error }
+    }
+    init(prepared: PreparedOrchestra) {
+        core = prepared.core; bank = prepared.bank; copiedSampleBytes = prepared.bank.copiedBytes
+    }
+    public convenience init(source: AmbianceSource, orchestraDirectory: URL) throws {
+        self.init(prepared: try Self.prepareOrchestra(source: source, orchestraDirectory: orchestraDirectory))
     }
     init(fileURL: URL, looping: Bool, finish: @escaping () -> Void) throws {
         output = try AmbianceAudioOutput(fileURL: fileURL, looping: looping, finish: finish)
@@ -48,6 +64,7 @@ public struct AmbianceRenderMeasure {
             output = AmbianceAudioOutput(core: core)
         }
         guard let output else { throw AmbianceError.unavailable }
+        output.interrupted = onInterrupted
         do { try output.start(volume: volume) }
         catch { stop(); throw error }
     }
@@ -61,6 +78,7 @@ public struct AmbianceRenderMeasure {
         return result
     }
     public func stop() {
+        onInterrupted = nil
         output?.stop(); output = nil
         if let core { onde_dsp_destroy(core) }
         core = nil; bank = nil; copiedSampleBytes = 0

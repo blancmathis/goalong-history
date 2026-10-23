@@ -27,6 +27,33 @@ extension Notification.Name {
     private var nativeSource = false
     private var richSource = false
     private var conversationSource = false
+    /// Privacy-policy and pause revisions captured before the native events were read.
+    private var guardRevisions: (privacy: String, pause: String)?
+    private var pauseObserver: NSObjectProtocol?
+    init() {
+        pauseObserver = NotificationCenter.default.addObserver(forName: .goalongGlobalPauseDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.nativeSource, self.busy || self.request != nil, GoalongGlobalPause.isPaused(in: AppPaths.applicationSupportDirectory) else { return }
+                self.dropNativeSelection("Pause globale active : la sélection a été retirée. Rechargez-la après la reprise.")
+            }
+        }
+    }
+    deinit { if let pauseObserver { NotificationCenter.default.removeObserver(pauseObserver) } }
+    private func dropNativeSelection(_ message: String) {
+        invalidate(); evidence = []; selectedEvidence = []; guardRevisions = nil; error = message
+    }
+    /// Refuses a send when the global exclusions or the global pause changed since the events were read.
+    nonisolated static func revalidate(native: Bool, revisions: (privacy: String, pause: String)?, root: URL) throws {
+        guard native else { return }
+        guard let revisions, GoalongPrivacyPolicy.load(in: root).revision == revisions.privacy else {
+            throw GoalongProfileAnalysis.invalid("Les exclusions ont changé. Rechargez la sélection avant de continuer.")
+        }
+        try GoalongGlobalPause.revalidate(revisions.pause, in: root)
+    }
+    private func revalidateNative() throws {
+        do { try Self.revalidate(native: nativeSource, revisions: guardRevisions, root: AppPaths.applicationSupportDirectory) }
+        catch { dropNativeSelection(goalongUserMessage(error)); throw error }
+    }
     var archive: GoalongProfileAnalysis.Archive? { guard let request, let result else { return nil }; return .init(request: request, result: result) }
     func invalidate() { cancel(); request = nil; result = nil; selectedItems = []; consent = false; reviewed = false }
     func cancel() { operation = UUID(); task?.cancel(); session?.close(); session = nil; busy = false }
@@ -34,6 +61,11 @@ extension Notification.Name {
     func load(start: Date, end: Date, rich: Bool, computer: Bool = true, conversations: Bool = false, conversationsFrom: Date? = nil) {
         invalidate(); evidence = []; selectedEvidence = []; nativeSource = computer; richSource = computer && rich; conversationSource = conversations
         guard computer || conversations, sourcesEnabled else { error = "Choisissez une source et activez-la dans les réglages."; return }
+        let root = AppPaths.applicationSupportDirectory
+        if computer {
+            do { guardRevisions = (GoalongPrivacyPolicy.load(in: root).revision, try GoalongGlobalPause.admit(in: root)) }
+            catch { guardRevisions = nil; self.error = goalongUserMessage(error); return }
+        } else { guardRevisions = nil }
         busy = true; error = nil; status = "Lecture locale des événements horodatés…"; let id = operation
         task = Task {
             do {
@@ -49,45 +81,53 @@ extension Notification.Name {
                 let rows = selection.0
                 guard operation == id else { return }
                 guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source a été désactivée pendant la lecture.") }
+                try Self.revalidate(native: computer, revisions: guardRevisions, root: root)
                 evidence = rows; selectedEvidence = Set(rows.map(\.id)); busy = false; status = "\(rows.count) événements chargés localement. Préparez ensuite le prompt pour appliquer vos règles. \(selection.1)"
-            } catch { guard operation == id else { return }; self.error = error.localizedDescription; busy = false }
+            } catch { guard operation == id else { return }; self.error = goalongUserMessage(error); busy = false }
         }
     }
     func prepare(day: Date, modules: Set<String>, policy: GoalongProfileAnalysis.Policy, includeConversations: Bool = false) {
         invalidate(); error = nil
         do {
             guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source sélectionnée a été désactivée.") }
+            try revalidateNative()
             let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
             request = try GoalongProfileAnalysis.prepare(date: formatter.string(from: day), timezone: TimeZone.current.identifier,
                 evidence: evidence.filter { selectedEvidence.contains($0.id) }, policy: policy, selected: GoalongProfileAnalysis.modules.filter { modules.contains($0) }, includeConversations: includeConversations)
             status = "Prompt préparé. Les termes exclus ont retiré les événements concernés ; les alias ont été appliqués."
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = goalongUserMessage(error) }
     }
     func analyze() {
         guard !busy, consent, let selected = request, sourcesEnabled, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { error = "Relisez la sélection et autorisez son envoi à l’agent."; return }
+        do { try revalidateNative() } catch { return }
         busy = true; result = nil; selectedItems = []; reviewed = false; error = nil; status = "Analyse des seules rubriques choisies…"; let id = UUID(); operation = id
+        let native = nativeSource, revisions = guardRevisions, root = AppPaths.applicationSupportDirectory
         task = Task {
             do {
                 guard let executable = CodexExecutableLocator.locate() else { throw CodexAppServerError.executableUnavailable }
-                let active = try CodexAppServerSession(executableURL: executable, codexHomeURL: AppPaths.chatGPTDirectory.appendingPathComponent("site-analysis-codex-home", isDirectory: true), siteAnalysisOnly: true)
+                let home = AppPaths.chatGPTDirectory.appendingPathComponent("site-analysis-codex-home", isDirectory: true)
+                guard let active = try await GoalongWorkAgent.makeOffMain({ try CodexAppServerSession(executableURL: executable, codexHomeURL: home, siteAnalysisOnly: true, homeLeaseWait: 0) },
+                                                                          isStale: { [weak self] in self?.operation != id }, close: { $0.close() }) else { return }
                 session = active; defer { active.close(); if operation == id { session = nil } }
                 guard operation == id, sourcesEnabled, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { throw GoalongProfileAnalysis.invalid("Autorisation retirée.") }
                 let output = try await Task.detached(priority: .userInitiated) {
+                    try Self.revalidate(native: native, revisions: revisions, root: root)
                     let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
                     return try active.generateProfileAnalysis(request: selected, workingDirectory: directory)
                 }.value
                 guard operation == id else { return }
                 guard sourcesEnabled, GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis) else { throw GoalongProfileAnalysis.invalid("Autorisation retirée pendant l’analyse.") }
+                try Self.revalidate(native: native, revisions: revisions, root: root)
                 result = try GoalongProfileAnalysis.apply(output, to: selected); busy = false; consent = false
                 status = "Analyse terminée. Elle reste locale. Relisez, corrigez et choisissez éventuellement les résultats à transmettre."
-            } catch { guard operation == id else { return }; self.error = error.localizedDescription; busy = false; consent = false }
+            } catch { guard operation == id else { return }; self.error = goalongUserMessage(error); busy = false; consent = false }
         }
     }
     func importResult(_ url: URL) {
         do { guard let request, sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Préparez ou rouvrez d’abord la sélection locale.") }
             result = try GoalongProfileAnalysis.apply(GoalongProfileAnalysis.parseResult(GoalongSiteAnalysisRequest.readSelectedBytes(url)), to: request)
             selectedItems = []; reviewed = false; status = "Réponse contrôlée. Aucun résultat n’a été envoyé."
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = goalongUserMessage(error) }
     }
     func save() {
         do {
@@ -101,7 +141,7 @@ extension Notification.Name {
             try ChatGPTSecureStorage.writeFileAtomically(bytes, to: url)
             status = "Enregistré dans Goalong History. Aucun envoi au site."
             NotificationCenter.default.post(name: .goalongProfileAnalysisDidSave, object: nil)
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = goalongUserMessage(error) }
     }
     func open(_ url: URL) {
         do {
@@ -110,8 +150,8 @@ extension Notification.Name {
             if let saved = try? GoalongProfileAnalysis.parseArchive(bytes) {
                 let checked = try GoalongProfileAnalysis.apply(saved.result, to: saved.request); request = saved.request; result = checked
             } else { let saved = try GoalongProfileAnalysis.parseRequest(bytes); _ = try saved.context(); request = saved }
-            nativeSource = false; richSource = false; conversationSource = false; evidence = []; selectedEvidence = []; status = "Dossier local rouvert. Relisez-le avant tout envoi."
-        } catch { self.error = error.localizedDescription }
+            nativeSource = false; richSource = false; conversationSource = false; guardRevisions = nil; evidence = []; selectedEvidence = []; status = "Dossier local rouvert. Relisez-le avant tout envoi."
+        } catch { self.error = goalongUserMessage(error) }
     }
     func correct(_ id: String, field: String, text: String) {
         guard let index = result?.items.firstIndex(where: { $0.id == id }) else { return }
@@ -127,18 +167,41 @@ extension Notification.Name {
 /// A document-sized window keeps the long, scrollable review usable on smaller displays.
 @MainActor final class GoalongProfileWindow: NSObject, ObservableObject, NSWindowDelegate {
     private var studioWindow: NSWindow?
+    private var studioModel: GoalongProfileStudioModel?
+    private var studioDay: Date?
+    private var studioLocalOnly = false
+    enum Reopen: Equatable { case front, rebuild, keepWork, modeMismatch }
+    /// A new day replaces the window's content only while nothing is loaded, running or analysed there.
+    /// The same holds for the mode (local-only or with sending): an idle window takes the caller's mode, one with work keeps its own.
+    static func reopen(shownDay: Date?, requestedDay: Date?, idle: Bool, calendar: Calendar = .current,
+                       shownLocalOnly: Bool? = nil, requestedLocalOnly: Bool = false) -> Reopen {
+        let sameMode = shownLocalOnly.map { $0 == requestedLocalOnly } ?? true
+        if let requestedDay, !(shownDay.map { calendar.isDate($0, inSameDayAs: requestedDay) } ?? false) { return idle ? .rebuild : .keepWork }
+        if !sameMode { return idle ? .rebuild : .modeMismatch }
+        return .front
+    }
     func show(localOnly: Bool = false, initialDay: Date? = nil, onSend: @escaping (Data) -> Void) {
-        if let studioWindow { studioWindow.makeKeyAndOrderFront(nil); return }
-        let view = GoalongProfileStudio(onSend: { [weak self] data in
-            self?.studioWindow?.close()
-            onSend(data)
-        }, onClose: { [weak self] in self?.studioWindow?.close() }, localOnly: localOnly, initialDay: initialDay)
-        let window = NSWindow(contentViewController: NSHostingController(rootView: view
-            .background(LHTheme.pageBackground)
-            .foregroundStyle(LHTheme.text)
-            .tint(LHTheme.accent)
-            .accentColor(LHTheme.accent)
-            .goalongControls()))
+        if let studioWindow {
+            let model = studioModel
+            let idle = model.map { !$0.busy && $0.request == nil && $0.result == nil } ?? true
+            // One window serves every entry point: an idle one takes the mode (local-only or with sending) of the caller.
+            let action = Self.reopen(shownDay: studioDay, requestedDay: initialDay, idle: idle, shownLocalOnly: studioLocalOnly, requestedLocalOnly: localOnly)
+            switch action {
+            case .front: break
+            case .rebuild:
+                let frame = studioWindow.frame
+                studioWindow.contentViewController = content(localOnly: localOnly, initialDay: initialDay, onSend: onSend)
+                studioWindow.setFrame(frame, display: true)
+            case .keepWork:
+                model?.status = "Une analyse est déjà ouverte pour une autre journée. Fermez-la pour analyser la journée choisie."
+            case .modeMismatch:
+                model?.status = studioLocalOnly
+                    ? "Cette analyse est ouverte en mode local. Fermez-la pour préparer un envoi à votre compte Goalong."
+                    : "Cette analyse est ouverte pour un envoi. Fermez-la pour une analyse locale seule."
+            }
+            studioWindow.makeKeyAndOrderFront(nil); return
+        }
+        let window = NSWindow(contentViewController: content(localOnly: localOnly, initialDay: initialDay, onSend: onSend))
         window.title = ProductIdentity.windowTitle("Comprendre mon travail — Goalong History")
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(LHTheme.pageBackground)
@@ -151,9 +214,54 @@ extension Notification.Name {
         studioWindow = window
         window.center(); window.makeKeyAndOrderFront(nil)
     }
+    private func content(localOnly: Bool, initialDay: Date?, onSend: @escaping (Data) -> Void) -> NSViewController {
+        let model = GoalongProfileStudioModel()
+        studioModel = model; studioLocalOnly = localOnly; studioDay = initialDay.map { Calendar.current.startOfDay(for: $0) }
+        let view = GoalongProfileStudio(onSend: { [weak self] data in
+            self?.studioWindow?.close()
+            onSend(data)
+        }, onClose: { [weak self] in self?.studioWindow?.close() }, localOnly: localOnly, initialDay: initialDay, model: model)
+        return NSHostingController(rootView: view
+            .background(LHTheme.pageBackground)
+            .foregroundStyle(LHTheme.text)
+            .tint(LHTheme.accent)
+            .accentColor(LHTheme.accent)
+            .goalongControls())
+    }
     func windowWillClose(_ notification: Notification) {
         studioWindow?.contentViewController = nil
-        studioWindow = nil
+        studioWindow = nil; studioModel = nil; studioDay = nil
+    }
+}
+
+/// Owns the profile studio window and the analysis it hands off, for the life of the dashboard.
+/// A pane that opens the studio can disappear before the member sends; the hand-off must survive that.
+@MainActor final class GoalongProfileStudioHost: ObservableObject {
+    struct Share: Equatable { let data: Data; let privacyRevision: String }
+    @Published var pending: Share?
+    /// Brings the dashboard back, so the share sheet has a view to appear on. Wired by the app delegate.
+    var onNeedsPresentation: (() -> Void)?
+    let window = GoalongProfileWindow()
+    private let currentRevision: () -> String
+    init(currentRevision: @escaping () -> String = { GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision }) {
+        self.currentRevision = currentRevision
+    }
+    func show(localOnly: Bool = false, initialDay: Date? = nil) {
+        window.show(localOnly: localOnly, initialDay: initialDay) { [weak self] in self?.receive($0) }
+    }
+    /// The privacy revision is captured when the member sends.
+    func receive(_ data: Data) { pending = Share(data: data, privacyRevision: currentRevision()); onNeedsPresentation?() }
+}
+
+/// Presents the reviewed analysis for sending, from a view that always exists in the dashboard.
+struct GoalongProfileShareHost: View {
+    @ObservedObject var host: GoalongProfileStudioHost
+    var body: some View {
+        Color.clear.sheet(isPresented: Binding(get: { host.pending != nil }, set: { if !$0 { host.pending = nil } })) {
+            if let share = host.pending {
+                GoalongWebsiteConnectionSheet(preparedAnalysis: share.data, privacyRevision: share.privacyRevision).goalongControls()
+            }
+        }
     }
 }
 
@@ -162,24 +270,26 @@ struct GoalongProfileStudio: View {
     var onClose: (() -> Void)? = nil
     var localOnly = false
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var model = GoalongProfileStudioModel()
+    @StateObject private var model: GoalongProfileStudioModel
     @StateObject private var connection = GoalongSiteAnalysisModel()
     @StateObject private var windowHost = GoalongWebsiteWindowHost()
-    @State private var start = Calendar.current.startOfDay(for: Date())
-    @State private var end = Date()
+    @State private var start = Calendar.current.startOfDay(for: GoalongToday.now)
+    @State private var end = GoalongToday.now
     @State private var rich = false
     @State private var computer = true
     @State private var conversations = false
-    @State private var conversationsFrom = Calendar.current.date(byAdding: .day, value: -6, to: Calendar.current.startOfDay(for: Date()))!
+    @State private var conversationsFrom = Calendar.current.date(byAdding: .day, value: -6, to: Calendar.current.startOfDay(for: GoalongToday.now))!
     @State private var modules = Set(GoalongProfileAnalysis.modules.filter { $0 != "ai" })
     @State private var exclusions = ""
     @State private var aliases = ""
     @State private var instructions = ""
-    init(onSend: @escaping (Data) -> Void, onClose: (() -> Void)? = nil, localOnly: Bool = false, initialDay: Date? = nil) {
+    init(onSend: @escaping (Data) -> Void, onClose: (() -> Void)? = nil, localOnly: Bool = false, initialDay: Date? = nil,
+         model: GoalongProfileStudioModel? = nil) {
         self.onSend = onSend; self.onClose = onClose; self.localOnly = localOnly
-        let day = Calendar.current.startOfDay(for: initialDay ?? Date())
+        _model = StateObject(wrappedValue: model ?? GoalongProfileStudioModel())
+        let day = Calendar.current.startOfDay(for: initialDay ?? GoalongToday.now)
         _start = State(initialValue: day)
-        _end = State(initialValue: min(Date(), Calendar.current.date(byAdding: .day, value: 1, to: day) ?? Date()))
+        _end = State(initialValue: min(GoalongToday.now, Calendar.current.date(byAdding: .day, value: 1, to: day) ?? GoalongToday.now))
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -192,7 +302,7 @@ struct GoalongProfileStudio: View {
                     GoalongProfileSection("1. Choisir les données") {
                         VStack(alignment: .leading, spacing: 10) {
                             DatePicker("Journée analysée — jusqu’à", selection: $end)
-                            Toggle("Computer History — activité de l’ordinateur", isOn: $computer)
+                            Toggle("Historique de ce Mac — activité de l’ordinateur", isOn: $computer)
                             if computer { DatePicker("Activité depuis", selection: $start); Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich) }
                             Toggle("Conversation History — utiliser les conversations IA comme contexte", isOn: $conversations)
                             if conversations {
@@ -259,7 +369,7 @@ struct GoalongProfileStudio: View {
                                 if let archive = model.archive, let projection = try? GoalongProfileAnalysis.project(archive, selectedIDs: model.selectedItems), let bytes = try? GoalongContextualRhythm.encode(projection) {
                                     GoalongDisclosureGroup("Voir exactement les cartes sélectionnées") { Text(String(decoding: bytes, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                                 }
-                                HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); closeStudio() } catch { model.error = error.localizedDescription } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
+                                HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); closeStudio() } catch { model.error = goalongUserMessage(error) } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
                                 Text("Le partage avec les autres se règle ensuite sur le site, rubrique par rubrique et selon le public choisi.").font(.caption).foregroundStyle(.secondary)
                                 }
                             }.padding(8)
@@ -290,7 +400,7 @@ struct GoalongProfileStudio: View {
                 return .init(term: parts[0].trimmingCharacters(in: .whitespaces), replacement: parts[1].trimmingCharacters(in: .whitespaces))
             }
             model.prepare(day: end.addingTimeInterval(-0.001), modules: modules, policy: .init(excluded_terms: split(exclusions), replacements: replacements, additional_instructions: instructions), includeConversations: conversations)
-        } catch { model.error = error.localizedDescription }
+        } catch { model.error = goalongUserMessage(error) }
     }
     private func chooseFile(_ action: @escaping (URL) -> Void, directory: URL? = nil) {
         guard let window = windowHost.window else { return }
@@ -300,10 +410,10 @@ struct GoalongProfileStudio: View {
     private func saveFile(_ name: String, data: Data) {
         guard let window = windowHost.window else { return }
         let panel = NSSavePanel(); panel.nameFieldStringValue = name
-        panel.beginSheetModal(for: window) { if $0 == .OK, let url = panel.url { do { try GoalongSiteAnalysisExportWriter.write(data, to: url); model.status = "Fichier exporté. Aucun envoi au site." } catch { model.error = error.localizedDescription } } }
+        panel.beginSheetModal(for: window) { if $0 == .OK, let url = panel.url { do { try GoalongSiteAnalysisExportWriter.write(data, to: url); model.status = "Fichier exporté. Aucun envoi au site." } catch { model.error = goalongUserMessage(error) } } }
     }
-    private func exportPrompt(_ r: GoalongProfileAnalysis.Request) { do { model.save(); saveFile("goalong-prompt.txt", data: Data(try r.prompt().utf8)) } catch { model.error = error.localizedDescription } }
-    private func exportCards() { do { saveFile("goalong-cartes.json", data: try model.projection()) } catch { model.error = error.localizedDescription } }
+    private func exportPrompt(_ r: GoalongProfileAnalysis.Request) { do { model.save(); saveFile("goalong-prompt.txt", data: Data(try r.prompt().utf8)) } catch { model.error = goalongUserMessage(error) } }
+    private func exportCards() { do { saveFile("goalong-cartes.json", data: try model.projection()) } catch { model.error = goalongUserMessage(error) } }
     private func importResult() { chooseFile { model.importResult($0) } }
     private func openSaved() { chooseFile({ url in
         model.open(url)
@@ -329,7 +439,7 @@ struct GoalongProfileStudio: View {
                 model.invalidate()
                 for var e in input.evidence { e.id = "e\(model.evidence.count + 1)"; model.evidence.append(e); model.selectedEvidence.insert(e.id) }
                 model.status = "Preuves ajoutées localement. Vérifiez les dates et préparez le prompt pour appliquer vos règles."
-            } catch { model.error = error.localizedDescription }
+            } catch { model.error = goalongUserMessage(error) }
         }
     }
 }

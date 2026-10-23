@@ -41,6 +41,24 @@ final class GoalongActivityCheckpointTests: XCTestCase {
         GoalongActivityDayStore(root: root).loadResumable(day: day, now: now ?? end, calendar: calendar)
     }
 
+    func testDayKeyAndJournalLookupAreGregorianUnderNonGregorianCalendars() throws {
+        let zone = TimeZone(identifier: "Europe/Paris")!
+        var greg = Calendar(identifier: .gregorian); greg.timeZone = zone
+        let instant = greg.date(from: .init(year: 2026, month: 10, day: 15, hour: 12))!
+        try fixture { root, _ in
+            try Data().write(to: root.appendingPathComponent("events/2026-10-15.jsonl"))
+            try Data().write(to: root.appendingPathComponent("events/2026-10-14.jsonl"))
+            for identifier in [Calendar.Identifier.buddhist, .japanese] {
+                var cal = Calendar(identifier: identifier); cal.timeZone = zone
+                XCTAssertEqual(GoalongActivityDayStore.dayKey(instant, calendar: cal), "2026-10-15")
+                let store = GoalongActivityDayStore(root: root)
+                XCTAssertNotEqual(store.journalRevision(day: instant, calendar: cal), "missing")
+                let days = try store.journalDays(before: greg.date(from: .init(year: 2026, month: 10, day: 16))!, calendar: cal)
+                XCTAssertEqual(days.map { GoalongActivityDayStore.dayKey($0, calendar: greg) }, ["2026-10-14", "2026-10-15"])
+            }
+        }
+    }
+
     func testRelaunchReadsOnlyAppendedLinesAndPreservesEveryMeasurement() throws {
         try fixture { root, journal in
             try bytes(rows()).write(to: journal)

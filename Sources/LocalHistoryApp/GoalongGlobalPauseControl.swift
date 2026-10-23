@@ -2,6 +2,12 @@
 import SwiftUI
 import LocalHistoryCore
 
+/// One wording for the global pause, shared by the window and the menu bar.
+enum GoalongGlobalPauseText {
+    static let resume = "Reprendre tout le suivi"
+    static let failureTitle = "Pause non modifiée"
+}
+
 struct GoalongGlobalPauseControl: View {
     @ObservedObject var model: DashboardViewModel
     var compact = false
@@ -14,7 +20,7 @@ struct GoalongGlobalPauseControl: View {
                 if pause.blocksActivity { changePause(false) }
                 else { confirming = true }
             } label: {
-                Label(pause.blocksActivity ? "Reprendre le suivi" : "Tout suspendre…",
+                Label(pause.blocksActivity ? GoalongGlobalPauseText.resume : "Tout suspendre…",
                       systemImage: pause.blocksActivity ? "play.circle" : "pause.circle")
                     .font(.system(size: 12, weight: .medium))
                     .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
@@ -34,7 +40,7 @@ struct GoalongGlobalPauseControl: View {
         } message: {
             Text("L’historique, les analyses et les envois seront suspendus jusqu’à votre reprise. Pour une pause détente sans trou dans l’historique, utilisez la pause de surveillance.")
         }
-        .alert("Arrêt non modifié", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+        .alert(GoalongGlobalPauseText.failureTitle, isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("Fermer", role: .cancel) {}
         } message: { Text(error ?? "") }
     }
@@ -56,9 +62,11 @@ struct GoalongGlobalPauseBanner: View {
                         Text("Historique suspendu · confidentialité").font(.system(size: 13, weight: .semibold))
                         Text(pause.invalid ? "Réglage illisible : reprise bloquée par sécurité." : "Tout le suivi est arrêté, pas seulement la surveillance. Reprenez-le pour enregistrer à nouveau.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    GoalongGlobalPauseControl(model: model, compact: true).frame(width: 170)
+                    // The action keeps its whole name: the text beside it wraps instead.
+                    GoalongGlobalPauseControl(model: model, compact: true).fixedSize()
                 }.padding(14).background(LHTheme.cardBackground)
                 Divider()
             }

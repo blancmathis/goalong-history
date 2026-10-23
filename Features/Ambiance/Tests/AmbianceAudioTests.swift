@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import XCTest
 @testable import Ambiance
@@ -37,5 +38,40 @@ final class AmbianceAudioTests: XCTestCase {
         if case .error = controller.state {} else { XCTFail("Invalid audio must fail honestly") }
         XCTAssertFalse(controller.diagnostics.engineRunning)
         XCTAssertFalse(controller.diagnostics.runtimeCreated)
+    }
+    @MainActor func testOutputConfigurationChangeNotifiesOnlyWhilePlaying() throws {
+        guard ProcessInfo.processInfo.environment["GOALONG_AMBIANCE_DEVICE_TESTS"] == "1" else {
+            throw XCTSkip("Explicit device playback required")
+        }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("ambiance-config-\(UUID()).caf")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+        do {
+            let writer = try AVAudioFile(forWriting: file, settings: format.settings)
+            let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_410))
+            buffer.frameLength = 4_410
+            try writer.write(from: buffer)
+        }
+        var calls = 0
+        let output = try AmbianceAudioOutput(fileURL: file, looping: true) {}
+        output.interrupted = { calls += 1 }
+        do { try output.start(volume: 0) } catch { throw XCTSkip("No audio output device: \(error)") }
+        let engine = try XCTUnwrap(output.engineForTesting)
+        NotificationCenter.default.post(name: AmbianceAudioOutput.configurationChangeForTesting, object: engine)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(calls, 1)
+        output.stop()
+        NotificationCenter.default.post(name: AmbianceAudioOutput.configurationChangeForTesting, object: engine)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(calls, 1)
+    }
+    @MainActor func testInterruptionOutsidePlaybackChangesNothing() throws {
+        let name = "goalong.ambiance.interrupt.\(UUID())", defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let settings = AmbianceSettings(defaults: defaults); settings.isEnabled = true
+        let support = FileManager.default.temporaryDirectory.appendingPathComponent("unused-\(UUID())")
+        let controller = try XCTUnwrap(AmbianceModule(settings: settings) { support }.controller)
+        controller.outputInterrupted()
+        XCTAssertEqual(controller.state, .idle)
     }
 }

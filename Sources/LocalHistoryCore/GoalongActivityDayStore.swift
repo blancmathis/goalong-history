@@ -6,9 +6,15 @@ import Darwin
 /// Bounded, content-free foreground days. Raw journals remain authoritative while present.
 public struct GoalongActivityDayStore: Sendable {
     public static let schema = "goalong.activity-day.v1"
+    /// Hidden temporary name prefix used by `writePrivateFile` before its atomic rename.
+    public static let temporaryPrefix = ".activity-"
     public static let directoryName = "activity-days"
     public static let maximumSegments = 20_000
     public static let maximumBytes = 2 * 1_024 * 1_024
+    /// Content-free trace that retention expired this day's journal without leaving a summary.
+    public static let purgeMarkerSuffix = ".purged"
+    /// Files that share the day summaries' retention: the summary and the marker of a day erased without one.
+    public static let summaryRetentionSuffixes: Set<String> = [".json", purgeMarkerSuffix]
     public let root: URL
     public init(root: URL) { self.root = root }
 
@@ -32,7 +38,7 @@ public struct GoalongActivityDayStore: Sendable {
     public enum Failure: Error { case unsafePath, invalidSummary, sourceChanged, unavailable }
 
     public static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let f = DateFormatter(); f.calendar = calendar; f.timeZone = calendar.timeZone
+        let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.timeZone = calendar.timeZone
         f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
         return f.string(from: date)
     }
@@ -96,14 +102,38 @@ public struct GoalongActivityDayStore: Sendable {
     }
 
     public func read(day: Date, sourceRevision: String? = nil, calendar: Calendar = .current) throws -> GoalongLocalAnalytics.Day {
+        try readSummary(day: day, sourceRevision: sourceRevision, calendar: calendar).day
+    }
+
+    /// True when the saved summary of this date is valid but was written in another time zone.
+    /// Such a summary is the settled account of the day: it is never replaced by a recount.
+    public func hasForeignTimeZoneSummary(day: Date, calendar: Calendar = .current) -> Bool {
+        (try? readSummary(day: day, sourceRevision: nil, calendar: calendar))?.foreign == true
+    }
+
+    private func readSummary(day: Date, sourceRevision: String?, calendar: Calendar) throws -> (day: GoalongLocalAnalytics.Day, foreign: Bool) {
         let key = Self.dayKey(day, calendar: calendar)
         let bytes = try readPrivateFile(name: key + ".json", maximumBytes: Self.maximumBytes)
         let e = try JSONDecoder().decode(Envelope.self, from: bytes)
-        let start = calendar.startOfDay(for: day)
-        let end = calendar.date(byAdding: .day, value: 1, to: start)!
+        // A summary written in another time zone describes the same date in that zone. Without
+        // a journal it is still the only account of the day: validate it in its own zone, then
+        // place it on this zone's date. With a journal, the day is recounted in this zone.
+        var zone = calendar
+        let foreign = e.timeZone != calendar.timeZone.identifier
+        let start: Date
+        if foreign {
+            guard sourceRevision == nil, let timeZone = TimeZone(identifier: e.timeZone) else { throw Failure.invalidSummary }
+            zone.timeZone = timeZone
+            let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.timeZone = timeZone
+            f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
+            guard let parsed = f.date(from: key) else { throw Failure.invalidSummary }
+            start = zone.startOfDay(for: parsed)
+        } else {
+            start = calendar.startOfDay(for: day)
+        }
+        guard let end = zone.date(byAdding: .day, value: 1, to: start) else { throw Failure.invalidSummary }
         // Without a journal, a summary from an older method is still the only account of the day.
         guard e.schema == Self.schema, e.method == GoalongLocalAnalytics.method || sourceRevision == nil,
-              e.timeZone == calendar.timeZone.identifier,
               e.date == key, e.start == start, e.end == end, e.state == .ready, e.eventCount > 0,
               sourceRevision.map({ Self.revision(e.sourceRevision, describes: $0, timeZone: calendar.timeZone.identifier) }) ?? true,
               !e.sourceRevision.isEmpty, e.sourceRevision.utf8.count <= 1024,
@@ -144,7 +174,7 @@ public struct GoalongActivityDayStore: Sendable {
               first >= start, last <= end, first <= last else { throw Failure.invalidSummary }
         var previousEnd = start
         for hour in e.breakdown.hours {
-            guard let boundary = calendar.dateInterval(of: .hour, for: hour.start),
+            guard let boundary = zone.dateInterval(of: .hour, for: hour.start),
                   boundary.start == hour.start, boundary.end == hour.end, hour.start >= previousEnd else { throw Failure.invalidSummary }
             let active = segments.filter { $0.kind.isActive }.reduce(0.0) {
                 $0 + max(0, min($1.end, hour.end).timeIntervalSince(max($1.start, hour.start)))
@@ -152,7 +182,131 @@ public struct GoalongActivityDayStore: Sendable {
             guard active == hour.totalSeconds else { throw Failure.invalidSummary }
             previousEnd = hour.end
         }
-        return result
+        guard foreign else { return (result, false) }
+        // Same wall-clock day, moved onto this zone's date so pages match it to the selected day.
+        // Each instant keeps its wall-clock time (15:00 in Paris shows at 15:00 here), also after
+        // a clock change in either zone. A repeated hour overlaps itself: active time wins, then
+        // the first pass, and its bilan is capped to match. A skipped hour, or this day's extra
+        // hour, is marked as not recorded.
+        // The saved summary itself stays unchanged.
+        let localStart = calendar.startOfDay(for: day)
+        guard let localEnd = calendar.date(byAdding: .day, value: 1, to: localStart), localEnd > localStart else { throw Failure.invalidSummary }
+        let mapping = WallClockMapping(origin: zone.timeZone, start: start, end: end,
+                                       local: calendar.timeZone, localStart: localStart, localEnd: localEnd)
+        let moved = mapping.segments(segments)
+        var hourIndex: [Date: Int] = [:], hours: [GoalongActivityBreakdown.Hour] = []
+        for hour in e.breakdown.hours {
+            guard let range = mapping.range(hour.start, hour.end) else { continue }
+            if let index = hourIndex[range.from] {
+                hours[index] = .init(start: hours[index].start, end: max(hours[index].end, range.to),
+                    secondsByMode: hours[index].secondsByMode.merging(hour.secondsByMode, uniquingKeysWith: +))
+            } else {
+                hourIndex[range.from] = hours.count
+                hours.append(.init(start: range.from, end: range.to, secondsByMode: hour.secondsByMode))
+            }
+        }
+        hours.sort { $0.start < $1.start }
+        // Overlapping passes keep one segment each instant, but their hours add up: an hour may
+        // not hold more than the active time its moved segments show (each mode in proportion).
+        hours = hours.map { hour in
+            let active = moved.filter { $0.kind.isActive }.reduce(0.0) {
+                $0 + max(0, min($1.end, hour.end).timeIntervalSince(max($1.start, hour.start)))
+            }
+            let total = hour.totalSeconds
+            guard total > active else { return hour }
+            let ratio = total > 0 ? active / total : 0
+            return .init(start: hour.start, end: hour.end, secondsByMode: hour.secondsByMode.mapValues { $0 * ratio })
+        }
+        let movedFirst = mapping.point(first), movedLast = mapping.point(last)
+        let movedDay = GoalongLocalAnalytics.Day(date: localStart, end: localEnd, state: .ready, segments: moved,
+            eventCount: e.eventCount, classifierVersions: Set(e.classifierVersions), origin: .summary, hasDetailedSource: false,
+            firstObservation: min(movedFirst, movedLast), lastObservation: max(movedFirst, movedLast),
+            recordedBreakdown: GoalongActivityBreakdown(hours: hours))
+        return (movedDay, true)
+    }
+
+    /// Moves instants of one zone's day onto the same wall-clock times of another zone's date.
+    struct WallClockMapping {
+        let origin: TimeZone, start: Date, end: Date
+        let local: TimeZone, localStart: Date, localEnd: Date
+
+        /// Seconds since the origin day's wall-clock midnight, with the offset in force at `reference`.
+        private func wall(_ t: Date, reference: Date) -> TimeInterval {
+            t.timeIntervalSince(start) + Double(origin.secondsFromGMT(for: reference) - origin.secondsFromGMT(for: start))
+        }
+        /// The local instant showing wall time `w`, with the local offset in force at `reference` seconds.
+        private func instant(_ w: TimeInterval, reference: TimeInterval) -> Date {
+            let shift = local.secondsFromGMT(for: localStart.addingTimeInterval(reference)) - local.secondsFromGMT(for: localStart)
+            return localStart.addingTimeInterval(w - Double(shift))
+        }
+        private func transitions(_ zone: TimeZone, from: Date, to: Date) -> [Date] {
+            var output: [Date] = [], cursor = from
+            while output.count < 8, let next = zone.nextDaylightSavingTimeTransition(after: cursor), next < to {
+                output.append(next); cursor = next
+            }
+            return output
+        }
+        private func clamp(_ t: Date) -> Date { min(max(t, localStart), localEnd) }
+
+        func point(_ t: Date) -> Date { clamp(instant(wall(t, reference: t), reference: wall(t, reference: t))) }
+
+        /// Mapped pieces of [from, to), cut at both zones' clock changes so each piece moves by one offset.
+        func pieces(_ from: Date, _ to: Date) -> [(from: Date, to: Date)] {
+            var output: [(from: Date, to: Date)] = []
+            let originCuts = transitions(origin, from: from, to: to)
+            let localCuts = transitions(local, from: localStart, to: localEnd).map { $0.timeIntervalSince(localStart) }
+            for (a, b) in zip([from] + originCuts, originCuts + [to]) where b > a {
+                let w1 = wall(a, reference: a), w2 = wall(b, reference: a)
+                let inside = localCuts.filter { $0 > w1 && $0 < w2 }
+                for (x, y) in zip([w1] + inside, inside + [w2]) where y > x {
+                    let mappedFrom = clamp(instant(x, reference: x)), mappedTo = clamp(instant(y, reference: x))
+                    if mappedTo > mappedFrom { output.append((mappedFrom, mappedTo)) }
+                }
+            }
+            return output
+        }
+
+        /// One continuous local interval for an origin hour, or nil when it falls outside this date.
+        func range(_ from: Date, _ to: Date) -> (from: Date, to: Date)? {
+            let parts = pieces(from, to)
+            guard let first = parts.first, let last = parts.last else { return nil }
+            return (first.from, max(first.to, last.to))
+        }
+
+        func segments(_ source: [GoalongLocalAnalytics.Segment]) -> [GoalongLocalAnalytics.Segment] {
+            typealias Segment = GoalongLocalAnalytics.Segment
+            struct Piece { let from: Date, to: Date, rank: Int, order: Int, source: Int, segment: Segment }
+            var all: [Piece] = []
+            for (index, segment) in source.enumerated() {
+                let rank = segment.kind.isActive ? 2 : segment.kind == .unobserved ? 0 : 1
+                for part in pieces(segment.start, segment.end) {
+                    all.append(.init(from: part.from, to: part.to, rank: rank, order: all.count, source: index, segment: segment))
+                }
+            }
+            func piece(_ s: Segment, _ from: Date, _ to: Date) -> Segment {
+                .init(start: from, end: to, kind: s.kind, application: s.application, bundleIdentifier: s.bundleIdentifier,
+                      host: s.host, contextKey: s.contextKey, coverageReason: s.coverageReason)
+            }
+            let missing = Segment(start: localStart, end: localEnd, kind: .unobserved, application: nil, bundleIdentifier: nil,
+                                  host: nil, contextKey: nil, coverageReason: .notRecorded)
+            let bounds = Array(Set(all.flatMap { [$0.from, $0.to] } + [localStart, localEnd])).sorted()
+            let byStart = all.sorted { ($0.from, $0.order) < ($1.from, $1.order) }
+            var open: [Piece] = [], next = 0, output: [Segment] = [], lastSource = -1
+            for (a, b) in zip(bounds, bounds.dropFirst()) {
+                while next < byStart.count, byStart[next].from <= a { open.append(byStart[next]); next += 1 }
+                open.removeAll { $0.to <= a }
+                let best = open.max { ($0.rank, -$0.order) < ($1.rank, -$1.order) }
+                // Pieces of one source segment, cut at a clock change, join again when adjacent.
+                let source = best?.source ?? -2
+                if source == lastSource, let previous = output.last, previous.end == a {
+                    output[output.count - 1] = piece(previous, previous.start, b)
+                } else {
+                    output.append(piece(best?.segment ?? missing, a, b))
+                }
+                lastSource = source
+            }
+            return output
+        }
     }
 
     public func write(_ day: GoalongLocalAnalytics.Day, sourceRevision: String, now: Date = Date(), calendar: Calendar = .current) throws {
@@ -183,11 +337,11 @@ public struct GoalongActivityDayStore: Sendable {
     }
 
     package func writePrivateFile(_ bytes: Data, name: String) throws {
-        guard name.range(of: #"^\d{4}-\d{2}-\d{2}(\.json|\.resume\.plist)$"#, options: .regularExpression) != nil else {
+        guard name.range(of: #"^\d{4}-\d{2}-\d{2}(\.json|\.resume\.plist|\.purged)$"#, options: .regularExpression) != nil else {
             throw Failure.unsafePath
         }
         let fd = try directory(create: true); defer { close(fd) }
-        let temporary = ".activity-" + UUID().uuidString
+        let temporary = Self.temporaryPrefix + UUID().uuidString
         var existing = stat()
         let status = fstatat(fd, name, &existing, AT_SYMLINK_NOFOLLOW)
         guard status != 0 ? errno == ENOENT : (existing.st_mode & S_IFMT == S_IFREG && existing.st_nlink == 1) else { throw Failure.unsafePath }
@@ -205,18 +359,61 @@ public struct GoalongActivityDayStore: Sendable {
         guard fsync(file) == 0, renameat(fd, temporary, fd, name) == 0, fsync(fd) == 0 else { throw Failure.unavailable }
     }
 
-    /// Writes only if the journal is unchanged across the full read. A failed save never permits purge.
-    public func preserveBeforePurge(day: Date, now: Date = Date(), calendar: Calendar = .current) throws {
+    /// What a journal leaves behind before retention deletes it.
+    public enum Preservation: Equatable, Sendable {
+        /// A valid summary of the day is on disk.
+        case summarized
+        /// The journal holds no activity evidence (only health or permission rows): nothing to keep.
+        case nothingToSummarize
+        /// The journal stayed unchanged but its content cannot be read completely (corrupt or
+        /// oversized line, evidence budget). Its day has no summary; retention still applies.
+        case unreadable
+    }
+
+    /// Writes only if the journal is unchanged across the full read. A failed save, a source that
+    /// changes during the read or incomplete access to events/ never permits purge; a day with
+    /// nothing to summarize, or a stable journal with a content defect, does (the retention
+    /// policy still applies).
+    @discardableResult
+    public func preserveBeforePurge(day: Date, now: Date = Date(), calendar: Calendar = .current) throws -> Preservation {
         let revision = sourceRevision(day: day, calendar: calendar)
-        if (try? read(day: day, sourceRevision: revision, calendar: calendar)) != nil {
+        if (try? read(day: day, sourceRevision: revision, calendar: calendar)) != nil || hasForeignTimeZoneSummary(day: day, calendar: calendar) {
             guard revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
-            return
+            return .summarized
         }
-        let value = GoalongLocalAnalytics.load(root: root, day: day, now: now, calendar: calendar)
-        guard value.state == .ready, revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
+        let (value, defect) = GoalongLocalAnalytics.loadReportingDefect(root: root, day: day, now: now, calendar: calendar)
+        guard revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
+        switch value.state {
+        case .noSource: markPurgedWithoutSummary(day: day, calendar: calendar); return .nothingToSummarize
+        // Only a defect in the journals' own content is permanent. Incomplete access to events/
+        // (a linked or foreign entry, a listing that changed, a cancelled read) keeps the journal.
+        case .incomplete:
+            guard defect == .content else { throw Failure.sourceChanged }
+            markPurgedWithoutSummary(day: day, calendar: calendar); return .unreadable
+        case .ready: break
+        }
         try write(value, sourceRevision: revision, now: now, calendar: calendar)
         _ = try read(day: day, sourceRevision: revision, calendar: calendar)
         guard revision == sourceRevision(day: day, calendar: calendar) else { throw Failure.sourceChanged }
+        return .summarized
+    }
+
+    /// Best effort: without the marker the day later reads as « no data » instead of
+    /// « erased without summary »; it never blocks the purge itself.
+    private func markPurgedWithoutSummary(day: Date, calendar: Calendar) {
+        try? writePrivateFile(Data("purged\n".utf8), name: Self.dayKey(day, calendar: calendar) + Self.purgeMarkerSuffix)
+    }
+
+    /// A day without journal was really erased only if retention left a trace of it: its marker,
+    /// or a summary file that can no longer be read. A day never recorded has neither.
+    private func hasPurgeTrace(day: Date, calendar: Calendar) -> Bool {
+        let key = Self.dayKey(day, calendar: calendar)
+        guard let fd = try? directory(create: false) else { return false }
+        defer { close(fd) }
+        return [Self.purgeMarkerSuffix, ".json"].contains { suffix in
+            var info = stat()
+            return fstatat(fd, key + suffix, &info, AT_SYMLINK_NOFOLLOW) == 0 && info.st_mode & S_IFMT == S_IFREG
+        }
     }
 
     public func load(day: Date, now: Date = Date(), calendar: Calendar = .current, retentionDays: Int? = 30, summaryRetentionDays: Int? = nil,
@@ -234,7 +431,8 @@ public struct GoalongActivityDayStore: Sendable {
         var value = loadResumable(day: start, now: now, calendar: calendar,
             retentionDays: retentionDays, allowsCheckpoints: allowsCheckpoints, shouldContinue: shouldContinue).day
         if value.state == .noSource, absent, let days = retentionDays, days > 0,
-           let cutoff = calendar.date(byAdding: .day, value: -days, to: now), start < calendar.startOfDay(for: cutoff) {
+           let cutoff = calendar.date(byAdding: .day, value: -days, to: now), start < calendar.startOfDay(for: cutoff),
+           hasPurgeTrace(day: start, calendar: calendar) {
             value.dayReason = .purgedWithoutSummary
             value = .init(date: value.date, end: value.end, state: value.state, segments: value.segments.map {
                 var segment = $0; segment.coverageReason = .purgedWithoutSummary; return segment
@@ -243,7 +441,8 @@ public struct GoalongActivityDayStore: Sendable {
         value.hasDetailedSource = !absent
         if past, value.state == .ready, Self.isSettled(start, now: now, calendar: calendar), shouldContinue(),
            retains(day: start, now: now, days: summaryRetentionDays, calendar: calendar),
-           revision == sourceRevision(day: start, calendar: calendar) {
+           revision == sourceRevision(day: start, calendar: calendar),
+           !hasForeignTimeZoneSummary(day: start, calendar: calendar) {
             try? write(value, sourceRevision: revision, now: now, calendar: calendar)
         }
         return value
@@ -286,7 +485,7 @@ public struct GoalongActivityDayStore: Sendable {
         guard lstat(folder.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { throw Failure.unsafePath }
         let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
         guard names.count <= 20_000 else { throw Failure.unavailable }
-        let f = DateFormatter(); f.calendar = calendar; f.timeZone = calendar.timeZone
+        let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.timeZone = calendar.timeZone
         f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
         return names.compactMap { name in
             guard name.hasSuffix(".jsonl"), name.count == 16 else { return nil }
@@ -306,7 +505,8 @@ public struct GoalongActivityDayStore: Sendable {
             guard Self.isSettled(day, now: now, calendar: calendar),
                   retains(day: day, now: now, days: summaryRetentionDays, calendar: calendar) else { continue }
             let revision = sourceRevision(day: day, calendar: calendar)
-            if (try? read(day: day, sourceRevision: revision, calendar: calendar)) != nil { continue }
+            if (try? read(day: day, sourceRevision: revision, calendar: calendar)) != nil
+                || hasForeignTimeZoneSummary(day: day, calendar: calendar) { continue }
             let value = GoalongLocalAnalytics.load(root: root, day: day, now: now, calendar: calendar,
                 shouldContinue: shouldContinue)
             guard shouldContinue() else { break }

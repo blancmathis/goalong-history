@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import LocalHistoryCore
 
 public struct GoalongSitePairing: Sendable {
     public let origin: String
@@ -35,6 +36,7 @@ public struct GoalongSitePairing: Sendable {
     }
 
     public func exchange() throws -> Data {
+        try GoalongDevServerDisabledError.check()
         let delegate = PairingResponse()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpShouldSetCookies = false
@@ -53,7 +55,7 @@ public struct GoalongSitePairing: Sendable {
 
     /// Older websites can still pair, but cannot use account-bound navigation until re-paired.
     public static func accountID(response: Data) throws -> String? {
-        guard response.count <= 8192, let object = try JSONSerialization.jsonObject(with: response) as? [String: Any] else {
+        guard response.count <= 8192, let object = (try? JSONSerialization.jsonObject(with: response)) as? [String: Any] else {
             throw GoalongSiteExportError.invalid("Réponse de connexion invalide.")
         }
         guard let value = object["accountId"] else { return nil }
@@ -65,7 +67,7 @@ public struct GoalongSitePairing: Sendable {
 
     public func save(response: Data, directory: URL) throws -> URL {
         guard response.count <= 8192,
-              let object = try JSONSerialization.jsonObject(with: response) as? [String: Any],
+              let object = (try? JSONSerialization.jsonObject(with: response)) as? [String: Any],
               object["origin"] as? String == origin,
               object["scope"] as? String == "upload:private",
               let token = object["token"] as? String,
@@ -103,11 +105,35 @@ public struct GoalongSitePairing: Sendable {
     }
 }
 
-private final class PairingResponse: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+extension GoalongSitePairing {
+    /// Deletes a token file that pairing created itself (`<UUID>.token` directly inside `directory`).
+    /// A file the user picked by hand, a symlink, or anything else is never touched.
+    @discardableResult
+    public static func discardManagedToken(path: String, directory: URL) -> Bool {
+        guard !path.isEmpty else { return false }
+        let file = URL(fileURLWithPath: path)
+        let name = file.lastPathComponent
+        guard name.range(of: "^[0-9A-F-]{36}\\.token$", options: .regularExpression) != nil,
+              file.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL.path
+                == directory.resolvingSymlinksInPath().standardizedFileURL.path else { return false }
+        let dir = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard dir >= 0 else { return false }
+        defer { close(dir) }
+        var metadata = stat()
+        guard fstat(dir, &metadata) == 0, metadata.st_uid == getuid(), metadata.st_mode & 0o777 == 0o700 else { return false }
+        var entry = stat()
+        guard fstatat(dir, name, &entry, AT_SYMLINK_NOFOLLOW) == 0,
+              entry.st_mode & S_IFMT == S_IFREG, entry.st_uid == getuid() else { return false }
+        return unlinkat(dir, name, 0) == 0
+    }
+}
+
+final class PairingResponse: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     let finished = DispatchSemaphore(value: 0)
     private var data = Data()
     private var status = 0
     private var failed = false
+    private var transportError: URLError?
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         failed = true
         completionHandler(nil)
@@ -122,13 +148,27 @@ private final class PairingResponse: NSObject, URLSessionDataDelegate, @unchecke
         data.append(chunk)
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if error != nil { failed = true }
+        if let error { failed = true; transportError = error as? URLError ?? URLError(.unknown) }
         finished.signal()
     }
     func result() throws -> Data {
         guard !failed, (200...299).contains(status) else {
-            throw GoalongSiteExportError.invalid("La liaison n’a pas été confirmée. Le lien peut avoir expiré ou déjà été utilisé. Relancez la connexion depuis Goalong.")
+            throw GoalongSiteExportError.invalid(Self.failureMessage(status: status, transportError: transportError))
         }
         return data
+    }
+
+    /// Keeps the real cause: a network or server problem must not tell the user to regenerate a valid link.
+    static func failureMessage(status: Int, transportError: URLError?) -> String {
+        if let error = transportError, error.code != .cancelled {
+            return "Pas de connexion au site. Réessayez avec le même lien."
+        }
+        if status >= 500 || status == 429 {
+            return "Le site ne répond pas pour le moment. Réessayez avec le même lien dans quelques instants."
+        }
+        if (400...499).contains(status) {
+            return "La liaison n’a pas été confirmée. Le lien peut avoir expiré ou déjà été utilisé. Relancez la connexion depuis Goalong."
+        }
+        return "La liaison n’a pas été confirmée. Relancez la connexion depuis Goalong."
     }
 }

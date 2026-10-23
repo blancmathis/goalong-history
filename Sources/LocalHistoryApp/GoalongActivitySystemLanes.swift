@@ -381,10 +381,10 @@ struct GoalongDayNoteSheet: View {
                 if let problem { Text(problem).font(.system(size: 12)).foregroundStyle(LHTheme.warning).lineLimit(2) }
                 Spacer(minLength: 8)
                 if !initial.isEmpty {
-                    Button("Supprimer", role: .destructive) { attempt { try onDelete() } }.buttonStyle(LHQuietButtonStyle())
+                    Button("Supprimer", role: .destructive) { attempt(failure: "La note n’a pas pu être supprimée.") { try onDelete() } }.buttonStyle(LHQuietButtonStyle())
                 }
                 Button("Annuler") { dismiss() }.buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
-                Button("Enregistrer") { attempt { try onSave(trimmed) } }.buttonStyle(LHPrimaryButtonStyle())
+                Button("Enregistrer") { attempt(failure: "La note n’a pas pu être enregistrée.") { try onSave(trimmed) } }.buttonStyle(LHPrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .disabled(trimmed.isEmpty || trimmed.count > Self.limit || trimmed == initial)
             }
@@ -392,8 +392,9 @@ struct GoalongDayNoteSheet: View {
         .padding(24).frame(width: 480)
     }
 
-    private func attempt(_ change: () throws -> Void) {
-        do { try change(); dismiss() } catch { problem = "La note n’a pas pu être enregistrée." }
+    private func attempt(failure: String, _ change: () throws -> Void) {
+        problem = nil
+        do { try change(); dismiss() } catch { problem = failure }
     }
 }
 #endif

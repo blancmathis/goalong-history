@@ -265,6 +265,32 @@
             wait(for: [fallbackPublished], timeout: 2)
         }
 
+        func testActivityPageModelShowsFrenchMessagesForCycleAndRefreshErrors() {
+            // B06-R2-01 / B06-R2-04: the Activité page showed English error text.
+            let day = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_777_000_000))
+            let errors: [(Error, String)] = [
+                (ActivityAnalysisCycleError.sourceChangedDuringRead,
+                 ActivityAnalysisCycleError.sourceChangedDuringRead.frenchDescription),
+                (ActivityAnalysisRefreshError.invalidatedByHistoryClear,
+                 "Actualisation annulée : l’historique local a été effacé."),
+            ]
+            for (error, expected) in errors {
+                let runtime = ControlledRefreshRuntime()
+                let model = ActivityAnalysisPageModel(
+                    refreshRuntime: runtime, storedAnalysisLoader: { _ in Self.analysis(for: day) })
+                model.refresh(day: day, forceRebuild: true)
+                runtime.completeRequest(at: 0, with: .failure(error))
+                let published = expectation(description: "French error published")
+                DispatchQueue.main.async {
+                    DispatchQueue.main.async {
+                        XCTAssertEqual(model.errorMessage, expected)
+                        published.fulfill()
+                    }
+                }
+                wait(for: [published], timeout: 2)
+            }
+        }
+
         func testComputerHistoryPageModelVerifiesStoredMemoryAndReportsAbsentSource() {
             let runtime = ControlledRefreshRuntime()
             let day = Calendar.current.startOfDay(
@@ -333,11 +359,9 @@
             )
             DispatchQueue.main.async {
                 XCTAssertEqual(model.memory, stored)
-                XCTAssertEqual(
-                    model.sourceStatus,
-                    .inaccessible(error.localizedDescription)
-                )
-                XCTAssertEqual(model.errorMessage, error.localizedDescription)
+                // B06-R2-02: the technical detail keeps the real cause.
+                XCTAssertEqual(model.sourceStatus, .inaccessible("Permission denied"))
+                XCTAssertEqual(model.errorMessage, error.frenchDescription)
                 XCTAssertFalse(model.isLoading)
                 inaccessiblePublished.fulfill()
             }

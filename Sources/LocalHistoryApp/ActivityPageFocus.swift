@@ -32,7 +32,7 @@
         func focusBlockRow(_ block: ActivityFocusBlock) -> some View {
             let expanded = expandedBlockID == block.id
             return Button {
-                withAnimation(.easeInOut(duration: 0.16)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
                     expandedBlockID = expanded ? nil : block.id
                 }
             } label: {

@@ -306,8 +306,10 @@ public struct RecorderConfig: Codable, Equatable {
         guard let bundleIdentifier else {
             return includedBundleIdentifiers?.isEmpty != false
         }
+        // Excluding one Goalong copy excludes the family (installed Goalong and Goalong Dev).
+        let goalong = GoalongBundleIdentity.isGoalong(bundleIdentifier)
         let excluded = excludedBundleIdentifiers.contains {
-            $0.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
+            $0.caseInsensitiveCompare(bundleIdentifier) == .orderedSame || (goalong && GoalongBundleIdentity.isGoalong($0))
         }
         guard !excluded else { return false }
         guard let allowed = includedBundleIdentifiers, !allowed.isEmpty else { return true }

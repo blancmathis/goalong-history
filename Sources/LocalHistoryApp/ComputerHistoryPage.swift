@@ -49,6 +49,9 @@
             qos: .userInitiated
         )
         private var refreshRequestID = UUID()
+        /// Refreshes asked and not yet published, all pages together (main thread). The gallery waits for 0 before
+        /// it captures the page, so « Vérification de la journée » never lands in an image by chance.
+        private(set) static var refreshesInFlight = 0
 
         init(
             store: ComputerHistoryStore = ComputerHistoryStore(),
@@ -65,6 +68,7 @@
             let normalized = Calendar.current.startOfDay(for: day)
             let requestID = UUID()
             refreshRequestID = requestID
+            Self.refreshesInFlight += 1
             errorMessage = nil
             isLoading = true
             sourceStatus = .checking
@@ -102,6 +106,7 @@
                         memory = invalidated ? nil : load(normalized) ?? retained.value
                     }
                     DispatchQueue.main.async { [weak self] in
+                        Self.refreshesInFlight -= 1
                         guard let self, self.refreshRequestID == requestID else { return }
                         self.memory = memory
                         self.isAnalysisPartial = Self.exceededAnalysisCeiling(result)
@@ -112,7 +117,7 @@
                             self.sourceStatus = .available
                         case .failure(let error):
                             self.sourceStatus = invalidated ? .unverified : Self.sourceStatus(for: error)
-                            self.errorMessage = error.localizedDescription
+                            self.errorMessage = Self.displayMessage(for: error)
                         }
                         self.isLoading = false
                     }
@@ -125,6 +130,12 @@
             var value: ComputerHistoryDayMemory?
         }
 
+        static func displayMessage(for error: Error) -> String {
+            if let cycleError = error as? ActivityAnalysisCycleError { return cycleError.frenchDescription }
+            if let refreshError = error as? ActivityAnalysisRefreshError { return refreshError.frenchDescription }
+            return error.localizedDescription
+        }
+
         private static func sourceStatus(for error: Error) -> ComputerHistorySourceStatus {
             guard let cycleError = error as? ActivityAnalysisCycleError else {
                 return .unverified
@@ -132,7 +143,8 @@
             switch cycleError {
             case .sourceInaccessible, .sourceChangedDuringRead, .oversizedJSONLine,
                 .reentrantCycle:
-                return .inaccessible(error.localizedDescription)
+                // « Détails techniques » shows the real cause; errorMessage carries the French sentence.
+                return .inaccessible(cycleError.errorDescription ?? cycleError.frenchDescription)
             case .retainedEvidenceBudgetExceeded:
                 return .available
             }
@@ -239,7 +251,8 @@
         static func build(
             sessions: [ActivitySession],
             day: Date,
-            calendar: Calendar = .current
+            calendar: Calendar = .current,
+            now: Date = Date()
         ) -> [ComputerHistoryTenMinuteGroup] {
             let dayStart = calendar.startOfDay(for: day)
             guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
@@ -249,7 +262,7 @@
             var segmentsByWindow: [Date: [Segment]] = [:]
             for session in sessions {
                 let clippedStart = max(session.start, dayStart)
-                let clippedEnd = min(session.end.addingTimeInterval(30), dayEnd)
+                let clippedEnd = min(session.end.addingTimeInterval(30), dayEnd, max(now, session.end))
                 guard clippedEnd > clippedStart else { continue }
 
                 var windowStart = tenMinuteStart(for: clippedStart, calendar: calendar)
@@ -578,6 +591,32 @@
         }
     }
 
+    /// Pure display strings of the Computer History page, kept testable.
+    enum ComputerHistoryPageCopy {
+        /// French warning shown when the store could not read every retained memory.
+        static func retainedGapMessage(for answer: ComputerHistoryAnswer) -> String? {
+            guard answer.limitations.contains(where: {
+                $0.hasPrefix(ComputerHistoryStore.retainedLoadIncompletePrefix)
+            }) else { return nil }
+            return "Une partie de l’historique local conservé est illisible : seules les mémoires lisibles sont utilisées, une absence de résultat n’est donc pas exhaustive."
+        }
+
+        /// "12 périodes", or "3 sur 12 périodes" while a search filters the timeline.
+        static func periodCountLabel(visible: Int, total: Int, searching: Bool) -> String {
+            let totalLabel = total <= 1 ? "\(total) période" : "\(total) périodes"
+            return searching ? "\(visible) sur \(totalLabel)" : totalLabel
+        }
+
+        /// With an empty timeline, one place explains why. The timeline card does it for a day without
+        /// data; the status card does it when it also offers « Réessayer ».
+        static func timelineExplainsEmptyDay(_ status: ComputerHistorySourceStatus) -> Bool {
+            switch status {
+            case .available, .absent, .checking: return true
+            case .inaccessible, .unverified: return false
+            }
+        }
+    }
+
     struct ComputerHistoryPage: View {
         @ObservedObject var model: ComputerHistoryPageModel
         @StateObject private var timelineModel = ComputerHistoryTimelineModel()
@@ -609,7 +648,7 @@
                 Alert(
                     title: Text("Supprimer cet élément de l’historique ?"),
                     message: Text(
-                        "Goalong retrouve cet élément dans le journal local d’origine, supprime uniquement ses événements exacts et les instantanés liés, puis reconstruit la journée concernée. Les sceaux, reçus, le Temps d’écran et les conversations IA sont conservés."
+                        "Goalong retrouve cet élément dans le journal local d’origine et supprime ses événements exacts et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés ; la journée sera reconstruite. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
                     ),
                     primaryButton: .destructive(Text("Supprimer")) {
                         deleteEpisode(episode)
@@ -695,10 +734,12 @@
                     VStack(alignment: .leading, spacing: 4) {
                         Text(recordingStateTitle)
                             .font(.system(size: 13, weight: .semibold))
-                        Text(recordingSummary)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        if showsRecordingSummary {
+                            Text(recordingSummary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer(minLength: 12)
                     if needsRetry {
@@ -799,6 +840,11 @@
             }
         }
 
+        private var showsRecordingSummary: Bool {
+            isPreparingTimeline || !tenMinuteGroups.isEmpty || model.isAnalysisPartial
+                || !ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
+        }
+
         private var recordingSummary: String {
             let events = snapshot.eventCount.formatted()
             if isPreparingTimeline {
@@ -853,7 +899,11 @@
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     } else {
-                        Text(timelineSearch.isEmpty ? "\(tenMinuteGroups.count) périodes" : "\(visibleTimelineGroups.count) of \(tenMinuteGroups.count) périodes")
+                        Text(ComputerHistoryPageCopy.periodCountLabel(
+                            visible: visibleTimelineGroups.count,
+                            total: tenMinuteGroups.count,
+                            searching: !timelineSearch.isEmpty
+                        ))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -873,7 +923,7 @@
                         Text("Plus ancien d’abord").tag(false)
                     }
                     .labelsHidden()
-                    .frame(width: 150)
+                    .frame(width: 190)
                 }
                 .font(.system(size: 12))
 
@@ -886,17 +936,17 @@
                 LazyVStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Text(
-                            Calendar.current.isDateInToday(day)
+                            GoalongToday.isToday(day)
                                 ? "Aujourd’hui"
                                 : DashboardFormatters.dayTitle.string(from: day)
                         )
                         .font(.system(size: 14, weight: .semibold))
                         Spacer()
-                        Text(snapshot.eventCount == 0
-                            ? "Aucune activité enregistrée"
-                            : "\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                        if snapshot.eventCount > 0 {
+                            Text("\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 17)
@@ -921,11 +971,13 @@
                                 .foregroundStyle(.secondary)
                             Text(emptyTimelineTitle)
                                 .font(.system(size: 14, weight: .semibold))
-                            Text(emptyTimelineMessage)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
+                            if ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus) {
+                                Text(emptyTimelineMessage)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
@@ -978,7 +1030,7 @@
                 return model.memory == nil
                     ? "Aucun journal pour cette date"
                     : "Détails de la journée indisponibles"
-            case .available where Calendar.current.isDateInToday(day):
+            case .available where GoalongToday.isToday(day):
                 return "Aucune activité enregistrée aujourd’hui"
             case .available:
                 return "Aucune activité trouvée"
@@ -999,7 +1051,7 @@
                 return model.memory == nil
                     ? "Aucun historique conservé pour ce jour. Les autres jours sont inchangés."
                     : "Le journal d’origine est absent, mais l’historique conservé n’a pas été supprimé."
-            case .available where Calendar.current.isDateInToday(day):
+            case .available where GoalongToday.isToday(day):
                 return "L’activité apparaît ici lorsque Goalong enregistre une application autorisée."
             case .available:
                 return "Choisissez une autre date. Un historique vide ne prouve pas une absence d’activité."
@@ -1127,7 +1179,7 @@
                             if model.isAnswering {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Label("Ask", systemImage: "arrow.right.circle.fill")
+                                Label("Demander", systemImage: "arrow.right.circle.fill")
                             }
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
@@ -1151,7 +1203,7 @@
                 LHCard(padding: 17) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Label("Answer", systemImage: "sparkles")
+                            Label("Réponse", systemImage: "sparkles")
                                 .font(.system(size: 13, weight: .semibold))
                             Spacer()
                             Button(action: model.clearAnswer) {
@@ -1159,14 +1211,14 @@
                                     .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Effacer la réponse")
+                            .help("Effacer la réponse")
                         }
                         Text(answer.answer)
                             .font(.system(size: 11))
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let retainedGap = answer.limitations.first(where: {
-                            $0.hasPrefix("Historique local conservé loading was incomplete")
-                        }) {
+                        if let retainedGap = ComputerHistoryPageCopy.retainedGapMessage(for: answer) {
                             Label(retainedGap, systemImage: "exclamationmark.triangle.fill")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.orange)
@@ -1714,12 +1766,13 @@
         let openResource: (ComputerHistoryResourceReference) -> Void
         let requestDeletion: () -> Void
         @State private var expanded = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             LHCard(padding: 16) {
                 VStack(alignment: .leading, spacing: 11) {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { expanded.toggle() }
                     } label: {
                         HStack(alignment: .top, spacing: 11) {
                             VStack(alignment: .leading, spacing: 5) {

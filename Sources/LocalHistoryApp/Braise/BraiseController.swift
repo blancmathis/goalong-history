@@ -12,6 +12,8 @@ import ServiceManagement
     @Published private(set) var displayCount = 0
     @Published private(set) var nextEvent = ""
     @Published private(set) var errorMessage: String?
+    /// Set once when unreadable settings were reset at start.
+    @Published private(set) var recoveryNotice: String?
     @Published var shortcutAvailable = false
     @Published private(set) var loginEnabled = false
     @Published private(set) var loginApprovalRequired = false
@@ -28,10 +30,11 @@ import ServiceManagement
     private var saveTask: DispatchWorkItem?
 
     init(store: BraiseStore, gamma: BraiseGammaDriving, runsTimers: Bool = true,
-         clock: @escaping () -> Date = Date.init, calendar: Calendar = .current) throws {
+         clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) throws {
         self.store = store; self.gamma = gamma; self.runsTimers = runsTimers
         self.clock = clock; self.calendar = calendar
-        preferences = try store.load()
+        let loaded = try store.loadRecovering()
+        preferences = loaded.preferences; recoveryNotice = loaded.notice
         gamma.onError = { [weak self] message in
             guard let self, self.running else { return }
             self.preferences.mode = .off; self.preferences.pauseUntil = nil; self.active = false
@@ -57,6 +60,8 @@ import ServiceManagement
     private func observe(_ center: NotificationCenter, names: [Notification.Name]) {
         for name in names {
             let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // The default calendar follows the system zone; drop the cached zone first so evaluate() sees the new one.
+                if name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
                 MainActor.assumeIsolated {
                     guard let self, self.running else { return }
                     self.evaluate(); self.gamma.checkAfterSystemChange()
@@ -79,17 +84,17 @@ import ServiceManagement
     func pause() { update { $0.pauseUntil = clock().addingTimeInterval(15 * 60) } }
     func resume() { update { $0.pauseUntil = nil } }
     func refreshLoginStatus() {
-        loginEnabled = SMAppService.mainApp.status == .enabled
-        loginApprovalRequired = SMAppService.mainApp.status == .requiresApproval
+        let status = SMAppService.mainApp.status
+        loginEnabled = status == .enabled
+        loginApprovalRequired = status == .requiresApproval
     }
     func setLogin(_ enabled: Bool) throws {
-        do {
-            if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-            refreshLoginStatus()
-        } catch {
-            errorMessage = "Le démarrage de Goalong à la connexion n’a pas pu être modifié."
-            refreshLoginStatus(); throw GoalongFocusError.storageFailed
-        }
+        // Same path as Settings and onboarding: consent, preference and lock bookkeeping change together.
+        let manager = LaunchAtLoginManager()
+        let ok = manager.setUserPreference(enabled, surface: .settings)
+        errorMessage = manager.message
+        refreshLoginStatus()
+        if !ok { throw GoalongFocusError.storageFailed }
     }
     func saveRule(_ rule: ScheduleRule) throws {
         guard rule.isValid else { throw GoalongFocusError.invalidArgument }

@@ -33,18 +33,19 @@ import SwiftUI
                     Text("Le filtre rouge, à vos horaires.").foregroundStyle(LHTheme.secondaryText)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(controller.stateLabel).font(.system(size: compact ? 22 : 28, weight: .medium))
+                    Text(controller.stateLabel).font(LHTheme.sectionTitleFont)
                     Text(controller.nextEvent).foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 8) {
                         Button("Rétablir les couleurs") { controller.emergencyOff() }.buttonStyle(LHSecondaryButtonStyle())
                             .accessibilityIdentifier("braise-emergency-off")
                         if controller.isPaused {
-                            Button("Reprendre") { controller.resume() }.buttonStyle(LHQuietButtonStyle())
+                            Button("Reprendre") { controller.resume() }.buttonStyle(LHSecondaryButtonStyle())
                         } else {
-                            Button("Pause 15 min") { controller.pause() }.buttonStyle(LHQuietButtonStyle()).disabled(!controller.active)
+                            Button("Pause 15 min") { controller.pause() }.buttonStyle(LHSecondaryButtonStyle()).disabled(!controller.active)
                         }
                     }
                 }
+                if let notice = controller.recoveryNotice { GoalongNote(notice, tone: .warning).accessibilityIdentifier("braise-recovery") }
                 if let error = controller.errorMessage { GoalongNote(error, tone: .warning).accessibilityIdentifier("braise-error") }
                 LHCard {
                     VStack(alignment: .leading, spacing: 18) {
@@ -64,7 +65,7 @@ import SwiftUI
                             HStack(spacing: 12) {
                                 Button { editingRule = rule } label: {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(rule.hours + (rule.crossesMidnight ? " · lendemain" : "")).monospacedDigit()
+                                        Text(rule.hours + (rule.crossesMidnight ? " · le lendemain" : "")).monospacedDigit()
                                         Text(rule.dayLabel).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                 }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Modifier l’horaire \(rule.hours), \(rule.dayLabel)")
@@ -128,7 +129,7 @@ import SwiftUI
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text(existed ? "Modifier l’horaire" : "Ajouter un horaire").font(.system(size: 22, weight: .semibold))
-            Text("Jours de début").foregroundStyle(LHTheme.secondaryText)
+            Text("Jours de début de la plage").foregroundStyle(LHTheme.secondaryText)
             HStack(spacing: 10) {
                 ForEach(days, id: \.0) { day in
                     Toggle(day.1, isOn: Binding(get: { draft.weekdays.contains(day.0) }, set: { on in
@@ -148,7 +149,7 @@ import SwiftUI
             HStack {
                 if existed { Button("Supprimer", role: .destructive) { controller.deleteRule(draft.id); dismiss() }.buttonStyle(LHQuietButtonStyle()) }
                 Spacer()
-                Button("Annuler") { dismiss() }.buttonStyle(LHQuietButtonStyle()).keyboardShortcut(.cancelAction)
+                Button("Annuler") { dismiss() }.buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
                 Button("Enregistrer") {
                     do { try controller.saveRule(draft); dismiss() } catch { self.error = "Impossible d’ajouter cet horaire (32 plages au maximum)." }
                 }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction).disabled(!draft.isValid)
@@ -157,10 +158,60 @@ import SwiftUI
             .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
     }
     private func time(_ title: String, minute: Binding<Int>) -> some View {
-        DatePicker(title, selection: Binding(get: {
-            Calendar.current.date(bySettingHour: minute.wrappedValue / 60, minute: minute.wrappedValue % 60, second: 0, of: Date()) ?? Date()
-        }, set: { date in minute.wrappedValue = Calendar.current.component(.hour, from: date) * 60 + Calendar.current.component(.minute, from: date) }), displayedComponents: .hourAndMinute)
-            .environment(\.locale, Locale(identifier: "fr_FR"))
+        HStack(spacing: 10) {
+            Text(title)
+            ScheduleTimeField(title: title, minute: minute)
+        }
+    }
+}
+
+/// Editable "HH:mm" field with a 5-minute stepper. Typing "7", "0730" or "7:30" works; invalid text reverts on commit.
+struct ScheduleTimeField: View {
+    let title: String
+    @Binding var minute: Int
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    static func format(_ minute: Int) -> String { String(format: "%02d:%02d", minute / 60, minute % 60) }
+
+    /// Minutes since midnight for "H", "HH", "HHmm", "H:mm", "H h mm"; nil when not a valid time of day.
+    static func parse(_ raw: String) -> Int? {
+        let t = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !t.isEmpty else { return nil }
+        let parts = t.split(whereSeparator: { ":hH. ".contains($0) }).map(String.init).filter { !$0.isEmpty }
+        var hour: Int?, min = 0
+        if parts.count == 1, let n = Int(parts[0]), parts[0].allSatisfy(\.isNumber) {
+            if parts[0].count <= 2 { hour = n }
+            else if parts[0].count <= 4 { hour = n / 100; min = n % 100 }
+        } else if parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]), parts[1].count <= 2 { hour = h; min = m }
+        guard let hour, (0...23).contains(hour), (0...59).contains(min) else { return nil }
+        return hour * 60 + min
+    }
+
+    private func commit() {
+        if let parsed = Self.parse(text) { minute = parsed }
+        text = Self.format(minute)
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField("HH:mm", text: $text)
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.center)
+                .font(.system(size: 13).monospacedDigit())
+                .frame(width: 52)
+                .focused($focused)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 6).fill(LHTheme.cardBackground))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(focused ? Color.accentColor : LHTheme.secondaryText.opacity(0.3)))
+                .accessibilityLabel(title)
+                .onSubmit(commit)
+                .onChange(of: focused) { if !$0 { commit() } }
+            Stepper(title, value: Binding(get: { minute }, set: { minute = (($0 % 1440) + 1440) % 1440 }), in: -5...1445, step: 5)
+                .labelsHidden()
+        }
+        .onAppear { text = Self.format(minute) }
+        .onChange(of: minute) { text = Self.format($0) }
     }
 }
 #endif

@@ -227,6 +227,16 @@ public enum GoalongWorkClassification {
             application = label.application; site = label.host; title = label.title
             verdict = assignment.verdict.rawValue; task = assignment.task
         }
+        init(application: String, site: String?, title: String?, verdict: String, task: String?) {
+            self.application = application; self.site = site; self.title = title; self.verdict = verdict; self.task = task
+        }
+        /// Same bounds and secret redaction as the contexts, so no caller can send a raw example.
+        var normalized: Example {
+            let clip = GoalongWorkClassification.clip
+            return Example(application: clip(application, 80), site: site.map { clip($0, 100) },
+                    title: title.flatMap { ActivitySemanticTextSanitizer.redact($0) }.map { clip($0, GoalongWorkContext.maximumTitleLength) },
+                    verdict: verdict, task: task)
+        }
     }
     public struct Request: Codable, Equatable, Sendable {
         public let schema: String
@@ -299,7 +309,7 @@ public enum GoalongWorkClassification {
         }
         return Request(schema: schema, request_id: UUID().uuidString.lowercased(), date: date,
             definition_revision: definition.revision, contexts: contexts, keys: ids,
-            known_tasks: Array(knownTasks.prefix(maximumKnownTasks)), examples: Array(examples.prefix(maximumExamples)),
+            known_tasks: Array(knownTasks.prefix(maximumKnownTasks)), examples: examples.prefix(maximumExamples).map(\.normalized),
             timeline: timeline(day: day, ids: byKey, verdicts: verdicts, calendar: calendar),
             day_note: dayNote.flatMap { ActivitySemanticTextSanitizer.redact($0) }.map { clip($0, 280) })
     }

@@ -4,6 +4,7 @@
 
     struct ActivityPage: View {
         @ObservedObject var model: DashboardViewModel
+        @Environment(\.accessibilityReduceMotion) var reduceMotion
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @StateObject var analysisModel = ActivityAnalysisPageModel()
         @StateObject var computerHistoryModel = ComputerHistoryPageModel()
@@ -186,6 +187,7 @@
                     .buttonStyle(LHSecondaryButtonStyle())
                     .disabled(analysesLoading)
                     .help(refreshHelp)
+                    .accessibilityLabel("Actualiser")
                 }
             }
         }

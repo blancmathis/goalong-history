@@ -20,6 +20,13 @@ on:
         type: string
         required: false
 
+# Whole runs are serialized. A pending run is replaced only by a newer run, so the
+# newest main commit is always published and a deferred-delta job of an older run
+# can no longer cancel a pending main publication in the job-level writer group.
+concurrency:
+  group: goalong-history-main-publication
+  cancel-in-progress: false
+
 permissions:
   contents: write
   id-token: write
@@ -207,7 +214,8 @@ jobs:
           if [[ "${{ inputs.local_gates }}" == true ]]; then
             python3 scripts/local_deploy_policy.py "$GITHUB_SHA" "$RUNNER_TEMP/source-gates.json"
           else
-            xcrun swift test
+            mkdir -p "$RUNNER_TEMP/goalong-test-home"
+            GOALONG_TEST_HOME="$RUNNER_TEMP/goalong-test-home" CFFIXED_USER_HOME="$RUNNER_TEMP/goalong-test-home" xcrun swift test
           fi
           bash scripts/audit_privacy_boundaries.sh
           bash scripts/test_release_signing_policy.sh
@@ -313,6 +321,11 @@ jobs:
             exit 1
           fi
 
+      - name: Require monotonic authenticated release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/authenticated_release_state.py "$RUNNER_TEMP/previous-public" "dist/Goalong History.app/Contents/Info.plist"
+
       - name: Publish immutable update archive
         env:
           GH_TOKEN: ${{ github.token }}
@@ -331,11 +344,6 @@ jobs:
             dist/Goalong-History-macOS-universal.zip.sha256 \
             dist/security-capabilities.json dist/sbom.spdx.json dist/release-manifest.json \
             ${deltas[@]+"${deltas[@]}"}
-
-      - name: Require monotonic authenticated release state
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/authenticated_release_state.py "$RUNNER_TEMP/previous-public" "dist/Goalong History.app/Contents/Info.plist"
 
       - name: Remove retired rolling-release assets
         env:
@@ -357,6 +365,11 @@ jobs:
 
       - name: Render rolling release notes
         run: python3 scripts/render_rolling_notes.py "${{ steps.version.outputs.value }}" "${{ steps.version.outputs.build }}" "$GITHUB_SHA" "$RUNNER_TEMP/rolling-notes.md"
+
+      - name: Recheck main before the rolling assets and manifest are replaced
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA"
 
       - name: Publish rolling GitHub release
         uses: softprops/action-gh-release@5113cdc90fd4d541c801c55356214017bf5ae34b # v3

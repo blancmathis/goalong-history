@@ -123,6 +123,18 @@ final class PermissionLifecycleTests: XCTestCase {
         XCTAssertEqual(manager.probeCount, 2)
     }
 
+    func testReadyLocalHistoryClearsInputMonitoringRecoveryToo() {
+        XCTAssertEqual(PermissionRecoveryLedger.permissionsProvenWorking(by: .localComputerHistory), [.accessibility, .inputMonitoring])
+        XCTAssertEqual(PermissionRecoveryLedger.permissionsProvenWorking(by: .appleScreenTime), [.fullDiskAccess])
+        XCTAssertEqual(PermissionRecoveryLedger.permissionsProvenWorking(by: .aiConversations), [])
+        let d = defaults(), now = Date()
+        PermissionRecoveryLedger.record(.relaunchPrepared, for: .inputMonitoring, defaults: d, now: now)
+        XCTAssertEqual(PermissionRecoveryLedger.activePermission(defaults: d), .inputMonitoring)
+        PermissionRecoveryLedger.clear(.inputMonitoring, defaults: d)
+        XCTAssertEqual(PermissionRecoveryLedger.load(.inputMonitoring, defaults: d, now: now), .init())
+        XCTAssertNil(PermissionRecoveryLedger.activePermission(defaults: d))
+    }
+
     func testClockRollbackCannotFreezeCachedGrant() {
         var now = Date(timeIntervalSince1970: 1000), calls = 0
         let old = granted, new = denied

@@ -62,6 +62,45 @@ final class AnalysisProofTests: XCTestCase {
         )
     }
 
+    func testInvalidRunSignatureDoesNotLeakSignerClaimsAndShortArchiveIsMalformed() throws {
+        let fixture = try proofFixture()
+        var entries = fixture.entries
+        entries["run.jws"] = Data("a.b.c".utf8)
+        let report = try GoalongProofPackageVerifier.verify(archive: GoalongProofArchive.create(entries: entries))
+        XCTAssertFalse(report.isLocallyValid)
+        XCTAssertEqual(report.providerObservation, "unknown")
+        XCTAssertEqual(report.externalReceipt, "not_present")
+        XCTAssertEqual(report.appAttest, "not_present")
+        XCTAssertThrowsError(try GoalongProofArchive.extract(Data())) { error in
+            XCTAssertEqual(error as? GoalongProofArchiveError, .malformedZIP)
+        }
+    }
+
+    func testForgedClaimsInValidlySignedRunPayloadAreNotEchoed() throws {
+        let fixture = try proofFixture(forgedClaims: true)
+        let report = try GoalongProofPackageVerifier.verify(
+            archive: GoalongProofArchive.create(entries: fixture.entries)
+        )
+        XCTAssertEqual(report.runSignature, "valid")
+        XCTAssertEqual(report.providerObservation, "unknown")
+        XCTAssertEqual(report.externalReceipt, "not_present")
+        XCTAssertEqual(report.appAttest, "not_present")
+    }
+
+    func testDecodablePayloadWithBadRunSignatureDoesNotEchoPayload() throws {
+        let fixture = try proofFixture(forgedClaims: true, corruptRunSignature: true)
+        let report = try GoalongProofPackageVerifier.verify(
+            archive: GoalongProofArchive.create(entries: fixture.entries)
+        )
+        XCTAssertFalse(report.isLocallyValid)
+        XCTAssertEqual(report.runSignature, "invalid")
+        XCTAssertEqual(report.privacyMode, "unknown")
+        XCTAssertEqual(report.activityAnchors, "not_present")
+        XCTAssertEqual(report.providerObservation, "unknown")
+        XCTAssertEqual(report.appAttest, "not_present")
+        XCTAssertEqual(report.externalReceipt, "not_present")
+    }
+
     func testStandaloneProofRoundTripsAndRejectsTamperingAndUnlistedEntries() throws {
         let fixture = try proofFixture()
         let archive = try GoalongProofArchive.create(entries: fixture.entries)
@@ -117,7 +156,10 @@ final class AnalysisProofTests: XCTestCase {
         }
     }
 
-    private func proofFixture() throws -> (entries: [String: Data], runID: UUID) {
+    private func proofFixture(
+        forgedClaims: Bool = false,
+        corruptRunSignature: Bool = false
+    ) throws -> (entries: [String: Data], runID: UUID) {
         let key = P256.Signing.PrivateKey()
         let publicKey = key.publicKey.x963Representation
         let keyID = try XCTUnwrap(GoalongES256JWS.keyID(publicKeyX963: publicKey))
@@ -218,9 +260,9 @@ final class AnalysisProofTests: XCTestCase {
             providerRequest: AnalysisArtifactDescriptor(data: requestData, mediaType: "application/json"),
             providerResponse: AnalysisArtifactDescriptor(data: responseData, mediaType: "application/json"),
             sourceRoot: contextManifest.sourceRoot,
-            firstActivityAnchor: nil,
-            lastActivityAnchor: nil,
-            providerObservation: "local_codex_app_server_final_stream_observed",
+            firstActivityAnchor: forgedClaims ? GoalongProofDigest.sha256(Data("first".utf8)) : nil,
+            lastActivityAnchor: forgedClaims ? GoalongProofDigest.sha256(Data("last".utf8)) : nil,
+            providerObservation: forgedClaims ? "observed" : "local_codex_app_server_final_stream_observed",
             helperIdentity: "restricted_ephemeral",
             signerDeviceID: GoalongProofDigest.sha256(publicKey),
             keyID: keyID,
@@ -228,8 +270,8 @@ final class AnalysisProofTests: XCTestCase {
             softwareVersion: "1",
             softwareBuild: "1",
             buildTrust: "local_build",
-            externalReceiptStatus: "not_present",
-            appAttestStatus: "local_build_not_eligible",
+            externalReceiptStatus: forgedClaims ? "verified" : "not_present",
+            appAttestStatus: forgedClaims ? "verified" : "local_build_not_eligible",
             terminalStatus: "completed"
         )
         XCTAssertTrue(run.isValid)
@@ -238,6 +280,14 @@ final class AnalysisProofTests: XCTestCase {
             type: AnalysisRunProof.jwsType,
             publicKeyX963: publicKey
         ) { try key.signature(for: $0).derRepresentation }
+        var runJWSData = Data(runJWS.utf8)
+        if corruptRunSignature {
+            var parts = runJWS.split(separator: ".").map(String.init)
+            var signature = try XCTUnwrap(GoalongBase64URL.decode(parts[2]))
+            signature[63] ^= 0x01
+            parts[2] = GoalongBase64URL.encode(signature)
+            runJWSData = Data(parts.joined(separator: ".").utf8)
+        }
         let files: [String: Data] = [
             "definition.jws": definitionData,
             "context-manifest.json": contextData,
@@ -245,7 +295,7 @@ final class AnalysisProofTests: XCTestCase {
             "provider-response.json": responseData,
             "result.json": resultData,
             "device-public-key.x963": publicKey,
-            "run.jws": Data(runJWS.utf8),
+            "run.jws": runJWSData,
         ]
         return (try addingManifest(to: files), runID)
     }

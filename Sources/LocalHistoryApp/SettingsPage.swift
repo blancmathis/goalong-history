@@ -8,7 +8,6 @@ import AppKit
     @ObservedObject private var updates = SoftwareUpdateManager.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
     @State private var search = ""
-    @State private var showingRetention = false
     @State private var showingDeveloperProjects = false
     @StateObject private var system = GoalongSystemSourcesModel()
     @State private var pendingPrivate = false
@@ -38,7 +37,9 @@ import AppKit
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 Text(pane.title).goalongPageTitle()
-                content
+                GoalongConfigStatusBanner(model: model)
+                // While config.json is unreadable, nothing may be saved over it.
+                content.disabled(model.configLocked && pane != .home)
             }
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
             .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 40)
@@ -53,7 +54,6 @@ import AppKit
             }
         }
         .background(LHTheme.pageBackground)
-        .sheet(isPresented: $showingRetention) { HistoryRetentionSettingsSheet().goalongControls() }
         .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}
@@ -246,6 +246,11 @@ import AppKit
                 GoalongUpdateStatusRow()
                 Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.goalongSwitch)
+                    .disabled(!updates.isConfigured)
+                if !updates.isConfigured {
+                    Text(updates.statusMessage).font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -265,7 +270,7 @@ import AppKit
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
-        case .jev: return GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring) ? "Activé" : "Clé API et surveillance"
+        case .jev: return GoalongHomeRows.jevSummary(enabled: GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
         case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
         case .permissions: return "Selon vos fonctions"
         case .storage: return "Conservation et effacement"
@@ -338,6 +343,7 @@ enum SettingsPane: Hashable {
         case .modules: return "square.stack.3d.up"
         case .permissions: return "hand.raised"
         case .storage: return "internaldrive"
+        case .advanced: return "wrench.and.screwdriver"
         default: return "slider.horizontal.3"
         }
     }
@@ -347,10 +353,9 @@ enum SettingsPane: Hashable {
         case .applications: return "ignorer exclure exclusions masquer application navigateur domaine"
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"
-        case .modules: return "module modules ambiance braise filtre rouge luminosité horaires musique son sons concentration détente activer"
+        case .modules: return "module modules ambiance braise filtre rouge luminosité horaires musique son sons concentration détente blocage bloquer site sites app apps verrouiller cold turkey geler activer"
         case .jev: return "jev surveillance temps réel clé api typesafe rappel rappels distraction pause"
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
-        case .modules: return "module modules blocage bloquer site sites app apps verrouiller cold turkey geler activer"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"
         case .storage: return "supprimer effacer historique conserver durée espace mémoire"
         case .advanced: return "terminal cli configuration json diagnostic diagnostics version mise à jour démarrage développeur developer mocks fictives aperçu"
@@ -360,6 +365,42 @@ enum SettingsPane: Hashable {
     }
 }
 /// Version, last check and the one relevant action, in plain words.
+/// config.json could not be read: says what is applied and offers the only ways out.
+@MainActor struct GoalongConfigStatusBanner: View {
+    @ObservedObject var model: DashboardViewModel
+    @State private var confirmingReset = false
+
+    var body: some View {
+        if let notice = model.configNotice {
+            VStack(alignment: .leading, spacing: 10) {
+                Label(notice, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
+                    Button("Recharger") { model.reloadConfigurationFromSettings() }.buttonStyle(LHSecondaryButtonStyle())
+                    if model.configLocked {
+                        Button("Réinitialiser les réglages…") { confirmingReset = true }.buttonStyle(LHQuietButtonStyle())
+                    }
+                }
+            }
+            .padding(14)
+            .background(LHTheme.warning.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityIdentifier("settings-config-unreadable")
+            .alert("Réinitialiser les réglages ?", isPresented: $confirmingReset) {
+                Button("Annuler", role: .cancel) {}
+                Button("Réinitialiser", role: .destructive) { model.resetConfigurationFromSettings() }
+            } message: {
+                Text("Le fichier illisible est conservé à côté sous le nom config.damaged-<date>.json. Les réglages par défaut le remplacent.")
+            }
+        } else if let backup = model.configBackupName {
+            Text("Ancien fichier conservé : \(backup)")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .accessibilityIdentifier("settings-config-backup")
+        }
+    }
+}
+
 @MainActor struct GoalongUpdateStatusRow: View {
     @ObservedObject private var updates = SoftwareUpdateManager.shared
 

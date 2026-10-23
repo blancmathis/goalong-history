@@ -170,16 +170,27 @@
             return try self.performRefresh(day: day, force: force)
         }
 
+        /// Preferences and clock of the analysis passes. The app keeps `.standard` and the real clock; the gallery sets
+        /// its own suite and frozen clock once, before any page asks for a refresh.
+        var preferences: UserDefaults = .standard
+        var clock: () -> Date = Date.init
+
         private let axClient: AXClient
         private let applicationWitness: (pid_t) -> (() -> Bool)?
         private let allowsSemantic: (ContextSnapshot) -> Bool
         private let semanticRead: (pid_t, Int, Int) -> AXRichContextCapture?
+        private let hostGate: HostCaptureGate
+        private let richContextEnabled: () -> Bool
 
         init(client: AXClient = .system,
+             hostGate: HostCaptureGate = .live,
+             richContextEnabled: @escaping () -> Bool = { ActivityAnalysisPreferences.richContextEnabled },
              applicationWitness: ((pid_t) -> (() -> Bool)?)? = nil,
              allowsSemantic: ((ContextSnapshot) -> Bool)? = nil,
              semanticRead: ((pid_t, Int, Int) -> AXRichContextCapture?)? = nil) {
             axClient = client
+            self.hostGate = hostGate
+            self.richContextEnabled = richContextEnabled
             self.applicationWitness = applicationWitness ?? { pid in
                 guard let application = NSRunningApplication(processIdentifier: pid), !application.isTerminated else { return nil }
                 let instance = application.launchDate, bundle = application.bundleIdentifier
@@ -188,7 +199,7 @@
                         && NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == bundle
                 }
             }
-            self.allowsSemantic = allowsSemantic ?? Self.workerAllowsSemantic
+            self.allowsSemantic = allowsSemantic ?? { Self.workerAllowsSemantic($0, hostGate: hostGate, richContextEnabled: richContextEnabled) }
             self.semanticRead = semanticRead ?? { pid, characters, nodes in
                 AXRichContextReader.capture(processIdentifier: pid, maximumCharacters: characters, maximumNodes: nodes)
             }
@@ -467,9 +478,9 @@
             deduplicate: Bool,
             metadata additionalMetadata: [String: String]
         ) {
-            guard ActivityAnalysisPreferences.richContextEnabled, let recorder, let state,
+            guard richContextEnabled(), let recorder, let state,
                   state.isCapturing, snapshot.suppressionReason == nil,
-                  snapshot.focusedElement?.isSecure != true, !IsSecureEventInputEnabled(),
+                  snapshot.focusedElement?.isSecure != true, !hostGate.secureInput(),
                   let requestContext = currentContext,
                   pendingSemanticCaptureCount < Self.maximumPendingSemanticCaptures,
                   let writePermit = derivedWriteBarrier.beginJob() else { return }
@@ -505,7 +516,7 @@
                             guard let self, permit.isValid, captureGeneration == self.interactionCaptureGeneration,
                                   self.started, let post, Self.semanticBoundaryMatches(post.snapshot, expected: validatedSnapshot),
                                   post.boundary == evidence.boundary,
-                                  state.isCapturing, !IsSecureEventInputEnabled() else { finish(); return }
+                                  state.isCapturing, !self.hostGate.secureInput() else { finish(); return }
                             self.commitSemanticContext(capture, snapshot: post.snapshot, deduplicate: deduplicate,
                                 metadata: additionalMetadata, recorder: recorder, permit: permit,
                                 application: application, writePermit: writePermit, completion: finish)
@@ -515,9 +526,10 @@
             }
         }
 
-        private static func workerAllowsSemantic(_ snapshot: ContextSnapshot) -> Bool {
-            guard ActivityAnalysisPreferences.richContextEnabled, !IsSecureEventInputEnabled(),
-                  ForegroundSessionAvailability.isAvailable(),
+        private static func workerAllowsSemantic(_ snapshot: ContextSnapshot, hostGate: HostCaptureGate,
+                                                 richContextEnabled: () -> Bool) -> Bool {
+            guard richContextEnabled(), !hostGate.secureInput(),
+                  hostGate.sessionAvailable(),
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == snapshot.app.processIdentifier else { return false }
             if let revision = snapshot.globalPauseRevision {
                 guard (try? GoalongGlobalPause.revalidate(revision)) != nil else { return false }
@@ -689,7 +701,7 @@
             force: Bool
         ) throws -> ActivityAnalysisCycleResult {
             let calendar = Calendar.current
-            let today = calendar.startOfDay(for: Date())
+            let today = calendar.startOfDay(for: clock())
             let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
             if force {
                 store.removeOrphanedAnalyses()
@@ -704,7 +716,7 @@
             let result = try autoreleasepool {
                 try analysisCycleService.process(
                     day: day,
-                    tokenBudget: ActivityAnalysisPreferences.agentTokenBudget,
+                    tokenBudget: ActivityAnalysisPreferences.agentTokenBudget(in: preferences),
                     forceVerification: force,
                     includeActivityMemory: memoryStore != nil
                 )
@@ -803,6 +815,18 @@
                 return "The refresh was cancelled because local history was cleared"
             case .runtimeUnavailable:
                 return "The activity-analysis runtime is no longer available"
+            }
+        }
+
+        /// French text for the interface; `errorDescription` stays English for logs.
+        var frenchDescription: String {
+            switch self {
+            case .temporarilySuspended:
+                return "Actualisation en pause pendant l’effacement de l’historique local."
+            case .invalidatedByHistoryClear:
+                return "Actualisation annulée : l’historique local a été effacé."
+            case .runtimeUnavailable:
+                return "L’analyse d’activité n’est plus disponible."
             }
         }
     }
@@ -1273,6 +1297,22 @@
                 return "Derived analysis kept the last-known-good views because the "
                     + "retained-evidence budget was exceeded "
                     + "(\(rows) rows or \(bytes) estimated bytes)"
+            }
+        }
+
+        /// French text for the interface; `errorDescription` stays English for logs and journals.
+        var frenchDescription: String {
+            switch self {
+            case .sourceInaccessible:
+                return "Goalong n’a pas pu lire les données locales de cette journée."
+            case .sourceChangedDuringRead:
+                return "Le journal source a changé pendant la lecture. Les dernières vues valides sont conservées."
+            case .oversizedJSONLine(let path, let maximumBytes):
+                return "Ligne trop volumineuse refusée dans \(path) (maximum \(maximumBytes) octets)."
+            case .reentrantCycle:
+                return "Analyse déjà en cours sur cette source : nouvelle lecture refusée."
+            case .retainedEvidenceBudgetExceeded(let rows, let bytes):
+                return "La journée dépasse la mémoire prévue pour l’analyse (\(rows) lignes ou \(bytes) octets estimés). Les dernières vues valides sont conservées."
             }
         }
     }
@@ -2405,8 +2445,11 @@
         /// Codex produces ten-minute activity memories. Matching that cadence keeps
         /// the active journal fresh without rereading an ever-growing day once per
         /// minute. Explicit user refreshes bypass this background debounce.
-        private static let minimumBackgroundRefreshInterval =
-            ActivityAnalysisRuntime.backgroundRefreshInterval
+        /// The debounce sits below the timer period: `successfulAt` is stamped after the
+        /// day is read, and the timer has a tolerance, so a tick that fires on schedule would
+        /// otherwise often land just under the threshold and be skipped (a 20 minute cadence).
+        static let minimumBackgroundRefreshInterval =
+            ActivityAnalysisRuntime.backgroundRefreshInterval - 90
 
         private let rootDirectory: URL
         private let computerHistoryStore: ComputerHistoryStore
@@ -2618,12 +2661,15 @@
                     maximumDays: Self.maximumPriorComputerHistoryDays + 2,
                     renderMarkdown: false
                 )
-                guard priorLoad.isComplete else {
+                // Only an unstable listing fails closed. A single unreadable prior
+                // day is skipped and recorded, so it cannot block every later cycle.
+                guard priorLoad.hasStableSnapshot else {
                     throw ActivityAnalysisCycleError.sourceInaccessible(
                         "Computer History kept the last-known-good view because prior "
-                            + "retained memories could not be loaded completely"
+                            + "retained memories could not be listed reliably"
                     )
                 }
+                ComputerHistoryStore.reportPartialPriorContext(priorLoad, day: start)
                 priorComputerHistory = Array(
                     priorLoad.memories.filter { $0.dayStart < start }
                         .suffix(Self.maximumPriorComputerHistoryDays)

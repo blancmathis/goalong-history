@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fetch the pinned, official Codex runtime for a Goalong build (never at app launch)."""
+from __future__ import annotations
 from pathlib import Path
 import argparse, hashlib, json, os, shutil, subprocess, tarfile, tempfile, urllib.request
 

@@ -10,13 +10,13 @@ public enum AgentActivityStoreError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .configurationCorrupt:
-            return "The Agent Activity configuration is invalid and was left untouched."
+            return "La configuration de l’activité des agents est invalide ; elle n’a pas été modifiée."
         case .indexCorrupt:
-            return "The lightweight Agent Activity index is invalid."
+            return "L’index léger de l’activité des agents est invalide."
         case .sourceNotFound(let id):
-            return "The indexed agent source \(id) could not be found."
+            return "La source d’agent indexée \(id) est introuvable."
         case .sourceReferenceChanged(let id):
-            return "The indexed source reference for \(id) changed while it was being read."
+            return "La référence de la source indexée \(id) a changé pendant la lecture."
         }
     }
 }

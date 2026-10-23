@@ -40,12 +40,22 @@ struct ChatGPTAccountConnectionCard: View {
         case .connected:
             Button("Déconnecter") { runtime.disconnectChatGPT() }.buttonStyle(LHSecondaryButtonStyle())
         case .checking:
-            ProgressView().controlSize(.small)
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                if runtime.isConnecting {
+                    Button("Annuler") { runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
+                }
+            }
         case .codexUnavailable:
             Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHSecondaryButtonStyle())
         default:
-            Button(runtime.isConnecting ? "Connexion…" : "Connecter ChatGPT") { runtime.connectChatGPT() }
-                .buttonStyle(LHPrimaryButtonStyle()).disabled(runtime.isConnecting)
+            HStack(spacing: 10) {
+                if runtime.isConnecting {
+                    Button("Annuler") { runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
+                }
+                Button(runtime.isConnecting ? "Connexion…" : "Connecter ChatGPT") { runtime.connectChatGPT() }
+                    .buttonStyle(LHPrimaryButtonStyle()).disabled(runtime.isConnecting)
+            }
         }
     }
 }

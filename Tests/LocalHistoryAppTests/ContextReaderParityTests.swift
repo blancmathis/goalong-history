@@ -193,5 +193,154 @@ final class ContextReaderParityTests: XCTestCase {
         XCTAssertEqual(streams[0], streams[1], "No field, date, ID, ordering or integrity field is filtered out")
         XCTAssertEqual(streams[0].filter { $0 == 10 }.count, kinds.count)
     }
+
+    // MARK: - Windowless browsers (R1-073)
+
+    func testWindowlessKnownBrowserIsNeutralNotAccessibilityFailure() {
+        let tree = ScriptedAXTree()
+        tree.errors["AXFocusedWindow"] = .noValue
+        tree.errors["AXMainWindow"] = .noValue
+        let input = parameters(bundle: "com.apple.Safari", name: "Safari")
+        let result = AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: input) }
+        XCTAssertNil(result.snapshot?.suppressionReason)
+        XCTAssertNil(result.snapshot?.window); XCTAssertNil(result.snapshot?.focusedElement)
+        XCTAssertNil(result.snapshot?.url)
+        let fast = AXAccess.withClient(tree.client) { ContextAXReader().fastSuppressionReason(parameters: input) }
+        XCTAssertNil(fast)
+    }
+
+    func testFailedWindowReadOnKnownBrowserStillFailsClosed() {
+        let tree = ScriptedAXTree()
+        tree.errors["AXFocusedWindow"] = .cannotComplete
+        let input = parameters(bundle: "com.apple.Safari", name: "Safari")
+        let result = AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: input) }
+        XCTAssertEqual(result.snapshot?.suppressionReason, .accessibilityUnavailable)
+        XCTAssertFalse(result.provedExternalAX)
+        let fast = AXAccess.withClient(tree.client) { ContextAXReader().fastSuppressionReason(parameters: input) }
+        XCTAssertEqual(fast, .accessibilityUnavailable)
+    }
+
+    // MARK: - Website rules in non-browser apps (R1-074)
+
+    private func addWebArea(to tree: ScriptedAXTree, url: String? = nil) {
+        let webArea = AXUIElementCreateApplication(50_010)
+        var attributes: [String: CFTypeRef] = ["AXRole": "AXWebArea" as CFString]
+        if let url { attributes["AXURL"] = url as CFString }
+        tree.attributes[Int(CFHash(webArea))] = attributes
+        tree.attributes[Int(CFHash(tree.window))]?["AXChildren"] = [tree.focus, webArea] as CFArray
+    }
+
+    func testMailWebAreaIsRecordedUnderAWebsiteExclusion() {
+        for capturesURLs in [true, false] {
+            let tree = ScriptedAXTree()
+            addWebArea(to: tree)
+            let input = parameters(bundle: "com.apple.mail", name: "Mail", config: {
+                $0.excludedDomains = ["example.com"]; $0.captureURLs = capturesURLs
+            })
+            let result = AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: input) }
+            XCTAssertNil(result.snapshot?.suppressionReason, "captureURLs=\(capturesURLs)")
+            XCTAssertNotNil(result.snapshot?.window)
+            XCTAssertNil(result.discoveredBrowser)
+        }
+    }
+
+    func testWebViewWithoutPageHostStillFailsClosedUnderAnIncludeOnlyScope() {
+        let tree = ScriptedAXTree()
+        addWebArea(to: tree)
+        let input = parameters(bundle: "com.apple.mail", name: "Mail", config: {
+            $0.includedDomains = ["example.com"]
+        })
+        let result = AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: input) }
+        XCTAssertEqual(result.snapshot?.suppressionReason, .excludedDomain)
+        XCTAssertNil(result.discoveredBrowser)
+    }
+
+    func testFileDocumentDoesNotMakeAnAppABrowser() {
+        let tree = ScriptedAXTree()
+        tree.attributes[Int(CFHash(tree.window))]?["AXDocument"] = "file:///tmp/a.txt" as CFString
+        for included in [nil, ["example.com"]] as [[String]?] {
+            let input = parameters(bundle: "com.apple.TextEdit", name: "TextEdit", config: {
+                $0.excludedDomains = ["example.com"]; $0.includedDomains = included
+            })
+            let result = AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: input) }
+            XCTAssertNil(result.snapshot?.suppressionReason)
+            XCTAssertNotNil(result.snapshot?.window)
+            XCTAssertNil(result.discoveredBrowser)
+        }
+    }
+
+    func testUnknownAppShowingAnExcludedPageIsABrowser() {
+        let tree = ScriptedAXTree()
+        addWebArea(to: tree, url: "https://example.com/x")
+        let input = parameters(bundle: "test.unknown", name: "Fixture", config: {
+            $0.excludedDomains = ["example.com"]
+        })
+        let result = AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: input) }
+        XCTAssertEqual(result.snapshot?.suppressionReason, .excludedDomain)
+        XCTAssertEqual(result.discoveredBrowser?.bundleIdentifier, "test.unknown")
+    }
+
+    func testKnownBrowserWithoutHostStillFailsClosed() {
+        let tree = ScriptedAXTree()
+        addWebArea(to: tree)
+        let input = parameters(bundle: "com.apple.Safari", name: "Safari", config: {
+            $0.excludedDomains = ["youtube.com"]
+        })
+        let result = AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: input) }
+        XCTAssertEqual(result.snapshot?.suppressionReason, .excludedDomain)
+    }
+
+    func testWebPageEvidenceAcceptsOnlyHTTPAddresses() {
+        XCTAssertTrue(BrowserIdentity.isNamedBrowser(name: "ChatGPT Atlas", bundleIdentifier: "com.openai.atlas"))
+        XCTAssertTrue(BrowserIdentity.isNamedBrowser(name: "Comet", bundleIdentifier: "ai.perplexity.comet"))
+        XCTAssertTrue(BrowserIdentity.isNamedBrowser(name: "Whale", bundleIdentifier: "com.naver.Whale"))
+        XCTAssertFalse(BrowserIdentity.isNamedBrowser(name: "Whale", bundleIdentifier: "com.example.whale-trello"))
+        XCTAssertFalse(BrowserIdentity.isNamedBrowser(name: "Atlas", bundleIdentifier: "com.mongodb.atlas-tool"))
+        XCTAssertFalse(BrowserIdentity.isNamedBrowser(name: "Comet Notes", bundleIdentifier: "com.example.cometnotes"))
+        XCTAssertTrue(BrowserIdentity.isNamedBrowser(name: "Naver Whale", bundleIdentifier: nil))
+        XCTAssertTrue(BrowserIdentity.isWebPageEvidence("https://youtube.com/watch"))
+        XCTAssertTrue(BrowserIdentity.isWebPageEvidence("http://example.com"))
+        XCTAssertTrue(BrowserIdentity.isWebPageEvidence("example.com/page"))
+        XCTAssertFalse(BrowserIdentity.isWebPageEvidence("file:///tmp/x.txt"))
+        XCTAssertFalse(BrowserIdentity.isWebPageEvidence("about:blank"))
+        XCTAssertFalse(BrowserIdentity.isWebPageEvidence("x-msg://12/"))
+        XCTAssertFalse(BrowserIdentity.isWebPageEvidence("https://"))
+        XCTAssertFalse(BrowserIdentity.isWebPageEvidence(nil))
+    }
+
+    // MARK: - Browser identity (R1-076)
+
+    func testBrowserIdentityMatchesWholeNamesAndKnownBundles() {
+        let notBrowsers: [(String, String?)] = [
+            ("Archive Utility", "com.apple.archiveutility"), ("Hedge", "com.hedge.app"),
+            ("Diarly", "com.pureformstudio.diary"), ("Adobe Media Encoder", "com.adobe.ame"),
+            ("Diagrams", "com.example.diagrams"), ("Foo Browser", "com.example.foo"),
+            ("MediaInfo", "net.mediaarea.mediainfo"),
+        ]
+        let browsers: [(String, String?)] = [
+            ("Arc", "company.thebrowser.Browser"), ("Dia", "company.thebrowser.dia"),
+            ("Microsoft Edge", "com.microsoft.edgemac"), ("Opera", "com.operasoftware.Opera"),
+            ("Zen", "app.zen-browser.zen"), ("Google Chrome", nil), ("Zen Browser", nil),
+        ]
+        let reader = ContextAXReader()
+        for (name, bundle) in notBrowsers + browsers {
+            let expected = browsers.contains { $0.0 == name }
+            XCTAssertEqual(BrowserIdentity.isNamedBrowser(name: name, bundleIdentifier: bundle), expected, name)
+            let app = AppSnapshot(name: name, bundleIdentifier: bundle, processIdentifier: 7)
+            XCTAssertEqual(reader.isBrowser(app: app, config: .default), expected, name)
+            let context = ContextSnapshot(app: app, window: nil, focusedElement: nil, url: nil, suppressionReason: nil)
+            XCTAssertEqual(ForegroundActivityProbe.isBrowser(context), expected, name)
+        }
+    }
+
+    func testArchiveUtilityIsNotSuppressedByAWebsiteExclusion() {
+        let tree = ScriptedAXTree()
+        let input = parameters(bundle: "com.apple.archiveutility", name: "Archive Utility", config: {
+            $0.excludedDomains = ["youtube.com"]
+        })
+        let result = AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: input) }
+        XCTAssertNil(result.snapshot?.suppressionReason)
+        XCTAssertNotNil(result.snapshot?.window)
+    }
 }
 #endif

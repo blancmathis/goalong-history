@@ -58,7 +58,7 @@ public enum GoalongCommitmentCLI {
                 guard stakes.count <= 200, Set(stakes).count == stakes.count, stakes.allSatisfy({ UUID(uuidString: $0) != nil }) else { throw GoalongFocusError.invalidArgument }
                 if let until = options["--until"] {
                     let n = until.split(separator: ":", omittingEmptySubsequences: false)
-                    guard n.count == 2, let h = Int(n[0]), let m = Int(n[1]), (0...23).contains(h), (0...59).contains(m), String(format: "%02d:%02d", h, m) == until else { throw GoalongFocusError.invalidArgument }
+                    guard n.count == 2, let h = Int(n[0]), let m = Int(n[1]), (0...23).contains(h), (0...59).contains(m), String(format: "%02d:%02d", h, m) == until, until != "00:00" else { throw GoalongFocusError.invalidArgument }
                 }
             }
         default: throw GoalongFocusError.invalidArgument

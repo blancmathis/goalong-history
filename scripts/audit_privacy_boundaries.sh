@@ -153,7 +153,7 @@ fi
 # argument. No shell, arbitrary command, or user-provided argument vector is allowed.
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$BRAISE_GAMMA" && "$file" != "$CODEX_BRIDGE" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRepair.swift" ]]; then
+  if [[ "$file" != "$BRAISE_GAMMA" && "$file" != "$CODEX_BRIDGE" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRepair.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/Blocking/GoalongGuardClient.swift" ]]; then
     echo "Unexpected Process API outside the fixed Codex, self-relaunch, Braise restoration guardian and user-confirmed TCC reset boundaries: $match" >&2
     failed=true
   fi
@@ -187,7 +187,7 @@ if [[ -f "$PERMISSION_REPAIR" ]]; then
   for fragment in \
     'process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")' \
     'return ["reset", service, bundleIdentifier]' \
-    'static let bundleIdentifier = "ai.goalong.localhistory"' \
+    'static let bundleIdentifier = ProductIdentity.bundleIdentifier' \
     'guard bundleID == bundleIdentifier' \
     '.confirmationDialog(' \
     'process.standardOutput = FileHandle.nullDevice' \
@@ -201,6 +201,12 @@ if [[ -f "$PERMISSION_REPAIR" ]]; then
   if grep -nE 'return "All"|TCC.db|ProcessInfo.processInfo.environment|process.arguments.*CommandLine' "$PERMISSION_REPAIR"; then
     echo "Permission reset boundary was broadened." >&2; failed=true
   fi
+fi
+# "Me" is this copy's own Goalong bundle ID (release or Goalong Dev), never another app's.
+if ! grep -Fq 'static let bundleIdentifier = GoalongBundleIdentity.current' "$ROOT_DIR/Sources/LocalHistoryApp/ProductIdentity.swift" ||
+   ! grep -Fq 'guard let identifier, let own = family.first(where: { $0 == identifier }) else { return release }' "$ROOT_DIR/Sources/LocalHistoryCore/GoalongBuildChannel.swift" ||
+   ! grep -Fq 'public static let family: [String] = [release, development]' "$ROOT_DIR/Sources/LocalHistoryCore/GoalongBuildChannel.swift"; then
+  echo "Goalong self bundle identity is no longer limited to the Goalong family." >&2; failed=true
 fi
 
 if [[ -f "$CODEX_BRIDGE" ]]; then
@@ -344,9 +350,13 @@ done < <(grep -R -nE --include='*.swift' 'NSWorkspace\.shared\.open\(' "$ROOT_DI
 PERMISSION_RECOVERY="$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift"
 RELAUNCHER="$ROOT_DIR/Sources/GoalongRelauncher/main.swift"
 BLOCKING_ENFORCEMENT="$ROOT_DIR/Sources/LocalHistoryApp/Blocking/BlockingEnforcement.swift"
+# The blocking guard (spec K) reopens only the app bundle that contains it, quietly, and only
+# while a severe block is armed. It never runs commands; the app may only kickstart its own agent.
+BLOCKING_GUARD="$ROOT_DIR/Sources/GoalongGuard/main.swift"
+GUARD_CLIENT="$ROOT_DIR/Sources/LocalHistoryApp/Blocking/GoalongGuardClient.swift"
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$RELAUNCHER" && "$file" != "$BLOCKING_ENFORCEMENT" ]]; then
+  if [[ "$file" != "$RELAUNCHER" && "$file" != "$BLOCKING_ENFORCEMENT" && "$file" != "$BLOCKING_GUARD" ]]; then
     echo "Unreviewed application relaunch boundary: $match" >&2
     failed=true
   fi
@@ -367,7 +377,7 @@ if [[ -f "$BLOCKING_ENFORCEMENT" ]]; then
 fi
 
 for required_fragment in \
-  'bundle.bundleIdentifier == "ai.goalong.localhistory"' \
+  'bundle.bundleIdentifier == ProductIdentity.bundleIdentifier' \
   'child.executableURL = helper' \
   'Contents/MacOS/goalong-relauncher' \
   'helper.resolvingSymlinksInPath() == helper.standardizedFileURL' \
@@ -395,6 +405,28 @@ done
 if grep -nE 'tccutil|SecItem|SecTrust|CGRequest|AXIsProcessTrustedWithOptions|\.set\(.*enabled:' "$PERMISSION_RECOVERY" "$RELAUNCHER"; then
   echo "Permission recovery must not grant access, change trust, or enable recording." >&2
   failed=true
+fi
+if [[ -f "$BLOCKING_GUARD" ]]; then
+  for fragment in 'NSWorkspace.shared.openApplication(at: bundle.appURL, configuration: configuration)' \
+    'configuration.activates = false' 'configuration.createsNewApplicationInstance = false' \
+    'configuration.promptsUserIfNeeded = false' 'configuration.arguments = [GuardIdentity.relaunchArgument]'; do
+    if ! grep -Fq "$fragment" "$BLOCKING_GUARD"; then
+      echo "Blocking guard relaunch confinement invariant is missing: $fragment" >&2; failed=true
+    fi
+  done
+  if [[ "$(grep -c 'NSWorkspace.shared.openApplication(' "$BLOCKING_GUARD")" != 1 ]]; then
+    echo "The blocking guard added an unreviewed application launcher." >&2; failed=true
+  fi
+  if grep -R -nE 'Process\(|URLSession|NSApplication\.shared|kill\([^,]*, *SIG(KILL|TERM)' "$BLOCKING_GUARD" "$ROOT_DIR/Sources/GoalongGuardCore"; then
+    echo "The blocking guard must not run commands, use the network, become an app or stop processes." >&2; failed=true
+  fi
+fi
+if [[ -f "$GUARD_CLIENT" ]]; then
+  if [[ "$(grep -c 'Process()' "$GUARD_CLIENT")" != 1 ]] \
+    || ! grep -Fq 'process.executableURL = URL(fileURLWithPath: "/bin/launchctl")' "$GUARD_CLIENT" \
+    || ! grep -Fq 'process.arguments = ["kickstart", "gui/\(getuid())/\(label)"]' "$GUARD_CLIENT"; then
+    echo "The guard client may only run /bin/launchctl kickstart (without -k) on its own agent." >&2; failed=true
+  fi
 fi
 if grep -nE 'Process\(|URLSession|AppPaths|NSApplication\.shared|capability-consent' "$RELAUNCHER"; then
   echo "The one-shot relauncher must not execute commands, open history, or become the app." >&2

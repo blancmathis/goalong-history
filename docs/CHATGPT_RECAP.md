@@ -120,7 +120,16 @@ and hashes of the transient included projection. It never contains the body of a
 source conversation. A growing source is read to a pinned complete prefix; a
 rewrite, replacement or truncation remains an error.
 
-Only the bounded final assistant response is kept for up to 30 days in an
+The five-line recap is also saved on this Mac as plain JSON and Markdown in
+`chatgpt/recaps` (owner-only file permissions, not encrypted). It has no
+automatic expiry. Clearing the detailed history (all of it, a period or chosen
+days) erases the recaps of the cleared days, together with their local proof package
+(`chatgpt/proofs/<executionID>/`, which holds the canonical markdown, five lines and
+scores) and the encrypted response capsule with its Keychain key. A full clear also removes
+orphan proof packages, capsules and `chain-head.json`. After a partial clear the chain head may
+point to an erased run; the next proof then starts a new chain. Retention rules do not touch it.
+
+An encrypted copy of the bounded final assistant response is kept for up to 30 days in an
 AES-256-GCM capsule with one random per-run DEK stored as a `ThisDeviceOnly`
 Keychain item. Authenticated metadata binds the execution, artifact kind, format
 and plaintext hash. Deleting the DEK first provides cryptographic deletion. The
@@ -141,13 +150,17 @@ UI no longer offers creation of a transcript copy.
 
 ## Scheduling and resource use
 
-Automatic completed-day analysis is enabled by default unless the user has
-explicitly turned it off.
+Automatic completed-day analysis is off by default. It runs only after the
+user turns it on.
 
 - One tolerant, non-repeating timer is scheduled for 00:05 local time.
 - One independent one-shot fallback wakes at 00:10 in case the main RunLoop timer did not fire; it adds no polling loop or background process.
 - The timer analyzes only the day that just ended.
 - On app launch, one delayed catch-up checks yesterday only.
+- These timers count only awake time. After a wake from sleep, a new calendar day,
+  or a clock or time zone change, Goalong re-arms them and, about 45 seconds later,
+  checks yesterday once. If the Mac sleeps across several midnights, only the
+  last completed day is recapped automatically.
 - Transient startup or session failures retry at most three times, after 15 minutes, 1 hour and 3 hours.
 - Existing valid reports suppress duplicate work.
 - There is no fifteen-minute polling loop and no unbounded historical backlog.

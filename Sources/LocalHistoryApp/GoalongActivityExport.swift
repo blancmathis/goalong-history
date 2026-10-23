@@ -7,18 +7,29 @@ import UniformTypeIdentifiers
 /// Spreadsheet-ready export of the period shown in Activité: one row per day and
 /// application or website. Only names, identifiers and durations already on screen;
 /// no window title, URL path or content. Written only where the user chooses.
+/// A past or current day without usage keeps one « jour » row whose classement says why
+/// (incomplet, sans données, sans activité): the file never drops a day silently.
 enum GoalongActivityExport {
     static let header = ["date", "type", "nom", "identifiant", "classement", "secondes_actives",
                          "secondes_travail", "secondes_hors_travail", "secondes_a_classer"]
 
     static func csv(period: GoalongLocalAnalytics.Period, grouping: GoalongActivityUsageGrouping,
-                    calendar: Calendar = .current) -> String {
+                    calendar: Calendar = .current, now: Date = Date()) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
         var lines = [header.joined(separator: ";")]
-        for day in period.days where day.state == .ready && day.activeSeconds > 0 {
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
+        for day in period.days where day.date < tomorrow {
             let date = formatter.string(from: day.date)
+            guard day.state == .ready, day.activeSeconds > 0 else {
+                // Unknown durations stay empty; a complete day without activity is a real zero.
+                let ready = day.state == .ready
+                let status = ready ? "sans activité" : day.state == .incomplete ? "incomplet" : "sans données"
+                let zero = ready ? "0" : ""
+                lines.append([date, "jour", "", "", status, zero, zero, zero, zero].map(escape).joined(separator: ";"))
+                continue
+            }
             for item in GoalongActivityProjection.usage(.init(days: [day]), grouping: grouping) {
                 let label = item.classLabel.lowercased()
                 let fields = [date, item.isWebsite ? "site" : "application", item.displayName,

@@ -11,8 +11,8 @@ glissez **Goalong History** dans Applications. C’est l’unique application
 publique : elle est gratuite, open source et ne nécessite ni Xcode ni abonnement
 Apple Developer payant.
 
-La Community Build est signée ad hoc pour vérifier l’intégrité du bundle, mais
-elle n’est pas notariée par Apple. Après avoir vérifié le SHA-256, le manifeste
+La Community Build est signée avec une identité Apple Development épinglée (équipe
+2L5SSLPX46), mais elle n’est pas notariée par Apple. Après avoir vérifié le SHA-256, le manifeste
 de release et la provenance GitHub/Sigstore, si macOS bloque la première
 ouverture, essayez d’ouvrir l’app une fois puis utilisez uniquement :
 
@@ -23,10 +23,11 @@ Réglages Système → Confidentialité et sécurité → Ouvrir quand même
 Ne désactivez jamais Gatekeeper globalement.
 
 Après l’installation, ouvrez **Goalong History** et suivez l’assistant. L’app
-exige macOS 13 Ventura ou une version plus récente. Comme la signature gratuite
-n’a pas d’identité Apple stable, macOS peut demander de renouveler les
-autorisations Goalong après une mise à jour ; l’historique et les réglages restent
-conservés.
+exige macOS 13 Ventura ou une version plus récente. Les versions
+publiques gardent la même identité de signature : macOS ne doit pas redemander les
+autorisations Goalong lors d’une mise à jour normale. Il peut les redemander une fois
+en quittant une ancienne version signée ad hoc, ou si l’identité de signature change un
+jour ; l’historique et les réglages restent conservés.
 
 ## L’assistant de première ouverture
 
@@ -97,13 +98,13 @@ La navigation privée des navigateurs reconnus ou détectés par leurs capacité
 ~/Library/Application Support/LocalHistory/
 ```
 
-La collecte et les archives restent locales. L’analyse ChatGPT ne démarre qu’après un consentement séparé et utilise la connexion Codex locale avec un contexte quotidien borné. Le système de mise à jour intégré et l’ancien envoi de preuves restent exclus.
+La collecte et les archives restent locales. L’analyse ChatGPT ne démarre qu’après un consentement séparé et utilise la connexion Codex locale avec un contexte quotidien borné. Seul l’ancien envoi de preuves reste exclu. La vérification des mises à jour (section « Mises à jour » ci-dessous) contacte le flux de versions signé, sans envoyer aucune donnée d’historique.
 
-La connexion facultative au site permet de choisir une journée, ses appareils et les détails à transmettre, puis d’examiner un aperçu hors ligne. Seul **Send reviewed data**, ou la commande `goalong send-site`, envoie cette sélection avec le fichier de jeton choisi. Aucun envoi automatique n’est programmé. Les conversations brutes et le contenu des événements capturés ne sont pas transmis. Les données envoyées restent non vérifiées et les règles de partage déjà définies sur le site peuvent s’appliquer. Voir le [parcours de connexion et ses limites](docs/CLI.md#website-export-and-account-submission).
+La connexion facultative au site permet de choisir une journée, ses appareils et les détails à transmettre, puis d’examiner un aperçu hors ligne. Seul **Envoyer cette journée**, la commande `goalong send-site` ou l’envoi quotidien facultatif envoie cette sélection avec le fichier de jeton choisi (seul son chemin est mémorisé, jamais sa valeur). L’envoi quotidien est désactivé par défaut et ne démarre qu’après votre activation explicite, depuis l’aperçu examiné, avec **Activer l’envoi quotidien**. Il envoie la veille après l’heure choisie, seulement tant que Goalong est ouvert, réutilise la même sélection (sans nouveaux appareils, apps, domaines ni bilans), s’arrête en cas d’erreur et se met en pause ou se désactive dans **Réglages → Envoi à Goalong**. Rien n’est envoyé sans votre action ou votre activation. Les conversations brutes et le contenu des événements capturés ne sont pas transmis. Les données envoyées restent non vérifiées et les règles de partage déjà définies sur le site peuvent s’appliquer. Voir le [parcours de connexion et ses limites](docs/CLI.md#website-export-and-account-submission).
 
 Depuis **Confidentialité et sécurité**, vous pouvez ouvrir le dossier local, examiner les protections et supprimer les détails. La suppression des détails conserve les sceaux cryptographiques ; la période devient alors privée et ne peut plus être révélée en détail.
 
-Pour analyser une demande téléchargée depuis le site, ouvrez **Settings → Goalong website → Analyser une demande du site**. Choisissez le JSON, relisez son contenu et autorisez cette analyse avec votre connexion ChatGPT locale. Vous pourrez modifier le brouillon et l’exporter avant de l’importer volontairement sur le site. Ce parcours utilise uniquement le fichier choisi, avec un profil de connexion séparé ; il ne consulte pas votre historique natif. Voir le [parcours et ses limites](docs/SITE-ANALYSIS.md).
+Pour analyser une demande téléchargée depuis le site, ouvrez **Réglages → Avancé → Outils de partage et analyses → Analyser une demande du site**. Choisissez le JSON, relisez son contenu et autorisez cette analyse avec votre connexion ChatGPT locale. Vous pourrez modifier le brouillon et l’exporter avant de l’importer volontairement sur le site. Ce parcours utilise uniquement le fichier choisi, avec un profil de connexion séparé ; il ne consulte pas votre historique natif. Voir le [parcours et ses limites](docs/SITE-ANALYSIS.md).
 
 ## Lancement à la connexion
 
@@ -128,12 +129,15 @@ L’icône de barre des menus permet de :
 - signaler un problème ;
 - quitter l’application.
 
-La fenêtre principale compte quatre rubriques (raccourcis ⌘1, ⌘2, ⌘3 et ⌘,) :
+La fenêtre principale compte cinq rubriques (raccourcis ⌘1 à ⌘4 et ⌘,) :
 
-- **Activité** — votre journée, vos 7 ou 28 derniers jours : temps actif, travail, concentration, changements d’app, rythme heure par heure, apps et sites. Si rien n’est enregistré (désactivé, en pause, autorisation à rétablir), la page le dit en tête avec le bouton utile ;
-- **Historique** — la chronologie d’une date, par source : ce Mac, Temps d’écran Apple et conversations locales ;
-- **Surveillance temps réel** — facultative, avec ses rappels, ses pauses et ses effets ;
-- **Réglages** — enregistrement, envoi à Goalong, analyse ChatGPT, apps et sites, autorisations macOS, stockage et options avancées.
+- **Activité** (⌘1) — votre journée, vos 7 ou 28 derniers jours : temps actif, travail, concentration, changements d’app, rythme heure par heure, apps et sites. Si rien n’est enregistré (désactivé, en pause, autorisation à rétablir), la page le dit en tête avec le bouton utile ;
+- **Mon travail** (⌘2) — votre définition du travail et le classement de vos usages, que vous pouvez corriger ;
+- **Historique** (⌘3) — la chronologie d’une date, par source : ce Mac, Temps d’écran Apple et conversations locales ;
+- **Concentration** (⌘4) — avec ses onglets **Maintenant** (séances), **Distractions** (vos listes) et **Programme** (le blocage) ;
+- **Réglages** (⌘,) — enregistrement, envoi à Goalong, analyse ChatGPT, apps et sites, autorisations macOS, stockage et options avancées. La **surveillance temps réel** (facultative, avec ses rappels, ses pauses et ses effets) se règle dans **Réglages → Jev**.
+
+Ambiance et Braise, quand vous activez ces modules, s’ajoutent dans la barre latérale avant Réglages ; ils n’ont pas de raccourci numéroté.
 
 Pour mesurer votre travail, classez vos principaux usages en **Travail** ou **Hors travail** directement depuis Activité : le choix s’applique à tout l’historique et reste modifiable dans **Réglages → Apps et sites**. Le temps au premier plan est volontairement prudent : Goalong n’invente jamais de minutes entre deux observations éloignées.
 
@@ -168,7 +172,7 @@ Double-cliquez `Uninstall.command` dans le dossier source, ou lancez :
 ./uninstall.sh
 ```
 
-Par défaut, l’application et ses autorisations sont supprimées, mais l’historique reste conservé. Pour supprimer aussi les données :
+Par défaut, l’application, ses autorisations (accès complet au disque, accessibilité, surveillance de la saisie, calendrier et rappels), ses hooks dans Claude Code, Codex, Cursor et OpenCode, et le lien `~/.local/bin/goalong` (s’il pointe vers Goalong) sont supprimés, mais l’historique reste conservé. Pour supprimer aussi les données, les préférences, les caches et les clés d’analyse du Trousseau (la clé d’identité de l’appareil reste dans le Trousseau) :
 
 ```bash
 ./uninstall.sh --purge-data

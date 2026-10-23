@@ -45,7 +45,7 @@ struct BlockingListFeedback: Equatable, Hashable {
     var attemptsToday: Int
     var earnedMinutesToday: Double
     var reasonLine: String? { reason.map { "« \($0) »" } }
-    var attemptLine: String? { attemptsToday >= 2 ? "\(attemptsToday)ᵉ tentative aujourd’hui" : nil }
+    var attemptLine: String? { attemptsToday >= 2 ? "\(FocusUIFormat.ordinal(attemptsToday)) tentative aujourd’hui" : nil }
     var earnedLine: String? { earnedMinutesToday > 0 ? "+\(Int(earnedMinutesToday)) min gagnées" : nil }
 }
 
@@ -77,7 +77,7 @@ extension BlockingRules {
         return triggers.apps.allSatisfy { app in
             let id = app.bundleIdentifier
             guard !id.isEmpty, id == id.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !neverBlocked.contains(id), !app.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+                  !isNeverBlocked(id), !app.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
             let appMatch = list.apps.contains { $0.bundleIdentifier == id }
             return list.mode == .block ? !appMatch : appMatch
         }

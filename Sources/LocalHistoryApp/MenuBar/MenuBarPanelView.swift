@@ -112,9 +112,7 @@
     }
 
     private func durationText(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds / 60)
-        if minutes < 60 { return "\(minutes) min" }
-        return minutes % 60 == 0 ? "\(minutes / 60) h" : "\(minutes / 60) h \(String(format: "%02d", minutes % 60))"
+        GoalongAnalyticsFormatting.duration(seconds)
     }
 
     private func clockText(_ seconds: TimeInterval) -> String {
@@ -149,17 +147,32 @@
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(ProductIdentity.displayName).font(.system(size: 13, weight: .semibold))
-                    HStack(spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Circle().fill(dotColor).frame(width: 6, height: 6)
-                        Text(model.trackingDetail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                            .lineLimit(1).truncationMode(.tail)
+                        VStack(alignment: .leading, spacing: 1) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                if let title = model.attentionTitle {
+                                    Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
+                                        .lineLimit(1).truncationMode(.tail)
+                                }
+                                Text(model.trackingDetail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                    .lineLimit(model.attentionTitle == nil ? 1 : 3).truncationMode(.tail)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .accessibilityElement(children: .combine)
+                            if let fix = model.attentionFix {
+                                Button(fix.label) { model.perform(fix) }
+                                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                                    .accessibilityIdentifier("menubar-attention-fix")
+                            }
+                        }
                     }
+                    .help(model.attentionTitle.map { "\($0) : \(model.trackingDetail)" } ?? model.trackingDetail)
                 }
-                .accessibilityElement(children: .combine)
                 Spacer(minLength: 8)
                 PanelIconButton(
-                    symbol: paused ? "play.fill" : "pause.fill",
-                    label: paused ? "Reprendre le suivi" : "Mettre le suivi en pause",
+                    symbol: model.consentOff || model.globalPaused ? "gearshape.fill" : (paused ? "play.fill" : "pause.fill"),
+                    label: model.headerActionLabel,
                     prominent: paused,
                     action: model.togglePause
                 )
@@ -178,7 +191,7 @@
                 Button("Voir la journée", action: model.openDay).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
             } content: {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    WorkFigure(seconds: model.workSeconds)
+                    WorkFigure(seconds: model.workSeconds, known: model.workKnown)
                     Text(model.otherSeconds >= 60
                         ? "de travail, \(durationText(model.otherSeconds)) hors travail" : "de travail")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
@@ -192,10 +205,17 @@
     /// « 3 h 12 »: hours large, minutes one step down, like the app's period figure.
     private struct WorkFigure: View {
         let seconds: TimeInterval
+        let known: Bool
         var body: some View {
-            let minutes = Int(seconds / 60)
+            // Rounded like the Activity page, so both show the same figure for the same day.
+            let minutes = Int((seconds / 60).rounded())
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                if minutes >= 60 {
+                if !known {
+                    Text("—").font(.system(size: 28, weight: .bold)).tracking(-0.6)
+                } else if seconds > 0 && seconds < 60 {
+                    Text("< 1").font(.system(size: 28, weight: .bold)).tracking(-0.6)
+                    Text("min").font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                } else if minutes >= 60 {
                     Text("\(minutes / 60) h").font(.system(size: 28, weight: .bold)).tracking(-0.6)
                     Text(String(format: "%02d", minutes % 60)).font(.system(size: 17, weight: .semibold)).tracking(-0.2)
                 } else {
@@ -205,7 +225,7 @@
             }
             .goalongNumericTransition()
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(durationText(seconds)) de travail aujourd’hui")
+            .accessibilityLabel(known ? "\(durationText(seconds)) de travail aujourd’hui" : "Temps de travail aujourd’hui : à classer")
         }
     }
 
@@ -272,6 +292,10 @@
                 Group {
                     if let run = model.focusRun {
                         FocusRunning(run: run, model: model).transition(.opacity.combined(with: .move(edge: .trailing)))
+                    } else if !model.concentrationEnabled {
+                        InactiveRow(text: "Séances libres ou Pomodoro, avec blocage.",
+                                    action: "Activer dans Réglages", perform: model.openModulesSettings)
+                            .transition(.opacity)
                     } else {
                         FocusSetup(model: model).transition(.opacity.combined(with: .move(edge: .leading)))
                     }
@@ -307,8 +331,16 @@
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.focusAvailable)
                 if !model.focusAvailable, let reason = model.focusUnavailableReason {
-                    Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let fix = model.focusUnavailableFix {
+                            Spacer(minLength: 8)
+                            Button(fix.label) { model.perform(fix) }
+                                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                                .accessibilityIdentifier("menubar-focus-fix")
+                        }
+                    }
                 }
             }
             .animation(reduceMotion ? nil : LHTheme.settle, value: model.focusKind)
@@ -365,7 +397,7 @@
                         .accessibilityHidden(true)
                     }
                     Spacer(minLength: 8)
-                    Button("Terminer", action: model.stopFocus)
+                    Button("Arrêter", action: model.stopFocus)
                         .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                 }
             }
@@ -414,11 +446,11 @@
         }
 
         private func tabTitle(_ tab: MenuBarPanelModel.AmbianceTab) -> String {
-            switch tab { case .focus: return "Focus"; case .relax: return "Détente"; case .texture: return "Textures"; case .ownFile: return "Mes fichiers" }
+            kind(of: tab).displayName
         }
 
         private func kindTitle(_ kind: AmbianceSource.Kind) -> String {
-            switch kind { case .focus: return "Focus"; case .relax: return "Détente"; case .texture: return "Texture"; case .ownFile: return "Fichier" }
+            kind.displayName
         }
 
         private var tabs: [MenuBarPanelModel.AmbianceTab] {
@@ -440,7 +472,7 @@
             } content: {
                 if !model.ambianceEnabled {
                     InactiveRow(text: "Musique générative pour travailler ou se reposer.",
-                                action: "Activer l’Ambiance", perform: model.enableAmbiance)
+                                action: "Activer dans Réglages", perform: model.enableAmbiance)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
                         player
@@ -480,7 +512,8 @@
                 VStack(alignment: .leading, spacing: 1) {
                     Text(model.ambianceCurrent?.title ?? "Aucun son choisi")
                         .font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 4)
@@ -488,7 +521,7 @@
                     PanelIconButton(symbol: "forward.fill", label: "Son suivant", quiet: true, action: model.playNext)
                 }
                 Button(action: model.togglePlay) {
-                    Image(systemName: model.ambiancePlaying ? "pause.fill" : "play.fill")
+                    Image(systemName: model.ambiancePlaying ? "stop.fill" : "play.fill")
                         .font(.system(size: 12, weight: .bold))
                         .frame(width: 32, height: 32)
                         .background(Circle().fill(LHTheme.elevatedBackground))
@@ -497,15 +530,15 @@
                 }
                 .buttonStyle(.plain)
                 .disabled(model.ambianceCurrent == nil || model.ambianceLoading)
-                .help(model.ambiancePlaying ? "Pause" : "Lire")
-                .accessibilityLabel(model.ambiancePlaying ? "Mettre l’Ambiance en pause" : "Lire l’Ambiance")
+                .help(model.ambiancePlaying ? "Arrêter" : "Lire")
+                .accessibilityLabel(model.ambiancePlaying ? "Arrêter l’Ambiance" : "Lire l’Ambiance")
             }
         }
 
         private var subtitle: String {
             guard let current = model.ambianceCurrent else { return "Choisissez un son ci-dessous" }
             if model.ambianceLoading { return "\(kindTitle(current.kind)), chargement…" }
-            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en lecture" : "\(kindTitle(current.kind)), dernière écoutée"
+            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en cours" : "\(kindTitle(current.kind)), écouté en dernier"
         }
 
         private var volume: some View {
@@ -525,9 +558,9 @@
                 HStack(spacing: 2) {
                     ForEach(tabs, id: \.self) { t in
                         Button { tab = t } label: {
-                            Text(tabTitle(t)).font(.system(size: 12, weight: .medium)).lineLimit(1).fixedSize()
+                            Text(tabTitle(t)).font(.system(size: 12, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
                                 .foregroundStyle(tab == t ? LHTheme.text : LHTheme.secondaryText)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .padding(.horizontal, 6).padding(.vertical, 3)
                                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                                     .fill(tab == t ? LHTheme.elevatedBackground : .clear))
                                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -594,7 +627,7 @@
             PanelSection(title: "Blocage") {
                 if !model.blockingEnabled {
                     InactiveRow(text: "Bloquez les sites et apps qui vous distraient.",
-                                action: "Activer le Blocage", perform: model.openSettings)
+                                action: "Activer dans Réglages", perform: model.openModulesSettings)
                 } else if model.blockLists.isEmpty {
                     InactiveRow(text: "Aucune liste pour l’instant.", action: "Créer une liste", perform: model.openApp)
                 } else {
@@ -632,10 +665,10 @@
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
                         .accessibilityLabel("Demander l’arrêt de \(list.title)")
                 } else {
-                    GoalongSwitch(isOn: Binding(get: { list.isActive }, set: { model.setBlockList(list.id, active: $0) }))
+                    Toggle("Bloquer \(list.title)", isOn: Binding(get: { list.isActive }, set: { model.setBlockList(list.id, active: $0) }))
+                        .toggleStyle(GoalongSwitchStyle(layout: .switchOnly))
                         .controlSize(.small)
                         .help(list.isActive ? "Arrêter ce blocage" : "Bloquer jusqu’à minuit")
-                        .accessibilityLabel("Bloquer \(list.title)")
                 }
             }
             .frame(minHeight: 40)

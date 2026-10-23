@@ -12,10 +12,14 @@ struct GoalongActivityNavigation: Equatable {
     private(set) var day: Date
     private(set) var period: Int
     private(set) var returnContext: Context?
+    /// The calendar day this navigation last saw as today. It lives with the navigation, not the
+    /// page, so a page rebuilt after midnight still knows that « aujourd’hui » was yesterday.
+    private(set) var seenToday: Date
 
-    init(day: Date = Date(), period: Int = 1, calendar: Calendar = .current) {
+    init(day: Date = GoalongToday.now, period: Int = 1, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         self.day = calendar.startOfDay(for: day)
         self.period = [1, 7, 28].contains(period) ? period : 1
+        seenToday = calendar.startOfDay(for: now)
     }
 
     func interval(calendar: Calendar = .current) -> DateInterval {
@@ -24,9 +28,10 @@ struct GoalongActivityNavigation: Equatable {
         return DateInterval(start: start, end: end)
     }
 
-    mutating func selectDay(_ value: Date, now: Date = Date(), calendar: Calendar = .current) {
+    mutating func selectDay(_ value: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         day = min(calendar.startOfDay(for: value), calendar.startOfDay(for: now))
         returnContext = nil
+        seenToday = calendar.startOfDay(for: now)
     }
 
     mutating func selectPeriod(_ value: Int) {
@@ -35,22 +40,39 @@ struct GoalongActivityNavigation: Equatable {
         returnContext = nil
     }
 
-    mutating func step(_ direction: Int, now: Date = Date(), calendar: Calendar = .current) {
+    mutating func step(_ direction: Int, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         guard direction == -1 || direction == 1,
               let next = calendar.date(byAdding: .day, value: direction * period, to: day) else { return }
         selectDay(next, now: now, calendar: calendar)
     }
 
-    mutating func today(now: Date = Date(), calendar: Calendar = .current) {
+    mutating func today(now: Date = GoalongToday.now, calendar: Calendar = .current) {
         day = calendar.startOfDay(for: now)
         period = 1
         returnContext = nil
+        seenToday = day
     }
 
-    mutating func openDay(_ value: Date, now: Date = Date(), calendar: Calendar = .current) {
+    mutating func openDay(_ value: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         if period > 1 { returnContext = Context(day: day, period: period) }
         day = min(calendar.startOfDay(for: value), calendar.startOfDay(for: now))
         period = 1
+        seenToday = calendar.startOfDay(for: now)
+    }
+
+    /// After midnight, a navigation left on the old today moves to the new today (same period,
+    /// return context kept and moved too). A past day chosen by the user stays. Returns true
+    /// when the calendar day changed since this navigation last saw it.
+    @discardableResult
+    mutating func followToday(now: Date = GoalongToday.now, calendar: Calendar = .current) -> Bool {
+        let today = calendar.startOfDay(for: now)
+        guard today > seenToday else { return false }
+        if calendar.isDate(day, inSameDayAs: seenToday) { day = today }
+        if let context = returnContext, calendar.isDate(context.day, inSameDayAs: seenToday) {
+            returnContext = Context(day: today, period: context.period)
+        }
+        seenToday = today
+        return true
     }
 
     mutating func restorePeriod() {

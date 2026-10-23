@@ -451,7 +451,9 @@
 
         private func synchronizeCurrentHandle() throws {
             guard let handle = currentHandle, writesSinceSync > 0 else { return }
-            try handle.synchronize()
+            // A barrier sync orders these rows before the integrity checkpoint written next.
+            let code = DurableSync.barrier(handle.fileDescriptor)
+            guard code == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(code)) }
             synchronizationCount += 1
             writesSinceSync = 0
         }
@@ -1057,16 +1059,15 @@
             while true {
                 let result = Darwin.write(descriptor, &newline, 1)
                 if result == 1 { return }
-                if result < 0, errno == EINTR { continue }
-                throw JSONLStoreError.couldNotWriteDeletionTemporaryFile(fileURL)
+                let code = result < 0 ? errno : 0
+                if code == EINTR { continue }
+                throw posixFailure(.couldNotWriteDeletionTemporaryFile(fileURL), code: code)
             }
         }
 
         private static func synchronize(descriptor: Int32, fileURL: URL) throws {
-            while Darwin.fsync(descriptor) != 0 {
-                if errno == EINTR { continue }
-                throw JSONLStoreError.couldNotSynchronizeDeletion(fileURL)
-            }
+            let code = DurableSync.full(descriptor)
+            guard code == 0 else { throw posixFailure(.couldNotSynchronizeDeletion(fileURL), code: code) }
         }
 
         private static func openVerifiedDirectory(at directoryURL: URL) throws -> DirectoryHandle {
@@ -1481,7 +1482,11 @@
                 }
             }
             guard descriptor >= 0 else {
-                throw JSONLStoreError.unsafeEventFile(fileURL)
+                let code = errno
+                // A symlink or a non-directory path is refused as unsafe; a full disk,
+                // a quota or a permission error keeps its errno for the storage banner.
+                if [ELOOP, EMLINK, ENOTDIR].contains(code) { throw JSONLStoreError.unsafeEventFile(fileURL) }
+                throw posixFailure(.couldNotOpenEventFile(fileURL), code: code)
             }
 
             var info = stat()
@@ -1496,8 +1501,12 @@
                 _ = Darwin.close(descriptor)
                 throw JSONLStoreError.unsafeEventFile(fileURL)
             }
-            guard permissionSetter(descriptor, mode_t(0o600)) == 0,
-                Darwin.fstat(descriptor, &info) == 0,
+            guard permissionSetter(descriptor, mode_t(0o600)) == 0 else {
+                let code = errno
+                _ = Darwin.close(descriptor)
+                throw posixFailure(.unsafeEventFile(fileURL), code: code)
+            }
+            guard Darwin.fstat(descriptor, &info) == 0,
                 isSafeRegularFile(info),
                 info.st_mode & mode_t(0o777) == mode_t(0o600),
                 try descriptorTargetsCurrentPath(
@@ -1514,14 +1523,17 @@
                 var finalByte: UInt8 = 0
                 let readCount = pread(descriptor, &finalByte, 1, info.st_size - 1)
                 guard readCount == 1 else {
+                    let code = readCount < 0 ? errno : 0
                     _ = Darwin.close(descriptor)
-                    throw JSONLStoreError.couldNotInspectEventTail(fileURL)
+                    throw posixFailure(.couldNotInspectEventTail(fileURL), code: code)
                 }
                 if finalByte != 0x0A {
                     var newline: UInt8 = 0x0A
-                    guard write(descriptor, &newline, 1) == 1 else {
+                    let written = write(descriptor, &newline, 1)
+                    guard written == 1 else {
+                        let code = written < 0 ? errno : 0
                         _ = Darwin.close(descriptor)
-                        throw JSONLStoreError.couldNotSeparateIncompleteEventTail(fileURL)
+                        throw posixFailure(.couldNotSeparateIncompleteEventTail(fileURL), code: code)
                     }
                     Diagnostics.write(
                         "Preserved an incomplete event-journal tail as its own malformed row before appending new events"
@@ -1563,38 +1575,69 @@
             else { throw JSONLStoreError.unsafeEventFile(fileURL) }
             guard info.st_size > 0 else { return nil }
 
-            let byteCount = min(Int64(maximumTailBytes), Int64(info.st_size))
-            let offset = Int64(info.st_size) - byteCount
-            var data = Data(count: Int(byteCount))
-            let bytesRead = data.withUnsafeMutableBytes { buffer -> Int in
-                guard let baseAddress = buffer.baseAddress else { return 0 }
-                return pread(descriptor, baseAddress, Int(byteCount), off_t(offset))
-            }
-            guard bytesRead >= 0 else {
-                throw JSONLStoreError.couldNotInspectEventTail(fileURL)
-            }
-            if bytesRead < data.count { data.removeSubrange(bytesRead..<data.count) }
-
-            let rows = data.split(separator: 0x0A, omittingEmptySubsequences: true)
-            for (index, row) in rows.enumerated().reversed() {
-                // A bounded tail can begin in the middle of a large row. Never accept
-                // that leading fragment as recovery evidence.
-                if offset > 0, index == 0 { continue }
-                if let event = try? decoder.decode(HistoryEvent.self, from: Data(row)) {
-                    return event
+            // Read a small tail first and grow it only when no complete row decodes.
+            // A normal journal ends with a small row, so launch reads kilobytes, not
+            // megabytes; the result is the same as one read of the full cap.
+            let fileSize = Int64(info.st_size)
+            let cap = min(Int64(maximumTailBytes), fileSize)
+            var window = min(Int64(initialTailWindowBytes), cap)
+            while true {
+                let byteCount = window
+                let offset = fileSize - byteCount
+                var data = Data(count: Int(byteCount))
+                let bytesRead = data.withUnsafeMutableBytes { buffer -> Int in
+                    guard let baseAddress = buffer.baseAddress else { return 0 }
+                    return pread(descriptor, baseAddress, Int(byteCount), off_t(offset))
                 }
+                guard bytesRead >= 0 else {
+                    throw JSONLStoreError.couldNotInspectEventTail(fileURL)
+                }
+                if bytesRead < data.count { data.removeSubrange(bytesRead..<data.count) }
+
+                let rows = data.split(separator: 0x0A, omittingEmptySubsequences: true)
+                for (index, row) in rows.enumerated().reversed() {
+                    // A bounded tail can begin in the middle of a large row. Never accept
+                    // that leading fragment as recovery evidence.
+                    if offset > 0, index == 0 { continue }
+                    if let event = try? decoder.decode(HistoryEvent.self, from: Data(row)) {
+                        return event
+                    }
+                }
+                if window >= cap { return nil }
+                window = min(window * 4, cap)
             }
-            return nil
         }
+
+        static let initialTailWindowBytes = 64 * 1_024
 
         private static func isKnownEventFileName(_ name: String) -> Bool {
             guard name.count == 16, name.hasSuffix(".jsonl") else { return false }
             return dayFormatter.date(from: String(name.prefix(10))) != nil
         }
 
+        /// Keeps the errno of a failed system call so StorageHealth can tell a full disk
+        /// or a permission error from an unsafe file. Only the numeric code is added.
+        private struct POSIXFailure: LocalizedError, CustomNSError {
+            let base: JSONLStoreError
+            let code: Int32
+            var errorDescription: String? { base.errorDescription }
+            static var errorDomain: String { "LocalHistory.JSONLStore" }
+            var errorCode: Int { Int(code) }
+            var errorUserInfo: [String: Any] {
+                var info: [String: Any] = [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(code))]
+                if let errorDescription { info[NSLocalizedDescriptionKey] = errorDescription }
+                return info
+            }
+        }
+
+        private static func posixFailure(_ base: JSONLStoreError, code: Int32) -> Error {
+            code == 0 ? base : POSIXFailure(base: base, code: code)
+        }
+
         private enum JSONLStoreError: LocalizedError {
             case unsafeEventsDirectory(URL)
             case unsafeEventFile(URL)
+            case couldNotOpenEventFile(URL)
             case missingEventHandle(URL)
             case couldNotInspectEventTail(URL)
             case couldNotSeparateIncompleteEventTail(URL)
@@ -1623,6 +1666,8 @@
                     return "The events directory is unavailable or unsafe at \(url.path)."
                 case .unsafeEventFile(let url):
                     return "Refusing to modify a linked or non-regular event file at \(url.path)."
+                case .couldNotOpenEventFile(let url):
+                    return "Could not open the event journal at \(url.path)."
                 case .missingEventHandle(let url):
                     return "The event journal handle disappeared before writing \(url.path)."
                 case .couldNotInspectEventTail(let url):

@@ -205,6 +205,8 @@ struct BlockingProtectionState: Hashable {
     var level: BlockingProtectionLevel = .standard
     var component: Component = .notInstalled
     var launchAtLogin = false
+    /// The kill guard (spec K); `.running` makes the level strict.
+    var guardian: Component = .notInstalled
 }
 
 struct BlockingFrictionPresentation: Equatable {

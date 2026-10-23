@@ -22,7 +22,7 @@
                 Alert(
                     title: Text("Supprimer cette session d’application ?"),
                     message: Text(
-                        "Seuls les événements locaux de cette session et les instantanés liés seront supprimés. Les vues de la journée seront reconstruites ; sceaux, reçus, Temps d’écran et conversations IA sont conservés."
+                        "Goalong supprimera les événements locaux de cette session et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés ; les vues de la journée seront reconstruites. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
                     ),
                     primaryButton: .destructive(Text("Supprimer la session")) {
                         model.deleteActivitySession(session)
@@ -39,7 +39,7 @@
                 GoalongSegmentedControl("Filtre", selection: $model.activityFilter,
                                         options: ActivityFilter.allCases) { $0.title }
 
-                Text("\(model.filteredSessions.count) session\(model.filteredSessions.count == 1 ? "" : "s")")
+                Text(GoalongWebsiteSharingModel.frCount(model.filteredSessions.count, "session", "sessions"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 72, alignment: .trailing)
@@ -222,7 +222,7 @@
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(LHTheme.privateTint)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Details intentionally unavailable")
+                    Text("Détails volontairement indisponibles")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
                         "Goalong n’a conservé que l’état de couverture pour cette période : l’adresse, le titre et la saisie masqués ne pourront jamais être révélés."
@@ -242,10 +242,10 @@
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(LHTheme.warning)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Software-attributed input detected")
+                    Text("Saisie attribuée à un logiciel détectée")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "macOS a attribué \(session.softwareAttributedEventCount) événement(s) de saisie à un logiciel. C’est un signal d’intégrité, pas une preuve de triche."
+                        "macOS a attribué \(GoalongWebsiteSharingModel.frCount(session.softwareAttributedEventCount, "événement", "événements")) de saisie à un logiciel. C’est un signal d’intégrité, pas une preuve de triche."
                     )
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)

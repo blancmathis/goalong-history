@@ -9,7 +9,10 @@ import LocalHistoryQueryCLI
 @MainActor final class ConcentrationRuntime: ObservableObject {
     static let shared = ConcentrationRuntime()
     @Published private(set) var controller: ConcentrationController?
+    /// Why the module could not start. Shown only while the module is on and has no controller.
     @Published private(set) var error: String?
+    /// A failed background measurement. The controller keeps working without measurements.
+    @Published private(set) var measurementError: String?
     lazy var statusHub = GoalongFocusStatusHub()
     var onOpen: (() -> Void)?
     /// The phase and the minutes left, for the menu bar; `nil` when no session runs.
@@ -27,7 +30,9 @@ import LocalHistoryQueryCLI
     private let factory: ((FocusStore) throws -> ConcentrationController)?
     private let clock: () -> Date
     private let calendar: Calendar
-    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .current) {
+    /// Set by the app before start(); the CLI and tests keep the silent default.
+    var audio: FocusSessionAudio = NoOpFocusSessionAudio()
+    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) {
         self.storeFactory = storeFactory; self.factory = factory; self.blockingProvider = blockingProvider; self.presentsPanels = presentsPanels
         self.clock = clock; self.calendar = calendar
     }
@@ -41,7 +46,7 @@ import LocalHistoryQueryCLI
         if enabled, controller == nil {
             do {
                 let store = storeFactory()
-                let value = try factory?(store) ?? ConcentrationController(store: store, clock: clock, calendar: calendar, blocking: blockingProvider, runsTimers: true)
+                let value = try factory?(store) ?? ConcentrationController(store: store, clock: clock, calendar: calendar, blocking: blockingProvider, audio: audio, runsTimers: true)
                 controller = value; error = nil
                 NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
                 value.onStatusChange = { [weak self] status in if let data = try? FocusJSON.encode(status) { self?.statusHub.publish(data) } }
@@ -64,7 +69,7 @@ import LocalHistoryQueryCLI
                     self?.updateMenuBar(phase: phase, session: session)
                 }
                 refreshMeasurements()
-            } catch { self.error = String(describing: error) }
+            } catch { self.error = FocusUIError.message(error) }
         } else if !enabled, let controller {
             controller.refresh()
             if controller.hasLockedBlock { modules?.setEnabled(.concentration, true); error = FocusFailure.locked.rawValue; return }
@@ -73,14 +78,21 @@ import LocalHistoryQueryCLI
             menuBarSubscription = nil; menuBarTimer?.invalidate(); menuBarTimer = nil; onMenuBarText?(nil)
             presenter?.close(); presenter = nil; self.controller = nil
             NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
+            error = nil; measurementError = nil
+        } else if !enabled {
+            // Off with no controller: a start failure no longer applies.
+            error = nil; measurementError = nil
         }
     }
+    /// App quit: save a pending stop (or leave its tombstone). A running session is not ended.
+    func flushForTermination() { controller?.flushPendingStop() }
     func noteInput(at: Date, count: Int) { controller?.noteInput(at: at, count: count) }
     /// Minutes, not seconds: one wake per minute while a session runs, none otherwise.
     private func updateMenuBar(phase: FocusPhase?, session: FocusSession?) {
         menuBarTimer?.invalidate(); menuBarTimer = nil
-        guard let session, let phase, phase.kind != .ended else { onMenuBarText?(nil); return }
-        let now = Date(), text: String, next: TimeInterval
+        let now = Date()
+        guard let session, let phase, phase.kind != .ended, phase.endsAt.map({ $0 > now }) ?? true else { onMenuBarText?(nil); return }
+        let text: String, next: TimeInterval
         if let end = phase.endsAt {
             let left = max(0, end.timeIntervalSince(now)), minutes = max(1, Int((left / 60).rounded(.up)))
             text = (phase.isWork ? "" : "Pause ") + "\(minutes) min"
@@ -98,11 +110,17 @@ import LocalHistoryQueryCLI
         menuBarTimer = timer
     }
     func deleteData() throws {
+        error = nil
         controller?.refresh()
         if controller?.hasLockedBlock == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
         let wasEnabled = modules?.isEnabled(.concentration) == true
         apply(enabled: false)
-        do { try storeFactory().deleteData() } catch { self.error = String(describing: error); if wasEnabled { apply(enabled: true) }; throw error }
+        do { try storeFactory().deleteData() } catch {
+            // Re-enable first: `apply(enabled: true)` resets `error`, which must keep the failure.
+            if wasEnabled { apply(enabled: true) }
+            self.error = FocusUIError.message(error)
+            throw error
+        }
         if wasEnabled { apply(enabled: true) }
     }
     private func refreshMeasurements() {
@@ -135,7 +153,7 @@ import LocalHistoryQueryCLI
                 }
                 for date in dates where canRead {
                     try Task.checkCancellation()
-                    measured[BlockingController.dayKey(date, calendar: calendar)] = try await GoalongAnalyticsReader.shared.focusDay(date, verdicts: verdicts)
+                    measured[FocusCalendar.dayKey(date, calendar: calendar)] = try await GoalongAnalyticsReader.shared.focusDay(date, verdicts: verdicts)
                 }
                 var valued = 0
                 for day in try store.planDays().reversed() {
@@ -152,8 +170,9 @@ import LocalHistoryQueryCLI
                 guard let self, !Task.isCancelled, generation == self.measurementGeneration,
                       canRead == (GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) && !GoalongGlobalPause.isPaused()) else { if self?.measurementGeneration == generation { self?.measurementTask = nil }; return }
                 controller?.applyMeasurements(Array(measured.values), hasDefinition: hasDefinition)
+                self.measurementError = nil
             } catch {
-                if !(error is CancellationError) { self?.error = String(describing: error) }
+                if !(error is CancellationError) { self?.measurementError = FocusUIError.message(error) }
             }
             if self?.measurementGeneration == generation { self?.measurementTask = nil }
         }
@@ -165,7 +184,7 @@ import LocalHistoryQueryCLI
             let validated = try request.validated()
             if validated.command == "block-lists" {
                 let lists: [[String: Any]] = b.lists.map { list in ["id": list.id.uuidString, "name": list.name, "mode": list.mode.rawValue,
-                    "action": list.effectiveAction.rawValue, "locked": b.activeBlocks.contains { $0.lock == .locked && $0.listIDs.contains(list.id) } || list.program.isLocked(at: Date())] }
+                    "action": list.effectiveAction.rawValue, "locked": b.isStricterOnly(list.id)] }
                 return try JSONSerialization.data(withJSONObject: ["schema": 1, "lists": lists], options: [.sortedKeys])
             }
             return try FocusJSON.encode(b.frictionCounts(day: resolveDay(validated.options["--day"] ?? "today")))
@@ -320,7 +339,15 @@ import LocalHistoryQueryCLI
             } else {
                 guard let kind = o["--kind"].flatMap(FocusCommitment.Kind.init(rawValue:)),
                       let target = GoalongCommitmentCLI.target(o["--target"] ?? "", kind: kind.rawValue) else { throw FocusFailure.invalidArgument }
-                let stake = o["--stake"].map { FocusStake(listIds: $0.split(separator: ",").compactMap { UUID(uuidString: String($0)) }, until: o["--until"] ?? "12:00") }
+                // A mistyped list ID or an `--until` at midnight (always already past at settle time) is refused, not dropped.
+                let stake: FocusStake? = try o["--stake"].map { raw in
+                    let ids = try raw.split(separator: ",", omittingEmptySubsequences: false).map { part -> UUID in
+                        guard let id = UUID(uuidString: String(part)) else { throw FocusFailure.invalidArgument }; return id
+                    }
+                    let value = FocusStake(listIds: ids, until: o["--until"] ?? "12:00")
+                    guard value.minute.map({ $0 > 0 }) == true else { throw FocusFailure.invalidArgument }
+                    return value
+                }
                 _ = try controller.setCommitment(period: period, kind: kind, target: target, task: o["--task"], stake: stake)
             }
         case "commitment delete":

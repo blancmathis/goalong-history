@@ -377,6 +377,63 @@ final class IntegrationInstallerChurnTests: XCTestCase {
         XCTAssertEqual(try regularBackupCount(for: directoryURL), 0)
     }
 
+    func testStatusReportsHooksInstalledForAnotherExecutableAndBrokenTargets() throws {
+        let home = try makeTemporaryDirectory("other-executable")
+        let a = home.appendingPathComponent("Copy A/Goalong's History")
+        let b = home.appendingPathComponent("Copy B/Goalong History")
+        for url in [a, b] {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: Data()))
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+        let installerA = AgentIntegrationInstaller(executableURL: a, homeDirectory: home)
+        let installerB = AgentIntegrationInstaller(executableURL: b, homeDirectory: home)
+        for kind in AgentIntegrationKind.allCases {
+            try installerA.install(kind)
+            XCTAssertTrue(installerA.status(for: kind).isInstalled)
+            XCTAssertNil(installerA.status(for: kind).otherExecutablePath)
+
+            let other = installerB.status(for: kind)
+            XCTAssertFalse(other.isInstalled)
+            XCTAssertEqual(other.otherExecutablePath, a.standardizedFileURL.path, "\(kind)")
+            XCTAssertTrue(other.otherExecutableExists)
+        }
+        try FileManager.default.removeItem(at: a)
+        for kind in AgentIntegrationKind.allCases {
+            let broken = installerB.status(for: kind)
+            XCTAssertEqual(broken.otherExecutablePath, a.standardizedFileURL.path)
+            XCTAssertFalse(broken.otherExecutableExists)
+        }
+        for kind in AgentIntegrationKind.allCases {
+            try installerB.install(kind)
+            let status = installerB.status(for: kind)
+            XCTAssertTrue(status.isInstalled)
+            XCTAssertNil(status.otherExecutablePath)
+        }
+        let settings = try String(
+            contentsOf: installerB.configurationURL(for: .claudeCodeHooks), encoding: .utf8)
+        XCTAssertFalse(settings.contains("Copy A"))
+    }
+
+    func testUninstallRemovesHooksOfAnotherCopyAndKeepsForeignHooks() throws {
+        let home = try makeTemporaryDirectory("uninstall-other-copy")
+        let executable = home.appendingPathComponent("Goalong History")
+        XCTAssertTrue(FileManager.default.createFile(atPath: executable.path, contents: Data()))
+        let installer = AgentIntegrationInstaller(executableURL: executable, homeDirectory: home)
+        let url = installer.configurationURL(for: .claudeCodeHooks)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let foreign = #"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/usr/bin/true"}]}]}}"#
+        try foreign.write(to: url, atomically: true, encoding: .utf8)
+        try installer.install(.claudeCodeHooks)
+        let other = AgentIntegrationInstaller(
+            executableURL: home.appendingPathComponent("Other"), homeDirectory: home)
+        try other.uninstall(.claudeCodeHooks)
+        let settings = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(settings.contains("--agent-hook-ingest"))
+        XCTAssertTrue(settings.contains("/usr/bin/true"))
+    }
+
     func testOpenCodeUninstallIsIdempotentAndKeepsPrivateBoundedBackups() throws {
         let home = try makeTemporaryDirectory("idempotent-uninstall")
         let executable = home.appendingPathComponent("Goalong History")
@@ -402,6 +459,42 @@ final class IntegrationInstallerChurnTests: XCTestCase {
                 AgentIntegrationInstaller.maximumConfigurationBytes
             )
         }
+    }
+
+    func testUninstallLeavesForeignOnlyConfigurationsUntouched() throws {
+        let home = try makeTemporaryDirectory("uninstall-foreign")
+        let executable = home.appendingPathComponent("Goalong History")
+        XCTAssertTrue(FileManager.default.createFile(atPath: executable.path, contents: Data()))
+        let installer = AgentIntegrationInstaller(executableURL: executable, homeDirectory: home)
+        let raw = Data("{\"hooks\":{\"Stop\":[{\"command\":\"echo mine\"}]},\n  \"env\": {\"B\":1, \"A\":2}}".utf8)
+        for kind in [AgentIntegrationKind.claudeCodeHooks, .codexHooks, .cursorHooks] {
+            let url = installer.configurationURL(for: kind)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try raw.write(to: url)
+            try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+            try installer.uninstall(kind)
+            XCTAssertEqual(try Data(contentsOf: url), raw)
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o644)
+            let siblings = try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
+            XCTAssertFalse(siblings.contains { $0.contains(".goalong-backup-") })
+        }
+    }
+
+    func testUninstallRemovesGoalongHookAndKeepsForeignHooks() throws {
+        let home = try makeTemporaryDirectory("uninstall-mixed")
+        let executable = home.appendingPathComponent("Goalong History")
+        XCTAssertTrue(FileManager.default.createFile(atPath: executable.path, contents: Data()))
+        let installer = AgentIntegrationInstaller(executableURL: executable, homeDirectory: home)
+        try writeJSON(
+            ["hooks": ["Stop": [
+                nestedHook("echo mine"),
+                nestedHook("/old/goalong --agent-hook-ingest claudeCode Stop"),
+            ]]], to: installer.configurationURL(for: .claudeCodeHooks))
+        try installer.uninstall(.claudeCodeHooks)
+        let text = try String(contentsOf: installer.configurationURL(for: .claudeCodeHooks), encoding: .utf8)
+        XCTAssertTrue(text.contains("echo mine"))
+        XCTAssertFalse(text.contains("--agent-hook-ingest"))
     }
 
     private func nestedHook(_ command: String) -> [String: Any] {

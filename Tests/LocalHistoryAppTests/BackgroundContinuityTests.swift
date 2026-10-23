@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import ServiceManagement
     import XCTest
     @testable import LocalHistoryApp
 
@@ -13,12 +14,50 @@
             return defaults
         }
 
+        @MainActor func testInterruptionNoticeIsFrench() {
+            let text = BackgroundContinuityController.interruptionNoticeText
+            XCTAssertTrue(text.hasPrefix("La session précédente"))
+            XCTAssertFalse(text.contains("previous session"))
+        }
+
         func testBackgroundProtectionDefaultsOnWithoutPersistingAChoice() {
             let defaults = isolatedDefaults()
             let preferences = BackgroundContinuityPreferences(defaults: defaults)
             XCTAssertTrue(preferences.keepRunning)
             XCTAssertNil(defaults.object(forKey: BackgroundContinuityPreferences.keepRunningKey))
             XCTAssertFalse(preferences.manuallyPaused)
+        }
+
+        func testBlockingRemovesOnlyTheLoginItemItForcedAndOnlyAfterAnOptOut() {
+            typealias P = BackgroundContinuityPreferences
+            // A lock registers a missing item once, never one already there or pending approval.
+            XCTAssertEqual(P.blockingLoginAction(locked: true, registered: false, requested: false, forced: false, consentEnabled: false), .register)
+            XCTAssertEqual(P.blockingLoginAction(locked: true, registered: false, requested: true, forced: true, consentEnabled: false), .none)
+            XCTAssertEqual(P.blockingLoginAction(locked: true, registered: true, requested: false, forced: false, consentEnabled: false), .none)
+            // The lock ended: an item Blocage forced goes away when the member's choice is off.
+            XCTAssertEqual(P.blockingLoginAction(locked: false, registered: true, requested: true, forced: true, consentEnabled: false), .release)
+            XCTAssertEqual(P.blockingLoginAction(locked: false, registered: true, requested: false, forced: true, consentEnabled: true), .none)
+            XCTAssertEqual(P.blockingLoginAction(locked: false, registered: true, requested: false, forced: false, consentEnabled: false), .none)
+            XCTAssertEqual(P.blockingLoginAction(locked: false, registered: false, requested: false, forced: true, consentEnabled: false), .none)
+        }
+
+        func testOptOutDuringALockKeepsTheLoginItemUntilTheLockEnds() {
+            typealias P = BackgroundContinuityPreferences
+            XCTAssertTrue(P.keepsLoginItem(enabled: false, registered: true, lockActive: true))
+            XCTAssertFalse(P.keepsLoginItem(enabled: false, registered: true, lockActive: false))
+            XCTAssertFalse(P.keepsLoginItem(enabled: true, registered: true, lockActive: true))
+            XCTAssertFalse(P.keepsLoginItem(enabled: false, registered: false, lockActive: true))
+            let defaults = isolatedDefaults()
+            XCTAssertFalse(P(defaults: defaults).blockingForcedLogin)
+            P(defaults: defaults).blockingForcedLogin = true
+            XCTAssertTrue(P(defaults: defaults).blockingForcedLogin)
+        }
+
+        func testLoginStatusMapping() {
+            XCTAssertEqual(LaunchAtLoginManager.state(for: .enabled), .enabled)
+            XCTAssertEqual(LaunchAtLoginManager.state(for: .requiresApproval), .requiresApproval)
+            XCTAssertEqual(LaunchAtLoginManager.state(for: .notRegistered), .disabled)
+            XCTAssertEqual(LaunchAtLoginManager.state(for: .notFound), .unavailable)
         }
 
         func testBackgroundOptOutSurvivesRecreation() {
@@ -105,7 +144,7 @@
         }
 
         func testOrderlyQuitAndUpdateDoNotReportAnInterruption() {
-            for reason in ["user_quit", "update", "permission_restart", "system_or_application_exit"] {
+            for reason in ["user_quit", "update", "permission_restart", "system_or_application_exit", "signal_terminate"] {
                 let defaults = isolatedDefaults()
                 let journal = BackgroundSessionJournal(defaults: defaults)
                 journal.begin()
@@ -146,6 +185,74 @@
             // No fabricated user Quit event, no modal dialog and no restart.
             let delegate = AppDelegate()
             XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
+        }
+
+        func testExternalSigtermSkipsTheBlockingQuitConfirmationOnly() {
+            func confirms(system: Bool = false, restarting: Bool = false, update: Bool = false, signal: Bool = false) -> Bool {
+                AppDelegate.shouldConfirmBlockingQuit(systemQuit: system, restarting: restarting,
+                                                      relaunchingForUpdate: update, externalSignal: signal)
+            }
+            XCTAssertTrue(confirms(), "The user's own quit is still protected")
+            XCTAssertFalse(confirms(signal: true))
+            XCTAssertFalse(confirms(system: true))
+            XCTAssertFalse(confirms(restarting: true))
+            XCTAssertFalse(confirms(update: true))
+        }
+
+        func testSigtermShutdownIsReportedAsAnOrderlyExit() {
+            XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: false, restarting: false, externalSignal: true, userQuit: false),
+                           "signal_terminate")
+            XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: true, restarting: false, externalSignal: true, userQuit: false),
+                           "update")
+            XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: false, restarting: false, externalSignal: false, userQuit: true),
+                           "user_quit")
+            XCTAssertEqual(AppDelegate.exitReason(relaunchingForUpdate: false, restarting: false, externalSignal: true, userQuit: false,
+                                                  sessionEnd: true), "session_end")
+        }
+
+        func testSigtermIsIgnoredOnlyDuringASevereBlockOutsideASessionEnd() {
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: false, sessionEnding: false))
+            XCTAssertFalse(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: false))
+            XCTAssertFalse(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: false, senderPID: 4242),
+                           "killall or kill from a shell: ignored, no gap")
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: true))
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: false, senderPID: 1),
+                          "launchd at a shutdown or `sudo reboot` without a power-off notice")
+            XCTAssertTrue(AppDelegate.honoursTerminationSignal(severeBlock: true, sessionEnding: false, installOverride: true),
+                          "an installer with the documented override quits Goalong cleanly")
+        }
+
+        func testAPowerOffNoticeCountsOnlyBriefly() {
+            let at = Date(timeIntervalSince1970: 1_000_000)
+            XCTAssertFalse(AppDelegate.isPowerOffRecent(nil, now: at))
+            XCTAssertTrue(AppDelegate.isPowerOffRecent(at, now: at.addingTimeInterval(30)))
+            XCTAssertFalse(AppDelegate.isPowerOffRecent(at, now: at.addingTimeInterval(AppDelegate.powerOffWindow + 1)),
+                           "a logout cancelled by another app must not leave SIGTERM honoured")
+            XCTAssertFalse(AppDelegate.isPowerOffRecent(at, now: at.addingTimeInterval(-10)))
+        }
+
+        func testGuardReleaseTokenNamesOnlyAConfirmedQuitOrALoginwindowEnd() {
+            func reason(_ sender: String?, user: Bool = false, approved: Bool = false, powerOff: Bool = false) -> String? {
+                AppDelegate.guardReleaseReason(senderBundleID: sender, userQuit: user, blockingQuitApproved: approved,
+                                               powerOffRecent: powerOff)
+            }
+            for sender in [nil, "com.apple.systempreferences", "com.apple.SystemSettings", "com.apple.dock",
+                           "com.apple.ActivityMonitor"] as [String?] {
+                XCTAssertNil(reason(sender), "\(sender ?? "nil"): a kill, a signal or a Settings quit leaves no token")
+            }
+            XCTAssertEqual(reason("com.apple.loginwindow"), "session_end")
+            XCTAssertEqual(reason(nil, powerOff: true), "session_end")
+            XCTAssertEqual(reason("com.apple.dock", user: true), "user_quit")
+            XCTAssertEqual(reason("com.apple.ActivityMonitor", approved: true), "user_quit",
+                           "a password-approved external quit is the member's own")
+            XCTAssertEqual(reason("com.apple.SystemSettings", approved: true), "user_quit")
+            XCTAssertEqual(reason("com.apple.loginwindow", user: true), "session_end")
+        }
+
+        @MainActor func testAGuardRelaunchShowsNoPreviousSessionBanner() {
+            XCTAssertNil(BackgroundContinuityController.interruptionNotice(quietRelaunch: true))
+            XCTAssertEqual(BackgroundContinuityController.interruptionNotice(quietRelaunch: false),
+                           BackgroundContinuityController.interruptionNoticeText)
         }
     }
 #endif
