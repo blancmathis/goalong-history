@@ -25,6 +25,8 @@ final class ConcentrationUiCopyTests: XCTestCase {
         XCTAssertTrue(Sheet.hasAnswer(choices: [id: .unset], tomorrowFirst: "Relire", note: "", commit: false))
         XCTAssertTrue(Sheet.hasAnswer(choices: [:], tomorrowFirst: "", note: "Bien", commit: false))
         XCTAssertTrue(Sheet.hasAnswer(choices: [id: .unset], tomorrowFirst: "", note: "", commit: true))
+        // A saved review can be edited down to nothing.
+        XCTAssertTrue(Sheet.hasAnswer(choices: [id: .unset], tomorrowFirst: "", note: "", commit: false, existing: true))
     }
 }
 #endif

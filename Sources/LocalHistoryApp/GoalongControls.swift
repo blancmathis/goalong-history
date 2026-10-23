@@ -176,7 +176,7 @@
                                 font: Font = .system(size: 13), top: CGFloat = 0) -> some View {
             overlay(alignment: alignment) {
                 if isEmpty && !placeholder.isEmpty {
-                    Text(placeholder).font(font).foregroundStyle(LHTheme.tertiaryText)
+                    Text(placeholder).font(font).foregroundStyle(LHTheme.placeholder)
                         .padding(.horizontal, 11).padding(.top, top)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }

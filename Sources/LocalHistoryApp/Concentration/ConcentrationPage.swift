@@ -743,8 +743,10 @@ struct FocusThreadModel: Equatable {
             Image(systemName: "text.quote").font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 20).accessibilityHidden(true)
             if editingIntention {
-                TextField("L’important aujourd’hui", text: $intention)
+                TextField("", text: $intention)
                     .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("L’important aujourd’hui", isEmpty: intention.isEmpty)
+                    .accessibilityLabel("L’important aujourd’hui")
                     .onSubmit(saveIntention)
                 Button("Enregistrer", action: saveIntention)
             } else if let value = plan.intention, !value.isEmpty {
@@ -846,17 +848,23 @@ struct FocusThreadModel: Equatable {
             HStack(spacing: 8) {
                 Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 20).accessibilityHidden(true)
-                TextField(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", text: $newTitle)
+                TextField("", text: $newTitle)
                     .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", isEmpty: newTitle.isEmpty)
                     .focused(addFocused)
                     .onSubmit(add)
                     .accessibilityIdentifier("concentration-add-item")
-                TextField("Projet", text: $newProject)
-                    .textFieldStyle(GoalongFieldStyle()).frame(width: 120)
+                TextField("", text: $newProject)
+                    .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("Projet", isEmpty: newProject.isEmpty)
+                    .frame(width: 120)
+                    .accessibilityLabel("Projet")
                     .onSubmit(add)
                     .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
-                TextField("min", text: $newEstimate)
-                    .textFieldStyle(GoalongFieldStyle()).frame(width: 64)
+                TextField("", text: $newEstimate)
+                    .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("min", isEmpty: newEstimate.isEmpty)
+                    .frame(width: 64)
                     .onSubmit(add)
                     .help("Estimation, facultative : de 5 à 600 minutes.")
                     .accessibilityLabel("Estimation en minutes")
@@ -1152,7 +1160,8 @@ struct FocusThreadModel: Equatable {
     private var endRow: some View {
         let weekdays = controller.settings.limits.weekdays
         return HStack(alignment: .center, spacing: 12) {
-            labels("Fin de journée", "Prévient à cette heure, ces jours-là.")
+            labels("Fin de journée", controller.settings.limits.endMinute != nil
+                   ? "Prévient à cette heure, ces jours-là." : "Choisissez d’abord une heure de fin.")
             Spacer(minLength: 12)
             HStack(spacing: 3) {
                 ForEach(1...7, id: \.self) { day in
@@ -1178,6 +1187,7 @@ struct FocusThreadModel: Equatable {
                 }
             }
             .opacity(controller.settings.limits.endMinute == nil ? 0.85 : 1)
+            .accessibilityHint(controller.settings.limits.endMinute == nil ? "Indisponible : choisissez d’abord une heure de fin." : "")
             TextField("", text: $end)
                 .textFieldStyle(GoalongFieldStyle())
                 .goalongPlaceholder("hh:mm", isEmpty: end.isEmpty, alignment: .trailing)
