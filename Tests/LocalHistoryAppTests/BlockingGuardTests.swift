@@ -2,6 +2,7 @@
 import Foundation
 import GoalongGuardCore
 import LocalHistoryCore
+import ServiceManagement
 import XCTest
 @testable import LocalHistoryApp
 
@@ -199,10 +200,142 @@ import XCTest
         XCTAssertEqual(GoalongGuardClient.launchctlServiceNotFound, 113)
     }
 
-    /// K2-safe-01: outside a severe block the client reads the BTM status only when a block has just ended.
+    /// Counts BTM calls; never registers anything. `.requiresApproval` keeps update() away from pings.
+    private final class FakeService: GuardServiceControlling, @unchecked Sendable {
+        private let lock = NSLock()
+        private var reads = 0, registers = 0, unregisters = 0
+        var current: SMAppService.Status = .requiresApproval
+        var statusReads: Int { lock.withLock { reads } }
+        var registerCalls: Int { lock.withLock { registers } }
+        var unregisterCalls: Int { lock.withLock { unregisters } }
+        var status: SMAppService.Status { lock.withLock { reads += 1; return current } }
+        func register() throws { lock.withLock { registers += 1 } }
+        func unregister() throws { lock.withLock { unregisters += 1 } }
+    }
+
+    private final class Flag: @unchecked Sendable {
+        private let lock = NSLock(); private var stored = false
+        var value: Bool { get { lock.withLock { stored } } set { lock.withLock { stored = newValue } } }
+    }
+
+    private func client(_ service: FakeService, override: Flag = Flag()) -> GoalongGuardClient {
+        let identity = GuardIdentity(bundleIdentifier: "ai.goalong.localhistory.dev", channel: "dev")!
+        let defaults = UserDefaults(suiteName: "goalong-guard-client-tests-" + UUID().uuidString)!
+        return GoalongGuardClient(identity: identity, defaults: defaults, overrideActive: { override.value }, service: service)
+    }
+
+    /// Lets the client's queue answer and its main-queue hop run.
+    private func settle(_ condition: () -> Bool) {
+        for _ in 0..<200 where !condition() { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    /// K2-kill-03 / K3-kill-03: the 2 s SIGSTOP check runs exactly while armed and outside an override,
+    /// wired through update(severeUntil:).
+    func testTheStopCheckFollowsTheArmingThroughUpdate() {
+        let service = FakeService(), override = Flag()
+        let client = client(service, override: override)
+        settle { client.canRemove }
+        XCTAssertFalse(client.isWatchingForStop)
+        _ = client.update(severeUntil: Date().addingTimeInterval(600))
+        XCTAssertTrue(client.isWatchingForStop, "armed")
+        _ = client.update(severeUntil: Date().addingTimeInterval(600))
+        XCTAssertTrue(client.isWatchingForStop, "still armed on the next refresh")
+        override.value = true
+        _ = client.update(severeUntil: Date().addingTimeInterval(600))
+        XCTAssertFalse(client.isWatchingForStop, "an installer override stops it")
+        override.value = false
+        _ = client.update(severeUntil: Date().addingTimeInterval(600))
+        XCTAssertTrue(client.isWatchingForStop)
+        _ = client.update(severeUntil: nil)
+        XCTAssertFalse(client.isWatchingForStop, "block over")
+        XCTAssertEqual(service.registerCalls, 0)
+    }
+
+    /// K2-safe-01 / K3-kill-03: outside a severe block the client reads the BTM status once at launch and
+    /// once when a block ends, never on every refresh.
     func testIdleClientReadsTheStatusOnlyWhenABlockEnds() {
-        XCTAssertFalse(GoalongGuardClient.readsStatusWhenIdle(wasArmed: false))
-        XCTAssertTrue(GoalongGuardClient.readsStatusWhenIdle(wasArmed: true))
+        let service = FakeService()
+        let client = client(service)
+        settle { client.canRemove }
+        XCTAssertEqual(service.statusReads, 1, "the read at launch")
+        for _ in 0..<3 { _ = client.update(severeUntil: nil) }
+        settle { false }
+        XCTAssertEqual(service.statusReads, 1, "idle refreshes read nothing")
+        _ = client.update(severeUntil: Date().addingTimeInterval(600))
+        let armedReads = service.statusReads
+        _ = client.update(severeUntil: nil)
+        settle { service.statusReads > armedReads }
+        XCTAssertEqual(service.statusReads, armedReads + 1, "one read when the block ends")
+        _ = client.update(severeUntil: nil)
+        settle { false }
+        XCTAssertEqual(service.statusReads, armedReads + 1)
+    }
+
+    /// One arming's escalation memory, shared by the rounds like the client's.
+    private final class EscalationProbe {
+        var status: SMAppService.Status = .enabled
+        var pings: [GuardPingOutcome] = []
+        var kickstartResult: Int32? = 113
+        var kickstartUsed = false, bootedOut = false, reregisterUsed = false, override = false
+        var kickstarts = 0, reregisters = 0, notArmed = 0
+
+        func escalation() -> GuardEscalation {
+            GuardEscalation(
+                status: { self.status },
+                ping: { self.pings.isEmpty ? .unreachable : self.pings.removeFirst() },
+                resumeStoppedGuards: { false },
+                overrideActive: { self.override },
+                noteNotArmed: { self.notArmed += 1 },
+                claimKickstart: { defer { self.kickstartUsed = true }; return !self.kickstartUsed },
+                kickstart: { self.kickstarts += 1; return self.kickstartResult },
+                bootedOut: { self.bootedOut },
+                noteBootedOut: { self.bootedOut = true },
+                claimReregister: { defer { self.reregisterUsed = true }; return !self.reregisterUsed },
+                reregister: { self.reregisters += 1; return self.status })
+        }
+    }
+
+    /// K2-safe-02 / K3-safe-04 / K3-kill-03: after a bootout (kickstart 113) no round re-registers, and the
+    /// badge keeps saying "stopped until the next login" for the whole arming.
+    func testABootoutIsNeverReregisteredAndItsMessageHolds() {
+        let probe = EscalationProbe()
+        let stopped = BlockingProtectionState.Component.failed(GuardEscalation.stoppedUntilLogin)
+        XCTAssertEqual(probe.escalation().run().1, stopped)
+        XCTAssertEqual(probe.kickstarts, 1)
+        for _ in 0..<3 { XCTAssertEqual(probe.escalation().run().1, stopped, "later rounds, no kickstart left") }
+        XCTAssertEqual(probe.kickstarts, 1)
+        XCTAssertEqual(probe.reregisters, 0)
+        probe.pings = [.running]
+        XCTAssertEqual(probe.escalation().run().1, .running, "a guard that answers again wins")
+    }
+
+    /// K3-kill-03: a loaded guard that does not answer is re-registered once per build, after one kickstart.
+    func testAnUnreachableLoadedGuardIsReregisteredOnce() {
+        let probe = EscalationProbe()
+        probe.kickstartResult = 0
+        XCTAssertEqual(probe.escalation().run().1, .failed(GuardEscalation.unreachable))
+        XCTAssertEqual(probe.kickstarts, 1)
+        XCTAssertEqual(probe.reregisters, 1)
+        XCTAssertEqual(probe.escalation().run().1, .failed(GuardEscalation.unreachable))
+        XCTAssertEqual(probe.kickstarts, 1, "once per arming")
+        XCTAssertEqual(probe.reregisters, 1, "once per build")
+        XCTAssertFalse(probe.bootedOut)
+    }
+
+    /// Status first and the override: nothing is kicked or re-registered.
+    func testEscalationRespectsTheStatusAndTheOverride() {
+        let probe = EscalationProbe()
+        probe.status = .notRegistered
+        XCTAssertEqual(probe.escalation().run().1, .notInstalled)
+        probe.status = .requiresApproval
+        XCTAssertEqual(probe.escalation().run().1, .awaitingApproval)
+        probe.status = .enabled; probe.override = true
+        XCTAssertEqual(probe.escalation().run().1, .notInstalled)
+        XCTAssertEqual(probe.kickstarts + probe.reregisters, 0)
+        probe.override = false; probe.pings = [.notArmed]
+        if case .failed = probe.escalation().run().1 {} else { XCTFail("not armed is reported") }
+        XCTAssertEqual(probe.notArmed, 1)
     }
 
     /// K2-safe-05: a guard killed while armed keeps its memory in guard-state.json. After an early end by

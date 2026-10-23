@@ -765,11 +765,13 @@ import LocalHistoryQueryCLI
         if let store, !storeFailed {
             do { _ = try store.load() } catch { restoreStore(store) }
         }
-        let currentClock = BlockingClockState(wall: now, continuous: continuous(), boot: boot())
+        var currentClock = BlockingClockState(wall: now, continuous: continuous(), boot: boot())
+        var jump: TimeInterval = 0
         if let previous = lastClock {
-            let jump = BlockingClock.adjustment(previous: previous, now: currentClock)
+            jump = BlockingClock.adjustment(previous: previous, now: currentClock)
             if jump != 0 { extendLocks(by: jump, at: previous.wall) }
         }
+        currentClock = BlockingClock.advanced(previous: lastClock, now: currentClock, adjusted: jump)
         lastClock = currentClock
         document.clock = currentClock
         followTimeZone(at: now)

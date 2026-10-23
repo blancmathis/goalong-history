@@ -64,6 +64,10 @@ public struct GuardInput: Equatable, Sendable {
     /// False when another death's `session_end` was honoured less than `sessionEndCooldown` ago: a logout
     /// cancelled by another app must not open a 30 s hole again and again.
     public var sessionEndAllowed = true
+    /// Continuous seconds since the observed death.
+    public var sinceDeath: TimeInterval = 0
+    /// Wait before relaunching after a `session_end` refused by the cooldown (tests shorten it).
+    public var refusedSessionEndDelay: TimeInterval = GuardDecision.refusedSessionEndDelay
     /// Delay the relaunch budget imposes, in seconds from now.
     public var budgetDelay: TimeInterval = 0
     public var bootTime: Double = 0
@@ -94,6 +98,9 @@ public enum GuardDecision {
     public static let sessionEndWait: TimeInterval = 30
     /// At most one honoured `session_end` per this many seconds (continuous time) in one guard process.
     public static let sessionEndCooldown: TimeInterval = 600
+    /// A `session_end` refused by the cooldown may still be a real logout after a cancelled one: the
+    /// relaunch waits this long after the death, so it does not race loginwindow (a hole of the §12.3 class).
+    public static let refusedSessionEndDelay: TimeInterval = 5
     /// A token counts only if written at most this long before the death.
     public static let tokenFreshness: TimeInterval = 10
     public static let leasesPerHour = 3
@@ -103,8 +110,9 @@ public enum GuardDecision {
         if let pid = input.alivePID { return .watch(pid) }
         if let release = validRelease(input) {
             if release.reason == GuardRelease.userQuit { return .exit(0) }
-            if release.reason == GuardRelease.sessionEnd, input.sessionEndAllowed, !input.sessionEndWaitOver {
-                return .waitForSessionEnd(sessionEndWait)
+            if release.reason == GuardRelease.sessionEnd, !input.sessionEndWaitOver {
+                if input.sessionEndAllowed { return .waitForSessionEnd(sessionEndWait) }
+                return .relaunch(after: max(0, input.budgetDelay, input.refusedSessionEndDelay - input.sinceDeath))
             }
         }
         if let lease = validLease(input) { return .waitForLease(until: lease.until) }
@@ -132,6 +140,16 @@ public enum GuardDecision {
               lease.until <= input.now + GuardLease.maximumDuration,
               [GuardLease.update, GuardLease.permissionRestart].contains(lease.reason) else { return nil }
         return lease
+    }
+
+    /// The last honoured `session_end` kept in `guard-state.json`, when it is of this boot and its
+    /// cooldown still runs.
+    public static func restoredSessionEnd(from state: GuardState?, bootTime: Double, bootSession: String,
+                                          continuous: TimeInterval) -> (pid: Int32, at: TimeInterval)? {
+        guard let state, let pid = state.sessionEndPID, let at = state.sessionEndContinuous, let boot = state.bootTime,
+              sameBoot(boot, state.bootSession, bootTime, bootSession),
+              at <= continuous, continuous - at < sessionEndCooldown else { return nil }
+        return (pid, at)
     }
 
     static func sameBoot(_ a: Double, _ b: Double) -> Bool { a > 0 && b > 0 && abs(a - b) < 2 }

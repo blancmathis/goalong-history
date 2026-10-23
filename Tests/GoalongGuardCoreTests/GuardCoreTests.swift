@@ -120,16 +120,39 @@ extension GuardDecisionTests {
         XCTAssertNil(arming.markerDate)
     }
 
-    /// K2-kill-02: one honoured session end per cooldown; the next death with a session_end token is relaunched.
-    func testASessionEndOutsideItsAllowanceIsRelaunched() {
+    /// K2-kill-02 + K3-safe-01: one honoured session end per cooldown. The next death with a session_end
+    /// token is relaunched, but only 5 s after the death: it may be a real logout after a cancelled one.
+    func testASessionEndOutsideItsAllowanceIsRelaunchedAfterAShortWait() {
         let release = GuardRelease(pid: 42, reason: GuardRelease.sessionEnd, writtenAt: 999_999, bootTime: 900_000)
         let death = GuardInput.Death(pid: 42, at: 1_000_000)
         XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.release = release; $0.sessionEndAllowed = false }),
+                       .relaunch(after: 5))
+        XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.release = release; $0.sessionEndAllowed = false; $0.sinceDeath = 3 }),
+                       .relaunch(after: 2), "the wait counts from the death, not from each evaluation")
+        XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.release = release; $0.sessionEndAllowed = false; $0.sinceDeath = 6 }),
                        .relaunch(after: 0))
+        XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.release = release; $0.sessionEndAllowed = false; $0.budgetDelay = 30 }),
+                       .relaunch(after: 30), "the crash budget still wins")
+        XCTAssertEqual(GuardDecision.refusedSessionEndDelay, 5)
+        XCTAssertLessThanOrEqual(GuardDecision.refusedSessionEndDelay, 10, "within the §12.3 hole")
         let userQuit = GuardRelease(pid: 42, reason: GuardRelease.userQuit, writtenAt: 999_999, bootTime: 900_000)
         XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.release = userQuit; $0.sessionEndAllowed = false }),
                        .exit(0), "a user quit is never limited")
         XCTAssertEqual(GuardDecision.sessionEndCooldown, 600)
+    }
+
+    /// K3-kill-01: the session_end cooldown survives a guard restart of the same boot, and only while it runs.
+    func testTheSessionEndCooldownIsRestoredFromTheGuardState() {
+        let state = GuardState(build: "b", armed: true, bootTime: 42, bootSession: "A", sessionEndPID: 7, sessionEndContinuous: 1000)
+        let restored = GuardDecision.restoredSessionEnd(from: state, bootTime: 42 + 3600, bootSession: "A", continuous: 1200)
+        XCTAssertEqual(restored?.pid, 7)
+        XCTAssertEqual(restored?.at, 1000)
+        XCTAssertNil(GuardDecision.restoredSessionEnd(from: state, bootTime: 42, bootSession: "B", continuous: 1200), "another boot")
+        XCTAssertNil(GuardDecision.restoredSessionEnd(from: state, bootTime: 42, bootSession: "A", continuous: 1600), "cooldown over")
+        XCTAssertNil(GuardDecision.restoredSessionEnd(from: state, bootTime: 42, bootSession: "A", continuous: 900), "in the future")
+        XCTAssertNil(GuardDecision.restoredSessionEnd(from: GuardState(build: "b", armed: true, bootTime: 42, bootSession: "A"),
+                                                      bootTime: 42, bootSession: "A", continuous: 1200))
+        XCTAssertNil(GuardDecision.restoredSessionEnd(from: nil, bootTime: 42, bootSession: "A", continuous: 1200))
     }
 
     /// K2-kill-04: the boot session id decides; boot times only when one side lacks it.

@@ -392,6 +392,37 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertEqual(c.freeze?.end, date().addingTimeInterval(10800))
         XCTAssertTrue(c.activeBlocks.contains { if case .program = $0.origin { return true }; return false })
     }
+    /// K3-kill-04: small forward steps (60 s or less each) add up and are compensated once their sum
+    /// passes 60 s; a step back then forth nets to nothing.
+    @MainActor func testSmallForwardClockStepsAddUpAndAreCompensated() {
+        var now = date(), uptime = 1000.0
+        let list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, continuous: { uptime }, boot: { "boot" })
+        let end = now.addingTimeInterval(7200)
+        c.start(listIDs: [list.id], until: end, lock: .locked)
+        c.refresh()
+        for _ in 0..<10 { now = now.addingTimeInterval(15 + 59); uptime += 15; c.refresh() }
+        XCTAssertEqual(c.snapshot.sessions[0].end.timeIntervalSince(end), 590, accuracy: 0.001)
+        // Back one hour, then forward one hour: the real time spent is what counts.
+        now = now.addingTimeInterval(-3600); uptime += 15; c.refresh()
+        now = now.addingTimeInterval(3615); uptime += 15; c.refresh()
+        XCTAssertEqual(c.snapshot.sessions[0].end.timeIntervalSince(end), 590, accuracy: 0.001)
+    }
+    func testClockAnchorIsKeptUntilACompensation() {
+        let first = BlockingClockState(wall: date(), continuous: 100, boot: "b")
+        let anchored = BlockingClock.advanced(previous: nil, now: first, adjusted: 0)
+        XCTAssertEqual(anchored.anchor, first.offset)
+        let step = BlockingClockState(wall: date().addingTimeInterval(90), continuous: 140, boot: "b")
+        XCTAssertEqual(BlockingClock.adjustment(previous: anchored, now: step), 0)
+        let kept = BlockingClock.advanced(previous: anchored, now: step, adjusted: 0)
+        XCTAssertEqual(kept.anchor, first.offset)
+        // 50 s ahead after the first step, 120 s after the second: compensated from the anchor, not from `step`.
+        let next = BlockingClockState(wall: date().addingTimeInterval(200), continuous: 180, boot: "b")
+        XCTAssertEqual(BlockingClock.adjustment(previous: kept, now: next), 120)
+        XCTAssertEqual(BlockingClock.advanced(previous: kept, now: next, adjusted: 120).anchor, next.offset)
+        let rebooted = BlockingClockState(wall: date(), continuous: 5, boot: "c")
+        XCTAssertEqual(BlockingClock.advanced(previous: kept, now: rebooted, adjusted: 0).anchor, rebooted.offset)
+    }
     func testRebootBackwardsPreservesRemainingAndContinuousSleep() {
         let old = BlockingClockState(wall: date(), continuous: 100, boot: "old")
         XCTAssertEqual(BlockingClock.adjustment(previous: old, now: BlockingClockState(wall: date().addingTimeInterval(-3600), continuous: 1, boot: "new")), -3600)

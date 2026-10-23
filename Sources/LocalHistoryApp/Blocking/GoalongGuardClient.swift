@@ -160,6 +160,80 @@ enum TerminationSignalSender {
     }
 }
 
+/// The SMAppService calls the client makes. `SMAppService` in the app; a fake in tests (no BTM call).
+protocol GuardServiceControlling: AnyObject, Sendable {
+    var status: SMAppService.Status { get }
+    func register() throws
+    func unregister() throws
+}
+
+extension SMAppService: GuardServiceControlling {}
+
+enum GuardPingOutcome { case running, unreachable, notArmed }
+
+/// One escalation round of a guard that does not answer, every side effect injected (tests drive it
+/// with fakes). Status first: an intentional unregister or a switch-off in Login Items is never undone.
+/// Then ping → resume a stopped guard → kickstart once per arming → re-register once per build →
+/// failed. A bootout seen in this arming (kickstart 113) is final until the next arming. Never an alert.
+struct GuardEscalation {
+    static let stoppedUntilLogin = "Service de protection arrêté jusqu’à la prochaine ouverture de session."
+    static let unreachable = "Service de protection injoignable."
+
+    var status: () -> SMAppService.Status
+    var ping: () -> GuardPingOutcome
+    var resumeStoppedGuards: () -> Bool
+    var overrideActive: () -> Bool
+    var noteNotArmed: () -> Void
+    /// True once per arming.
+    var claimKickstart: () -> Bool
+    var kickstart: () -> Int32?
+    /// A kickstart of this arming already found the job missing from launchd.
+    var bootedOut: () -> Bool
+    var noteBootedOut: () -> Void
+    /// True once per build.
+    var claimReregister: () -> Bool
+    /// unregister, short wait, register; the status after it.
+    var reregister: () -> SMAppService.Status
+
+    func run() -> (SMAppService.Status, BlockingProtectionState.Component) {
+        let current = status()
+        switch current {
+        case .enabled: break
+        case .requiresApproval: return (current, .awaitingApproval)
+        default: return (current, .notInstalled)
+        }
+        switch ping() {
+        case .running: return (.enabled, .running)
+        case .notArmed:
+            noteNotArmed()
+            return (.enabled, .failed("Le service de protection ne voit pas le blocage."))
+        case .unreachable: break
+        }
+        // A SIGSTOPped guard looks alive to launchd, so nothing else would ever restart it.
+        if resumeStoppedGuards(), ping() == .running { return (.enabled, .running) }
+        guard !overrideActive() else { return (.enabled, .notInstalled) }
+        if bootedOut() { return (.enabled, .failed(Self.stoppedUntilLogin)) }
+        var kickstartStatus: Int32?
+        if claimKickstart() {
+            kickstartStatus = kickstart()
+            if ping() == .running { return (.enabled, .running) }
+        }
+        guard GoalongGuardClient.mayReregister(kickstartStatus: kickstartStatus) else {
+            if kickstartStatus == GoalongGuardClient.launchctlServiceNotFound {
+                noteBootedOut()
+                return (.enabled, .failed(Self.stoppedUntilLogin))
+            }
+            return (status(), .failed(Self.unreachable))
+        }
+        if !overrideActive(), claimReregister() {
+            let next = reregister()
+            if next == .requiresApproval { return (next, .awaitingApproval) }
+            if next == .enabled, ping() == .running { return (next, .running) }
+        }
+        return (status(), .failed(Self.unreachable))
+    }
+}
+
 /// SMAppService agent client. Every SMAppService and XPC call runs on its own serial queue.
 @MainActor final class GoalongGuardClient: GoalongGuardClienting {
     static let registeredBuildKey = "goalong.guard.registeredBuild"
@@ -173,7 +247,7 @@ enum TerminationSignalSender {
 
     var onChange: (() -> Void)?
     private let identity: GuardIdentity
-    private let service: SMAppService
+    private let service: any GuardServiceControlling
     private let defaults: UserDefaults
     private let build: String
     private let overrideActive: @Sendable () -> Bool
@@ -189,6 +263,8 @@ enum TerminationSignalSender {
     private var registerFailed = false
     /// `launchctl kickstart` already ran for this arming.
     private var kickstartUsed = false
+    /// That kickstart found the job missing (bootout): the badge keeps saying so for this arming.
+    private var bootedOut = false
     /// A ping answered "not armed" once in this arming: one early retry, after the marker check.
     private var notArmedRetried = false
     /// Every 2 s while armed, independent of refresh (15 s apart when the Mac is idle).
@@ -205,9 +281,10 @@ enum TerminationSignalSender {
     }
 
     init(identity: GuardIdentity, defaults: UserDefaults,
-         overrideActive: @escaping @Sendable () -> Bool = { GoalongGuardFiles.overrideActive() }) {
+         overrideActive: @escaping @Sendable () -> Bool = { GoalongGuardFiles.overrideActive() },
+         service: (any GuardServiceControlling)? = nil) {
         self.identity = identity
-        service = SMAppService.agent(plistName: identity.plistName)
+        self.service = service ?? SMAppService.agent(plistName: identity.plistName)
         self.defaults = defaults
         self.overrideActive = overrideActive
         build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
@@ -235,11 +312,11 @@ enum TerminationSignalSender {
             stopWatch.setActive(false)
             // Spec §3.4 "nil : rien": no BTM call while idle. One status read when a block ends, so the
             // "remove the service" button sees the current state; otherwise only the read at launch.
-            if Self.readsStatusWhenIdle(wasArmed: wasArmed) { closeConnection(); readStatus() }
+            if wasArmed { closeConnection(); readStatus() }
             component = .notInstalled
             return component
         }
-        if !wasArmed { lastPing = .distantPast; kickstartUsed = false; notArmedRetried = false }
+        if !wasArmed { lastPing = .distantPast; kickstartUsed = false; bootedOut = false; notArmedRetried = false }
         if overrideActive() {
             // An installer is replacing or removing this copy with the override: never bring the guard back.
             stopWatch.setActive(false)
@@ -284,9 +361,6 @@ enum TerminationSignalSender {
         }
     }
 
-    /// Outside a severe block the status is read only once, when the block ends.
-    nonisolated static func readsStatusWhenIdle(wasArmed: Bool) -> Bool { wasArmed }
-
     /// Re-register only when `launchctl kickstart` ran in this round and found the job loaded. A job
     /// missing from launchd while BTM says `.enabled` was removed by `launchctl bootout`: an exit the
     /// spec offers (§7), never undone here.
@@ -317,8 +391,6 @@ enum TerminationSignalSender {
         guard let pid = guardPID, Self.isGuardProcess(pid, executable: guardExecutable) else { return }
         if Self.resumeStopped([pid]) { NSLog("Goalong: blocking guard was stopped, resumed") }
     }
-
-    fileprivate enum Outcome { case running, unreachable, notArmed }
 
     private func readStatus() {
         guard !working else { return }
@@ -372,6 +444,8 @@ enum TerminationSignalSender {
     }
 
     fileprivate func noteRegisterFailed() { registerFailed = true }
+    fileprivate func noteBootedOut() { if armed { bootedOut = true } }
+    fileprivate var isBootedOut: Bool { bootedOut }
 
     /// The guard answered but does not see the block (marker forged or not yet written): the controller
     /// has rewritten the marker before this update, so ping once more soon instead of in 30 s.
@@ -389,7 +463,7 @@ enum TerminationSignalSender {
 
     /// Runs on `queue` only.
     fileprivate struct Worker: @unchecked Sendable {
-        let service: SMAppService
+        let service: any GuardServiceControlling
         let label: String
         weak var client: GoalongGuardClient?
         let overrideActive: @Sendable () -> Bool
@@ -406,51 +480,31 @@ enum TerminationSignalSender {
             }
         }
 
-        /// Status first: an intentional unregister or a switch-off in Login Items is never undone here.
-        /// Then ping → resume a stopped guard → kickstart once per arming → re-register once per build →
-        /// failed. Never an alert.
         func pingEscalating() -> (SMAppService.Status, BlockingProtectionState.Component) {
-            let status = service.status
-            switch status {
-            case .enabled: break
-            case .requiresApproval: return (status, .awaitingApproval)
-            default: return (status, .notInstalled)
+            let service = service, client = client
+            func onMain<T>(_ fallback: T, _ body: @escaping @MainActor (GoalongGuardClient) -> T) -> T {
+                DispatchQueue.main.sync { MainActor.assumeIsolated { client.map(body) ?? fallback } }
             }
-            switch ping() {
-            case .running: return (.enabled, .running)
-            case .notArmed:
-                DispatchQueue.main.async { MainActor.assumeIsolated { client?.noteNotArmed() } }
-                return (.enabled, .failed("Le service de protection ne voit pas le blocage."))
-            case .unreachable: break
-            }
-            // A SIGSTOPped guard looks alive to launchd, so nothing else would ever restart it.
-            if resumeStoppedGuards(), ping() == .running { return (.enabled, .running) }
-            guard !overrideActive() else { return (.enabled, .notInstalled) }
-            let mayKickstart = DispatchQueue.main.sync { MainActor.assumeIsolated { client?.claimKickstart() ?? false } }
-            var kickstartStatus: Int32?
-            if mayKickstart {
-                kickstartStatus = kickstart()
-                if ping() == .running { return (.enabled, .running) }
-            }
-            guard GoalongGuardClient.mayReregister(kickstartStatus: kickstartStatus) else {
-                if kickstartStatus == GoalongGuardClient.launchctlServiceNotFound {
-                    return (.enabled, .failed("Service de protection arrêté jusqu’à la prochaine ouverture de session."))
-                }
-                return (service.status, .failed("Service de protection injoignable."))
-            }
-            let allowed = !overrideActive() && DispatchQueue.main.sync { MainActor.assumeIsolated { client?.claimReregister() ?? false } }
-            if allowed {
-                try? service.unregister()
-                Thread.sleep(forTimeInterval: 1)
-                try? service.register()
-                let status = service.status
-                if status == .requiresApproval { return (status, .awaitingApproval) }
-                if status == .enabled, ping() == .running { return (status, .running) }
-            }
-            return (service.status, .failed("Service de protection injoignable."))
+            return GuardEscalation(
+                status: { service.status },
+                ping: { ping() },
+                resumeStoppedGuards: { resumeStoppedGuards() },
+                overrideActive: overrideActive,
+                noteNotArmed: { DispatchQueue.main.async { MainActor.assumeIsolated { client?.noteNotArmed() } } },
+                claimKickstart: { onMain(false) { $0.claimKickstart() } },
+                kickstart: { kickstart() },
+                bootedOut: { onMain(false) { $0.isBootedOut } },
+                noteBootedOut: { onMain(()) { $0.noteBootedOut() } },
+                claimReregister: { onMain(false) { $0.claimReregister() } },
+                reregister: {
+                    try? service.unregister()
+                    Thread.sleep(forTimeInterval: 1)
+                    try? service.register()
+                    return service.status
+                }).run()
         }
 
-        func ping() -> Outcome {
+        func ping() -> GuardPingOutcome {
             guard let client else { return .unreachable }
             let connection: xpc_connection_t = client.connection ?? {
                 let value = xpc_connection_create_mach_service(label, DispatchQueue.global(qos: .utility), 0)
@@ -511,7 +565,7 @@ enum TerminationSignalSender {
             return process.terminationStatus
         }
 
-        final class Box: @unchecked Sendable { var value: Outcome?; var pid: Int32? }
+        final class Box: @unchecked Sendable { var value: GuardPingOutcome?; var pid: Int32? }
     }
 }
 #endif

@@ -29,6 +29,8 @@ public struct GuardEnvironment {
     public var stopCheckInterval: TimeInterval = 2
     /// Wait after an honoured `session_end` (tests shorten it).
     public var sessionEndWait: TimeInterval = GuardDecision.sessionEndWait
+    /// Wait before the relaunch after a `session_end` refused by the cooldown (tests shorten it).
+    public var refusedSessionEndDelay: TimeInterval = GuardDecision.refusedSessionEndDelay
 
     public init(locateApp: @escaping () -> Int32?, launch: @escaping (@escaping (Int32?, Error?) -> Void) -> Void) {
         self.locateApp = locateApp; self.launch = launch
@@ -90,6 +92,10 @@ public final class GuardEngine {
                 arming = memory
                 environment.log("armed window restored from the previous guard")
             }
+            // Its session_end cooldown too: killing the guard must not reopen a 30 s hole.
+            sessionEndHonoured = GuardDecision.restoredSessionEnd(from: files.readState(), bootTime: environment.bootTime(),
+                                                                  bootSession: environment.bootSession(),
+                                                                  continuous: environment.continuous())
             watchDirectory(); evaluate()
         }
     }
@@ -134,6 +140,8 @@ public final class GuardEngine {
         input.sessionEndAllowed = sessionEndHonoured.map { honoured in
             honoured.pid == death?.pid || deathContinuous - honoured.at >= GuardDecision.sessionEndCooldown
         } ?? true
+        input.sinceDeath = death == nil ? 0 : continuous - deathContinuous
+        input.refusedSessionEndDelay = environment.refusedSessionEndDelay
         input.budgetDelay = budget.delay(at: continuous)
         input.bootTime = environment.bootTime()
         input.bootSession = environment.bootSession()
@@ -297,6 +305,12 @@ public final class GuardEngine {
         if armed, !finished, let end = arming.endContinuous {
             state.endContinuous = end
             state.markerDate = arming.markerDate?.timeIntervalSince1970
+        }
+        if let honoured = sessionEndHonoured {
+            state.sessionEndPID = honoured.pid
+            state.sessionEndContinuous = honoured.at
+        }
+        if state.endContinuous != nil || state.sessionEndContinuous != nil {
             state.bootTime = environment.bootTime()
             let session = environment.bootSession()
             state.bootSession = session.isEmpty ? nil : session

@@ -54,11 +54,16 @@ public struct GuardState: Codable, Equatable, Sendable {
     public var markerDate: Double?
     public var bootTime: Double?
     public var bootSession: String?
+    /// Last honoured `session_end` (dead pid, continuous time of the death): a guard restarted in the same
+    /// boot keeps its cooldown, so killing the guard does not open a new 30 s hole.
+    public var sessionEndPID: Int32?
+    public var sessionEndContinuous: Double?
     public init(build: String, armed: Bool, lastRelaunch: Double? = nil, gapMs: Int? = nil, budget: String = "normal",
-                endContinuous: Double? = nil, markerDate: Double? = nil, bootTime: Double? = nil, bootSession: String? = nil) {
+                endContinuous: Double? = nil, markerDate: Double? = nil, bootTime: Double? = nil, bootSession: String? = nil,
+                sessionEndPID: Int32? = nil, sessionEndContinuous: Double? = nil) {
         self.build = build; self.armed = armed; self.lastRelaunch = lastRelaunch; self.gapMs = gapMs; self.budget = budget
         self.endContinuous = endContinuous; self.markerDate = markerDate; self.bootTime = bootTime
-        self.bootSession = bootSession
+        self.bootSession = bootSession; self.sessionEndPID = sessionEndPID; self.sessionEndContinuous = sessionEndContinuous
     }
 }
 

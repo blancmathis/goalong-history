@@ -22,9 +22,17 @@ final class GuardEngineIntegrationTests: XCTestCase {
             return process.processIdentifier
         }
 
+        /// Counted once the process exists, timed at the call: `launchCount` never runs ahead of `current`.
         func launch(_ completion: @escaping (Int32?, Error?) -> Void) {
-            lock.withLock { launches.append(Date()) }
-            do { completion(try spawn(), nil) } catch { completion(nil, error) }
+            let calledAt = Date()
+            do {
+                let pid = try spawn()
+                lock.withLock { launches.append(calledAt) }
+                completion(pid, nil)
+            } catch {
+                lock.withLock { launches.append(calledAt) }
+                completion(nil, error)
+            }
         }
 
         func killAll() { lock.withLock { processes.filter(\.isRunning).forEach { kill($0.processIdentifier, SIGKILL) } } }
@@ -54,11 +62,12 @@ final class GuardEngineIntegrationTests: XCTestCase {
     }
 
     private func startEngine(stopCheck: TimeInterval = 0.3, wall: (() -> Date)? = nil, bootTime: (() -> Double)? = nil,
-                             sessionEndWait: TimeInterval? = nil) {
+                             sessionEndWait: TimeInterval? = nil, refusedSessionEndDelay: TimeInterval? = nil) {
         var environment = GuardEnvironment(locateApp: { [app] in app!.current }, launch: { [app] in app!.launch($0) })
         if let wall { environment.wall = wall }
         if let bootTime { environment.bootTime = bootTime }
         if let sessionEndWait { environment.sessionEndWait = sessionEndWait }
+        if let refusedSessionEndDelay { environment.refusedSessionEndDelay = refusedSessionEndDelay }
         environment.proofAlive = { [weak self] _ in self?.proofAlive ?? false }
         environment.stopCheckInterval = stopCheck
         environment.retryDelay = 0.05
@@ -266,19 +275,21 @@ final class GuardEngineIntegrationTests: XCTestCase {
         XCTAssertNil(code)
     }
 
-    /// K2-kill-02: a logout cancelled by another app gives one session-end wait, not one per quit.
-    func testASecondSessionEndSoonAfterTheFirstIsRelaunchedAtOnce() throws {
+    private func quitForSessionEnd(_ pid: Int32) {
+        XCTAssertTrue(files.writeRelease(GuardRelease(pid: pid, reason: GuardRelease.sessionEnd,
+                                                      writtenAt: Date().timeIntervalSince1970, bootTime: GuardSystem.bootTime(),
+                                                      bootSession: GuardSystem.bootSession())))
+        kill(pid, SIGKILL)
+    }
+
+    /// K2-kill-02 + K3-safe-01: a logout cancelled by another app gives one session-end wait, not one per
+    /// quit. The next one is relaunched after the short refused delay (a real logout may follow a cancelled one).
+    func testASecondSessionEndSoonAfterTheFirstIsRelaunchedAfterTheShortDelay() throws {
         let first = try app.spawn()
         arm()
         markHealthy(first)
-        startEngine(sessionEndWait: 0.6)
+        startEngine(sessionEndWait: 0.6, refusedSessionEndDelay: 0.3)
         XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == first })
-        func quitForSessionEnd(_ pid: Int32) {
-            XCTAssertTrue(files.writeRelease(GuardRelease(pid: pid, reason: GuardRelease.sessionEnd,
-                                                          writtenAt: Date().timeIntervalSince1970, bootTime: GuardSystem.bootTime(),
-                                                          bootSession: GuardSystem.bootSession())))
-            kill(pid, SIGKILL)
-        }
         let firstQuit = Date()
         quitForSessionEnd(first)
         usleep(300_000)
@@ -292,9 +303,41 @@ final class GuardEngineIntegrationTests: XCTestCase {
         usleep(1_100_000)  // the healthy-kill spacing (1 s) is not what this test measures
         let secondQuit = Date()
         quitForSessionEnd(second)
+        usleep(150_000)
+        XCTAssertEqual(app.launchCount, 1, "not at once: loginwindow may be ending the session")
         XCTAssertNotNil(waitUntil(1) { app.launchCount == 2 })
         guard app.launchCount == 2 else { return }
-        XCTAssertLessThan(app.launches[1].timeIntervalSince(secondQuit), 0.3, "no second wait within the cooldown")
+        let delay = app.launches[1].timeIntervalSince(secondQuit)
+        XCTAssertGreaterThanOrEqual(delay, 0.25)
+        XCTAssertLessThan(delay, 0.55, "the short delay, not a second session-end wait")
+        XCTAssertNil(code)
+    }
+
+    /// K3-kill-01: killing the guard after an honoured session end does not reset its cooldown.
+    func testAGuardRestartedAfterASessionEndKeepsTheCooldown() throws {
+        let first = try app.spawn()
+        arm()
+        markHealthy(first)
+        startEngine(sessionEndWait: 0.4, refusedSessionEndDelay: 0.2)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == first })
+        quitForSessionEnd(first)
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 && app.current != nil })
+        let second = try XCTUnwrap(app.current)
+        XCTAssertNotNil(waitUntil(1) { files.readState()?.sessionEndContinuous != nil && snapshot()?.watchingPID == second })
+        XCTAssertEqual(files.readState()?.sessionEndPID, first)
+        // The guard is killed (no finish): only its state file remains. launchd starts a new one.
+        let saved = try XCTUnwrap(files.readState())
+        engine?.cancel()
+        engine = nil
+        XCTAssertTrue(files.writeState(saved))
+        markHealthy(second)
+        startEngine(sessionEndWait: 5, refusedSessionEndDelay: 0.2)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == second })
+        let secondQuit = Date()
+        quitForSessionEnd(second)
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 2 }, "no new 5 s session-end wait")
+        guard app.launchCount == 2 else { return }
+        XCTAssertLessThan(app.launches[1].timeIntervalSince(secondQuit), 1.5)
         XCTAssertNil(code)
     }
 
