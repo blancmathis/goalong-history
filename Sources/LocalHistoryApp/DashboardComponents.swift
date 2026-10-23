@@ -524,7 +524,7 @@
             case .recording: return "Suivi local actif"
             case .paused: return "Suivi en pause"
             case .permissionsMissing: return "Accès à configurer"
-            case .inputTapUnavailable: return "Interactions indisponibles"
+            case .inputTapUnavailable: return "Saisie non reçue"
             case .storageUnavailable(.diskFull): return "Disque plein"
             case .storageUnavailable: return "Suivi interrompu"
             case .suppressed(let reason):

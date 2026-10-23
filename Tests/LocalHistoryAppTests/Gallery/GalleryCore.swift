@@ -76,7 +76,7 @@ struct GalleryEnvironment {
     /// « Espace utilisé par Goalong »: fixed, the fixture files' sizes move with their write times.
     var usedBytes: Int64 = 48_300_000
     var identity = ProductIdentity.GalleryIdentity()
-    /// The recorder's input tap is created and has seen input; false shows « Interactions indisponibles ».
+    /// The recorder's input tap is created and has seen input; false shows « Saisie non reçue ».
     var inputTapWorks = true
     /// The recorder could not write its journal a minute ago (storage banner); nil = writes fine.
     var storageFailure: CaptureStorageFailureKind?

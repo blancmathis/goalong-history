@@ -293,10 +293,21 @@
             .accessibilityIdentifier("activity-thread-weave")
         }
 
-        /// A month names its Mondays only; a week names every day.
         private func label(_ day: GoalongLocalAnalytics.Day) -> String {
-            if dense, calendar.component(.weekday, from: day.date) != 2, day.id != period.days.first?.id { return "" }
-            return day.date.formatted(.dateTime.locale(GoalongUIFormat.locale).weekday(.abbreviated).day())
+            Self.label(day.date, dense: dense, isFirst: day.id == period.days.first?.id, calendar: calendar)
+        }
+
+        /// Every row says its day. A month writes the weekday on Mondays and on its first row only,
+        /// the other rows their date number (with the month on its first day), so the weeks stay visible without a wall of text.
+        static func label(_ date: Date, dense: Bool, isFirst: Bool, calendar: Calendar) -> String {
+            var style = Date.FormatStyle.dateTime.locale(GoalongUIFormat.locale)
+            style.calendar = calendar; style.timeZone = calendar.timeZone
+            if dense, calendar.component(.weekday, from: date) != 2, !isFirst {
+                // A new month says its name, so « 1 » never follows « 30 » without context.
+                return calendar.component(.day, from: date) == 1 ? date.formatted(style.day().month(.abbreviated))
+                    : date.formatted(style.day())
+            }
+            return date.formatted(style.weekday(.abbreviated).day())
         }
 
         private func marks(_ hours: ClosedRange<Int>) -> [(label: String, position: CGFloat)] {
