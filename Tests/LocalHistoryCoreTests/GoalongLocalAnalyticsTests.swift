@@ -372,6 +372,38 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         }
     }
 
+    func testForeignSummaryBilanNeverExceedsItsMovedSegments() throws {
+        // B05-R1-03: two passes of one wall-clock hour overlap here; segments kept one pass, the
+        // bilan added both (up to 2 h in one hour).
+        var paris = Calendar(identifier: .gregorian); paris.timeZone = TimeZone(identifier: "Europe/Paris")!
+        var newYork = paris; newYork.timeZone = TimeZone(identifier: "America/New_York")!
+        // 2026-10-25: Paris repeats 02:00. 2027-03-14: New York skips 02:00.
+        for (year, month, date) in [(2026, 10, 25), (2027, 3, 14)] {
+            let root = try temporaryRoot("analytics-overlap"), store = GoalongActivityDayStore(root: root)
+            let parisDay = paris.date(from: DateComponents(year: year, month: month, day: date))!
+            let from = paris.date(from: DateComponents(year: year, month: month, day: date, hour: 1, minute: 30))!
+            let later = parisDay.addingTimeInterval(10 * 86400)
+            let events = stride(from: 0.0, through: 3 * 3600, by: 60).map {
+                HistoryEvent(sessionID: "fixture", timestamp: from.addingTimeInterval($0), kind: .heartbeat,
+                    app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1))
+            }
+            let source = GoalongLocalAnalytics.build(events: events, day: parisDay, now: later, calendar: paris)
+            try store.write(source, sourceRevision: "fixture", now: later, calendar: paris)
+            let localDay = newYork.date(from: DateComponents(year: year, month: month, day: date))!
+            let moved = try store.read(day: localDay, calendar: newYork)
+            let label = "\(year)-\(month)-\(date)"
+            XCTAssertLessThan(moved.activeSeconds, source.activeSeconds, label)
+            XCTAssertEqual(moved.breakdown.totalSeconds, moved.activeSeconds, accuracy: 0.001, label)
+            for hour in moved.breakdown.hours {
+                let active = moved.segments.filter { $0.kind.isActive }.reduce(0.0) {
+                    $0 + max(0, min($1.end, hour.end).timeIntervalSince(max($1.start, hour.start)))
+                }
+                XCTAssertEqual(hour.totalSeconds, active, accuracy: 0.001, "\(label) \(hour.start)")
+                XCTAssertLessThanOrEqual(hour.totalSeconds, hour.end.timeIntervalSince(hour.start) + 0.001, label)
+            }
+        }
+    }
+
     func testOptInReadOnlyLocalAnalyticsProbe() throws {
         guard let path = ProcessInfo.processInfo.environment["GOALONG_ANALYTICS_PROBE_ROOT"] else {
             throw XCTSkip("Opt-in read-only local analytics probe; logs aggregate counts only")

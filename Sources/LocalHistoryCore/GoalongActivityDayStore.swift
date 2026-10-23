@@ -13,6 +13,8 @@ public struct GoalongActivityDayStore: Sendable {
     public static let maximumBytes = 2 * 1_024 * 1_024
     /// Content-free trace that retention expired this day's journal without leaving a summary.
     public static let purgeMarkerSuffix = ".purged"
+    /// Files that share the day summaries' retention: the summary and the marker of a day erased without one.
+    public static let summaryRetentionSuffixes: Set<String> = [".json", purgeMarkerSuffix]
     public let root: URL
     public init(root: URL) { self.root = root }
 
@@ -184,7 +186,8 @@ public struct GoalongActivityDayStore: Sendable {
         // Same wall-clock day, moved onto this zone's date so pages match it to the selected day.
         // Each instant keeps its wall-clock time (15:00 in Paris shows at 15:00 here), also after
         // a clock change in either zone. A repeated hour overlaps itself: active time wins, then
-        // the first pass. A skipped hour, or this day's extra hour, is marked as not recorded.
+        // the first pass, and its bilan is capped to match. A skipped hour, or this day's extra
+        // hour, is marked as not recorded.
         // The saved summary itself stays unchanged.
         let localStart = calendar.startOfDay(for: day)
         guard let localEnd = calendar.date(byAdding: .day, value: 1, to: localStart), localEnd > localStart else { throw Failure.invalidSummary }
@@ -203,6 +206,17 @@ public struct GoalongActivityDayStore: Sendable {
             }
         }
         hours.sort { $0.start < $1.start }
+        // Overlapping passes keep one segment each instant, but their hours add up: an hour may
+        // not hold more than the active time its moved segments show (each mode in proportion).
+        hours = hours.map { hour in
+            let active = moved.filter { $0.kind.isActive }.reduce(0.0) {
+                $0 + max(0, min($1.end, hour.end).timeIntervalSince(max($1.start, hour.start)))
+            }
+            let total = hour.totalSeconds
+            guard total > active else { return hour }
+            let ratio = total > 0 ? active / total : 0
+            return .init(start: hour.start, end: hour.end, secondsByMode: hour.secondsByMode.mapValues { $0 * ratio })
+        }
         let movedFirst = mapping.point(first), movedLast = mapping.point(last)
         let movedDay = GoalongLocalAnalytics.Day(date: localStart, end: localEnd, state: .ready, segments: moved,
             eventCount: e.eventCount, classifierVersions: Set(e.classifierVersions), origin: .summary, hasDetailedSource: false,

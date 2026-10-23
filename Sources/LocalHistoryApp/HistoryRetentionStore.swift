@@ -50,7 +50,7 @@
                 HistoryRetentionArtifactDirectory(
                     directory: AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongActivityDayStore.directoryName),
                     dataClass: .activitySummaries,
-                    allowedSuffixes: [".json"]
+                    allowedSuffixes: GoalongActivityDayStore.summaryRetentionSuffixes
                 ),
                 HistoryRetentionArtifactDirectory(
                     directory: AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongActivityDayStore.directoryName),
@@ -285,10 +285,14 @@
                     if decision.artifact.dataClass == .detailedEvents,
                        file.deletingLastPathComponent().lastPathComponent == "events",
                        let cutoff = policy.activitySummaries.cutoff(relativeTo: now), decision.artifact.end < cutoff {
-                        let summary = file.deletingLastPathComponent().deletingLastPathComponent()
-                            .appendingPathComponent("activity-days/" + String(file.lastPathComponent.prefix(10)) + ".json")
-                        if isManagedRegularArtifact(summary), activationMatchesCurrentPolicy() {
-                            try Self.unlinkRegularFile(at: summary)
+                        let days = file.deletingLastPathComponent().deletingLastPathComponent()
+                            .appendingPathComponent(GoalongActivityDayStore.directoryName)
+                        // The summary, or the marker just left in its place, expires with the journal.
+                        for suffix in GoalongActivityDayStore.summaryRetentionSuffixes.sorted() {
+                            let summary = days.appendingPathComponent(String(file.lastPathComponent.prefix(10)) + suffix)
+                            if isManagedRegularArtifact(summary), activationMatchesCurrentPolicy() {
+                                try Self.unlinkRegularFile(at: summary)
+                            }
                         }
                     }
                 } catch {

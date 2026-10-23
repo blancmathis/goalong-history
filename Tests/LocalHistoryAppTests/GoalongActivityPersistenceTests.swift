@@ -202,8 +202,43 @@ final class GoalongActivityPersistenceTests: XCTestCase {
                 .init(directory: root.appendingPathComponent("events"), dataClass: .detailedEvents, allowedSuffixes: [".jsonl"]),
                 .init(directory: root.appendingPathComponent("activity-days"), dataClass: .detailedEvents,
                     allowedSuffixes: [GoalongActivityCheckpointStore.suffix]),
-                .init(directory: root.appendingPathComponent("activity-days"), dataClass: .activitySummaries, allowedSuffixes: [".json"])
+                .init(directory: root.appendingPathComponent("activity-days"), dataClass: .activitySummaries,
+                    allowedSuffixes: GoalongActivityDayStore.summaryRetentionSuffixes)
             ], prepare: {}))
+    }
+
+    func testPurgeMarkerExpiresWithTheDaySummaries() throws {
+        // B05-R1-02: « Détail effacé » used to outlive the chosen summary duration forever.
+        let calendar = Calendar.current
+        func marker(_ root: URL, _ date: Date) -> URL {
+            root.appendingPathComponent("activity-days/" + GoalongActivityDayStore.dayKey(date, calendar: calendar)
+                + GoalongActivityDayStore.purgeMarkerSuffix)
+        }
+        func policy(summaryDays: Int) -> HistoryRetentionPolicy {
+            .init(detailedEvents: .init(days: 1), semanticSnapshots: .init(days: 1), memories: .indefinite,
+                  analysisCaches: .indefinite, minuteSeals: .indefinite, anchorReceipts: .indefinite,
+                  activitySummaries: .init(days: summaryDays))
+        }
+        // An old marker expires with the summaries; a recent one stays.
+        let root = try root(), recent = calendar.date(byAdding: .day, value: 150, to: day)!
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("activity-days"), withIntermediateDirectories: true)
+        for date in [day, recent] { try Data("purged\n".utf8).write(to: marker(root, date)) }
+        let store = checkpointRetention(root: root, days: 1)
+        try store.activate(policy(summaryDays: 90))
+        store.applyCleanup(now: calendar.date(byAdding: .day, value: 200, to: day)!)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker(root, day).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker(root, recent).path))
+
+        // A journal with nothing to summarize past the summary duration leaves no marker behind.
+        let other = try self.root(), journal = try writeEvents(root: other)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        try (try encoder.encode(HistoryEvent(sessionID: "fixture", timestamp: day.addingTimeInterval(60), kind: .recorderHealth))
+            + Data([10])).write(to: journal)
+        let short = checkpointRetention(root: other, days: 1)
+        try short.activate(policy(summaryDays: 5))
+        short.applyCleanup(now: day.addingTimeInterval(10 * 86400))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker(other, day).path))
     }
 
     func testCheckpointExpiresWithDetailedEventsWhileSummaryRemains() throws {

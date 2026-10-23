@@ -37,8 +37,6 @@ struct GoalongAnalyticsPage: View {
     /// very busy day never keeps a core busy while the page is simply left open.
     @State private var lastReadSeconds: TimeInterval = 0
     @State private var lastAutomaticRefresh = Date.distantPast
-    /// The calendar day the page last saw as today, to follow it across midnight.
-    @State private var knownToday = Calendar.current.startOfDay(for: Date())
 
     private var previewActive: Bool { developerMode && showingPreview }
     private var selection: GoalongActivityNavigation { previewActive ? previewNavigation : navigation }
@@ -174,7 +172,11 @@ struct GoalongAnalyticsPage: View {
         } message: {
             Text("Choisissez le type d’analyse. Les sources et les autorisations restent à vérifier avant toute génération.")
         }
-        .onAppear { model.selectDay(navigation.day) }
+        .onAppear {
+            // The page is rebuilt on each section change: a day that turned while it was away counts too.
+            followCalendarDay()
+            model.selectDay(navigation.day)
+        }
         .task(id: loadRequest) {
             let request = loadRequest
             guard request.permitsLoading else { return }
@@ -454,20 +456,10 @@ struct GoalongAnalyticsPage: View {
     /// A page left on today moves to the new today at midnight (same period); the day that just
     /// ended is read once more. A past day chosen by the user stays as it is.
     private func followCalendarDay(now: Date = Date()) {
-        let previous = knownToday
-        knownToday = Calendar.current.startOfDay(for: now)
-        guard knownToday != previous else { return }
-        if let day = Self.dayAfterMidnight(shown: navigation.day, previousToday: previous, now: now) {
-            if previewActive { navigation.selectDay(day, now: now) } else { updateSelection { $0.selectDay(day, now: now) } }
-        }
+        let shown = navigation.day
+        guard navigation.followToday(now: now) else { return }
+        if !previewActive, navigation.day != shown { model.selectDay(navigation.day) }
         if !previewActive { revision += 1 }
-    }
-
-    /// The day to show after the calendar day changed, or nil to keep the shown day.
-    static func dayAfterMidnight(shown: Date, previousToday: Date, now: Date, calendar: Calendar = .current) -> Date? {
-        let today = calendar.startOfDay(for: now)
-        guard calendar.isDate(shown, inSameDayAs: previousToday), today > calendar.startOfDay(for: previousToday) else { return nil }
-        return today
     }
 
     private func updateSelection(_ change: (inout GoalongActivityNavigation) -> Void) {

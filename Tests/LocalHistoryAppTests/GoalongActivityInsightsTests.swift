@@ -344,12 +344,42 @@ final class GoalongActivityInsightsTests: XCTestCase {
 
     func testPageLeftOnTodayFollowsTheNewDayAtMidnight() {
         // R5-historique-03: at 00:10 the page left open on « aujourd’hui » at 23:50 showed the old day.
-        let before = date(10), after = date(11).addingTimeInterval(600)
-        XCTAssertEqual(GoalongAnalyticsPage.dayAfterMidnight(shown: before, previousToday: before, now: after, calendar: calendar), date(11))
-        XCTAssertNil(GoalongAnalyticsPage.dayAfterMidnight(shown: date(8), previousToday: before, now: after, calendar: calendar),
-                     "A past day chosen by the user stays")
-        XCTAssertNil(GoalongAnalyticsPage.dayAfterMidnight(shown: before, previousToday: before, now: before.addingTimeInterval(3600),
-                                                           calendar: calendar))
+        let evening = date(10).addingTimeInterval(23 * 3600 + 50 * 60), after = date(11).addingTimeInterval(600)
+        var onToday = GoalongActivityNavigation(day: evening, now: evening, calendar: calendar)
+        XCTAssertFalse(onToday.followToday(now: evening.addingTimeInterval(60), calendar: calendar))
+        XCTAssertEqual(onToday.day, date(10))
+        XCTAssertTrue(onToday.followToday(now: after, calendar: calendar))
+        XCTAssertEqual(onToday.day, date(11))
+        XCTAssertFalse(onToday.followToday(now: after.addingTimeInterval(60), calendar: calendar), "Followed once")
+
+        var past = GoalongActivityNavigation(day: evening, now: evening, calendar: calendar)
+        past.selectDay(date(8), now: evening, calendar: calendar)
+        XCTAssertTrue(past.followToday(now: after, calendar: calendar))
+        XCTAssertEqual(past.day, date(8), "A past day chosen by the user stays")
+
+        // A week ending today keeps its period and moves too.
+        var week = GoalongActivityNavigation(day: evening, period: 7, now: evening, calendar: calendar)
+        week.followToday(now: after, calendar: calendar)
+        XCTAssertEqual(week.day, date(11)); XCTAssertEqual(week.period, 7)
+    }
+
+    func testNavigationRebuiltPageStillFollowsTodayAfterMidnight() {
+        // B05-R1-01: the page is rebuilt on each section change and used to learn the new day on
+        // return, so the shown day never moved. The navigation itself remembers the day it saw.
+        let evening = date(10).addingTimeInterval(23 * 3600 + 50 * 60), after = date(11).addingTimeInterval(600)
+        var navigation = GoalongActivityNavigation(day: evening, now: evening, calendar: calendar)
+        navigation.openDay(evening, now: evening, calendar: calendar)
+        // No call while the user is on Travail; the page reappears at 00:10.
+        XCTAssertTrue(navigation.followToday(now: after, calendar: calendar))
+        XCTAssertEqual(navigation.day, date(11))
+
+        // A day opened from a week keeps its way back, moved to the new week too.
+        var fromWeek = GoalongActivityNavigation(day: evening, period: 7, now: evening, calendar: calendar)
+        fromWeek.openDay(date(9), now: evening, calendar: calendar)
+        fromWeek.followToday(now: after, calendar: calendar)
+        XCTAssertEqual(fromWeek.day, date(9))
+        fromWeek.restorePeriod()
+        XCTAssertEqual(fromWeek.day, date(11)); XCTAssertEqual(fromWeek.period, 7)
     }
 
     private func mergedSegments(_ a: GoalongLocalAnalytics.Day, _ b: GoalongLocalAnalytics.Day) -> [GoalongLocalAnalytics.Segment] {

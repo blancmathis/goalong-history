@@ -51,7 +51,7 @@ final class GoalongActivityTests: XCTestCase {
     }
 
     func testDayDrillDownRestoresExactPeriodAndAnchor() {
-        let original = GoalongActivityNavigation(day: date(20), period: 28, calendar: calendar)
+        let original = GoalongActivityNavigation(day: date(20), period: 28, now: date(20), calendar: calendar)
         var selection = original
         selection.openDay(date(12), now: date(20), calendar: calendar)
         XCTAssertEqual(selection.day, date(12))
