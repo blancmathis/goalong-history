@@ -514,10 +514,22 @@ final class GoalongSiteExportTests: XCTestCase {
     }
 
     func testExportErrorsShownInTheAppAreFrenchAndKeepEnglishForTheCLI() {
-        let error = GoalongSiteExportError.localized("This day exceeds 200 domains; export without website details.", french: "Cette journée compte plus de 200 sites. Décochez Détails des sites ou choisissez-en moins.")
-        XCTAssertEqual(goalongUserMessage(error), "Cette journée compte plus de 200 sites. Décochez Détails des sites ou choisissez-en moins.")
-        XCTAssertTrue(String(describing: error).hasPrefix("This day exceeds"))
+        do {
+            _ = try GoalongSiteExport.payload(record: fixture(), options: .init(deviceIDs: ["missing"]))
+            XCTFail("An unknown device must be refused")
+        } catch {
+            XCTAssertEqual(goalongUserMessage(error), "Un appareil choisi n’est pas disponible pour cette journée. Actualisez ou ajustez la sélection.")
+            XCTAssertTrue(String(describing: error).hasPrefix("A selected device is absent"))
+        }
         XCTAssertFalse(goalongUserMessage(GoalongCanonicalJSONError.trailingData).contains("Canonical"))
+        XCTAssertFalse(goalongUserMessage(GoalongCanonicalJSONError.tooLarge).contains("signer"))
+    }
+
+    func testUnsafeSourceMessagesKeepTheirPreciseFrenchReason() {
+        let french = "Les exclusions ont changé. Préparez un nouvel aperçu."
+        XCTAssertEqual(goalongUserMessage(CLIError.unsafeSource(french)), french)
+        XCTAssertEqual(goalongUserMessage(CLIError.unsafeSource("No saved recap exists for this day. Export without --include-recap.")),
+                       "Aucun récap enregistré pour cette journée. Décochez le récap ou choisissez une autre date.")
     }
 }
 #endif

@@ -18,16 +18,16 @@ public enum GoalongCanonicalJSONError: Error, Equatable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .tooLarge: return "Les données à signer sont trop volumineuses."
-        case .tooDeep: return "Les données à signer sont trop imbriquées."
-        case .unexpectedEnd: return "Les données à signer se terminent trop tôt."
-        case .unexpectedByte: return "Les données à signer contiennent un caractère inattendu."
-        case .duplicateKey: return "Les données à signer répètent une clé."
-        case .invalidString: return "Les données à signer contiennent un texte invalide."
-        case .invalidEscape: return "Les données à signer contiennent une séquence de texte invalide."
-        case .invalidInteger: return "Les données à signer contiennent un nombre non valide."
-        case .trailingData: return "Les données à signer contiennent des données en trop."
-        case .unsupportedValue: return "Les données à signer contiennent une valeur non prise en charge."
+        case .tooLarge: return "Ces données JSON sont trop volumineuses."
+        case .tooDeep: return "Ces données JSON sont trop imbriquées."
+        case .unexpectedEnd: return "Ces données JSON se terminent trop tôt."
+        case .unexpectedByte: return "Ces données JSON contiennent un caractère inattendu."
+        case .duplicateKey: return "Ces données JSON répètent une clé."
+        case .invalidString: return "Ces données JSON contiennent un texte invalide."
+        case .invalidEscape: return "Ces données JSON contiennent une séquence de texte invalide."
+        case .invalidInteger: return "Ces données JSON contiennent un nombre non valide."
+        case .trailingData: return "Ces données JSON contiennent des données en trop."
+        case .unsupportedValue: return "Ces données JSON contiennent une valeur non prise en charge."
         }
     }
 }
