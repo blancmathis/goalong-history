@@ -43,6 +43,32 @@ GUARD_LIMITS = ("Gardes : URLProtocol compté (aussi dans URLSession(configurati
                 "orderFront/beginSheet/runModal/statusItem = échec, UserDefaults.standard lu = leaky. "
                 "Non couverts : posix_spawn/fork, sockets bas niveau, Network.framework, réseau d'un processus "
                 "déjà lancé.")
+# States spec C §6 lists that no catalogue entry renders yet (review C3-couverture-01): the index names them so a
+# missing image reads as « non couvert », not as a forgotten state. Remove a line when its entry lands.
+NOT_COVERED = (
+    "Fenêtre : bannière après une mise à jour, bandeau Goalong Dev",
+    "Activité : aperçu (mode développeur)",
+    "Mon travail : agent absent",
+    "Historique : filtres Temps d’écran et conversations",
+    "Temps d’écran : importé, indisponible",
+    "Conversations : consentement, liste, carte jetons (et fixtures §5.7)",
+    "Bilan : chargement, erreur, rapport",
+    "Surveillance : prête, interventions, panneau d’alerte Jev",
+    "Distractions : suggestions",
+    "Programme : semaine",
+    "Blocage sévère : service absent, actif, « Retirer le service »",
+    "Ambiance : erreur de téléchargement (page)",
+    "Barre des menus : bouton avec badge dev",
+    "Feuilles : import Santé, analyse de site, projets développeur",
+    "Permissions : relance demandée",
+    "Compte et site : non lié, appairage, lié, envoi auto, erreur, hors ligne ; carte ChatGPT (3 états) ; studio de profil",
+    "Terminal : installé, lien cassé",
+    "Mises à jour : 4 états",
+    "Support : demande",
+)
+STALE_INDEX_LIMIT = ("Index : un accept réécrit l'index des runs de ce checkout ; un index ouvert depuis un autre "
+                     "checkout ou une copie peut montrer une base remplacée depuis (make gallery-index pour le "
+                     "réécrire).")
 
 CHECKOUT = Path(__file__).resolve().parent.parent
 
@@ -682,8 +708,29 @@ def command_accept(args: argparse.Namespace) -> int:
                 shutil.rmtree(staging, ignore_errors=True)
     if not os.environ.get("GALLERY_BASELINE"):
         prune_base_keys(manifest["envKey"])
-    log(f"gallery: {len(selected)} image(s) acceptée(s) dans {base}")
+    refreshed = refresh_indexes(base)
+    log(f"gallery: {len(selected)} image(s) acceptée(s) dans {base} ; index réécrit pour {refreshed} run(s) de ce "
+        "checkout comparé(s) à cette base (autre checkout : make gallery-index)")
     return 0
+
+
+def refresh_indexes(base: Path) -> int:
+    """Rewrites the index of this checkout's runs whose diff targets `base`: a static index otherwise keeps showing
+    the replaced base's live file:// URL as the base its percentages describe (C3-outil-01)."""
+    if not runs_dir().is_dir():
+        return 0
+    refreshed = 0
+    for run in sorted(runs_dir().iterdir()):
+        try:
+            if not (run / "manifest.json").exists() or not (run / "diff.json").exists():
+                continue
+            if Path(read_json(run / "diff.json").get("base", "")).resolve() != base.resolve():
+                continue
+            write_index(run)
+            refreshed += 1
+        except (OSError, ValueError, KeyError) as error:
+            log(f"gallery: index de {run.name} non réécrit : {error}")
+    return refreshed
 
 
 def prune_base_keys(current: str) -> None:
@@ -806,6 +853,9 @@ def write_index(run: Path) -> None:
                             f'états différents</summary><ul>{rows}</ul></details>')
     else:
         duplicates_block = '<div class="limits">aucune image identique entre états différents</div>'
+    not_covered = (f'<details class="limits"><summary>{len(NOT_COVERED)} groupe(s) d’états de la spec (§6) non '
+                   f'couverts : pas d’image</summary><ul>'
+                   + "".join(f"<li>{html.escape(line)}</li>" for line in NOT_COVERED) + "</ul></details>")
     totals = " · ".join(f"{html.escape(key)} {value}" for key, value in sorted(counts.items()))
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     page = f"""<!doctype html>
@@ -818,7 +868,8 @@ def write_index(run: Path) -> None:
 {manifest.get('shards')} shard(s), {manifest.get('duration')} s{' · ONLY=' + html.escape(manifest['only']) if manifest.get('only') else ''}</div>
 <div class="meta">{diff_line}</div>
 {duplicates_block}
-<div class="limits">{html.escape(GUARD_LIMITS)} {html.escape(APP_ICON_LIMIT)}</div></header>
+{not_covered}
+<div class="limits">{html.escape(GUARD_LIMITS)} {html.escape(APP_ICON_LIMIT)} {html.escape(STALE_INDEX_LIMIT)}</div></header>
 <div class="bar"><label>Thème <select id="theme"><option value="">tous</option></select></label>
 <label>Surface <select id="surface"><option value="">toutes</option></select></label>
 <label>Statut <select id="status"><option value="">tous</option></select></label>

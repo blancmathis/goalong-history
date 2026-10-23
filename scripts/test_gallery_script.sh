@@ -213,9 +213,14 @@ make_run t3 $K3 1 2 "a/x--light:same" "b/y--light:same"
 out="$("${G[@]}" diff 2>&1)" && fail "diff after a partial accept passed"
 [[ "$out" == *"commit abc1234, + 1 accept(s) partiel(s) : def5678"* && "$out" == *"a/x--light.png"*"(base : def5678)"* ]] \
   || fail "partial accept not named by the diff: $out"
-# Once its base is replaced, a run's index stops showing the new base as the one its diff describes.
-"${G[@]}" accept >/dev/null
-"${G[@]}" index --run t3 >/dev/null
+# Once its base is replaced, a run's index stops showing the new base as the one its diff describes: the accept
+# itself rewrites the index of this checkout's runs compared with that base (C3-outil-01), no manual index call.
+"${G[@]}" diff --run t3 >/dev/null 2>&1 || true
+grep -q "base remplacée depuis le diff" "$GALLERY_ROOT/runs/t3/index.html" && fail "index says replaced before any accept"
+out="$("${G[@]}" accept 2>&1)" || fail "accept t3: $out"
+[[ "$out" == *"index réécrit pour"*"make gallery-index"* ]] || fail "accept message does not name the index: $out"
+grep -q "make gallery-index" "$GALLERY_ROOT/runs/t3/index.html" || fail "index limits omit gallery-index"
+grep -q "non couverts : pas d’image" "$GALLERY_ROOT/runs/t3/index.html" || fail "index omits the uncovered states"
 python3 - "$GALLERY_ROOT/runs/t3/index.html" <<'PY2' || fail "index shows a replaced base"
 import json, re, sys
 text = open(sys.argv[1], encoding="utf-8").read()

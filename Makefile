@@ -1,5 +1,5 @@
 .PHONY: check test test-ui build app dmg audit install install-source uninstall clean dev dev-stop dev-status \
-	gallery gallery-diff gallery-accept gallery-clean
+	gallery gallery-diff gallery-accept gallery-index gallery-clean
 
 VERSION ?= 0.6.0
 ARCHS ?= $(shell uname -m)
@@ -40,6 +40,10 @@ gallery-diff:
 # make gallery-accept [ONLY=prefixes] [RUN=latest] [FORCE=1]: the run's PNGs become the base of its env key.
 gallery-accept:
 	python3 scripts/gallery.py accept --run "$(or $(RUN),latest)" --only "$(ONLY)" $(if $(filter 1,$(FORCE)),--force,)
+
+# make gallery-index [RUN=latest]: rewrites a run's index.html (after an accept made from another checkout).
+gallery-index:
+	python3 scripts/gallery.py index --run "$(or $(RUN),latest)"
 
 # make gallery-clean: this checkout's runs only; the shared base stays.
 gallery-clean:
