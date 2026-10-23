@@ -33,13 +33,13 @@ import SwiftUI
                     Text("Le filtre rouge, à vos horaires.").foregroundStyle(LHTheme.secondaryText)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(controller.stateLabel).font(.system(size: compact ? 20 : 22, weight: .semibold))
+                    Text(controller.stateLabel).font(LHTheme.sectionTitleFont)
                     Text(controller.nextEvent).foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 8) {
                         Button("Rétablir les couleurs") { controller.emergencyOff() }.buttonStyle(LHSecondaryButtonStyle())
                             .accessibilityIdentifier("braise-emergency-off")
                         if controller.isPaused {
-                            Button("Reprendre") { controller.resume() }.buttonStyle(LHQuietButtonStyle())
+                            Button("Reprendre") { controller.resume() }.buttonStyle(LHSecondaryButtonStyle())
                         } else {
                             Button("Pause 15 min") { controller.pause() }.buttonStyle(LHSecondaryButtonStyle()).disabled(!controller.active)
                         }
@@ -159,11 +159,17 @@ import SwiftUI
     private func time(_ title: String, minute: Binding<Int>) -> some View {
         HStack(spacing: 10) {
             Text(title)
-            DatePicker(title, selection: Binding(get: {
-            Calendar.current.date(bySettingHour: minute.wrappedValue / 60, minute: minute.wrappedValue % 60, second: 0, of: Date()) ?? Date()
-        }, set: { date in minute.wrappedValue = Calendar.current.component(.hour, from: date) * 60 + Calendar.current.component(.minute, from: date) }), displayedComponents: .hourAndMinute)
-                .labelsHidden().frame(minWidth: 96)
-                .environment(\.locale, Locale(identifier: "fr_FR"))
+            HStack(spacing: 6) {
+                Text(String(format: "%02d:%02d", minute.wrappedValue / 60, minute.wrappedValue % 60))
+                    .font(.system(size: 13).monospacedDigit())
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(LHTheme.cardBackground))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(LHTheme.secondaryText.opacity(0.3)))
+                Stepper(title, value: Binding(get: { minute.wrappedValue }, set: { minute.wrappedValue = (($0 % 1440) + 1440) % 1440 }), in: -5...1445, step: 5)
+                    .labelsHidden()
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(title)
         }
     }
 }

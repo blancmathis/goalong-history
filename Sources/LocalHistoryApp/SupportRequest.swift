@@ -282,6 +282,7 @@ struct SupportRequestView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
