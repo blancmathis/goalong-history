@@ -46,10 +46,11 @@ enum AmbiancePackDownloader {
     static let requestTimeout: TimeInterval = 60
     static let resourceTimeout: TimeInterval = 3_600
 
-    /// A timeout means the link is too slow, not absent. Other transport errors are never exposed:
+    /// A timeout after some pack bytes means the link is too slow. A timeout before the first byte
+    /// (blocked or silent server) is a connection failure. Other transport errors are never exposed:
     /// they may contain the signed failing URL.
-    static func transportFailure(_ error: Error) -> AmbianceError {
-        (error as? URLError)?.code == .timedOut ? .tooSlow : .network
+    static func transportFailure(_ error: Error, bytesReceived: Int64) -> AmbianceError {
+        (error as? URLError)?.code == .timedOut && bytesReceived > 0 ? .tooSlow : .network
     }
 
     static func progressFailure(status: Int?, written: Int64, expected: Int64, packBytes: Int64) -> AmbianceError? {
@@ -82,6 +83,8 @@ enum AmbiancePackDownloader {
         private var cancelled = false
         private var failure: Error?
         private var redirects = 0
+        /// Pack bytes received so far. Written and read only on the session's serial delegate queue.
+        private var bytesReceived: Int64 = 0
         init(pack: AmbiancePack, url: URL, progress: @escaping (Double) -> Void) {
             self.pack = pack; self.url = url; self.progress = progress
         }
@@ -143,6 +146,7 @@ enum AmbiancePackDownloader {
                 written: totalBytesWritten, expected: totalBytesExpectedToWrite, packBytes: pack.bytes) {
                 failure = failed; downloadTask.cancel(); return
             }
+            bytesReceived = totalBytesWritten
             progress(min(1, Double(totalBytesWritten) / Double(pack.bytes)))
         }
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
@@ -162,7 +166,7 @@ enum AmbiancePackDownloader {
             // Foundation transport errors may contain the signed failing URL.
             // Never retain or expose them through the controller's public error.
             if let error {
-                finish(.failure(failure ?? AmbiancePackDownloader.transportFailure(error)))
+                finish(.failure(failure ?? AmbiancePackDownloader.transportFailure(error, bytesReceived: bytesReceived)))
             }
         }
     }
