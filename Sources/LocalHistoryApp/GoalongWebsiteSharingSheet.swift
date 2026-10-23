@@ -295,24 +295,31 @@ struct GoalongSharingSelector: View {
     static let selectionCap = 200
     @State private var search = ""
     private var absent: [String] { selection.subtracting(Set(items.map(\.id))).sorted() }
+    private var present: Set<String> { selection.intersection(Set(items.map(\.id))) }
+    private var roomLeft: Int { max(0, Self.selectionCap - present.count) }
+    private var uncheckedResults: [Item] { visible.filter { !selection.contains($0.id) } }
     private var visible: [Item] { items.filter { search.isEmpty || $0.title.localizedStandardContains(search) } }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(title).font(.callout.weight(.semibold))
                 Spacer()
-                Text("\(selection.intersection(Set(items.map(\.id))).count) / \(items.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                Text("\(present.count) / \(items.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }
             if items.count > 4 {
                 GoalongSearchField("Rechercher…", text: $search, accessibilityLabel: "Rechercher dans \(title)")
             }
             HStack(spacing: 12) {
                 Button("Sélectionner les résultats") {
-                    let room = max(0, Self.selectionCap - selection.count)
-                    selection.formUnion(visible.map(\.id).filter { !selection.contains($0) }.prefix(room))
-                }.disabled(visible.isEmpty)
+                    selection.formUnion(uncheckedResults.map(\.id).prefix(roomLeft))
+                }.disabled(uncheckedResults.isEmpty || roomLeft == 0)
                 Button("Tout décocher") { selection.removeAll() }.disabled(selection.isEmpty)
             }.buttonStyle(LHQuietButtonStyle()).font(.caption)
+            if uncheckedResults.count > roomLeft {
+                let left = uncheckedResults.count - roomLeft
+                Text("\(Self.selectionCap) éléments au plus par envoi : \(left) \(left > 1 ? "résultats non cochés" : "résultat non coché").")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if !absent.isEmpty {
                 GoalongDisclosureGroup("\(absent.count) choix enregistrés absents de cette journée") {
                     VStack(alignment: .leading, spacing: 8) {

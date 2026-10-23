@@ -128,11 +128,12 @@ extension GoalongSitePairing {
     }
 }
 
-private final class PairingResponse: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+final class PairingResponse: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     let finished = DispatchSemaphore(value: 0)
     private var data = Data()
     private var status = 0
     private var failed = false
+    private var transportError: URLError?
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         failed = true
         completionHandler(nil)
@@ -147,13 +148,27 @@ private final class PairingResponse: NSObject, URLSessionDataDelegate, @unchecke
         data.append(chunk)
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if error != nil { failed = true }
+        if let error { failed = true; transportError = error as? URLError ?? URLError(.unknown) }
         finished.signal()
     }
     func result() throws -> Data {
         guard !failed, (200...299).contains(status) else {
-            throw GoalongSiteExportError.invalid("La liaison n’a pas été confirmée. Le lien peut avoir expiré ou déjà été utilisé. Relancez la connexion depuis Goalong.")
+            throw GoalongSiteExportError.invalid(Self.failureMessage(status: status, transportError: transportError))
         }
         return data
+    }
+
+    /// Keeps the real cause: a network or server problem must not tell the user to regenerate a valid link.
+    static func failureMessage(status: Int, transportError: URLError?) -> String {
+        if let error = transportError, error.code != .cancelled {
+            return "Pas de connexion au site. Réessayez avec le même lien."
+        }
+        if status >= 500 || status == 429 {
+            return "Le site ne répond pas pour le moment. Réessayez avec le même lien dans quelques instants."
+        }
+        if (400...499).contains(status) {
+            return "La liaison n’a pas été confirmée. Le lien peut avoir expiré ou déjà été utilisé. Relancez la connexion depuis Goalong."
+        }
+        return "La liaison n’a pas été confirmée. Relancez la connexion depuis Goalong."
     }
 }
