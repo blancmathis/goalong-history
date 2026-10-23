@@ -45,7 +45,7 @@ for spec in specs:
                    "theme": theme, "size": "", "file": rel, "points": [w // 2, h // 2], "pixels": [w, h],
                    "scale": scale, "sha256": digest, "status": status, "detail": "", "ms": 1,
                    "source": "Fake.swift", "note": ""})
-manifest = {"schema": 2, "run": os.path.basename(run), "commit": "abc1234", "branch": "test", "clean": clean,
+manifest = {"schema": 2, "run": os.path.basename(run), "commit": os.environ.get("MR_COMMIT", "abc1234"), "branch": "test", "clean": clean,
             "date": "2026-10-23T09:41:00+02:00", "envKey": key, "screen": {"width": 1728, "height": 1117, "scale": scale},
             "windowScale": scale, "locale": "fr_FR", "timeZone": "Europe/Paris", "clock": 1792741260,
             "shards": 1, "only": os.environ.get("MR_ONLY", ""), "duration": 1.0,
@@ -193,4 +193,51 @@ xctest = command.index("-XCTest")
 for flag, value in (("-AppleAccentColor", "4"), ("-AppleShowScrollBars", "WhenScrolling"), ("-AppleLocale", "fr_FR")):
     assert command.index(flag) < xctest and command[command.index(flag) + 1] == value, command
 PY2
+
+# 9. Review r2 (C2-outil-04, 05, 06).
+K3=25F80-17C529-arm64-3x
+make_run t1 $K3 1 2 "a/x--light:same" "b/y--light:same"
+"${G[@]}" accept >/dev/null
+# A partial accept from another commit keeps the full accept's header and records itself; the next diff names it.
+MR_ONLY=a/ MR_COMMIT=def5678 make_run t2 $K3 1 2 "a/x--light:dot"
+"${G[@]}" accept >/dev/null || fail "partial accept refused"
+python3 - "$GALLERY_CACHE/$K3/baseline/manifest.json" <<'PY2' || fail "partial accept rewrote the base header"
+import json, sys
+m = json.load(open(sys.argv[1]))
+assert m["commit"] == "abc1234" and m["only"] == "" and m["acceptedFrom"] == "t1", m
+assert [a["commit"] for a in m["accepts"]] == ["abc1234", "def5678"], m["accepts"]
+commits = {i["key"]: i.get("acceptedCommit") for i in m["images"]}
+assert commits == {"a/x--light.png": "def5678", "b/y--light.png": "abc1234"}, commits
+PY2
+make_run t3 $K3 1 2 "a/x--light:same" "b/y--light:same"
+out="$("${G[@]}" diff 2>&1)" && fail "diff after a partial accept passed"
+[[ "$out" == *"commit abc1234, + 1 accept(s) partiel(s) : def5678"* && "$out" == *"a/x--light.png"*"(base : def5678)"* ]] \
+  || fail "partial accept not named by the diff: $out"
+# Once its base is replaced, a run's index stops showing the new base as the one its diff describes.
+"${G[@]}" accept >/dev/null
+"${G[@]}" index --run t3 >/dev/null
+python3 - "$GALLERY_ROOT/runs/t3/index.html" <<'PY2' || fail "index shows a replaced base"
+import json, re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', text, re.S).group(1).replace("<\\/", "</"))
+assert "basePng" not in data["diff"] and "base remplacée depuis le diff" in text, data["diff"].keys()
+PY2
+# A base held past the timeout at the end of a render: the run keeps a diff note and its index, no exit.
+make_run t4 $K3 1 2 "a/x--light:dot"
+python3 -c "import fcntl,sys,time;f=open(sys.argv[1],'a+');fcntl.flock(f,fcntl.LOCK_EX);open(sys.argv[2],'w').close();time.sleep(30)" \
+  "$GALLERY_CACHE/$K3/baseline.lock" "$dir/locked3" &
+holder=$!
+for _ in $(seq 50); do [[ -f "$dir/locked3" ]] && break; python3 -c "import time;time.sleep(0.1)"; done
+GALLERY_LOCK_TIMEOUT=1 python3 - "$ROOT/scripts" "$GALLERY_ROOT/runs/t4" <<'PY2' || { kill $holder; fail "locked base ended the run"; }
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import gallery
+run = Path(sys.argv[2])
+report = gallery.compare_after_render(run, json.load(open(run / "manifest.json")))
+assert report.get("baseLocked") and "diff non fait" in report["message"], report
+gallery.write_index(run)
+assert "diff non fait" in (run / "index.html").read_text(encoding="utf-8")
+PY2
+kill $holder; wait $holder 2>/dev/null || true
 echo "test_gallery_script: ok"

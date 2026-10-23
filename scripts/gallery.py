@@ -37,6 +37,8 @@ KEEP_RUNS = 5
 KEEP_BASE_KEYS = 3
 MAX_RELAUNCHES = 40
 STATUSES = ("ok", "unstable", "not-ready", "leaky", "timeout", "failed")
+APP_ICON_LIMIT = ("Icônes d’apps : toujours l’initiale de l’app ; la galerie ne lit ni les apps installées ni "
+                  "leurs icônes sur ce Mac.")
 GUARD_LIMITS = ("Gardes : URLProtocol compté (aussi dans URLSession(configuration:)), NSTask lancé = échec, "
                 "orderFront/beginSheet/runModal/statusItem = échec, UserDefaults.standard lu = leaky. "
                 "Non couverts : posix_spawn/fork, sockets bas niveau, Network.framework, réseau d'un processus "
@@ -369,7 +371,7 @@ def command_run(args: argparse.Namespace) -> int:
                 handle.write(f"{image['status']}\t{image['key']}\t{image['detail']}\n")
         for problem in problems:
             handle.write(f"problem\t{problem}\n")
-    report = compare(run, manifest, None, 0, 0)
+    report = compare_after_render(run, manifest)
     write_index(run)
     link = gallery_root() / "latest"
     temporary = gallery_root() / ".latest.tmp"
@@ -395,6 +397,19 @@ def command_run(args: argparse.Namespace) -> int:
     log(f"gallery: index : {run / 'index.html'}")
     bad = problems or any(image["status"] != "ok" for image in manifest["images"])
     return 1 if bad else 0
+
+
+def compare_after_render(run: Path, manifest: dict) -> dict:
+    """The run's diff; a base held too long by another accept or diff leaves a note instead of an exit: the images
+    are rendered, the run still gets its index and becomes `latest` (C2-outil-06)."""
+    try:
+        return compare(run, manifest, None, 0, 0)
+    except BaseLocked as error:
+        report = {"run": manifest["run"], "runKey": manifest["envKey"], "noBase": True, "baseLocked": True,
+                  "message": f"diff non fait ({error}) ; relancer make gallery-diff RUN={manifest['run']}",
+                  "changed": [], "new": [], "missing": [], "resized": [], "notOk": [], "same": 0, "withinTolerance": 0}
+        write_json(run / "diff.json", report)
+        return report
 
 
 def prune_runs() -> None:
@@ -436,6 +451,9 @@ def compare_locked(run: Path, manifest: dict, base: Path, base_env: str | None, 
     base_manifest = read_json(base_manifest_path)
     report["baseKey"] = base_manifest.get("envKey", base_env or key)
     report["baseCommit"] = base_manifest.get("commit", "")
+    report["baseRevision"] = base_revision(base_manifest)
+    if len(base_manifest.get("accepts") or []) > 1:
+        report["basePartialAccepts"] = base_manifest["accepts"][1:]
     report["cause"] = "code" if report["baseKey"] == key else "environnement"
     current = {image["key"]: image for image in manifest["images"]}
     previous = {image["key"]: image for image in base_manifest.get("images", [])
@@ -465,10 +483,16 @@ def compare_locked(run: Path, manifest: dict, base: Path, base_env: str | None, 
         else:
             report["changed"].append({"key": name, "pixels": result["changed"], "percent": round(result["percent"], 3),
                                       "bbox": result.get("bbox"), "maxDelta": result.get("maxDelta"),
-                                      "diff": "diff/" + name})
+                                      "diff": "diff/" + name,
+                                      "baseCommit": previous[name].get("acceptedCommit", report["baseCommit"])})
     report["missing"] = [{"key": name} for name in sorted(set(previous) - set(current))]
     write_json(run / "diff.json", report)
     return report
+
+
+def base_revision(base_manifest: dict) -> str:
+    """Identity of a base's content; bases accepted before `revision` existed fall back to their run."""
+    return base_manifest.get("revision") or base_manifest.get("acceptedFrom", "")
 
 
 def known_keys() -> list[str]:
@@ -487,7 +511,10 @@ def print_report(report: dict) -> None:
         log(f"gallery: diff — {report['message']}")
         return
     count = differences(report)
-    header = (f"gallery: diff contre {report['baseKey']} (commit {report.get('baseCommit') or '?'}) — "
+    partial = report.get("basePartialAccepts") or []
+    commits = ", ".join(sorted({item.get("commit", "?") for item in partial}))
+    header = (f"gallery: diff contre {report['baseKey']} (commit {report.get('baseCommit') or '?'}"
+              + (f", + {len(partial)} accept(s) partiel(s) : {commits}" if partial else "") + ") — "
               f"{count} écart(s), {report['same']} identique(s)")
     if report["withinTolerance"]:
         header += f", {report['withinTolerance']} sous MAXPX"
@@ -499,7 +526,9 @@ def print_report(report: dict) -> None:
     for item in report["changed"]:
         box = item.get("bbox")
         where = f" boîte {box[0]},{box[1]} {box[2]}×{box[3]} px" if box else ""
-        log(f"  changé          {item['key']}  {item['percent']} %{where}" + (f"  {item['error']}" if item.get("error") else ""))
+        origin = f"  (base : {item['baseCommit']})" if partial and item.get("baseCommit") else ""
+        log(f"  changé          {item['key']}  {item['percent']} %{where}{origin}"
+            + (f"  {item['error']}" if item.get("error") else ""))
     for item in report["resized"]:
         log(f"  taille changée  {item['key']}  {item['baseSize'][0]}×{item['baseSize'][1]} → "
             f"{item['currentSize'][0]}×{item['currentSize'][1]} px")
@@ -514,7 +543,10 @@ def print_report(report: dict) -> None:
 def command_diff(args: argparse.Namespace) -> int:
     run = resolve_run(args.run)
     manifest = read_json(run / "manifest.json")
-    report = compare(run, manifest, args.base_env or None, args.tol, args.maxpx)
+    try:
+        report = compare(run, manifest, args.base_env or None, args.tol, args.maxpx)
+    except BaseLocked as error:
+        fail(str(error), 3)
     write_index(run)
     print_report(report)
     log(f"gallery: index : {run / 'index.html'}")
@@ -522,6 +554,10 @@ def command_diff(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------- accept
+
+class BaseLocked(Exception):
+    """Another accept or diff held the base past GALLERY_LOCK_TIMEOUT."""
+
 
 class BaseLock:
     def __init__(self, base: Path, shared: bool = False) -> None:
@@ -531,6 +567,8 @@ class BaseLock:
         self.handle = None
 
     def __enter__(self) -> "BaseLock":
+        if self.handle is not None:
+            return self  # already held: `lock = BaseLock(b).__enter__()` then `with lock:`
         self.handle = open(self.path, "a+")
         deadline = time.time() + float(os.environ.get("GALLERY_LOCK_TIMEOUT", "60"))
         while True:
@@ -540,12 +578,14 @@ class BaseLock:
             except OSError as error:
                 if error.errno not in (errno.EAGAIN, errno.EACCES) or time.time() >= deadline:
                     self.handle.close()
-                    fail(f"base verrouillée par un autre accept ou diff ({self.path})", 3)
+                    self.handle = None
+                    raise BaseLocked(f"base verrouillée par un autre accept ou diff ({self.path})") from None
                 time.sleep(0.2)
 
     def __exit__(self, *_exc) -> None:
         fcntl.flock(self.handle, fcntl.LOCK_UN)
         self.handle.close()
+        self.handle = None
 
 
 def command_accept(args: argparse.Namespace) -> int:
@@ -575,7 +615,11 @@ def command_accept(args: argparse.Namespace) -> int:
              + ", ".join(f"{image['key']} ({image['status']})" for image in bad[:10])
              + (" …" if len(bad) > 10 else ""))
     base = baseline_dir(manifest["envKey"])
-    with BaseLock(base):
+    try:
+        lock = BaseLock(base).__enter__()
+    except BaseLocked as error:
+        fail(str(error), 3)
+    with lock:
         old_manifest = read_json(base / "manifest.json") if (base / "manifest.json").exists() else None
         if old_manifest and not args.force:
             for field, current, previous in (
@@ -596,14 +640,29 @@ def command_accept(args: argparse.Namespace) -> int:
                 target = staging / image["file"]
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(run / image["file"], target)
-                images[image["key"]] = image
+                images[image["key"]] = {**image, "acceptedCommit": manifest["commit"], "acceptedFrom": manifest["run"]}
             if filters and old_manifest:
                 for path in (staging / "png").rglob("*.png"):
                     key = str(path.relative_to(staging / "png"))
                     if key not in images:
                         path.unlink()
-            fields = {key: value for key, value in manifest.items() if key not in ("images", "problems")}
-            write_json(staging / "manifest.json", {**fields, "acceptedFrom": manifest["run"],
+            accepted_at = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+            accept = {"run": manifest["run"], "commit": manifest["commit"], "only": label, "date": accepted_at,
+                      "images": len(selected)}
+            if old_manifest and filters:
+                # Partial accept: the header still describes the full accept most images come from; this accept
+                # joins the history and each image keeps its own commit (C2-outil-04).
+                fields = {key: value for key, value in old_manifest.items() if key not in ("images", "accepts")}
+                accepts = old_manifest.get("accepts") or [{"run": old_manifest.get("acceptedFrom", ""),
+                                                           "commit": old_manifest.get("commit", ""),
+                                                           "only": old_manifest.get("only") or "ONLY=*"}]
+            else:
+                fields = {key: value for key, value in manifest.items() if key not in ("images", "problems")}
+                fields["acceptedFrom"] = manifest["run"]
+                accepts = []
+            # A new value at every accept: a run's index knows when the base it was compared with was replaced.
+            fields["revision"] = f"{manifest['run']}@{time.time_ns()}"
+            write_json(staging / "manifest.json", {**fields, "accepts": accepts + [accept],
                                                    "images": sorted(images.values(), key=lambda item: item["key"])})
             history = (base / "accept.log").read_text(encoding="utf-8") if (base / "accept.log").exists() else ""
             line = (f"{dt.datetime.now().astimezone().isoformat(timespec='seconds')}\t{manifest['run']}\t"
@@ -701,6 +760,7 @@ function show(key){const i=D.images.find(x=>x.key===key);const sib=D.images.filt
   +'<figure><figcaption>base</figcaption><img src="'+esc(b)+'"></figure><figure><figcaption>actuel</figcaption><img src="'+esc(i.file)+'"></figure>'
   +(c.diff?'<figure><figcaption>diff (magenta = changé)</figcaption><img src="'+esc(c.diff)+'"></figure>':'')+'</div>';
   if(!c.resized)h+='<h2>Curseur base / actuel</h2><input type="range" id="sl" min="0" max="100" value="50" style="width:320px"><br><div class="slide"><img src="'+esc(b)+'"><div class="top" id="top"><img src="'+esc(i.file)+'"></div></div>'}
+ if(c&&!D.diff.basePng&&c.diff)h+='<h2>Écart avec la base du diff (remplacée depuis)</h2><div class="row"><figure><figcaption>diff (magenta = changé)</figcaption><img src="'+esc(c.diff)+'"></figure></div>';
  const v=$('#view');v.innerHTML=h;v.style.display='block';$('#close').onclick=()=>v.style.display='none';
  const sl=$('#sl');if(sl){const top=$('#top');const set=()=>{top.style.width=sl.value+'%';top.querySelector('img').style.width=top.parentElement.querySelector('img').clientWidth+'px'};sl.oninput=set;setTimeout(set,50)}}
 for(const id of ['#theme','#surface','#status','#changed','#q'])$(id).oninput=draw;
@@ -711,10 +771,17 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#view').style.dis
 def write_index(run: Path) -> None:
     manifest = read_json(run / "manifest.json")
     report = read_json(run / "diff.json") if (run / "diff.json").exists() else {}
+    base_replaced = False
     if report and not report.get("noBase"):
-        # Absolute URL: the index also opens through the `latest` link or from a copy of the run, where a path
-        # relative to runs/<run> points one level off.
-        report["basePng"] = (Path(report["base"]) / "png").resolve().as_uri()
+        # The diff's base may have been replaced by an accept since (C2-outil-05): its images then no longer
+        # show what diff/ and the percentages describe, so the index does not show them as "base".
+        base_manifest_path = Path(report["base"]) / "manifest.json"
+        current_revision = base_revision(read_json(base_manifest_path)) if base_manifest_path.exists() else None
+        base_replaced = "baseRevision" in report and current_revision != report["baseRevision"]
+        if not base_replaced:
+            # Absolute URL: the index also opens through the `latest` link or from a copy of the run, where a path
+            # relative to runs/<run> points one level off.
+            report["basePng"] = (Path(report["base"]) / "png").resolve().as_uri()
     data = {"images": manifest["images"], "diff": report}
     counts: dict[str, int] = {}
     for image in manifest["images"]:
@@ -726,6 +793,9 @@ def write_index(run: Path) -> None:
                      f"({len(report['changed'])} changées, {len(report['new'])} nouvelles, {len(report['missing'])} "
                      f"disparues, {len(report['resized'])} taille changée, {len(report.get('notOk', []))} non ok) — "
                      f"cause : {html.escape(report['cause'])}")
+        if base_replaced:
+            diff_line += (" — <b>base remplacée depuis le diff</b> : les images de base ne sont plus affichées ; "
+                          "relancer make gallery-diff pour comparer à la base actuelle")
     else:
         diff_line = "pas de diff"
     duplicates = manifest.get("duplicates") or []
@@ -748,7 +818,7 @@ def write_index(run: Path) -> None:
 {manifest.get('shards')} shard(s), {manifest.get('duration')} s{' · ONLY=' + html.escape(manifest['only']) if manifest.get('only') else ''}</div>
 <div class="meta">{diff_line}</div>
 {duplicates_block}
-<div class="limits">{html.escape(GUARD_LIMITS)}</div></header>
+<div class="limits">{html.escape(GUARD_LIMITS)} {html.escape(APP_ICON_LIMIT)}</div></header>
 <div class="bar"><label>Thème <select id="theme"><option value="">tous</option></select></label>
 <label>Surface <select id="surface"><option value="">toutes</option></select></label>
 <label>Statut <select id="status"><option value="">tous</option></select></label>
