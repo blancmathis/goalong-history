@@ -48,7 +48,10 @@ for spec in specs:
 manifest = {"schema": 2, "run": os.path.basename(run), "commit": "abc1234", "branch": "test", "clean": clean,
             "date": "2026-10-23T09:41:00+02:00", "envKey": key, "screen": {"width": 1728, "height": 1117, "scale": scale},
             "windowScale": scale, "locale": "fr_FR", "timeZone": "Europe/Paris", "clock": 1792741260,
-            "shards": 1, "only": "", "duration": 1.0, "problems": [], "images": images}
+            "shards": 1, "only": os.environ.get("MR_ONLY", ""), "duration": 1.0,
+            "problems": [p for p in os.environ.get("MR_PROBLEMS", "").split("|") if p], "images": images}
+if os.environ.get("MR_DUPS"):
+    manifest["duplicates"] = [os.environ["MR_DUPS"].split(",")]
 os.makedirs(run, exist_ok=True)
 with open(os.path.join(run, "manifest.json"), "w") as f:
     json.dump(manifest, f)
@@ -132,4 +135,62 @@ done
 # 7. Clean removes the runs and the link, never the base.
 "${G[@]}" clean >/dev/null
 [[ ! -e "$GALLERY_ROOT/runs" && ! -L "$GALLERY_ROOT/latest" && -d "$GALLERY_CACHE/k4/baseline" ]] || fail "clean"
+
+# 8. Review r1 (C1-outil-01…07, C1-couverture-10).
+K2=25F80-17C529-arm64-2x
+make_run s1 $K2 1 2 "a/x--light:same" "b/y--light:same" "c/z--light:same"
+"${G[@]}" accept >/dev/null
+# A run made with ONLY=a/ and accepted without ONLY keeps the rest of the base.
+MR_ONLY=a/ make_run s2 $K2 1 2 "a/x--light:dot"
+"${G[@]}" diff >/dev/null 2>&1 && fail "ONLY run with a changed image passed the diff"
+"${G[@]}" accept >/dev/null || fail "accept of an ONLY run refused"
+python3 - "$GALLERY_CACHE/$K2/baseline/manifest.json" <<'PY2' || fail "accept of an ONLY run emptied the base"
+import json, sys
+keys = sorted(i["key"] for i in json.load(open(sys.argv[1]))["images"])
+assert keys == ["a/x--light.png", "b/y--light.png", "c/z--light.png"], keys
+PY2
+grep -q "ONLY=a/" "$GALLERY_CACHE/$K2/baseline/accept.log" || fail "accept.log misses the run filter"
+# A run with a problem (a shard that crashed) is refused; FORCE=1 passes.
+MR_PROBLEMS="shard 2 : code 1 (voir shard-2.log)" make_run s3 $K2 1 2 "a/x--light:same" "b/y--light:same"
+out="$("${G[@]}" accept 2>&1)" && fail "run with problems accepted"
+[[ "$out" == *"shard 2 : code 1"* && "$out" == *"FORCE=1"* ]] || fail "problems message: $out"
+[[ -f "$GALLERY_CACHE/$K2/baseline/png/c/z--light.png" ]] || fail "refused accept touched the base"
+# A timeout image is reported as such, not as a pixel change.
+make_run s4 $K2 1 2 "a/x--light:dot" "b/y--light:same:timeout" "c/z--light:same"
+out="$("${G[@]}" diff 2>&1)" && fail "diff with a timeout passed"
+[[ "$out" == *"non ok          b/y--light.png  timeout"* && "$out" != *"changé          b/y--light.png"* ]] \
+  || fail "timeout line: $out"
+# The index opened through `latest` finds the base: absolute file:// URL to an existing folder; duplicates shown.
+MR_DUPS="a/x--light.png,c/z--light.png" make_run s5 $K2 1 2 "a/x--light:same" "c/z--light:same"
+"${G[@]}" diff >/dev/null 2>&1 || true
+python3 - "$GALLERY_ROOT/latest/index.html" "$GALLERY_CACHE/$K2/baseline/png" <<'PY2' || fail "index base URL or duplicates"
+import json, os, re, sys, urllib.parse, urllib.request
+text = open(sys.argv[1], encoding="utf-8").read()
+data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>', text, re.S).group(1).replace("<\\/", "</"))
+url = data["diff"]["basePng"]
+assert url.startswith("file:///"), url
+path = urllib.request.url2pathname(urllib.parse.urlparse(url).path)
+assert os.path.samefile(path, sys.argv[2]), (path, sys.argv[2])
+assert "a/x--light.png = c/z--light.png" in text, "duplicates section"
+PY2
+# The diff waits for an accept that holds the base, then gives up with a clear message.
+python3 -c "import fcntl,sys,time;f=open(sys.argv[1],'a+');fcntl.flock(f,fcntl.LOCK_EX);open(sys.argv[2],'w').close();time.sleep(30)" \
+  "$GALLERY_CACHE/$K2/baseline.lock" "$dir/locked2" &
+holder=$!
+for _ in $(seq 50); do [[ -f "$dir/locked2" ]] && break; python3 -c "import time;time.sleep(0.1)"; done
+out="$(GALLERY_LOCK_TIMEOUT=1 "${G[@]}" diff 2>&1)" && { kill $holder; fail "diff read the base under an accept"; }
+kill $holder; wait $holder 2>/dev/null || true
+[[ "$out" == *"verrouillée"* ]] || fail "diff lock message: $out"
+# Two run folders with the same name: the second gets a suffix; the launch fixes accent and scroll bars.
+python3 - "$ROOT/scripts" <<'PY2' || fail "run name or launch arguments"
+import sys
+sys.path.insert(0, sys.argv[1])
+import gallery
+first, second = gallery.new_run_dir("20261023-094100-abc1234"), gallery.new_run_dir("20261023-094100-abc1234")
+assert first.name == "20261023-094100-abc1234" and second.name == "20261023-094100-abc1234-2", (first, second)
+command = gallery.shard_command(first, 0, 1, "/tmp/h", None)
+xctest = command.index("-XCTest")
+for flag, value in (("-AppleAccentColor", "4"), ("-AppleShowScrollBars", "WhenScrolling"), ("-AppleLocale", "fr_FR")):
+    assert command.index(flag) < xctest and command[command.index(flag) + 1] == value, command
+PY2
 echo "test_gallery_script: ok"

@@ -206,6 +206,10 @@ def build() -> None:
         fail("build en échec", 1)
 
 
+LAUNCH_ARGUMENTS = ["-AppleLocale", "fr_FR", "-AppleLanguages", "(fr)", "-AppleAccentColor", "4",
+                    "-AppleShowScrollBars", "WhenScrolling"]
+
+
 def shard_command(run: Path, shard: int, shards: int, home: str, only: str | None) -> list[str]:
     environment = ["PATH=/usr/bin:/bin", "TZ=Europe/Paris", f"HOME={home}", f"CFFIXED_USER_HOME={home}",
                    f"GOALONG_GALLERY={run}", f"GOALONG_GALLERY_SHARD={shard}/{shards}"]
@@ -214,8 +218,10 @@ def shard_command(run: Path, shard: int, shards: int, home: str, only: str | Non
     if os.environ.get("GOALONG_GALLERY_CLOCK_PROBE") == "1":
         environment.append("GOALONG_GALLERY_CLOCK_PROBE=1")
     xctest = CHECKOUT / ".build" / "debug" / "LocalHistoryPackageTests.xctest"
-    return ["/usr/bin/env", "-i", *environment, "/usr/bin/xcrun", "xctest", "-AppleLocale", "fr_FR",
-            "-AppleLanguages", "(fr)", "-XCTest", "LocalHistoryAppTests.GalleryTests", str(xctest)]
+    # Spec C §3-4: the arguments domain is read only before -XCTest. The fake HOME has no global preferences, so the
+    # accent colour and the scroll-bar style (else « Automatic »: legacy bars once a mouse is plugged in) are fixed here.
+    return ["/usr/bin/env", "-i", *environment, "/usr/bin/xcrun", "xctest", *LAUNCH_ARGUMENTS,
+            "-XCTest", "LocalHistoryAppTests.GalleryTests", str(xctest)]
 
 
 def render(run: Path, shards: int, only: str | None, homes: Homes) -> list[str]:
@@ -295,15 +301,27 @@ def duplicate_groups(images: list[dict]) -> list[list[str]]:
     return sorted(groups)
 
 
+def new_run_dir(name: str) -> Path:
+    """A fresh run folder; two runs in the same second on the same commit get -2, -3… (a run is never rewritten)."""
+    runs_dir().mkdir(parents=True, exist_ok=True)
+    for attempt in range(1, 100):
+        run = runs_dir() / (name if attempt == 1 else f"{name}-{attempt}")
+        try:
+            run.mkdir()
+            return run
+        except FileExistsError:
+            continue
+    fail(f"impossible de créer un dossier de run neuf pour {name} dans {runs_dir()}")
+
+
 def command_run(args: argparse.Namespace) -> int:
     if not args.no_build:
         build()
     diff_tool()
     info, system = git_info(), system_info()
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    name = f"{stamp}-{info['commit']}"
-    run = runs_dir() / name
-    run.mkdir(parents=True, exist_ok=False)
+    run = new_run_dir(f"{stamp}-{info['commit']}")
+    name = run.name
     homes = Homes(name)
     previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
 
@@ -323,6 +341,8 @@ def command_run(args: argparse.Namespace) -> int:
             signal.signal(sig, handler)
     duration = round(time.time() - started, 1)
     results, environment = merge_results(run)
+    if not results:
+        problems.append("aucune image rendue")
     scale = float(environment.get("windowScale") or environment.get("screenScale") or 0)
     manifest = {
         "schema": SCHEMA, "run": name, "commit": info["commit"], "commitFull": info["commitFull"],
@@ -338,8 +358,6 @@ def command_run(args: argparse.Namespace) -> int:
     }
     manifest["duplicates"] = duplicate_groups(manifest["images"])
     write_json(run / "manifest.json", manifest)
-    if not results:
-        problems.append("aucune image rendue")
     counts = {status: 0 for status in STATUSES}
     for image in manifest["images"]:
         counts[image["status"]] = counts.get(image["status"], 0) + 1
@@ -394,7 +412,18 @@ def compare(run: Path, manifest: dict, base_env: str | None, tol: int, maxpx: in
     key = manifest["envKey"]
     base = baseline_dir(key, base_env)
     report: dict = {"run": manifest["run"], "runKey": key, "base": str(base), "tol": tol, "maxpx": maxpx,
-                    "changed": [], "new": [], "missing": [], "resized": [], "same": 0, "withinTolerance": 0}
+                    "changed": [], "new": [], "missing": [], "resized": [], "notOk": [], "same": 0,
+                    "withinTolerance": 0}
+    # Shared lock: an accept swaps the base with two renames; a diff never reads between them.
+    if not base.parent.is_dir():
+        return compare_locked(run, manifest, base, base_env, report, tol, maxpx)  # no base, nothing to lock
+    with BaseLock(base, shared=True):
+        return compare_locked(run, manifest, base, base_env, report, tol, maxpx)
+
+
+def compare_locked(run: Path, manifest: dict, base: Path, base_env: str | None, report: dict, tol: int,
+                   maxpx: int) -> dict:
+    key = manifest["envKey"]
     base_manifest_path = base / "manifest.json"
     if not base_manifest_path.exists():
         report["baseKey"] = base_env or key
@@ -414,7 +443,10 @@ def compare(run: Path, manifest: dict, base_env: str | None, tol: int, maxpx: in
     shutil.rmtree(run / "diff", ignore_errors=True)
     pairs, keys = [], []
     for name, image in current.items():
-        if name not in previous:
+        if image.get("status", "ok") != "ok":
+            # A timeout or a failed render is not a pixel change: say what happened to it.
+            report["notOk"].append({"key": name, "status": image.get("status", ""), "detail": image.get("detail", "")})
+        elif name not in previous:
             report["new"].append({"key": name})
         elif image["sha256"] and image["sha256"] == previous[name]["sha256"] and tol == 0:
             report["same"] += 1
@@ -446,7 +478,8 @@ def known_keys() -> list[str]:
 
 
 def differences(report: dict) -> int:
-    return len(report["changed"]) + len(report["new"]) + len(report["missing"]) + len(report["resized"])
+    return (len(report["changed"]) + len(report["new"]) + len(report["missing"]) + len(report["resized"])
+            + len(report.get("notOk", [])))
 
 
 def print_report(report: dict) -> None:
@@ -470,6 +503,8 @@ def print_report(report: dict) -> None:
     for item in report["resized"]:
         log(f"  taille changée  {item['key']}  {item['baseSize'][0]}×{item['baseSize'][1]} → "
             f"{item['currentSize'][0]}×{item['currentSize'][1]} px")
+    for item in report.get("notOk", []):
+        log(f"  non ok          {item['key']}  {item['status']}" + (f" : {item['detail']}" if item.get("detail") else ""))
     for item in report["new"]:
         log(f"  nouveau         {item['key']}")
     for item in report["missing"]:
@@ -489,8 +524,9 @@ def command_diff(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------- accept
 
 class BaseLock:
-    def __init__(self, base: Path) -> None:
+    def __init__(self, base: Path, shared: bool = False) -> None:
         base.parent.mkdir(parents=True, exist_ok=True)
+        self.mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
         self.path = base.parent / f"{base.name}.lock" if os.environ.get("GALLERY_BASELINE") else base.parent / "baseline.lock"
         self.handle = None
 
@@ -499,12 +535,12 @@ class BaseLock:
         deadline = time.time() + float(os.environ.get("GALLERY_LOCK_TIMEOUT", "60"))
         while True:
             try:
-                fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(self.handle, self.mode | fcntl.LOCK_NB)
                 return self
             except OSError as error:
                 if error.errno not in (errno.EAGAIN, errno.EACCES) or time.time() >= deadline:
                     self.handle.close()
-                    fail(f"base verrouillée par un autre accept ({self.path})", 3)
+                    fail(f"base verrouillée par un autre accept ou diff ({self.path})", 3)
                 time.sleep(0.2)
 
     def __exit__(self, *_exc) -> None:
@@ -518,9 +554,21 @@ def command_accept(args: argparse.Namespace) -> int:
     if not manifest.get("clean"):
         fail(f"refusé : le run {manifest['run']} vient d'un arbre non propre (commit {manifest['commit']}) ; "
              "committer puis relancer make gallery")
-    selected = [image for image in manifest["images"] if matches(image["id"], args.only)]
+    # A run made with ONLY= holds only part of the catalogue: its accept is always partial, limited to both filters,
+    # so the rest of the base stays (else `make gallery ONLY=settings/` then accept emptied the shared base).
+    run_only = manifest.get("only") or ""
+    filters = [only for only in (args.only, run_only) if only]
+
+    def in_scope(identifier: str) -> bool:
+        return all(matches(identifier, only) for only in filters)
+
+    label = " et ".join(f"ONLY={only}" for only in filters) or "ONLY=*"
+    if manifest.get("problems") and not args.force:
+        fail("refusé : le run a des problèmes (images peut-être manquantes) : " + " ; ".join(manifest["problems"])
+             + " ; relancer make gallery, ou FORCE=1")
+    selected = [image for image in manifest["images"] if in_scope(image["id"])]
     if not selected:
-        fail(f"aucune image ne correspond à ONLY={args.only}")
+        fail(f"aucune image ne correspond à {label}")
     bad = [image for image in selected if image["status"] != "ok"]
     if bad:
         fail("refusé : entrées non ok dans le filtre : "
@@ -539,17 +587,17 @@ def command_accept(args: argparse.Namespace) -> int:
         staging = Path(tempfile.mkdtemp(prefix=".baseline-", dir=base.parent))
         try:
             images: dict[str, dict] = {}
-            if old_manifest and args.only:
-                # Partial accept: the base keeps every image outside the filter.
+            if old_manifest and filters:
+                # Partial accept: the base keeps every image outside the filters.
                 shutil.copytree(base / "png", staging / "png", dirs_exist_ok=True)
                 images = {image["key"]: image for image in old_manifest.get("images", [])
-                          if not matches(image["id"], args.only)}
+                          if not in_scope(image["id"])}
             for image in selected:
                 target = staging / image["file"]
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(run / image["file"], target)
                 images[image["key"]] = image
-            if args.only and old_manifest:
+            if filters and old_manifest:
                 for path in (staging / "png").rglob("*.png"):
                     key = str(path.relative_to(staging / "png"))
                     if key not in images:
@@ -559,7 +607,7 @@ def command_accept(args: argparse.Namespace) -> int:
                                                    "images": sorted(images.values(), key=lambda item: item["key"])})
             history = (base / "accept.log").read_text(encoding="utf-8") if (base / "accept.log").exists() else ""
             line = (f"{dt.datetime.now().astimezone().isoformat(timespec='seconds')}\t{manifest['run']}\t"
-                    f"{manifest['commit']}\tONLY={args.only or '*'}\t{len(selected)} image(s)"
+                    f"{manifest['commit']}\t{label}\t{len(selected)} image(s)"
                     f"{chr(9) + 'FORCE' if args.force else ''}\n")
             (staging / "accept.log").write_text(history + line, encoding="utf-8")
             retired = None
@@ -664,7 +712,9 @@ def write_index(run: Path) -> None:
     manifest = read_json(run / "manifest.json")
     report = read_json(run / "diff.json") if (run / "diff.json").exists() else {}
     if report and not report.get("noBase"):
-        report["basePng"] = Path(os.path.relpath(Path(report["base"]) / "png", run)).as_posix()
+        # Absolute URL: the index also opens through the `latest` link or from a copy of the run, where a path
+        # relative to runs/<run> points one level off.
+        report["basePng"] = (Path(report["base"]) / "png").resolve().as_uri()
     data = {"images": manifest["images"], "diff": report}
     counts: dict[str, int] = {}
     for image in manifest["images"]:
@@ -674,9 +724,18 @@ def write_index(run: Path) -> None:
     elif report:
         diff_line = (f"diff contre <b>{html.escape(report['baseKey'])}</b> : {differences(report)} écart(s) "
                      f"({len(report['changed'])} changées, {len(report['new'])} nouvelles, {len(report['missing'])} "
-                     f"disparues, {len(report['resized'])} taille changée) — cause : {html.escape(report['cause'])}")
+                     f"disparues, {len(report['resized'])} taille changée, {len(report.get('notOk', []))} non ok) — "
+                     f"cause : {html.escape(report['cause'])}")
     else:
         diff_line = "pas de diff"
+    duplicates = manifest.get("duplicates") or []
+    if duplicates:
+        # The best detector of blank pages and ignored fixtures: different states that give the same pixels.
+        rows = "".join(f"<li>{' = '.join(html.escape(key) for key in group)}</li>" for group in duplicates)
+        duplicates_block = (f'<details class="limits"><summary>{len(duplicates)} groupe(s) d’images identiques entre '
+                            f'états différents</summary><ul>{rows}</ul></details>')
+    else:
+        duplicates_block = '<div class="limits">aucune image identique entre états différents</div>'
     totals = " · ".join(f"{html.escape(key)} {value}" for key, value in sorted(counts.items()))
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     page = f"""<!doctype html>
@@ -688,6 +747,7 @@ def write_index(run: Path) -> None:
 {html.escape(manifest['date'])} · <b>{len(manifest['images'])}</b> images ({totals}) · clé env <b>{html.escape(manifest['envKey'])}</b> ·
 {manifest.get('shards')} shard(s), {manifest.get('duration')} s{' · ONLY=' + html.escape(manifest['only']) if manifest.get('only') else ''}</div>
 <div class="meta">{diff_line}</div>
+{duplicates_block}
 <div class="limits">{html.escape(GUARD_LIMITS)}</div></header>
 <div class="bar"><label>Thème <select id="theme"><option value="">tous</option></select></label>
 <label>Surface <select id="surface"><option value="">toutes</option></select></label>
