@@ -274,6 +274,104 @@ final class GoalongLocalAnalyticsTests: XCTestCase {
         XCTAssertEqual(broken.state, .incomplete)
         XCTAssertEqual(broken.activeSeconds, 0)
     }
+    private func temporaryRoot(_ name: String) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(name + "-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("events"), withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return root
+    }
+    private func journal(_ times: [Date], root: URL, key: String) throws {
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var bytes = Data()
+        for time in times {
+            bytes.append(try encoder.encode(HistoryEvent(sessionID: "fixture", timestamp: time, kind: .heartbeat,
+                app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1))))
+            bytes.append(10)
+        }
+        try bytes.write(to: root.appendingPathComponent("events/\(key).jsonl"))
+    }
+
+    func testOldDayWithoutJournalIsErasedOnlyWhenRetentionLeftATrace() throws {
+        // R5-historique-01: a day older than the retention but never recorded is not « erased ».
+        let root = try temporaryRoot("analytics-purge"), store = GoalongActivityDayStore(root: root)
+        let later = day.addingTimeInterval(60 * 86400)
+        let never = store.load(day: day, now: later, calendar: calendar)
+        XCTAssertEqual(never.state, .noSource)
+        XCTAssertNotEqual(never.dayReason, .purgedWithoutSummary)
+        XCTAssertFalse(never.segments.contains { $0.coverageReason == .purgedWithoutSummary })
+
+        // A journal that retention expires without a summary leaves its marker.
+        let file = root.appendingPathComponent("events/2026-09-10.jsonl")
+        try Data("invalid JSON\n".utf8).write(to: file)
+        XCTAssertEqual(try store.preserveBeforePurge(day: day, now: later, calendar: calendar), .unreadable)
+        try FileManager.default.removeItem(at: file)
+        XCTAssertEqual(store.load(day: day, now: later, calendar: calendar).dayReason, .purgedWithoutSummary)
+        // The marker alone never stands for a summary, and a newer day keeps its own reason.
+        XCTAssertThrowsError(try store.read(day: day, calendar: calendar))
+        let other = calendar.date(byAdding: .day, value: 1, to: day)!
+        XCTAssertNotEqual(store.load(day: other, now: later, calendar: calendar).dayReason, .purgedWithoutSummary)
+    }
+
+    func testCorruptNeighbourJournalIsNotThisDaysContentDefect() throws {
+        // L-01: a next-day journal created before this day ends (time-zone change) is read for its
+        // early rows. Its corrupt line must not make this sound day expire without a summary.
+        let root = try temporaryRoot("analytics-neighbour")
+        let start = calendar.startOfDay(for: Date().addingTimeInterval(2 * 3600))
+        let next = calendar.date(byAdding: .day, value: 1, to: start)!
+        let key = GoalongActivityDayStore.dayKey(start, calendar: calendar)
+        let nextKey = GoalongActivityDayStore.dayKey(next, calendar: calendar)
+        try journal([0, 60, 120].map { start.addingTimeInterval($0) }, root: root, key: key)
+        try Data("{broken JSON}\n".utf8).write(to: root.appendingPathComponent("events/\(nextKey).jsonl"))
+        let later = next.addingTimeInterval(86400)
+        let neighbour = GoalongLocalAnalytics.loadReportingDefect(root: root, day: start, now: later, calendar: calendar)
+        XCTAssertNotEqual(neighbour.defect, .content, "the neighbour's defect is not this day's")
+        XCTAssertEqual(neighbour.day.state, .incomplete, "the neighbour must be read for this test to matter")
+        XCTAssertEqual(neighbour.defect, .access)
+        // The journal stays until it can be summarized, instead of expiring as unreadable.
+        XCTAssertThrowsError(try GoalongActivityDayStore(root: root).preserveBeforePurge(day: start, now: later, calendar: calendar))
+
+        // The day's own corrupt line is still a content defect.
+        try FileManager.default.removeItem(at: root.appendingPathComponent("events/\(nextKey).jsonl"))
+        try Data("{broken JSON}\n".utf8).write(to: root.appendingPathComponent("events/\(key).jsonl"))
+        XCTAssertEqual(GoalongLocalAnalytics.loadReportingDefect(root: root, day: start, now: later, calendar: calendar).defect, .content)
+    }
+
+    func testForeignSummaryKeepsWallClockTimesAcrossTheOriginClockChange() throws {
+        // L-02: Paris changes its clock on 2026-10-25 and 2026-03-29, New York does not.
+        var paris = Calendar(identifier: .gregorian); paris.timeZone = TimeZone(identifier: "Europe/Paris")!
+        var newYork = paris; newYork.timeZone = TimeZone(identifier: "America/New_York")!
+        for (month, date) in [(10, 25), (3, 29)] {
+            let root = try temporaryRoot("analytics-wall"), store = GoalongActivityDayStore(root: root)
+            let parisDay = paris.date(from: DateComponents(year: 2026, month: month, day: date))!
+            let fifteen = paris.date(from: DateComponents(year: 2026, month: month, day: date, hour: 15))!
+            let later = parisDay.addingTimeInterval(10 * 86400)
+            let events = [0.0, 60, 120].map {
+                HistoryEvent(sessionID: "fixture", timestamp: fifteen.addingTimeInterval($0), kind: .heartbeat,
+                    app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1))
+            }
+            let source = GoalongLocalAnalytics.build(events: events, day: parisDay, now: later, calendar: paris)
+            XCTAssertEqual(source.activeSeconds, 120)
+            try store.write(source, sourceRevision: "fixture", now: later, calendar: paris)
+
+            let localDay = newYork.date(from: DateComponents(year: 2026, month: month, day: date))!
+            let localEnd = newYork.date(byAdding: .day, value: 1, to: localDay)!
+            let localFifteen = newYork.date(from: DateComponents(year: 2026, month: month, day: date, hour: 15))!
+            let moved = try store.read(day: localDay, calendar: newYork)
+            let label = "\(month)-\(date)"
+            XCTAssertEqual(moved.activeSeconds, 120, label)
+            XCTAssertEqual(moved.segments.first { $0.kind.isActive }?.start, localFifteen, label)
+            XCTAssertEqual(moved.firstObservation, localFifteen, label)
+            XCTAssertEqual(moved.segments.first?.start, localDay, label)
+            XCTAssertEqual(moved.segments.last?.end, localEnd, label)
+            XCTAssertTrue(zip(moved.segments, moved.segments.dropFirst()).allSatisfy { $0.end == $1.start }, label)
+            XCTAssertEqual(moved.breakdown.totalSeconds, 120, label)
+            XCTAssertEqual(moved.breakdown.hours.first { $0.totalSeconds > 0 }?.start, localFifteen, label)
+            // The origin day is 25 h or 23 h long; the New York day stays 24 h, with one hour cut or not recorded.
+            XCTAssertEqual(moved.segments.reduce(0) { $0 + $1.seconds }, localEnd.timeIntervalSince(localDay), label)
+        }
+    }
+
     func testOptInReadOnlyLocalAnalyticsProbe() throws {
         guard let path = ProcessInfo.processInfo.environment["GOALONG_ANALYTICS_PROBE_ROOT"] else {
             throw XCTSkip("Opt-in read-only local analytics probe; logs aggregate counts only")

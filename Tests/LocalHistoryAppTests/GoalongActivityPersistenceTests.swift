@@ -167,7 +167,9 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         XCTAssertEqual(deleted.activitySummaryFiles, 1)
         XCTAssertThrowsError(try store.read(day: day))
         try store.preserveBeforePurge(day: day, now: day.addingTimeInterval(86400))
-        XCTAssertEqual(try cleaner.delete(since: nil).activitySummaryFiles, 1)
+        // R5-historique-01: the content-free purge marker goes with a full history clear too.
+        try Data("purged\n".utf8).write(to: root.appendingPathComponent("activity-days/2026-08-09" + GoalongActivityDayStore.purgeMarkerSuffix))
+        XCTAssertEqual(try cleaner.delete(since: nil).activitySummaryFiles, 2)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("activity-days").path))
     }
     func testCacheRevisionChangesWhenSummaryAloneIsDeleted() throws {

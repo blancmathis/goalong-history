@@ -634,7 +634,8 @@
             let summaryDirectory = rootDirectory.appendingPathComponent("activity-days")
             let summaryPlan = try deletionPlan(
                 in: summaryDirectory,
-                trustedAncestor: trustedAncestor, suffixes: [".json", GoalongActivityCheckpointStore.suffix],
+                trustedAncestor: trustedAncestor,
+                suffixes: [".json", GoalongActivityCheckpointStore.suffix, GoalongActivityDayStore.purgeMarkerSuffix],
                 cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
             // A targeted clear must not touch temporaries: a concurrent writer may own them.
             let summaryTemporaryPlan = isFullClear

@@ -266,6 +266,32 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertTrue(lines[2].hasPrefix("2026-09-11;application;Editor;fixture.Editor;travail;1800;1800;0;0"), lines[2])
     }
 
+    func testCSVExportKeepsOneRowForEveryDayWithoutUsage() {
+        // R5-historique-02: incomplete, unrecorded and empty days used to vanish from the file.
+        let active = day(10, from: 9 * 3600, minutes: 10, app: "Editor", work: true)
+        let incomplete = GoalongLocalAnalytics.build(events: [], day: date(11), now: date(13), calendar: calendar, incomplete: true)
+        let missing = GoalongLocalAnalytics.build(events: [], day: date(12), now: date(13), calendar: calendar)
+        let future = GoalongLocalAnalytics.build(events: [], day: date(14), now: date(13), calendar: calendar)
+        let csv = GoalongActivityExport.csv(period: .init(days: [active, incomplete, missing, future]), grouping: .sites,
+                                            calendar: calendar, now: date(13).addingTimeInterval(3600))
+        let lines = csv.split(separator: "\r\n").map(String.init)
+        XCTAssertEqual(lines.count, 4, csv)
+        XCTAssertTrue(lines[1].hasPrefix("2026-09-10;application;Editor;"), lines[1])
+        XCTAssertEqual(lines[2], "2026-09-11;jour;;;incomplet;;;;")
+        XCTAssertEqual(lines[3], "2026-09-12;jour;;;\(missing.state == .ready ? "sans activité;0;0;0;0" : "sans données;;;;")")
+        XCTAssertFalse(csv.contains("2026-09-14"), "A future day is not exported")
+    }
+
+    func testPageLeftOnTodayFollowsTheNewDayAtMidnight() {
+        // R5-historique-03: at 00:10 the page left open on « aujourd’hui » at 23:50 showed the old day.
+        let before = date(10), after = date(11).addingTimeInterval(600)
+        XCTAssertEqual(GoalongAnalyticsPage.dayAfterMidnight(shown: before, previousToday: before, now: after, calendar: calendar), date(11))
+        XCTAssertNil(GoalongAnalyticsPage.dayAfterMidnight(shown: date(8), previousToday: before, now: after, calendar: calendar),
+                     "A past day chosen by the user stays")
+        XCTAssertNil(GoalongAnalyticsPage.dayAfterMidnight(shown: before, previousToday: before, now: before.addingTimeInterval(3600),
+                                                           calendar: calendar))
+    }
+
     private func mergedSegments(_ a: GoalongLocalAnalytics.Day, _ b: GoalongLocalAnalytics.Day) -> [GoalongLocalAnalytics.Segment] {
         // Keep the morning, then the evening activity; everything else stays unobserved.
         let active = (a.segments + b.segments).filter { $0.kind.isActive }.sorted { $0.start < $1.start }

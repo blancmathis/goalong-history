@@ -506,9 +506,16 @@ public enum GoalongLocalAnalytics {
             || metrics.evidenceBudgetExceeded || !loaded.issues.isEmpty
         let result = build(events: loaded.events, day: day, now: now, calendar: calendar, incomplete: incomplete)
         guard result.state == .incomplete else { return (result, nil) }
-        // Content issues carry the journal line; access, listing and change issues do not.
+        // Content issues carry the journal line; access, listing and change issues do not. A
+        // neighbouring journal read for its early or late rows (time-zone change) can be corrupt
+        // while this day's own journal is sound: its defect is not this day's, so it stays `.access`.
+        let ownJournal = GoalongActivityDayStore.dayKey(start, calendar: calendar) + ".jsonl"
         let content = !metrics.wasCancelled && !metrics.sourceChangedDuringRead
-            && (metrics.evidenceBudgetExceeded || loaded.issues.contains { $0.line != nil })
+            && (metrics.evidenceBudgetExceeded || loaded.issues.contains { issue in
+                let file = URL(fileURLWithPath: issue.path)
+                return issue.line != nil && file.lastPathComponent == ownJournal
+                    && file.deletingLastPathComponent().lastPathComponent == "events"
+            })
         return (result, content ? .content : .access)
     }
 }
