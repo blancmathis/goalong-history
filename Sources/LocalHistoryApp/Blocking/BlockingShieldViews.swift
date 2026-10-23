@@ -33,7 +33,7 @@ struct BlockedSiteVeil: View {
                         .accessibilityIdentifier("blocking-veil-reason")
                 }
                 Text(detail).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                    .multilineTextAlignment(.center).frame(maxWidth: 380).fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.center).frame(maxWidth: 460).fixedSize(horizontal: false, vertical: true)
                 if let counts = countsLine {
                     Text(counts).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
                         .accessibilityIdentifier("blocking-veil-attempts")
@@ -73,7 +73,7 @@ struct BlockedSiteVeil: View {
     private var title: String {
         switch presentation.reason {
         case .site(let host), .quotaUsed(let host, _): return host
-        case .unsupportedBrowser(let name): return "\(name) n’est pas pris en charge"
+        case .unsupportedBrowser(let name): return name
         }
     }
 
@@ -90,8 +90,8 @@ struct BlockedSiteVeil: View {
     private var detail: String {
         switch presentation.reason {
         case .site: return "Liste « \(presentation.listName) »."
-        case .quotaUsed(_, let minutes): return "Vos \(BlockingFormat.duration(minutes: minutes)) du jour sont passées. Liste « \(presentation.listName) »."
-        case .unsupportedBrowser: return "Goalong ne lit pas l’adresse dans ce navigateur. Pendant un blocage de sites, il reste couvert. Safari, Chrome, Edge, Brave, Arc et Aside sont pris en charge."
+        case .quotaUsed(_, let minutes): return "Vos \(BlockingFormat.duration(minutes: minutes)) de la journée sont écoulées (liste « \(presentation.listName) »)."
+        case .unsupportedBrowser(let name): return "\(name) n’est pas pris en charge : Goalong ne lit pas l’adresse dans ce navigateur. Pendant un blocage de sites, il reste couvert. Safari, Chrome, Edge, Brave, Arc et Aside sont pris en charge."
         }
     }
 }
@@ -216,6 +216,14 @@ struct BlockingStruckIcon: View {
                 path.addLine(to: CGPoint(x: size * 0.92, y: size * 0.08))
             }
             .stroke(LHTheme.text, style: StrokeStyle(lineWidth: max(2, size * 0.06), lineCap: .round))
+            // The initial of a site without icon would be cut by the stroke: draw it again above, on a small disc.
+            if case .site(let host) = item, let initial = host.first {
+                Text(String(initial).uppercased())
+                    .font(.system(size: size * 0.34, weight: .bold, design: .rounded))
+                    .foregroundStyle(LHTheme.text)
+                    .frame(width: size * 0.5, height: size * 0.5)
+                    .background(Circle().fill(LHTheme.insetBackground))
+            }
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)

@@ -451,6 +451,12 @@ struct BlockingMeter: View {
     /// The end the engine will store: the alert must promise this one.
     private var freezeEnd: Date { BlockingWallClock.freezeEnd(end, now: now) }
 
+    private var startHint: String? {
+        BlockingProtectionDetails.startHint(wholeMac: wholeMac, frozen: controller.freeze != nil, hasLists: !controller.lists.isEmpty,
+                                            anySelected: !selected.isDisjoint(with: controller.lists.map(\.id)),
+                                            needsPassword: lock == .password && !controller.hasPassword)
+    }
+
     private var actionTitle: String {
         if wholeMac { return "Geler \(BlockingFormat.until(freezeEnd, now: now))…" }
         return plan(at: now).actionTitle()
@@ -533,6 +539,10 @@ struct BlockingMeter: View {
                     }
                     HStack {
                         Spacer()
+                        if let hint = startHint {
+                            Text(hint).font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
+                                .accessibilityIdentifier("blocking-start-hint")
+                        }
                         Button {
                             if wholeMac { confirmingFreeze = true } else if lock.protectsLists { confirmingLock = true } else { start() }
                         } label: {
@@ -702,6 +712,8 @@ struct BlockingLockExplainer: View {
 
     var body: some View {
         let ok = controller.siteBlockingAvailable
+        // A rounded rectangle like the other controls: a capsule drew square stubs at its two ends.
+        let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
         Button { open.toggle() } label: {
             HStack(spacing: 6) {
                 Image(systemName: ok ? "shield.lefthalf.filled" : "exclamationmark.triangle")
@@ -710,18 +722,20 @@ struct BlockingLockExplainer: View {
                         : "Sites non couverts")
                     .font(.system(size: 12, weight: .medium))
             }
+            .fixedSize()
             .foregroundStyle(ok ? LHTheme.secondaryText : LHTheme.warning)
             .padding(.horizontal, 10).frame(height: 26)
-            .background(Capsule().fill(LHTheme.controlBackground).overlay(Capsule().strokeBorder(LHTheme.controlBorder)))
-            .contentShape(Capsule())
+            .background(shape.fill(LHTheme.controlBackground))
+            .overlay(shape.strokeBorder(LHTheme.controlBorder))
+            .contentShape(shape)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("blocking-protection")
-        .popover(isPresented: $open, arrowEdge: .bottom) {
+        .background(Color.clear.popover(isPresented: $open, arrowEdge: .bottom) {
             BlockingProtectionDetails(controller: controller)
                 .padding(18).frame(width: 440)
                 .goalongControls()
-        }
+        })
     }
 }
 
@@ -748,7 +762,7 @@ struct BlockingLockExplainer: View {
                 passwordRow
                 GoalongRowDivider()
                 statusRow(symbol: "shield.lefthalf.filled", title: "Niveau",
-                          ok: controller.protection.level == .strict,
+                          ok: Self.levelIsSettled(controller.protection),
                           value: Self.levelLabel(controller.protection))
             }
             if controller.canRemoveGuard {
@@ -787,6 +801,24 @@ struct BlockingLockExplainer: View {
         case .failed: return "Indisponible"
         case .running, .notInstalled: return "Standard"
         }
+    }
+
+    /// « Standard » is a normal level, not something missing: only a guard waiting or failed keeps the dashed circle.
+    static func levelIsSettled(_ protection: BlockingProtectionState) -> Bool {
+        if protection.level == .strict { return true }
+        switch protection.guardian {
+        case .awaitingApproval, .failed: return false
+        case .running, .notInstalled: return true
+        }
+    }
+
+    /// Why the start button is off, or nil when it is on.
+    static func startHint(wholeMac: Bool, frozen: Bool, hasLists: Bool, anySelected: Bool, needsPassword: Bool) -> String? {
+        if wholeMac { return frozen ? "Le Mac est déjà gelé." : nil }
+        if !hasLists { return "Créez d’abord une liste." }
+        if !anySelected { return "Choisissez au moins une liste." }
+        if needsPassword { return "Choisissez d’abord un mot de passe de blocage." }
+        return nil
     }
 
     /// The blocking password: set it here, or with the « Mot de passe » lock when first chosen.
