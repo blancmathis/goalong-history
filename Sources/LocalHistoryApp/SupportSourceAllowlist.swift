@@ -17,6 +17,7 @@ enum SupportSourceAllowlist {
         "ActivityPageInsights.swift",
         "AgentActivityFrenchNames.swift",
         "AgentActivityPage.swift",
+        "AgentActivityPathLabel.swift",
         "AgentActivityRuntime.swift",
         "AgentConversationSourceHealth.swift",
         "AgentTokenUsageCard.swift",

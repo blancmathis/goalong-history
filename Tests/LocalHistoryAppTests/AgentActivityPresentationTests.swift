@@ -5,6 +5,18 @@
     @testable import LocalHistoryApp
 
     final class AgentActivityPresentationTests: XCTestCase {
+        func testConfigurationPathUnderHomeShowsTilde() {
+            let home = "/tmp/goalong-gallery-x/shard-1-ab"
+            XCTAssertEqual(
+                AgentActivityPathLabel.abbreviated(home + "/.codex/hooks.json", home: home),
+                "~/.codex/hooks.json")
+            XCTAssertEqual(AgentActivityPathLabel.abbreviated(home, home: home), "~")
+            XCTAssertEqual(AgentActivityPathLabel.abbreviated(home + "/a", home: home + "/"), "~/a")
+            // A sibling folder that only shares the prefix, and a path elsewhere, stay as they are.
+            XCTAssertEqual(AgentActivityPathLabel.abbreviated(home + "-other/a", home: home), home + "-other/a")
+            XCTAssertEqual(AgentActivityPathLabel.abbreviated("/etc/hooks.json", home: home), "/etc/hooks.json")
+        }
+
         func testScanFailureAlertsOnlyForNewFailures() {
             let first = ["/a: unreadable"]
             // First scan: alert.

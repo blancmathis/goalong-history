@@ -201,7 +201,8 @@
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Fill the row's height, content at the top: cards side by side share one height.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .accessibilityElement(children: .combine)
         }

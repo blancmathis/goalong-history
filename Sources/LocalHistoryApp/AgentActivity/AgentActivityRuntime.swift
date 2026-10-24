@@ -921,6 +921,21 @@
             return derivedStateRefreshCount
         }
 
+        #if DEBUG
+        /// Gallery only: shows a state the scanner would produce (conversations read, loading, unreadable source)
+        /// without a scan, so no real tool folder is read. Never compiled into a release build.
+        func galleryInstall(overview: AgentActivityOverview, tokenUsage: AgentDailyTokenUsage?, analyzedAt: Date?,
+                            scan: AgentScanResult = AgentScanResult(), indexIsValid: Bool = true, isScanning: Bool = false) {
+            selectedDay = overview.day
+            self.overview = overview
+            tokenUsageSnapshot = tokenUsage
+            tokenUsageAnalyzedAt = analyzedAt
+            lastScanResult = scan
+            self.indexIsValid = indexIsValid
+            self.isScanning = isScanning
+        }
+        #endif
+
         func waitForPendingScansForTesting() {
             guard DispatchQueue.getSpecific(key: workQueueSpecificKey) == nil else { return }
             workQueue.sync {}

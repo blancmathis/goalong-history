@@ -43,8 +43,6 @@ extension GalleryCatalog {
                       prepare: { ctx in
                 GoalongCapabilityConsentStore.shared.set(.aiConversations, enabled: true, surface: .settings)
                 try seedAgentIndex(ctx)
-                AgentActivityPage.galleryShowsHomeAsTilde = true
-                ctx.cleanups.append { AgentActivityPage.galleryShowsHomeAsTilde = false }
             }),
         ]
     }

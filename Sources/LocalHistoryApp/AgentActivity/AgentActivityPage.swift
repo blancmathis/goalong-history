@@ -269,7 +269,7 @@
                         .frame(width: 150)
                     }
                     GoalongSearchField("Rechercher dans les conversations", text: $search)
-                        .frame(width: 240)
+                        .frame(width: 280)
                 }
 
                 if sourceHealth != .ready {
@@ -510,6 +510,8 @@
                     tint: LHTheme.privateTint
                 )
             }
+            // Equal card heights: the row takes its tallest card's height.
+            .fixedSize(horizontal: false, vertical: true)
         }
 
         private var integrationCard: some View {
@@ -577,16 +579,8 @@
             }
         }
 
-        #if DEBUG
-        nonisolated(unsafe) static var galleryShowsHomeAsTilde = false
-        #endif
-
         private func configurationPathLabel(_ path: String) -> String {
-            #if DEBUG
-            // Test gallery only: the throwaway HOME changes on every run, so show it as `~`.
-            if Self.galleryShowsHomeAsTilde { return (path as NSString).abbreviatingWithTildeInPath }
-            #endif
-            return path
+            AgentActivityPathLabel.abbreviated(path)
         }
 
         private func integrationRow(_ kind: AgentIntegrationKind) -> some View {

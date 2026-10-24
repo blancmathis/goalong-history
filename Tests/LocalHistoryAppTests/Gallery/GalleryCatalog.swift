@@ -6,9 +6,11 @@ import SwiftUI
 /// Every surface × state of the gallery (spec C §6). Zone files add their entries; ids are `surface/état`.
 @MainActor enum GalleryCatalog {
     static var all: [GalleryEntry] {
-        dashboardEntries + settingsEntries + onboardingEntries + menuBarEntries + concentrationEntries
-            + blockingEntries + ambianceEntries + systemEntries + recapEntries + sourcesEntries
-            + accountEntries + previewEntries + agentEntries + agendaEntries + activityDetailEntries
+        var entries = dashboardEntries + settingsEntries + onboardingEntries + menuBarEntries + concentrationEntries
+        entries += blockingEntries + ambianceEntries + systemEntries + recapEntries + sourcesEntries
+        entries += accountEntries + previewEntries + agentEntries + agendaEntries + activityDetailEntries
+        entries += conversationEntries + supportRequestEntries
+        return entries
     }
 
     /// Entries whose id starts with one of the comma-separated prefixes (`ONLY=`).
