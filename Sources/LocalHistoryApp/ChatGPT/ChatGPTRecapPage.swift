@@ -13,9 +13,10 @@
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
-        init(model: DashboardViewModel) {
+        /// `runtime` is the app's own; the gallery passes one with its sources replaced.
+        init(model: DashboardViewModel, runtime: ChatGPTRecapRuntime = .shared) {
             self.model = model
-            _recapRuntime = ObservedObject(wrappedValue: ChatGPTRecapRuntime.shared)
+            _recapRuntime = ObservedObject(wrappedValue: runtime)
         }
 
         var body: some View {
