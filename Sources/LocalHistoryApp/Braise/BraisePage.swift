@@ -1,4 +1,5 @@
 #if os(macOS)
+import LocalHistoryCore
 import AppKit
 import BraiseCore
 import ServiceManagement
@@ -92,7 +93,7 @@ import SwiftUI
                         if controller.loginApprovalRequired {
                             Button("Ouvrir les éléments de connexion…") { SMAppService.openSystemSettingsLoginItems() }.buttonStyle(LHQuietButtonStyle())
                         }
-                        Text("\(controller.displayCount) écran(s). Le filtre est recalculé au réveil. Il ne réveille pas le Mac.").foregroundStyle(LHTheme.secondaryText)
+                        Text("\(FrenchCount.count(controller.displayCount, "écran", "écrans")). Le filtre est recalculé au réveil. Il ne réveille pas le Mac.").foregroundStyle(LHTheme.secondaryText)
                         Text("Aucun réseau ni nouvel accès. Les couleurs sont restaurées à l’arrêt du module, à la fermeture de Goalong ou par un gardien après un crash. Le HDR et les autres filtres peuvent modifier le résultat ; zéro lumière bleue physiquement émise n’est pas garanti.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }.fixedSize(horizontal: false, vertical: true).padding(.top, 12)

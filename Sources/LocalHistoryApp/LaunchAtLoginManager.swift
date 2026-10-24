@@ -135,7 +135,7 @@
                 }
                 return true
             } catch {
-                message = (error as NSError).localizedDescription
+                message = "Le lancement à l’ouverture de session n’a pas pu être modifié."
                 return false
             }
         }

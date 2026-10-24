@@ -556,7 +556,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     }
                 }
                 let applications = rows.reduce(0) { $0 + (($1["apps"] as? [Any])?.count ?? 0) }
-                previewSummary = "\(day) · \(GoalongWebsiteSharingModel.frCount(rows.count, "appareil", "appareils")) · \(GoalongWebsiteSharingModel.frCount(applications, "ligne", "lignes")) d’applications · \(GoalongWebsiteSharingModel.frCount(result.count, "octet", "octets")). Vérifiez les champs exacts ci-dessous."
+                previewSummary = "\(day) · \(FrenchCount.count(rows.count, "appareil", "appareils")) · \(FrenchCount.count(applications, "ligne", "lignes")) d’applications · \(FrenchCount.count(result.count, "octet", "octets")). Vérifiez les champs exacts ci-dessous."
                 payload = result
                 previewPrivacyRevision = reviewed.privacyRevision
             } catch { self.error = goalongUserMessage(error) }
@@ -584,7 +584,7 @@ struct GoalongWebsiteConnectionSheet: View {
                 }.value
                 let result = try JSONSerialization.jsonObject(with: receipt) as? [String: Any] ?? [:]
                 func count(_ key: String) -> Int { (result[key] as? NSNumber)?.intValue ?? 0 }
-                status = "Reçu par le site : \(GoalongWebsiteSharingModel.frCount(count("imported"), "nouveau", "nouveaux")), \(count("updated")) mis à jour, \(GoalongWebsiteSharingModel.frCount(count("skipped"), "inchangé", "inchangés")). Données non vérifiées ; vos règles de partage du site s’appliquent."
+                status = "Reçu par le site : \(FrenchCount.count(count("imported"), "nouveau", "nouveaux")), \(count("updated")) mis à jour, \(FrenchCount.count(count("skipped"), "inchangé", "inchangés")). Données non vérifiées ; vos règles de partage du site s’appliquent."
                 payload = nil; previewPrivacyRevision = nil
             } catch {
                 if case GoalongSiteSubmissionError.accessRefused = error,

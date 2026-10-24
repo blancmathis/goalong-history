@@ -275,7 +275,7 @@ struct GoalongAnalyticsContent: View {
         let today = !payload.isPreview && current.days.contains { GoalongToday.isToday($0.date) }
         let restored = current.days.filter { $0.observedSeconds > 0 && !$0.hasDetailedSource }.count
         if current.incompleteDays > 0 {
-            GoalongNote("\(current.incompleteDays) jour(s) illisible(s) ou incomplet(s), exclus des totaux. Actualisez ou consultez l’historique.",
+            GoalongNote("\(FrenchCount.count(current.incompleteDays, "jour illisible ou incomplet, exclu", "jours illisibles ou incomplets, exclus")) des totaux. Actualisez ou consultez l’historique.",
                         tone: .warning)
         } else if restored > 0 {
             GoalongNote(isDay ? "Détail effacé après la durée de conservation. Cette journée est relue depuis son résumé : durées, apps et sites, sans titres de fenêtre."

@@ -196,7 +196,7 @@
                         UsageBreakdownChild(
                             id: "\(browser.id):remainder",
                             kind: .remainder,
-                            name: "Other or unidentified browsing",
+                            name: "Navigation autre ou non identifiée",
                             host: nil,
                             seconds: remainder
                         )
@@ -258,7 +258,7 @@
                     UsageBreakdownItem(
                         id: "other-web",
                         kind: .otherWeb,
-                        name: "Other web activity",
+                        name: "Autre activité web",
                         bundleIdentifier: nil,
                         host: nil,
                         seconds: otherWebSeconds,
@@ -271,7 +271,7 @@
                     UsageBreakdownItem(
                         id: "other-active",
                         kind: .otherActive,
-                        name: "Other active time",
+                        name: "Autre temps actif",
                         bundleIdentifier: nil,
                         host: nil,
                         seconds: otherActiveSeconds,
@@ -289,7 +289,7 @@
                             UsageBreakdownItem(
                                 id: "apple-unassigned-web",
                                 kind: .otherWeb,
-                                name: "Websites not assigned to a browser",
+                                name: "Sites non rattachés à un navigateur",
                                 bundleIdentifier: nil,
                                 host: nil,
                                 seconds: appleWebsiteTotal - browserApplicationTotal,

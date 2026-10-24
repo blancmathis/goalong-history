@@ -1,4 +1,5 @@
 #if os(macOS)
+import LocalHistoryCore
 import AppleScreenTime
 import SwiftUI
 
@@ -183,7 +184,7 @@ struct GoalongScreenTimePage: View {
                     Text("Applications").font(.system(size: 13)).foregroundStyle(.secondary)
                     Text("\(rows.filter { !$0.isWebsite }.count)").font(LHTheme.figureFont(28))
                         .monospacedDigit().accessibilityIdentifier("screen-time-day-applications")
-                    Text("\(summary.deviceSummaries.count) appareil(s) avec des données").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("\(FrenchCount.count(summary.deviceSummaries.count, "appareil", "appareils")) avec des données").font(.system(size: 12)).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Dernière lecture").font(.system(size: 13)).foregroundStyle(.secondary)
@@ -211,7 +212,7 @@ struct GoalongScreenTimePage: View {
                     Text("Les durées ne sont ni remplacées ni réparties à partir de l’historique Goalong.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                     GoalongSearchField("Rechercher dans les données Apple", text: $search, identifier: "screen-time-search",
-                                       trailing: "\(matching.count) résultat(s)")
+                                       trailing: FrenchCount.count(matching.count, "résultat", "résultats"))
                 }.padding(18)
                 Divider()
                 if visible.isEmpty && screenTime.isBusy {

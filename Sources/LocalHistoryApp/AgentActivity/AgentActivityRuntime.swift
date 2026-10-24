@@ -695,7 +695,7 @@
                         title: "Certains fichiers d’agents n’ont pas pu être lus",
                         message: newFailures.count == 1
                             ? first
-                            : "\(first)\n\nEt \(newFailures.count - 1) autre(s) erreur(s) de lecture."
+                            : "\(first)\n\nEt \(FrenchCount.count(newFailures.count - 1, "autre erreur", "autres erreurs")) de lecture."
                     )
                 }
             }

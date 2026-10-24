@@ -56,11 +56,6 @@
                 : "\(count) lignes locales n’ont pas pu être lues. Ces lacunes restent signalées, jamais ignorées en silence."
         }
 
-        /// French plural: 0 and 1 are singular.
-        private static func frCount(_ n: Int, _ singular: String, _ plural: String) -> String {
-            "\(n) \(n > 1 ? plural : singular)"
-        }
-
         static func button(_ raw: String) -> String {
             switch raw.lowercased() {
             case "left": return "gauche"
@@ -84,12 +79,12 @@
             case .typingBurst:
                 let count = event.metadata?["keystroke_count"].flatMap { Int($0) }
                 let duration = event.metadata?["duration_ms"].flatMap { Int($0) }
-                let keys = count.map { frCount($0, "touche", "touches") } ?? "nombre de touches inconnu"
+                let keys = count.map { FrenchCount.count($0, "touche", "touches") } ?? "nombre de touches inconnu"
                 let time = duration.map { "\($0) ms" } ?? "durée inconnue"
                 return "Frappe : \(keys), \(time) ; contenu non reconstitué"
             case .scrollBurst:
                 guard let scroll = event.scroll else { return nil }
-                let events = frCount(scroll.eventCount, "événement", "événements")
+                let events = FrenchCount.count(scroll.eventCount, "événement", "événements")
                 return "Défilement : Δx \(Int(scroll.deltaX)), Δy \(Int(scroll.deltaY)), \(events)"
             case .keyboardShortcut, .keyPressed:
                 guard let keyboard = event.keyboard else { return nil }

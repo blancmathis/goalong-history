@@ -170,8 +170,6 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         } catch { /* Delivery succeeded; failure to remember must not duplicate a send. */ }
     }
-    /// French plural: 0 and 1 are singular.
-    static func frCount(_ n: Int, _ singular: String, _ plural: String) -> String { "\(n) \(n > 1 ? plural : singular)" }
     private func readableError(_ error: Error) -> String {
         let message = String(describing: error)
         if message.contains("Apple Screen Time is off") { return "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer." }
@@ -340,7 +338,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
                 preview = nil; reviewed = false
                 rememberSelection()
                 func count(_ key: String) -> Int { (object[key] as? NSNumber)?.intValue ?? 0 }
-                status = "Reçu par Goalong : \(Self.frCount(count("imported"), "ajout", "ajouts")), \(Self.frCount(count("updated"), "mise à jour", "mises à jour")), \(Self.frCount(count("skipped"), "inchangé", "inchangés")). Aucun envoi quotidien n’a été activé."
+                status = "Reçu par Goalong : \(FrenchCount.count(count("imported"), "ajout", "ajouts")), \(FrenchCount.count(count("updated"), "mise à jour", "mises à jour")), \(FrenchCount.count(count("skipped"), "inchangé", "inchangés")). Aucun envoi quotidien n’a été activé."
             }
         } catch {
             if case GoalongSiteSubmissionError.accessRefused = error {

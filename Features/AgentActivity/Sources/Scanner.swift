@@ -1239,7 +1239,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             } catch {
                 analysisSliceWasInterrupted = true
                 appendFailure(
-                    "\(projection.sourcePath): la projection du jour sélectionné n’a pas pu être conservée : \(error.localizedDescription)",
+                    "\(projection.sourcePath) : la projection du jour sélectionné n’a pas pu être conservée : \(error.localizedDescription)",
                     result: &result
                 )
             }

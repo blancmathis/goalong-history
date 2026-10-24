@@ -1988,7 +1988,7 @@ public enum GoalongQueryCLI {
             }
             if let indices = options.recapSectionIndices {
                 guard let lines = recap.summaryLines, !indices.isEmpty, Set(indices).count == indices.count,
-                      indices.allSatisfy({ lines.indices.contains($0) }) else { throw CLIError.unsafeSource("Les parties de ce récap ont changé. Relisez-le avant l'envoi.") }
+                      indices.allSatisfy({ lines.indices.contains($0) }) else { throw CLIError.unsafeSource("Les parties de ce récap ont changé. Relisez-le avant l’envoi.") }
                 recapText = indices.sorted().map { lines[$0] }.joined(separator: "\n\n")
             } else { recapText = recap.summaryLines?.joined(separator: "\n") ?? recap.markdown }
         }
@@ -2003,7 +2003,7 @@ public enum GoalongQueryCLI {
         if var rhythm = options.contextualRhythm {
             guard capabilityConsentEnabled(rootDirectory: root, capability: "localComputerHistory"),
                   rhythm.timezone == record.timeZoneIdentifier,
-                  let rawStart = rhythm.start else { throw CLIError.unsafeSource("La session choisie n'est plus disponible sur ce périmètre.") }
+                  let rawStart = rhythm.start else { throw CLIError.unsafeSource("La session choisie n’est plus disponible sur ce périmètre.") }
             let parser = ISO8601DateFormatter(); parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             guard let start = parser.date(from: rawStart), sourceDate.string(from: start) == rawDay,
                   sourceDate.string(from: start.addingTimeInterval(Double(rhythm.window_ms) / 1000 - 0.001)) == rawDay else {

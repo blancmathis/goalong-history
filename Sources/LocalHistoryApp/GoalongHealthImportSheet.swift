@@ -123,7 +123,7 @@ struct GoalongHealthImportSheet: View {
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Divider()
-            HStack { Text("Votre sélection").font(.headline); Spacer(); Text("\(days.count) journée(s)").font(.subheadline).foregroundStyle(.secondary) }
+            HStack { Text("Votre sélection").font(.headline); Spacer(); Text(FrenchCount.count(days.count, "journée", "journées")).font(.subheadline).foregroundStyle(.secondary) }
             if let result {
                 ForEach(result.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
             }
@@ -154,7 +154,7 @@ struct GoalongHealthImportSheet: View {
                             Text(Self.sport(workout["sport"] as? String ?? ""))
                             Spacer()
                             Text(Self.duration(workout["durationSeconds"] as? Double ?? 0))
-                            if let distance = workout["distanceMeters"] as? Double { Text(String(format: "%.2f km", distance / 1000)) }
+                            if let distance = workout["distanceMeters"] as? Double { Text(Self.kilometres(distance)) }
                         }.font(.subheadline)
                     }
                 }.padding(14).background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 10))
@@ -226,7 +226,7 @@ struct GoalongHealthImportSheet: View {
         do {
             try GoalongHealthArchive.save(result, root: AppPaths.applicationSupportDirectory)
             savedDates = try GoalongHealthArchive.dates(root: AppPaths.applicationSupportDirectory)
-            message = "\(result.dayCount) journée(s) Santé conservée(s) sur ce Mac. Aucun envoi effectué."
+            message = "\(FrenchCount.count(result.dayCount, "journée", "journées")) Santé \(FrenchCount.word(result.dayCount, "conservée", "conservées")) sur ce Mac. Aucun envoi effectué."
         } catch { self.error = goalongUserMessage(error) }
     }
     private func readSaved() {
@@ -322,10 +322,16 @@ struct GoalongHealthImportSheet: View {
         "heartRateBPM": "Fréquence cardiaque moyenne", "heartRateMinBPM": "Fréquence minimale observée", "heartRateMaxBPM": "Fréquence maximale observée",
         "restingHeartRateBPM": "Fréquence au repos", "walkingHeartRateBPM": "Fréquence moyenne à la marche", "heartRateVariabilityMS": "Variabilité cardiaque (SDNN)",
         "respiratoryRate": "Fréquence respiratoire", "oxygenPercent": "Oxygène sanguin", "vo2Max": "VO₂ max estimée"]
+    /// « 5,25 km »: French decimal comma, always two decimals.
+    static func kilometres(_ meters: Double) -> String {
+        let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "fr_FR")
+        formatter.minimumFractionDigits = 2; formatter.maximumFractionDigits = 2
+        return (formatter.string(from: NSNumber(value: meters / 1000)) ?? "—") + " km"
+    }
     static func formatted(_ metric: [String: Any]) -> String {
         guard let value = metric["value"] as? Double, let unit = metric["unit"] as? String else { return "Non disponible" }
         if unit == "s" { return duration(value) }
-        if unit == "m" { return String(format: "%.2f km", value / 1000) }
+        if unit == "m" { return kilometres(value) }
         let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "fr_FR"); formatter.maximumFractionDigits = 1
         return (formatter.string(from: NSNumber(value: value)) ?? "—") + (unit == "count" ? "" : " \(unit)")
     }

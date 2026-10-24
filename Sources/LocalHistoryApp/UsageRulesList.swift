@@ -53,11 +53,6 @@
             )
         }
 
-        /// French plural: 0 and 1 are singular.
-        static func itemCountLabel(_ count: Int) -> String {
-            "\(count) élément\(count > 1 ? "s" : "")"
-        }
-
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
                 controls
@@ -107,7 +102,7 @@
                     .frame(width: UsageRulesList.ruleColumnWidth)
                 }
 
-                Text(Self.itemCountLabel(filteredItems.count))
+                Text(FrenchCount.count(filteredItems.count, "élément", "éléments"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 58, alignment: .trailing)

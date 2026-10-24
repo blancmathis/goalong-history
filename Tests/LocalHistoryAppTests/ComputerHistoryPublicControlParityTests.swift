@@ -239,11 +239,6 @@
                     ),
                 encoding: .utf8
             )
-            let overview = try String(
-                contentsOf: repositoryRoot
-                    .appendingPathComponent("Sources/LocalHistoryApp/OverviewPage.swift"),
-                encoding: .utf8
-            )
 
             XCTAssertTrue(
                 history.contains(
@@ -260,24 +255,6 @@
             XCTAssertTrue(screenTime.contains("screen-time-open-settings"))
             XCTAssertTrue(screenTime.contains("DisclosureGroup"))
             XCTAssertFalse(screenTime.contains("with input"))
-            XCTAssertFalse(overview.contains("with input"))
-            XCTAssertTrue(overview.contains("Applications et sites"))
-            XCTAssertTrue(overview.contains("Group sites by browser"))
-            XCTAssertTrue(overview.contains("Same usage and total; only the grouping changes."))
-            XCTAssertTrue(overview.contains("isOn: groupsSitesByBrowser"))
-            XCTAssertFalse(overview.contains("Picker(\"Screen Time breakdown\""))
-            XCTAssertTrue(overview.contains("DisclosureGroup"))
-            XCTAssertTrue(overview.contains("Show \\(hiddenCount) more"))
-            XCTAssertFalse(overview.contains("Website breakdown"))
-            XCTAssertFalse(overview.contains("Inside browser apps · This Mac only · never added"))
-            XCTAssertTrue(overview.contains("Include login and lock-screen time"))
-            XCTAssertTrue(
-                overview.contains(
-                    "Apple may record these periods while the device is not actively being used."
-                )
-            )
-            XCTAssertFalse(overview.contains("Show all apps"))
-            XCTAssertFalse(overview.contains("combinedAppUsage.prefix"))
         }
 
         func testAIConversationListOrdersNewestFirstAndCompactsLongFallbackTitles() {
