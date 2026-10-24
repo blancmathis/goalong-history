@@ -574,7 +574,10 @@
             let keptCapsuleOnly = UUID().uuidString.lowercased()
             func package(_ id: String) -> URL { proofs.appendingPathComponent(id, isDirectory: true) }
             let staging = proofs.appendingPathComponent(".\(erasedStaging).tmp", isDirectory: true)
-            for directory in [recaps, evidence, package(erasedOrphan), package(keptOrphan), package(referenced), staging] {
+            // A stale staging copy of a kept recap's proof, with no manifest: its date is today.
+            let referencedStaging = proofs.appendingPathComponent(".\(referenced).tmp", isDirectory: true)
+            for directory in [recaps, evidence, package(erasedOrphan), package(keptOrphan), package(referenced), staging,
+                              referencedStaging] {
                 try fm.createDirectory(at: directory, withIntermediateDirectories: true)
             }
             for directory in [root, root.appendingPathComponent("chatgpt"), recaps, proofs, evidence] {
@@ -589,6 +592,7 @@
             try writeManifest(day: keptDay, in: package(keptOrphan))
             try writeManifest(day: keptDay, in: package(referenced))
             try writeManifest(day: erasedDay, in: staging)
+            try writeFixture(to: referencedStaging.appendingPathComponent("result.json"))
             try Data("{\"proof\":{\"executionID\":\"\(referenced)\"}}".utf8)
                 .write(to: recaps.appendingPathComponent(dayKey(keptDay) + ".chatgpt-recap.json"))
             for id in [erasedOrphan, keptOrphan, referenced, erasedStaging, erasedCapsuleOnly, keptCapsuleOnly] {
@@ -616,6 +620,7 @@
             XCTAssertEqual(erasedKeys, [erasedOrphan, erasedStaging, erasedCapsuleOnly])
             XCTAssertFalse(fm.fileExists(atPath: package(erasedOrphan).appendingPathComponent("result.json").path))
             XCTAssertFalse(fm.fileExists(atPath: staging.appendingPathComponent("result.json").path))
+            XCTAssertFalse(fm.fileExists(atPath: referencedStaging.appendingPathComponent("result.json").path))
             for id in [erasedOrphan, erasedStaging, erasedCapsuleOnly] {
                 XCTAssertFalse(fm.fileExists(atPath: evidence.appendingPathComponent(id + ".capsule").path), id)
             }

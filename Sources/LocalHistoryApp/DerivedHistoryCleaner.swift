@@ -732,7 +732,9 @@
                     where isErased(proofDate(in: proofsDirectory.appendingPathComponent(name, isDirectory: true)))
                 {
                     stagingNames.insert(name)
-                    executionIDs.insert(String(name.dropFirst().dropLast(4)))
+                    // A stale copy next to a kept recap's proof never takes that proof or its key with it.
+                    let executionID = String(name.dropFirst().dropLast(4))
+                    if !referenced.contains(executionID.lowercased()) { executionIDs.insert(executionID) }
                 }
                 // A capsule written before its package (the run stopped in between) has only its date.
                 let packageIDs = Set(packages.map { $0.lowercased() })
@@ -792,7 +794,7 @@
             {
                 return (key, true)
             }
-            // No folder date means nothing to read: the earliest possible key erases it with any clear.
+            // No folder date (it vanished or cannot be read): the earliest key never erases it on a guess.
             return (modificationDayKey(of: directory) ?? "0000-00-00", false)
         }
 
