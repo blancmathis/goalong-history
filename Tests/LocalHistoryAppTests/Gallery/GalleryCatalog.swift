@@ -8,6 +8,7 @@ import SwiftUI
     static var all: [GalleryEntry] {
         dashboardEntries + settingsEntries + onboardingEntries + menuBarEntries + concentrationEntries
             + blockingEntries + ambianceEntries + systemEntries + recapEntries + sourcesEntries
+            + accountEntries + previewEntries + agentEntries
     }
 
     /// Entries whose id starts with one of the comma-separated prefixes (`ONLY=`).
@@ -24,6 +25,7 @@ import SwiftUI
                           paused: Bool = false, fixture: GalleryFixtureHome.Kind = .empty, period: Int = 1,
                           note: String? = nil, file: String = #fileID,
                           reached: (@MainActor () -> Bool)? = nil,
+                          prepare: (@MainActor (GalleryContext) throws -> Void)? = nil,
                           configure: (@MainActor (DashboardViewModel, GalleryContext) throws -> Void)? = nil) -> GalleryEntry {
         var model: DashboardViewModel?
         // `reached`: the state the entry names is on screen; else the image is `not-ready`, not a quiet wrong image.
@@ -36,6 +38,7 @@ import SwiftUI
             ctx.environment.usedBytes = GalleryFixtureHome.usedBytes(fixture)
             if let environment { environment(&ctx.environment) }
             try GalleryFixtureHome.install(fixture)
+            try prepare?(ctx)
             var options = GalleryFixtures.DashboardOptions()
             options.section = section; options.settingsPane = pane; options.globallyPaused = paused
             let built = try GalleryFixtures.dashboardModel(ctx, options)

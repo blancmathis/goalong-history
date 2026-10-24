@@ -125,7 +125,7 @@
                 )
                 : storedConfiguration
             let initialConfiguration = (try? store.saveConfiguration(merged)) ?? merged
-            let initialDay = Calendar.current.startOfDay(for: Date())
+            let initialDay = Calendar.current.startOfDay(for: GoalongToday.now)
             configuration = initialConfiguration
             scanConfiguration = initialConfiguration
             selectedDay = initialDay

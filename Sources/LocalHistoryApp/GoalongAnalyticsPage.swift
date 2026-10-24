@@ -30,7 +30,13 @@ struct GoalongAnalyticsPage: View {
     /// The named view of Activité on screen (nil = summary); kept when the day or period changes.
     @State private var detail: GoalongActivityDetail?
     @AppStorage(GoalongDeveloperPreferences.enabledKey) private var developerMode = false
+    #if DEBUG
+    /// Test gallery only: the page opens on the developer preview (default: the page's own data).
+    static var galleryStartsInPreview = false
+    @State private var showingPreview = galleryStartsInPreview
+    #else
     @State private var showingPreview = false
+    #endif
     @State private var previewNavigation = GoalongActivityNavigation()
     private let refreshTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     /// Automatic refreshes of today wait at least ten times the last read duration, so a
