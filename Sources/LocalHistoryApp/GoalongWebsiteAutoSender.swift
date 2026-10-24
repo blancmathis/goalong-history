@@ -240,6 +240,7 @@ import LocalHistoryCore
         let offsets = floor == nil ? [-1] : [-3, -2, -1]
         let candidates = offsets.compactMap { calendar.date(byAdding: .day, value: $0, to: now) }.map { formatter.string(from: $0) }
         guard let day = candidates.first(where: { floor == nil || $0 > floor! }) else { return }
+        guard current.lastAttempt != day else { return }
         if let retry = networkRetry, retry.day == day, now < retry.notBefore { return }
         let previousAttempt = current.lastAttempt
         do {
