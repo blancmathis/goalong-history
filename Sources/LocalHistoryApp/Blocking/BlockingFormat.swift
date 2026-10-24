@@ -6,7 +6,7 @@ enum BlockingFormat {
     private static let locale = Locale(identifier: "fr_FR")
 
     /// Blocks started by a trigger app have no end of their own.
-    static func isOpenEnded(_ end: Date) -> Bool { end.timeIntervalSinceReferenceDate > Date().timeIntervalSinceReferenceDate + 400 * 86_400 }
+    static func isOpenEnded(_ end: Date) -> Bool { end.timeIntervalSinceReferenceDate > GoalongToday.now.timeIntervalSinceReferenceDate + 400 * 86_400 }
 
     static func time(_ date: Date) -> String {
         let formatter = DateFormatter()
@@ -48,20 +48,20 @@ enum BlockingFormat {
     }
 
     /// « aujourd’hui à 14:00 », « demain à 9:00 », « lundi à 9:00 », « le 31 oct. à 9:00 ».
-    static func moment(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+    static func moment(_ date: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) -> String {
         "\(dayWord(date, now: now, calendar: calendar)) à \(time(date))"
     }
 
     /// The end of a block, with its day when it is not today: « 12:00 », « minuit », « demain à 2:00 »,
     /// « samedi à 12:00 », « vendredi à minuit », « le 31 oct. à 12:00 ». A 0:00 end belongs to the day before.
-    static func deadline(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+    static func deadline(_ date: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) -> String {
         let (day, value) = endParts(date, calendar: calendar)
         if calendar.isDate(day, inSameDayAs: now) { return value }
         return "\(dayWord(day, now: now, calendar: calendar)) à \(value)"
     }
 
     /// « jusqu’à 12:00 », « jusqu’à demain à 2:00 », « jusqu’au 31 oct. à 12:00 ».
-    static func until(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+    static func until(_ date: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) -> String {
         untilPhrase(deadline(date, now: now, calendar: calendar))
     }
 
@@ -72,7 +72,7 @@ enum BlockingFormat {
 
     /// A block that starts later: « samedi de 10:00 à 12:00 », « le 31 oct. de 10:00 à 12:00 »,
     /// « d’aujourd’hui 22:00 à demain 2:00 », « du 31 oct. 22:00 au 1er nov. 2:00 ».
-    static func period(from start: Date, to end: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+    static func period(from start: Date, to end: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) -> String {
         let (endDay, endValue) = endParts(end, calendar: calendar)
         let first = dayWord(start, now: now, calendar: calendar)
         if calendar.isDate(start, inSameDayAs: endDay) { return "\(first) de \(time(start)) à \(endValue)" }

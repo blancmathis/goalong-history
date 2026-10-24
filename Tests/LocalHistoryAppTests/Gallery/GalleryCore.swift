@@ -6,12 +6,19 @@ import SwiftUI
 @testable import LocalHistoryCore
 
 /// Fixed clock of the gallery: Friday 23 October 2026, 09:41, Europe/Paris.
-/// `GOALONG_GALLERY_CLOCK_PROBE=1` moves it one day later (proof that no real `Date()` reaches an entry).
+/// `GOALONG_GALLERY_CLOCK_PROBE=1` moves it one day later, `-1` one day earlier: an image that does not move with it
+/// read the real clock. Both directions: a page that only follows « aujourd’hui » forward (`followToday`) hides a leak
+/// when the real day is before the probed one.
 enum GalleryClock {
     static let base = Date(timeIntervalSince1970: 1_792_741_260)
-    static var now: Date {
-        ProcessInfo.processInfo.environment["GOALONG_GALLERY_CLOCK_PROBE"] == "1" ? base.addingTimeInterval(86_400) : base
+    static var probeDays: Int {
+        switch ProcessInfo.processInfo.environment["GOALONG_GALLERY_CLOCK_PROBE"] {
+        case "1": return 1
+        case "-1": return -1
+        default: return 0
+        }
     }
+    static var now: Date { base.addingTimeInterval(Double(probeDays) * 86_400) }
     static let timeZone = TimeZone(identifier: "Europe/Paris")!
     static let locale = Locale(identifier: "fr_FR")
     static var calendar: Calendar {

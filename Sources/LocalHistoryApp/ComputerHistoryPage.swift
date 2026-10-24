@@ -252,7 +252,7 @@
             sessions: [ActivitySession],
             day: Date,
             calendar: Calendar = .current,
-            now: Date = Date()
+            now: Date = GoalongToday.now
         ) -> [ComputerHistoryTenMinuteGroup] {
             let dayStart = calendar.startOfDay(for: day)
             guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {

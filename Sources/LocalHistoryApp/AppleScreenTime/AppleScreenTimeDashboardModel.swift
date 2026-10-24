@@ -246,7 +246,7 @@
                     self.biomeIntervalCount = collection.biomeIntervalCount
                     self.screenTimeAppUsageIntervalCount = collection.screenTimeAppUsageIntervalCount
                     self.storageState = collection.storageState
-                    self.lastRefreshAt = Date()
+                    self.lastRefreshAt = GoalongToday.now
                     self.isBusy = false
                 }
             }

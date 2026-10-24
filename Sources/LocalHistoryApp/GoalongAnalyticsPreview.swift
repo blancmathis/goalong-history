@@ -6,7 +6,7 @@ import LocalHistoryCore
 /// Generated from calendar dates so a given day's values match in 1 / 7 / 28-day views.
 enum GoalongAnalyticsPreview {
     static func make(ending date: Date, count rawCount: Int, calendar: Calendar = .current,
-                     now: Date = Date()) -> GoalongAnalyticsPayload {
+                     now: Date = GoalongToday.now) -> GoalongAnalyticsPayload {
         let count = [1, 7, 28].contains(rawCount) ? rawCount : 7
         let last = calendar.startOfDay(for: date)
         let days = (0..<(count * 2)).reversed().compactMap { offset -> GoalongLocalAnalytics.Day? in

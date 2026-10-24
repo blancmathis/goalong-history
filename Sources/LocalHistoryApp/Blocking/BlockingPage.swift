@@ -36,7 +36,7 @@ import SwiftUI
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in
-            let now = self.now ?? context.date
+            let now = self.now ?? GoalongToday.timeline(context.date)
             let frozen = controller.freeze.map { $0.end > now } ?? false
             let blocking = controller.activeBlocks.contains { $0.end > now }
             ScrollView {
@@ -108,7 +108,7 @@ import SwiftUI
         }
         .sheet(isPresented: Binding(get: { editingList != nil }, set: { if !$0 { editingList = nil } })) {
             if let id = editingList {
-                BlockListSheet(controller: controller, listID: id, now: now ?? Date()) { editingList = nil }
+                BlockListSheet(controller: controller, listID: id, now: now ?? GoalongToday.now) { editingList = nil }
                     .goalongControls()
             }
         }

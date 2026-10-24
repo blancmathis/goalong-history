@@ -243,8 +243,9 @@ def shard_command(run: Path, shard: int, shards: int, home: str, only: str | Non
                    f"GOALONG_GALLERY={run}", f"GOALONG_GALLERY_SHARD={shard}/{shards}"]
     if only:
         environment.append(f"GOALONG_GALLERY_ONLY={only}")
-    if os.environ.get("GOALONG_GALLERY_CLOCK_PROBE") == "1":
-        environment.append("GOALONG_GALLERY_CLOCK_PROBE=1")
+    probe = os.environ.get("GOALONG_GALLERY_CLOCK_PROBE")
+    if probe in ("1", "-1"):  # one day later or earlier
+        environment.append(f"GOALONG_GALLERY_CLOCK_PROBE={probe}")
     xctest = CHECKOUT / ".build" / "debug" / "LocalHistoryPackageTests.xctest"
     # Spec C §3-4: the arguments domain is read only before -XCTest. The fake HOME has no global preferences, so the
     # accent colour and the scroll-bar style (else « Automatic »: legacy bars once a mouse is plugged in) are fixed here.
@@ -380,7 +381,7 @@ def command_run(args: argparse.Namespace) -> int:
                    "scale": environment.get("screenScale")},
         "windowScale": environment.get("windowScale"), "locale": environment.get("locale"),
         "timeZone": environment.get("timeZone"), "clock": environment.get("clock"),
-        "clockProbe": environment.get("clockProbe", False), "guards": environment.get("guards", False),
+        "clockProbe": environment.get("clockProbe", 0), "guards": environment.get("guards", False),
         "shards": args.shards, "only": args.only or "", "duration": duration, "problems": problems,
         "images": [manifest_image(entry) for entry in results],
     }

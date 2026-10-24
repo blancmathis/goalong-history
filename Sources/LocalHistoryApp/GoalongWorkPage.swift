@@ -49,12 +49,12 @@ import SwiftUI
         .onAppear { runtime.refreshAccount() }
         .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
             // A new definition re-classifies today straight away when the user allowed it.
-            if work.automatic { agent.classify(day: Date(), userInitiated: false) }
+            if work.automatic { agent.classify(day: GoalongToday.now, userInitiated: false) }
         }
         .onChange(of: runtime.connectionState) { state in
             guard classifyWhenConnected, case .connected = state else { return }
             classifyWhenConnected = false
-            agent.classify(day: Date())
+            agent.classify(day: GoalongToday.now)
         }
         .onChange(of: agent.isRunning) { running in
             if !running, let day = review.loadedDay { review.load(day: day) }
@@ -73,7 +73,7 @@ import SwiftUI
             Text("Pour chaque contexte nouveau, Goalong envoie à votre compte ChatGPT le nom de l’app, le site et le titre de la fenêtre, avec sa durée, ainsi que votre définition du travail. Jamais ce que vous tapez, ni de capture d’écran. Vos exclusions et vos choix « Données pour ChatGPT » s’appliquent. Cela active aussi l’autorisation générale Analyse ChatGPT, réglable dans Réglages.")
         }
         .confirmationDialog("Tout reclasser avec votre définition actuelle ?", isPresented: $confirmingForget) {
-            Button("Tout reclasser") { work.forgetAgentVerdicts(); agent.classify(day: Date()) }
+            Button("Tout reclasser") { work.forgetAgentVerdicts(); agent.classify(day: GoalongToday.now) }
         } message: {
             Text("Les verdicts de l’agent sont effacés et les contextes seront renvoyés au fil de vos consultations d’Activité. Vos corrections sont conservées.")
         }
@@ -175,7 +175,7 @@ import SwiftUI
             case .historyOff:
                 Button("Ouvrir les réglages") { model.openRecordingSettings() }.buttonStyle(LHSecondaryButtonStyle())
             case .ready:
-                Button("Classer aujourd’hui") { agent.classify(day: Date()) }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Classer aujourd’hui") { agent.classify(day: GoalongToday.now) }.buttonStyle(LHSecondaryButtonStyle())
                     .accessibilityIdentifier("work-classify-today")
             case .paused, .noDefinition:
                 EmptyView()

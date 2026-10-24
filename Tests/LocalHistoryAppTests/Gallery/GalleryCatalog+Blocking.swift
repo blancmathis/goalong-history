@@ -46,6 +46,16 @@ extension GalleryCatalog {
             panel("programme/protection-mot-de-passe", width: 440, clock: .injected) { _ in
                 AnyView(BlockingProtectionDetails(controller: F.blockingGuarded()).padding(18))
             },
+            // A locked block runs and the background service that reopens Goalong is waiting, failed or running.
+            panel("programme/protection-a-autoriser", width: 440, clock: .injected) { _ in
+                AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.awaitingApproval)).padding(18))
+            },
+            panel("programme/protection-indisponible", width: 440, clock: .injected) { _ in
+                AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.failed("Service de protection indisponible."))).padding(18))
+            },
+            panel("programme/protection-renforcee", width: 440, clock: .injected) { _ in
+                AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.running)).padding(18))
+            },
             panel("programme/composer-plus-tard", width: 820, clock: .injected) { _ in
                 AnyView(BlockingNowComposer(controller: F.blockingIdle(), now: F.sunday, later: true, lock: .password).padding(24))
             },

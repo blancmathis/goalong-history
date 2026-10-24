@@ -31,11 +31,11 @@ import Foundation
     }
 
     static func install(_ kind: Kind) throws {
-        // The app creates its journal folder at every launch, recording on or off (AppDelegate: `AppPaths.prepare`).
-        // The reset deletes it and `prepare` runs once per process, so make it again: without it Activité reports
-        // « Lecture incomplète » (source folder absent) instead of an empty day, a state the app never shows (R10).
-        try FileManager.default.createDirectory(at: AppPaths.eventsDirectory, withIntermediateDirectories: true,
-                                                attributes: [.posixPermissions: 0o700])
+        // The app prepares its storage folders at every launch, recording on or off (AppDelegate: `AppPaths.prepare`).
+        // The reset deletes them and `prepare` runs once per process, so run the app's own function again: without
+        // the journal folder Activité reports « Lecture incomplète » instead of an empty day, a state the app never
+        // shows (R10); the other folders (Temps d'écran, Conversations IA, Bilan) are the app's too.
+        try AppPaths.prepareApplicationStorage(applicationSupportDirectory: AppPaths.applicationSupportDirectory)
         guard kind != .empty else { return }
         enableRecording()
         switch kind {

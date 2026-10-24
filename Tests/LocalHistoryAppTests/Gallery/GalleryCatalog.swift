@@ -7,7 +7,7 @@ import SwiftUI
 @MainActor enum GalleryCatalog {
     static var all: [GalleryEntry] {
         dashboardEntries + settingsEntries + onboardingEntries + menuBarEntries + concentrationEntries
-            + blockingEntries + ambianceEntries + systemEntries
+            + blockingEntries + ambianceEntries + systemEntries + recapEntries + sourcesEntries
     }
 
     /// Entries whose id starts with one of the comma-separated prefixes (`ONLY=`).

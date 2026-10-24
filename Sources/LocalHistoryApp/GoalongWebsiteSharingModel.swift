@@ -139,7 +139,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             needsInitialSuggestion = false; needsWebsiteSuggestion = false
         } else if root.standardizedFileURL == AppPaths.applicationSupportDirectory.standardizedFileURL,
                   let remembered = Self.rememberedSelection(in: root) {
-            draft = remembered; draft.delivery = .once; draft.date = Date()
+            draft = remembered; draft.delivery = .once; draft.date = GoalongToday.now
             needsInitialSuggestion = false; needsWebsiteSuggestion = false
         }
         userChangedSelection = false

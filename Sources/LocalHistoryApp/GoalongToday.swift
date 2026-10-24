@@ -15,6 +15,14 @@ enum GoalongToday {
         return Date()
     }
 
+    /// A `TimelineView` tick: the frozen clock in the gallery, the tick itself in the app.
+    static func timeline(_ date: Date) -> Date {
+        #if DEBUG
+        if let galleryClock { return galleryClock() }
+        #endif
+        return date
+    }
+
     /// `Calendar.isDateInToday`, against `now`.
     static func isToday(_ date: Date, calendar: Calendar = .current) -> Bool {
         calendar.isDate(date, inSameDayAs: now)

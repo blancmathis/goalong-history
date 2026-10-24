@@ -432,7 +432,7 @@
         @Published var selectedDay: Date
         @Published var automaticRecapsEnabled: Bool {
             didSet {
-                UserDefaults.standard.set(automaticRecapsEnabled, forKey: Self.automaticRecapsKey)
+                defaults.set(automaticRecapsEnabled, forKey: Self.automaticRecapsKey)
                 scheduleNextAutomaticRecap()
                 scheduleAutomaticBoundaryFallback()
                 if automaticRecapsEnabled { maybeGenerateAutomaticRecap() }
@@ -467,6 +467,7 @@
         private let chatHistoryStore: ChatGPTHistoryStore
         private let fileManager: FileManager
         private let recapsDirectory: URL
+        private let defaults: UserDefaults
         private let proofStore: AnalysisProofStore
         private let executableLocator: () -> URL?
         private let sessionFactory: (URL) throws -> CodexAppServerSession
@@ -554,8 +555,10 @@
             },
             analysisSelectionProvider: @escaping () -> GoalongAnalysisSelection = { GoalongAnalysisSelection.load() },
             analysisSigningIdentityProvider: (() throws -> AnalysisRunSigningIdentity)? = nil,
-            dayOverviewReader: ((Date) throws -> ChatGPTRecapDayOverview)? = nil
+            dayOverviewReader: ((Date) throws -> ChatGPTRecapDayOverview)? = nil,
+            defaults: UserDefaults = .standard
         ) {
+            self.defaults = defaults
             self.chatHistoryStore = chatHistoryStore
             self.fileManager = fileManager
             self.recapsDirectory = recapsDirectory
@@ -579,9 +582,9 @@
             let today = Calendar.current.startOfDay(for: Date())
             selectedDay = today
             automaticRecapsEnabled =
-                UserDefaults.standard.object(forKey: Self.automaticRecapsKey) == nil
+                defaults.object(forKey: Self.automaticRecapsKey) == nil
                 ? false
-                : UserDefaults.standard.bool(forKey: Self.automaticRecapsKey)
+                : defaults.bool(forKey: Self.automaticRecapsKey)
             recap = ChatGPTRecapPersistence.load(for: today, from: recapsDirectory)
             proofReport = nil
         }

@@ -462,7 +462,7 @@ enum SettingsPane: Hashable {
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = Locale(identifier: "fr_FR")
         formatter.unitsStyle = .full
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return formatter.localizedString(for: date, relativeTo: GoalongToday.now)
     }
 }
 #endif

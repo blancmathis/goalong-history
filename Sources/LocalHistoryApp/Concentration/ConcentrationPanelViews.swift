@@ -79,7 +79,7 @@ import SwiftUI
             FocusLimitPanelView(text: content.text, onClose: { controller.dismissPanel() })
         case .commitment:
             FocusCommitmentPanelView(cards: controller.commitmentCards.filter { content.commitmentIDs.contains($0.id) },
-                                     lists: controller.blockLists, now: Date(),
+                                     lists: controller.blockLists, now: GoalongToday.now,
                                      onJoker: { period in exit { try controller.useCommitmentJoker(period: period) } },
                                      onDeclare: { period in exit { try controller.declareCommitmentHeld(period: period) } },
                                      onClose: { controller.dismissPanel() })
@@ -95,7 +95,7 @@ extension ConcentrationPanelView {
 
 enum FocusPanelMath {
     static func workSeconds(_ session: FocusSession) -> TimeInterval {
-        FocusMeasurement.workIntervals(session, until: session.endedAt ?? Date()).reduce(0) { $0 + $1.duration }
+        FocusMeasurement.workIntervals(session, until: session.endedAt ?? GoalongToday.now).reduce(0) { $0 + $1.duration }
     }
 }
 
@@ -324,7 +324,7 @@ struct FocusLimitPanelView: View {
     private let now: Date
 
     init(controller: ConcentrationController, plan: FocusPlan, review: FocusReview?, commitTomorrow: Bool = false,
-         now: Date = Date(), onClose: @escaping () -> Void) {
+         now: Date = GoalongToday.now, onClose: @escaping () -> Void) {
         self.controller = controller
         self.now = now
         self.plan = plan

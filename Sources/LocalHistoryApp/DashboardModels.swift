@@ -273,7 +273,7 @@
         let storageBytes: Int64
         let availableDays: [Date]
 
-        static func empty(day: Date = Date()) -> DashboardDaySnapshot {
+        static func empty(day: Date = GoalongToday.now) -> DashboardDaySnapshot {
             DashboardDaySnapshot(
                 day: day,
                 eventCount: 0,

@@ -211,6 +211,27 @@ import SwiftUI
         return controller
     }
 
+    /// The guard service answers with this state while a severe block runs (a fake: no SMAppService, no launchd).
+    @MainActor final class GalleryGuardClient: GoalongGuardClienting {
+        var onChange: (() -> Void)?
+        var needsConsent = false
+        var canRemove = false
+        let answer: BlockingProtectionState.Component
+        init(_ answer: BlockingProtectionState.Component) { self.answer = answer }
+        func update(severeUntil: Date?) -> BlockingProtectionState.Component { severeUntil == nil ? .notInstalled : answer }
+        func removeService() {}
+    }
+
+    /// A locked block is running (a severe one) and the protection service is in `guardian` state.
+    static func blockingProtected(_ guardian: BlockingProtectionState.Component) -> BlockingController {
+        let now = blockingNow
+        var document = BlockingDocument()
+        document.lists = [socialList, videoList, focusList]
+        document.sessions = [BlockSession(listIDs: [socialID, focusID], start: now.addingTimeInterval(-50 * 60),
+                                          end: now.addingTimeInterval(84 * 60), lock: .locked)]
+        return BlockingController(document: document, clock: { now }, guardClient: GalleryGuardClient(guardian))
+    }
+
     static var freeze: BlockFreeze {
         let now = blockingNow
         return BlockFreeze(start: now.addingTimeInterval(-20 * 60), end: now.addingTimeInterval(64 * 60 + 12), mode: .shield,

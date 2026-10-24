@@ -75,15 +75,33 @@ final class GalleryGuardTests: XCTestCase {
         let patterns = try [#"isDateInToday\("#, #"startOfDay\(for: Date\(\)\)"#, #"to: Date\(\)\)"#,
                             #"\.\.\.Date\(\)"#, #"@State (private )?var \w+ = Date\(\)"#]
             .map { try NSRegularExpression(pattern: $0) }
+        // R12 audit: a live `TimelineView` tick (`?? context.date`, `at: context.date`), a `?? Date()` or `now: Date()`
+        // argument, a `day:` / `relativeTo:` / `of:` real clock, `Date().timeIntervalSinceReferenceDate`, a
+        // `.date = Date()` reset or a `{ Date() }` clock. Wrap ticks in `GoalongToday.timeline(_:)`. Background files
+        // below stamp real events, deadlines or durations and never draw « aujourd’hui ».
+        let background: Set<String> = ["EventRecorder.swift", "EventTapMonitor.swift", "SupportDiagnostics.swift",
+                                       "JevMonitor.swift", "AppDelegate.swift", "MinuteSealer.swift",
+                                       "SoftwareUpdateManager.swift", "GoalongGuardClient.swift"]
+        let livePatterns = try [#"(\?\? |at: )context\.date"#, #"\?\? Date\(\)"#, #"now: Date\(\)"#, #"day: Date\(\)"#,
+                                #"relativeTo: Date\(\)"#, #"of: Date\(\)"#, #"Date\(\)\.timeIntervalSinceReferenceDate"#,
+                                #"\.date = Date\(\)"#, #"\{ Date\(\) \}"#]
+            .map { try NSRegularExpression(pattern: $0) }
+        // A view, sheet, formatter or view model must default its clock to the views' today, not `Date()`.
+        let viewFile = try NSRegularExpression(pattern: #"(Page|Views?|Sheet|Format|Preview|Summary|Models?)\.swift$"#)
+        let viewDefault = try NSRegularExpression(pattern: #"(now|day): Date = Date\(\)"#)
         let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
         var offenders: [String] = []
         var scanned = 0
         for case let url as URL in files where url.pathExtension == "swift" && !allowed.contains(url.lastPathComponent) {
             scanned += 1
             let text = try String(contentsOf: url, encoding: .utf8)
-            for pattern in patterns
+            let name = url.lastPathComponent
+            var checks = patterns
+            if !background.contains(name) { checks += livePatterns }
+            if viewFile.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) != nil { checks.append(viewDefault) }
+            for pattern in checks
             where pattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil {
-                offenders.append("\(url.lastPathComponent): \(pattern.pattern)")
+                offenders.append("\(name): \(pattern.pattern)")
             }
             // The Activité preview opens `GoalongActivityNavigation()` with no day: its defaults must be the views' today.
             if url.lastPathComponent == "GoalongActivityNavigation.swift", text.contains("Date()") {
