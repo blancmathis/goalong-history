@@ -16,6 +16,8 @@ struct GalleryImage {
     let backingScale: CGFloat
     var status: Status
     var detail: String?
+    /// One-line fields whose height is not their own text height (`GalleryRenderer.misMeasuredFields`).
+    var misMeasuredFields: [String] = []
     /// Raw RGBA bytes, kept for in-memory checks (smoke test).
     let bitmap: NSBitmapImageRep
 }
@@ -148,8 +150,26 @@ struct GalleryImage {
             .transaction { $0.disablesAnimations = true; $0.animation = nil })
     }
 
-    /// Renders one image. Never orders the window; the window is closed and released before returning.
+    /// Renders one image. SwiftUI sizes a one-line field once, while it builds it, and now and then from another
+    /// field's font: 15 pt for a 13 pt field, 16 pt for a 12 pt one (about one image in 40 for
+    /// programme/feuille-liste-verrouillee, in any process, loaded or not). It never measures it again, so the text
+    /// or every row below it sits half a point or a point off. Such a render is made again from a new view.
     static func render(_ entry: GalleryEntry, theme: GalleryTheme, size: GallerySize, ctx: GalleryContext) throws -> GalleryImage {
+        var image = try renderOnce(entry, theme: theme, size: size, ctx: ctx)
+        for _ in 1..<3 where image.status == .ok && !image.misMeasuredFields.isEmpty {
+            FileHandle.standardError.write(Data(("[gallery] render again, \(entry.id) \(theme.rawValue): "
+                + image.misMeasuredFields.joined(separator: ", ") + "\n").utf8))
+            image = try renderOnce(entry, theme: theme, size: size, ctx: ctx)
+        }
+        if !image.misMeasuredFields.isEmpty && image.status == .ok {
+            image.status = .unstable
+            image.detail = "field sized from another font in 3 renders: " + image.misMeasuredFields.joined(separator: ", ")
+        }
+        return image
+    }
+
+    /// One render. Never orders the window; the window is closed and released before returning.
+    private static func renderOnce(_ entry: GalleryEntry, theme: GalleryTheme, size: GallerySize, ctx: GalleryContext) throws -> GalleryImage {
         ctx.theme = theme
         let start: NSSize
         switch size {
@@ -275,6 +295,22 @@ struct GalleryImage {
         visit(view)
     }
 
+    /// One-line fields (scrolling, not wrapping) whose height differs from their own text height. A field always
+    /// gets that height when SwiftUI measures it right (`GoalongFieldStyle` fixes it); a wrapping field may be taller.
+    static func misMeasuredFields(_ view: NSView) -> [String] {
+        var fields: [String] = []
+        func visit(_ view: NSView) {
+            if let field = view as? NSTextField, let cell = field.cell, cell.isScrollable, !cell.wraps,
+               field.intrinsicContentSize.height > 0, field.bounds.height != field.intrinsicContentSize.height {
+                fields.append("« \((field.placeholderString ?? field.stringValue).prefix(24)) » \(field.bounds.height) pt"
+                              + " for \(field.intrinsicContentSize.height)")
+            }
+            view.subviews.forEach(visit)
+        }
+        visit(view)
+        return fields
+    }
+
     static func markNeedsDisplay(_ view: NSView) {
         view.needsDisplay = true
         view.subviews.forEach(markNeedsDisplay)
@@ -327,7 +363,7 @@ struct GalleryImage {
         let digest = SHA256.hash(data: capture.bitmapData).map { String(format: "%02x", $0) }.joined()
         return GalleryImage(png: png, pixelHash: digest, pointSize: host.bounds.size,
                             pixelSize: (capture.rep.pixelsWide, capture.rep.pixelsHigh), backingScale: window.backingScaleFactor,
-                            status: status, detail: detail, bitmap: capture.rep)
+                            status: status, detail: detail, misMeasuredFields: misMeasuredFields(host), bitmap: capture.rep)
     }
 }
 
