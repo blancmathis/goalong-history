@@ -46,6 +46,19 @@ enum SupportReportStore {
     /// Driven by this controller; internal so isolated renders can show each state.
     @Published var phase: Phase = .idle
     @Published var feedback: String?
+    @Published var feedbackKind: FeedbackKind = .success
+
+    /// Whether a feedback line reports something that worked or something that did not.
+    enum FeedbackKind: Equatable {
+        case success, problem
+
+        var symbol: String { self == .success ? "checkmark.circle" : "exclamationmark.triangle.fill" }
+        var tint: Color { self == .success ? LHTheme.secondaryText : LHTheme.warning }
+    }
+
+    private func report(_ message: String, _ kind: FeedbackKind) {
+        feedback = message; feedbackKind = kind
+    }
     private var window: NSWindow?
     private var onClose: (() -> Void)?
     private var closeObserver: NSObjectProtocol?
@@ -109,12 +122,12 @@ enum SupportReportStore {
         let body = Self.messageBody(findings: findings, fileName: url.lastPathComponent)
         guard let service = NSSharingService(named: .composeEmail),
               service.canPerform(withItems: [body, url]) else {
-            feedback = "Aucune app de messagerie n’est configurée. Utilisez « Partager » ou « Enregistrer une copie »."
+            report("Aucune app de messagerie n’est configurée. Utilisez « Partager » ou « Enregistrer une copie ».", .problem)
             return
         }
         service.subject = "Goalong History \(SoftwareUpdateManager.shared.currentVersion) — rapport de diagnostic"
         service.perform(withItems: [body, url])
-        feedback = "Un message avec le rapport en pièce jointe a été préparé. Décrivez le problème, puis envoyez-le."
+        report("Un message avec le rapport en pièce jointe a été préparé. Décrivez le problème, puis envoyez-le.", .success)
     }
 
     func saveCopy() {
@@ -129,16 +142,16 @@ enum SupportReportStore {
             data = try SupportDiagnostics.readPrivateFile(url, maximum: Self.maximumReportBytes)
         } catch {
             SupportDiagnostics.shared.failure(error, component: .support)
-            feedback = "Le rapport n’est plus disponible. Cliquez sur « Actualiser le rapport » puis réessayez."
+            report("Le rapport n’est plus disponible. Cliquez sur « Actualiser le rapport » puis réessayez.", .problem)
             return
         }
         do {
             try SupportReportWriter.write(data, to: destination)
-            feedback = "Copie enregistrée."
+            report("Copie enregistrée.", .success)
             NSWorkspace.shared.activateFileViewerSelecting([destination])
         } catch {
             SupportDiagnostics.shared.failure(error, component: .support)
-            feedback = "La copie n’a pas pu être enregistrée. Essayez un autre dossier."
+            report("La copie n’a pas pu être enregistrée. Essayez un autre dossier.", .problem)
         }
     }
 
@@ -151,11 +164,11 @@ enum SupportReportStore {
 
     func markIssue(journal: SupportDiagnostics = .shared) {
         guard journal.isEnabled else {
-            feedback = "Le journal technique est désactivé : activez-le dans Réglages › Aide et diagnostic pour ajouter un repère."
+            report("Le journal technique est désactivé : activez-le dans Réglages › Aide et diagnostic pour ajouter un repère.", .problem)
             return
         }
         journal.record(.userMarkedIssue, component: .support)
-        feedback = "Repère ajouté à \(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)). Reproduisez le problème puis cliquez sur « Actualiser le rapport »."
+        report("Repère ajouté à \(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)). Reproduisez le problème puis cliquez sur « Actualiser le rapport ».", .success)
     }
 
     func close() { window?.close() }
@@ -198,8 +211,8 @@ struct SupportRequestView: View {
                     detected
                     contents
                     if let feedback = controller.feedback {
-                        Label(feedback, systemImage: "checkmark.circle")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        Label(feedback, systemImage: controller.feedbackKind.symbol)
+                            .font(.system(size: 12)).foregroundStyle(controller.feedbackKind.tint)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("support-feedback")
                     }

@@ -95,7 +95,9 @@ extension GalleryCatalog {
         }
         model.agentActivityRuntime.galleryInstall(
             overview: overview, tokenUsage: usage, analyzedAt: usage == nil ? nil : GalleryClock.at(9, 40), scan: scan,
-            isScanning: state == .loading)
+            isScanning: state == .loading,
+            codexFolder: state == .filled
+                ? AgentWatchedFolder(displayName: ".codex", path: "/Users/demo/.codex", provider: .codex) : nil)
     }
 
     /// Historique › Conversations locales, in the dashboard window.
