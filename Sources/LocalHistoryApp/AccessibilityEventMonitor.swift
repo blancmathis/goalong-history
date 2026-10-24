@@ -10,7 +10,33 @@ private let observationCallback: AXObserverCallback = { _, _, notification, refc
     attachment.owner?.handle(notification: notification as String, generation: attachment.generation)
 }
 
-/// All AX handles, registrations and focus reads belong to the observation thread.
+/// Coalesces a burst of AX notifications on the observation thread, so the main thread
+/// wakes once per burst instead of once per notification. Trailing deadline: the last
+/// notification plus the delay its pending set calls for (fast for structural changes).
+struct AXNotificationCoalescer {
+    private(set) var pending = Set<String>()
+    private(set) var deadline: TimeInterval?
+
+    /// Returns the burst's new deadline.
+    mutating func add(_ notification: String, at now: TimeInterval) -> TimeInterval {
+        pending.insert(notification)
+        let deadline = now + AccessibilityEventMonitor.debounceDelay(for: pending)
+        self.deadline = deadline
+        return deadline
+    }
+
+    /// The burst's trigger once its deadline has passed, else nil.
+    mutating func fire(at now: TimeInterval) -> String? {
+        guard let deadline, now >= deadline else { return nil }
+        let trigger = pending.map(AccessibilityEventMonitor.shortName).sorted().joined(separator: "+")
+        reset()
+        return trigger.isEmpty ? "accessibility_change" : trigger
+    }
+
+    mutating func reset() { pending.removeAll(); deadline = nil }
+}
+
+/// All AX handles, registrations, focus reads and notification coalescing belong to the observation thread.
 final class AXObserverOwner {
     final class Attachment {
         weak var owner: AXObserverOwner?
@@ -27,6 +53,9 @@ final class AXObserverOwner {
     private var observedPID: pid_t?
     private var registeredApplicationNotifications = Set<String>()
     private var registeredFocusedNotifications = Set<String>()
+    private var coalescer = AXNotificationCoalescer()
+    private var coalescingTimer: CFRunLoopTimer?
+    private var publishedCoverage: Bool?
     private let applicationNotifications: [CFString] = [
         kAXFocusedUIElementChangedNotification as CFString, kAXFocusedWindowChangedNotification as CFString,
         kAXWindowCreatedNotification as CFString, kAXTitleChangedNotification as CFString,
@@ -52,6 +81,7 @@ final class AXObserverOwner {
             detachObserver()
             guard let application, !application.isTerminated else { publish(generation, false, nil); return }
             attach(application, generation: generation)
+            publishedCoverage = coverage
             publish(generation, coverage, nil)
         }
     }
@@ -134,6 +164,9 @@ final class AXObserverOwner {
 
         private func detachObserver() {
             attachment?.active = false
+            coalescer.reset()
+            publishedCoverage = nil
+            if let coalescingTimer { CFRunLoopTimerSetNextFireDate(coalescingTimer, Self.parkedFireDate) }
             guard let observer else {
                 applicationElement = nil
                 focusedElement = nil
@@ -167,7 +200,11 @@ final class AXObserverOwner {
         }
 
 
-    func detach() { AXAccess.withBackgroundClient(client) { detachObserver() } }
+    func detach() {
+        AXAccess.withBackgroundClient(client) { detachObserver() }
+        if let coalescingTimer { CFRunLoopTimerInvalidate(coalescingTimer) }
+        coalescingTimer = nil
+    }
     fileprivate func handle(notification: String, generation: UUID) {
         guard let attachment, attachment.active, attachment.generation == generation else { return }
         AXAccess.withBackgroundClient(client) {
@@ -177,21 +214,55 @@ final class AXObserverOwner {
                 refreshFocusedElementNotifications()
             }
         }
-        publish(generation, coverage, notification)
+        // A coverage change still reaches the poll at once; the notification waits for its burst.
+        let coverage = coverage
+        if coverage != publishedCoverage {
+            publishedCoverage = coverage
+            publish(generation, coverage, nil)
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        let deadline = coalescer.add(notification, at: now)
+        CFRunLoopTimerSetNextFireDate(armedCoalescingTimer(), Self.fireDate(for: deadline, now: now))
+    }
+    private static let parkedInterval: CFTimeInterval = 1e9
+    private static var parkedFireDate: CFAbsoluteTime { CFAbsoluteTimeGetCurrent() + parkedInterval }
+    /// Bursts run on the monotonic clock, like the old main-queue delay: a wall-clock step cannot hold a trigger back.
+    private static func fireDate(for deadline: TimeInterval, now: TimeInterval) -> CFAbsoluteTime {
+        CFAbsoluteTimeGetCurrent() + max(0, deadline - now)
+    }
+    /// One timer on this thread's run loop, re-armed per notification and parked far in the future.
+    private func armedCoalescingTimer() -> CFRunLoopTimer {
+        if let coalescingTimer { return coalescingTimer }
+        let timer = CFRunLoopTimerCreateWithHandler(nil, Self.parkedFireDate, Self.parkedInterval, 0, 0) { [weak self] _ in
+            self?.fireCoalescedNotifications()
+        }!
+        CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, .commonModes)
+        coalescingTimer = timer
+        return timer
+    }
+    private func fireCoalescedNotifications() {
+        guard let attachment, attachment.active else { coalescer.reset(); return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let trigger = coalescer.fire(at: now) {
+            publishedCoverage = coverage
+            publish(attachment.generation, coverage, trigger)
+        } else if let deadline = coalescer.deadline, let coalescingTimer {
+            CFRunLoopTimerSetNextFireDate(coalescingTimer, Self.fireDate(for: deadline, now: now))
+        }
     }
 }
 
-/// The main facade owns workspace notifications and debouncing only.
+/// The main facade owns workspace notifications; AX bursts arrive already coalesced.
 final class AccessibilityEventMonitor {
     private let isAccessibilityAvailable: () -> Bool
     private let onChange: (String) -> Void
     private let thread = AXObservationThread()
     private let client: AXClient
-    private lazy var owner = AXObserverOwner(client: client) { [weak self] generation, coverage, notification in
+    private lazy var owner = AXObserverOwner(client: client) { [weak self] generation, coverage, trigger in
         DispatchQueue.main.async { [weak self] in
             guard let self, self.generation == generation else { return }
             self.hasReliableEventCoverage = coverage
-            if let notification { self.handle(notification: notification) }
+            if let trigger { self.onChange(trigger) }
         }
     }
     private var generation = UUID()
@@ -199,8 +270,6 @@ final class AccessibilityEventMonitor {
     private var launchToken: NSObjectProtocol?
     var onApplication: ((NSRunningApplication) -> Void)?
     var observesApplicationLaunches = false
-    private var debounceWorkItem: DispatchWorkItem?
-    private var pendingNotifications = Set<String>()
     private(set) var hasReliableEventCoverage = false
     var canAttemptAttachment: Bool { isAccessibilityAvailable() }
 
@@ -211,7 +280,6 @@ final class AccessibilityEventMonitor {
     deinit {
         if let activationToken { NSWorkspace.shared.notificationCenter.removeObserver(activationToken) }
         if let launchToken { NSWorkspace.shared.notificationCenter.removeObserver(launchToken) }
-        debounceWorkItem?.cancel()
         let owner = owner
         thread.shutdown { owner.detach() }
     }
@@ -241,7 +309,6 @@ final class AccessibilityEventMonitor {
     func stop() {
         generation = UUID()
         hasReliableEventCoverage = false
-        debounceWorkItem?.cancel(); debounceWorkItem = nil; pendingNotifications.removeAll()
         if let activationToken { NSWorkspace.shared.notificationCenter.removeObserver(activationToken) }
         if let launchToken { NSWorkspace.shared.notificationCenter.removeObserver(launchToken) }
         activationToken = nil; launchToken = nil
@@ -249,7 +316,6 @@ final class AccessibilityEventMonitor {
         thread.submit { owner.detach() }
     }
     private func attach(to application: NSRunningApplication?) {
-        debounceWorkItem?.cancel(); debounceWorkItem = nil; pendingNotifications.removeAll()
         generation = UUID()
         hasReliableEventCoverage = false
         let generation = generation
@@ -257,25 +323,12 @@ final class AccessibilityEventMonitor {
         let owner = owner
         thread.submit { owner.attach(to: descriptor, generation: generation) }
     }
-    private func handle(notification: String) {
-        pendingNotifications.insert(notification)
-        debounceWorkItem?.cancel()
-        let generation = generation
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.generation == generation else { return }
-            let trigger = self.pendingNotifications.map(Self.shortName).sorted().joined(separator: "+")
-            self.pendingNotifications.removeAll()
-            self.onChange(trigger.isEmpty ? "accessibility_change" : trigger)
-        }
-        debounceWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.debounceDelay(for: pendingNotifications), execute: work)
-    }
     static func debounceDelay(for notifications: Set<String>) -> TimeInterval {
         let structural = Set([kAXFocusedUIElementChangedNotification as String, kAXFocusedWindowChangedNotification as String,
                               kAXUIElementDestroyedNotification as String, kAXWindowCreatedNotification as String])
         return notifications.isDisjoint(with: structural) ? 1.4 : 0.18
     }
-        private static func shortName(_ notification: String) -> String {
+        static func shortName(_ notification: String) -> String {
             notification
                 .replacingOccurrences(of: "AX", with: "")
                 .replacingOccurrences(of: "Changed", with: "_changed")

@@ -4,9 +4,19 @@
 
     /// macOS `fsync` does not flush the drive cache, so data it "synced" can still be lost or
     /// reordered on power loss. `full` asks the drive itself (F_FULLFSYNC) for the rare writes that
-    /// later state depends on: checkpoints, seals and directory entries. `barrier` (F_BARRIERFSYNC)
-    /// keeps frequent journal syncs cheap while still ordering them before any later write.
+    /// later state depends on: seals, the journal file's creation and their directory entries.
+    /// `barrier` (F_BARRIERFSYNC) keeps frequent syncs cheap while still ordering them before any
+    /// later write: the event journal, and the integrity checkpoint that is rebuilt from it.
     enum DurableSync {
+        enum Kind { case full, barrier }
+
+        static func sync(_ kind: Kind, _ descriptor: Int32) -> Int32 {
+            switch kind {
+            case .full: return full(descriptor)
+            case .barrier: return barrier(descriptor)
+            }
+        }
+
         /// Returns 0 on success, otherwise the errno of the failed sync.
         static func full(_ descriptor: Int32) -> Int32 {
             sync(descriptor, primary: { fcntl($0, F_FULLFSYNC) }, fallback: { fsync($0) })

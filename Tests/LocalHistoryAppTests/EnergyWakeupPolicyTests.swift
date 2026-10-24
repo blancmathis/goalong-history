@@ -66,29 +66,26 @@
 
         // MARK: Blocking fallback poll
 
-        private func blockingInterval(idle: TimeInterval, session: Bool = true, coverage: Bool = true) -> TimeInterval {
-            ContextMonitor.blockingPollInterval(idleSeconds: idle, sessionAvailable: session,
-                                                eventDrivenCoverageAvailable: coverage)
+        private func blockingInterval(idle: TimeInterval, session: Bool = true) -> TimeInterval {
+            ContextMonitor.blockingPollInterval(idleSeconds: idle, sessionAvailable: session)
         }
 
         func testBlockingPollNeverSlowsWhileTheUserActs() {
             for idle in stride(from: 0.0, to: 15, by: 0.5) {
                 XCTAssertEqual(blockingInterval(idle: idle), 0.75, "idle \(idle) s")
-                XCTAssertEqual(blockingInterval(idle: idle, coverage: false), 0.75, "idle \(idle) s")
             }
         }
 
-        func testBlockingPollBacksOffWhenIdleOnlyWithReliableEvents() {
+        func testBlockingPollBacksOffWhenIdle() {
             XCTAssertEqual(blockingInterval(idle: 30), 2)
             XCTAssertGreaterThanOrEqual(blockingInterval(idle: 120), 5)
             XCTAssertGreaterThanOrEqual(blockingInterval(idle: 3_600), 5)
-            // Without AX event coverage the poll is the only detector: it keeps the fast cadence.
-            XCTAssertEqual(blockingInterval(idle: 3_600, coverage: false), 0.75)
+            // R49 (E1): the back-off no longer depends on AX coverage; app activation stays immediate.
         }
 
         func testBlockingPollNearlyStopsWhileLockedAndResumesAtOnce() {
             XCTAssertGreaterThanOrEqual(blockingInterval(idle: 0, session: false), 60)
-            XCTAssertGreaterThanOrEqual(blockingInterval(idle: 600, session: false, coverage: false), 60)
+            XCTAssertGreaterThanOrEqual(blockingInterval(idle: 600, session: false), 60)
             // Back from the lock with fresh input: fast again (unlock also calls resetAndSample()).
             XCTAssertEqual(blockingInterval(idle: 0, session: true), 0.75)
         }

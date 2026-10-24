@@ -30,6 +30,8 @@ enum ForegroundSessionAvailability {
 struct HostCaptureGate {
     var sessionAvailable: () -> Bool
     var secureInput: () -> Bool
+    /// Sets the poll cadence. Tests pin it: a CI runner gets no input and looks idle for hours.
+    var secondsSinceLastInput: () -> TimeInterval = { UserInputActivityClock.secondsSinceLastInput() }
     static let live = HostCaptureGate(
         sessionAvailable: { ForegroundSessionAvailability.isAvailable() },
         secureInput: { IsSecureEventInputEnabled() })

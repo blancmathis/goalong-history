@@ -198,8 +198,7 @@
             guard pollingIsActive,
                   let interval = blockingObservationEnabled ? Self.blockingPollInterval(
                 idleSeconds: idleSeconds(),
-                sessionAvailable: blockingSessionAvailable,
-                eventDrivenCoverageAvailable: eventDrivenCoverageAvailable
+                sessionAvailable: blockingSessionAvailable
             ) : Self.nextPollInterval(
                 configuredInterval: configuredInterval,
                 idleSeconds: idleSeconds(),
@@ -256,15 +255,14 @@
 
         /// Fallback poll while blocking observation is on. App activation, launches and AX
         /// title/focus events stay immediate, so the poll only covers missed events: it keeps
-        /// 0.75 s after recent input or without reliable AX coverage, backs off when the user is
-        /// idle, and nearly stops while the session is locked or every display sleeps.
+        /// 0.75 s after input in the last 15 s, backs off when the user is idle (with or without
+        /// AX coverage: an idle user starts nothing new to block), and nearly stops while the
+        /// session is locked or every display sleeps.
         static func blockingPollInterval(
             idleSeconds: TimeInterval,
-            sessionAvailable: Bool,
-            eventDrivenCoverageAvailable: Bool
+            sessionAvailable: Bool
         ) -> TimeInterval {
             guard sessionAvailable else { return blockingSuspendedPollInterval }
-            guard eventDrivenCoverageAvailable else { return blockingActivePollInterval }
             let idle = max(0, idleSeconds)
             if idle < 15 { return blockingActivePollInterval }
             if idle < 60 { return 2 }
@@ -272,8 +270,9 @@
         }
 
         /// The event tap, workspace notifications and AX observers remain immediate.
-        /// This timer is only their fallback, so it can back off when the user is idle
-        /// while retaining the configured high-frequency sampling during active input.
+        /// This timer is only their fallback, so it backs off when the user is idle. During
+        /// active input it keeps the configured cadence only without reliable AX coverage;
+        /// with coverage, AX events report the changes and the poll stays at 2 s or slower.
         static func nextPollInterval(
             configuredInterval: TimeInterval,
             idleSeconds: TimeInterval,
@@ -295,10 +294,13 @@
             default:
                 break
             }
-            guard eventDrivenCoverageAvailable else { return base }
-
             let idle = max(0, idleSeconds)
-            if idle < 3 { return base }
+            guard eventDrivenCoverageAvailable else {
+                if idle < 15 { return base }
+                if idle < 60 { return min(45.0, max(base, 2.0)) }
+                return min(45.0, max(base, 5.0))
+            }
+
             if idle < 15 { return min(45.0, max(base, 2.0)) }
             if idle < 60 { return min(45.0, max(base, 5.0)) }
             if idle < 300 { return min(45.0, max(base, 15.0)) }
@@ -556,7 +558,7 @@
             recorder.record(kind: .diagnostic, metadata: ["goalong.focus.limit": mark.kind, "goalong.focus.period": mark.period], timestamp: mark.at)
         }
         private func idleSeconds() -> Double {
-            UserInputActivityClock.secondsSinceLastInput()
+            hostGate.secondsSinceLastInput()
         }
     }
 #endif

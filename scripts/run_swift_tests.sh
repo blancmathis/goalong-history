@@ -1,7 +1,7 @@
 #!/bin/bash
 # One entry for the three ways to run the Swift tests on this Mac (see `make check|test|test-ui`).
 #   check [FILTER]  fast loop: incremental build + filtered tests, slow tests left out
-#   full            whole suite, then the skipped-test report (unknown skip = failure)
+#   full [ARGS]     whole suite (ARGS go to swift test, e.g. --sanitize=thread), then the skipped-test report
 #   ui              render and AX opt-ins (GOALONG_*_SNAPSHOTS, *_UI_TESTS), no visible window
 # Every mode runs in a throwaway HOME, so no test can read or write the real LocalHistory folder or
 # leave preference files in ~/Library/Preferences. Set GOALONG_TESTS_VISIBLE=1 to watch windows.
@@ -155,7 +155,7 @@ case "$mode" in
     ;;
   full)
     report_screen
-    swift_test; status=$?
+    swift_test "$@"; status=$?   # extra swift test flags, e.g. --sanitize=thread --scratch-path .build-tsan
     echo "----"
     python3 scripts/skip_report.py "$log"; report=$?
     elapsed

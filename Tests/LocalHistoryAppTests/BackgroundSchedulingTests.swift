@@ -193,14 +193,14 @@
             )
         }
 
-        func testContextPollingPreservesConfiguredCadenceDuringActiveInput() {
+        func testContextPollingPreservesConfiguredCadenceDuringActiveInputWithoutCoverage() {
             XCTAssertEqual(
                 ContextMonitor.nextPollInterval(
                     configuredInterval: 0.65,
                     idleSeconds: 2.9,
                     isCapturing: true,
                     suppressionReason: nil,
-                    eventDrivenCoverageAvailable: true
+                    eventDrivenCoverageAvailable: false
                 ) ?? -1,
                 0.65,
                 accuracy: 0.001
@@ -331,7 +331,7 @@
             XCTAssertEqual(
                 ContextMonitor.nextPollInterval(
                     configuredInterval: 0.65,
-                    idleSeconds: 600,
+                    idleSeconds: 14,
                     isCapturing: true,
                     suppressionReason: nil,
                     eventDrivenCoverageAvailable: false

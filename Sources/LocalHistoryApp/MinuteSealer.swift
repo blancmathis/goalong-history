@@ -771,6 +771,10 @@
             return queue.sync(execute: operation)
         }
 
+        /// A seal is the durable proof of its minute: its full sync also flushes the drive cache
+        /// for the minute's journal rows and checkpoint, which the durability barrier wrote before it.
+        static let sealSync = DurableSync.Kind.full
+
         static func appendJSONLine<T: Encodable>(
             _ value: T,
             to url: URL,
@@ -892,7 +896,7 @@
                 }
             }
 
-            let fileSyncCode = DurableSync.full(descriptor)
+            let fileSyncCode = DurableSync.sync(sealSync, descriptor)
             if fileSyncCode != 0 {
                 throw MinuteSealPersistenceError.durabilityUncertain(
                     posixError(path: url.path, code: fileSyncCode).localizedDescription
@@ -901,7 +905,7 @@
             durabilityObserver?(.fileSynchronized)
 
             if parentDirectoryNeedsSynchronization {
-                let directorySyncCode = DurableSync.full(directoryDescriptor)
+                let directorySyncCode = DurableSync.sync(sealSync, directoryDescriptor)
                 if directorySyncCode != 0 {
                     throw MinuteSealPersistenceError.durabilityUncertain(
                         posixError(path: directoryURL.path, code: directorySyncCode).localizedDescription
