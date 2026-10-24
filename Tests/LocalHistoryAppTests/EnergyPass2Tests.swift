@@ -125,6 +125,9 @@
                 "Sources/LocalHistoryApp/AccessibilityEventMonitor.swift"), encoding: .utf8)
             XCTAssertFalse(source.contains("DispatchQueue.main.asyncAfter"))
             XCTAssertTrue(source.contains("coalescer.add(notification"))
+            // Burst deadlines use the monotonic clock: a wall-clock step back must not hold a trigger.
+            XCTAssertFalse(source.contains("(at: CFAbsoluteTimeGetCurrent())"))
+            XCTAssertTrue(source.contains("ProcessInfo.processInfo.systemUptime"))
         }
     }
 #endif

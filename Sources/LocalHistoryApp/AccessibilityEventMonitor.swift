@@ -220,11 +220,16 @@ final class AXObserverOwner {
             publishedCoverage = coverage
             publish(generation, coverage, nil)
         }
-        let deadline = coalescer.add(notification, at: CFAbsoluteTimeGetCurrent())
-        CFRunLoopTimerSetNextFireDate(armedCoalescingTimer(), deadline)
+        let now = ProcessInfo.processInfo.systemUptime
+        let deadline = coalescer.add(notification, at: now)
+        CFRunLoopTimerSetNextFireDate(armedCoalescingTimer(), Self.fireDate(for: deadline, now: now))
     }
     private static let parkedInterval: CFTimeInterval = 1e9
     private static var parkedFireDate: CFAbsoluteTime { CFAbsoluteTimeGetCurrent() + parkedInterval }
+    /// Bursts run on the monotonic clock, like the old main-queue delay: a wall-clock step cannot hold a trigger back.
+    private static func fireDate(for deadline: TimeInterval, now: TimeInterval) -> CFAbsoluteTime {
+        CFAbsoluteTimeGetCurrent() + max(0, deadline - now)
+    }
     /// One timer on this thread's run loop, re-armed per notification and parked far in the future.
     private func armedCoalescingTimer() -> CFRunLoopTimer {
         if let coalescingTimer { return coalescingTimer }
@@ -237,11 +242,12 @@ final class AXObserverOwner {
     }
     private func fireCoalescedNotifications() {
         guard let attachment, attachment.active else { coalescer.reset(); return }
-        if let trigger = coalescer.fire(at: CFAbsoluteTimeGetCurrent()) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let trigger = coalescer.fire(at: now) {
             publishedCoverage = coverage
             publish(attachment.generation, coverage, trigger)
         } else if let deadline = coalescer.deadline, let coalescingTimer {
-            CFRunLoopTimerSetNextFireDate(coalescingTimer, deadline)
+            CFRunLoopTimerSetNextFireDate(coalescingTimer, Self.fireDate(for: deadline, now: now))
         }
     }
 }
