@@ -92,8 +92,6 @@
             case .activity:
                 ActivityPage(
                     model: model,
-                    initialMode: .computerHistory,
-                    showsModePicker: false
                 )
             case .screenTime:
                 GoalongScreenTimePage(model: model)

@@ -79,8 +79,6 @@
             case .computer:
                 ActivityPage(
                     model: model,
-                    initialMode: .computerHistory,
-                    showsModePicker: false,
                     showsHeader: false
                 )
             case .screenTime:

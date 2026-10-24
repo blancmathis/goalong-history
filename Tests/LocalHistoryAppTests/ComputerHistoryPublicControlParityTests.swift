@@ -49,11 +49,6 @@
                     .appendingPathComponent("Sources/LocalHistoryApp/ComputerHistoryPage.swift"),
                 encoding: .utf8
             )
-            let timeline = try String(
-                contentsOf: repositoryRoot
-                    .appendingPathComponent("Sources/LocalHistoryApp/ActivityPageExplorer.swift"),
-                encoding: .utf8
-            )
             let privacy = try String(
                 contentsOf: repositoryRoot
                     .appendingPathComponent("Sources/LocalHistoryApp/PrivacyPage.swift"),
@@ -80,19 +75,13 @@
             XCTAssertTrue(computerHistory.contains("Les autres jours sont inchangés"))
             XCTAssertTrue(computerHistory.contains(".disabled(!canRevealSourceData)"))
             XCTAssertTrue(computerHistory.contains("@StateObject private var timelineModel"))
-            XCTAssertTrue(timeline.contains("Supprimer la session…"))
             XCTAssertTrue(privacy.contains("Dernière session d’application"))
             // Every session-delete alert states the whole-day derived erasure.
-            let explorer = try String(
-                contentsOf: repositoryRoot
-                    .appendingPathComponent("Sources/LocalHistoryApp/ActivityPageExplorer.swift"),
-                encoding: .utf8
-            )
-            for copy in [explorer, privacy] {
+            for copy in [privacy] {
                 XCTAssertTrue(copy.contains("les appels et l’activité de développement de ce jour sont aussi effacés"))
                 XCTAssertTrue(copy.contains("La note du jour, les sceaux"))
             }
-            XCTAssertFalse(explorer.contains("Seuls les événements locaux de cette session"))
+            XCTAssertFalse(privacy.contains("Seuls les événements locaux de cette session"))
             XCTAssertTrue(activity.contains("openSourceJSON: model.revealTodayJSON"))
             XCTAssertTrue(activity.contains("snapshotGeneration: model.snapshotGeneration"))
             XCTAssertTrue(activity.contains("isSnapshotLoading: model.isRefreshing"))

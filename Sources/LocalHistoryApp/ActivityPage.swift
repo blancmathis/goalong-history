@@ -6,39 +6,22 @@
         @ObservedObject var model: DashboardViewModel
         @Environment(\.accessibilityReduceMotion) var reduceMotion
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
-        @StateObject var analysisModel = ActivityAnalysisPageModel()
         @StateObject var computerHistoryModel = ComputerHistoryPageModel()
         @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey)
         var richContextEnabled = false
-        @AppStorage(ActivityAnalysisPreferences.agentTokenBudgetKey)
-        var agentTokenBudget = 1_600
-        @State var expandedBlockID: String?
-        @State var showRichContextConfirmation = false
-        @State var mode: ActivityMode
 
-        private let showsModePicker: Bool
         private let showsHeader: Bool
-
-        let metricColumns = [
-            GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
-        ]
 
         init(
             model: DashboardViewModel,
-            initialMode: ActivityMode = .appsAndSites,
-            showsModePicker: Bool = true,
             showsHeader: Bool = true
         ) {
             self.model = model
-            _mode = State(initialValue: initialMode)
-            self.showsModePicker = showsModePicker
             self.showsHeader = showsHeader
         }
 
         var body: some View {
-            if mode == .computerHistory {
-                SourceAccessGate(capability: .localComputerHistory) { pageBody }
-            } else { pageBody }
+            SourceAccessGate(capability: .localComputerHistory) { pageBody }
         }
 
         private var pageBody: some View {
@@ -47,24 +30,10 @@
                     header
                 }
 
-                if showsModePicker {
-                    Picker("Vue de l’activité", selection: $mode) {
-                        ForEach(ActivityMode.allCases) { item in
-                            Text(item.title).tag(item)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 590)
-                }
-
                 Group {
-                    switch mode {
-                    case .appsAndSites:
-                        MonitoringRulesList(model: model)
-                    case .computerHistory:
-                        if !consents.isEnabled(.localComputerHistory) {
-                            ComputerHistoryActivationCard(model: model)
-                        } else {
+                    if !consents.isEnabled(.localComputerHistory) {
+                        ComputerHistoryActivationCard(model: model)
+                    } else {
                         ComputerHistoryPage(
                             model: computerHistoryModel,
                             day: model.selectedDay,
@@ -80,11 +49,6 @@
                                 )
                             }
                         )
-                        }
-                    case .dayRecap:
-                        recapBody
-                    case .timeline:
-                        ActivityTimelineExplorer(model: model)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -97,76 +61,24 @@
                 refreshVisibleAnalysis(day: model.selectedDay)
             }
             .onChange(of: model.selectedDay) { day in
-                expandedBlockID = nil
                 computerHistoryModel.clearAnswer()
                 refreshVisibleAnalysis(day: day)
             }
             .onChange(of: consents.document) { _ in
                 refreshVisibleAnalysis(day: model.selectedDay)
             }
-            .onChange(of: mode) { _ in
-                refreshVisibleAnalysis(day: model.selectedDay)
-            }
-            .onChange(of: agentTokenBudget) { _ in
-                if mode == .dayRecap {
-                    analysisModel.refresh(day: model.selectedDay, forceRebuild: true)
-                }
-            }
             .onChange(of: richContextEnabled) { _ in
                 ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
-                if mode == .dayRecap {
-                    analysisModel.refresh(day: model.selectedDay, forceRebuild: true)
-                }
             }
             .onChange(of: model.historyDeletionGeneration) { _ in
                 refreshVisibleAnalysis(day: model.selectedDay, forceRebuild: true)
-            }
-            .alert("Activer le texte affiché ?", isPresented: $showRichContextConfirmation) {
-                Button("Annuler", role: .cancel) {}
-                Button("Activer le texte affiché") {
-                    richContextEnabled = true
-                }
-            } message: {
-                Text(
-                    "\(ProductIdentity.displayName) will store selected and visible text exposed by macOS Accessibility for eligible foreground windows. It will not decode keystrokes and will still respect your private browsing setting, exclusions and secure fields. Turning it off later stops future snapshots; existing snapshots follow your normal local retention and deletion controls."
-                )
-            }
-        }
-
-        var recapBody: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    if let analysis = analysisModel.analysis {
-                        headlineCard(analysis)
-                        metrics(analysis)
-
-                        HStack(alignment: .top, spacing: 14) {
-                            focusBlocksCard(analysis)
-                                .frame(minWidth: 500, maxWidth: .infinity)
-                            VStack(spacing: 14) {
-                                sitesCard(analysis)
-                                requestsCard(analysis)
-                            }
-                            .frame(minWidth: 330, idealWidth: 370, maxWidth: 430)
-                        }
-
-                        agentBriefCard(analysis)
-                        richContextCard(analysis)
-                        evidenceCard
-                    } else if analysisModel.isLoading {
-                        loadingState
-                    } else {
-                        emptyState
-                    }
-                }
-                .padding(.bottom, 8)
             }
         }
 
         var header: some View {
             PageHeader(
-                title: mode == .computerHistory ? "Historique de ce Mac" : "Activity",
-                subtitle: headerSubtitle
+                title: "Historique de ce Mac",
+                subtitle: "Consultez l’activité enregistrée par tranches de 10 minutes, sans résumé généré par IA."
             ) {
                 HStack(spacing: 10) {
                     DateSelectionControl(
@@ -186,7 +98,7 @@
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
                     .disabled(analysesLoading)
-                    .help(refreshHelp)
+                    .help("Actualiser l’activité enregistrée")
                     .accessibilityLabel("Actualiser")
                 }
             }
@@ -194,155 +106,12 @@
 
         private var analysesLoading: Bool {
             model.isRefreshing
-                || (mode == .computerHistory && computerHistoryModel.isLoading)
-                || (mode == .dayRecap && analysisModel.isLoading)
-        }
-
-        private var refreshHelp: String {
-            mode == .dayRecap
-                ? "Actualiser l’activité et reconstruire le récapitulatif"
-                : "Actualiser l’activité enregistrée"
-        }
-
-        private var headerSubtitle: String {
-            switch mode {
-            case .appsAndSites:
-                return "Voyez chaque app et site observé, puis choisissez ce que Goalong peut suivre à l’avenir."
-            case .computerHistory:
-                return "Consultez l’activité enregistrée par tranches de 10 minutes, sans résumé généré par IA."
-            case .dayRecap:
-                return "Consultez le résumé compact utilisé par les agents, à côté de l’historique complet."
-            case .timeline:
-                return "Inspectez les événements exacts, les coupures, les catégories et les signaux d’intégrité, dans l’ordre chronologique."
-            }
+                || computerHistoryModel.isLoading
         }
 
         private func refreshVisibleAnalysis(day: Date, forceRebuild: Bool = false) {
-            switch mode {
-            case .computerHistory:
-                guard consents.isEnabled(.localComputerHistory) else { return }
-                computerHistoryModel.refresh(day: day, forceRebuild: forceRebuild)
-            case .dayRecap:
-                analysisModel.refresh(day: day, forceRebuild: forceRebuild)
-            case .appsAndSites, .timeline:
-                break
-            }
-        }
-
-        func headlineCard(_ analysis: ActivityDayAnalysis) -> some View {
-            LHCard(padding: 20) {
-                HStack(alignment: .center, spacing: 17) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(analysis.headline)
-                            .font(LHTheme.sectionTitleFont)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(
-                            "\(analysis.coverage.sourceEventCount.formatted()) événements bruts résumés en \(analysis.coverage.representativeMinuteCount.formatted()) minutes significatives. L’historique complet reste disponible dans son onglet."
-                        )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 16)
-                    StatusPill(
-                        title: "~\(analysis.estimatedAgentTokens.formatted()) agent tokens",
-                        symbol: "leaf.fill",
-                        tint: LHTheme.success
-                    )
-                }
-            }
-        }
-
-        func metrics(_ analysis: ActivityDayAnalysis) -> some View {
-            LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 12) {
-                MetricCard(
-                    title: "ACTIVE",
-                    value: duration(analysis.activeSeconds),
-                    detail: "Minutes représentatives au premier plan",
-                    symbol: "clock.fill",
-                    tint: LHTheme.teal
-                )
-                MetricCard(
-                    title: "FOCUS BLOCKS",
-                    value: "\(analysis.focusBlocks.count)",
-                    detail: "Compact task digest",
-                    symbol: "rectangle.3.group.fill",
-                    tint: LHTheme.accent
-                )
-                MetricCard(
-                    title: "SITES / PAGES",
-                    value: "\(analysis.sites.count) / \(analysis.sites.reduce(0) { $0 + $1.pageCount })",
-                    detail: "Chaque site détecté et page nettoyée",
-                    symbol: "globe",
-                    tint: LHTheme.privateTint
-                )
-                MetricCard(
-                    title: "WEB CLICKS",
-                    value: "\(analysis.sites.reduce(0) { $0 + $1.clickCount })",
-                    detail: "Accessible targets plus unlabelled positions",
-                    symbol: "cursorarrow.click",
-                    tint: LHTheme.warning
-                )
-            }
-        }
-
-        var loadingState: some View {
-            LHCard {
-                GoalongPageLoadingView(title: "Préparation du résumé de la journée…",
-                    message: "Les événements sont regroupés localement en minutes, sites, pages et périodes de concentration.")
-                    .accessibilityIdentifier("day-analysis-page-loading")
-            }
-        }
-
-        var emptyState: some View {
-            LHCard {
-                EmptyStateView(
-                    symbol: "sparkles.rectangle.stack",
-                    title: "Pas encore d’activité à analyser",
-                    message: analysisModel.errorMessage
-                        ?? "Laissez Goalong actif : le récapitulatif se construira automatiquement avec votre activité.",
-                    buttonTitle: "Réessayer",
-                    action: { analysisModel.refresh(day: model.selectedDay) }
-                )
-                .frame(minHeight: 320)
-            }
-        }
-
-        func compactEmpty(symbol: String, title: String) -> some View {
-            HStack(spacing: 9) {
-                Image(systemName: symbol)
-                    .foregroundStyle(.secondary)
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(11)
-            .background(
-                Color.primary.opacity(0.03),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-            )
-        }
-
-        func duration(_ seconds: Int) -> String {
-            DashboardFormatters.duration(seconds: TimeInterval(seconds))
-        }
-    }
-
-    enum ActivityMode: String, CaseIterable, Identifiable {
-        case appsAndSites
-        case computerHistory
-        case dayRecap
-        case timeline
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .appsAndSites: return "Apps & websites"
-            case .computerHistory: return "Historique de ce Mac"
-            case .dayRecap: return "Day recap"
-            case .timeline: return "Raw timeline"
-            }
+            guard consents.isEnabled(.localComputerHistory) else { return }
+            computerHistoryModel.refresh(day: day, forceRebuild: forceRebuild)
         }
     }
 #endif
