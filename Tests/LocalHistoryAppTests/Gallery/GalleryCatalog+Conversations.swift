@@ -37,7 +37,7 @@ extension GalleryCatalog {
             visibleMessages: (0..<(prompts + replies)).map { offset in
                 .init(role: offset.isMultiple(of: 2) ? .user : .assistantFinal,
                       text: offset.isMultiple(of: 2) ? (title.isEmpty ? "Question sans titre" : title) : "Voici une proposition.",
-                      timestamp: GalleryClock.at(hour - 1, minute + offset % 10))
+                      timestamp: GalleryClock.calendar.date(byAdding: .minute, value: offset % 10, to: GalleryClock.at(hour - 1, minute))!)
             })
         summary.tokenUsage = usage
         summary.projectPath = project
@@ -61,7 +61,9 @@ extension GalleryCatalog {
                 conversation(5, .codex, "", 7, 10, prompts: 1, replies: 1, tokens: [("gpt-5.5", 8_200, 900)]),
             ]
         case .projects:
-            // The same day, with the folder each conversation ran in: « Agents et code » groups them by project.
+            // The same day, with the folder each conversation ran in: « Agents et code » groups them by project. A scan
+            // of a finished day reads each file for that day (`analysisInterval`); without it the figures show as partial.
+            let day = GalleryClock.calendar.dateInterval(of: .day, for: GalleryClock.today)
             return [
                 conversation(1, .codex, "Planifier la migration du module Atlas", 9, 12, prompts: 7, replies: 7,
                              project: "/galerie/projets/atlas", tokens: [("gpt-5.5", 182_400, 21_300)]),
@@ -73,7 +75,7 @@ extension GalleryCatalog {
                              project: "/galerie/projets/atlas", tokens: [("claude-sonnet-5-5", 14_500, 2_100)]),
                 conversation(5, .codex, "Vérifier une idée sans dossier de projet", 7, 10, prompts: 1, replies: 1,
                              tokens: [("gpt-5.5", 8_200, 900)]),
-            ]
+            ].map { record in var scoped = record; scoped.analysisInterval = day; return scoped }
         case .partial:
             return [
                 conversation(1, .codex, "Planifier la migration du module Atlas", 9, 12, prompts: 7, replies: 7, complete: false,

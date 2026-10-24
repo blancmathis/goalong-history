@@ -59,9 +59,12 @@ extension GalleryCatalog {
         dashboard("activite/detail-sommeil", section: .overview, sizes: [.full(1240)], fixture: .classified,
                   note: "vue « Sommeil et activité » : import Apple Santé du jour, phases du sommeil, pas et une séance",
                   prepare: { ctx in
+            // The import is the entry's own: no other image of the same day may find a Health file. The reset before
+            // each entry removes the whole data folder; this also covers a shard killed and resumed on this entry.
+            let health = AppPaths.applicationSupportDirectory.appendingPathComponent("health")
+            try? FileManager.default.removeItem(at: health)
             try installHealthImport()
-            // The import is the entry's own: no other image of the same day may find a Health file.
-            ctx.cleanups.append { try? FileManager.default.removeItem(at: AppPaths.applicationSupportDirectory.appendingPathComponent("health")) }
+            ctx.cleanups.append { try? FileManager.default.removeItem(at: health) }
             GoalongAnalyticsPage.galleryDetail = .sleep
             ctx.cleanups.append { GoalongAnalyticsPage.galleryDetail = nil }
         })
