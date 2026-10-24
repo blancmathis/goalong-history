@@ -426,6 +426,26 @@ extension ConcentrationControllerTests {
         XCTAssertEqual(try s.sessions(BlockingController.dayKey(now)).first { $0.id == id }?.events.last?.kind, .stop)
         XCTAssertNil(try s.pendingStopTombstone())
     }
+    /// R34-04: a time-zone change or a wake recomputes the evening prompt once, with the new zone.
+    @MainActor func testTimeZoneChangeRecomputesTheEveningPromptWithoutDuplicates() throws {
+        let previousZone = NSTimeZone.default
+        NSTimeZone.default = TimeZone(identifier: "Europe/Paris")!
+        addTeardownBlock { NSTimeZone.default = previousZone }
+        let s = store()
+        var settings = FocusSettings(); settings.morningPrompt = false; settings.eveningPrompt = true; try s.saveSettings(settings)
+        let now = Date(timeIntervalSince1970: 1_791_216_000)   // 2026-10-05 16:00 UTC: 18:00 in Paris (evening at 18:30), 20:00 in Dubai
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: .autoupdatingCurrent, runsTimers: true)
+        defer { c.shutdown() }
+        var shown = 0
+        c.onPanelChange = { if $0?.kind == .evening { shown += 1 } }
+        c.refresh(); XCTAssertEqual(shown, 0)
+        NSTimeZone.default = TimeZone(identifier: "Asia/Dubai")!
+        NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+        XCTAssertEqual(shown, 1)
+        NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertEqual(shown, 1)
+    }
     /// R3-017: the retry runs from its own timer, without observe() or a user action.
     @MainActor func testStorageRetryIsScheduledWhileTheLatchIsSet() throws {
         let s = store(); try quiet(s)

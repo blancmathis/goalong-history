@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import Combine
 import Foundation
 import LocalHistoryCore
@@ -65,6 +66,8 @@ struct FocusPanel: Equatable {
     private let audio: FocusSessionAudio
     private let runsTimers: Bool
     private var timer: Timer?
+    private var systemObservers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
     private var detection = FocusDetection()
     private var observation: FocusObservation?
     private var latestInput: Date?
@@ -150,6 +153,23 @@ struct FocusPanel: Equatable {
             if blocking()?.activeBlocks.contains(where: { $0.id == id }) == true { phaseBlockID = id; phaseBlockKey = phaseKey(p) }
         }
         try reconcileCommitmentBlocks(); refresh()
+        observeClockChanges()
+    }
+    /// A zone change or a wake moves the evening prompt and the end-of-day limit; the timer was set with the old ones.
+    /// `refresh` recomputes both from the live calendar and shows each prompt once (`promptState` keeps what was shown).
+    private func observeClockChanges() {
+        guard runsTimers else { return }
+        for name in [Notification.Name.NSSystemTimeZoneDidChange, .NSSystemClockDidChange] {
+            systemObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                if name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
+                MainActor.assumeIsolated { self?.refresh() }
+            })
+        }
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+            workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refresh() }
+            })
+        }
     }
     private func loadDay(_ day: String) throws {
         sessions = try store.sessions(day); plan = try store.plan(day) ?? FocusPlan(day: day); review = try store.review(day)
@@ -625,6 +645,8 @@ struct FocusPanel: Equatable {
         flushPendingStop()
         if let value = currentSession, !hasLockedPhaseBlock { try? finish(value, at: clock(), reason: .moduleDisabled) }
         timer?.invalidate(); timer = nil; audio.stop(); showPanel(nil); observation = nil; detection.reset()
+        systemObservers.forEach(NotificationCenter.default.removeObserver); systemObservers.removeAll()
+        workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); workspaceObservers.removeAll()
     }
 }
 
