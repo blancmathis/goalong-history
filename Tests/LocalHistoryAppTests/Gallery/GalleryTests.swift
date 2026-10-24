@@ -120,7 +120,7 @@ final class GalleryTests: XCTestCase {
             "screenScale": Double(screen?.backingScaleFactor ?? 0), "windowScale": Double(probe.backingScaleFactor),
             "locale": Locale.current.identifier, "timeZone": TimeZone.current.identifier,
             "clock": GalleryClock.now.timeIntervalSince1970,
-            "clockProbe": ProcessInfo.processInfo.environment["GOALONG_GALLERY_CLOCK_PROBE"] == "1",
+            "clockProbe": GalleryClock.probeDays,
             "guards": GoalongGalleryGuardsInstalled(),
         ]
         try JSONSerialization.data(withJSONObject: info, options: [.sortedKeys]).write(to: url, options: .atomic)
