@@ -171,6 +171,14 @@ extension SMAppService: GuardServiceControlling {}
 
 enum GuardPingOutcome { case running, unreachable, notArmed }
 
+/// The launchd side of an escalation round: XPC ping, SIGCONT scan, `launchctl kickstart`. nil in the
+/// app (the real calls); fakes in tests, which then drive the client's own wiring through update().
+struct GuardLaunchProbes: Sendable {
+    var ping: @Sendable () -> GuardPingOutcome
+    var resumeStoppedGuards: @Sendable () -> Bool
+    var kickstart: @Sendable () -> Int32?
+}
+
 /// One escalation round of a guard that does not answer, every side effect injected (tests drive it
 /// with fakes). Status first: an intentional unregister or a switch-off in Login Items is never undone.
 /// Then ping → resume a stopped guard → kickstart once per arming → re-register once per build →
@@ -251,14 +259,17 @@ struct GuardEscalation {
     private let defaults: UserDefaults
     private let build: String
     private let overrideActive: @Sendable () -> Bool
+    private let probes: GuardLaunchProbes?
+    private let pingInterval: TimeInterval
     fileprivate nonisolated let guardExecutable: String
     fileprivate nonisolated let queue = DispatchQueue(label: "ai.goalong.guard-client", qos: .utility)
     private var status: SMAppService.Status?
     private var statusRead = Date.distantPast
-    private var working = false
+    private(set) var isWorking = false
     private var armed = false
     private var lastPing = Date.distantPast
-    private var component: BlockingProtectionState.Component = .notInstalled
+    /// The badge state of the last update or finished round.
+    private(set) var component: BlockingProtectionState.Component = .notInstalled
     /// register() failed in this launch: no retry until the next launch (an unsigned copy would loop).
     private var registerFailed = false
     /// `launchctl kickstart` already ran for this arming.
@@ -282,8 +293,11 @@ struct GuardEscalation {
 
     init(identity: GuardIdentity, defaults: UserDefaults,
          overrideActive: @escaping @Sendable () -> Bool = { GoalongGuardFiles.overrideActive() },
-         service: (any GuardServiceControlling)? = nil) {
+         service: (any GuardServiceControlling)? = nil, probes: GuardLaunchProbes? = nil,
+         pingInterval: TimeInterval = GoalongGuardClient.pingInterval) {
         self.identity = identity
+        self.probes = probes
+        self.pingInterval = pingInterval
         self.service = service ?? SMAppService.agent(plistName: identity.plistName)
         self.defaults = defaults
         self.overrideActive = overrideActive
@@ -324,7 +338,7 @@ struct GuardEscalation {
             return component
         }
         stopWatch.setActive(true)
-        guard !working else { return component }
+        guard !isWorking else { return component }
         switch status {
         case nil:
             readStatus()
@@ -336,9 +350,9 @@ struct GuardEscalation {
             work { client in client.registerThenPing() }
         case .requiresApproval?:
             component = .awaitingApproval
-            if Date().timeIntervalSince(statusRead) > Self.pingInterval { readStatus() }
+            if Date().timeIntervalSince(statusRead) > pingInterval { readStatus() }
         case .enabled?:
-            if Date().timeIntervalSince(lastPing) >= Self.pingInterval {
+            if Date().timeIntervalSince(lastPing) >= pingInterval {
                 lastPing = Date()
                 work { client in client.pingEscalating() }
             }
@@ -353,7 +367,7 @@ struct GuardEscalation {
         closeConnection()
         defaults.removeObject(forKey: Self.registeredBuildKey)
         let service = service
-        working = true
+        isWorking = true
         queue.async { [weak self] in
             try? service.unregister()
             let next = service.status
@@ -393,8 +407,8 @@ struct GuardEscalation {
     }
 
     private func readStatus() {
-        guard !working else { return }
-        working = true
+        guard !isWorking else { return }
+        isWorking = true
         let service = service
         queue.async { [weak self] in
             let next = service.status
@@ -406,8 +420,8 @@ struct GuardEscalation {
     }
 
     private func work(_ job: @escaping @Sendable (Worker) -> (SMAppService.Status, BlockingProtectionState.Component)) {
-        working = true
-        let worker = Worker(service: service, label: identity.label, client: self, overrideActive: overrideActive)
+        isWorking = true
+        let worker = Worker(service: service, label: identity.label, client: self, overrideActive: overrideActive, probes: probes)
         queue.async { [weak self] in
             let (next, component) = job(worker)
             DispatchQueue.main.async { self?.finish(status: next, component: component) }
@@ -415,7 +429,7 @@ struct GuardEscalation {
     }
 
     private func finish(status next: SMAppService.Status, component next2: BlockingProtectionState.Component) {
-        working = false
+        isWorking = false
         let changed = status != next || component != next2
         status = next; statusRead = Date(); component = armed ? next2 : .notInstalled
         if next == .enabled, defaults.string(forKey: Self.registeredBuildKey) == nil { defaults.set(build, forKey: Self.registeredBuildKey) }
@@ -452,7 +466,7 @@ struct GuardEscalation {
     fileprivate func noteNotArmed() {
         guard armed, !notArmedRetried else { return }
         notArmedRetried = true
-        lastPing = Date().addingTimeInterval(-Self.pingInterval + 3)
+        lastPing = Date().addingTimeInterval(-pingInterval + 3)
     }
 
     fileprivate func connectionLost() {
@@ -467,6 +481,7 @@ struct GuardEscalation {
         let label: String
         weak var client: GoalongGuardClient?
         let overrideActive: @Sendable () -> Bool
+        let probes: GuardLaunchProbes?
 
         func registerThenPing() -> (SMAppService.Status, BlockingProtectionState.Component) {
             try? service.register()
@@ -481,18 +496,18 @@ struct GuardEscalation {
         }
 
         func pingEscalating() -> (SMAppService.Status, BlockingProtectionState.Component) {
-            let service = service, client = client
+            let service = service, client = client, probes = probes
             func onMain<T>(_ fallback: T, _ body: @escaping @MainActor (GoalongGuardClient) -> T) -> T {
                 DispatchQueue.main.sync { MainActor.assumeIsolated { client.map(body) ?? fallback } }
             }
             return GuardEscalation(
                 status: { service.status },
-                ping: { ping() },
-                resumeStoppedGuards: { resumeStoppedGuards() },
+                ping: { probes?.ping() ?? ping() },
+                resumeStoppedGuards: { probes?.resumeStoppedGuards() ?? resumeStoppedGuards() },
                 overrideActive: overrideActive,
                 noteNotArmed: { DispatchQueue.main.async { MainActor.assumeIsolated { client?.noteNotArmed() } } },
                 claimKickstart: { onMain(false) { $0.claimKickstart() } },
-                kickstart: { kickstart() },
+                kickstart: { if let probes { return probes.kickstart() }; return kickstart() },
                 bootedOut: { onMain(false) { $0.isBootedOut } },
                 noteBootedOut: { onMain(()) { $0.noteBootedOut() } },
                 claimReregister: { onMain(false) { $0.claimReregister() } },

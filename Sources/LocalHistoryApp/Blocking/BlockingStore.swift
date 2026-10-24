@@ -163,14 +163,18 @@ struct BlockingClockState: Codable, Equatable {
     var continuous: Double
     var boot: String
     /// Wall minus continuous seconds at the last compensated jump (or the first sample of this boot).
-    /// Forward jumps are measured from it, not from the last refresh: small steps of 60 s or less
-    /// add up and are compensated once their sum passes 60 s. nil in documents of older builds.
+    /// Forward jumps are measured from it, not from the last refresh: small steps add up and are
+    /// compensated once their sum passes `BlockingClock.jumpTolerance`. nil in documents of older builds.
     var anchor: Double? = nil
 
     var offset: Double { wall.timeIntervalSince1970 - continuous }
 }
 
 enum BlockingClock {
+    /// Forward drift of the wall clock against continuous time left uncompensated (spec K §4: changing
+    /// the time changes nothing). Above sampling noise and slow crystal drift; a compensation only makes
+    /// a block longer.
+    static let jumpTolerance: TimeInterval = 1
     static func continuous() -> Double {
         var info = mach_timebase_info_data_t(); mach_timebase_info(&info)
         return Double(mach_continuous_time()) * Double(info.numer) / Double(info.denom) / 1e9
@@ -183,7 +187,7 @@ enum BlockingClock {
     static func adjustment(previous: BlockingClockState, now: BlockingClockState) -> TimeInterval {
         if previous.boot == now.boot, now.continuous >= previous.continuous {
             let jump = now.offset - (previous.anchor ?? previous.offset)
-            return jump > 60 ? jump : 0
+            return jump > jumpTolerance ? jump : 0
         }
         return min(0, now.wall.timeIntervalSince(previous.wall))
     }

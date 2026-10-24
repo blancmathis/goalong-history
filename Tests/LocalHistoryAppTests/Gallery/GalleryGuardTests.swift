@@ -4,6 +4,7 @@ import GoalongHeadlessTestSupport
 import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
+import LocalHistoryCore
 
 /// In `make test`: the gallery's own protections work (spec C §11.7, §11.9). Renders nothing.
 final class GalleryGuardTests: XCTestCase {
@@ -38,6 +39,27 @@ final class GalleryGuardTests: XCTestCase {
         let realHome = URL(fileURLWithPath: String(cString: getpwuid(getuid())!.pointee.pw_dir), isDirectory: true)
         XCTAssertThrowsError(try GalleryStateReset.resetHome(realHome))
         XCTAssertThrowsError(try GalleryStateReset.resetHome(URL(fileURLWithPath: "/tmp", isDirectory: true)))
+    }
+
+    /// R10: with recording off the gallery read today as « Lecture incomplète » because its reset had deleted the
+    /// journal folder the app creates at every launch. The empty fixture must read like the app: no source, not a
+    /// read error.
+    @MainActor func testTheEmptyFixtureReadsTodayAsNoSource() throws {
+        let events = AppPaths.eventsDirectory, manager = FileManager.default
+        guard events.path.hasPrefix("/tmp/goalong-") || events.path.hasPrefix("/private/tmp/goalong-") else {
+            throw XCTSkip("data root \(events.path) is not a throwaway HOME")
+        }
+        let aside = events.deletingLastPathComponent().appendingPathComponent("events-r10-aside-" + UUID().uuidString)
+        let existed = manager.fileExists(atPath: events.path)
+        if existed { try manager.moveItem(at: events, to: aside) }
+        defer {
+            try? manager.removeItem(at: events)
+            if existed { try? manager.moveItem(at: aside, to: events) }
+        }
+        try GalleryFixtureHome.install(.empty)
+        let day = GoalongLocalAnalytics.load(root: AppPaths.applicationSupportDirectory, day: GalleryClock.today,
+                                             now: GalleryClock.now, calendar: GalleryClock.calendar)
+        XCTAssertEqual(day.state, .noSource, "recording off reads as no source, never as an unreadable day")
     }
 
     /// Views decide « aujourd’hui » through `GoalongToday`, which the gallery freezes. `Calendar.isDateInToday`, a
