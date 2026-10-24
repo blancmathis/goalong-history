@@ -823,9 +823,7 @@ struct GoalongAnalyticsContent: View {
         return GoalongActivityPresentation.chartRange(day, fullDay: fullDay)
     }
     private var dateRange: ClosedRange<Date> {
-        let first = current.days.first?.date ?? payload.updatedAt
-        let last = current.days.last?.date ?? first
-        return first...(Calendar.current.date(byAdding: .day, value: 1, to: last) ?? last)
+        GoalongActivityPresentation.periodRange(dates: current.days.map(\.date), fallback: payload.updatedAt)
     }
     /// The day a period is anchored on: the one sharing, correcting and analysing act on.
     private var anchorDay: Date { current.days.last?.date ?? payload.updatedAt }

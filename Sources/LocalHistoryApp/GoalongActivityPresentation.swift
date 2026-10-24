@@ -32,6 +32,14 @@ enum GoalongActivityPresentation {
             }
     }
 
+    /// First day through the end of the last one. Takes the earliest and latest dates, so a
+    /// period whose days arrive unsorted cannot build a reversed (trapping) range.
+    static func periodRange(dates: [Date], fallback: Date, calendar: Calendar = .current) -> ClosedRange<Date> {
+        let first = dates.min() ?? fallback
+        let last = dates.max() ?? first
+        return first...(calendar.date(byAdding: .day, value: 1, to: last) ?? last)
+    }
+
     /// Only the chart viewport is cropped; totals and the complete history are untouched.
     /// Calendar hour boundaries preserve 23/25-hour days and half-hour time zones.
     static func chartRange(_ day: GoalongLocalAnalytics.Day, fullDay: Bool,
