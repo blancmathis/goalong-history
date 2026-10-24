@@ -51,8 +51,41 @@ struct GoalongAgendaDay: Equatable {
         if callSeconds >= 60 { parts.append("\(GoalongAnalyticsFormatting.duration(callSeconds)) d’appels") }
         if plannedSeconds >= 60 { parts.append("\(GoalongAnalyticsFormatting.duration(plannedSeconds)) prévues") }
         if !reminders.isEmpty { parts.append(GoalongCodeDay.count(reminders.count, "rappel terminé", "rappels terminés")) }
-        if parts.isEmpty { return calendarOn && calendarAccess != .granted ? "Accès à l’agenda à autoriser" : "Aucun appel ni événement prévu" }
+        if parts.isEmpty { return calendarOn && calendarAccess != .granted ? "Accès à l’agenda à autoriser" : nothingRead }
         return parts.joined(separator: " · ")
+    }
+
+    /// The first line of « Appels et agenda ». The notes under the section say which source is off or not allowed.
+    var lead: String {
+        var sentences: [String] = []
+        let planned = plannedSeconds, callTime = callSeconds
+        if readsEvents && callsOn && (planned >= 60 || callTime >= 60) {
+            var text = "\(GoalongAnalyticsFormatting.duration(planned)) prévues dans l’agenda, \(GoalongAnalyticsFormatting.duration(callTime)) d’appels observés"
+            let unplanned = unplannedCallSeconds
+            if planned >= 60 && unplanned >= 60 { text += ", dont \(GoalongAnalyticsFormatting.duration(unplanned)) hors agenda" }
+            sentences.append(text + ".")
+        } else if callTime >= 60 {
+            sentences.append("\(GoalongAnalyticsFormatting.duration(callTime)) d’appels observés.")
+        } else if planned >= 60 {
+            sentences.append("\(GoalongAnalyticsFormatting.duration(planned)) prévues dans l’agenda.")
+        }
+        if !reminders.isEmpty {
+            sentences.append(GoalongCodeDay.count(reminders.count, "rappel terminé.", "rappels terminés."))
+        }
+        return sentences.isEmpty ? nothingRead + " ce jour-là." : sentences.joined(separator: " ")
+    }
+
+    /// The agenda is read only when it is on and macOS gives the access.
+    private var readsEvents: Bool { calendarOn && calendarAccess == .granted }
+
+    /// An empty day names only the sources Goalong read: a source that is off or not allowed proves nothing.
+    private var nothingRead: String {
+        switch (callsOn, readsEvents) {
+        case (true, true): return "Aucun appel ni événement prévu"
+        case (true, false): return "Aucun appel observé"
+        case (false, true): return "Aucun événement prévu"
+        case (false, false): return "Ni appels ni agenda lus"
+        }
     }
 }
 
@@ -64,7 +97,7 @@ struct GoalongAgendaSection: View {
     var onAllowCalendar: () -> Void = {}
 
     var body: some View {
-        GoalongSection(title: "Appels et agenda", subtitle: lead) {
+        GoalongSection(title: "Appels et agenda", subtitle: agenda.lead) {
             VStack(alignment: .leading, spacing: 22) {
                 if !agenda.events.isEmpty || !agenda.calls.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -88,25 +121,6 @@ struct GoalongAgendaSection: View {
             }
         }
         .accessibilityIdentifier("activity-agenda")
-    }
-
-    private var lead: String {
-        var sentences: [String] = []
-        let planned = agenda.plannedSeconds, calls = agenda.callSeconds
-        if agenda.calendarOn && agenda.callsOn && (planned >= 60 || calls >= 60) {
-            var text = "\(GoalongAnalyticsFormatting.duration(planned)) prévues dans l’agenda, \(GoalongAnalyticsFormatting.duration(calls)) d’appels observés"
-            let unplanned = agenda.unplannedCallSeconds
-            if planned >= 60 && unplanned >= 60 { text += ", dont \(GoalongAnalyticsFormatting.duration(unplanned)) hors agenda" }
-            sentences.append(text + ".")
-        } else if calls >= 60 {
-            sentences.append("\(GoalongAnalyticsFormatting.duration(calls)) d’appels observés.")
-        } else if planned >= 60 {
-            sentences.append("\(GoalongAnalyticsFormatting.duration(planned)) prévues dans l’agenda.")
-        }
-        if !agenda.reminders.isEmpty {
-            sentences.append(GoalongCodeDay.count(agenda.reminders.count, "rappel terminé.", "rappels terminés."))
-        }
-        return sentences.isEmpty ? "Aucun appel ni événement prévu ce jour-là." : sentences.joined(separator: " ")
     }
 
     private var legend: [(mark: GoalongLaneMark, title: String)] {

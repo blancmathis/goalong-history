@@ -47,6 +47,29 @@ final class GoalongSystemLaneBuilderTests: XCTestCase {
         XCTAssertEqual(callsOnly?.partial, true)
     }
 
+    /// An empty day claims only what Goalong read: no call when calls are off, no event when the agenda is off or refused.
+    func testAnEmptyAgendaNamesOnlyTheSourcesGoalongRead() {
+        var day = GoalongAgendaDay(callsOn: true, calendarOn: true)
+        XCTAssertEqual(day.lead, "Aucun appel ni événement prévu ce jour-là.")
+        XCTAssertEqual(day.caption, "Aucun appel ni événement prévu")
+        for access in [GoalongAgendaDay.CalendarAccess.denied, .notAsked] {
+            day.calendarAccess = access
+            XCTAssertEqual(day.lead, "Aucun appel observé ce jour-là.", "\(access)")
+            XCTAssertEqual(day.caption, "Accès à l’agenda à autoriser", "\(access)")
+        }
+        day = GoalongAgendaDay(callsOn: true, calendarOn: false)
+        XCTAssertEqual(day.lead, "Aucun appel observé ce jour-là.")
+        XCTAssertEqual(day.caption, "Aucun appel observé")
+        day = GoalongAgendaDay(callsOn: false, calendarOn: true)
+        XCTAssertEqual(day.lead, "Aucun événement prévu ce jour-là.")
+        XCTAssertEqual(day.caption, "Aucun événement prévu")
+        // An hour of calls with a refused agenda: no « 0 min prévues ».
+        let start = Date(timeIntervalSince1970: 1_790_000_000)
+        day = GoalongAgendaDay(calls: [DateInterval(start: start, duration: 3_600)], callsOn: true, calendarOn: true, calendarAccess: .denied)
+        XCTAssertTrue(day.lead.hasSuffix("d’appels observés."), day.lead)
+        XCTAssertFalse(day.lead.contains("prévu"), day.lead)
+    }
+
     func testSleepNamesPhasesInOrderAndRoundsSteps() throws {
         var health = GoalongHealthLane(status: .partial)
         health.sleepStages = ["sleepSeconds": 23_400, "sleepCoreSeconds": 14_400, "sleepDeepSeconds": 3600, "sleepREMSeconds": 5400, "sleepAwakeSeconds": 30]
