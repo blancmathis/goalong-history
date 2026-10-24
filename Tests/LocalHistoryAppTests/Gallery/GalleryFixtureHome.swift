@@ -8,7 +8,7 @@ import Foundation
 /// build or still reads. Invented apps and sites only; no real name, mail or text.
 @MainActor enum GalleryFixtureHome {
     enum Kind: Equatable {
-        /// Nothing written: recording off, no day.
+        /// Recording off, no day: only the empty journal folder every launch creates.
         case empty
         /// Recording on, 28 days of work ending on the gallery morning (08:12-09:40), not classified yet.
         case realistic
@@ -31,12 +31,13 @@ import Foundation
     }
 
     static func install(_ kind: Kind) throws {
-        guard kind != .empty else { return }
-        enableRecording()
-        // A running recorder has its journal folder even before the first event; without it Activité reports
-        // « Lecture incomplète » (source folder absent) instead of an empty day.
+        // The app creates its journal folder at every launch, recording on or off (AppDelegate: `AppPaths.prepare`).
+        // The reset deletes it and `prepare` runs once per process, so make it again: without it Activité reports
+        // « Lecture incomplète » (source folder absent) instead of an empty day, a state the app never shows (R10).
         try FileManager.default.createDirectory(at: AppPaths.eventsDirectory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
+        guard kind != .empty else { return }
+        enableRecording()
         switch kind {
         case .empty, .recordingOn: return
         case .sparse: try write(sparseDay(), day: GalleryClock.today)
