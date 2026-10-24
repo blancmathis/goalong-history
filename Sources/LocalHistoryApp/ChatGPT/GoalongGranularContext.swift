@@ -191,7 +191,7 @@ extension ChatGPTRecapContextBuilder {
             activeSeconds: usage.reduce(0) { $0 + $1.activeSeconds }, workSeconds: 0, focusBlocks: [], sites: [], applications: usage,
             requests: [], contextHighlights: [], coverage: activity.coverage, agentMarkdown: "", estimatedAgentTokens: 0)
         let counts = ChatGPTRecapSourceCounts(localEvents: filtered.filter { $0.suppressionReason == nil }.count,
-            activeMinutes: safeActivity.activeSeconds / 60, semanticSnapshots: semanticCount,
+            activeMinutes: DashboardFormatters.roundedMinutes(seconds: TimeInterval(safeActivity.activeSeconds)), semanticSnapshots: semanticCount,
             screenTimeDevices: appleRows.count, screenTimeApplications: appleCount, agentCaptures: dialogues.count,
             agentMessages: messageCount, visibleAgentMessages: messageCount, analyzedAgentCaptures: dialogues.count,
             importedChatMessages: 0, computerHistoryEpisodes: nil, computerHistoryResources: nil, workflowSuggestions: nil,

@@ -28,10 +28,36 @@ final class DurationFormatConsistencyTests: XCTestCase {
         let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/LocalHistoryApp")
         let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
-        for case let url as URL in files where url.pathExtension == "swift" && url.lastPathComponent != "ChatGPTRecapContext.swift" {  // that one writes the model prompt, not UI
+        for case let url as URL in files where url.pathExtension == "swift" {
             let text = try String(contentsOf: url, encoding: .utf8)
             XCTAssertFalse(text.contains("h \\(minutes)m\""), "\(url.lastPathComponent) has its own « 1h 28m » format")
         }
+    }
+
+    func testRecapPromptReadsTheSameDurationAsThePage() {
+        // 4 050 s: the page says « 1 h 08 »; the prompt used to say « 1h 7m ».
+        let page = DashboardFormatters.duration(seconds: 4_050)
+        XCTAssertEqual(ChatGPTRecapContextBuilder.durationForTesting(4_050), page)
+        XCTAssertEqual(ChatGPTRecapContextBuilder.durationForTesting(4_020), DashboardFormatters.duration(seconds: 4_020))
+        XCTAssertEqual(DashboardFormatters.roundedMinutes(seconds: 4_050), 68)
+        XCTAssertEqual(DashboardFormatters.roundedMinutes(seconds: 29), 0)
+    }
+
+    func testPromptSourceCountsDoNotTruncateSecondsToMinutes() throws {
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/LocalHistoryApp/ChatGPT")
+        for name in ["ChatGPTRecapContext.swift", "GoalongGranularContext.swift"] {
+            let text = try String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8)
+            XCTAssertFalse(text.contains("activeSeconds / 60"), "\(name) truncates « Active minutes » (4 050 s would read 67, the page says 68)")
+            XCTAssertFalse(text.contains("} / 60,"), "\(name) truncates « Active minutes »")
+        }
+    }
+
+    func testOverviewTimelineTooltipIsFrench() {
+        let now = Date()
+        let bucket = TimelineBucket(start: now, end: now.addingTimeInterval(3_600), kind: .active, activeMinutes: 68, workMinutes: 45, privateMinutes: 0, sealedMinutes: 0)
+        let text = DashboardFormatters.timelineHelp(range: "10:00–11:00", bucket: bucket)
+        XCTAssertEqual(text, "10:00–11:00 · 1\(nb)h\(nb)08 d’activité · 45\(nb)min de travail · 0\(nb)min en privé")
     }
 
     func testScreenTimeRefreshTextFollowsTheRealInterval() {
