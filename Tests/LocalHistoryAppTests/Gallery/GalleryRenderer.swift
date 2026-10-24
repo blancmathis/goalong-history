@@ -195,9 +195,9 @@ struct GalleryImage {
             window.close()
         }
         host.layoutSubtreeIfNeeded()
-        // Data first: the entry's own predicate (20 ms polls, 3 s at most).
+        // Data first: the entry's own predicate (20 ms polls, 6 s at most: under load, with builds running beside, data can take more than 3 s).
         if let ready = entry.ready {
-            let deadline = Date().addingTimeInterval(3)
+            let deadline = Date().addingTimeInterval(6)
             var isReady = ready(ctx)
             while !isReady && Date() < deadline {
                 RunLoop.current.run(until: Date().addingTimeInterval(0.02))
@@ -205,7 +205,7 @@ struct GalleryImage {
             }
             if !isReady {
                 let capture = try capture(host, window: window)
-                return image(capture, host: host, window: window, status: .notReady, detail: "ready predicate not met in 3 s")
+                return image(capture, host: host, window: window, status: .notReady, detail: "ready predicate not met in 6 s")
             }
         }
         pump(0.05)
