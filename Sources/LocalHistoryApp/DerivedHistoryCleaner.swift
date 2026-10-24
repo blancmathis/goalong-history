@@ -2,6 +2,7 @@
     import Darwin
     import Foundation
     import LocalHistoryCore
+    import Security
 
     /// A no-follow deletion plan for exact, feature-owned regular files.
     ///
@@ -522,15 +523,24 @@
         func execute() throws -> DerivedHistoryDeletionResult {
             // Key-first cryptographic erasure of the encrypted response capsules, after the
             // whole plan is revalidated so an unsafe target still aborts before any deletion.
+            // A keychain error never stops the run: every file is still deleted, then the first
+            // error is thrown so the user learns that the erase is incomplete.
+            var keychainError: Error?
             if let evidenceStore, !evidenceExecutionIDs.isEmpty {
                 try OwnedFileDeletionPlan.validate(allPlans)
-                for executionID in evidenceExecutionIDs { try evidenceStore.destroy(executionID: executionID) }
+                for executionID in evidenceExecutionIDs {
+                    do { try evidenceStore.destroy(executionID: executionID) } catch {
+                        Diagnostics.write("Evidence key erase failed for \(executionID): \(error)")
+                        if keychainError == nil { keychainError = error }
+                    }
+                }
             }
             _ = try OwnedFileDeletionPlan.execute(allPlans)
             for plan in proofDirectoryPlans { try Self.removeEmptyDirectory(plan) }
             if clearSummaryDirectory, let plan = activitySummaryPlans.first ?? activityTemporaryPlans.first {
                 try Self.removeEmptyDirectory(plan)
             }
+            if let keychainError { throw keychainError }
             return expectedResult
         }
 
@@ -560,12 +570,15 @@
     final class DerivedHistoryCleaner {
         private let rootDirectory: URL
         private let computerHistoryStore: ComputerHistoryStore
+        private let deleteEvidenceKeyItem: (CFDictionary) -> OSStatus
 
         init(
             rootDirectory: URL = AppPaths.applicationSupportDirectory,
-            codexMemoryDirectory: URL? = nil
+            codexMemoryDirectory: URL? = nil,
+            deleteEvidenceKeyItem: @escaping (CFDictionary) -> OSStatus = { SecItemDelete($0) }
         ) {
             self.rootDirectory = rootDirectory
+            self.deleteEvidenceKeyItem = deleteEvidenceKeyItem
             computerHistoryStore = ComputerHistoryStore(
                 rootDirectory: rootDirectory,
                 codexMemoryDirectory: codexMemoryDirectory
@@ -680,17 +693,20 @@
             var executionIDs = Set(
                 (chatGPTRecapPlan?.targets ?? []).compactMap { recapExecutionID(at: $0.URL) }
             )
+            var stagingNames: Set<String> = []
             if isFullClear {
                 for name in Self.uuidNamedEntries(in: proofsDirectory) { executionIDs.insert(name) }
                 for name in Self.uuidNamedEntries(in: evidenceDirectory, suffix: ".capsule") {
                     executionIDs.insert(name)
                 }
+                // Interrupted proof writes leave `.<uuid>.tmp` staging folders with the same files.
+                for name in Self.stagingEntries(in: proofsDirectory) { stagingNames.insert(name) }
                 plan.proofPlans = try deletionPlan(
                     in: proofsDirectory, trustedAncestor: trustedAncestor, suffixes: [],
                     cutoffKey: nil, matchingDayKeys: nil, nameKey: { $0 == "chain-head.json" ? $0 : nil }
                 ).map { [$0] } ?? []
             }
-            for executionID in executionIDs.sorted() {
+            for executionID in executionIDs.sorted() + stagingNames.sorted() {
                 let directory = proofsDirectory.appendingPathComponent(executionID, isDirectory: true)
                 let known: Set<String> = [
                     "definition.jws", "context-manifest.json", "provider-request.json",
@@ -706,7 +722,8 @@
                 }
             }
             plan.evidenceExecutionIDs = executionIDs.sorted()
-            plan.evidenceStore = AnalysisEvidenceCapsuleStore(directory: evidenceDirectory)
+            plan.evidenceStore = AnalysisEvidenceCapsuleStore(
+                directory: evidenceDirectory, deleteKeyItem: deleteEvidenceKeyItem)
             // Sequential category discovery is followed by one whole-plan validation,
             // immediately before the caller is permitted to begin deleting raw stores.
             try plan.validate()
@@ -733,6 +750,15 @@
                 guard name.hasSuffix(suffix) else { return nil }
                 let stem = String(name.dropLast(suffix.count))
                 return UUID(uuidString: stem) != nil ? stem : nil
+            }
+        }
+
+        /// `.<uuid>.tmp` folder names in `directory` (staging folders of `AnalysisProofStore`).
+        private static func stagingEntries(in directory: URL) -> [String] {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            return names.filter { name in
+                name.hasPrefix(".") && name.hasSuffix(".tmp")
+                    && UUID(uuidString: String(name.dropFirst().dropLast(4))) != nil
             }
         }
 

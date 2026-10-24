@@ -1,5 +1,6 @@
 #if os(macOS)
     import Foundation
+    import Security
     import XCTest
     @testable import LocalHistoryApp
 
@@ -494,6 +495,56 @@
             formatter.timeZone = .current
             formatter.dateFormat = "yyyy-MM-dd"
             return formatter.string(from: date)
+        }
+
+        func testFullClearDeletesEveryFileEvenWhenTheKeychainFailsThenReportsTheError() throws {
+            // The capsule store opens every path component without following links, and /var and /tmp are links
+            // on macOS: build in the package's own .build folder, which has none.
+            let container = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent(".build/derived-cleaner-tests", isDirectory: true)
+                .appendingPathComponent("goalong-derived-keychain-\(UUID().uuidString)", isDirectory: true)
+            let root = container.appendingPathComponent("LocalHistory", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: container) }
+            let fm = FileManager.default
+            let proofs = root.appendingPathComponent("chatgpt/proofs", isDirectory: true)
+            let evidence = proofs.appendingPathComponent("private-evidence", isDirectory: true)
+            let analysis = root.appendingPathComponent("analysis", isDirectory: true)
+            let id = UUID().uuidString.lowercased()
+            let stagingID = UUID().uuidString.lowercased()
+            let staging = proofs.appendingPathComponent(".\(stagingID).tmp", isDirectory: true)
+            for directory in [analysis, evidence, proofs.appendingPathComponent(id), staging] {
+                try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            // …and folders that other users can read.
+            for directory in [root, root.appendingPathComponent("chatgpt"), proofs, evidence,
+                              proofs.appendingPathComponent(id), staging] {
+                try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            }
+            let files = [
+                analysis.appendingPathComponent("2026-08-20.analysis.json"),
+                evidence.appendingPathComponent(id + ".capsule"),
+                proofs.appendingPathComponent(id + "/result.json"),
+                staging.appendingPathComponent("result.json"),
+                proofs.appendingPathComponent("chain-head.json"),
+            ]
+            for file in files { try writeFixture(to: file) }
+            var deleteCalls = 0
+            let cleaner = DerivedHistoryCleaner(
+                rootDirectory: root,
+                codexMemoryDirectory: container.appendingPathComponent("codex"),
+                deleteEvidenceKeyItem: { _ in deleteCalls += 1; return errSecAuthFailed }
+            )
+
+            XCTAssertThrowsError(try cleaner.prepareDeletion(since: nil).execute()) { error in
+                guard case AnalysisEvidenceCapsuleError.keychainFailure(let status) = error else {
+                    return XCTFail("unexpected error \(error)")
+                }
+                XCTAssertEqual(status, errSecAuthFailed)
+            }
+            XCTAssertGreaterThan(deleteCalls, 0)
+            XCTAssertEqual(files.map { fm.fileExists(atPath: $0.path) }, Array(repeating: false, count: files.count))
+            XCTAssertFalse(fm.fileExists(atPath: staging.path))
         }
 
         private func writeFixture(to URL: URL) throws {
