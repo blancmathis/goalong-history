@@ -37,6 +37,10 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
   tap.
 - Reuse the existing observation (`ContextMonitor` / `ContextProvider`) and the Jev window technique
   (`JevWarningPanel`: non-activating `NSPanel`). No second polling observer of the foreground.
+  App activation, launches and AX focus/title events sample at once; the fallback poll
+  (`ContextMonitor.blockingPollInterval`) stays 0.75 s after input in the last 15 s or without
+  reliable AX coverage, 2 s / 5 s when idle, 60 s while locked or displays sleep (unlock and wake
+  resample at once).
 - Visual design (page, veils, shield) is done by the design session. Plumbing never edits
   `BlockingPage*.swift` or `BlockingShieldViews.swift`.
 

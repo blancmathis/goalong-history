@@ -169,6 +169,11 @@ struct PermissionPrivacyNote: View {
     }
 }
 
+extension Notification.Name {
+    /// The permission guide or macOS privacy settings were opened: the watchdog checks fast again.
+    static let goalongPermissionGuideDidOpen = Notification.Name("goalong.permission-guide.opened")
+}
+
 /// Recovery advances according to actions actually taken. It never grants access,
 /// changes source consent, or repeats reset/relaunch loops automatically.
 @MainActor struct PermissionRecoveryView: View {
@@ -230,6 +235,7 @@ struct PermissionPrivacyNote: View {
             }
         }
         .onAppear {
+            NotificationCenter.default.post(name: .goalongPermissionGuideDidOpen, object: nil)
             refreshAdvice()
             DispatchQueue.global(qos: .utility).async {
                 let valid = SupportBuild.current().signatureValidation == 0

@@ -74,6 +74,9 @@
         private let onCaptured: ([AgentCaptureRecord]) -> Void
         private var scanTimer: DispatchSourceTimer?
         private var signalWatcher: DispatchSourceFileSystemObject?
+        // Both only touched on workQueue.
+        private var signalCoalescer = AgentSignalCoalescer()
+        private var signalScanTimer: DispatchSourceTimer?
         private var started = false
         private let snapshotLock = NSLock()
         private var scanConfiguration: AgentActivityConfiguration
@@ -140,6 +143,7 @@
         deinit {
             scanTimer?.cancel()
             signalWatcher?.cancel()
+            signalScanTimer?.cancel()
         }
 
         var userWatchedFolders: [AgentWatchedFolder] {
@@ -188,7 +192,9 @@
             scanner.cancelCurrentScan()
             // Wait for an in-flight scan so no capture is committed after EventRecorder closes.
             if DispatchQueue.getSpecific(key: workQueueSpecificKey) == nil {
-                workQueue.sync {}
+                workQueue.sync { cancelSignalScan() }
+            } else {
+                cancelSignalScan()
             }
         }
 
@@ -832,7 +838,7 @@
             timer.schedule(
                 deadline: .now() + interval,
                 repeating: interval,
-                leeway: .milliseconds(500)
+                leeway: .seconds(5)
             )
             timer.setEventHandler { [weak self] in self?.scanNow(forceFullDiscovery: false) }
             timer.resume()
@@ -851,11 +857,34 @@
                 queue: workQueue
             )
             watcher.setEventHandler { [weak self] in
-                self?.scanNow(forceFullDiscovery: false)
+                self?.noteSignalEvent()
             }
             watcher.setCancelHandler { _ = Darwin.close(descriptor) }
             watcher.resume()
             signalWatcher = watcher
+        }
+
+        /// Runs on workQueue. Agents write one signal per event: a burst opens one window
+        /// and gets one scan when it closes, instead of one chained scan per write.
+        private func noteSignalEvent() {
+            let now = Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+            guard let deadline = signalCoalescer.signal(at: now) else { return }
+            let timer = DispatchSource.makeTimerSource(queue: workQueue)
+            timer.schedule(deadline: .now() + (deadline - now), leeway: .seconds(1))
+            timer.setEventHandler { [weak self] in
+                guard let self else { return }
+                self.signalScanTimer?.cancel()
+                self.signalScanTimer = nil
+                if self.signalCoalescer.fire() { self.scanNow(forceFullDiscovery: false) }
+            }
+            timer.resume()
+            signalScanTimer = timer
+        }
+
+        private func cancelSignalScan() {
+            signalScanTimer?.cancel()
+            signalScanTimer = nil
+            signalCoalescer.reset()
         }
 
         static func effectivePollingInterval(configuredInterval: Double) -> Double {
@@ -959,3 +988,27 @@
         }
     }
 #endif
+
+/// Groups agent signal-file events: at most one scan per window, and a scan always follows
+/// the last signal of a burst (the window closes after it). Pure, so a virtual clock tests it.
+struct AgentSignalCoalescer {
+    static let window: TimeInterval = 2
+    private(set) var deadline: TimeInterval?
+
+    /// Returns the deadline to arm when this signal opens a window; nil while one is armed.
+    mutating func signal(at now: TimeInterval) -> TimeInterval? {
+        guard deadline == nil else { return nil }
+        let next = now + Self.window
+        deadline = next
+        return next
+    }
+
+    /// Called when the armed deadline elapses: true once per window, scan then.
+    mutating func fire() -> Bool {
+        guard deadline != nil else { return false }
+        deadline = nil
+        return true
+    }
+
+    mutating func reset() { deadline = nil }
+}

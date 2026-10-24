@@ -36,6 +36,9 @@ enum GoalongActivityClassStyle {
 
 /// Always present next to a chart of classes: identity never rests on colour alone.
 struct GoalongActivityClassLegend: View {
+    /// 11 pt when it sits on top of a lane legend, so the two lines read as one legend.
+    var size: CGFloat = 12
+
     var body: some View {
         HStack(spacing: 14) {
             ForEach(GoalongActivityClassStyle.order, id: \.rawValue) { kind in
@@ -46,7 +49,7 @@ struct GoalongActivityClassLegend: View {
                 }
             }
         }
-        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+        .font(.system(size: size)).foregroundStyle(LHTheme.secondaryText)
         .accessibilityElement(children: .combine)
     }
 }

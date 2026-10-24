@@ -614,7 +614,8 @@
                 discardedPayloadBytes: 0,
                 processIdentifier: 1
             )
-            wait(for: [signalScan], timeout: 2)
+            // Signals are grouped for AgentSignalCoalescer.window (2 s, 1 s leeway), still far below the 30 s poll.
+            wait(for: [signalScan], timeout: 5)
             subscription.cancel()
             runtime.stop()
         }
