@@ -207,8 +207,8 @@ final class BlockingPageRenderingTests: XCTestCase {
                                                 start: now, end: now.addingTimeInterval(3600), lock: .locked)
             return BlockedSiteVeil(presentation: veil, now: now).detail
         }
-        XCTAssertEqual(detail(minutes: 60), "Temps du jour écoulé : 1 h (liste « Réseaux »).")
-        XCTAssertEqual(detail(minutes: 90), "Temps du jour écoulé : 1 h 30 (liste « Réseaux »).")
+        XCTAssertEqual(detail(minutes: 60), "Temps du jour écoulé : 1 h (liste « Réseaux »).")
+        XCTAssertEqual(detail(minutes: 90), "Temps du jour écoulé : 1 h 30 (liste « Réseaux »).")
     }
 }
 #endif

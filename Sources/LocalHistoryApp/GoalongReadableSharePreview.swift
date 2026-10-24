@@ -145,9 +145,7 @@ struct GoalongReadableSharePreview: View {
         HStack { Text(label).font(.system(size: 14)); Spacer(); Text(Self.duration(seconds)).font(.system(size: 14, weight: .medium)).monospacedDigit() }
     }
     static func duration(_ seconds: Int) -> String {
-        if seconds < 60 { return "\(seconds) s" }
-        if seconds < 3600 { return "\(seconds / 60) min" }
-        return "\(seconds / 3600) h \(String(format: "%02d", seconds % 3600 / 60))"
+        DashboardFormatters.duration(seconds: TimeInterval(seconds))
     }
 }
 #endif

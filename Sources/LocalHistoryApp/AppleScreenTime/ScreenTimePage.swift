@@ -604,12 +604,7 @@
         }
 
         private func duration(_ seconds: TimeInterval) -> String {
-            let total = max(0, Int(seconds.rounded()))
-            let hours = total / 3_600
-            let minutes = (total % 3_600) / 60
-            if hours > 0 { return "\(hours)h \(minutes)m" }
-            if minutes > 0 { return "\(minutes)m" }
-            return "\(total)s"
+            DashboardFormatters.duration(seconds: seconds)
         }
 
         private func relativeDate(_ date: Date) -> String {

@@ -21,7 +21,7 @@ extension GalleryCatalog {
 
     /// A saved report of the gallery day, written like the app writes one (an old report without signature: schema 2).
     private static func saveRecap() throws {
-        let lines = ["Matinée concentrée sur Atlas : 1 h 08 de travail réel entre 08:12 et 09:40.",
+        let lines = ["Matinée concentrée sur Atlas : 1 h 07 de travail réel entre 08:12 et 09:40.",
                      "Xcode domine la journée, Safari sert surtout à la documentation.",
                      "Deux blocs de concentration, séparés par une courte pause.",
                      "Peu de distractions : Messages et YouTube restent sous dix minutes.",

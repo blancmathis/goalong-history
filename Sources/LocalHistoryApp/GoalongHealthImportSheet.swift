@@ -330,7 +330,7 @@ struct GoalongHealthImportSheet: View {
         return (formatter.string(from: NSNumber(value: value)) ?? "—") + (unit == "count" ? "" : " \(unit)")
     }
     static func duration(_ seconds: Double) -> String {
-        let minutes = Int((seconds / 60).rounded()); return "\(minutes / 60) h \(minutes % 60) min"
+        DashboardFormatters.duration(seconds: seconds)
     }
     static func sport(_ raw: String) -> String {
         let kind = raw.replacingOccurrences(of: "HKWorkoutActivityType", with: "")

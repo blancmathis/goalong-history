@@ -189,7 +189,7 @@ struct GoalongScreenTimePage: View {
                     Text("Dernière lecture").font(.system(size: 13)).foregroundStyle(.secondary)
                     Text(screenTime.lastRefreshAt.map { $0.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) } ?? "—")
                         .font(LHTheme.figureFont(26)).monospacedDigit().accessibilityIdentifier("screen-time-day-update")
-                    Text(screenTime.selectedDayIsToday ? "Actualisation locale toutes les 30 s" : "Archive locale · Apple non relu")
+                    Text(screenTime.selectedDayIsToday ? "Actualisation locale \(AppleScreenTimeDashboardModel.refreshCadenceLabel(screenTime.refreshInterval))" : "Archive locale · Apple non relu")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.fixedSize(horizontal: false, vertical: true)

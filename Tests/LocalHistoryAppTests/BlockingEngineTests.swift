@@ -1060,7 +1060,7 @@ final class BlockingEngineTests: XCTestCase {
         let tick = date(5, 11, 58).addingTimeInterval(40)
         let raised = BlockingFreezePromise(end: date(5, 12), now: tick)
         XCTAssertEqual(raised, .minimum)
-        XCTAssertEqual(raised.phrase(now: tick), "pendant 5 min")
+        XCTAssertEqual(raised.phrase(now: tick), "pendant 5 min")
         let click = date(5, 12, 0).addingTimeInterval(10)
         XCTAssertEqual(raised.end(at: click), click.addingTimeInterval(300), "5 min from the click, as the alert said")
         // A « 25 min » alert left open 21 min: 4 min left, the engine would make it 5. Refused.
@@ -1081,7 +1081,7 @@ final class BlockingEngineTests: XCTestCase {
         let click = date(5, 12).addingTimeInterval(15)
         let alert = BlockingFreezePromise.alert(end: date(5, 12, 5), click: click)
         XCTAssertEqual(alert, .minimum)
-        XCTAssertEqual(alert.phrase(now: click), "pendant 5 min")
+        XCTAssertEqual(alert.phrase(now: click), "pendant 5 min")
         let freeze = click.addingTimeInterval(40)
         XCTAssertEqual(alert.end(at: freeze), freeze.addingTimeInterval(300))
         // Less than 6 min from the click: promised as the minimum; 6 min or more keeps the end time.
@@ -1189,9 +1189,9 @@ final class BlockingEngineTests: XCTestCase {
                        "Vidéo, lundi, 22:00 à 24:00, verrouillé")
         XCTAssertEqual(BlockingFormat.rangeLabel(name: "Vidéo", weekday: 7, start: 540, end: 600, lock: .free), "Vidéo, dimanche, 9:00 à 10:00")
         XCTAssertEqual(BlockingFormat.remaining(86_400), "1 jour")
-        XCTAssertEqual(BlockingFormat.remaining(86_400 + 2_400), "1 jour 40 min")
-        XCTAssertEqual(BlockingFormat.remaining(86_400 + 3 * 3_600 + 2_400), "1 jour 3 h 40")
-        XCTAssertEqual(BlockingFormat.remaining(2 * 86_400 + 3 * 3_600), "2 jours 3 h")
+        XCTAssertEqual(BlockingFormat.remaining(86_400 + 2_400), "1 jour 40 min")
+        XCTAssertEqual(BlockingFormat.remaining(86_400 + 3 * 3_600 + 2_400), "1 jour 3 h 40")
+        XCTAssertEqual(BlockingFormat.remaining(2 * 86_400 + 3 * 3_600), "2 jours 3 h")
     }
 }
 

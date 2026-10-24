@@ -31,20 +31,18 @@ enum BlockingFormat {
         let minutes = Int((seconds / 60).rounded(.up))
         if seconds < 60 { return "moins d’une minute" }
         if minutes < 60 { return "\(minutes) min" }
-        let hours = minutes / 60, rest = minutes % 60
+        let hours = minutes / 60
         if hours >= 24 {
             // « 1 jour », « 1 jour 3 h », « 1 jour 3 h 40 », « 2 jours 40 min »: never « 0 h », never a lost minute.
             let days = hours / 24, left = minutes - days * 1_440
             let head = days == 1 ? "1 jour" : "\(days) jours"
             return left == 0 ? head : "\(head) \(duration(minutes: left))"
         }
-        return rest == 0 ? "\(hours) h" : String(format: "%d h %02d", hours, rest)
+        return DashboardFormatters.duration(minutes: minutes)
     }
 
     static func duration(minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes) min" }
-        let hours = minutes / 60, rest = minutes % 60
-        return rest == 0 ? "\(hours) h" : String(format: "%d h %02d", hours, rest)
+        DashboardFormatters.duration(minutes: minutes)
     }
 
     /// « aujourd’hui à 14:00 », « demain à 9:00 », « lundi à 9:00 », « le 31 oct. à 9:00 ».
