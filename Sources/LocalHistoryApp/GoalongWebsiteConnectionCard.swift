@@ -96,7 +96,7 @@ extension Notification.Name {
     private func refreshCredential() {
         let readable = !origin.isEmpty && !tokenPath.isEmpty
             && (try? GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath))) != nil
-        accessRefused = readable && GoalongWebsiteAutoSender.accessWasRefused(tokenPath: tokenPath)
+        accessRefused = readable && GoalongWebsiteAutoSender.accessWasRefused(tokenPath: tokenPath, defaults: defaults)
         credentialAvailable = readable && !accessRefused
     }
     private func openWebsite() {

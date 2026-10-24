@@ -140,6 +140,29 @@
             super.init()
         }
 
+        #if DEBUG
+        /// Test gallery only: shows one state of the update row without Sparkle or the network. Returns the way back.
+        func galleryShow(isConfigured: Bool, isChecking: Bool = false, availableVersion: String? = nil,
+                         result: SupportState = .unknown, message: String, checkedAt: Date?,
+                         automatic: Bool) -> () -> Void {
+            let before = (self.isConfigured, self.isChecking, presentationState, lastCheckResult, statusMessage,
+                          lastCheckedAt, automaticallyChecksForUpdates, requiresSignedBuild)
+            self.isConfigured = isConfigured
+            self.isChecking = isChecking
+            presentationState = SoftwareUpdatePresentationState()
+            if let availableVersion { presentationState.recordReady(version: availableVersion) }
+            lastCheckResult = result
+            statusMessage = message
+            lastCheckedAt = checkedAt
+            automaticallyChecksForUpdates = automatic
+            requiresSignedBuild = false
+            return { [self] in
+                (self.isConfigured, self.isChecking, presentationState, lastCheckResult, statusMessage,
+                 lastCheckedAt, automaticallyChecksForUpdates, requiresSignedBuild) = before
+            }
+        }
+        #endif
+
         func start() {
             guard !hasStarted else { return }
             hasStarted = true

@@ -577,6 +577,18 @@
             }
         }
 
+        #if DEBUG
+        nonisolated(unsafe) static var galleryShowsHomeAsTilde = false
+        #endif
+
+        private func configurationPathLabel(_ path: String) -> String {
+            #if DEBUG
+            // Test gallery only: the throwaway HOME changes on every run, so show it as `~`.
+            if Self.galleryShowsHomeAsTilde { return (path as NSString).abbreviatingWithTildeInPath }
+            #endif
+            return path
+        }
+
         private func integrationRow(_ kind: AgentIntegrationKind) -> some View {
             let status = agents.status(for: kind)
             return HStack(spacing: 12) {
@@ -584,7 +596,7 @@
                 VStack(alignment: .leading, spacing: 3) {
                     Text(kind.frenchName)
                         .font(.system(size: 11, weight: .semibold))
-                    Text(status.configurationPath)
+                    Text(configurationPathLabel(status.configurationPath))
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
