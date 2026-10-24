@@ -35,10 +35,15 @@ public enum GoalongFocusCalendar {
     }
     public static func dayInterval(_ key: String, calendar: Calendar = .current) -> DateInterval? {
         guard key.count == 10 else { return nil }
-        let f = DateFormatter(); f.calendar = civil(calendar); f.timeZone = calendar.timeZone
-        f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
-        guard let start = f.date(from: key), f.string(from: start) == key,
-              let end = civil(calendar).date(byAdding: .day, value: 1, to: start) else { return nil }
+        let parts = key.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]) else { return nil }
+        // Noon exists even where midnight does not (America/Santiago, 2026-09-06); the day's start is the first instant of that day.
+        let c = civil(calendar)
+        guard let noon = c.date(from: DateComponents(year: year, month: month, day: day, hour: 12)),
+              dayKey(noon, calendar: calendar) == key else { return nil }
+        let start = c.startOfDay(for: noon)
+        guard let nextNoon = c.date(byAdding: .day, value: 1, to: noon) else { return nil }
+        let end = c.startOfDay(for: nextNoon)
         return DateInterval(start: start, end: end)
     }
     public static func weekKey(_ date: Date, calendar: Calendar = .current) -> String {
