@@ -9,13 +9,15 @@
         var applicationIsHidden: Bool
         var windowIsOccluded: Bool
         var windowIsKey: Bool
+        /// False while the screen is locked or asleep or the session is inactive.
+        var sessionIsAvailable = true
 
         /// Dashboard readers can touch large or protected local stores. They run only
         /// while Goalong owns the keyboard, never merely because a background window
         /// remains visible beside the application the user is actually using.
         var permitsRefresh: Bool {
             windowIsVisible && !windowIsMiniaturized && !applicationIsHidden
-                && windowIsKey
+                && windowIsKey && sessionIsAvailable
         }
 
         static let hidden = DashboardVisibilityState(
@@ -49,6 +51,9 @@
         private static let frameAutosaveName = "GoalongHistory.MainWindow.v4"
         private static let legacyFrameAutosaveName = "LocalHistory.MainWindow.v3"
         private var applicationVisibilityObservers: [NSObjectProtocol] = []
+        private var sessionObservers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+        /// Injected by tests; production reads the same session signal as capture.
+        var sessionAvailable: () -> Bool = { ForegroundSessionAvailability.isAvailable() }
         private lazy var visibilityCoordinator = DashboardVisibilityCoordinator {
             [weak self] isVisible in
             guard let self else { return }
@@ -79,6 +84,27 @@
                 )
             }
 
+            // Lock/unlock, display sleep/wake and session switches re-evaluate now and
+            // once more ~1 s later, so a missed return notification never leaves it frozen.
+            let screenEvents: [(NotificationCenter, Notification.Name)] = [
+                (DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsLocked")),
+                (DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")),
+                (NSWorkspace.shared.notificationCenter, NSWorkspace.screensDidSleepNotification),
+                (NSWorkspace.shared.notificationCenter, NSWorkspace.screensDidWakeNotification),
+                (NSWorkspace.shared.notificationCenter, NSWorkspace.sessionDidResignActiveNotification),
+                (NSWorkspace.shared.notificationCenter, NSWorkspace.sessionDidBecomeActiveNotification),
+            ]
+            for (center, name) in screenEvents {
+                sessionObservers.append((center, center.addObserver(
+                    forName: name, object: nil, queue: .main
+                ) { [weak self] _ in
+                    self?.updateDashboardVisibility()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                        self?.updateDashboardVisibility()
+                    }
+                }))
+            }
+
             // A direct Finder/Spotlight/Launchpad launch makes the app active. A login-item
             // launch stays in accessory mode, so it can keep recording without opening UI.
             DispatchQueue.main.async { [weak self] in
@@ -93,6 +119,7 @@
             for observer in applicationVisibilityObservers {
                 NotificationCenter.default.removeObserver(observer)
             }
+            for (center, token) in sessionObservers { center.removeObserver(token) }
         }
 
         /// Real size of the dashboard window, and its smallest size.
@@ -245,7 +272,8 @@
                     windowIsMiniaturized: window.isMiniaturized,
                     applicationIsHidden: NSApplication.shared.isHidden,
                     windowIsOccluded: !window.occlusionState.contains(.visible),
-                    windowIsKey: window.isKeyWindow
+                    windowIsKey: window.isKeyWindow,
+                    sessionIsAvailable: sessionAvailable()
                 )
             )
         }

@@ -553,6 +553,29 @@
             XCTAssertEqual(changes, [true])
         }
 
+        func testDashboardKeyWindowDoesNotRefreshWhileSessionIsLockedAndResumesOnUnlock() {
+            var changes: [Bool] = []
+            let coordinator = DashboardVisibilityCoordinator { changes.append($0) }
+            var state = DashboardVisibilityState(
+                windowIsVisible: true,
+                windowIsMiniaturized: false,
+                applicationIsHidden: false,
+                windowIsOccluded: false,
+                windowIsKey: true,
+                sessionIsAvailable: false
+            )
+
+            coordinator.update(state)
+            XCTAssertFalse(coordinator.permitsRefresh)
+            XCTAssertTrue(changes.isEmpty)
+            state.sessionIsAvailable = true
+            coordinator.update(state)
+            XCTAssertTrue(coordinator.permitsRefresh)
+            state.sessionIsAvailable = false
+            coordinator.update(state)
+            XCTAssertEqual(changes, [true, false])
+        }
+
         func testDashboardWindowLifecycleOwnsRefreshScheduler() throws {
             let repositoryRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
