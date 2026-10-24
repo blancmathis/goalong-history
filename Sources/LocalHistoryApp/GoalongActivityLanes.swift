@@ -261,6 +261,19 @@ struct GoalongCodeDay: Equatable {
         return parts.joined(separator: " · ")
     }
 
+    /// « 2 projets actifs ce jour-là : … ». A conversation without project is not in any project: the count says so.
+    var activeProjectsSentence: String {
+        var facts: [String] = []
+        if commits > 0 { facts.append(Self.count(commits, "commit", "commits")) }
+        if fileChanges > 0 { facts.append(Self.count(fileChanges, "modification de fichier", "modifications de fichiers")) }
+        if conversations > 0 {
+            facts.append(Self.count(conversations, "conversation d’agent", "conversations d’agents")
+                + (unassignedConversations > 0 && !projects.isEmpty ? ", dont \(unassignedConversations) sans projet" : ""))
+        }
+        let list = facts.count > 1 ? facts.dropLast().joined(separator: ", ") + " et " + facts[facts.count - 1] : facts.joined()
+        return "\(Self.count(projects.count, "projet actif", "projets actifs")) ce jour-là" + (list.isEmpty ? "." : " : \(list).")
+    }
+
     static func facts(_ project: Project) -> String {
         var parts: [String] = []
         if project.requests > 0 {
@@ -381,12 +394,7 @@ struct GoalongCodeSection: View {
             return text + ". Ce temps ne s’ajoute jamais à votre temps actif."
         }
         guard !code.projects.isEmpty else { return "Ce que vos outils de développement ont fait ce jour-là." }
-        var facts: [String] = []
-        if code.commits > 0 { facts.append(GoalongCodeDay.count(code.commits, "commit", "commits")) }
-        if code.fileChanges > 0 { facts.append(GoalongCodeDay.count(code.fileChanges, "modification de fichier", "modifications de fichiers")) }
-        if code.conversations > 0 { facts.append(GoalongCodeDay.count(code.conversations, "conversation d’agent", "conversations d’agents")) }
-        let list = facts.count > 1 ? facts.dropLast().joined(separator: ", ") + " et " + facts[facts.count - 1] : facts.joined()
-        return "\(GoalongCodeDay.count(code.projects.count, "projet actif", "projets actifs")) ce jour-là" + (list.isEmpty ? "." : " : \(list).")
+        return code.activeProjectsSentence
     }
 
     private var followNote: (text: String, action: String)? {

@@ -61,7 +61,6 @@ final class VisibleTextConventionTests: XCTestCase {
         XCTAssertEqual(DashboardFormatters.percentage(1, 4), "25 %")
         XCTAssertEqual(DashboardFormatters.percentage(0, 0), "0 %")
         let spots = [
-            "Sources/LocalHistoryApp/ActivityPageExplorer.swift",
             "Sources/LocalHistoryApp/ComputerHistoryPage.swift",
             "Sources/LocalHistoryApp/DashboardComponents.swift",
         ]

@@ -87,7 +87,7 @@ struct GoalongHealthLane: Equatable, Sendable {
     var workoutSeconds: TimeInterval = 0
     var timeZone: String?
     /// Sleep is split at midnight, not assigned to the wake-up day by the import.
-    let sleepLabel = "Sommeil pendant cette date (découpé à minuit dans le fuseau de l’import)"
+    let sleepLabel = "Sommeil compté sur ce jour, coupé à minuit dans le fuseau horaire de l’import"
 }
 enum GoalongHealthSource {
     static func load(root: URL, day: Date) -> GoalongHealthLane {

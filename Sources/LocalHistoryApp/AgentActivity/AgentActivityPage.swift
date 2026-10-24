@@ -533,7 +533,6 @@
                     }
 
                     providerDirectoryRow
-                    Divider()
                     ForEach(AgentIntegrationKind.allCases) { kind in
                         Divider()
                         integrationRow(kind)

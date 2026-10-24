@@ -11,41 +11,45 @@ extension GalleryCatalog {
     }
 
     private static func supportPanel(_ id: String, note: String, phase: SupportRequestController.Phase,
-                                     feedback: String? = nil) -> GalleryEntry {
+                                     feedback: String? = nil, kind: SupportRequestController.FeedbackKind = .success) -> GalleryEntry {
         panel(id, width: 580, height: 660, note: note) { ctx in
             let controller = ctx.keep(SupportRequestController())
             controller.phase = phase
             controller.feedback = feedback
+            controller.feedbackKind = kind
             return AnyView(SupportRequestView(controller: controller))
         }
     }
 
     private static let supportFile = URL(fileURLWithPath: "/private/tmp/goalong-gallery-rapport.zip")
 
-    private static var supportReport: SupportRequestController.Phase {
+    /// The journal finding follows the journal: a state that says the journal is on must not list it as off.
+    private static func supportReport(journalOff: Bool = true) -> SupportRequestController.Phase {
         .ready(supportFile, [
             finding(.error, .permissionMissing, "Autorisation d’accessibilité manquante",
                     "Goalong ne peut plus enregistrer l’activité tant que macOS n’a pas rétabli cette autorisation."),
             finding(.warning, .lowDiskSpace, "Espace disque faible", "Il reste moins de 2 Go sur le disque de l’app."),
-            finding(.info, .diagnosticsDisabled, "Journal technique désactivé", "Aucun nouvel événement n’est conservé."),
-        ], byteCount: 184_320, eventCount: 212)
+        ] + (journalOff ? [finding(.info, .diagnosticsDisabled, "Journal technique désactivé", "Aucun nouvel événement n’est conservé.")] : []),
+              byteCount: 184_320, eventCount: 212)
     }
 
     /// The states `support/preparation`, `rapport-pret` and `echec` (MenuBar file) leave out: every severity, a clean
     /// report, and the feedback line under the cards.
     static var supportRequestEntries: [GalleryEntry] {
         [
-            supportPanel("support/constats-multiples", note: "trois constats : erreur, avertissement, information", phase: supportReport),
+            supportPanel("support/constats-multiples", note: "trois constats : erreur, avertissement, information", phase: supportReport()),
             supportPanel("support/aucun-probleme", note: "rapport prêt, aucun problème détecté",
                          phase: .ready(supportFile, [finding(.info, .noProblemDetected, "Aucun problème détecté automatiquement",
                                                              "Décrivez ce que vous avez fait et ce que vous attendiez dans votre message.")],
                                        byteCount: 52_480, eventCount: 38)),
-            supportPanel("support/retour-repere", note: "retour d’information : repère ajouté", phase: supportReport,
+            supportPanel("support/retour-repere", note: "retour d’information : repère ajouté", phase: supportReport(journalOff: false),
                          feedback: "Repère ajouté à 09:41. Reproduisez le problème puis cliquez sur « Actualiser le rapport »."),
-            supportPanel("support/retour-messagerie-absente", note: "retour d’information : aucune app de messagerie", phase: supportReport,
-                         feedback: "Aucune app de messagerie n’est configurée. Utilisez « Partager » ou « Enregistrer une copie »."),
-            supportPanel("support/retour-journal-desactive", note: "retour d’information : journal technique désactivé", phase: supportReport,
-                         feedback: "Le journal technique est désactivé : activez-le dans Réglages › Aide et diagnostic pour ajouter un repère."),
+            supportPanel("support/retour-messagerie-absente", note: "retour d’information : aucune app de messagerie", phase: supportReport(journalOff: false),
+                         feedback: "Aucune app de messagerie n’est configurée. Utilisez « Partager » ou « Enregistrer une copie ».",
+                         kind: .problem),
+            supportPanel("support/retour-journal-desactive", note: "retour d’information : journal technique désactivé", phase: supportReport(),
+                         feedback: "Le journal technique est désactivé : activez-le dans Réglages › Aide et diagnostic pour ajouter un repère.",
+                         kind: .problem),
         ]
     }
 }

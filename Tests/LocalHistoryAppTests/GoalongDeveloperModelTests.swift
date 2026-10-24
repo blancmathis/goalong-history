@@ -79,6 +79,16 @@ final class GoalongDeveloperModelTests: XCTestCase {
         let present = [DateInterval(start: day.addingTimeInterval(120), duration: 180)]
         XCTAssertEqual(GoalongIntervals.seconds(running, outside: present), 720)
     }
+    func testActiveProjectsSentenceSaysWhichConversationsHaveNoProject() {
+        func project(_ name: String, _ conversations: Int) -> GoalongCodeDay.Project {
+            var row = GoalongCodeDay.Project(id: name, name: name); row.conversations = conversations; return row
+        }
+        let projects = [project("atlas", 3), project("onboarding", 1)]
+        let mixed = GoalongCodeDay(projects: projects, unassignedConversations: 1, followsProjects: false, followedProjects: 0)
+        XCTAssertEqual(mixed.activeProjectsSentence, "2\u{00A0}projets actifs ce jour-là : 5\u{00A0}conversations d’agents, dont 1 sans projet.")
+        let allAssigned = GoalongCodeDay(projects: projects, unassignedConversations: 0, followsProjects: false, followedProjects: 0)
+        XCTAssertEqual(allAssigned.activeProjectsSentence, "2\u{00A0}projets actifs ce jour-là : 4\u{00A0}conversations d’agents.")
+    }
     func testCounterJournalsAreRemovedWithDerivedDayDeletion() throws {
         let root = try fixture(), day = Calendar.current.startOfDay(for: Date()), store = GoalongDeveloperStore(root: root.appendingPathComponent("data"))
         let project = GoalongDeveloperProject(root: root.appendingPathComponent("repo"))

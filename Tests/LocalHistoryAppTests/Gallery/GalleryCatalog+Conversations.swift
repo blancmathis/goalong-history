@@ -8,11 +8,12 @@ import AgentActivity
 /// Conversations IA with content: the list of Historique › Conversations locales, and the sources page, fed through
 /// the runtime's DEBUG seam (`galleryInstall`) with the records a scan would produce. No tool folder is read.
 extension GalleryCatalog {
-    private enum Conversations { case filled, loading, unreadable, partial }
+    enum Conversations { case filled, loading, unreadable, partial, projects }
 
     private static func conversation(_ n: Int, _ provider: AgentProvider, _ title: String, _ hour: Int, _ minute: Int,
                                      prompts: Int, replies: Int, availability: AgentSourceAvailability = .available,
-                                     complete: Bool = true, tokens: [(String, Int64, Int64)] = []) -> AgentCaptureRecord {
+                                     complete: Bool = true, project: String? = nil,
+                                     tokens: [(String, Int64, Int64)] = []) -> AgentCaptureRecord {
         let folder = provider == .codex ? ".codex/sessions" : ".claude/projects"
         let relative = "2026/10/23/\(provider == .codex ? "rollout" : "session")-\(n).jsonl"
         let at = GalleryClock.at(hour, minute)
@@ -36,9 +37,10 @@ extension GalleryCatalog {
             visibleMessages: (0..<(prompts + replies)).map { offset in
                 .init(role: offset.isMultiple(of: 2) ? .user : .assistantFinal,
                       text: offset.isMultiple(of: 2) ? (title.isEmpty ? "Question sans titre" : title) : "Voici une proposition.",
-                      timestamp: GalleryClock.at(hour - 1, minute + offset % 10))
+                      timestamp: GalleryClock.calendar.date(byAdding: .minute, value: offset % 10, to: GalleryClock.at(hour - 1, minute))!)
             })
         summary.tokenUsage = usage
+        summary.projectPath = project
         return AgentCaptureRecord(index: index, summary: summary, isAnalyzed: availability == .available,
                                   projectionIsComplete: complete)
     }
@@ -58,6 +60,22 @@ extension GalleryCatalog {
                              prompts: 1, replies: 1, tokens: [("claude-sonnet-5-5", 14_500, 2_100)]),
                 conversation(5, .codex, "", 7, 10, prompts: 1, replies: 1, tokens: [("gpt-5.5", 8_200, 900)]),
             ]
+        case .projects:
+            // The same day, with the folder each conversation ran in: « Agents et code » groups them by project. A scan
+            // of a finished day reads each file for that day (`analysisInterval`); without it the figures show as partial.
+            let day = GalleryClock.calendar.dateInterval(of: .day, for: GalleryClock.today)
+            return [
+                conversation(1, .codex, "Planifier la migration du module Atlas", 9, 12, prompts: 7, replies: 7,
+                             project: "/galerie/projets/atlas", tokens: [("gpt-5.5", 182_400, 21_300)]),
+                conversation(2, .claudeCode, "Relire la maquette de l’onboarding", 8, 47, prompts: 4, replies: 4,
+                             project: "/galerie/projets/onboarding", tokens: [("claude-opus-5-5", 96_200, 12_800)]),
+                conversation(3, .codex, "Corriger les tests du lecteur de calendrier", 8, 20, prompts: 12, replies: 11,
+                             project: "/galerie/projets/atlas", tokens: [("gpt-5.5", 241_000, 30_100)]),
+                conversation(4, .claudeCode, "Préparer la note de version", 7, 40, prompts: 3, replies: 3,
+                             project: "/galerie/projets/atlas", tokens: [("claude-sonnet-5-5", 14_500, 2_100)]),
+                conversation(5, .codex, "Vérifier une idée sans dossier de projet", 7, 10, prompts: 1, replies: 1,
+                             tokens: [("gpt-5.5", 8_200, 900)]),
+            ].map { record in var scoped = record; scoped.analysisInterval = day; return scoped }
         case .partial:
             return [
                 conversation(1, .codex, "Planifier la migration du module Atlas", 9, 12, prompts: 7, replies: 7, complete: false,
@@ -71,7 +89,7 @@ extension GalleryCatalog {
     }
 
     /// Installs the state in the page's runtime and gives the consent the page needs to show conversations.
-    private static func installConversations(_ state: Conversations, _ model: DashboardViewModel) {
+    static func installConversations(_ state: Conversations, _ model: DashboardViewModel) {
         GoalongCapabilityConsentStore.shared.set(.aiConversations, enabled: true, surface: .settings)
         let records = conversationRecords(state)
         let overview = AgentActivityOverview(
@@ -83,7 +101,7 @@ extension GalleryCatalog {
         var scan = AgentScanResult(scannedSourceCount: records.count)
         var usage: AgentDailyTokenUsage?
         switch state {
-        case .filled:
+        case .filled, .projects:
             usage = AgentDailyTokenUsage(records: records, day: GalleryClock.today, calendar: GalleryClock.calendar)
         case .partial:
             scan.analysisIncomplete = true
@@ -95,7 +113,9 @@ extension GalleryCatalog {
         }
         model.agentActivityRuntime.galleryInstall(
             overview: overview, tokenUsage: usage, analyzedAt: usage == nil ? nil : GalleryClock.at(9, 40), scan: scan,
-            isScanning: state == .loading)
+            isScanning: state == .loading,
+            codexFolder: state == .filled
+                ? AgentWatchedFolder(displayName: ".codex", path: "/Users/demo/.codex", provider: .codex) : nil)
     }
 
     /// Historique › Conversations locales, in the dashboard window.

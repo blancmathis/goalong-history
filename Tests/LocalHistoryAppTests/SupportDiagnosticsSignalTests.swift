@@ -132,10 +132,12 @@ final class SupportDiagnosticsSignalTests: XCTestCase {
         controller.markIssue(journal: journal)
         XCTAssertFalse(controller.feedback?.contains("Repère ajouté") ?? true)
         XCTAssertNotNil(controller.feedback)
+        XCTAssertEqual(controller.feedbackKind, .problem)
         XCTAssertFalse(journal.snapshot().records.contains { $0.event == .userMarkedIssue })
         journal.setEnabled(true)
         controller.markIssue(journal: journal)
         XCTAssertTrue(controller.feedback?.contains("Repère ajouté") == true)
+        XCTAssertEqual(controller.feedbackKind, .success)
         XCTAssertTrue(journal.snapshot().records.contains { $0.event == .userMarkedIssue })
     }
 
