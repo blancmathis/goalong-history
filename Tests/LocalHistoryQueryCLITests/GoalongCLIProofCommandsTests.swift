@@ -90,7 +90,9 @@ final class GoalongCLIProofCommandsTests: XCTestCase {
             XCTAssertEqual(json["status"] as? String, "inaccessibleOrInvalid", path)
             XCTAssertEqual(json["packageBytes"] as? Int, 0)
             XCTAssertEqual(json["packageSHA256"] as? String, "")
-            XCTAssertFalse((json["error"] as? String ?? "").isEmpty)
+            let message = json["error"] as? String ?? ""
+            XCTAssertFalse(message.isEmpty)
+            XCTAssertFalse(message.contains("invalidArchive") || message.contains("Swift.") || message.contains("Context("), message)
             XCTAssertNil(json["report"] as? [String: Any])
         }
     }

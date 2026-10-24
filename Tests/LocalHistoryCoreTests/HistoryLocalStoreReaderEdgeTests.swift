@@ -53,7 +53,7 @@ final class HistoryLocalStoreReaderEdgeTests: XCTestCase {
         XCTAssertTrue(load.issues[0].message.contains("exceeds the 1048576-byte safety limit"), load.issues[0].message)
     }
 
-    func testMemoryFileIssuesReadAsSentencesButKeepDecodingDetail() throws {
+    func testMemoryFileIssuesReadAsSentencesWithoutSwiftDumps() throws {
         let reader = HistoryLocalStoreReader(rootDirectory: try makeRoot())
         let memories = reader.memoriesDirectory
         try FileManager.default.createDirectory(at: memories, withIntermediateDirectories: true)
@@ -63,7 +63,8 @@ final class HistoryLocalStoreReaderEdgeTests: XCTestCase {
         XCTAssertEqual(messages.count, 2, "\(messages)")
         XCTAssertTrue(messages.contains { $0.hasPrefix("Could not decode JSON file: file exceeds the") }, "\(messages)")
         XCTAssertFalse(messages.contains { $0.contains("exceedsLimit(") }, "\(messages)")
-        XCTAssertTrue(messages.contains { $0.contains("dataCorrupted") }, "\(messages)")
+        XCTAssertTrue(messages.contains { $0.contains("The data is not readable") }, "\(messages)")
+        XCTAssertFalse(messages.contains { $0.contains("DecodingError") || $0.contains("dataCorrupted") }, "\(messages)")
     }
 
     func testPresenceTimestampsKeepInputsAndBackdateIdleHeartbeatsInOrder() throws {

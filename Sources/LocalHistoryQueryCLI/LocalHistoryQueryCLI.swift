@@ -624,7 +624,9 @@ public enum GoalongQueryCLI {
             }
         }
         if let failure = error as? GoalongContextualRhythm.Failure, case .invalid(let message) = failure { return message }
-        return String(describing: error)
+        if let cli = error as? CLIError { return cli.description }
+        if let focus = error as? GoalongFocusError { return focus.description }
+        return GoalongReadableError.message(error)
     }
 
     /// The stderr envelope. `error` stays a bare code for focus errors; advice goes in `hint`.
@@ -1158,7 +1160,7 @@ public enum GoalongQueryCLI {
                         recap: nil,
                         integrity: nil,
                         sourcePath: recapURL.path,
-                        error: String(describing: error)
+                        error: errorMessage(for: error)
                     )
                 )
             }
@@ -1200,7 +1202,7 @@ public enum GoalongQueryCLI {
                         status: "inaccessibleOrInvalid",
                         recap: nil,
                         integrity: nil,
-                        error: String(describing: error)
+                        error: errorMessage(for: error)
                     )
                 )
             }
@@ -1334,7 +1336,7 @@ public enum GoalongQueryCLI {
                         packageSHA256: "",
                         report: nil,
                         status: "inaccessibleOrInvalid",
-                        error: String(describing: error)
+                        error: errorMessage(for: error)
                     )
                 )
             }
@@ -1376,7 +1378,7 @@ public enum GoalongQueryCLI {
                         createdAt: nil,
                         report: nil,
                         status: "inaccessibleOrInvalid",
-                        error: String(describing: error)
+                        error: errorMessage(for: error)
                     )
                 )
             }
@@ -2327,7 +2329,7 @@ public enum GoalongQueryCLI {
                 )
             }
         } catch {
-            issues.append("Stored/live Screen Time range read failed: \(error)")
+            issues.append("Stored/live Screen Time range read failed: \(errorMessage(for: error))")
         }
 
         let needsDirectDetail = days.contains { $0.omittedApplicationCount > 0 }
@@ -2384,7 +2386,7 @@ public enum GoalongQueryCLI {
             FileHandle.standardOutput.write(payload)
         } catch {
             throw CLIError.unsafeSource(
-                "Apple Screen Time is unavailable. Open Goalong History and explicitly enable Screen Time; the CLI never reads Apple's protected stores directly. Broker error: \(error)"
+                "Apple Screen Time is unavailable. Open Goalong History and explicitly enable Screen Time; the CLI never reads Apple's protected stores directly. Broker error: \(errorMessage(for: error))"
             )
         }
     }

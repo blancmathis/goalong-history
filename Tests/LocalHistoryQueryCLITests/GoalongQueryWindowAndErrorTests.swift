@@ -99,6 +99,12 @@ final class GoalongQueryWindowAndErrorTests: XCTestCase {
         XCTAssertTrue(GoalongQueryCLI.errorMessage(for: GoalongGlobalPause.PauseError.unreadable).contains("stays paused"))
         XCTAssertEqual(GoalongQueryCLI.errorMessage(for: GoalongFocusError.locked), "locked")
         XCTAssertEqual(GoalongQueryCLI.errorMessage(for: CLIError.usage("bad flag")), "bad flag")
+        for focus in [GoalongFocusError.storageFailed, .appNotRunning, .outcomeUnknown] {
+            XCTAssertEqual(GoalongQueryCLI.errorMessage(for: focus), focus.rawValue, "focus codes stay bare")
+        }
+        XCTAssertEqual(GoalongQueryCLI.errorMessage(for: GoalongProofArchiveError.malformedZIP), "The Goalong proof package is malformed.")
+        let dump = GoalongQueryCLI.errorMessage(for: DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "The given data was not valid JSON.")))
+        XCTAssertEqual(dump, "The data is not readable: The given data was not valid JSON.")
 
         let plain = try XCTUnwrap(GoalongQueryCLI.errorEnvelopeData(for: CLIError.usage("bad flag")))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: plain) as? [String: Any])
