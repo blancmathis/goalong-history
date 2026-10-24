@@ -232,12 +232,14 @@ import LocalHistoryCore
         }
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
         let minutes = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
-        guard minutes >= (current.hour ?? 9) * 60 + (current.minute ?? 0),
-              let previous = calendar.date(byAdding: .day, value: -1, to: now) else { return }
+        guard minutes >= (current.hour ?? 9) * 60 + (current.minute ?? 0) else { return }
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = calendar; formatter.timeZone = zone
-        let day = formatter.string(from: previous)
-        guard current.lastAttempt != day else { return }
+        // Oldest day not yet sent, at most 3 days back; with no history only yesterday. Never a day at or before the last attempt/success.
+        let floor = [current.lastSuccess, current.lastAttempt].compactMap { $0 }.max()
+        let offsets = floor == nil ? [-1] : [-3, -2, -1]
+        let candidates = offsets.compactMap { calendar.date(byAdding: .day, value: $0, to: now) }.map { formatter.string(from: $0) }
+        guard let day = candidates.first(where: { floor == nil || $0 > floor! }) else { return }
         if let retry = networkRetry, retry.day == day, now < retry.notBefore { return }
         let previousAttempt = current.lastAttempt
         do {
