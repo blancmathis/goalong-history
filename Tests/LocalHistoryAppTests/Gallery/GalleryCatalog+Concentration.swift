@@ -215,9 +215,14 @@ extension GalleryCatalog {
         return blocking
     }
 
+    /// A fresh store each call. The HOME is reset once per image, but `GalleryRenderer.render` builds the view again
+    /// when a field is mis-measured: a store left by the render before would add its plan items a second time (the
+    /// third `planned()` in one image threw `planFull`, R41).
     private func controller(_ name: String) throws -> ConcentrationController {
         let clock = self.clock, blocking = self.blocking
-        return try ConcentrationController(store: FocusStore(directory: root.appendingPathComponent(name)),
+        let directory = root.appendingPathComponent(name, isDirectory: true)
+        if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
+        return try ConcentrationController(store: FocusStore(directory: directory),
                                            clock: { clock.now }, blocking: { blocking })
     }
 

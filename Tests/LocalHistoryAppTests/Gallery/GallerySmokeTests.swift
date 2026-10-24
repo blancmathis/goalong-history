@@ -185,6 +185,20 @@ final class GallerySmokeTests: XCTestCase {
                       "Activité left the gallery day for \(model.selectedDay): a view read the real clock")
     }
 
+    /// `GalleryRenderer.render` builds an entry's view up to six times in one image, with no HOME reset between the
+    /// tries: the Concentration fixtures give the same controller each time (R41: the third `planned()` threw
+    /// `planFull` on concentration-maintenant/plan-du-jour).
+    @MainActor func testConcentrationFixturesAreTheSameWhenBuiltAgainInOneImage() throws {
+        var first: [String]?
+        for attempt in 0..<6 {
+            let planned = try GalleryConcentrationFixtures().planned().controller
+            let titles = planned.plan.items.map(\.title)
+            XCTAssertEqual(titles.count, 4, "try \(attempt + 1)")
+            if let first { XCTAssertEqual(titles, first, "try \(attempt + 1)") } else { first = titles }
+            _ = try GalleryConcentrationFixtures().pomodoro()
+        }
+    }
+
     /// Every pixel of the first and last rows and columns is opaque.
     static func assertOpaqueEdges(_ image: GalleryImage, _ label: String, file: StaticString = #filePath, line: UInt = #line) {
         let bitmap = image.bitmap
