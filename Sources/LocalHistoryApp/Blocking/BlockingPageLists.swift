@@ -728,14 +728,14 @@ struct BlockingIconStack: View {
     }
 }
 
-/// A site has no icon offline: its initial on a quiet tile, the same shape as an app icon.
+/// A site has no icon offline: a globe on a quiet tile, the same shape as an app icon.
 struct BlockingSiteTile: View {
     let host: String
     var size: CGFloat = 22
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-        Text(host.first.map { String($0).uppercased() } ?? "•")
-            .font(.system(size: size * 0.5, weight: .semibold, design: .rounded))
+        Image(systemName: "globe")
+            .font(.system(size: size * 0.5, weight: .medium))
             .foregroundStyle(LHTheme.secondaryText)
             .frame(width: size, height: size)
             .background(shape.fill(LHTheme.insetBackground))

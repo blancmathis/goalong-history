@@ -203,12 +203,12 @@ struct BlockingStruckIcon: View {
     let item: BlockingItem
     var size: CGFloat = 48
 
-    /// The initial shown for an item without an icon of its own (a site, an app Goalong cannot read the icon of).
+    /// The initial shown for an item without an icon of its own (an app Goalong cannot read the icon of).
     static func fallbackInitial(for item: BlockingItem) -> String? {
         switch item {
-        case .site(let host): return host.first.map { String($0).uppercased() } ?? "•"
         case .app(let app): return AppIconView.icon(bundleIdentifier: app.bundleIdentifier) == nil ? AppIconView.initial(for: app.name) : nil
-        case .symbol: return nil
+        // A site without an icon shows a globe (BlockingSiteTile), never a letter.
+        case .site, .symbol: return nil
         }
     }
 
