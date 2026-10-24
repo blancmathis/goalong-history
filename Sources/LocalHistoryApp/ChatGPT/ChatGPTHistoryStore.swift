@@ -116,9 +116,9 @@
                 return "Goalong a refusé un dossier de stockage ChatGPT non sécurisé : \(url.path)."
             case .unsafeFile(let url):
                 return "Goalong a refusé un fichier de stockage ChatGPT non sécurisé : \(url.path)."
-            case .posix(let operation, let url, let code):
+            case .posix(_, let url, let code):
                 return
-                    "Goalong could not \(operation) the ChatGPT storage directory at \(url.path): \(String(cString: strerror(code)))"
+                    "Goalong n’a pas pu accéder au dossier de stockage ChatGPT \(url.path) (code \(code)). Réessayez."
             }
         }
     }
