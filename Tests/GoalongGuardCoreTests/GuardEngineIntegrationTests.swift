@@ -45,6 +45,8 @@ final class GuardEngineIntegrationTests: XCTestCase {
     private var exitCode: Int32?
     private let exited = NSLock()
     private var proofAlive = false
+    /// Injected loginwindow announcements.
+    private var announce: ((GuardSessionEvent) -> Void)?
 
     override func setUpWithError() throws {
         root = GuardSystem.realPath(FileManager.default.temporaryDirectory)
@@ -64,6 +66,7 @@ final class GuardEngineIntegrationTests: XCTestCase {
     private func startEngine(stopCheck: TimeInterval = 0.3, wall: (() -> Date)? = nil, bootTime: (() -> Double)? = nil,
                              sessionEndWait: TimeInterval? = nil, refusedSessionEndDelay: TimeInterval? = nil) {
         var environment = GuardEnvironment(locateApp: { [app] in app!.current }, launch: { [app] in app!.launch($0) })
+        environment.observeSession = { [weak self] handler in self?.announce = handler }
         if let wall { environment.wall = wall }
         if let bootTime { environment.bootTime = bootTime }
         if let sessionEndWait { environment.sessionEndWait = sessionEndWait }
@@ -310,6 +313,48 @@ final class GuardEngineIntegrationTests: XCTestCase {
         let delay = app.launches[1].timeIntervalSince(secondQuit)
         XCTAssertGreaterThanOrEqual(delay, 0.25)
         XCTAssertLessThan(delay, 0.55, "the short delay, not a second session-end wait")
+        XCTAssertNil(code)
+    }
+
+    /// K4-02: logout cancelled, then a real one announced within the cooldown: no relaunch 5 s after the
+    /// death while loginwindow may still be closing apps. A cancel ends the wait at once; a kill does not wait.
+    func testAnAnnouncedLogoutAfterACancelledOneIsNotMetByARelaunch() throws {
+        let first = try app.spawn()
+        arm()
+        markHealthy(first)
+        startEngine(sessionEndWait: 1.2, refusedSessionEndDelay: 0.2)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == first && announce != nil })
+        announce?(.ending)
+        quitForSessionEnd(first)
+        usleep(300_000)
+        XCTAssertEqual(app.launchCount, 0, "the first session end is honoured: the guard waits")
+        let cancelledAt = Date()
+        announce?(.cancelled)
+        XCTAssertNotNil(waitUntil(0.5) { app.launchCount == 1 }, "a cancelled logout reopens Goalong at once")
+        guard app.launchCount == 1 else { return }
+        XCTAssertLessThan(app.launches[0].timeIntervalSince(cancelledAt), 0.3)
+        let second = try XCTUnwrap(app.current)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == second })
+        markHealthy(second)
+        usleep(1_100_000)  // the healthy-kill spacing (1 s) is not what this test measures
+        announce?(.ending)
+        let secondQuit = Date()
+        quitForSessionEnd(second)
+        usleep(700_000)
+        XCTAssertEqual(app.launchCount, 1, "the real logout goes on: no relaunch after the short delay")
+        XCTAssertNotNil(waitUntil(1.5) { app.launchCount == 2 }, "the guard still lives after the wait: relaunch")
+        guard app.launchCount == 2 else { return }
+        XCTAssertGreaterThanOrEqual(app.launches[1].timeIntervalSince(secondQuit), 1.1)
+        let third = try XCTUnwrap(app.current)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == third })
+        markHealthy(third)
+        usleep(1_100_000)
+        announce?(.ending)
+        let killedAt = Date()
+        kill(third, SIGKILL)
+        XCTAssertNotNil(waitUntil(1) { app.launchCount == 3 }, "a kill without a token is relaunched, announcement or not")
+        guard app.launchCount == 3 else { return }
+        XCTAssertLessThan(app.launches[2].timeIntervalSince(killedAt), 0.2)
         XCTAssertNil(code)
     }
 

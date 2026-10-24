@@ -53,6 +53,13 @@ environment.binaryReplaced = {
     return now != ownStamp
 }
 environment.log = { message in logger.log("\(message, privacy: .public)") }
+// loginwindow announces logouts and their cancels: a cancel ends a session-end wait at once (K4-02).
+environment.observeSession = { handler in
+    let center = DistributedNotificationCenter.default()
+    for (name, event) in GuardSessionEvent.notifications {
+        _ = center.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { _ in handler(event) }
+    }
+}
 environment.build = build
 
 let engine = GuardEngine(files: files, environment: environment, queue: .main) { code in
