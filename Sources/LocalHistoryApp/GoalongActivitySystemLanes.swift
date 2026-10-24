@@ -101,7 +101,7 @@ struct GoalongAgendaSection: View {
             VStack(alignment: .leading, spacing: 22) {
                 if !agenda.events.isEmpty || !agenda.calls.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        GoalongLaneLegend(items: legend)
+                        GoalongLaneLegend(items: legend, showsThreadClasses: day.segments.contains(where: { $0.kind.isActive }))
                         GoalongLaneMatrix(rows: rows, range: range, summary: agenda.caption)
                     }
                 }

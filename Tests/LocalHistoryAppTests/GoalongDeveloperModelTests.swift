@@ -85,7 +85,7 @@ final class GoalongDeveloperModelTests: XCTestCase {
         }
         let projects = [project("atlas", 3), project("onboarding", 1)]
         let mixed = GoalongCodeDay(projects: projects, unassignedConversations: 1, followsProjects: false, followedProjects: 0)
-        XCTAssertEqual(mixed.activeProjectsSentence, "2\u{00A0}projets actifs ce jour-là : 5\u{00A0}conversations d’agents, dont 1 sans projet.")
+        XCTAssertEqual(mixed.activeProjectsSentence, "2\u{00A0}projets actifs ce jour-là : 5\u{00A0}conversations d’agents, dont 1\u{00A0}sans projet.")
         let allAssigned = GoalongCodeDay(projects: projects, unassignedConversations: 0, followsProjects: false, followedProjects: 0)
         XCTAssertEqual(allAssigned.activeProjectsSentence, "2\u{00A0}projets actifs ce jour-là : 4\u{00A0}conversations d’agents.")
     }

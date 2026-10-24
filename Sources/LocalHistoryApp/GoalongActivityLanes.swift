@@ -184,18 +184,23 @@ struct GoalongLaneMatrix: View {
 
 struct GoalongLaneLegend: View {
     let items: [(mark: GoalongLaneMark, title: String)]
+    /// The « Vous » row takes the colours of the thread: its classes get the legend they have everywhere else.
+    var showsThreadClasses = false
 
     var body: some View {
-        HStack(spacing: 16) {
-            ForEach(items.indices, id: \.self) { index in
-                HStack(spacing: 6) {
-                    swatch(items[index].mark)
-                    Text(items[index].title)
+        VStack(alignment: .leading, spacing: 6) {
+            if showsThreadClasses { GoalongActivityClassLegend() }
+            HStack(spacing: 16) {
+                ForEach(items.indices, id: \.self) { index in
+                    HStack(spacing: 6) {
+                        swatch(items[index].mark)
+                        Text(items[index].title)
+                    }
                 }
             }
+            .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+            .accessibilityHidden(true)
         }
-        .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
-        .accessibilityHidden(true)
     }
 
     @ViewBuilder private func swatch(_ mark: GoalongLaneMark) -> some View {
@@ -268,7 +273,7 @@ struct GoalongCodeDay: Equatable {
         if fileChanges > 0 { facts.append(Self.count(fileChanges, "modification de fichier", "modifications de fichiers")) }
         if conversations > 0 {
             facts.append(Self.count(conversations, "conversation d’agent", "conversations d’agents")
-                + (unassignedConversations > 0 && !projects.isEmpty ? ", dont \(unassignedConversations) sans projet" : ""))
+                + (unassignedConversations > 0 && !projects.isEmpty ? ", dont " + Self.count(unassignedConversations, "sans projet", "sans projet") : ""))
         }
         let list = facts.count > 1 ? facts.dropLast().joined(separator: ", ") + " et " + facts[facts.count - 1] : facts.joined()
         return "\(Self.count(projects.count, "projet actif", "projets actifs")) ce jour-là" + (list.isEmpty ? "." : " : \(list).")
@@ -357,7 +362,7 @@ struct GoalongCodeSection: View {
                         .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        GoalongLaneLegend(items: legend(shown))
+                        GoalongLaneLegend(items: legend(shown), showsThreadClasses: day.segments.contains(where: { $0.kind.isActive }))
                         GoalongLaneMatrix(rows: rows(shown), range: range(shown), summary: code.caption)
                     }
                     VStack(spacing: 0) {
