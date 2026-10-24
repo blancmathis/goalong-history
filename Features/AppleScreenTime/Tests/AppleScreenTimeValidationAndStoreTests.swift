@@ -63,6 +63,7 @@ final class AppleScreenTimeValidationAndStoreTests: XCTestCase {
             start: start, end: start.addingTimeInterval(60), totalScreenOnDuration: 60,
             applications: [AppleScreenTimeApplicationUsage(bundleIdentifier: "a", displayName: "A", duration: 120)])
         XCTAssertEqual(message(envelope(reports: [report(segments: [tooLong])])), "Device mac contains an invalid application duration.")
+        // The validator allows 1 s of rounding above the segment length.
         let atLimit = AppleScreenTimeSegment(
             start: start, end: start.addingTimeInterval(60), totalScreenOnDuration: 60,
             applications: [AppleScreenTimeApplicationUsage(bundleIdentifier: "a", displayName: "A", duration: 61)])
