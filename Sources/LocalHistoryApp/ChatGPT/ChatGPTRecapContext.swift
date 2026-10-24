@@ -205,7 +205,7 @@
             let importedChats: [ChatGPTImportedMessage] = []
             let counts = ChatGPTRecapSourceCounts(
                 localEvents: activity.coverage.sourceEventCount,
-                activeMinutes: activity.activeSeconds / 60,
+                activeMinutes: DashboardFormatters.roundedMinutes(seconds: TimeInterval(activity.activeSeconds)),
                 semanticSnapshots: activity.coverage.semanticSnapshotCount,
                 screenTimeDevices: screenTime?.deviceSummaries.count ?? 0,
                 screenTimeApplications: screenTime?.topApplications.count ?? 0,
@@ -337,7 +337,7 @@
                 throw CodexAppServerError.protocolLimitExceeded("les données choisies dépassent la taille permise.")
             }
             let counts = ChatGPTRecapSourceCounts(localEvents: details ? activity.coverage.sourceEventCount : 0,
-                activeMinutes: apps.reduce(0) { $0 + $1.activeSeconds } / 60,
+                activeMinutes: DashboardFormatters.roundedMinutes(seconds: TimeInterval(apps.reduce(0) { $0 + $1.activeSeconds })),
                 semanticSnapshots: details ? activity.coverage.semanticSnapshotCount : 0,
                 screenTimeDevices: safeScreenTime?.deviceSummaries.count ?? 0, screenTimeApplications: appleAppCount,
                 agentCaptures: safeAgents.sessionCount, agentMessages: safeAgents.messageCount,
@@ -1035,6 +1035,8 @@
         }
 
         #if DEBUG
+            static func durationForTesting(_ seconds: Int) -> String { duration(seconds) }
+
             static func renderAgentActivityForTesting(_ overview: AgentActivityOverview) -> String {
                 renderAgentActivity(overview)
             }
@@ -1120,12 +1122,9 @@
             duration(TimeInterval(seconds))
         }
 
+        /// The prompt reads the same figure as the page: shared formatter, rounded to the minute.
         private static func duration(_ seconds: TimeInterval) -> String {
-            let value = max(0, Int(seconds.rounded()))
-            let hours = value / 3_600
-            let minutes = (value % 3_600) / 60
-            if hours > 0 { return "\(hours)h \(minutes)m" }
-            return "\(minutes)m"
+            DashboardFormatters.duration(seconds: seconds)
         }
 
         private static let dayFormatter: DateFormatter = {

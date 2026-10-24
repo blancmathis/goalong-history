@@ -14,6 +14,15 @@
         /// Keep the visible dashboard responsive without repeatedly enumerating them.
         static let defaultRefreshInterval: TimeInterval = 30
 
+        /// « toutes les 30 s », « toutes les 10 min », « toutes les heures »: the cadence the model really uses.
+        static func refreshCadenceLabel(_ interval: TimeInterval) -> String {
+            let seconds = max(1, Int(interval.rounded()))
+            if seconds == 3_600 { return "toutes les heures" }
+            if seconds % 3_600 == 0 { return "toutes les \(seconds / 3_600) h" }
+            if seconds % 60 == 0 { return "toutes les \(seconds / 60) min" }
+            return "toutes les \(seconds) s"
+        }
+
         @Published var selectedDay: Date
         @Published var configuration: AppleScreenTimeConfiguration
         @Published private(set) var summary: AppleScreenTimeDaySummary?
@@ -36,7 +45,7 @@
         private let appleSource: AppleSystemScreenTimeSource
         private let collectionProvider: CollectionProvider
         private let includesUnfilteredSummary: Bool
-        private let refreshInterval: TimeInterval
+        let refreshInterval: TimeInterval
         private let queue = DispatchQueue(
             label: "ai.goalong.localhistory.apple-system-screen-time.dashboard",
             qos: .userInitiated

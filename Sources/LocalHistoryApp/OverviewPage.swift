@@ -1008,8 +1008,7 @@
         private func helpText(for bucket: TimelineBucket) -> String {
             let range =
                 "\(DashboardFormatters.shortTime.string(from: bucket.start))–\(DashboardFormatters.shortTime.string(from: bucket.end))"
-            return
-                "\(range) · \(bucket.activeMinutes)m active · \(bucket.workMinutes)m work · \(bucket.privateMinutes)m private"
+            return DashboardFormatters.timelineHelp(range: range, bucket: bucket)
         }
     }
 #endif

@@ -336,8 +336,7 @@ struct ConcentrationHubHeader: View {
 
 enum FocusDistractionFormat {
     static func minutes(_ seconds: Int) -> String {
-        let minutes = max(1, Int((Double(seconds) / 60).rounded()))
-        return minutes >= 60 ? "\(minutes / 60) h \(String(format: "%02d", minutes % 60))" : "\(minutes) min"
+        DashboardFormatters.duration(minutes: max(1, Int((Double(seconds) / 60).rounded())))
     }
 }
 

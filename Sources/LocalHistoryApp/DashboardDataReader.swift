@@ -594,7 +594,7 @@
                     let value = AppUsage(
                         appName: item.name,
                         bundleIdentifier: item.bundleIdentifier,
-                        activeMinutes: Int(ceil(item.foregroundSeconds / 60)),
+                        activeMinutes: max(1, DashboardFormatters.roundedMinutes(seconds: item.foregroundSeconds)),
                         eventCount: item.eventCount
                     )
                     try derivedBudget.reserve(
