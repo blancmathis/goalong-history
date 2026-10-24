@@ -27,6 +27,12 @@ final class ErrorTextMappingTests: XCTestCase {
         XCTAssertFalse(GoalongUserFacingError.message(error).contains("Decoding"))
     }
 
+    func testGoalongNSErrorsKeepTheirFrenchSentence() {
+        let limit = NSError(domain: "GoalongAnalysis", code: 1, userInfo: [NSLocalizedDescriptionKey: "Limite : 4 000 caractères de consignes."])
+        XCTAssertEqual(GoalongUserFacingError.message(limit), "Limite : 4 000 caractères de consignes.")
+        XCTAssertEqual(GoalongUserFacingError.message(NSError(domain: "GoalongPrivacy", code: 3)), GoalongUserFacingError.genericMessage)
+    }
+
     @MainActor func testComputerHistoryFallbackNeverShowsSystemEnglishForCustomErrors() {
         struct Other: Error {}
         XCTAssertEqual(ComputerHistoryPageModel.displayMessage(for: Other()), GoalongUserFacingError.genericMessage)
@@ -34,7 +40,7 @@ final class ErrorTextMappingTests: XCTestCase {
 
     @MainActor func testUpdateSummaryHasNoBareCode() {
         let unknown = SoftwareUpdateManager.unknownErrorSummary
-        XCTAssertEqual(SoftwareUpdateManager.errorSummary(NSError(domain: NSURLErrorDomain, code: NSURLErrorBadURL)), unknown)
+        XCTAssertEqual(SoftwareUpdateManager.errorSummary(NSError(domain: NSURLErrorDomain, code: NSURLErrorBadURL)), "problème de réseau ; réessayez plus tard")
         XCTAssertEqual(SoftwareUpdateManager.errorSummary(NSError(domain: "Other", code: 7)), unknown)
         XCTAssertFalse(unknown.contains(where: \.isNumber))
     }

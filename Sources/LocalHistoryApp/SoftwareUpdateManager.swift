@@ -459,7 +459,7 @@
                 case NSURLErrorTimedOut: return "le serveur n’a pas répondu à temps"
                 case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed, NSURLErrorCannotConnectToHost:
                     return "le serveur des mises à jour est injoignable"
-                default: return Self.unknownErrorSummary
+                default: return "problème de réseau ; réessayez plus tard"
                 }
             }
             if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError, underlying.domain == NSURLErrorDomain {

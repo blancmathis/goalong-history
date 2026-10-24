@@ -7,7 +7,9 @@ public enum GoalongReadableError {
         if let decoding = error as? DecodingError { return describe(decoding) }
         if let text = (error as? LocalizedError)?.errorDescription, !text.isEmpty { return text }
         let ns = error as NSError
-        if [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain].contains(ns.domain) {
+        if let text = ns.userInfo[NSLocalizedDescriptionKey] as? String, !text.isEmpty { return text }
+        // A real NSError has a system sentence; its `description` is the `Error Domain=…` dump.
+        if type(of: error) is NSError.Type || [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain].contains(ns.domain) {
             return error.localizedDescription
         }
         if let text = (error as? CustomStringConvertible)?.description, !text.isEmpty, !text.hasPrefix("Error Domain=") {

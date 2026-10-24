@@ -32,4 +32,12 @@ final class GoalongReadableErrorTests: XCTestCase {
         XCTAssertEqual(GoalongReadableError.message(Bare.unavailable), "The operation failed (Bare: unavailable).")
         XCTAssertFalse(GoalongReadableError.message(Bare.failed(code: 7)).contains("code:"))
     }
+
+    func testNSErrorsUseTheirSentenceNeverTheirDump() {
+        let described = NSError(domain: "GoalongPrivacy", code: 1, userInfo: [NSLocalizedDescriptionKey: "Too many exclusions."])
+        XCTAssertEqual(GoalongReadableError.message(described), "Too many exclusions.")
+        let bare = NSError(domain: "GoalongPrivacy", code: 3)
+        XCTAssertEqual(GoalongReadableError.message(bare), bare.localizedDescription)
+        XCTAssertFalse(GoalongReadableError.message(bare).contains("Error Domain="))
+    }
 }
