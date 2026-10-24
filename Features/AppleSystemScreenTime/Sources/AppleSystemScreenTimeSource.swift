@@ -448,7 +448,7 @@
             }
 
             let now = nowProvider()
-            let effectiveEnd = calendar.isDateInToday(day) ? min(dayInterval.end, now) : dayInterval.end
+            let effectiveEnd = calendar.isDate(day, inSameDayAs: now) ? min(dayInterval.end, now) : dayInterval.end
             let requestedInterval = DateInterval(
                 start: dayInterval.start,
                 end: max(dayInterval.start, effectiveEnd)
@@ -1604,7 +1604,7 @@
                 let allEvents = Array(latestBeforeInterval.values)
                     + eventsInsideInterval
                     + Array(earliestAfterInterval.values)
-                let isToday = calendar.isDateInToday(interval.start)
+                let isToday = calendar.isDate(interval.start, inSameDayAs: now)
                 let stitched = AppleBiomeScreenTimeAppUsageIntervalBuilder.intervals(
                     from: allEvents,
                     closeOpenIntervalAt: isToday ? min(now, interval.end) : nil,
@@ -1758,7 +1758,7 @@
                 biomeFileCache.retainFiles(existing, under: directory.standardizedFileURL.path)
 
                 let latestEvent = allEvents.map(\.timestamp).max()
-                let canCloseLiveInterval = calendar.isDateInToday(interval.start)
+                let canCloseLiveInterval = calendar.isDate(interval.start, inSameDayAs: now)
                     && latestEvent.map { now.timeIntervalSince($0) <= 20 * 60 } == true
                 let stitched = AppleBiomeIntervalBuilder.intervals(
                     from: allEvents,

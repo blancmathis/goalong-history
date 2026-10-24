@@ -580,6 +580,47 @@
             )
         }
 
+        /// "Today" is the day of `nowProvider`, not of the system clock: with `now` in the past,
+        /// the open interval of that day closes at `now`.
+        func testCollectClosesTheDayAtInjectedNowNotTheSystemClock() throws {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("apple-screen-time-injected-now-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+
+            let knowledge = root.appendingPathComponent("knowledgeC.db")
+            let calendar = Calendar(identifier: .gregorian)
+            let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 30)))
+            let hour: TimeInterval = 3_600
+            try createKnowledgeDatabase(
+                at: knowledge,
+                day: day,
+                rows: [("com.apple.Safari", 9 * hour, 16 * hour)]
+            )
+            let missing = root.appendingPathComponent("missing", isDirectory: true)
+            let source = AppleSystemScreenTimeSource(
+                deviceID: "test-device",
+                paths: AppleSystemScreenTimePaths(
+                    knowledgeDatabase: knowledge,
+                    biomeSyncDatabase: missing.appendingPathComponent("sync.db"),
+                    biomeLocalDirectory: missing.appendingPathComponent("local", isDirectory: true),
+                    biomeRemoteDirectory: missing.appendingPathComponent("remote", isDirectory: true),
+                    appleAccountDeviceDatabase: missing.appendingPathComponent("devicelist.db")
+                ),
+                calendar: calendar,
+                nowProvider: { day.addingTimeInterval(12 * hour) }
+            )
+
+            let collection = source.collect(for: day)
+            let stored = try XCTUnwrap(collection.storedExport)
+            let interval = try XCTUnwrap(calendar.dateInterval(of: .day, for: day))
+            let summary = try XCTUnwrap(
+                AppleScreenTimeAnalyzer.summary(from: stored, interval: interval, scope: .allDevices)
+            )
+
+            XCTAssertEqual(summary.totalScreenOnDuration, 3 * hour, accuracy: 0.001)
+        }
+
         func testSystemSourceCollectsTwoDayRangeOnceAndPreservesDailySegments() throws {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("apple-screen-time-range-\(UUID().uuidString)", isDirectory: true)
