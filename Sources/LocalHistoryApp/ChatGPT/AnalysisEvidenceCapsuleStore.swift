@@ -4,7 +4,7 @@
     import LocalHistoryCore
     import Security
 
-    enum AnalysisEvidenceCapsuleError: Error, LocalizedError {
+    enum AnalysisEvidenceCapsuleError: Error, LocalizedError, GoalongFrenchDescribable {
         case invalidExecutionID
         case randomFailure(OSStatus)
         case keychainFailure(OSStatus)
@@ -18,6 +18,17 @@
             case .keychainFailure(let status): return "The local evidence key could not be accessed (OSStatus \(status))."
             case .malformedCapsule: return "The local evidence capsule is malformed."
             case .integrityFailure: return "The local evidence capsule failed authenticated decryption."
+            }
+        }
+
+        /// French text for the interface; `errorDescription` stays English for logs.
+        var frenchDescription: String {
+            switch self {
+            case .invalidExecutionID: return "L’identifiant de l’analyse est invalide."
+            case .randomFailure: return "Goalong n’a pas pu créer de clé aléatoire sûre."
+            case .keychainFailure: return "Goalong n’a pas pu accéder à la clé locale des preuves."
+            case .malformedCapsule: return "La capsule de preuves locale est abîmée."
+            case .integrityFailure: return "La capsule de preuves locale n’a pas pu être déchiffrée."
             }
         }
     }

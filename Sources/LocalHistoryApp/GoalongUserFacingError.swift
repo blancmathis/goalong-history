@@ -1,5 +1,11 @@
 import Foundation
 
+/// An error type whose `errorDescription` stays English (logs, journals) and that
+/// also offers a finished French sentence for alerts and status lines.
+protocol GoalongFrenchDescribable {
+    var frenchDescription: String { get }
+}
+
 /// A short French message for an alert, never a Swift or NSError debug dump.
 enum GoalongUserFacingError {
     static let genericMessage = "Une erreur inattendue s’est produite."
@@ -7,6 +13,7 @@ enum GoalongUserFacingError {
     static let unreadableFileMessage = "Un fichier de Goalong est illisible. Réessayez ; si cela continue, ouvrez l’aide."
 
     static func message(_ error: Error) -> String {
+        if let french = (error as? GoalongFrenchDescribable)?.frenchDescription { return french }
         if let text = (error as? LocalizedError)?.errorDescription, !text.isEmpty {
             return text
         }

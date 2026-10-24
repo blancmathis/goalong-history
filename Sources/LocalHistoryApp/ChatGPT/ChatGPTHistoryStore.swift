@@ -36,7 +36,7 @@
         let messages: [ChatGPTImportedMessage]
     }
 
-    enum ChatGPTHistoryStoreError: LocalizedError {
+    enum ChatGPTHistoryStoreError: LocalizedError, GoalongFrenchDescribable {
         case fileTooLarge(Int64)
         case sourceIsSymbolicLink
         case sourceIsNotRegularFile
@@ -68,6 +68,30 @@
                 return "The export contains more than 250,000 messages and was not imported."
             case .importsDisabled:
                 return "Transcript imports are disabled. Goalong reads configured conversations directly from their original storage and never creates a second transcript archive."
+            }
+        }
+
+        /// French text for the interface; `errorDescription` stays English for logs.
+        var frenchDescription: String {
+            switch self {
+            case .fileTooLarge:
+                return "L’export ChatGPT est trop gros pour être importé en sécurité."
+            case .sourceIsSymbolicLink:
+                return "L’export ChatGPT doit être un vrai fichier, pas un alias."
+            case .sourceIsNotRegularFile:
+                return "L’export ChatGPT doit être un fichier ordinaire."
+            case .sourceChangedDuringRead:
+                return "L’export ChatGPT a changé pendant la lecture. Rien n’a été importé."
+            case .sourceReadFailed:
+                return "L’export ChatGPT n’a pas pu être lu en sécurité."
+            case .invalidRoot:
+                return "Choisissez le fichier conversations.json d’un export de données ChatGPT."
+            case .noMessages:
+                return "Aucun message daté n’a été trouvé dans cet export."
+            case .tooManyMessages:
+                return "L’export contient plus de 250 000 messages. Il n’a pas été importé."
+            case .importsDisabled:
+                return "L’import de conversations est désactivé. Goalong lit les conversations choisies là où elles sont, sans en garder de copie."
             }
         }
     }

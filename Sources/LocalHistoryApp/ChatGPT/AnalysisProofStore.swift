@@ -10,7 +10,7 @@
         let report: AnalysisProofVerificationReport
     }
 
-    enum AnalysisProofStoreError: Error, LocalizedError {
+    enum AnalysisProofStoreError: Error, LocalizedError, GoalongFrenchDescribable {
         case invalidIdentity
         case invalidManifest
         case invalidProof
@@ -26,6 +26,18 @@
             case .tooManySources: return "The selected day contains too many source references for one bounded proof manifest."
             case .randomFailure(let status): return "Secure random generation failed (OSStatus \(status))."
             case .destinationExists: return "An analysis proof already exists for this execution identifier."
+            }
+        }
+
+        /// French text for the interface; `errorDescription` stays English for logs.
+        var frenchDescription: String {
+            switch self {
+            case .invalidIdentity: return "L’identité locale de signature est invalide."
+            case .invalidManifest: return "La liste des sources de l’analyse est invalide."
+            case .invalidProof: return "La preuve de l’analyse n’a pas passé la vérification locale."
+            case .tooManySources: return "Ce jour contient trop de sources pour une seule preuve."
+            case .randomFailure: return "Goalong n’a pas pu créer de clé aléatoire sûre."
+            case .destinationExists: return "Une preuve existe déjà pour cette analyse."
             }
         }
     }
