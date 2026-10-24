@@ -281,7 +281,7 @@
             }
         }
 
-        private static func standardStorageDirectories(in root: URL) -> [URL] {
+        static func standardStorageDirectories(in root: URL) -> [URL] {
             let chatGPT = root.appendingPathComponent("chatgpt", isDirectory: true)
             return [
                 root.appendingPathComponent("events", isDirectory: true),

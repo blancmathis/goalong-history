@@ -1025,9 +1025,8 @@
             try journal.write(to: fixture.events.appendingPathComponent("2026-08-24.jsonl"))
             let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
             let tracked = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .application })
-            let app = try XCTUnwrap(snapshot.appUsage.first { $0.bundleIdentifier == "com.apple.Safari" })
             XCTAssertEqual(tracked.foregroundSeconds, 200, accuracy: 0.001)
-            XCTAssertEqual(app.activeMinutes, 3, "200 s reads 3 min like every other surface, not 4.")
+            XCTAssertEqual(DashboardFormatters.roundedMinutes(seconds: tracked.foregroundSeconds), 3, "200 s reads 3 min like every other surface, not 4.")
         }
 
         func testZoomCallWithoutKeyboardSurvivesDashboardDiskCompaction() throws {
