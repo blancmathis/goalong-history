@@ -340,6 +340,11 @@ private enum HistoryBoundedFileReadError: LocalizedError {
     }
 }
 
+/// A bounded-read failure reads as a sentence; decoding and system errors keep their full detail.
+private func historyIssueDescription(_ error: Error) -> String {
+    (error as? HistoryBoundedFileReadError)?.errorDescription ?? "\(error)"
+}
+
 private func historyPathReferencesPinnedRegularFile(
     _ file: URL,
     device: dev_t,
@@ -1250,8 +1255,7 @@ public struct HistoryLocalStoreReader {
                     HistoryLoadIssue(
                         path: captureHealthFile.path,
                         line: nil,
-                        message:
-                            "Could not decode capture health: \((error as? LocalizedError)?.errorDescription ?? "\(error)")"
+                        message: "Could not decode capture health: \(historyIssueDescription(error))"
                     )
                 ]
             )
@@ -2987,7 +2991,7 @@ public struct HistoryLocalStoreReader {
                     HistoryLoadIssue(
                         path: file.path,
                         line: nil,
-                        message: "Could not read semantic JSON for search: \(error)"
+                        message: "Could not read semantic JSON for search: \(historyIssueDescription(error))"
                     )
                 )
             }
@@ -3518,7 +3522,7 @@ public struct HistoryLocalStoreReader {
                     HistoryLoadIssue(
                         path: file.path,
                         line: nil,
-                        message: "Could not decode JSON file: \(error)"
+                        message: "Could not decode JSON file: \(historyIssueDescription(error))"
                     )
                 )
                 return nil
