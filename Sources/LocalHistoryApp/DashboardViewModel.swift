@@ -849,8 +849,8 @@
                             kind: .information,
                             title: "Détails locaux supprimés",
                             message: cutoff == nil
-                                ? "\(count) élément(s) local(aux) supprimé(s). Les sceaux et reçus sont conservés : ces périodes restent visibles comme privées."
-                                : "\(count) événement(s) détaillé(s) supprimé(s). Les sceaux et reçus sont conservés."
+                                ? "\(FrenchCount.count(count, "élément local", "éléments locaux")) \(FrenchCount.word(count, "supprimé", "supprimés")). Les sceaux et reçus sont conservés : ces périodes restent visibles comme privées."
+                                : "\(FrenchCount.count(count, "événement détaillé", "événements détaillés")) \(FrenchCount.word(count, "supprimé", "supprimés")). Les sceaux et reçus sont conservés."
                         )
                         self.refreshData(force: true)
                     case .failure(let error):

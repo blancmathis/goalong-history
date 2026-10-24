@@ -389,7 +389,7 @@ import LocalHistoryCore
         blockLists = controller.lists.map { list in
             let active = controller.activeBlocks.filter { $0.listIDs.contains(list.id) }
             let locked = controller.isStricterOnly(list.id)
-            let contents = "\(list.sites.count) site(s) · \(list.apps.count) app(s)"
+            let contents = "\(FrenchCount.count(list.sites.count, "site", "sites")) · \(FrenchCount.count(list.apps.count, "app", "apps"))"
             let detail = locked ? "Verrouillée · " + contents
                 : active.isEmpty ? contents : "Active · " + contents
             return BlockList(id: list.id.uuidString, title: list.name, detail: detail,

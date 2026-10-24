@@ -1459,7 +1459,7 @@
                                         )
                                 }
                                 Spacer(minLength: 0)
-                                Text("\(Int((suggestion.confidence * 100).rounded()))%")
+                                Text("\(Int((suggestion.confidence * 100).rounded())) %")
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.secondary)
                             }
@@ -1536,7 +1536,7 @@
 
         private func semanticPairValue(_ coverage: ComputerHistoryCoverage) -> String {
             guard let ratio = coverage.semanticPairCoverage else { return "—" }
-            return "\(Int((ratio * 100).rounded()))%"
+            return "\(Int((ratio * 100).rounded())) %"
         }
 
         private func hitIcon(_ kind: ComputerHistorySearchHitKind) -> String {

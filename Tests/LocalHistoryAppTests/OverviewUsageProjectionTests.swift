@@ -376,7 +376,7 @@
             let aside = try XCTUnwrap(result.appsAndBrowsers.first { $0.name == "Aside" })
             XCTAssertEqual(aside.kind, .browser)
             XCTAssertEqual(aside.children.map(\.name), [
-                "x.com", "chatgpt.com", "Other or unidentified browsing",
+                "x.com", "chatgpt.com", "Navigation autre ou non identifiée",
             ])
             XCTAssertEqual(
                 aside.children.map(\.seconds),
@@ -477,7 +477,7 @@
 
             let aside = try XCTUnwrap(result.appsAndBrowsers.first { $0.name == "Aside" })
             XCTAssertEqual(aside.children.map(\.name), [
-                "chatgpt.com", "Other or unidentified browsing",
+                "chatgpt.com", "Navigation autre ou non identifiée",
             ])
             XCTAssertEqual(
                 aside.children.map(\.seconds),

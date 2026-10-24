@@ -53,13 +53,6 @@ final class DurationFormatConsistencyTests: XCTestCase {
         }
     }
 
-    func testOverviewTimelineTooltipIsFrench() {
-        let now = Date()
-        let bucket = TimelineBucket(start: now, end: now.addingTimeInterval(3_600), kind: .active, activeMinutes: 68, workMinutes: 45, privateMinutes: 0, sealedMinutes: 0)
-        let text = DashboardFormatters.timelineHelp(range: "10:00–11:00", bucket: bucket)
-        XCTAssertEqual(text, "10:00–11:00 · 1\(nb)h\(nb)08 d’activité · 45\(nb)min de travail · 0\(nb)min en privé")
-    }
-
     func testScreenTimeRefreshTextFollowsTheRealInterval() {
         XCTAssertEqual(AppleScreenTimeDashboardModel.refreshCadenceLabel(30), "toutes les 30 s")
         XCTAssertEqual(AppleScreenTimeDashboardModel.refreshCadenceLabel(600), "toutes les 10 min")

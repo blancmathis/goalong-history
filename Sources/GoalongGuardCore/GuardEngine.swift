@@ -31,6 +31,8 @@ public struct GuardEnvironment {
     public var sessionEndWait: TimeInterval = GuardDecision.sessionEndWait
     /// Wait before the relaunch after a `session_end` refused by the cooldown (tests shorten it).
     public var refusedSessionEndDelay: TimeInterval = GuardDecision.refusedSessionEndDelay
+    /// Subscribes to loginwindow's session events (the real guard: distributed notifications).
+    public var observeSession: (@escaping (GuardSessionEvent) -> Void) -> Void = { _ in }
 
     public init(locateApp: @escaping () -> Int32?, launch: @escaping (@escaping (Int32?, Error?) -> Void) -> Void) {
         self.locateApp = locateApp; self.launch = launch
@@ -72,6 +74,9 @@ public final class GuardEngine {
     private var leaseHonoured = false
     /// Last honoured `session_end`: the dead pid and the continuous time of that death.
     private var sessionEndHonoured: (pid: Int32, at: TimeInterval)?
+    /// Continuous times of loginwindow's last session-end and cancel announcements (this process only).
+    private var sessionEnding: TimeInterval?
+    private var sessionCancelled: TimeInterval?
     private var finished = false
     private var lastState: GuardState?
     private var started = false
@@ -96,6 +101,7 @@ public final class GuardEngine {
             sessionEndHonoured = GuardDecision.restoredSessionEnd(from: files.readState(), bootTime: environment.bootTime(),
                                                                   bootSession: environment.bootSession(),
                                                                   continuous: environment.continuous())
+            environment.observeSession { [weak self] event in self?.sessionEvent(event) }
             watchDirectory(); evaluate()
         }
     }
@@ -108,6 +114,18 @@ public final class GuardEngine {
             let armed = arming.isArmed(continuous: environment.continuous())
             reply(GuardSnapshot(build: environment.build, armed: armed, watchingPID: watchedPID,
                                 state: finished ? "finished" : !armed ? "idle" : watchedPID != nil ? "watching" : "relaunching"))
+        }
+    }
+
+    private func sessionEvent(_ event: GuardSessionEvent) {
+        queue.async { [self] in
+            guard !finished else { return }
+            switch event {
+            case .ending: sessionEnding = environment.continuous()
+            case .cancelled: sessionCancelled = environment.continuous()
+            }
+            environment.log("session \(event.rawValue) announced")
+            evaluate()
         }
     }
 
@@ -141,6 +159,13 @@ public final class GuardEngine {
                                                                   deathContinuous: deathContinuous)
         input.sinceDeath = death == nil ? 0 : continuous - deathContinuous
         input.refusedSessionEndDelay = environment.refusedSessionEndDelay
+        input.sessionEndWait = environment.sessionEndWait
+        if death != nil {
+            input.sessionEndCancelled = sessionCancelled.map { $0 >= deathContinuous } ?? false
+            input.sessionEndingSignalled = GuardDecision.sessionEndingSignalled(
+                ending: sessionEnding, cancelled: sessionCancelled, lastHonoured: sessionEndHonoured?.at,
+                deathContinuous: deathContinuous, wait: environment.sessionEndWait)
+        }
         input.budgetDelay = budget.delay(at: continuous)
         input.bootTime = environment.bootTime()
         input.bootSession = environment.bootSession()

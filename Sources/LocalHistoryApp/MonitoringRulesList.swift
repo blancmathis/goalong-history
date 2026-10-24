@@ -204,7 +204,7 @@
                     return MonitoringState(
                         enabled: true,
                         editable: false,
-                        help: "This app has no stable bundle identifier, so Goalong cannot save a persistent app rule."
+                        help: "Cette app n’a pas d’identifiant stable : Goalong ne peut pas enregistrer de règle durable pour elle."
                     )
                 }
                 if ProductIdentity.isGoalong(bundleIdentifier) {

@@ -68,6 +68,13 @@ public struct GuardInput: Equatable, Sendable {
     public var sinceDeath: TimeInterval = 0
     /// Wait before relaunching after a `session_end` refused by the cooldown (tests shorten it).
     public var refusedSessionEndDelay: TimeInterval = GuardDecision.refusedSessionEndDelay
+    /// loginwindow said a logout was cancelled after this death: the session goes on, no wait is needed.
+    public var sessionEndCancelled = false
+    /// loginwindow said a logout, restart or shutdown started around this death, after cancelling the
+    /// previous one (so a cancel of this one would be heard too): see `sessionEndingSignalled`.
+    public var sessionEndingSignalled = false
+    /// The session-end wait (tests shorten it).
+    public var sessionEndWait: TimeInterval = GuardDecision.sessionEndWait
     /// Delay the relaunch budget imposes, in seconds from now.
     public var budgetDelay: TimeInterval = 0
     public var bootTime: Double = 0
@@ -81,6 +88,21 @@ public struct GuardInput: Equatable, Sendable {
     }
 
     public init() {}
+}
+
+/// loginwindow's distributed notifications about the end of the session.
+public enum GuardSessionEvent: String, Equatable, Sendable {
+    /// A logout, restart or shutdown starts (or goes on after an app answered).
+    case ending
+    /// An app refused to quit: the logout is cancelled, the session goes on.
+    case cancelled
+
+    /// Names found in loginwindow; `logoutInterrupted` (an app asks a question) is neither.
+    public static let notifications: [(name: String, event: GuardSessionEvent)] = [
+        ("com.apple.logoutInitiated", .ending), ("com.apple.restartInitiated", .ending),
+        ("com.apple.shutdownInitiated", .ending), ("com.apple.logoutContinued", .ending),
+        ("com.apple.logoutCancelled", .cancelled),
+    ]
 }
 
 public enum GuardAction: Equatable, Sendable {
@@ -110,9 +132,10 @@ public enum GuardDecision {
         if let pid = input.alivePID { return .watch(pid) }
         if let release = validRelease(input) {
             if release.reason == GuardRelease.userQuit { return .exit(0) }
-            if release.reason == GuardRelease.sessionEnd, !input.sessionEndWaitOver {
+            if release.reason == GuardRelease.sessionEnd, !input.sessionEndWaitOver, !input.sessionEndCancelled {
                 if input.sessionEndAllowed { return .waitForSessionEnd(sessionEndWait) }
-                return .relaunch(after: max(0, input.budgetDelay, input.refusedSessionEndDelay - input.sinceDeath))
+                let hold = input.sessionEndingSignalled ? input.sessionEndWait : input.refusedSessionEndDelay
+                return .relaunch(after: max(0, input.budgetDelay, hold - input.sinceDeath))
             }
         }
         if let lease = validLease(input) { return .waitForLease(until: lease.until) }
@@ -148,6 +171,16 @@ public enum GuardDecision {
                                          deathContinuous: TimeInterval) -> Bool {
         guard let lastHonoured else { return true }
         return lastHonoured.pid == deathPID || deathContinuous - lastHonoured.at >= sessionEndCooldown
+    }
+
+    /// K4-02: a `session_end` refused by the cooldown is held like an honoured one (up to `wait` after the
+    /// death) when loginwindow announced a session end around this death and had announced the cancel of
+    /// the honoured one. That cancel proves cancels reach the guard: a cancel of this logout ends the hold
+    /// at once, so repeated cancelled logouts still open no 30 s hole. Without that proof: the short delay.
+    public static func sessionEndingSignalled(ending: TimeInterval?, cancelled: TimeInterval?, lastHonoured: TimeInterval?,
+                                              deathContinuous: TimeInterval, wait: TimeInterval = sessionEndWait) -> Bool {
+        guard let ending, let cancelled, let lastHonoured else { return false }
+        return cancelled >= lastHonoured && ending > cancelled && abs(deathContinuous - ending) <= wait
     }
 
     /// The last honoured `session_end` kept in `guard-state.json`, when it is of this boot and its

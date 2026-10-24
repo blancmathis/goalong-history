@@ -160,6 +160,47 @@ extension GuardDecisionTests {
         }
     }
 
+    /// K4-02: a real logout after a cancelled one, when loginwindow announces it, is held like an honoured
+    /// one instead of being met by a relaunch 5 s after the death (loginwindow may still close apps).
+    func testAnAnnouncedLogoutAfterACancelledOneIsHeldNotRelaunchedAtTheShortDelay() {
+        let release = GuardRelease(pid: 42, reason: GuardRelease.sessionEnd, writtenAt: 999_999, bootTime: 900_000)
+        let death = GuardInput.Death(pid: 42, at: 1_000_000)
+        func refused(_ change: (inout GuardInput) -> Void) -> GuardAction {
+            GuardDecision.decide(input { $0.death = death; $0.release = release; $0.sessionEndAllowed = false; change(&$0) })
+        }
+        XCTAssertEqual(refused { $0.sessionEndingSignalled = true; $0.sinceDeath = 6 }, .relaunch(after: 24),
+                       "held until the session-end wait, not relaunched 5 s after the death")
+        XCTAssertEqual(refused { $0.sessionEndingSignalled = true; $0.sinceDeath = 30 }, .relaunch(after: 0),
+                       "the guard still lives after the wait: the session went on")
+        XCTAssertEqual(refused { $0.sessionEndingSignalled = true; $0.sinceDeath = 6; $0.sessionEndWait = 3 }, .relaunch(after: 0))
+        XCTAssertEqual(refused { $0.sinceDeath = 6 }, .relaunch(after: 0), "no announcement: the short delay as before")
+        // A cancel heard after the death ends any wait, honoured or held.
+        XCTAssertEqual(refused { $0.sessionEndingSignalled = true; $0.sessionEndCancelled = true; $0.sinceDeath = 1 }, .relaunch(after: 0))
+        XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.release = release; $0.sessionEndCancelled = true; $0.sinceDeath = 1 }),
+                       .relaunch(after: 0), "a cancelled logout reopens Goalong without the 30 s wait")
+        XCTAssertEqual(refused { $0.sessionEndCancelled = true; $0.budgetDelay = 30 }, .relaunch(after: 30), "the crash budget still wins")
+        // A kill during a severe block (no token) is relaunched at once, announcement or not.
+        XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.sessionEndingSignalled = true }), .relaunch(after: 0))
+        XCTAssertEqual(GuardDecision.decide(input { $0.death = death; $0.sessionEndingSignalled = true; $0.sessionEndCancelled = true }),
+                       .relaunch(after: 0))
+    }
+
+    /// K4-02: the hold needs a session end announced around this death, after a heard cancel of the
+    /// honoured logout. Without that cancel, a cancel of this logout might not be heard either.
+    func testTheHoldNeedsAnAnnouncedEndAfterAHeardCancel() {
+        let signalled = { (ending: TimeInterval?, cancelled: TimeInterval?, honoured: TimeInterval?, death: TimeInterval) in
+            GuardDecision.sessionEndingSignalled(ending: ending, cancelled: cancelled, lastHonoured: honoured, deathContinuous: death)
+        }
+        XCTAssertTrue(signalled(199.5, 120, 100, 200), "announced just before the death")
+        XCTAssertTrue(signalled(200.4, 120, 100, 200), "announced just after the death (delivery is async)")
+        XCTAssertFalse(signalled(199.5, nil, 100, 200), "no cancel heard: maybe cancels are not delivered")
+        XCTAssertFalse(signalled(199.5, 90, 100, 200), "the cancel heard was older than the honoured logout")
+        XCTAssertFalse(signalled(110, 120, 100, 200), "announced before the cancel: that was the cancelled logout")
+        XCTAssertFalse(signalled(150, 120, 100, 200), "announced long before this death")
+        XCTAssertFalse(signalled(199.5, 120, nil, 200), "no honoured logout in this guard")
+        XCTAssertFalse(signalled(nil, 120, 100, 200))
+    }
+
     /// K3-kill-01: the cooldown counts from the last honoured session_end, restored or not; the honoured
     /// death itself keeps its wait.
     func testTheSessionEndCooldownAllowsOneWaitPerTenMinutes() {

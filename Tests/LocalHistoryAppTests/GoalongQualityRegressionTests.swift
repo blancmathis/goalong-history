@@ -115,7 +115,7 @@ final class AgentConversationSourceHealthTests: XCTestCase {
                 failures: ["/private/fixture-one", "/private/fixture-two"]))
         XCTAssertEqual(health, .readFailures(2))
         XCTAssertTrue(health.hasReadFailure)
-        XCTAssertTrue(health.message.contains("2 problème(s) de lecture"))
+        XCTAssertTrue(health.message.contains("2 problèmes de lecture"))
         XCTAssertFalse(health.message.contains("/private/"))
         XCTAssertEqual(health.actionTitle, "Réessayer")
     }
@@ -132,7 +132,7 @@ final class AgentConversationSourceHealthTests: XCTestCase {
         XCTAssertEqual(health, .capacityLimited(2))
         XCTAssertFalse(health.hasReadFailure)
         XCTAssertNil(health.actionTitle)
-        XCTAssertTrue(health.message.contains("2 dossier(s)"))
+        XCTAssertTrue(health.message.contains("2 dossiers dépassent la limite"))
         XCTAssertTrue(health.message.contains("réessayer ne lève pas"))
     }
 

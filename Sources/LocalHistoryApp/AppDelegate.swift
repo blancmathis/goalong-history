@@ -533,7 +533,7 @@
             guard result == .ok else {
                 let failure = NSAlert(); failure.messageText = "Goalong reste ouvert"
                 switch result {
-                case .wrong(let remaining): failure.informativeText = "Mot de passe incorrect. \(remaining) essai(s) avant l’attente."
+                case .wrong(let remaining): failure.informativeText = "Mot de passe incorrect. \(FrenchCount.count(remaining, "essai", "essais")) avant l’attente."
                 case .wait(let until): failure.informativeText = "Réessayez \(BlockingFormat.moment(until))."
                 case .refused(let reason): failure.informativeText = reason
                 case .ok: break

@@ -39,7 +39,7 @@
                 GoalongSegmentedControl("Filtre", selection: $model.activityFilter,
                                         options: ActivityFilter.allCases) { $0.title }
 
-                Text(GoalongWebsiteSharingModel.frCount(model.filteredSessions.count, "session", "sessions"))
+                Text(FrenchCount.count(model.filteredSessions.count, "session", "sessions"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 72, alignment: .trailing)
@@ -184,7 +184,7 @@
                 )
                 detailValue(
                     title: "Classification confidence",
-                    value: session.confidence.map { "\(Int(($0 * 100).rounded()))%" } ?? "Indisponible",
+                    value: session.confidence.map { "\(Int(($0 * 100).rounded())) %" } ?? "Indisponible",
                     symbol: "gauge.with.dots.needle.50percent"
                 )
                 detailValue(
@@ -245,7 +245,7 @@
                     Text("Saisie attribuée à un logiciel détectée")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "macOS a attribué \(GoalongWebsiteSharingModel.frCount(session.softwareAttributedEventCount, "événement", "événements")) de saisie à un logiciel. C’est un signal d’intégrité, pas une preuve de triche."
+                        "macOS a attribué \(FrenchCount.count(session.softwareAttributedEventCount, "événement", "événements")) de saisie à un logiciel. C’est un signal d’intégrité, pas une preuve de triche."
                     )
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)

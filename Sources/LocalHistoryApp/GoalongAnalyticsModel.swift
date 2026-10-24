@@ -250,7 +250,7 @@ actor GoalongAnalyticsReader {
                 summary: recap.markdown, status: "inferred",
                 caveat: "Synthèse IA enregistrée. Ses sources peuvent différer des seules observations sur ce Mac."))
         }
-        return (cards, rejected > 0 ? "\(rejected) bilan(s) quotidien(s) illisible(s) ou incohérent(s) ne sont pas affichés." : nil)
+        return (cards, rejected > 0 ? "\(FrenchCount.count(rejected, "bilan", "bilans")) \(FrenchCount.word(rejected, "quotidien illisible ou incohérent n’est", "quotidiens illisibles ou incohérents ne sont")) pas \(FrenchCount.word(rejected, "affiché", "affichés"))." : nil)
     }
 
     private func sourceRevision(_ day: Date, calendar: Calendar) -> String {

@@ -133,7 +133,7 @@ public enum GoalongContextualRhythm {
             var episodes = (request.rhythm.episodes ?? []).map { row in var e = row; e.offset_ms += leading; return e }
             if leading > 0 { episodes.insert(Episode(id: "unobserved-leading", offset_ms: 0, duration_ms: leading, relation: "unknown"), at: 0) }
             if trailing > 0 { episodes.append(Episode(id: "unobserved-trailing", offset_ms: leading + request.rhythm.window_ms, duration_ms: trailing, relation: "unknown")) }
-            guard episodes.count <= 1500 else { throw Failure.invalid("Trop d'épisodes : choisissez une session plus courte.") }
+            guard episodes.count <= 1500 else { throw Failure.invalid("Trop d’épisodes : choisissez une session plus courte.") }
             request.rhythm.episodes = episodes
             request.rhythm.window_ms += leading + trailing
             let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -146,10 +146,10 @@ public enum GoalongContextualRhythm {
     public static func build(events: [HistoryEvent], snapshots: [String: SemanticContextPayload] = [:], day: Date,
                              project: String, intent: String, device: String, masks: [String] = [], includeRichContext: Bool = false) throws -> Request {
         let rows = events.filter(\.isDerivedAnalysisEvidence)
-        guard let first = rows.first, let last = rows.last, last.timestamp > first.timestamp else { throw Failure.invalid("Pas assez d'observations pour cette session.") }
+        guard let first = rows.first, let last = rows.last, last.timestamp > first.timestamp else { throw Failure.invalid("Pas assez d’observations pour cette session.") }
         var hidden = Set(masks.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty })
         for e in rows { if let a = e.app, let b = a.bundleIdentifier, hidden.contains(b.lowercased()) { hidden.insert(a.name.lowercased()) } }
-        guard !hidden.contains(where: { project.lowercased().contains($0) || intent.lowercased().contains($0) }) else { throw Failure.invalid("Le projet ou l'intention mentionne une application masquée. Corrigez ce texte.") }
+        guard !hidden.contains(where: { project.lowercased().contains($0) || intent.lowercased().contains($0) }) else { throw Failure.invalid("Le projet ou l’intention mentionne une application masquée. Corrigez ce texte.") }
         func clean(_ text: String?, maximum: Int) -> String? {
             guard let text else { return nil }
             let value = String(text.replacingOccurrences(of: "\u{0}", with: "").prefix(maximum)).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -165,7 +165,7 @@ public enum GoalongContextualRhythm {
             return Array(Set(texts)).sorted()
         }
         for e in rows {
-            guard e.timestamp >= previous.timestamp else { throw Failure.invalid("Les événements sont hors ordre ; aucune continuité n'est reconstruite.") }
+            guard e.timestamp >= previous.timestamp else { throw Failure.invalid("Les événements sont hors ordre ; aucune continuité n’est reconstruite.") }
             let offset = Int((previous.timestamp.timeIntervalSince(first.timestamp) * 1000).rounded())
             let upper = Int((e.timestamp.timeIntervalSince(first.timestamp) * 1000).rounded())
             let delta = upper - offset
@@ -184,7 +184,7 @@ public enum GoalongContextualRhythm {
                         subject: nil, explanation: nil, semantic_origin: known ? "unclassified" : nil,
                         evidence: texts.isEmpty ? nil : texts.enumerated().map { Evidence(id: "\(id)-e\($0.offset + 1)", text: $0.element) }))
                 }
-                guard episodes.count <= 1500 else { throw Failure.invalid("Trop d'épisodes : choisissez une session plus courte.") }
+                guard episodes.count <= 1500 else { throw Failure.invalid("Trop d’épisodes : choisissez une session plus courte.") }
             }
             previous = e
             if e.isObservationContinuityBoundary { app = nil; context = [] }
@@ -200,7 +200,7 @@ public enum GoalongContextualRhythm {
             longest_project_ms: 0, brief_consultations: 0, brief_consultation_ms: 0, start: formatter.string(from: first.timestamp), episodes: episodes))
         let date = DateFormatter(); date.dateFormat = "yyyy-MM-dd"; date.locale = Locale(identifier: "en_US_POSIX"); date.timeZone = .current
         let request = Request(schema: "goalong.rhythm-analysis.v1", request_id: UUID().uuidString.lowercased(), date: date.string(from: day),
-            intent: intent, rhythm: r, source_limitations: "Événements disponibles avant réduction à la minute. Intervalles sans observation inconnus. Extraits de contexte bornés et choisis, jamais une capture exhaustive ni une mesure d'attention.")
+            intent: intent, rhythm: r, source_limitations: "Événements disponibles avant réduction à la minute. Intervalles sans observation inconnus. Extraits de contexte bornés et choisis, jamais une capture exhaustive ni une mesure d’attention.")
         _ = try request.encoded()
         return request
     }
@@ -209,7 +209,7 @@ public enum GoalongContextualRhythm {
         let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
         guard let object, Set(object.keys) == ["request_id", "evidence_digest", "episodes", "interpretation", "interpretation_refs"],
               let rows = object["episodes"] as? [[String: Any]], rows.count <= 1500,
-              rows.allSatisfy({ Set($0.keys) == ["id", "relation", "subject", "explanation", "evidence_refs"] }) else { throw Failure.invalid("Réponse de l'agent hors du contrat attendu.") }
+              rows.allSatisfy({ Set($0.keys) == ["id", "relation", "subject", "explanation", "evidence_refs"] }) else { throw Failure.invalid("Réponse de l’agent hors du contrat attendu.") }
         return try JSONDecoder().decode(Annotation.self, from: bytes)
     }
     public static func apply(_ annotation: Annotation, to request: Request) throws -> Rhythm {
@@ -224,7 +224,7 @@ public enum GoalongContextualRhythm {
                   a.explanation.utf16.count <= 400, Set(a.evidence_refs).count == a.evidence_refs.count,
                   Set(a.evidence_refs).isSubset(of: validEvidence),
                   !["project", "other"].contains(a.relation) || (!a.evidence_refs.isEmpty && !a.explanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            else { throw Failure.invalid("L'agent a modifié une observation ou cité un contexte absent. Réessayez ou corrigez la sélection.") }
+            else { throw Failure.invalid("L’agent a modifié une observation ou cité un contexte absent. Réessayez ou corrigez la sélection.") }
             if e.relation == "unknown" { return e }
             var output = e; output.relation = a.relation; output.subject = a.subject.isEmpty ? nil : a.subject
             output.explanation = a.explanation.isEmpty ? nil : a.explanation; output.semantic_origin = "agent_inference"
@@ -233,7 +233,7 @@ public enum GoalongContextualRhythm {
         }
         let ids = Set(original.filter { $0.relation != "unknown" }.map(\.id))
         guard annotation.interpretation_refs.count <= original.count, Set(annotation.interpretation_refs).isSubset(of: ids),
-              annotation.interpretation.isEmpty || !annotation.interpretation_refs.isEmpty else { throw Failure.invalid("L'interprétation ne renvoie pas à des épisodes observés.") }
+              annotation.interpretation.isEmpty || !annotation.interpretation_refs.isEmpty else { throw Failure.invalid("L’interprétation ne renvoie pas à des épisodes observés.") }
         result.interpretation = annotation.interpretation.isEmpty ? nil : annotation.interpretation
         result.interpretation_refs = annotation.interpretation_refs
         result.interpretation_origin = "agent_inference"

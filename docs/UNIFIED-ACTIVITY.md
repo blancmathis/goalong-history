@@ -3,8 +3,8 @@
 La navigation principale devient **Activité · Historique · Réglages**. Les routes
 internes `overview` et `analytics` restent compatibles et ouvrent la même vue.
 La route `activity` conserve son sens technique : l’historique ordinateur détaillé.
-OverviewPage reste dans les sources pour ses projections et consommateurs
-existants, mais n’est plus routée par la fenêtre principale.
+La vue `OverviewPage` est supprimée ; `OverviewPage.swift` ne garde que les
+projections (`OverviewUsageProjection`, `DailyAppUsage`) encore utilisées.
 
 ## Lecture et navigation
 

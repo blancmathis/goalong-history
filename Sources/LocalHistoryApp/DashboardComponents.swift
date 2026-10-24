@@ -646,13 +646,6 @@
             return duration(minutes: roundedMinutes(seconds: seconds))
         }
 
-        /// Overview timeline tooltip: French, shared duration format.
-        static func timelineHelp(range: String, bucket: TimelineBucket) -> String {
-            "\(range) · \(duration(minutes: bucket.activeMinutes)) d’activité · "
-                + "\(duration(minutes: bucket.workMinutes)) de travail · "
-                + "\(duration(minutes: bucket.privateMinutes)) en privé"
-        }
-
         /// The one seconds → minutes rule: nearest minute. Truncating would make « 1 h 07 » (4 050 s) disagree with « 1 h 08 ».
         static func roundedMinutes(seconds: TimeInterval) -> Int {
             guard seconds.isFinite, seconds > 0 else { return 0 }
@@ -660,8 +653,8 @@
         }
 
         static func percentage(_ numerator: Int, _ denominator: Int) -> String {
-            guard denominator > 0 else { return "0%" }
-            return "\(Int((Double(numerator) / Double(denominator) * 100).rounded()))%"
+            guard denominator > 0 else { return "0 %" }
+            return "\(Int((Double(numerator) / Double(denominator) * 100).rounded())) %"
         }
     }
 #endif
