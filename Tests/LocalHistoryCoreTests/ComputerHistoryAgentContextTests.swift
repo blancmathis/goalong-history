@@ -39,6 +39,39 @@ final class ComputerHistoryAgentContextTests: XCTestCase {
         XCTAssertEqual(times, times.sorted())
     }
 
+    /// A damaged or older day file can repeat a resource id and carry an absurd confidence:
+    /// rendering must keep the day readable instead of trapping.
+    func testDamagedMemoryWithRepeatedResourceIDAndHugeConfidenceStillRenders() throws {
+        let memory = makeMemory(episodeCount: 3)
+        let encoded = try JSONEncoder().encode(memory)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var resources = try XCTUnwrap(object["resources"] as? [[String: Any]])
+        var duplicate = resources[0]
+        duplicate["title"] = "Second copy"
+        resources.append(duplicate)
+        resources[0]["locatorConfidence"] = 1e300
+        object["resources"] = resources
+        let damaged = try JSONDecoder().decode(
+            ComputerHistoryDayMemory.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+        XCTAssertEqual(damaged.resources.count, 4)
+        XCTAssertEqual(Set(damaged.resources.map(\.id)).count, 3)
+
+        let projection = ComputerHistoryAgentContextRenderer.render(damaged, tokenBudget: 800)
+
+        XCTAssertTrue(projection.markdown.contains("confidence=100%"))
+    }
+
+    func testConfidencePercentIsBoundedAndNeverTraps() {
+        XCTAssertEqual(ConfidencePercent.whole(0.926), 93)
+        XCTAssertEqual(ConfidencePercent.whole(1e300), 100)
+        XCTAssertEqual(ConfidencePercent.whole(-5), 0)
+        XCTAssertEqual(ConfidencePercent.whole(.nan), 0)
+        XCTAssertEqual(ConfidencePercent.whole(.infinity), 100)
+        XCTAssertEqual(ConfidencePercent.whole(-.infinity), 0)
+    }
+
     func testRepresentativeProjectionDoesNotClaimEveryEpisodeIsCovered() {
         let memory = makeMemory(episodeCount: 48, analyzedEpisodeCount: 300)
         XCTAssertTrue(memory.coverage.usesRepresentativeProjection)

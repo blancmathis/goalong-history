@@ -11,6 +11,37 @@ final class GoalongActivityPresentationTests: XCTestCase {
         .init(id: "app:chat", name: "\u{200E}WhatsApp", bundleIdentifier: "net.whatsapp.WhatsApp", isWebsite: false, seconds: 120)
     ]
 
+    func testPeriodRangeSurvivesUnsortedDaysAndEmptyPeriod() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+        let monday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 19)))
+        let tuesday = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: monday))
+        let wednesday = try XCTUnwrap(calendar.date(byAdding: .day, value: 2, to: monday))
+        let thursday = try XCTUnwrap(calendar.date(byAdding: .day, value: 3, to: monday))
+
+        let sorted = GoalongActivityPresentation.periodRange(
+            dates: [monday, tuesday, wednesday], fallback: .distantPast, calendar: calendar)
+        let unsorted = GoalongActivityPresentation.periodRange(
+            dates: [wednesday, monday, tuesday], fallback: .distantPast, calendar: calendar)
+        XCTAssertEqual(sorted, monday...thursday)
+        XCTAssertEqual(unsorted, sorted)
+
+        let empty = GoalongActivityPresentation.periodRange(dates: [], fallback: monday, calendar: calendar)
+        XCTAssertEqual(empty, monday...tuesday)
+    }
+
+    func testFocusChartScaleUpperBoundIsAlwaysAUsableAxis() {
+        for maximum in [0, -5, 1, 59, 3_599, 86_400, 1e12, Double.greatestFiniteMagnitude,
+                        .nan, .infinity, -.infinity] {
+            for hourly in [false, true] {
+                let scale = GoalongAnalyticsChartScale(maximumSeconds: maximum, hourly: hourly)
+                XCTAssertFalse(scale.upperBound.isNaN, "\(maximum)")
+                XCTAssertGreaterThan(scale.upperBound, 0, "\(maximum)")
+                _ = 0...scale.upperBound
+            }
+        }
+    }
+
     func testNativeAppIdentitySurvivesSearchingAndSorting() {
         let result = GoalongActivityPresentation.usage(items, search: "WHATSAPP", sort: .name)
         XCTAssertEqual(result.map(\.bundleIdentifier), ["net.whatsapp.WhatsApp"])

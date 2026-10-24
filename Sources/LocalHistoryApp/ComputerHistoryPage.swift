@@ -1338,7 +1338,8 @@
 
         private func episodes(_ memory: ComputerHistoryDayMemory) -> some View {
             let resourcesByID = Dictionary(
-                uniqueKeysWithValues: memory.resources.map { ($0.id, $0) }
+                memory.resources.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
             )
             return VStack(alignment: .leading, spacing: 10) {
                 SectionTitle(
@@ -1459,7 +1460,7 @@
                                         )
                                 }
                                 Spacer(minLength: 0)
-                                Text("\(Int((suggestion.confidence * 100).rounded())) %")
+                                Text("\(ConfidencePercent.whole(suggestion.confidence)) %")
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.secondary)
                             }
@@ -1536,7 +1537,7 @@
 
         private func semanticPairValue(_ coverage: ComputerHistoryCoverage) -> String {
             guard let ratio = coverage.semanticPairCoverage else { return "—" }
-            return "\(Int((ratio * 100).rounded())) %"
+            return "\(ConfidencePercent.whole(ratio)) %"
         }
 
         private func hitIcon(_ kind: ComputerHistorySearchHitKind) -> String {
@@ -1563,7 +1564,7 @@
         private func resourceConfidenceLabel(
             _ resource: ComputerHistoryResourceReference
         ) -> String {
-            let percentage = Int((resource.locatorConfidence * 100).rounded())
+            let percentage = ConfidencePercent.whole(resource.locatorConfidence)
             return "\(resource.kind.rawValue) · confiance \(percentage)\u{00A0}%"
         }
     }
@@ -1870,7 +1871,7 @@
                             }
                         }
                         Text(
-                            "Preuves : \(episode.provenance.sourceEventIDs.count) identifiants d’événements · \(episode.provenance.sourceSequences.count) séquences d’intégrité · confiance \(Int((episode.statusConfidence * 100).rounded()))\u{00A0}%"
+                            "Preuves : \(episode.provenance.sourceEventIDs.count) identifiants d’événements · \(episode.provenance.sourceSequences.count) séquences d’intégrité · confiance \(ConfidencePercent.whole(episode.statusConfidence))\u{00A0}%"
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)

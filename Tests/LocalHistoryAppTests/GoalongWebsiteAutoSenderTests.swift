@@ -87,6 +87,25 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
         await restarted.tick(now: parser.date(from: "2026-09-14T16:00:00Z")!)
     }
 
+    @MainActor func testMissedDaysAreSentOldestFirstWithinThreeDaysAndNeverTwice() async throws {
+        let suite = "goalong-auto-missed-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let root = hermeticDataRoot()
+        var config = GoalongWebsiteAutoSender.Configuration(origin: "https://goalong.example", tokenPath: "/synthetic", options: .init(deviceIDs: ["mac"]),
+            hour: 9, minute: 0, timeZoneIdentifier: "America/Chicago")
+        config.privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
+        config.lastAttempt = "2026-09-10"; config.lastSuccess = "2026-09-10"
+        defaults.set(try JSONEncoder().encode(config), forKey: "goalong.website.autoSend.v1")
+        var days: [String] = []
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, day, _ in days.append(day); return Data() },
+            sender: { _, _, _, _ in Data() }, sourceConsent: { _ in true })
+        let now = ISO8601DateFormatter().date(from: "2026-09-13T15:00:00Z")!
+        for _ in 0..<4 { await scheduler.tick(now: now) }
+        XCTAssertEqual(days, ["2026-09-11", "2026-09-12"])
+        XCTAssertEqual(scheduler.lastSuccess, "2026-09-12")
+    }
+
     @MainActor func testExplicitScheduleSendsOnceAndExcludesUnreviewableDailyText() async throws {
         let suite = "goalong-auto-test-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

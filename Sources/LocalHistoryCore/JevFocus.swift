@@ -71,7 +71,8 @@ public struct JevTimedBreak: Codable, Equatable, Sendable {
         guard (1...120).contains(minutes) else { return nil }
         startedAt = now; endsAt = now.addingTimeInterval(Double(minutes * 60))
     }
-    public func remaining(at now: Date) -> Int { max(0, Int(ceil(endsAt.timeIntervalSince(now)))) }
+    /// Never longer than the chosen duration, even when the clock moved back after the pause began.
+    public func remaining(at now: Date) -> Int { max(0, Int(ceil(min(endsAt.timeIntervalSince(now), endsAt.timeIntervalSince(startedAt))))) }
     public var isValid: Bool {
         endsAt > startedAt && endsAt.timeIntervalSince(startedAt) <= 7200
             && startedAt.timeIntervalSince1970.isFinite && endsAt.timeIntervalSince1970.isFinite

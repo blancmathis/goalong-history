@@ -526,7 +526,7 @@ public enum ActivityMemoryMarkdownRenderer {
         guard !claims.isEmpty else { return }
         lines.append("## \(title)")
         for claim in claims {
-            lines.append("- [\(claim.kind.rawValue), confidence \(Int((claim.confidence * 100).rounded()))%] \(claim.text) [sources: \(sourceLabel(claim.provenance))]")
+            lines.append("- [\(claim.kind.rawValue), confidence \(ConfidencePercent.whole(claim.confidence))%] \(claim.text) [sources: \(sourceLabel(claim.provenance))]")
         }
         lines.append("")
     }

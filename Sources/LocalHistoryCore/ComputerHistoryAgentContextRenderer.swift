@@ -59,11 +59,16 @@ public enum ComputerHistoryAgentContextRenderer {
         let tokenBudget = min(maximumTokenBudget, max(minimumTokenBudget, requestedTokenBudget))
         let byteBudget = tokenBudget * 4
         let resources = memory.resources
-        let resourceByID = Dictionary(uniqueKeysWithValues: resources.map { ($0.id, $0) })
+        // A damaged or older day file can repeat a resource id: the first one wins.
+        let resourceByID = Dictionary(
+            resources.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let resourceAliases = Dictionary(
-            uniqueKeysWithValues: resources.enumerated().map { index, resource in
+            resources.enumerated().map { index, resource in
                 (resource.id, "R\(index + 1)")
-            }
+            },
+            uniquingKeysWith: { first, _ in first }
         )
         let blocks = memory.episodes.enumerated().map { index, episode in
             episodeBlock(
@@ -937,7 +942,7 @@ public enum ComputerHistoryAgentContextRenderer {
     }
 
     private static func percent(_ value: Double) -> String {
-        "\(Int((value * 100).rounded()))%"
+        "\(ConfidencePercent.whole(value))%"
     }
 
     private static let timeFormatter: DateFormatter = {

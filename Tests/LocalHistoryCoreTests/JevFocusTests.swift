@@ -84,6 +84,10 @@ final class JevFocusTests: XCTestCase {
         XCTAssertEqual(pause.remaining(at: zero.addingTimeInterval(900)), 0)
         XCTAssertEqual(try JSONDecoder().decode(JevTimedBreak.self, from: JSONEncoder().encode(pause)), pause)
     }
+    func testBreakNeverExceedsChosenDurationWhenClockMovesBack() throws {
+        let pause = try XCTUnwrap(JevTimedBreak(minutes: 10, now: zero))
+        XCTAssertEqual(pause.remaining(at: zero.addingTimeInterval(-3600)), 600)
+    }
     private func response(choice: String = "procrastination", probabilities: [String: Double] = ["procrastination": 0.9, "productive": 0.05, "unknown": 0.05], tokens: Int = 300, model: String = JevPayload.model) throws -> Data {
         try JSONSerialization.data(withJSONObject: ["model": model, "answers": ["activity": ["type": "choice", "choice": choice, "confidence": 0.8, "probabilities": probabilities]], "usage": ["input_tokens": tokens]])
     }

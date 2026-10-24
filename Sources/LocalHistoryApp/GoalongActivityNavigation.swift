@@ -62,11 +62,11 @@ struct GoalongActivityNavigation: Equatable {
 
     /// After midnight, a navigation left on the old today moves to the new today (same period,
     /// return context kept and moved too). A past day chosen by the user stays. Returns true
-    /// when the calendar day changed since this navigation last saw it.
+    /// when the calendar day changed since this navigation last saw it (a zone moved west gives an earlier day).
     @discardableResult
     mutating func followToday(now: Date = GoalongToday.now, calendar: Calendar = .current) -> Bool {
         let today = calendar.startOfDay(for: now)
-        guard today > seenToday else { return false }
+        guard today != seenToday else { return false }
         if calendar.isDate(day, inSameDayAs: seenToday) { day = today }
         if let context = returnContext, calendar.isDate(context.day, inSameDayAs: seenToday) {
             returnContext = Context(day: today, period: context.period)

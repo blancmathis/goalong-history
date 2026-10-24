@@ -159,6 +159,9 @@
         )
 
         private(set) var selectedDay: Date
+        /// The « aujourd’hui » this model last saw; `followToday` compares it with the clock.
+        private var seenToday: Date
+        private var clockObservers: [NSObjectProtocol] = []
         private var savedSettingsDraft: DashboardSettingsDraft
 
         private let state: CaptureState
@@ -262,6 +265,7 @@
 
             let today = Calendar.current.startOfDay(for: now())
             selectedDay = today
+            seenToday = today
             snapshot = .empty(day: today)
             let draft = DashboardSettingsDraft(config: configManager.config)
             settingsDraft = draft
@@ -274,6 +278,15 @@
                 self?.refreshTrustNotices()
             }
             refreshConfigStatus()
+            for name in [Notification.Name.NSCalendarDayChanged, .NSSystemTimeZoneDidChange] {
+                clockObservers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: nil, queue: .main
+                ) { [weak self] _ in
+                    // Read the new zone, not the cached one.
+                    if name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
+                    self?.followToday()
+                })
+            }
             configObserver = NotificationCenter.default.addObserver(
                 forName: .goalongConfigStatusDidChange, object: configManager, queue: .main
             ) { [weak self] _ in
@@ -345,6 +358,7 @@
         deinit {
             if let trustObserver { NotificationCenter.default.removeObserver(trustObserver) }
             if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+            for observer in clockObservers { NotificationCenter.default.removeObserver(observer) }
             refreshScheduler.deactivate()
             cancelDataRequest()
             cancelMetadataRequest()
@@ -418,6 +432,17 @@
         var settingsHaveChanges: Bool {
             settingsDraft != savedSettingsDraft
         }
+
+        /// After midnight or a time zone change, a page left on the old « aujourd’hui » moves to the new one.
+        /// A day chosen by the user stays. Also called by the 60 s pass, which catches a sleep across midnight.
+        func followToday() {
+            let today = Calendar.current.startOfDay(for: now())
+            guard today != seenToday else { return }
+            let wasOnToday = Calendar.current.isDate(selectedDay, inSameDayAs: seenToday)
+            seenToday = today
+            if wasOnToday { selectDay(today) } else { updateRefreshSchedule() }
+        }
+
 
         func selectDay(_ date: Date) {
             let normalized = Calendar.current.startOfDay(for: date)
@@ -505,6 +530,7 @@
         func dashboardDidBecomeVisible() {
             guard !dashboardIsVisible else { return }
             dashboardIsVisible = true
+            followToday()
             agentActivityRuntime.dashboardDidBecomeVisible()
             refreshRuntime()
             refreshData(force: true)
@@ -926,6 +952,7 @@
                 refreshRuntime: { [weak self] in self?.refreshRuntime() },
                 refreshData: { [weak self] in
                     guard let self else { return }
+                    self.followToday()
                     self.refreshData(force: false)
                     self.refreshMetadataIfNeeded(force: false)
                 }
