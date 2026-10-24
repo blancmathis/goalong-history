@@ -114,19 +114,20 @@
     /// One field chrome for single-line, multi-line and search inputs.
     struct GoalongFieldStyle: TextFieldStyle {
         /// A font and its line height, for a field whose text is not the standard 13 pt system text.
-        /// Each case's `lineHeight` is the default line height of its `nsFont`: a unit test checks every case.
+        /// Each case's `lineHeight` is the default line height of its `nsFont` and the height of an AppKit field in that
+        /// font: a unit test checks every case. 15 and 16 pt system text fail (a 19 pt field for an 18 pt line).
         enum TextFont: CaseIterable {
             /// Type-to-stop challenge: 14 pt monospaced.
             case monospaced14
-            /// Block list name: 15 pt semibold.
-            case semibold15
+            /// Block list name: 14 pt semibold (15 pt drew its text half a point off).
+            case semibold14
             /// Focus intent « Je fais… »: 17 pt medium.
             case medium17
 
             var font: Font {
                 switch self {
                 case .monospaced14: return .system(size: 14, design: .monospaced)
-                case .semibold15: return .system(size: 15, weight: .semibold)
+                case .semibold14: return .system(size: 14, weight: .semibold)
                 case .medium17: return .system(size: 17, weight: .medium)
                 }
             }
@@ -135,7 +136,7 @@
             var nsFont: NSFont {
                 switch self {
                 case .monospaced14: return .monospacedSystemFont(ofSize: 14, weight: .regular)
-                case .semibold15: return .systemFont(ofSize: 15, weight: .semibold)
+                case .semibold14: return .systemFont(ofSize: 14, weight: .semibold)
                 case .medium17: return .systemFont(ofSize: 17, weight: .medium)
                 }
             }
@@ -143,7 +144,7 @@
             var lineHeight: CGFloat {
                 switch self {
                 case .monospaced14: return 17
-                case .semibold15: return 18
+                case .semibold14: return 17
                 case .medium17: return 20
                 }
             }

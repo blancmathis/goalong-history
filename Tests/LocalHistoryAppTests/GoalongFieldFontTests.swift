@@ -82,7 +82,7 @@ final class GoalongFieldFontTests: XCTestCase {
         XCTAssertEqual(Self.overriddenFontLines(in: underFieldLine), [2, 3])
         let fine = """
             TextField("a", text: $a)
-                .textFieldStyle(GoalongFieldStyle(textFont: .semibold15))
+                .textFieldStyle(GoalongFieldStyle(textFont: .semibold14))
                 .onChange(of: a) { _ in
                     Text("x").font(.caption)
                 }
@@ -106,6 +106,15 @@ final class GoalongFieldFontTests: XCTestCase {
         for preset in GoalongFieldStyle.TextFont.allCases {
             XCTAssertEqual(preset.lineHeight, NSLayoutManager().defaultLineHeight(for: preset.nsFont), "\(preset)")
             XCTAssertEqual(preset.lineHeight, preset.lineHeight.rounded(), "\(preset): the text stays on whole points")
+            // SwiftUI sizes the field to the line height; AppKit's field must want the same height, or it draws its
+            // text half a point off (15 and 16 pt system text: a 19 pt field for an 18 pt line).
+            let field = NSTextField(string: "")
+            field.font = preset.nsFont
+            field.isBordered = false
+            field.isBezeled = false
+            field.cell?.isScrollable = true
+            field.cell?.wraps = false
+            XCTAssertEqual(field.intrinsicContentSize.height, preset.lineHeight, "\(preset): AppKit field height")
         }
     }
 }
