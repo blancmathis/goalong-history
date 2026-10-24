@@ -1007,6 +1007,29 @@
             XCTAssertEqual(app.activeMinutes, 0)
         }
 
+        func testApplicationUsageMinutesRoundToNearestMinute() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day = makeDay(year: 2026, month: 8, day: 24)
+            var journal = Data()
+            for index in 0...20 {
+                let date = day.addingTimeInterval(Double(index * 10))
+                let presence = ForegroundUsageObservation(observedAt: date,
+                    idleSeconds: Double(index * 10), isForegroundVisible: true)
+                journal.append(try line(HistoryEvent(schemaVersion: 4, sessionID: "presence",
+                    timestamp: date, kind: .heartbeat,
+                    app: AppSnapshot(name: "Safari", bundleIdentifier: "com.apple.Safari", processIdentifier: 42),
+                    url: nil,
+                    metadata: presence.metadata(at: date))))
+            }
+            try journal.write(to: fixture.events.appendingPathComponent("2026-08-24.jsonl"))
+            let snapshot = DashboardDataReader(rootDirectory: fixture.root).snapshot(for: day)
+            let tracked = try XCTUnwrap(snapshot.trackedUsage.first { $0.kind == .application })
+            let app = try XCTUnwrap(snapshot.appUsage.first { $0.bundleIdentifier == "com.apple.Safari" })
+            XCTAssertEqual(tracked.foregroundSeconds, 200, accuracy: 0.001)
+            XCTAssertEqual(app.activeMinutes, 3, "200 s reads 3 min like every other surface, not 4.")
+        }
+
         func testZoomCallWithoutKeyboardSurvivesDashboardDiskCompaction() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }
