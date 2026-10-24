@@ -302,12 +302,13 @@
         static func label(_ date: Date, dense: Bool, isFirst: Bool, calendar: Calendar) -> String {
             var style = Date.FormatStyle.dateTime.locale(GoalongUIFormat.locale)
             style.calendar = calendar; style.timeZone = calendar.timeZone
+            // The 1st of a month always names its month, on every branch (« lun. 1 nov. », never « lun. 1 »).
+            let firstOfMonth = calendar.component(.day, from: date) == 1
             if dense, calendar.component(.weekday, from: date) != 2, !isFirst {
-                // A new month says its name, so « 1 » never follows « 30 » without context.
-                return calendar.component(.day, from: date) == 1 ? date.formatted(style.day().month(.abbreviated))
-                    : date.formatted(style.day())
+                return firstOfMonth ? date.formatted(style.day().month(.abbreviated)) : date.formatted(style.day())
             }
-            return date.formatted(style.weekday(.abbreviated).day())
+            return firstOfMonth ? date.formatted(style.weekday(.abbreviated).day().month(.abbreviated))
+                : date.formatted(style.weekday(.abbreviated).day())
         }
 
         private func marks(_ hours: ClosedRange<Int>) -> [(label: String, position: CGFloat)] {

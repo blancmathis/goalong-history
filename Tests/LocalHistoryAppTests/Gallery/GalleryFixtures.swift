@@ -296,7 +296,11 @@ import SwiftUI
         let manager = FileManager.default
         var lastError: Error?
         for attempt in 0..<3 {
-            do { try manager.removeItem(at: folder); return } catch { lastError = error }
+            do { try manager.removeItem(at: folder); return } catch {
+                lastError = error
+                FileHandle.standardError.write(Data(
+                    "gallery reset: try \(attempt + 1) of 3 failed on \(folder.path): \(error)\n".utf8))
+            }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05 * Double(attempt + 1)))
         }
         do {

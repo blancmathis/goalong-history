@@ -37,9 +37,15 @@
 
         private static let magic = Data("GOALONG-EVIDENCE-V1\0".utf8)
         private let directory: URL
+        /// Deletes one keychain item. Tests inject a stub: they never touch the real keychain.
+        private let deleteKeyItem: (CFDictionary) -> OSStatus
 
-        init(directory: URL) {
+        init(
+            directory: URL,
+            deleteKeyItem: @escaping (CFDictionary) -> OSStatus = { SecItemDelete($0) }
+        ) {
             self.directory = directory
+            self.deleteKeyItem = deleteKeyItem
         }
 
         func storeGeneratedResponse(
@@ -115,26 +121,32 @@
 
         /// Cryptographic deletion is key-first: once SecItemDelete succeeds the
         /// ciphertext is unrecoverable, even if its file removal is interrupted.
+        /// A keychain failure never keeps the capsule file on disk: the file is removed
+        /// anyway, then the keychain error is thrown so the caller reports an incomplete erase.
         func destroy(executionID: String) throws {
             var removedOrAbsent = false
+            var keychainError: AnalysisEvidenceCapsuleError?
             for dataProtection in [true, false] {
                 var query = keyQuery(executionID: executionID)
                 if dataProtection { query[kSecUseDataProtectionKeychain as String] = true }
-                let status = SecItemDelete(query as CFDictionary)
+                let status = deleteKeyItem(query as CFDictionary)
                 if status == errSecSuccess || status == errSecItemNotFound
                     || status == errSecMissingEntitlement
                 {
                     removedOrAbsent = true
                     continue
                 }
-                throw AnalysisEvidenceCapsuleError.keychainFailure(status)
+                keychainError = .keychainFailure(status)
+                break
             }
-            guard removedOrAbsent else { throw AnalysisEvidenceCapsuleError.keychainFailure(errSecItemNotFound) }
+            if keychainError == nil, !removedOrAbsent { keychainError = .keychainFailure(errSecItemNotFound) }
             // No capsule directory means no capsule file: nothing left to remove.
-            guard FileManager.default.fileExists(atPath: directory.path) else { return }
-            try ChatGPTSecureStorage.removeRegularFileIfPresent(
-                at: capsuleURL(executionID: executionID)
-            )
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try ChatGPTSecureStorage.removeRegularFileIfPresent(
+                    at: capsuleURL(executionID: executionID)
+                )
+            }
+            if let keychainError { throw keychainError }
         }
 
         @discardableResult

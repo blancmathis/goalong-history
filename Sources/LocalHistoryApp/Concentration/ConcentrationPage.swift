@@ -86,7 +86,7 @@ import SwiftUI
                     }
                     .font(.system(size: 13))
                     .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, 48)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, LHTheme.pageBottomInset)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .onAppear { openRequestedEditor(controller.requestedEditor, proxy: proxy) }
@@ -262,9 +262,9 @@ struct FocusComposerDraft: Equatable {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 10) {
                     TextField("", text: $draft.intent)
-                        .textFieldStyle(GoalongFieldStyle())
-                        .goalongPlaceholder("Je fais…", isEmpty: draft.intent.isEmpty, font: .system(size: 17, weight: .medium))
-                        .font(.system(size: 17, weight: .medium))
+                        // 17 pt medium text is 20 pt high: 8 + 20 + 8 makes the field 36 pt, 2 pt taller than a standard one.
+                        .textFieldStyle(GoalongFieldStyle(textFont: .medium17))
+                        .goalongPlaceholder("Je fais…", isEmpty: draft.intent.isEmpty, textFont: .medium17)
                         .onSubmit { if !intent.isEmpty { begin() } }
                         .accessibilityLabel("Ce que vous faites pendant la séance")
                         .accessibilityIdentifier("concentration-intent")

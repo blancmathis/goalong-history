@@ -58,7 +58,7 @@ struct GoalongScreenTimePage: View {
             }
             .frame(maxWidth: 1100)
             .padding(.horizontal, LHTheme.pageInset).padding(.top, showsHeader ? 28 : 20)
-            .padding(.bottom, 40).frame(maxWidth: .infinity)
+            .padding(.bottom, LHTheme.pageBottomInset).frame(maxWidth: .infinity)
         }
         .background(LHTheme.pageBackground)
         .onAppear {

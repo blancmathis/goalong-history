@@ -34,7 +34,7 @@ struct JevActivationAvailability: Equatable {
                 ScrollView {
                     content
                         .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-                        .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, 40)
+                        .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, LHTheme.pageBottomInset)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .background(LHTheme.pageBackground)

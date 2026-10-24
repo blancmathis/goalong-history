@@ -195,7 +195,7 @@ final class BlockingPageRenderingTests: XCTestCase {
     }
 
     func testStruckIconKeepsInitialOfItemsWithoutIcon() {
-        XCTAssertEqual(BlockingStruckIcon.fallbackInitial(for: .site("instagram.com")), "I")
+        XCTAssertNil(BlockingStruckIcon.fallbackInitial(for: .site("instagram.com")), "UI-galerie-G1: a globe, not a letter")
         XCTAssertEqual(BlockingStruckIcon.fallbackInitial(for: .app(BlockAppRule(bundleIdentifier: "", name: "Musique"))), "M")
         XCTAssertNil(BlockingStruckIcon.fallbackInitial(for: .symbol("globe")))
     }

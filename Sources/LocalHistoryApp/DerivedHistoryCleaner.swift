@@ -2,6 +2,7 @@
     import Darwin
     import Foundation
     import LocalHistoryCore
+    import Security
 
     /// A no-follow deletion plan for exact, feature-owned regular files.
     ///
@@ -522,15 +523,24 @@
         func execute() throws -> DerivedHistoryDeletionResult {
             // Key-first cryptographic erasure of the encrypted response capsules, after the
             // whole plan is revalidated so an unsafe target still aborts before any deletion.
+            // A keychain error never stops the run: every file is still deleted, then the first
+            // error is thrown so the user learns that the erase is incomplete.
+            var keychainError: Error?
             if let evidenceStore, !evidenceExecutionIDs.isEmpty {
                 try OwnedFileDeletionPlan.validate(allPlans)
-                for executionID in evidenceExecutionIDs { try evidenceStore.destroy(executionID: executionID) }
+                for executionID in evidenceExecutionIDs {
+                    do { try evidenceStore.destroy(executionID: executionID) } catch {
+                        Diagnostics.write("Evidence key erase failed for \(executionID): \(error)")
+                        if keychainError == nil { keychainError = error }
+                    }
+                }
             }
             _ = try OwnedFileDeletionPlan.execute(allPlans)
             for plan in proofDirectoryPlans { try Self.removeEmptyDirectory(plan) }
             if clearSummaryDirectory, let plan = activitySummaryPlans.first ?? activityTemporaryPlans.first {
                 try Self.removeEmptyDirectory(plan)
             }
+            if let keychainError { throw keychainError }
             return expectedResult
         }
 
@@ -560,12 +570,15 @@
     final class DerivedHistoryCleaner {
         private let rootDirectory: URL
         private let computerHistoryStore: ComputerHistoryStore
+        private let deleteEvidenceKeyItem: (CFDictionary) -> OSStatus
 
         init(
             rootDirectory: URL = AppPaths.applicationSupportDirectory,
-            codexMemoryDirectory: URL? = nil
+            codexMemoryDirectory: URL? = nil,
+            deleteEvidenceKeyItem: @escaping (CFDictionary) -> OSStatus = { SecItemDelete($0) }
         ) {
             self.rootDirectory = rootDirectory
+            self.deleteEvidenceKeyItem = deleteEvidenceKeyItem
             computerHistoryStore = ComputerHistoryStore(
                 rootDirectory: rootDirectory,
                 codexMemoryDirectory: codexMemoryDirectory
@@ -680,17 +693,61 @@
             var executionIDs = Set(
                 (chatGPTRecapPlan?.targets ?? []).compactMap { recapExecutionID(at: $0.URL) }
             )
+            var stagingNames: Set<String> = []
             if isFullClear {
                 for name in Self.uuidNamedEntries(in: proofsDirectory) { executionIDs.insert(name) }
                 for name in Self.uuidNamedEntries(in: evidenceDirectory, suffix: ".capsule") {
                     executionIDs.insert(name)
                 }
+                // Interrupted proof writes leave `.<uuid>.tmp` staging folders with the same files.
+                for name in Self.stagingEntries(in: proofsDirectory) { stagingNames.insert(name) }
                 plan.proofPlans = try deletionPlan(
                     in: proofsDirectory, trustedAncestor: trustedAncestor, suffixes: [],
                     cutoffKey: nil, matchingDayKeys: nil, nameKey: { $0 == "chain-head.json" ? $0 : nil }
                 ).map { [$0] } ?? []
+            } else {
+                // Orphans: proofs no recap references any more (a regenerated recap replaced its proof,
+                // the recap write failed, or a clear cancelled the run after its proof). They still hold
+                // the day's recap text (result.json) and its encrypted response: erase them with their day.
+                // The barrier is drained before this preflight, so no generation is writing them now.
+                let earliestKey = cutoffKey ?? matchingDayKeys?.min()
+                func isErased(_ date: (key: String, exact: Bool)) -> Bool {
+                    // A day read from the package is exact. A modification date is the generation
+                    // time, never before the analysed day: erase from the earliest erased day on.
+                    guard date.exact else { return earliestKey.map { date.key >= $0 } ?? false }
+                    return (cutoffKey.map { date.key >= $0 } ?? true)
+                        && (matchingDayKeys.map { $0.contains(date.key) } ?? true)
+                }
+                let recapNames = (try? FileManager.default.contentsOfDirectory(atPath: chatGPTRecapsDirectory.path)) ?? []
+                let referenced = Set(recapNames.compactMap {
+                    recapExecutionID(at: chatGPTRecapsDirectory.appendingPathComponent($0))?.lowercased()
+                })
+                let packages = Self.uuidNamedEntries(in: proofsDirectory)
+                for name in packages where !referenced.contains(name.lowercased())
+                    && isErased(proofDate(in: proofsDirectory.appendingPathComponent(name, isDirectory: true)))
+                {
+                    executionIDs.insert(name)
+                }
+                for name in Self.stagingEntries(in: proofsDirectory)
+                    where isErased(proofDate(in: proofsDirectory.appendingPathComponent(name, isDirectory: true)))
+                {
+                    stagingNames.insert(name)
+                    // A stale copy next to a kept recap's proof never takes that proof or its key with it.
+                    let executionID = String(name.dropFirst().dropLast(4))
+                    if !referenced.contains(executionID.lowercased()) { executionIDs.insert(executionID) }
+                }
+                // A capsule written before its package (the run stopped in between) has only its date.
+                let packageIDs = Set(packages.map { $0.lowercased() })
+                for name in Self.uuidNamedEntries(in: evidenceDirectory, suffix: ".capsule")
+                    where !packageIDs.contains(name.lowercased()) && !referenced.contains(name.lowercased())
+                {
+                    let capsule = evidenceDirectory.appendingPathComponent(name + ".capsule")
+                    if let key = modificationDayKey(of: capsule), isErased((key, false)) {
+                        executionIDs.insert(name)
+                    }
+                }
             }
-            for executionID in executionIDs.sorted() {
+            for executionID in executionIDs.sorted() + stagingNames.sorted() {
                 let directory = proofsDirectory.appendingPathComponent(executionID, isDirectory: true)
                 let known: Set<String> = [
                     "definition.jws", "context-manifest.json", "provider-request.json",
@@ -706,7 +763,8 @@
                 }
             }
             plan.evidenceExecutionIDs = executionIDs.sorted()
-            plan.evidenceStore = AnalysisEvidenceCapsuleStore(directory: evidenceDirectory)
+            plan.evidenceStore = AnalysisEvidenceCapsuleStore(
+                directory: evidenceDirectory, deleteKeyItem: deleteEvidenceKeyItem)
             // Sequential category discovery is followed by one whole-plan validation,
             // immediately before the caller is permitted to begin deleting raw stores.
             try plan.validate()
@@ -726,6 +784,27 @@
             return id
         }
 
+        /// Day of a proof package: the `day` of its context manifest, else its folder's modification day.
+        private func proofDate(in directory: URL) -> (key: String, exact: Bool) {
+            struct Manifest: Decodable { let day: String }
+            if let data = try? ChatGPTHistoryStore.readStableSource(
+                at: directory.appendingPathComponent("context-manifest.json"), maximumBytes: 1_024 * 1_024),
+                let day = (try? JSONDecoder().decode(Manifest.self, from: data))?.day,
+                let key = validDayKey(day)
+            {
+                return (key, true)
+            }
+            // No folder date (it vanished or cannot be read): the earliest key never erases it on a guess.
+            return (modificationDayKey(of: directory) ?? "0000-00-00", false)
+        }
+
+        /// Local day of the modification time of `URL` itself (symbolic links are not followed).
+        private func modificationDayKey(of URL: URL) -> String? {
+            var status = stat()
+            guard lstat(URL.path, &status) == 0 else { return nil }
+            return dayString(Date(timeIntervalSince1970: TimeInterval(status.st_mtimespec.tv_sec)))
+        }
+
         /// Names in `directory` that are UUIDs (optionally followed by `suffix`). Names only.
         private static func uuidNamedEntries(in directory: URL, suffix: String = "") -> [String] {
             let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
@@ -733,6 +812,15 @@
                 guard name.hasSuffix(suffix) else { return nil }
                 let stem = String(name.dropLast(suffix.count))
                 return UUID(uuidString: stem) != nil ? stem : nil
+            }
+        }
+
+        /// `.<uuid>.tmp` folder names in `directory` (staging folders of `AnalysisProofStore`).
+        private static func stagingEntries(in directory: URL) -> [String] {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            return names.filter { name in
+                name.hasPrefix(".") && name.hasSuffix(".tmp")
+                    && UUID(uuidString: String(name.dropFirst().dropLast(4))) != nil
             }
         }
 
@@ -767,7 +855,11 @@
         private func dayKey(_ URL: URL, suffixes: [String]) -> String? {
             let name = URL.lastPathComponent
             guard let suffix = suffixes.first(where: name.hasSuffix) else { return nil }
-            let rawDay = String(name.dropLast(suffix.count))
+            return validDayKey(String(name.dropLast(suffix.count)))
+        }
+
+        /// `rawDay` when it is a real local `yyyy-MM-dd` day, else nil.
+        private func validDayKey(_ rawDay: String) -> String? {
             let fields = rawDay.split(separator: "-", omittingEmptySubsequences: false)
             guard fields.count == 3,
                 fields[0].count == 4,

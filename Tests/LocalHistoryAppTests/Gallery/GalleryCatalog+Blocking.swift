@@ -96,6 +96,15 @@ extension GalleryCatalog {
                                                    attemptsToday: 2, earnedMinutesToday: 0))
                     .padding(20))
             },
+            panel("blocking-surfaces/avis-app-sans-icone", width: 420, clock: .injected) { _ in
+                // An app Goalong cannot read the icon of: its letter sits off the diagonal (UI-clair-09b).
+                let now = F.blockingNow
+                return AnyView(BlockedAppNotice(app: BlockAppRule(bundleIdentifier: "com.example.sans-icone", name: "Musique"),
+                    end: now.addingTimeInterval(4_200), lock: .locked, listName: "Distractions",
+                    feedback: BlockingListFeedback(listID: F.videoID, reason: "Finir le mémoire avant vendredi.",
+                                                   attemptsToday: 2, earnedMinutesToday: 0))
+                    .padding(20))
+            },
             panel("blocking-surfaces/gel-du-mac", width: 1_280, height: 800, clock: .injected) { _ in
                 AnyView(FrozenMacShield(freeze: F.freeze, now: F.blockingNow))
             },

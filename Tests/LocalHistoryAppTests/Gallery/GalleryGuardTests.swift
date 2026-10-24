@@ -62,6 +62,26 @@ final class GalleryGuardTests: XCTestCase {
         XCTAssertEqual(day.state, .noSource, "recording off reads as no source, never as an unreadable day")
     }
 
+    /// SYS-16: the fixture runs the app's own storage preparation, so every standard folder exists again after the
+    /// reset, not only `events/`.
+    @MainActor func testTheFixtureRecreatesEveryStandardStorageFolder() throws {
+        let support = AppPaths.applicationSupportDirectory
+        guard support.path.hasPrefix("/tmp/goalong-") || support.path.hasPrefix("/private/tmp/goalong-") else {
+            throw XCTSkip("data root \(support.path) is not a throwaway HOME")
+        }
+        // Remove only empty standard folders (deepest first): `make test` shares this HOME with other tests.
+        for folder in AppPaths.standardStorageDirectories(in: support).reversed() {
+            let contents = try? FileManager.default.contentsOfDirectory(atPath: folder.path)
+            if contents?.isEmpty == true { try? FileManager.default.removeItem(at: folder) }
+        }
+        try GalleryFixtureHome.install(.empty)
+        for folder in AppPaths.standardStorageDirectories(in: support) {
+            var isDirectory: ObjCBool = false
+            XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory) && isDirectory.boolValue,
+                          "\(folder.path) is missing after the fixture install")
+        }
+    }
+
     /// Views decide « aujourd’hui » through `GoalongToday`, which the gallery freezes. `Calendar.isDateInToday`, a
     /// day default such as `startOfDay(for: Date())`, `date(byAdding:…, to: Date())`, `in: ...Date()` or an
     /// `@State var x = Date()` read the real clock and change images on another day (C2-couverture-02, C3-outil-03,

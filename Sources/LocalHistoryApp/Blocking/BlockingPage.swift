@@ -88,7 +88,7 @@ import SwiftUI
                 }
                 .font(.system(size: 13))
                 .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-                .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 48)
+                .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, LHTheme.pageBottomInset)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
@@ -1035,8 +1035,8 @@ struct BlockingTypingChallengeSheet: View {
                 // One character at a time: a jump of several characters is a paste.
                 if value.count <= typed.count + 1 { typed = value }
             }))
-                .textFieldStyle(GoalongFieldStyle())
-                .font(.system(size: 14, design: .monospaced))
+                // 14 pt monospaced text is 17 pt high: 8 + 17 + 9 fills the 34 pt field.
+                .textFieldStyle(GoalongFieldStyle(textFont: .monospaced14))
                 .accessibilityIdentifier("blocking-typing-field")
             HStack {
                 BlockingMeter(fraction: Double(matched) / Double(max(1, text.count))).frame(width: 160)

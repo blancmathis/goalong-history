@@ -1,5 +1,6 @@
 #if os(macOS)
     import Foundation
+    import Security
     import XCTest
     @testable import LocalHistoryApp
 
@@ -418,6 +419,9 @@
                     try writeFixture(to: proofFile(id))
                     try writeFixture(to: proofs.appendingPathComponent(id + "/run.jws"))
                 }
+                // The orphan's own manifest dates it: yesterday.
+                try Data("{\"day\":\"\(dayKey(yesterday))\"}".utf8)
+                    .write(to: proofs.appendingPathComponent(orphanID + "/context-manifest.json"))
                 try writeFixture(to: chainHead)
             }
             let cleaner = DerivedHistoryCleaner(rootDirectory: root, codexMemoryDirectory: container.appendingPathComponent("codex"))
@@ -432,6 +436,7 @@
             try seed()
             _ = try cleaner.prepareDeletion(days: [yesterday]).execute()
             XCTAssertFalse(fm.fileExists(atPath: proofs.appendingPathComponent(yesterdayID).path))
+            XCTAssertFalse(fm.fileExists(atPath: proofFile(orphanID).path))
             XCTAssertTrue(fm.fileExists(atPath: proofFile(todayID).path))
 
             try seed()
@@ -494,6 +499,143 @@
             formatter.timeZone = .current
             formatter.dateFormat = "yyyy-MM-dd"
             return formatter.string(from: date)
+        }
+
+        func testFullClearDeletesEveryFileEvenWhenTheKeychainFailsThenReportsTheError() throws {
+            // The capsule store opens every path component without following links, and /var and /tmp are links
+            // on macOS: build in the package's own .build folder, which has none.
+            let container = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent(".build/derived-cleaner-tests", isDirectory: true)
+                .appendingPathComponent("goalong-derived-keychain-\(UUID().uuidString)", isDirectory: true)
+            let root = container.appendingPathComponent("LocalHistory", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: container) }
+            let fm = FileManager.default
+            let proofs = root.appendingPathComponent("chatgpt/proofs", isDirectory: true)
+            let evidence = proofs.appendingPathComponent("private-evidence", isDirectory: true)
+            let analysis = root.appendingPathComponent("analysis", isDirectory: true)
+            let id = UUID().uuidString.lowercased()
+            let stagingID = UUID().uuidString.lowercased()
+            let staging = proofs.appendingPathComponent(".\(stagingID).tmp", isDirectory: true)
+            for directory in [analysis, evidence, proofs.appendingPathComponent(id), staging] {
+                try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            // The store refuses folders that other users can read: make each one private (0700).
+            for directory in [root, root.appendingPathComponent("chatgpt"), proofs, evidence,
+                              proofs.appendingPathComponent(id), staging] {
+                try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            }
+            let files = [
+                analysis.appendingPathComponent("2026-08-20.analysis.json"),
+                evidence.appendingPathComponent(id + ".capsule"),
+                proofs.appendingPathComponent(id + "/result.json"),
+                staging.appendingPathComponent("result.json"),
+                proofs.appendingPathComponent("chain-head.json"),
+            ]
+            for file in files { try writeFixture(to: file) }
+            var deleteCalls = 0
+            let cleaner = DerivedHistoryCleaner(
+                rootDirectory: root,
+                codexMemoryDirectory: container.appendingPathComponent("codex"),
+                deleteEvidenceKeyItem: { _ in deleteCalls += 1; return errSecAuthFailed }
+            )
+
+            XCTAssertThrowsError(try cleaner.prepareDeletion(since: nil).execute()) { error in
+                guard case AnalysisEvidenceCapsuleError.keychainFailure(let status) = error else {
+                    return XCTFail("unexpected error \(error)")
+                }
+                XCTAssertEqual(status, errSecAuthFailed)
+            }
+            XCTAssertGreaterThan(deleteCalls, 0)
+            XCTAssertEqual(files.map { fm.fileExists(atPath: $0.path) }, Array(repeating: false, count: files.count))
+            XCTAssertFalse(fm.fileExists(atPath: staging.path))
+        }
+
+        func testPartialClearErasesTheOrphanProofsOfTheErasedDaysWithTheirKeys() throws {
+            // Same .build container as above: /var and /tmp are symbolic links on macOS.
+            let container = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent(".build/derived-cleaner-tests", isDirectory: true)
+                .appendingPathComponent("goalong-derived-orphans-\(UUID().uuidString)", isDirectory: true)
+            let root = container.appendingPathComponent("LocalHistory", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: container) }
+            let fm = FileManager.default
+            let recaps = root.appendingPathComponent("chatgpt/recaps", isDirectory: true)
+            let proofs = root.appendingPathComponent("chatgpt/proofs", isDirectory: true)
+            let evidence = proofs.appendingPathComponent("private-evidence", isDirectory: true)
+            let erasedDay = makeDay(year: 2026, month: 8, day: 20)
+            let keptDay = makeDay(year: 2026, month: 8, day: 10)
+            // Orphans: a regenerated recap replaced their proof, or the recap write never happened.
+            let erasedOrphan = UUID().uuidString.lowercased()
+            let keptOrphan = UUID().uuidString.lowercased()
+            let referenced = UUID().uuidString.lowercased()
+            let erasedStaging = UUID().uuidString.lowercased()
+            let erasedCapsuleOnly = UUID().uuidString.lowercased()
+            let keptCapsuleOnly = UUID().uuidString.lowercased()
+            func package(_ id: String) -> URL { proofs.appendingPathComponent(id, isDirectory: true) }
+            let staging = proofs.appendingPathComponent(".\(erasedStaging).tmp", isDirectory: true)
+            // A stale staging copy of a kept recap's proof, with no manifest: its date is today.
+            let referencedStaging = proofs.appendingPathComponent(".\(referenced).tmp", isDirectory: true)
+            for directory in [recaps, evidence, package(erasedOrphan), package(keptOrphan), package(referenced), staging,
+                              referencedStaging] {
+                try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            for directory in [root, root.appendingPathComponent("chatgpt"), recaps, proofs, evidence] {
+                try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            }
+            func writeManifest(day: Date, in directory: URL) throws {
+                try Data("{\"day\":\"\(dayKey(day))\",\"executionID\":\"x\"}".utf8)
+                    .write(to: directory.appendingPathComponent("context-manifest.json"))
+                try writeFixture(to: directory.appendingPathComponent("result.json"))
+            }
+            try writeManifest(day: erasedDay, in: package(erasedOrphan))
+            try writeManifest(day: keptDay, in: package(keptOrphan))
+            try writeManifest(day: keptDay, in: package(referenced))
+            try writeManifest(day: erasedDay, in: staging)
+            try writeFixture(to: referencedStaging.appendingPathComponent("result.json"))
+            try Data("{\"proof\":{\"executionID\":\"\(referenced)\"}}".utf8)
+                .write(to: recaps.appendingPathComponent(dayKey(keptDay) + ".chatgpt-recap.json"))
+            for id in [erasedOrphan, keptOrphan, referenced, erasedStaging, erasedCapsuleOnly, keptCapsuleOnly] {
+                try writeFixture(to: evidence.appendingPathComponent(id + ".capsule"))
+            }
+            // A capsule with no package has no day of its own: its date is the generation time.
+            try fm.setAttributes([.modificationDate: erasedDay],
+                                 ofItemAtPath: evidence.appendingPathComponent(erasedCapsuleOnly + ".capsule").path)
+            try fm.setAttributes([.modificationDate: makeDay(year: 2026, month: 8, day: 5)],
+                                 ofItemAtPath: evidence.appendingPathComponent(keptCapsuleOnly + ".capsule").path)
+            var erasedKeys: Set<String> = []
+            let cleaner = DerivedHistoryCleaner(
+                rootDirectory: root,
+                codexMemoryDirectory: container.appendingPathComponent("codex"),
+                deleteEvidenceKeyItem: { query in
+                    if let account = (query as NSDictionary)[kSecAttrAccount as String] as? String {
+                        erasedKeys.insert(account)
+                    }
+                    return errSecItemNotFound
+                }
+            )
+
+            _ = try cleaner.prepareDeletion(days: [erasedDay]).execute()
+
+            XCTAssertEqual(erasedKeys, [erasedOrphan, erasedStaging, erasedCapsuleOnly])
+            XCTAssertFalse(fm.fileExists(atPath: package(erasedOrphan).appendingPathComponent("result.json").path))
+            XCTAssertFalse(fm.fileExists(atPath: staging.appendingPathComponent("result.json").path))
+            XCTAssertFalse(fm.fileExists(atPath: referencedStaging.appendingPathComponent("result.json").path))
+            for id in [erasedOrphan, erasedStaging, erasedCapsuleOnly] {
+                XCTAssertFalse(fm.fileExists(atPath: evidence.appendingPathComponent(id + ".capsule").path), id)
+            }
+            for id in [keptOrphan, referenced, keptCapsuleOnly] {
+                XCTAssertTrue(fm.fileExists(atPath: evidence.appendingPathComponent(id + ".capsule").path), id)
+            }
+            XCTAssertTrue(fm.fileExists(atPath: package(keptOrphan).appendingPathComponent("result.json").path))
+            XCTAssertTrue(fm.fileExists(atPath: package(referenced).appendingPathComponent("result.json").path))
+
+            // A cutoff clear dates orphans the same way: the kept day's orphan is older than the cutoff.
+            _ = try cleaner.prepareDeletion(since: makeDay(year: 2026, month: 8, day: 15)).execute()
+            XCTAssertTrue(fm.fileExists(atPath: package(keptOrphan).appendingPathComponent("result.json").path))
+            _ = try cleaner.prepareDeletion(since: keptDay).execute()
+            XCTAssertFalse(fm.fileExists(atPath: package(keptOrphan).appendingPathComponent("result.json").path))
+            XCTAssertTrue(fm.fileExists(atPath: evidence.appendingPathComponent(keptCapsuleOnly + ".capsule").path))
         }
 
         private func writeFixture(to URL: URL) throws {

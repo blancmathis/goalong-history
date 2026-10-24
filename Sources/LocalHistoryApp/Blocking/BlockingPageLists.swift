@@ -128,7 +128,8 @@ import SwiftUI
                 TextField("Nom de la liste", text: Binding(get: { list.name }, set: { name in
                     var next = list; next.name = String(name.prefix(40)); controller.save(next)
                 }))
-                .textFieldStyle(GoalongFieldStyle()).font(.system(size: 15, weight: .semibold))
+                // 14 pt semibold text is 17 pt high: 8 + 17 + 9 fills the 34 pt field.
+                .textFieldStyle(GoalongFieldStyle(textFont: .semibold14))
                 .accessibilityIdentifier("blocking-list-name")
             }
             TextField("Pourquoi ? ex. Finir le mémoire avant vendredi", text: $reasonDraft)
@@ -728,14 +729,14 @@ struct BlockingIconStack: View {
     }
 }
 
-/// A site has no icon offline: its initial on a quiet tile, the same shape as an app icon.
+/// A site has no icon offline: a globe on a quiet tile, the same shape as an app icon.
 struct BlockingSiteTile: View {
     let host: String
     var size: CGFloat = 22
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-        Text(host.first.map { String($0).uppercased() } ?? "•")
-            .font(.system(size: size * 0.5, weight: .semibold, design: .rounded))
+        Image(systemName: "globe")
+            .font(.system(size: size * 0.5, weight: .medium))
             .foregroundStyle(LHTheme.secondaryText)
             .frame(width: size, height: size)
             .background(shape.fill(LHTheme.insetBackground))

@@ -132,6 +132,7 @@ enum SupportSourceAllowlist {
         "GoalongBuildCapabilities.swift",
         "GoalongButtonStyle.swift",
         "GoalongCLIInstallation.swift",
+        "GoalongCalendarBackend.swift",
         "GoalongCalendarSource.swift",
         "GoalongCallPresenceMonitor.swift",
         "GoalongChatGPTSettings.swift",

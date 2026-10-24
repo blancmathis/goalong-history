@@ -132,6 +132,17 @@ final class GoalongUXOptimizationTests: XCTestCase {
         XCTAssertEqual(GoalongThreadWeave.label(first, dense: true, isFirst: false, calendar: calendar), "1 oct.")
     }
 
+    func testMonthWeaveNamesTheMonthOnTheFirstOnEveryBranch() {
+        // 2026-06-01 is a Monday: the Monday branch must not hide the month (R7-A-01).
+        let mondayFirst = calendar.date(from: DateComponents(year: 2026, month: 6, day: 1))!
+        let fridayFirst = calendar.date(from: DateComponents(year: 2026, month: 5, day: 1))!
+        XCTAssertEqual(GoalongThreadWeave.label(mondayFirst, dense: true, isFirst: false, calendar: calendar), "lun. 1 juin")
+        XCTAssertEqual(GoalongThreadWeave.label(mondayFirst, dense: true, isFirst: true, calendar: calendar), "lun. 1 juin")
+        XCTAssertEqual(GoalongThreadWeave.label(mondayFirst, dense: false, isFirst: false, calendar: calendar), "lun. 1 juin")
+        XCTAssertEqual(GoalongThreadWeave.label(fridayFirst, dense: false, isFirst: false, calendar: calendar), "ven. 1 mai")
+        XCTAssertEqual(GoalongThreadWeave.label(fridayFirst, dense: true, isFirst: true, calendar: calendar), "ven. 1 mai")
+    }
+
     func testSidebarStatusForAFailedInputTapFitsTheSidebar() {
         let title = RuntimePresentation(state: .inputTapUnavailable, accessibilityGranted: true, inputMonitoringGranted: false,
             eventTapRunning: false, verificationEnabled: false, verificationServer: nil, captureHealth: nil).displayTitle

@@ -177,7 +177,6 @@
     struct AppUsage: Identifiable {
         let appName: String
         let bundleIdentifier: String?
-        let activeMinutes: Int
         let eventCount: Int
 
         var id: String { bundleIdentifier ?? "name:\(appName)" }

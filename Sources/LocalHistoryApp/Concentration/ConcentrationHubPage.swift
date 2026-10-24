@@ -111,7 +111,7 @@ struct ConcentrationHubHeader: View {
             }
             .font(.system(size: 13))
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, 48)
+            .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, LHTheme.pageBottomInset)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .accessibilityIdentifier("distractions-page")

@@ -113,11 +113,52 @@
 
     /// One field chrome for single-line, multi-line and search inputs.
     struct GoalongFieldStyle: TextFieldStyle {
+        /// A font and its line height, for a field whose text is not the standard 13 pt system text.
+        /// Each case's `lineHeight` is the default line height of its `nsFont` and the height of an AppKit field in that
+        /// font: a unit test checks every case. 15 and 16 pt system text fail (a 19 pt field for an 18 pt line).
+        enum TextFont: CaseIterable {
+            /// Type-to-stop challenge: 14 pt monospaced.
+            case monospaced14
+            /// Block list name: 14 pt semibold (15 pt drew its text half a point off).
+            case semibold14
+            /// Focus intent « Je fais… »: 17 pt medium.
+            case medium17
+
+            var font: Font {
+                switch self {
+                case .monospaced14: return .system(size: 14, design: .monospaced)
+                case .semibold14: return .system(size: 14, weight: .semibold)
+                case .medium17: return .system(size: 17, weight: .medium)
+                }
+            }
+
+            /// The AppKit font that draws the same text.
+            var nsFont: NSFont {
+                switch self {
+                case .monospaced14: return .monospacedSystemFont(ofSize: 14, weight: .regular)
+                case .semibold14: return .systemFont(ofSize: 14, weight: .semibold)
+                case .medium17: return .systemFont(ofSize: 17, weight: .medium)
+                }
+            }
+
+            var lineHeight: CGFloat {
+                switch self {
+                case .monospaced14: return 17
+                case .semibold14: return 17
+                case .medium17: return 20
+                }
+            }
+        }
+
+        var textFont: TextFont?
+
+        init(textFont: TextFont? = nil) { self.textFont = textFont }
+
         // swiftlint:disable:next identifier_name
         func _body(configuration: TextField<Self._Label>) -> some View {
             // The field keeps its own text height: a layout pass that offered it less (15 pt for 16) moved its text
             // half a point off, from one launch to the next (C final UI check).
-            GoalongFieldChrome { configuration.textFieldStyle(.plain).fixedSize(horizontal: false, vertical: true) }
+            GoalongFieldChrome(textFont: textFont) { configuration.textFieldStyle(.plain).fixedSize(horizontal: false, vertical: true) }
         }
     }
 
@@ -125,13 +166,17 @@
     struct GoalongFieldChrome<Content: View>: View {
         @FocusState private var focused: Bool
         private let content: Content
+        private let textFont: GoalongFieldStyle.TextFont?
 
-        init(@ViewBuilder content: () -> Content) { self.content = content() }
+        init(textFont: GoalongFieldStyle.TextFont? = nil, @ViewBuilder content: () -> Content) {
+            self.textFont = textFont
+            self.content = content()
+        }
 
         var body: some View {
             content
                 .focused($focused)
-                .modifier(GoalongFieldSurface(focused: focused, focus: { focused = true }))
+                .modifier(GoalongFieldSurface(focused: focused, focus: { focused = true }, textFont: textFont))
         }
     }
 
@@ -140,6 +185,8 @@
         var focused = false
         /// Clicks on the padding focus the field; clicks on the text stay with the field itself.
         var focus: () -> Void = {}
+        /// Replaces the standard text font; the field's padding then fits that line height on whole points.
+        var textFont: GoalongFieldStyle.TextFont?
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.controlSize) private var controlSize
         @Environment(\.colorSchemeContrast) private var contrast
@@ -149,13 +196,17 @@
         func body(content: Content) -> some View {
             let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
             let small = controlSize == .small || controlSize == .mini
+            let minHeight: CGFloat = small ? 26 : 34
+            let top: CGFloat = small ? 5 : 8
+            // A custom font keeps the top padding; the bottom takes what is left, so top + line + bottom fills the height.
+            let bottom: CGFloat = textFont.map { max(top, minHeight - top - $0.lineHeight) } ?? (small ? 6 : 8)
             content
-                .font(.system(size: small ? 12 : 13))
+                .font(textFont?.font ?? .system(size: small ? 12 : 13))
                 .padding(.horizontal, small ? 9 : 11)
                 // A small field's line is 15 pt high: 5 + 15 + 6 fills its 26 pt, so the text starts on a whole point.
                 // Centred, it started on a half point and drew half a point off from one launch to the next.
-                .padding(.top, small ? 5 : 8).padding(.bottom, small ? 6 : 8)
-                .frame(minHeight: small ? 26 : 34)
+                .padding(.top, top).padding(.bottom, bottom)
+                .frame(minHeight: minHeight)
                 .background {
                     shape.fill(LHTheme.fieldBackground).onTapGesture(perform: focus)
                 }
@@ -177,11 +228,14 @@
         /// A placeholder drawn by Goalong, in the placeholder colour, because the system one is
         /// not always told apart from typed text. Put it on a field that has the Goalong field style.
         func goalongPlaceholder(_ placeholder: String, isEmpty: Bool, alignment: Alignment = .leading,
-                                font: Font = .system(size: 13), top: CGFloat = 0) -> some View {
-            overlay(alignment: alignment) {
+                                font: Font = .system(size: 13), top: CGFloat = 0,
+                                textFont: GoalongFieldStyle.TextFont? = nil) -> some View {
+            // A field with a custom text font starts its line 8 pt from the top: the placeholder starts there too,
+            // so typed text and placeholder share the same x and baseline.
+            overlay(alignment: textFont == nil ? alignment : .topLeading) {
                 if isEmpty && !placeholder.isEmpty {
-                    Text(placeholder).font(font).foregroundStyle(LHTheme.placeholder)
-                        .padding(.horizontal, 11).padding(.top, top)
+                    Text(placeholder).font(textFont?.font ?? font).foregroundStyle(LHTheme.placeholder)
+                        .padding(.horizontal, 11).padding(.top, textFont == nil ? top : 8)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }

@@ -28,13 +28,17 @@ struct GoalongAnalyticsPage: View {
     @State private var showingAnalysisChoice = false
     @State private var reviewRequest: GoalongWorkReviewRequest?
     /// The named view of Activité on screen (nil = summary); kept when the day or period changes.
-    @State private var detail: GoalongActivityDetail?
+    @State private var detail: GoalongActivityDetail? = GoalongAnalyticsPage.initialDetail
     @AppStorage(GoalongDeveloperPreferences.enabledKey) private var developerMode = false
     #if DEBUG
+    /// Test gallery only: the named view the page opens on (default: the summary).
+    static var galleryDetail: GoalongActivityDetail?
+    private static var initialDetail: GoalongActivityDetail? { galleryDetail }
     /// Test gallery only: the page opens on the developer preview (default: the page's own data).
     static var galleryStartsInPreview = false
     @State private var showingPreview = galleryStartsInPreview
     #else
+    private static var initialDetail: GoalongActivityDetail? { nil }
     @State private var showingPreview = false
     #endif
     @State private var previewNavigation = GoalongActivityNavigation()
@@ -152,7 +156,7 @@ struct GoalongAnalyticsPage: View {
                         }
                     }
                     .frame(maxWidth: 1080, alignment: .leading)
-                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, 40)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, LHTheme.pageBottomInset)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .onChange(of: detail) { shown in
