@@ -104,12 +104,30 @@
         static let recoveryInterval: TimeInterval = 3
 
         /// A tap that is stopped on purpose (capture paused) has nothing to recover while permissions are healthy.
-        static func interval(status: PermissionStatus, eventTapRunning: Bool, captureIntended: Bool = true) -> TimeInterval {
-            let accessibilityHealthy = status.accessibilityUsable
-            let inputPathAvailable = status.canAttemptInputTap
-            return accessibilityHealthy && inputPathAvailable && (eventTapRunning || !captureIntended)
-                ? healthyInterval
-                : recoveryInterval
+        /// `degradedFor` is how long recovery has lasted since it began or since the user last came back
+        /// to Goalong or opened the permission guide: fast at first, then backing off to one minute.
+        static func interval(
+            status: PermissionStatus,
+            eventTapRunning: Bool,
+            captureIntended: Bool = true,
+            degradedFor: TimeInterval = 0
+        ) -> TimeInterval {
+            needsRecovery(status: status, eventTapRunning: eventTapRunning, captureIntended: captureIntended)
+                ? recoveryInterval(degradedFor: degradedFor)
+                : healthyInterval
+        }
+
+        static func needsRecovery(status: PermissionStatus, eventTapRunning: Bool, captureIntended: Bool = true) -> Bool {
+            !(status.accessibilityUsable && status.canAttemptInputTap && (eventTapRunning || !captureIntended))
+        }
+
+        static func recoveryInterval(degradedFor: TimeInterval) -> TimeInterval {
+            switch max(0, degradedFor) {
+            case ..<120: return recoveryInterval
+            case ..<300: return 10
+            case ..<600: return 30
+            default: return healthyInterval
+            }
         }
     }
 

@@ -117,6 +117,9 @@
         private var capabilityConsents: GoalongCapabilityConsentStore!
 
         private var permissionTimer: Timer?
+        /// Start of the current recovery back-off; reset when the user returns to Goalong or opens the guide.
+        private var permissionRecoverySince: Date?
+        private var permissionAttentionObservers: [NSObjectProtocol] = []
         private var lastPermissionStatus: PermissionStatus?
         private var lastRecordedHealthState: CaptureHealthState?
         private var workspaceObservers: [NSObjectProtocol] = []
@@ -437,6 +440,7 @@
             }
 
             installWorkspaceObservers()
+            installPermissionAttentionObservers()
             let resumedSetup = PermissionRecovery.consumeSetupReturn()
             if GoalongGuardFiles.isGuardRelaunch {
                 // Reopened by the blocking guard after a kill: quiet, no window (spec K §6).
@@ -1246,15 +1250,24 @@
 
         private func schedulePermissionWatchdog() {
             permissionTimer?.invalidate()
+            let status = permissions.snapshot
+            let now = Date()
+            if PermissionWatchdogPolicy.needsRecovery(status: status, eventTapRunning: eventTapMonitor.isRunning,
+                                                      captureIntended: captureState.isCapturing) {
+                if permissionRecoverySince == nil { permissionRecoverySince = now }
+            } else {
+                permissionRecoverySince = nil
+            }
             let interval = PermissionWatchdogPolicy.interval(
-                status: permissions.snapshot,
+                status: status,
                 eventTapRunning: eventTapMonitor.isRunning,
-                captureIntended: captureState.isCapturing
+                captureIntended: captureState.isCapturing,
+                degradedFor: permissionRecoverySince.map { now.timeIntervalSince($0) } ?? 0
             )
             let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
                 self?.checkPermissionsAndStartTap(forceRefresh: true)
             }
-            timer.tolerance = interval >= PermissionWatchdogPolicy.healthyInterval ? 6 : 0.3
+            timer.tolerance = interval * 0.1
             RunLoop.main.add(timer, forMode: .common)
             permissionTimer = timer
         }
@@ -1338,6 +1351,19 @@
 
         private func configureCallPresence() {
             GoalongCallPresenceMonitor.shared.configure(enabled: !clearingCallPresence && capabilityConsents.isEnabled(.localComputerHistory) && !captureState.isManuallyPaused && !configManager.isFailClosed, config: configManager.config)
+        }
+
+        /// The user is likely granting access right now: go back to the 3 s recovery cadence.
+        private func installPermissionAttentionObservers() {
+            for name in [NSApplication.didBecomeActiveNotification, .goalongPermissionGuideDidOpen] {
+                permissionAttentionObservers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: nil, queue: .main
+                ) { [weak self] _ in
+                    guard let self, self.permissionRecoverySince != nil else { return }
+                    self.permissionRecoverySince = Date()
+                    self.checkPermissionsAndStartTap(forceRefresh: true)
+                })
+            }
         }
 
         private func installCapabilityConsentObserver() {

@@ -140,6 +140,7 @@ import LocalHistoryCore
 
         static func openAccess(_ status: SourceAccessStatus) {
             PermissionRecoveryLedger.record(.settingsOpened, for: status)
+            NotificationCenter.default.post(name: .goalongPermissionGuideDidOpen, object: nil)
             let permissions = PermissionManager.shared
             switch status {
             case .accessibility:

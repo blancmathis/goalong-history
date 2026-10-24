@@ -192,19 +192,26 @@
                   blockingObservationEnabled || sampleJobs.isEmpty else { return }
             timer?.invalidate()
             let configuredInterval = Double(configManager.config.pollIntervalMilliseconds) / 1_000.0
+            let eventDrivenCoverageAvailable = accessibilityEventMonitor?.hasReliableEventCoverage == true
+                && consecutiveCaptureFailures == 0
+            let blockingSessionAvailable = !blockingObservationEnabled || hostGate.sessionAvailable()
             guard pollingIsActive,
-                  let interval = blockingObservationEnabled ? 0.75 : Self.nextPollInterval(
+                  let interval = blockingObservationEnabled ? Self.blockingPollInterval(
+                idleSeconds: idleSeconds(),
+                sessionAvailable: blockingSessionAvailable,
+                eventDrivenCoverageAvailable: eventDrivenCoverageAvailable
+            ) : Self.nextPollInterval(
                 configuredInterval: configuredInterval,
                 idleSeconds: idleSeconds(),
                 isCapturing: historyRequested && state.isCapturing,
                 suppressionReason: latestSnapshot?.suppressionReason,
-                eventDrivenCoverageAvailable: accessibilityEventMonitor?.hasReliableEventCoverage == true
-                    && consecutiveCaptureFailures == 0
+                eventDrivenCoverageAvailable: eventDrivenCoverageAvailable
             ) else {
                 timer = nil
                 return
             }
-            let boundedInterval = min(ForegroundUsageObservation.heartbeatInterval,
+            // A locked session or sleeping displays have no foreground to heartbeat.
+            let boundedInterval = !blockingSessionAvailable ? interval : min(ForegroundUsageObservation.heartbeatInterval,
                 (JevIngress.shared.isEnabled || lastForegroundEvidence != nil)
                     ? min(interval, JevIngress.shared.isEnabled ? JevIngress.foregroundSampleInterval : ForegroundActivityProbe.interval) : interval)
             let timer = Timer(timeInterval: boundedInterval, repeats: false) { [weak self] _ in
@@ -240,6 +247,28 @@
                 if self.blockingObservationEnabled, let observation { self.blockingSink?(observation) }
                 self.scheduleNextPoll()
             }
+        }
+
+        static let blockingActivePollInterval: TimeInterval = 0.75
+        /// Safety net only: unlock, session and display wake call `resetAndSample()`,
+        /// which samples at once and restarts the fast cadence.
+        static let blockingSuspendedPollInterval: TimeInterval = 60
+
+        /// Fallback poll while blocking observation is on. App activation, launches and AX
+        /// title/focus events stay immediate, so the poll only covers missed events: it keeps
+        /// 0.75 s after recent input or without reliable AX coverage, backs off when the user is
+        /// idle, and nearly stops while the session is locked or every display sleeps.
+        static func blockingPollInterval(
+            idleSeconds: TimeInterval,
+            sessionAvailable: Bool,
+            eventDrivenCoverageAvailable: Bool
+        ) -> TimeInterval {
+            guard sessionAvailable else { return blockingSuspendedPollInterval }
+            guard eventDrivenCoverageAvailable else { return blockingActivePollInterval }
+            let idle = max(0, idleSeconds)
+            if idle < 15 { return blockingActivePollInterval }
+            if idle < 60 { return 2 }
+            return 5
         }
 
         /// The event tap, workspace notifications and AX observers remain immediate.
