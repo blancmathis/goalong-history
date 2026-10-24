@@ -50,6 +50,8 @@
 
         // 4-point grid.
         static let pageInset: CGFloat = 32
+        /// Space under the last block of every scrolling page (UI-sombre-25b: one value, not 40 and 48).
+        static let pageBottomInset: CGFloat = 40
         static let sectionSpacing: CGFloat = 40
         static let cardInset: CGFloat = 16
         /// One corner per level: data marks, controls, groups.

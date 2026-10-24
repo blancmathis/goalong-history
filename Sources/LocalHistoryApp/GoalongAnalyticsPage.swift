@@ -152,7 +152,7 @@ struct GoalongAnalyticsPage: View {
                         }
                     }
                     .frame(maxWidth: 1080, alignment: .leading)
-                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, 40)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, LHTheme.pageBottomInset)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .onChange(of: detail) { shown in

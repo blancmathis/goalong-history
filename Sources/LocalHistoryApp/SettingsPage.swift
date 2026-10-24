@@ -42,7 +42,7 @@ import AppKit
                 content.disabled(model.configLocked && pane != .home)
             }
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 40)
+            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, LHTheme.pageBottomInset)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .id(pane)
