@@ -872,13 +872,8 @@ enum GoalongActivityEmptyCopy {
                 offersHistory: false)
         }
         // Today, a stopped recording is the known cause: never a read error, never a promise of minutes to come.
+        // A stopped day can also read as incomplete (gallery: activite/enregistrement-desactive): the cause still wins.
         if isDay && isToday && eventCount == 0, let recording, let reason = stoppedReason(recording) {
-            // An unreadable day must not read as "nothing recorded": keep the cause, say the reading is incomplete.
-            if incompleteDays > 0 {
-                return Copy(title: "Lecture incomplète",
-                    message: reason + " Certaines sources n’ont pas pu être lues : cela ne signifie pas une absence d’activité.",
-                    offersHistory: false)
-            }
             return Copy(title: "Aucune activité enregistrée aujourd’hui", message: reason, offersHistory: false)
         }
         if incompleteDays > 0 {

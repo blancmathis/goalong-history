@@ -89,14 +89,10 @@ final class GoalongUXOptimizationTests: XCTestCase {
         func today(_ recording: GoalongRecordingStateNotice.Kind?, events: Int = 0, incomplete: Int = 0) -> Empty.Copy {
             Empty.copy(isDay: true, isToday: true, eventCount: events, incompleteDays: incomplete, purged: false, recording: recording)
         }
-        let off = today(.off)
-        XCTAssertEqual(off.title, "Aucune activité enregistrée aujourd’hui")
+        let off = today(.off, incomplete: 1)
+        XCTAssertEqual(off.title, "Aucune activité enregistrée aujourd’hui", "UI-sombre-03: never « Lecture incomplète » while recording is off")
         XCTAssertTrue(off.message.contains("désactivé"))
         XCTAssertFalse(off.offersHistory)
-        let offUnreadable = today(.off, incomplete: 1)
-        XCTAssertEqual(offUnreadable.title, "Lecture incomplète", "R7-B-02: an unreadable day never reads as « nothing recorded »")
-        XCTAssertTrue(offUnreadable.message.contains("désactivé"), "the stopped cause stays named")
-        XCTAssertFalse(offUnreadable.title.contains("Aucune activité"))
         let permissions = today(.permissions)
         XCTAssertFalse(permissions.message.contains("premières minutes"), "UI-sombre-02: no promise while nothing is recorded")
         XCTAssertTrue(today(.paused).message.contains("pause"))
