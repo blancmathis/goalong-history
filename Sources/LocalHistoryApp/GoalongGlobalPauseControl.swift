@@ -46,7 +46,7 @@ struct GoalongGlobalPauseControl: View {
     }
     private func changePause(_ paused: Bool) {
         do { pause = try GoalongGlobalPause.setPaused(paused, recordingWasPaused: model.runtime.state == .paused) }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = GoalongUserFacingError.message(error) }
     }
 }
 

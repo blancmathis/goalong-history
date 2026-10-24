@@ -46,7 +46,7 @@ import SwiftUI
                 guard consents.isEnabled(.localComputerHistory), !rich || ActivityAnalysisPreferences.richContextEnabled else { throw GoalongContextualRhythm.Failure.invalid("Une source a été désactivée pendant la lecture.") }
                 request = value; selectedEvidence = Set(value.rhythm.episodes?.flatMap { ($0.evidence ?? []).map(\.id) } ?? [])
                 status = "Sélection locale prête. Choisissez les éléments à confier à l’agent."; busy = false
-            } catch { guard operation == id else { return }; self.error = error.localizedDescription; status = ""; busy = false }
+            } catch { guard operation == id else { return }; self.error = GoalongUserFacingError.message(error); status = ""; busy = false }
         }
     }
     func selectionChanged() { consentToAnalyze = false; result = nil; interpretation = "" }
@@ -81,7 +81,7 @@ import SwiftUI
                 result = try GoalongContextualRhythm.apply(annotation, to: selected)
                 interpretation = result?.interpretation ?? ""; consentToAnalyze = false; busy = false
                 status = "Interprétation prête. Relisez les associations avant de préparer l’envoi au site."
-            } catch { guard operation == id else { return }; self.error = error.localizedDescription; status = ""; busy = false; consentToAnalyze = false }
+            } catch { guard operation == id else { return }; self.error = GoalongUserFacingError.message(error); status = ""; busy = false; consentToAnalyze = false }
         }
     }
     func importAnnotation(_ url: URL) {
@@ -90,7 +90,7 @@ import SwiftUI
             let data = try GoalongSiteAnalysisRequest.readSelectedBytes(url)
             result = try GoalongContextualRhythm.apply(GoalongContextualRhythm.parseAnnotation(data), to: selected)
             interpretation = result?.interpretation ?? ""; status = "Réponse de votre agent importée. Relisez-la avant l’envoi."
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = GoalongUserFacingError.message(error) }
     }
     func correct(id: String, relation: String) {
         guard var value = result ?? selection?.rhythm, let index = value.episodes?.firstIndex(where: { $0.id == id }),
@@ -214,7 +214,7 @@ struct GoalongRhythmStudio: View {
             do {
                 let object: [String: Any] = ["instructions": selected.prompt, "request": try JSONSerialization.jsonObject(with: selected.encoded())]
                 try GoalongSiteAnalysisExportWriter.write(JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]), to: url)
-            } catch { model.error = error.localizedDescription }
+            } catch { model.error = GoalongUserFacingError.message(error) }
         }
     }
     private func importResponse() {

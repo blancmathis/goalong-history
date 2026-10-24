@@ -3094,7 +3094,7 @@
                 )
             } catch {
                 SupportDiagnostics.shared.failure(error, component: .analysis)
-                return .inaccessible(String(describing: error))
+                return .inaccessible(GoalongUserFacingError.message(error))
             }
         }
 

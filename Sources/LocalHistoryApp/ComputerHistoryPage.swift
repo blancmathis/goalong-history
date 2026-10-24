@@ -133,7 +133,7 @@
         static func displayMessage(for error: Error) -> String {
             if let cycleError = error as? ActivityAnalysisCycleError { return cycleError.frenchDescription }
             if let refreshError = error as? ActivityAnalysisRefreshError { return refreshError.frenchDescription }
-            return error.localizedDescription
+            return GoalongUserFacingError.message(error)
         }
 
         private static func sourceStatus(for error: Error) -> ComputerHistorySourceStatus {

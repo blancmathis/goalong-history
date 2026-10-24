@@ -811,7 +811,7 @@
                         self.isLoadingDayOverview = false
                     }
                 } catch {
-                    let message = ActivitySemanticTextSanitizer.redact(error.localizedDescription)
+                    let message = ActivitySemanticTextSanitizer.redact(GoalongUserFacingError.message(error))
                         ?? "La journée choisie n’a pas pu être chargée."
                     DispatchQueue.main.async {
                         guard self.isLatestDayOverviewRequest(requestID),
@@ -857,7 +857,7 @@
                     DispatchQueue.main.async {
                         self.isCheckingAccount = false
                         if case CodexAppServerError.homeBusy = error { return }
-                        self.connectionState = .failed(error.localizedDescription)
+                        self.connectionState = .failed(GoalongUserFacingError.message(error))
                     }
                 }
             }
@@ -919,10 +919,10 @@
                             self.connectionState = .signedOut
                             return
                         }
-                        self.connectionState = .failed(error.localizedDescription)
+                        self.connectionState = .failed(GoalongUserFacingError.message(error))
                         self.alert = ChatGPTRecapAlert(
                             title: "ChatGPT n’a pas pu être connecté",
-                            message: error.localizedDescription
+                            message: GoalongUserFacingError.message(error)
                         )
                     }
                 }
@@ -987,7 +987,7 @@
                         if wasStarted { self.start(checkPreviousDayImmediately: false) }
                         self.alert = ChatGPTRecapAlert(
                             title: "ChatGPT n’a pas pu être déconnecté",
-                            message: error.localizedDescription
+                            message: GoalongUserFacingError.message(error)
                         )
                     }
                 }
@@ -1018,7 +1018,7 @@
                 }
             } catch {
                 alert = ChatGPTRecapAlert(
-                    title: "Le dossier des rapports n’a pas pu être ouvert", message: error.localizedDescription)
+                    title: "Le dossier des rapports n’a pas pu être ouvert", message: GoalongUserFacingError.message(error))
             }
         }
 
@@ -1053,7 +1053,7 @@
             } catch {
                 alert = ChatGPTRecapAlert(
                     title: "La preuve n’a pas pu être exportée",
-                    message: error.localizedDescription
+                    message: GoalongUserFacingError.message(error)
                 )
             }
         }
@@ -1305,7 +1305,7 @@
                     if let runDirectory { try? self.fileManager.removeItem(at: runDirectory) }
                     if !(error is RecapGenerationInterruption) {
                         let detail = CodexAppServerLimits.boundedUTF8(
-                            ActivitySemanticTextSanitizer.redact(error.localizedDescription) ?? "",
+                            ActivitySemanticTextSanitizer.redact(GoalongUserFacingError.message(error)) ?? "",
                             maximumBytes: CodexAppServerLimits.production.maximumErrorBytes
                         )
                         Diagnostics.write("ChatGPT recap generation failed: \(detail)")
@@ -1334,7 +1334,7 @@
                         if !automatic {
                             self.alert = ChatGPTRecapAlert(
                                 title: "Le rapport n’a pas pu être généré",
-                                message: error.localizedDescription
+                                message: GoalongUserFacingError.message(error)
                             )
                         } else {
                             self.scheduleAutomaticRetry(for: normalizedDay, after: error)

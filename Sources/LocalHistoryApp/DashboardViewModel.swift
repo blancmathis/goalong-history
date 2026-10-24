@@ -834,11 +834,11 @@
                     do {
                         let restored = try onSaveConfiguration(original)
                         savedSettingsDraft = DashboardSettingsDraft(config: restored)
-                    } catch { rollbackError = error.localizedDescription }
+                    } catch { rollbackError = GoalongUserFacingError.message(error) }
                 }
                 settingsDraft = savedSettingsDraft
                 alert = DashboardAlert(kind: .error, title: "Enregistrement non confirmé",
-                    message: error.localizedDescription + (rollbackError.map { " Vérifiez le profil actuel : " + $0 } ?? " Vos choix précédents sont conservés."))
+                    message: GoalongUserFacingError.message(error) + (rollbackError.map { " Vérifiez le profil actuel : " + $0 } ?? " Vos choix précédents sont conservés."))
                 return false
             }
         }
@@ -856,7 +856,7 @@
                 refreshRuntime()
                 return true
             } catch {
-                alert = DashboardAlert(kind: .error, title: "Les choix n’ont pas pu être enregistrés", message: error.localizedDescription)
+                alert = DashboardAlert(kind: .error, title: "Les choix n’ont pas pu être enregistrés", message: GoalongUserFacingError.message(error))
                 return false
             }
         }

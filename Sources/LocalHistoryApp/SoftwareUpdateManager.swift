@@ -447,6 +447,9 @@
         }
 
         /// Plain-language cause for the most common update failures; codes stay in the journal.
+        /// The numeric code stays in the support log (`recordCheckResult`), never in the sentence.
+        static let unknownErrorSummary = "erreur inconnue ; réessayez plus tard"
+
         static func errorSummary(_ error: any Error) -> String {
             let error = error as NSError
             if error.domain == NSURLErrorDomain {
@@ -456,7 +459,7 @@
                 case NSURLErrorTimedOut: return "le serveur n’a pas répondu à temps"
                 case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed, NSURLErrorCannotConnectToHost:
                     return "le serveur des mises à jour est injoignable"
-                default: return "erreur réseau \(error.code)"
+                default: return Self.unknownErrorSummary
                 }
             }
             if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError, underlying.domain == NSURLErrorDomain {
@@ -475,10 +478,10 @@
                     return "Goalong est ouvert depuis l’image disque ; glissez-le d’abord dans Applications"
                 case SUError.installationWriteNoPermissionError.rawValue:
                     return "macOS n’autorise pas Goalong à remplacer l’app dans Applications"
-                default: return "code Sparkle \(error.code)"
+                default: return Self.unknownErrorSummary
                 }
             }
-            return "code \(error.code)"
+            return Self.unknownErrorSummary
         }
 
         static func isNoUpdateResult(_ error: any Error) -> Bool {

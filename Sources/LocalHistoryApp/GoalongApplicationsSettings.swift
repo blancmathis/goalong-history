@@ -33,7 +33,7 @@ final class GoalongExclusionStore: ObservableObject {
             }
             NotificationCenter.default.post(name: .goalongExclusionsDidChange, object: nil)
             return true
-        } catch { self.error = "Modification non appliquée : \(error.localizedDescription)"; return false }
+        } catch { self.error = "Modification non appliquée : \(GoalongUserFacingError.message(error))"; return false }
     }
 }
 

@@ -101,7 +101,7 @@ import LocalHistoryCore
                         try store.save(draft, applications: applications, content: content, procrastination: procrastination)
                         loadDraft(); editing = false; error = nil; prefilledFromLegacy = false
                         GoalongToastCenter.shared.show(purpose == .workDefinition ? "Définition enregistrée" : "Critères enregistrés")
-                    } catch { self.error = error.localizedDescription }
+                    } catch { self.error = GoalongUserFacingError.message(error) }
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
                 .disabled(draftBytes > JevWorkContext.maximumBytes)
