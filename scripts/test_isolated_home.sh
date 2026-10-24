@@ -10,7 +10,7 @@ LOG="$(mktemp)"
 trap 'rm -rf "$SAFE_HOME" "$LOG"' EXIT
 set +e
 HOME="$SAFE_HOME" CFFIXED_USER_HOME="$SAFE_HOME" \
-  xcrun swift test "$@" --filter 'GoalongRecordingDefaultsTests|GoalongUXOptimizationTests' 2>&1 | tee "$LOG"
+  xcrun swift test --disable-keychain "$@" --filter 'GoalongRecordingDefaultsTests|GoalongUXOptimizationTests' 2>&1 | tee "$LOG"
 STATUS=${PIPESTATUS[0]}
 set -e
 [[ $STATUS -eq 0 ]] || exit "$STATUS"

@@ -339,7 +339,7 @@ struct GoalongAnalyticsContent: View {
 
     private var classifyLabel: String {
         guard !isDay else { return "Classer maintenant" }
-        let target = GoalongWorkAgent.manualTarget(days: current.days, fallback: current.days.last?.date ?? Date())
+        let target = GoalongWorkAgent.manualTarget(days: current.days, fallback: current.days.last?.date ?? GoalongToday.now)
         if GoalongToday.isToday(target) { return "Classer aujourd’hui" }
         return "Classer le \(GoalongActivitySummary.weekdayDate(target))"
     }
@@ -872,6 +872,7 @@ enum GoalongActivityEmptyCopy {
                 offersHistory: false)
         }
         // Today, a stopped recording is the known cause: never a read error, never a promise of minutes to come.
+        // A stopped day can also read as incomplete (gallery: activite/enregistrement-desactive): the cause still wins.
         if isDay && isToday && eventCount == 0, let recording, let reason = stoppedReason(recording) {
             return Copy(title: "Aucune activité enregistrée aujourd’hui", message: reason, offersHistory: false)
         }

@@ -87,7 +87,7 @@ struct BlockedSiteVeil: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    private var detail: String {
+    var detail: String {
         switch presentation.reason {
         case .site: return "Liste « \(presentation.listName) »."
         case .quotaUsed(_, let minutes): return "Temps du jour écoulé : \(BlockingFormat.duration(minutes: minutes)) (liste « \(presentation.listName) »)."

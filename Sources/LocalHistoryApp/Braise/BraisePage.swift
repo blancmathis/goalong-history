@@ -119,6 +119,7 @@ import SwiftUI
     @ObservedObject var controller: BraiseController
     @State private var draft: ScheduleRule
     @State private var error: String?
+    @State private var unreadableFields: Set<String> = []
     @Environment(\.dismiss) private var dismiss
     private let existed: Bool
     init(controller: BraiseController, initial: ScheduleRule) {
@@ -152,7 +153,7 @@ import SwiftUI
                 Button("Annuler") { dismiss() }.buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
                 Button("Enregistrer") {
                     do { try controller.saveRule(draft); dismiss() } catch { self.error = "Impossible d’ajouter cet horaire (32 plages au maximum)." }
-                }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction).disabled(!draft.isValid)
+                }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction).disabled(!draft.isValid || !unreadableFields.isEmpty)
             }
         }.font(.system(size: 13)).padding(28).frame(width: 590)
             .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
@@ -160,15 +161,20 @@ import SwiftUI
     private func time(_ title: String, minute: Binding<Int>) -> some View {
         HStack(spacing: 10) {
             Text(title)
-            ScheduleTimeField(title: title, minute: minute)
+            ScheduleTimeField(title: title, minute: minute, onValidity: { valid in
+                if valid { unreadableFields.remove(title) } else { unreadableFields.insert(title) }
+            })
         }
     }
 }
 
-/// Editable "HH:mm" field with a 5-minute stepper. Typing "7", "0730" or "7:30" works; invalid text reverts on commit.
+/// Editable "HH:mm" field with a 5-minute stepper. Typing "7", "0730" or "7:30" works.
+/// The binding follows the text as soon as it parses, without reformatting it while typing.
+/// Text that does not parse reports `onValidity(false)` (the sheet disables Save) and reverts on commit.
 struct ScheduleTimeField: View {
     let title: String
     @Binding var minute: Int
+    var onValidity: (Bool) -> Void = { _ in }
     @State private var text = ""
     @FocusState private var focused: Bool
 
@@ -188,9 +194,21 @@ struct ScheduleTimeField: View {
         return hour * 60 + min
     }
 
+    /// Typed text -> the minute to hold. `nil` keeps the current minute (text does not parse).
+    static func minute(typing text: String, current: Int) -> Int? {
+        guard let parsed = parse(text) else { return nil }
+        return parsed == current ? nil : parsed
+    }
+
+    private func typed(_ newText: String) {
+        onValidity(Self.parse(newText) != nil)
+        if let parsed = Self.minute(typing: newText, current: minute) { minute = parsed }
+    }
+
     private func commit() {
         if let parsed = Self.parse(text) { minute = parsed }
         text = Self.format(minute)
+        onValidity(true)
     }
 
     var body: some View {
@@ -211,7 +229,8 @@ struct ScheduleTimeField: View {
                 .labelsHidden()
         }
         .onAppear { text = Self.format(minute) }
-        .onChange(of: minute) { text = Self.format($0) }
+        .onChange(of: text) { typed($0) }
+        .onChange(of: minute) { if Self.parse(text) != $0 { text = Self.format($0); onValidity(true) } }
     }
 }
 #endif

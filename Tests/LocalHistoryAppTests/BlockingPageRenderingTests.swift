@@ -201,8 +201,14 @@ final class BlockingPageRenderingTests: XCTestCase {
     }
 
     func testQuotaVeilSentenceHasNoPluralAgreement() {
-        let one = BlockingFormat.duration(minutes: 60)
-        XCTAssertEqual("Temps du jour écoulé : \(one) (liste « Réseaux »).", "Temps du jour écoulé : 1 h (liste « Réseaux »).")
+        func detail(minutes: Int) -> String {
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let veil = BlockingVeilPresentation(reason: .quotaUsed("instagram.com", minutes: minutes), listName: "Réseaux",
+                                                start: now, end: now.addingTimeInterval(3600), lock: .locked)
+            return BlockedSiteVeil(presentation: veil, now: now).detail
+        }
+        XCTAssertEqual(detail(minutes: 60), "Temps du jour écoulé : 1 h (liste « Réseaux »).")
+        XCTAssertEqual(detail(minutes: 90), "Temps du jour écoulé : 1 h 30 (liste « Réseaux »).")
     }
 }
 #endif

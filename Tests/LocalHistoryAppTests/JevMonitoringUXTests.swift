@@ -73,7 +73,7 @@ final class JevMonitoringUXTests: XCTestCase {
         let controls = try source("GoalongControls.swift")
         XCTAssertTrue(controls.contains("LHTheme.switchTrackHover : LHTheme.switchTrack"))
         XCTAssertFalse(controls.contains("LHTheme.pressedBackground : LHTheme.switchTrack"))
-        XCTAssertTrue(controls.contains(".opacity(isOn && !isEnabled ? 0.6 : 1)"), "Disabled off track stays opaque")
+        XCTAssertTrue(controls.contains(".opacity(isEnabled ? 1 : 0.6)"), "R7-C-01: a disabled track, on or off, is faded")
         let share = try source("SharePage.swift")
         XCTAssertTrue(share.contains("avant de créer le fichier."))
         XCTAssertFalse(share.contains("paquet") || share.contains("chaîne d’intégrité"))
