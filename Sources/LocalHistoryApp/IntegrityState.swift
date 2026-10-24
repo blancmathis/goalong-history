@@ -213,6 +213,12 @@
             successfulPersistenceCount += 1
         }
 
+        /// The checkpoint is redundant: startup rebuilds a missing, torn or older one from the
+        /// journal tails, without an integrity alarm. A barrier is enough because it is written
+        /// only after its journal reached its own barrier (events) or full sync (seals), so it can
+        /// never become durable ahead of them; the next seal's full sync flushes it to the drive.
+        static let checkpointSync = DurableSync.Kind.barrier
+
         private static func persistDurably(_ data: Data, to fileURL: URL) throws {
             try data.write(to: fileURL, options: [.atomic])
             try FileManager.default.setAttributes(
@@ -222,7 +228,7 @@
 
             let handle = try FileHandle(forWritingTo: fileURL)
             do {
-                let code = DurableSync.full(handle.fileDescriptor)
+                let code = DurableSync.sync(checkpointSync, handle.fileDescriptor)
                 guard code == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(code)) }
                 try handle.close()
             } catch {
@@ -236,7 +242,7 @@
                 open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
             }
             if directoryDescriptor >= 0 {
-                _ = DurableSync.full(directoryDescriptor)
+                _ = DurableSync.sync(checkpointSync, directoryDescriptor)
                 _ = Darwin.close(directoryDescriptor)
             }
         }
