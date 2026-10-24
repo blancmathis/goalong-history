@@ -128,7 +128,8 @@ import SwiftUI
                 TextField("Nom de la liste", text: Binding(get: { list.name }, set: { name in
                     var next = list; next.name = String(name.prefix(40)); controller.save(next)
                 }))
-                .textFieldStyle(GoalongFieldStyle()).font(.system(size: 15, weight: .semibold))
+                // 15 pt semibold text is 18 pt high: 8 + 18 + 8 fills the 34 pt field.
+                .textFieldStyle(GoalongFieldStyle(textFont: .semibold15))
                 .accessibilityIdentifier("blocking-list-name")
             }
             TextField("Pourquoi ? ex. Finir le mémoire avant vendredi", text: $reasonDraft)

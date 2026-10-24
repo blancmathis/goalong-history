@@ -1036,7 +1036,7 @@ struct BlockingTypingChallengeSheet: View {
                 if value.count <= typed.count + 1 { typed = value }
             }))
                 // 14 pt monospaced text is 17 pt high: 8 + 17 + 9 fills the 34 pt field.
-                .textFieldStyle(GoalongFieldStyle(textFont: .init(font: .system(size: 14, design: .monospaced), lineHeight: 17)))
+                .textFieldStyle(GoalongFieldStyle(textFont: .monospaced14))
                 .accessibilityIdentifier("blocking-typing-field")
             HStack {
                 BlockingMeter(fraction: Double(matched) / Double(max(1, text.count))).frame(width: 160)

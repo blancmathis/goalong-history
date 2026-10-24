@@ -114,9 +114,39 @@
     /// One field chrome for single-line, multi-line and search inputs.
     struct GoalongFieldStyle: TextFieldStyle {
         /// A font and its line height, for a field whose text is not the standard 13 pt system text.
-        struct TextFont {
-            var font: Font
-            var lineHeight: CGFloat
+        /// Each case's `lineHeight` is the default line height of its `nsFont`: a unit test checks every case.
+        enum TextFont: CaseIterable {
+            /// Type-to-stop challenge: 14 pt monospaced.
+            case monospaced14
+            /// Block list name: 15 pt semibold.
+            case semibold15
+            /// Focus intent « Je fais… »: 17 pt medium.
+            case medium17
+
+            var font: Font {
+                switch self {
+                case .monospaced14: return .system(size: 14, design: .monospaced)
+                case .semibold15: return .system(size: 15, weight: .semibold)
+                case .medium17: return .system(size: 17, weight: .medium)
+                }
+            }
+
+            /// The AppKit font that draws the same text.
+            var nsFont: NSFont {
+                switch self {
+                case .monospaced14: return .monospacedSystemFont(ofSize: 14, weight: .regular)
+                case .semibold15: return .systemFont(ofSize: 15, weight: .semibold)
+                case .medium17: return .systemFont(ofSize: 17, weight: .medium)
+                }
+            }
+
+            var lineHeight: CGFloat {
+                switch self {
+                case .monospaced14: return 17
+                case .semibold15: return 18
+                case .medium17: return 20
+                }
+            }
         }
 
         var textFont: TextFont?
@@ -197,11 +227,14 @@
         /// A placeholder drawn by Goalong, in the placeholder colour, because the system one is
         /// not always told apart from typed text. Put it on a field that has the Goalong field style.
         func goalongPlaceholder(_ placeholder: String, isEmpty: Bool, alignment: Alignment = .leading,
-                                font: Font = .system(size: 13), top: CGFloat = 0) -> some View {
-            overlay(alignment: alignment) {
+                                font: Font = .system(size: 13), top: CGFloat = 0,
+                                textFont: GoalongFieldStyle.TextFont? = nil) -> some View {
+            // A field with a custom text font starts its line 8 pt from the top: the placeholder starts there too,
+            // so typed text and placeholder share the same x and baseline.
+            overlay(alignment: textFont == nil ? alignment : .topLeading) {
                 if isEmpty && !placeholder.isEmpty {
-                    Text(placeholder).font(font).foregroundStyle(LHTheme.placeholder)
-                        .padding(.horizontal, 11).padding(.top, top)
+                    Text(placeholder).font(textFont?.font ?? font).foregroundStyle(LHTheme.placeholder)
+                        .padding(.horizontal, 11).padding(.top, textFont == nil ? top : 8)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
