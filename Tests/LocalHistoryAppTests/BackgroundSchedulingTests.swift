@@ -628,7 +628,7 @@
             XCTAssertTrue(timeline.contains("LazyVStack(alignment: .leading"))
             XCTAssertEqual(
                 timeline.components(
-                    separatedBy: "uniqueKeysWithValues: memory.resources.map"
+                    separatedBy: "memory.resources.map { ($0.id, $0) },"
                 ).count - 1,
                 1
             )
