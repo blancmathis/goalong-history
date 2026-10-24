@@ -44,7 +44,9 @@ cleanup() { rm -rf "$home" "$log"; }
 trap cleanup EXIT
 start=$SECONDS
 export GOALONG_TEST_HOME="$home" CFFIXED_USER_HOME="$home"
-swift_test() { xcrun swift test "$@" 2>&1 | tee -a "$log"; return "${PIPESTATUS[0]}"; }
+# --disable-keychain: under the isolated HOME, SwiftPM misses its shared cache. A fresh worktree then downloads
+# the Sparkle artifact, and the keychain lookup for github.com opens a modal prompt that waits forever.
+swift_test() { xcrun swift test --disable-keychain "$@" 2>&1 | tee -a "$log"; return "${PIPESTATUS[0]}"; }
 # Highest "Executed N test(s)" in a log: the final XCTest total. 0 also when nothing ran at all.
 executed_count() {
   grep -oE 'Executed [0-9]+ tests?' "$1" 2>/dev/null | awk '{ if ($2 > max) max = $2 } END { print max + 0 }'
@@ -185,7 +187,7 @@ case "$mode" in
         done
         mkdir -p "$out/brand" "$out/design-audit" "$out/sharing" "$out/focus-ui"
         export GOALONG_FOCUS_UI_TESTS=1 GOALONG_FOCUS_UI_SNAPSHOT="$out/focus-ui/disclosures-expanded.png" GOALONG_BLOCKING_UI_TESTS=1
-        xcrun swift test --filter "$classes" 2>&1 | tee -a "$log" "$group_log"; exit "${PIPESTATUS[0]}"
+        xcrun swift test --disable-keychain --filter "$classes" 2>&1 | tee -a "$log" "$group_log"; exit "${PIPESTATUS[0]}"
       ) || status=$?
       # A group must really have run: some tests, and every expected class in its log.
       if [[ "$(executed_count "$group_log")" -eq 0 ]]; then
