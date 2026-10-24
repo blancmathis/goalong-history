@@ -657,7 +657,7 @@ public enum ComputerHistoryEngine {
                     value += 2_000
                 }
                 if resource.kind != .application { value += 300 }
-                value += Int((resource.locatorConfidence * 100).rounded())
+                value += ConfidencePercent.whole(resource.locatorConfidence)
                 if resource.id == firstResourceID || resource.id == lastResourceID {
                     value += 4_000
                 }
