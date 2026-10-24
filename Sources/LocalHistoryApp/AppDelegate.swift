@@ -105,7 +105,21 @@
         private var sharingRulesStore: SharingRulesStore!
         private var agentActivityRuntime: AgentActivityRuntime!
         private var developerActivityRuntime: GoalongDeveloperRuntime?
-        private var screenTimeRepository: AppleSystemScreenTimeRepository?
+        // Written on main (launch, keychain retry); read on the query broker's appleQueue.
+        private let screenTimeRepositoryLock = NSLock()
+        private var lockedScreenTimeRepository: AppleSystemScreenTimeRepository?
+        private var screenTimeRepository: AppleSystemScreenTimeRepository? {
+            get {
+                screenTimeRepositoryLock.lock()
+                defer { screenTimeRepositoryLock.unlock() }
+                return lockedScreenTimeRepository
+            }
+            set {
+                screenTimeRepositoryLock.lock()
+                lockedScreenTimeRepository = newValue
+                screenTimeRepositoryLock.unlock()
+            }
+        }
         private var screenTimeArchiveTimer: Timer?
         private var screenTimeMidnightTimer: Timer?
         private var screenTimeClockObservers: [NSObjectProtocol] = []
