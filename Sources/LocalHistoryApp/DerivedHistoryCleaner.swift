@@ -705,6 +705,45 @@
                     in: proofsDirectory, trustedAncestor: trustedAncestor, suffixes: [],
                     cutoffKey: nil, matchingDayKeys: nil, nameKey: { $0 == "chain-head.json" ? $0 : nil }
                 ).map { [$0] } ?? []
+            } else {
+                // Orphans: proofs no recap references any more (a regenerated recap replaced its proof,
+                // the recap write failed, or a clear cancelled the run after its proof). They still hold
+                // the day's recap text (result.json) and its encrypted response: erase them with their day.
+                // The barrier is drained before this preflight, so no generation is writing them now.
+                let earliestKey = cutoffKey ?? matchingDayKeys?.min()
+                func isErased(_ date: (key: String, exact: Bool)) -> Bool {
+                    // A day read from the package is exact. A modification date is the generation
+                    // time, never before the analysed day: erase from the earliest erased day on.
+                    guard date.exact else { return earliestKey.map { date.key >= $0 } ?? false }
+                    return (cutoffKey.map { date.key >= $0 } ?? true)
+                        && (matchingDayKeys.map { $0.contains(date.key) } ?? true)
+                }
+                let recapNames = (try? FileManager.default.contentsOfDirectory(atPath: chatGPTRecapsDirectory.path)) ?? []
+                let referenced = Set(recapNames.compactMap {
+                    recapExecutionID(at: chatGPTRecapsDirectory.appendingPathComponent($0))?.lowercased()
+                })
+                let packages = Self.uuidNamedEntries(in: proofsDirectory)
+                for name in packages where !referenced.contains(name.lowercased())
+                    && isErased(proofDate(in: proofsDirectory.appendingPathComponent(name, isDirectory: true)))
+                {
+                    executionIDs.insert(name)
+                }
+                for name in Self.stagingEntries(in: proofsDirectory)
+                    where isErased(proofDate(in: proofsDirectory.appendingPathComponent(name, isDirectory: true)))
+                {
+                    stagingNames.insert(name)
+                    executionIDs.insert(String(name.dropFirst().dropLast(4)))
+                }
+                // A capsule written before its package (the run stopped in between) has only its date.
+                let packageIDs = Set(packages.map { $0.lowercased() })
+                for name in Self.uuidNamedEntries(in: evidenceDirectory, suffix: ".capsule")
+                    where !packageIDs.contains(name.lowercased()) && !referenced.contains(name.lowercased())
+                {
+                    let capsule = evidenceDirectory.appendingPathComponent(name + ".capsule")
+                    if let key = modificationDayKey(of: capsule), isErased((key, false)) {
+                        executionIDs.insert(name)
+                    }
+                }
             }
             for executionID in executionIDs.sorted() + stagingNames.sorted() {
                 let directory = proofsDirectory.appendingPathComponent(executionID, isDirectory: true)
@@ -741,6 +780,27 @@
                 UUID(uuidString: id) != nil
             else { return nil }
             return id
+        }
+
+        /// Day of a proof package: the `day` of its context manifest, else its folder's modification day.
+        private func proofDate(in directory: URL) -> (key: String, exact: Bool) {
+            struct Manifest: Decodable { let day: String }
+            if let data = try? ChatGPTHistoryStore.readStableSource(
+                at: directory.appendingPathComponent("context-manifest.json"), maximumBytes: 1_024 * 1_024),
+                let day = (try? JSONDecoder().decode(Manifest.self, from: data))?.day,
+                let key = validDayKey(day)
+            {
+                return (key, true)
+            }
+            // No folder date means nothing to read: the earliest possible key erases it with any clear.
+            return (modificationDayKey(of: directory) ?? "0000-00-00", false)
+        }
+
+        /// Local day of the modification time of `URL` itself (symbolic links are not followed).
+        private func modificationDayKey(of URL: URL) -> String? {
+            var status = stat()
+            guard lstat(URL.path, &status) == 0 else { return nil }
+            return dayString(Date(timeIntervalSince1970: TimeInterval(status.st_mtimespec.tv_sec)))
         }
 
         /// Names in `directory` that are UUIDs (optionally followed by `suffix`). Names only.
@@ -793,7 +853,11 @@
         private func dayKey(_ URL: URL, suffixes: [String]) -> String? {
             let name = URL.lastPathComponent
             guard let suffix = suffixes.first(where: name.hasSuffix) else { return nil }
-            let rawDay = String(name.dropLast(suffix.count))
+            return validDayKey(String(name.dropLast(suffix.count)))
+        }
+
+        /// `rawDay` when it is a real local `yyyy-MM-dd` day, else nil.
+        private func validDayKey(_ rawDay: String) -> String? {
             let fields = rawDay.split(separator: "-", omittingEmptySubsequences: false)
             guard fields.count == 3,
                 fields[0].count == 4,
