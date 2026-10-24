@@ -220,7 +220,7 @@ import LocalHistoryCore
                 guard enable else { return }
                 do { if !self.store.isEnabled(capability) { try prepare() } }
                 catch {
-                    self.result = .unavailable("Les réglages n’ont pas pu être enregistrés : \(error.localizedDescription)")
+                    self.result = .unavailable("Les réglages n’ont pas pu être enregistrés : \(GoalongUserFacingError.message(error))")
                     return
                 }
                 guard self.store.set(capability, enabled: true, surface: surface) else {
@@ -376,7 +376,7 @@ import LocalHistoryCore
                 onCheckingChanged(false)
                 if status == .ready {
                     do { try prepare() }
-                    catch { accessIssue = "Les réglages n’ont pas pu être enregistrés : \(error.localizedDescription)"; return }
+                    catch { accessIssue = "Les réglages n’ont pas pu être enregistrés : \(GoalongUserFacingError.message(error))"; return }
                     if !consents.set(capability, enabled: true, surface: surface) {
                         accessIssue = "Ce réglage n’a pas pu être enregistré. Réessayez."
                     }

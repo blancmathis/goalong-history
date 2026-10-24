@@ -137,7 +137,7 @@ private final class BlockingFreezePanel: NSPanel {
         case .register:
             requestedLogin = true
             do { try GoalongLoginItemGate.perform { try SMAppService.mainApp.register() }; preferences.blockingForcedLogin = true }
-            catch { loginError = "Démarrage à la connexion indisponible : \(error.localizedDescription)" }
+            catch { loginError = "Démarrage à la connexion indisponible : \(GoalongUserFacingError.message(error))" }
             loginStatus = nil
         case .release:
             // The lock is over: give the member back the choice they made (off).

@@ -394,7 +394,7 @@ import AgentActivity
             if wasAutomatic { ChatGPTRecapRuntime.shared.automaticRecapsEnabled = true; ChatGPTRecapRuntime.shared.start(checkPreviousDayImmediately: false) }
             onSave(next); dismiss()
             GoalongToastCenter.shared.show("Choix d’analyse enregistrés")
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = GoalongUserFacingError.message(error) }
     }
     private func runtimeStop() {
         ChatGPTRecapRuntime.shared.stop()
@@ -413,9 +413,9 @@ import AgentActivity
                 do {
                     let value = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
                     guard previewGeneration == ticket else { return }; previewText = value; previewBusy = false
-                } catch { guard previewGeneration == ticket else { return }; self.error = error.localizedDescription; previewBusy = false }
+                } catch { guard previewGeneration == ticket else { return }; self.error = GoalongUserFacingError.message(error); previewBusy = false }
             }
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = GoalongUserFacingError.message(error) }
     }
 }
 #endif

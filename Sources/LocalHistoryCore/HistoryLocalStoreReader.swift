@@ -340,9 +340,9 @@ private enum HistoryBoundedFileReadError: LocalizedError {
     }
 }
 
-/// A bounded-read failure reads as a sentence; decoding and system errors keep their full detail.
+/// Every read failure reads as a short sentence, never a Swift decoding or NSError dump.
 private func historyIssueDescription(_ error: Error) -> String {
-    (error as? HistoryBoundedFileReadError)?.errorDescription ?? "\(error)"
+    GoalongReadableError.message(error)
 }
 
 private func historyPathReferencesPinnedRegularFile(
@@ -1325,7 +1325,7 @@ public struct HistoryLocalStoreReader {
             appendIssue(
                 path: eventsDirectory.path,
                 line: nil,
-                message: "Could not access the read-only daily website source: \(error.localizedDescription)"
+                message: "Could not access the read-only daily website source: \(historyIssueDescription(error))"
             )
         }
 
@@ -1450,7 +1450,7 @@ public struct HistoryLocalStoreReader {
                 appendIssue(
                     path: sourceFile.url.path,
                     line: nil,
-                    message: "Could not read the daily website source: \(error.localizedDescription)"
+                    message: "Could not read the daily website source: \(historyIssueDescription(error))"
                 )
                 break
             }
@@ -1832,7 +1832,7 @@ public struct HistoryLocalStoreReader {
                         path: rootDirectory.path,
                         line: nil,
                         message:
-                            "Could not validate the bounded Computer History index; the authoritative journal must be read instead: \(error.localizedDescription)"
+                            "Could not validate the bounded Computer History index; the authoritative journal must be read instead: \(historyIssueDescription(error))"
                     )
                 ]
             )
@@ -1995,7 +1995,7 @@ public struct HistoryLocalStoreReader {
                     path: path,
                     line: nil,
                     message:
-                        "Computer History source access was incomplete; the day projection was rejected: \(error.localizedDescription)"
+                        "Computer History source access was incomplete; the day projection was rejected: \(historyIssueDescription(error))"
                 ),
                 to: &issues
             )
@@ -2118,7 +2118,7 @@ public struct HistoryLocalStoreReader {
                                     boundary: event.integrity.map { IntegrityBoundary(event: event, integrity: $0) },
                                     projected: projection.project(event))
                             } catch {
-                                return .failed("could not decode event JSONL row: \(error)")
+                                return .failed("could not decode event JSONL row: \(historyIssueDescription(error))")
                             }
                         }
                     }
@@ -2241,7 +2241,7 @@ public struct HistoryLocalStoreReader {
                                 recordSourceContentIssue(
                                     path: file.path,
                                     line: lineNumber,
-                                    message: "could not decode event JSONL row: \(error)"
+                                    message: "could not decode event JSONL row: \(historyIssueDescription(error))"
                                 )
                             }
                         }
@@ -2305,7 +2305,7 @@ public struct HistoryLocalStoreReader {
                         path: file.path,
                         line: nil,
                         message:
-                            "Could not read Computer History JSONL from its pinned source directory; the day projection was rejected: \(error.localizedDescription)"
+                            "Could not read Computer History JSONL from its pinned source directory; the day projection was rejected: \(historyIssueDescription(error))"
                     ),
                     to: &issues
                 )
@@ -2399,7 +2399,7 @@ public struct HistoryLocalStoreReader {
                                     recordSourceContentIssue(
                                         path: file.path,
                                         line: lineNumber,
-                                        message: "could not decode semantic JSONL row: \(error)"
+                                        message: "could not decode semantic JSONL row: \(historyIssueDescription(error))"
                                     )
                                 }
                             }
@@ -2453,7 +2453,7 @@ public struct HistoryLocalStoreReader {
                             path: file.path,
                             line: nil,
                             message:
-                                "Could not read Computer History semantic JSONL from its pinned source directory; the day projection was rejected: \(error.localizedDescription)"
+                                "Could not read Computer History semantic JSONL from its pinned source directory; the day projection was rejected: \(historyIssueDescription(error))"
                         ),
                         to: &issues
                     )
@@ -2563,7 +2563,7 @@ public struct HistoryLocalStoreReader {
                         recordSourceContentIssue(
                             path: file.path,
                             line: nil,
-                            message: "could not decode semantic JSON file: \(error)"
+                            message: "could not decode semantic JSON file: \(historyIssueDescription(error))"
                         )
                         break
                     } else {
@@ -2725,7 +2725,7 @@ public struct HistoryLocalStoreReader {
                 HistoryLoadIssue(
                     path: rootDirectory.path,
                     line: nil,
-                    message: "Could not pin raw-source root safely: \(error.localizedDescription)"
+                    message: "Could not pin raw-source root safely: \(historyIssueDescription(error))"
                 )
             )
             return accumulator.result()
@@ -2761,7 +2761,7 @@ public struct HistoryLocalStoreReader {
                 HistoryLoadIssue(
                     path: semanticDirectory.path,
                     line: nil,
-                    message: "Could not pin raw semantic source safely: \(error.localizedDescription)"
+                    message: "Could not pin raw semantic source safely: \(historyIssueDescription(error))"
                 )
             )
         }
@@ -2787,7 +2787,7 @@ public struct HistoryLocalStoreReader {
                 HistoryLoadIssue(
                     path: eventsDirectory.path,
                     line: nil,
-                    message: "Could not pin required raw event source safely: \(error.localizedDescription)"
+                    message: "Could not pin required raw event source safely: \(historyIssueDescription(error))"
                 )
             )
         }
@@ -2832,7 +2832,7 @@ public struct HistoryLocalStoreReader {
                                     HistoryLoadIssue(
                                         path: file.path,
                                         line: lineNumber,
-                                        message: "Could not decode semantic JSONL row: \(error)"
+                                        message: "Could not decode semantic JSONL row: \(historyIssueDescription(error))"
                                     )
                                 )
                             }
@@ -2897,7 +2897,7 @@ public struct HistoryLocalStoreReader {
                     HistoryLoadIssue(
                         path: file.path,
                         line: nil,
-                        message: "Could not read semantic JSONL for search: \(error.localizedDescription)"
+                        message: "Could not read semantic JSONL for search: \(historyIssueDescription(error))"
                     )
                 )
             }
@@ -3035,7 +3035,7 @@ public struct HistoryLocalStoreReader {
                                     HistoryLoadIssue(
                                         path: file.path,
                                         line: lineNumber,
-                                        message: "Could not decode event JSONL row for search: \(error)"
+                                        message: "Could not decode event JSONL row for search: \(historyIssueDescription(error))"
                                     )
                                 )
                             }
@@ -3100,7 +3100,7 @@ public struct HistoryLocalStoreReader {
                     HistoryLoadIssue(
                         path: file.path,
                         line: nil,
-                        message: "Could not read event JSONL for search: \(error.localizedDescription)"
+                        message: "Could not read event JSONL for search: \(historyIssueDescription(error))"
                     )
                 )
             }
@@ -3466,7 +3466,7 @@ public struct HistoryLocalStoreReader {
                                     HistoryLoadIssue(
                                         path: file.path,
                                         line: lineNumber,
-                                        message: "Could not decode JSONL row: \(error)"
+                                        message: "Could not decode JSONL row: \(historyIssueDescription(error))"
                                     )
                                 )
                             }
@@ -3497,7 +3497,7 @@ public struct HistoryLocalStoreReader {
                     HistoryLoadIssue(
                         path: file.path,
                         line: nil,
-                        message: "Could not read JSONL: \(error.localizedDescription)"
+                        message: "Could not read JSONL: \(historyIssueDescription(error))"
                     )
                 )
             }

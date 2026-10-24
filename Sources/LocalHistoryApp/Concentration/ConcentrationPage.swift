@@ -1307,6 +1307,14 @@ enum FocusUIError {
         return "L’action n’a pas abouti."
     }
 
+    /// The controller also stores finished French sentences. A bare case name (`unsafePath`) or a debug dump
+    /// (`keyNotFound(…)`) has no space, no capital start, or a parenthesis: it never shows.
+    static func isReadableSentence(_ text: String) -> Bool {
+        guard text.count < 120, text.contains(" "), !text.contains("("), !text.contains("Error"),
+              let first = text.first, first.isUppercase else { return false }
+        return text.range(of: "[A-Za-z]+\\.[A-Za-z]+", options: .regularExpression) == nil
+    }
+
     /// The controller keeps raw failure names; the page says what they mean.
     static func message(raw: String) -> String {
         switch FocusFailure(rawValue: raw) {
@@ -1317,7 +1325,7 @@ enum FocusUIError {
         case .storageFailed: return "Enregistrement impossible. Les données déjà enregistrées restent intactes ; Goalong réessaie chaque minute."
         case .moduleDisabled: return "Activez Blocage dans Réglages › Modules pour bloquer pendant une séance."
         case .appNotRunning: return "Goalong ne répond pas."
-        case nil: return raw.count < 120 && !raw.contains("Error") ? raw : "L’action n’a pas abouti."
+        case nil: return isReadableSentence(raw) ? raw : "L’action n’a pas abouti. Réessayez."
         }
     }
 }

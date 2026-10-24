@@ -589,7 +589,7 @@
             } catch {
                 alert = AgentActivityAlert(
                     title: "Les réglages de suivi n’ont pas pu être enregistrés",
-                    message: error.localizedDescription
+                    message: GoalongUserFacingError.message(error)
                 )
             }
         }
@@ -974,7 +974,7 @@
 
         private func publish(error: Error, title: String) {
             DispatchQueue.main.async { [weak self] in
-                self?.alert = AgentActivityAlert(title: title, message: error.localizedDescription)
+                self?.alert = AgentActivityAlert(title: title, message: GoalongUserFacingError.message(error))
             }
         }
 

@@ -820,7 +820,7 @@
             } catch {
                 errorPipe.fileHandleForReading.readabilityHandler = nil
                 lease.release()
-                throw CodexAppServerError.launchFailed(error.localizedDescription)
+                throw CodexAppServerError.launchFailed(GoalongUserFacingError.message(error))
             }
 
             globalPauseObserver = NotificationCenter.default.addObserver(forName: .goalongGlobalPauseDidChange,

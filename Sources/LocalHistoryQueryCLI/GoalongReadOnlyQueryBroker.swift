@@ -2,6 +2,7 @@
     import Darwin
     import Dispatch
     import Foundation
+    import LocalHistoryCore
 
     private struct GoalongBrokerRequest: Codable {
         let schemaVersion: Int
@@ -520,7 +521,7 @@
                     return
                 }
                 let payload = (try? JSONEncoder().encode(
-                    GoalongBrokerError(brokerError: String(describing: error))
+                    GoalongBrokerError(brokerError: GoalongReadableError.message(error))
                 )) ?? Data("{\"brokerError\":\"query failed\"}".utf8)
                 try? GoalongReadOnlyQueryBroker.writeAll(payload, to: client)
             }

@@ -90,7 +90,7 @@ struct ConcentrationHubHeader: View {
                 if let controller = runtime.controller {
                     BlockingListsSection(controller: controller, now: now ?? GoalongToday.now, editing: $editingList)
                     if let error = controller.error, editingList == nil {
-                        GoalongNote(error, tone: .warning).onTapGesture { controller.error = nil }
+                        GoalongNote(FocusUIError.message(raw: error), tone: .warning).onTapGesture { controller.error = nil }
                             .accessibilityAddTraits(.isButton)
                             .accessibilityHint("Masquer ce message")
                             .accessibilityAction(named: "Masquer") { controller.error = nil }
@@ -178,7 +178,7 @@ struct ConcentrationHubHeader: View {
             try store.save(context.summary, applications: context.applications, content: context.content, procrastination: text)
             editing = false; error = nil
             GoalongToastCenter.shared.show("Exemples enregistrés")
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = GoalongUserFacingError.message(error) }
     }
 }
 
