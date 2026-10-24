@@ -34,6 +34,22 @@ final class SoftwareUpdateWindowCoordinatorTests: XCTestCase {
         XCTAssertEqual(update.collectionBehavior, behavior); XCTAssertEqual(update.hidesOnDeactivate, hides)
         XCTAssertFalse(helper.isPresenting)
     }
+    @MainActor func testClosingTheLastUpdaterWindowRemovesThePerTurnObserver() {
+        _ = NSApplication.shared
+        let update = NSWindow(contentRect: NSRect(x: 21000, y: 20000, width: 480, height: 320), styleMask: [.titled], backing: .buffered, defer: false)
+        update.isReleasedWhenClosed = false; update.orderFrontRegardless()
+        defer { update.orderOut(nil); update.close() }
+        let helper = SoftwareUpdateWindowCoordinator(ordersWindows: false, recognizes: { $0 === update })
+        defer { helper.finish() }
+        helper.beginExplicitPresentation(); helper.reconcile([update])
+        XCTAssertTrue(helper.isObservingEveryUpdate)
+        helper.windowClosed(update) // closed by the user, finish() never called
+        XCTAssertFalse(helper.isObservingEveryUpdate)
+        helper.beginExplicitPresentation()
+        XCTAssertTrue(helper.isObservingEveryUpdate, "A new presentation observes again")
+        helper.finish()
+        XCTAssertEqual(helper.observerCount, 0)
+    }
     @MainActor func testUnknownAndHiddenWindowsAreNotPresented() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)

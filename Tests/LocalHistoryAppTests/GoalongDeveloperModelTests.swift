@@ -132,6 +132,37 @@ final class GoalongDeveloperModelTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.2)
         } while Date() < deadline
     }
+    func testIgnoredPathStormCausesNoDayFileRead() throws {
+        let root = try fixture(), store = GoalongDeveloperStore(root: root.appendingPathComponent("data"))
+        try store.add(root.appendingPathComponent("repo"))
+        let reads = NSLock(); var count = 0
+        let monitor = GoalongDeveloperFileMonitor(root: store.root, readDay: { store, day in
+            reads.lock(); count += 1; reads.unlock(); return store.read(day: day)
+        })
+        monitor.start(replayHistory: false); defer { monitor.stop() }
+        monitor.synchronizeForTesting()
+        let base = root.appendingPathComponent("repo").resolvingSymlinksInPath().path
+        let flag = UInt32(kFSEventStreamEventFlagItemIsFile | kFSEventStreamEventFlagItemModified)
+        // A bucket already written makes every later batch eligible for a deletion re-check read.
+        monitor.queueForTesting.sync { monitor.consume(paths: ["\(base)/Sources/first.swift"], flags: [flag], ids: [1]) }
+        reads.lock(); count = 0; reads.unlock()
+        let paths = (0..<10_000).map { "\(base)/.build/arm64/debug/obj\($0).o" }
+        monitor.queueForTesting.sync {
+            monitor.consume(paths: paths, flags: Array(repeating: flag, count: paths.count), ids: (2...10_001).map { FSEventStreamEventId($0) })
+        }
+        reads.lock(); XCTAssertEqual(count, 0, "Ignored paths must not reread the day file"); reads.unlock()
+        monitor.queueForTesting.sync {
+            monitor.consume(paths: ["\(base)/Sources/a.swift"], flags: [flag], ids: [10_002])
+        }
+        reads.lock(); XCTAssertGreaterThan(count, 0, "A useful path still reaches the store"); reads.unlock()
+    }
+    func testExclusionPathsAreCappedAtEightAndSkipMissingFolders() {
+        let roots = (0..<5).map { "/r\($0)" }
+        let all = GoalongDeveloperFileMonitor.exclusionPaths(roots: roots, exists: { _ in true })
+        XCTAssertEqual(all.count, 8); XCTAssertTrue(all.allSatisfy { $0.hasPrefix("/") })
+        XCTAssertEqual(GoalongDeveloperFileMonitor.exclusionPaths(roots: ["/a"], exists: { $0 == "/a/.build" }), ["/a/.build"])
+        XCTAssertTrue(GoalongDeveloperFileMonitor.exclusionPaths(roots: ["/a"], exists: { _ in false }).isEmpty)
+    }
     func testMonitorIgnoresItsOwnDataAndWritesOnlyChangedCounts() throws {
         // The data folder sits inside the followed repository, like a dotfiles repo at ~.
         let root = try fixture(), store = GoalongDeveloperStore(root: root.appendingPathComponent("repo/data"))

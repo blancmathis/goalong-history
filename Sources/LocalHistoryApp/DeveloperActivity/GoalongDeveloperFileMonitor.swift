@@ -25,7 +25,24 @@ final class GoalongDeveloperFileMonitor {
     private(set) var status: GoalongDeveloperLaneStatus = .disabled {
         didSet { GoalongDeveloperMonitorStatus.publish(status, root: store.root) }
     }
-    init(root: URL) { store = GoalongDeveloperStore(root: root) }
+    /// Day-file reads go through one seam so tests can prove that ignored paths never cause a read.
+    private let readDay: (GoalongDeveloperStore, Date) -> GoalongFileModificationsDay
+    init(root: URL, readDay: @escaping (GoalongDeveloperStore, Date) -> GoalongFileModificationsDay = { $0.read(day: $1) }) {
+        store = GoalongDeveloperStore(root: root); self.readDay = readDay
+    }
+    static let ignoredNames: Set<String> = [".git", ".build", "node_modules", "DerivedData", "dist", "build", "cache", "caches", ".cache", ".DS_Store"]
+    /// FSEvents accepts at most 8 exclusion paths. Prefer folders that exist; `permits` still filters the rest.
+    static func exclusionPaths(roots: [String], exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> [String] {
+        let names = [".build", "node_modules", "DerivedData", ".git"]
+        var result: [String] = []
+        for name in names {
+            for root in roots.sorted() {
+                let path = root + "/" + name
+                if result.count < 8, !result.contains(path), exists(path) { result.append(path) }
+            }
+        }
+        return result
+    }
     /// Every spelling of the app's data folders: our own journal writes must never count as activity.
     static func ownDataRoots(_ roots: [URL]) -> [String] {
         Array(Set(roots.flatMap { url -> [String] in
@@ -58,6 +75,8 @@ final class GoalongDeveloperFileMonitor {
                 }
                 guard let created = FSEventStreamCreate(nil, callback, &context, Array(Set(projects.flatMap(\.observationRoots))).sorted() as CFArray, since, 30, flags) else { status = .failed("Le suivi des fichiers n’a pas démarré."); return }
                 stream = created
+                let excluded = Self.exclusionPaths(roots: Array(Set(projects.flatMap(\.observationRoots))))
+                if !excluded.isEmpty { FSEventStreamSetExclusionPaths(created, excluded as CFArray) }
                 FSEventStreamSetDispatchQueue(created, queue)
                 guard FSEventStreamStart(created) else { FSEventStreamInvalidate(created); FSEventStreamRelease(created); stream = nil; status = .failed("Le suivi des fichiers n’a pas démarré."); return }
                 status = .ready
@@ -80,14 +99,14 @@ final class GoalongDeveloperFileMonitor {
     }
     func snapshotStatus() -> GoalongDeveloperLaneStatus { queue.sync { status } }
     #if DEBUG
+    var queueForTesting: DispatchQueue { queue }
     func synchronizeForTesting() {
         if let stream = queue.sync(execute: { stream }) { FSEventStreamFlushSync(stream) }
         queue.sync { }
     }
     #endif
     static func permits(relativePath: String) -> Bool {
-        let ignored: Set<String> = [".git", ".build", "node_modules", "DerivedData", "dist", "build", "cache", "caches", ".cache", ".DS_Store"]
-        return !relativePath.split(separator: "/").contains { ignored.contains(String($0)) }
+        !relativePath.split(separator: "/").contains { ignoredNames.contains(String($0)) }
     }
     private func rotate(at now: Date) {
         let day = Calendar.current.startOfDay(for: now)
@@ -95,39 +114,47 @@ final class GoalongDeveloperFileMonitor {
         if bucketStart != start {
             flush(); files.removeAll(); bucketStart = start; estimated = replaying; dirty = false; wroteBucket = false
             // Restarting mid-bucket cannot reconstruct the earlier in-memory distinct-file set.
-            let old = store.read(day: now).buckets.filter { $0.start == start }
+            let old = readDay(store, now).buckets.filter { $0.start == start }
             if !old.isEmpty { estimated = true }
         }
     }
-    private func consume(paths: [String], flags: [FSEventStreamEventFlags], ids: [FSEventStreamEventId]) {
+    func consume(paths: [String], flags: [FSEventStreamEventFlags], ids: [FSEventStreamEventId]) {
         guard !GoalongGlobalPause.isPaused(in: store.root), paths.count == flags.count, ids.count == flags.count else { return }
-        rotate(at: Date())
-        if wroteBucket, let start = bucketStart, store.read(day: start).status == .noData {
-            // An explicit deletion must not be reconstructed from the transient distinct set.
-            files.removeAll(); dirty = false; wroteBucket = false
-        }
         let droppedMask = UInt32(kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagEventIdsWrapped | kFSEventStreamEventFlagRootChanged)
         let changedMask = UInt32(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemInodeMetaMod)
         let roots = projects.flatMap { project in project.observationRoots.map { (project, $0) } }
+        // Filter first: a batch without any useful path (a `.build` storm) must not decode or reread anything.
+        enum Action { case historyDone, dropped, file(GoalongDeveloperProject, String) }
+        var actions: [Action] = []
         for index in paths.indices {
             lastEvent = max(lastEvent, ids[index])
-            if flags[index] & UInt32(kFSEventStreamEventFlagHistoryDone) != 0 { replaying = false; continue }
-            if flags[index] & droppedMask != 0 {
-                estimated = true; status = .partial; dirty = true
-                for project in projects where files[project.id] == nil { files[project.id] = [] }
-                continue
-            }
+            if flags[index] & UInt32(kFSEventStreamEventFlagHistoryDone) != 0 { actions.append(.historyDone); continue }
+            if flags[index] & droppedMask != 0 { actions.append(.dropped); continue }
             guard flags[index] & UInt32(kFSEventStreamEventFlagItemIsFile) != 0, flags[index] & changedMask != 0 else { continue }
             let path = paths[index]
             guard !ownRoots.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else { continue }
             guard let matched = roots.filter({ path.hasPrefix($0.1 + "/") }).max(by: { $0.1.count < $1.1.count }) else { continue }
-            let project = matched.0
-            let relative = String(path.dropFirst(matched.1.count + 1))
-            guard Self.permits(relativePath: relative) else { continue }
-            let hash = SHA256.hash(data: Data(path.utf8)).map { String(format: "%02x", $0) }.joined()
-            guard files.values.reduce(0, { $0 + $1.count }) < 10_000 else { estimated = true; status = .partial; continue }
-            files[project.id, default: []].insert(hash)
-            estimated = estimated || replaying; dirty = true
+            guard Self.permits(relativePath: String(path.dropFirst(matched.1.count + 1))) else { continue }
+            actions.append(.file(matched.0, path))
+        }
+        guard !actions.isEmpty else { flush(); return }
+        rotate(at: Date())
+        if wroteBucket, let start = bucketStart, readDay(store, start).status == .noData {
+            // An explicit deletion must not be reconstructed from the transient distinct set.
+            files.removeAll(); dirty = false; wroteBucket = false
+        }
+        for action in actions {
+            switch action {
+            case .historyDone: replaying = false
+            case .dropped:
+                estimated = true; status = .partial; dirty = true
+                for project in projects where files[project.id] == nil { files[project.id] = [] }
+            case let .file(project, path):
+                let hash = SHA256.hash(data: Data(path.utf8)).map { String(format: "%02x", $0) }.joined()
+                guard files.values.reduce(0, { $0 + $1.count }) < 10_000 else { estimated = true; status = .partial; continue }
+                files[project.id, default: []].insert(hash)
+                estimated = estimated || replaying; dirty = true
+            }
         }
         flush()
     }
@@ -136,7 +163,7 @@ final class GoalongDeveloperFileMonitor {
         do {
             let pause = try GoalongGlobalPause.admit(in: store.root)
             if dirty, let start = bucketStart {
-                let existing = Dictionary(uniqueKeysWithValues: store.read(day: start).buckets.filter { $0.start == start }.map { ($0.projectID, $0) })
+                let existing = Dictionary(uniqueKeysWithValues: readDay(store, start).buckets.filter { $0.start == start }.map { ($0.projectID, $0) })
                 let rows = files.map { id, values in
                     GoalongFileModificationBucket(projectID: id, start: start, modifiedFiles: min(10_000, max(values.count, existing[id]?.modifiedFiles ?? 0)), estimated: estimated || (existing[id]?.estimated ?? false), lastEventID: lastEvent)
                 }.filter { row in

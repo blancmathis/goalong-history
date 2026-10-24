@@ -19,6 +19,7 @@ import Sparkle
     private weak var dashboard: NSWindow?
     private var entries: [ObjectIdentifier: Entry] = [:]
     private var observers: [NSObjectProtocol] = []
+    private var updateObserver: NSObjectProtocol?
     private var refreshQueued = false
     private var focusPending = false
     private(set) var isPresenting = false
@@ -40,10 +41,16 @@ import Sparkle
     }
     func beginExplicitPresentation() {
         isPresenting = true; focusPending = true
+        let center = NotificationCenter.default
+        if updateObserver == nil {
+            // Fires every event-loop turn: it lives only while a Sparkle window is on screen.
+            updateObserver = center.addObserver(forName: NSApplication.didUpdateNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.scheduleRefresh() }
+            }
+        }
         if observers.isEmpty {
-            let center = NotificationCenter.default
             for name in [NSWindow.didBecomeKeyNotification, NSWindow.didChangeOcclusionStateNotification,
-                         NSApplication.didBecomeActiveNotification, NSApplication.didUpdateNotification] {
+                         NSApplication.didBecomeActiveNotification] {
                 observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                     Task { @MainActor in self?.scheduleRefresh() }
                 })
@@ -99,7 +106,7 @@ import Sparkle
             focusPending = false
         }
     }
-    private func windowClosed(_ window: NSWindow) {
+    func windowClosed(_ window: NSWindow) {
         if window === dashboard {
             for entry in entries.values {
                 if let child = entry.window { entry.attachedParent?.removeChildWindow(child) }
@@ -107,8 +114,19 @@ import Sparkle
             }
             dashboard = nil
         }
-        if let entry = entries.removeValue(forKey: ObjectIdentifier(window)) { restore(entry) }
+        if let entry = entries.removeValue(forKey: ObjectIdentifier(window)) {
+            restore(entry)
+            // The user closed the last updater window and finish() may never come: stop the per-turn observer.
+            if entries.isEmpty { removeUpdateObserver() }
+        }
     }
+    private func removeUpdateObserver() {
+        if let updateObserver { NotificationCenter.default.removeObserver(updateObserver) }
+        updateObserver = nil
+    }
+    /// Observers currently registered (test seam).
+    var observerCount: Int { observers.count + (updateObserver == nil ? 0 : 1) }
+    var isObservingEveryUpdate: Bool { updateObserver != nil }
     private func restore(_ entry: Entry) {
         guard let window = entry.window else { return }
         entry.attachedParent?.removeChildWindow(window)
@@ -119,7 +137,7 @@ import Sparkle
     func finish() {
         isPresenting = false; focusPending = false
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
-        observers.removeAll()
+        observers.removeAll(); removeUpdateObserver()
         for entry in entries.values { restore(entry) }
         entries.removeAll()
     }

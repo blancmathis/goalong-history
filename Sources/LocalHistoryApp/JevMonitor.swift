@@ -267,7 +267,7 @@ struct JevRecentCheck: Identifiable {
         let timer = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
-        timer.tolerance = seconds == 15 ? 0.1 : 0.2
+        timer.tolerance = seconds == 15 ? 1.5 : 0.2
         RunLoop.main.add(timer, forMode: .common); self.timer = timer
     }
     private func tick() {

@@ -274,6 +274,7 @@ private final class BlockingFreezePanel: NSPanel {
                     if ForegroundSessionAvailability.isAvailable() { self.lockSession() }
                 }
             }
+            timer.tolerance = 0.1 // ≈10 % of the 1 s fallback poll.
             RunLoop.main.add(timer, forMode: .common); lockTimer = timer
         } else {
             if savedPresentation == nil { savedPresentation = NSApp.presentationOptions }

@@ -375,6 +375,7 @@ struct SupportReport: Codable {
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.heartbeat() }
         }
+        timer.tolerance = 6 // ≈10 % of the period: a heartbeat needs no exact second.
         RunLoop.main.add(timer, forMode: .common); self.timer = timer
         heartbeat()
     }

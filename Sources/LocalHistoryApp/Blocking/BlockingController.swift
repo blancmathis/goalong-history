@@ -982,12 +982,16 @@ import LocalHistoryQueryCLI
         boundaries += (document.usage?.breakEnds.values).map(Array.init) ?? []
         if let end = freeze?.end { boundaries.append(end) }
         if let start = nextProgramStart?.date { boundaries += [start, start.addingTimeInterval(-60)] }
-        if !activeBlocks.isEmpty || freeze != nil || needsObservation || hasLocks { boundaries.append(now.addingTimeInterval(15)) }
+        let exactBoundaries = boundaries
+        let pollDeadline = now.addingTimeInterval(15)
+        if !activeBlocks.isEmpty || freeze != nil || needsObservation || hasLocks { boundaries.append(pollDeadline) }
         if hasAppTriggers { boundaries.append(now.addingTimeInterval(appTriggerPollSeconds)) }
         guard let next = boundaries.filter({ $0 > now }).min() else { return }
         let value = Timer(timeInterval: max(0.05, next.timeIntervalSince(now)), repeats: false) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        // The 15 s poll may slip by ~10 %; block ends and session starts stay exact.
+        if next == pollDeadline, !exactBoundaries.contains(next) { value.tolerance = 1.5 }
         RunLoop.main.add(value, forMode: .common); timer = value
     }
     private func extendLocks(by jump: Double, at oldWall: Date) {
