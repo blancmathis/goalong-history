@@ -269,7 +269,7 @@
                         .frame(width: 150)
                     }
                     GoalongSearchField("Rechercher dans les conversations", text: $search)
-                        .frame(width: 240)
+                        .frame(width: 280)
                 }
 
                 if sourceHealth != .ready {

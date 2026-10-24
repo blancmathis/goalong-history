@@ -156,14 +156,14 @@ struct GalleryImage {
     /// or every row below it sits half a point or a point off. Such a render is made again from a new view.
     static func render(_ entry: GalleryEntry, theme: GalleryTheme, size: GallerySize, ctx: GalleryContext) throws -> GalleryImage {
         var image = try renderOnce(entry, theme: theme, size: size, ctx: ctx)
-        for _ in 1..<3 where image.status == .ok && !image.misMeasuredFields.isEmpty {
+        for _ in 1..<6 where image.status == .ok && !image.misMeasuredFields.isEmpty {
             FileHandle.standardError.write(Data(("[gallery] render again, \(entry.id) \(theme.rawValue): "
                 + image.misMeasuredFields.joined(separator: ", ") + "\n").utf8))
             image = try renderOnce(entry, theme: theme, size: size, ctx: ctx)
         }
         if !image.misMeasuredFields.isEmpty && image.status == .ok {
             image.status = .unstable
-            image.detail = "field sized from another font in 3 renders: " + image.misMeasuredFields.joined(separator: ", ")
+            image.detail = "field sized from another font in 6 renders: " + image.misMeasuredFields.joined(separator: ", ")
         }
         return image
     }
