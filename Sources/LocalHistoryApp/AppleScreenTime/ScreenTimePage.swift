@@ -615,7 +615,7 @@
         private func relativeDate(_ date: Date) -> String {
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .abbreviated
-            return formatter.localizedString(for: date, relativeTo: Date())
+            return formatter.localizedString(for: date, relativeTo: GoalongToday.now)
         }
     }
 #endif

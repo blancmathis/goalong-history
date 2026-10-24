@@ -36,7 +36,7 @@ struct GoalongActivitySummary {
     let now: Date
 
     init(period: GoalongLocalAnalytics.Period, previous: GoalongLocalAnalytics.Period,
-         calendar: Calendar = .current, now: Date = Date()) {
+         calendar: Calendar = .current, now: Date = GoalongToday.now) {
         self.period = period; self.previous = previous; self.calendar = calendar; self.now = now
     }
 

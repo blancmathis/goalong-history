@@ -53,7 +53,7 @@ import SwiftUI
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in
-            let now = self.now ?? context.date
+            let now = self.now ?? GoalongToday.timeline(context.date)
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
@@ -101,7 +101,7 @@ import SwiftUI
                 .goalongControls()
         }
         .sheet(item: $editingCommitment) { request in
-            FocusCommitmentEditor(controller: controller, request: request, now: Date(), onClose: { editingCommitment = nil })
+            FocusCommitmentEditor(controller: controller, request: request, now: GoalongToday.now, onClose: { editingCommitment = nil })
                 .goalongControls()
         }
     }
@@ -488,7 +488,7 @@ struct FocusPlanChip: View {
             }
             Group {
                 if live {
-                    TimelineView(.periodic(from: Date(), by: 1)) { context in clock(at: context.date) }
+                    TimelineView(.periodic(from: Date(), by: 1)) { context in clock(at: GoalongToday.timeline(context.date)) }
                 } else {
                     clock(at: now)
                 }
@@ -1234,7 +1234,7 @@ struct FocusThreadModel: Equatable {
     }
 
     private static func date(_ minute: Int) -> Date {
-        Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: Date()) ?? Date()
+        Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: GoalongToday.now) ?? GoalongToday.now
     }
 
     private static func minute(_ date: Date) -> Int {

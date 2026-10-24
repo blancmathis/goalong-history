@@ -130,7 +130,7 @@ import LocalHistoryQueryCLI
         var value = Calendar(identifier: .gregorian); value.timeZone = TimeZone(identifier: model.draft.timezone) ?? .current; return value
     }
     private var scheduleTime: Binding<Date> {
-        Binding(get: { sharingCalendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: model.draft.hour, minute: model.draft.minute)) ?? Date() },
+        Binding(get: { sharingCalendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: model.draft.hour, minute: model.draft.minute)) ?? GoalongToday.now },
                 set: { model.draft.hour = sharingCalendar.component(.hour, from: $0); model.draft.minute = sharingCalendar.component(.minute, from: $0) })
     }
     private var selection: some View {

@@ -62,7 +62,7 @@ struct SlowDownCountdown: View {
             thread(at: now)
         } else {
             TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 20, paused: ready)) { context in
-                thread(at: context.date)
+                thread(at: GoalongToday.timeline(context.date))
             }
             .task {
                 let wait = presentation.readyAt.timeIntervalSinceNow
@@ -112,7 +112,7 @@ private struct SlowDownActions: View {
                 if let now {
                     continueButton(at: now)
                 } else {
-                    TimelineView(.periodic(from: presentation.shownAt, by: 1)) { context in continueButton(at: context.date) }
+                    TimelineView(.periodic(from: presentation.shownAt, by: 1)) { context in continueButton(at: GoalongToday.timeline(context.date)) }
                 }
             }
         }

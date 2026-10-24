@@ -88,7 +88,7 @@ struct ConcentrationHubHeader: View {
                 Text("Ce qui vous distrait. Une séance, un engagement ou le programme bloque ces listes.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 if let controller = runtime.controller {
-                    BlockingListsSection(controller: controller, now: now ?? Date(), editing: $editingList)
+                    BlockingListsSection(controller: controller, now: now ?? GoalongToday.now, editing: $editingList)
                     if let error = controller.error, editingList == nil {
                         GoalongNote(error, tone: .warning).onTapGesture { controller.error = nil }
                             .accessibilityAddTraits(.isButton)
@@ -117,7 +117,7 @@ struct ConcentrationHubHeader: View {
         .accessibilityIdentifier("distractions-page")
         .sheet(isPresented: Binding(get: { editingList != nil }, set: { if !$0 { editingList = nil } })) {
             if let id = editingList, let controller = runtime.controller {
-                BlockListSheet(controller: controller, listID: id, now: now ?? Date()) { editingList = nil }
+                BlockListSheet(controller: controller, listID: id, now: now ?? GoalongToday.now) { editingList = nil }
                     .goalongControls()
             }
         }
@@ -208,7 +208,7 @@ struct ConcentrationHubHeader: View {
             .accessibilityIdentifier("blocking-new-list-inline")
             .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { finish(controller) } })) {
                 if let id = editing {
-                    BlockListSheet(controller: controller, listID: id, now: Date()) { finish(controller) }
+                    BlockListSheet(controller: controller, listID: id, now: GoalongToday.now) { finish(controller) }
                         .goalongControls()
                 }
             }
@@ -261,7 +261,7 @@ struct ConcentrationHubHeader: View {
         }
         .sheet(isPresented: Binding(get: { editingList != nil }, set: { if !$0 { editingList = nil } })) {
             if let id = editingList, let lists = blocking.controller {
-                BlockListSheet(controller: lists, listID: id, now: Date()) { editingList = nil }.goalongControls()
+                BlockListSheet(controller: lists, listID: id, now: GoalongToday.now) { editingList = nil }.goalongControls()
             }
         }
     }

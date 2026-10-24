@@ -86,7 +86,7 @@ actor GoalongAnalyticsReader {
     private let root: URL
     /// The real clock in the app; a fixed one in tests and the gallery.
     private let now: @Sendable () -> Date
-    init(root: URL, now: @escaping @Sendable () -> Date = { Date() }) { self.root = root; self.now = now }
+    init(root: URL, now: @escaping @Sendable () -> Date = { GoalongToday.now }) { self.root = root; self.now = now }
 
     /// Focus reuses the same validated day cache and bounded current-day fold, without
     /// loading recap cards, starting analysis or changing the Activity selection.
@@ -100,7 +100,7 @@ actor GoalongAnalyticsReader {
               verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) throws -> GoalongAnalyticsPayload {
         try Task.checkCancellation()
         // Preview exits before looking at caches, journals, daily reports or project archives.
-        if preview { return GoalongAnalyticsPreview.make(ending: day, count: count) }
+        if preview { return GoalongAnalyticsPreview.make(ending: day, count: count, now: now()) }
         _ = try GoalongGlobalPause.admit(in: root)
         let calendar = Calendar.current, now = self.now()
         let count = [1, 7, 28].contains(count) ? count : 7

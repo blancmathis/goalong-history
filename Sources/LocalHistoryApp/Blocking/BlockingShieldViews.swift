@@ -22,7 +22,7 @@ struct BlockedSiteVeil: View {
                 }
                 if !BlockingFormat.isOpenEnded(presentation.end) {
                     TimelineView(.periodic(from: Date(), by: 15)) { context in
-                        BlockingSessionThread(start: presentation.start, end: presentation.end, now: now ?? context.date,
+                        BlockingSessionThread(start: presentation.start, end: presentation.end, now: now ?? GoalongToday.timeline(context.date),
                                               locked: presentation.lock == .locked)
                     }
                     .frame(width: 320)
@@ -151,7 +151,7 @@ struct FrozenMacShield: View {
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 1)) { context in
-            let now = self.now ?? context.date
+            let now = self.now ?? GoalongToday.timeline(context.date)
             VStack(spacing: 0) {
                 Spacer()
                 VStack(spacing: 28) {
