@@ -385,6 +385,17 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertEqual(week.day, date(11)); XCTAssertEqual(week.period, 7)
     }
 
+    func testPageFollowsTodayWhenTheTimeZoneMovesWest() {
+        // R34 défaut 2: Paris 25/10 00:30 → New York 24/10 18:30. The new today is earlier than the seen one.
+        var paris = Calendar(identifier: .gregorian); paris.timeZone = TimeZone(identifier: "Europe/Paris")!
+        var newYork = Calendar(identifier: .gregorian); newYork.timeZone = TimeZone(identifier: "America/New_York")!
+        let instant = paris.date(from: DateComponents(year: 2026, month: 10, day: 25, hour: 0, minute: 30))!
+        var navigation = GoalongActivityNavigation(day: instant, now: instant, calendar: paris)
+        XCTAssertTrue(navigation.followToday(now: instant, calendar: newYork))
+        XCTAssertEqual(navigation.day, newYork.startOfDay(for: instant))
+        XCTAssertFalse(navigation.followToday(now: instant, calendar: newYork), "Followed once")
+    }
+
     func testNavigationRebuiltPageStillFollowsTodayAfterMidnight() {
         // B05-R1-01: the page is rebuilt on each section change and used to learn the new day on
         // return, so the shown day never moved. The navigation itself remembers the day it saw.

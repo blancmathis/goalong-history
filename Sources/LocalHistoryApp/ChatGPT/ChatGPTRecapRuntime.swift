@@ -659,7 +659,11 @@
         /// them and checks yesterday once the network and the journal have settled.
         private func installSystemClockObservers() {
             guard systemClockObservers.isEmpty else { return }
-            let handler: (Notification) -> Void = { [weak self] _ in self?.handleWakeOrDayChange() }
+            let handler: (Notification) -> Void = { [weak self] note in
+                // The recap schedule reads `.current`: refresh the cached zone first.
+                if note.name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
+                self?.handleWakeOrDayChange()
+            }
             let workspace = NSWorkspace.shared.notificationCenter
             systemClockObservers.append((workspace, workspace.addObserver(
                 forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: handler)))
