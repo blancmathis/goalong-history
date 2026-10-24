@@ -558,7 +558,7 @@
             recorder.record(kind: .diagnostic, metadata: ["goalong.focus.limit": mark.kind, "goalong.focus.period": mark.period], timestamp: mark.at)
         }
         private func idleSeconds() -> Double {
-            UserInputActivityClock.secondsSinceLastInput()
+            hostGate.secondsSinceLastInput()
         }
     }
 #endif

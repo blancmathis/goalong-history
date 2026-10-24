@@ -6,9 +6,9 @@ import XCTest
 @testable import LocalHistoryApp
 
 /// Hermetic host for AX capture tests: fixed gate and a throwaway data root, so the
-/// installed app's pause/exclusions and the live screen-lock/Secure Input state cannot change results.
+/// installed app's pause/exclusions and the live screen-lock/Secure Input/idle state cannot change results.
 extension HostCaptureGate {
-    static let testOpen = HostCaptureGate(sessionAvailable: { true }, secureInput: { false })
+    static let testOpen = HostCaptureGate(sessionAvailable: { true }, secureInput: { false }, secondsSinceLastInput: { 1 })
 }
 final class TestConsentFlag {
     private let lock = NSLock(); private var flag = false
@@ -150,11 +150,14 @@ final class AXAdversarialReviewTests: XCTestCase {
         provider.invalidateHistory(); release.signal(); wait(for: [done], timeout: 3)
     }
 
-    func testReviewSlowHistoryMustNotSuspendMixedBlockingPoll() throws {
+    /// Holds a history read for 0.95 s with blocking observation on. Returns the blocking
+    /// observations seen meanwhile and whether the poll timer is armed.
+    private func blockingObservationsDuringHistoryStall(secondsSinceLastInput idle: TimeInterval) throws -> (count: Int, pollArmed: Bool) {
         richConsent(false)
         let rig = try rig(at: Date()), tree = ScriptedAXTree(), params = input()
         let provider = ContextProvider(client: tree.client, parameters: { params })
-        let monitor = contextMonitor(rig, provider)
+        let gate = HostCaptureGate(sessionAvailable: { true }, secureInput: { false }, secondsSinceLastInput: { idle })
+        let monitor = contextMonitor(rig, provider, hostGate: gate)
         monitor.configureForAdversarialReview(blocking: true, polling: true)
         let entered = expectation(description: "history held after blocking"), terminal = expectation(description: "history terminal")
         let release = DispatchSemaphore(value: 0)
@@ -164,11 +167,24 @@ final class AXAdversarialReviewTests: XCTestCase {
         monitor.sampleNow { _ in terminal.fulfill() }
         wait(for: [entered], timeout: 3)
         tick(0.95)
-        print("REVIEW blocking observations during 0.95s history stall: \(blocking), poll timer active: \(monitor.hasPollForAdversarialReview)")
-        XCTAssertGreaterThanOrEqual(blocking, 2, "The 0.75s blocking poll must run while history is held")
+        let observed = (count: blocking, pollArmed: monitor.hasPollForAdversarialReview)
         monitor.configureForAdversarialReview(blocking: false, polling: false)
         release.signal(); wait(for: [terminal], timeout: 3)
         try rig.recorder.closeAndWait()
+        return observed
+    }
+
+    func testReviewSlowHistoryMustNotSuspendMixedBlockingPoll() throws {
+        let (blocking, armed) = try blockingObservationsDuringHistoryStall(secondsSinceLastInput: 1)
+        print("REVIEW blocking observations during 0.95s history stall: \(blocking), poll timer active: \(armed)")
+        XCTAssertGreaterThanOrEqual(blocking, 2, "The 0.75s blocking poll must run while history is held")
+    }
+
+    /// The live poll reads idle time from the gate (R48-E1), not from the machine.
+    func testIdleUserBacksOffTheBlockingPollDuringAHistoryStall() throws {
+        let (blocking, armed) = try blockingObservationsDuringHistoryStall(secondsSinceLastInput: 3_600)
+        XCTAssertEqual(blocking, 1, "After 60 s without input, the blocking poll waits 5 s")
+        XCTAssertTrue(armed)
     }
 
     func testReviewConcurrentMixedSamplesRetainTheirOwnBlockingAdmissions() throws {
