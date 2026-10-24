@@ -302,6 +302,79 @@ import XCTest
         XCTAssertEqual(service.statusReads, armedReads + 1)
     }
 
+    /// Fake launchd side: the guard never answers; kickstart returns `kickstartResult`.
+    private final class FakeLaunchd: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        let kickstartResult: Int32
+        init(kickstartResult: Int32) { self.kickstartResult = kickstartResult }
+        var kickstarts: Int { lock.withLock { count } }
+        var probes: GuardLaunchProbes {
+            GuardLaunchProbes(ping: { .unreachable }, resumeStoppedGuards: { false },
+                              kickstart: { self.lock.withLock { self.count += 1 }; return self.kickstartResult })
+        }
+    }
+
+    /// Every update() of an armed client starts a round (ping interval 0); waits for that round's answer.
+    private func armedClient(_ service: FakeService, _ launchd: FakeLaunchd) -> GoalongGuardClient {
+        service.current = .enabled
+        let identity = GuardIdentity(bundleIdentifier: "ai.goalong.localhistory.dev", channel: "dev")!
+        let defaults = UserDefaults(suiteName: "goalong-guard-client-tests-" + UUID().uuidString)!
+        let client = GoalongGuardClient(identity: identity, defaults: defaults, overrideActive: { false },
+                                        service: service, probes: launchd.probes, pingInterval: 0)
+        settle { client.canRemove }
+        return client
+    }
+
+    /// One escalation round through update(), as the controller's refresh runs it.
+    private func round(_ client: GoalongGuardClient, until end: Date) -> BlockingProtectionState.Component {
+        _ = client.update(severeUntil: end)
+        settle { !client.isWorking }
+        return client.component
+    }
+
+    /// L-04 (K3-kill-03): the client's own wiring of a bootout. Kickstart 113 → "stopped until the next
+    /// login" for every later round of this arming, no second kickstart, never a re-register; a new
+    /// arming may kickstart once again.
+    func testABootoutSeenThroughUpdateIsKeptForTheArming() {
+        let service = FakeService(), launchd = FakeLaunchd(kickstartResult: GoalongGuardClient.launchctlServiceNotFound)
+        let client = armedClient(service, launchd)
+        let end = Date().addingTimeInterval(600)
+        let stopped = BlockingProtectionState.Component.failed(GuardEscalation.stoppedUntilLogin)
+        XCTAssertEqual(round(client, until: end), stopped)
+        XCTAssertEqual(launchd.kickstarts, 1)
+        for _ in 0..<3 { XCTAssertEqual(round(client, until: end), stopped, "the bootout is remembered") }
+        XCTAssertEqual(launchd.kickstarts, 1, "one kickstart per arming")
+        XCTAssertEqual(service.registerCalls, 0)
+        XCTAssertEqual(service.unregisterCalls, 0)
+        _ = client.update(severeUntil: nil)
+        settle { !client.isWorking }
+        XCTAssertEqual(round(client, until: end), stopped)
+        XCTAssertEqual(launchd.kickstarts, 2, "a new arming kickstarts again")
+        XCTAssertEqual(service.registerCalls, 0)
+    }
+
+    /// L-04 (K3-kill-03): a loaded guard that never answers is re-registered once per build, through the
+    /// client's own claims, after one kickstart per arming.
+    func testAnUnreachableGuardIsReregisteredOncePerBuildThroughUpdate() {
+        let service = FakeService(), launchd = FakeLaunchd(kickstartResult: 0)
+        let client = armedClient(service, launchd)
+        let end = Date().addingTimeInterval(600)
+        let unreachable = BlockingProtectionState.Component.failed(GuardEscalation.unreachable)
+        XCTAssertEqual(round(client, until: end), unreachable)
+        XCTAssertEqual(launchd.kickstarts, 1)
+        XCTAssertEqual(service.unregisterCalls, 1)
+        XCTAssertEqual(service.registerCalls, 1)
+        XCTAssertEqual(round(client, until: end), unreachable)
+        XCTAssertEqual(launchd.kickstarts, 1, "once per arming")
+        XCTAssertEqual(service.registerCalls, 1, "once per build")
+        _ = client.update(severeUntil: nil)
+        settle { !client.isWorking }
+        XCTAssertEqual(round(client, until: end), unreachable)
+        XCTAssertEqual(launchd.kickstarts, 2)
+        XCTAssertEqual(service.registerCalls, 1, "still once per build in a new arming")
+    }
+
     /// One arming's escalation memory, shared by the rounds like the client's.
     private final class EscalationProbe {
         var status: SMAppService.Status = .enabled
