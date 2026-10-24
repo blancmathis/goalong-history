@@ -39,10 +39,16 @@ enum GoalongCalendarBackends {
     static let eventKit = GoalongEventKitBackend()
     private static let lock = NSLock()
     private static var installed: (any GoalongCalendarBackend)?
+    private static var installedRevision = 0
     static var current: any GoalongCalendarBackend { lock.lock(); defer { lock.unlock() }; return installed ?? eventKit }
+    /// Changes each time another backend is installed. `GoalongCalendarSource` keys its cache and its observer on it,
+    /// so a backend never reuses the answers of the one before it, even if both have the same address.
+    static var revision: Int { lock.lock(); defer { lock.unlock() }; return installedRevision }
     #if DEBUG
-    /// Nil gives EventKit back. The caller invalidates `GoalongCalendarSource.shared`.
-    static func install(_ backend: (any GoalongCalendarBackend)?) { lock.lock(); installed = backend; lock.unlock() }
+    /// Nil gives EventKit back. Bumps `revision`, so `GoalongCalendarSource.shared` drops what the old backend gave.
+    static func install(_ backend: (any GoalongCalendarBackend)?) {
+        lock.lock(); installed = backend; installedRevision += 1; lock.unlock()
+    }
     #endif
 }
 

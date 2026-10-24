@@ -230,5 +230,23 @@ final class GoalongCalendarSourceTests: XCTestCase {
         GoalongCalendarBackends.install(nil)
         XCTAssertTrue(GoalongCalendarBackends.current === GoalongCalendarBackends.eventKit)
     }
+    /// The cache answers for one installed backend. Installing another one (or the same one again) starts a new revision,
+    /// so nothing the earlier backend gave is served again, whatever its address.
+    func testInstallingABackendDropsTheAnswersOfTheOneBefore() async {
+        let backend = GoalongFakeCalendarBackend(), zoned = calendar("Europe/Paris")
+        let noon = zoned.date(from: DateComponents(year: 2026, month: 10, day: 23, hour: 12))!
+        backend.events = [event("first", noon, noon.addingTimeInterval(60))]
+        GoalongCalendarBackends.install(backend)
+        addTeardownBlock { GoalongCalendarBackends.install(nil) }
+        let source = GoalongCalendarSource()
+        let before = GoalongCalendarBackends.revision
+        let first = await source.read(day: noon, enabled: true, calendar: zoned)
+        XCTAssertEqual(first.events.map(\.id), ["first"])
+        backend.events = [event("second", noon, noon.addingTimeInterval(60))]
+        GoalongCalendarBackends.install(backend)
+        XCTAssertNotEqual(GoalongCalendarBackends.revision, before)
+        let second = await source.read(day: noon, enabled: true, calendar: zoned)
+        XCTAssertEqual(second.events.map(\.id), ["second"])
+    }
 }
 #endif

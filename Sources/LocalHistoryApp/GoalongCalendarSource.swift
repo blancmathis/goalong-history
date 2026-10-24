@@ -38,13 +38,15 @@ actor GoalongCalendarSource {
     private var generation = 0
     private var cache: [String: (Int, GoalongCalendarLane)] = [:]
     private var observer: NSObjectProtocol?
-    private var observedBackend: ObjectIdentifier?
+    private var observedRevision: Int?
     static let maximumItems = 1000
     static let maximumTextLength = 16_000
 
     /// `backend` nil follows `GoalongCalendarBackends.current`.
     init(backend: (any GoalongCalendarBackend)? = nil) { fixedBackend = backend }
     private var backend: any GoalongCalendarBackend { fixedBackend ?? GoalongCalendarBackends.current }
+    /// A source made for one backend never sees it change.
+    private var backendRevision: Int { fixedBackend == nil ? GoalongCalendarBackends.revision : 0 }
 
     static func authorization(for entity: EKEntityType) -> GoalongSystemSourceStatus {
         GoalongCalendarBackends.current.authorization(for: entity)
@@ -64,22 +66,22 @@ actor GoalongCalendarSource {
         invalidate()
         return (backend.authorization(for: .event), backend.authorization(for: .reminder))
     }
-    private func startObserving(_ backend: any GoalongCalendarBackend) {
-        guard observedBackend != ObjectIdentifier(backend) else { return }
+    private func startObserving(_ backend: any GoalongCalendarBackend, revision: Int) {
+        guard observedRevision != revision else { return }
         if let observer { NotificationCenter.default.removeObserver(observer) }
-        observedBackend = ObjectIdentifier(backend)
+        observedRevision = revision
         observer = backend.observeChanges { [weak self] in Task { await self?.invalidate() } }
     }
     private static func bounded(_ text: String?) -> String { (text?.count ?? 0) <= maximumTextLength ? text ?? "" : "" }
     func read(day: Date, enabled: Bool, calendar: Calendar = .current) async -> GoalongCalendarLane {
         guard enabled else { disable(); return .disabled }
-        let backend = backend
-        startObserving(backend)
+        let backend = backend, revision = backendRevision
+        startObserving(backend, revision: revision)
         let calendarPermission = backend.authorization(for: .event), remindersPermission = backend.authorization(for: .reminder)
         guard let interval = calendar.dateInterval(of: .day, for: day) else {
             return .init(status: .failed("Date invalide."), calendarStatus: .failed("Date invalide."), remindersStatus: .failed("Date invalide."))
         }
-        let key = GoalongSystemSourceFiles.dayKey(day) + "|" + calendar.timeZone.identifier + "|\(calendarPermission)|\(remindersPermission)|\(ObjectIdentifier(backend).hashValue)"
+        let key = GoalongSystemSourceFiles.dayKey(day) + "|" + calendar.timeZone.identifier + "|\(calendarPermission)|\(remindersPermission)|\(revision)"
         let initialGeneration = generation
         if let cached = cache[key], cached.0 == generation { return cached.1 }
         var lane = GoalongCalendarLane(status: .noData, calendarStatus: calendarPermission, remindersStatus: remindersPermission)

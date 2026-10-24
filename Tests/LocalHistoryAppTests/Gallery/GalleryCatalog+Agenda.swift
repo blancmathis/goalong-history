@@ -56,11 +56,18 @@ extension GalleryCatalog {
         return backend
     }
 
-    private static func agendaActivity(_ id: String, _ state: Agenda, note: String) -> GalleryEntry {
+    /// Activité on the day; `detail` opens the named view « Appels et agenda » instead of the summary.
+    private static func agendaActivity(_ id: String, _ state: Agenda, detail: Bool = false, note: String) -> GalleryEntry {
         var backend: GoalongFakeCalendarBackend?
         return dashboard(id, section: .overview, sizes: [.full(1240)], fixture: .classified, note: note,
                          reached: { state == .denied || state == .notAsked || (backend?.enumerations ?? 0) > 0 },
-                         prepare: { ctx in backend = installCalendar(state, ctx) })
+                         prepare: { ctx in
+            backend = installCalendar(state, ctx)
+            if detail {
+                GoalongAnalyticsPage.galleryDetail = .agenda
+                ctx.cleanups.append { GoalongAnalyticsPage.galleryDetail = nil }
+            }
+        })
     }
     private static func agendaSettings(_ id: String, _ state: Agenda, note: String) -> GalleryEntry {
         dashboard(id, section: .settings, pane: .recording, sizes: [.fixed(1240, 1560)], fixture: .recordingOn, note: note,
@@ -71,8 +78,15 @@ extension GalleryCatalog {
         [
             agendaActivity("agenda/jour-avec-donnees", .withData,
                            note: "Activité, jour : quatre événements prévus (un libre, un sur la journée), deux rappels terminés, deux à faire"),
-            agendaActivity("agenda/jour-vide", .empty, note: "accès donné, aucun événement ni rappel ce jour-là"),
             agendaActivity("agenda/acces-refuse", .denied, note: "macOS refuse l’agenda et les rappels : message et « Ouvrir… »"),
+            agendaActivity("agenda/detail-avec-donnees", .withData, detail: true,
+                           note: "vue « Appels et agenda » : événements, rappels terminés et ouverts"),
+            agendaActivity("agenda/detail-vide", .empty, detail: true,
+                           note: "vue « Appels et agenda » : accès donné, aucun événement ni rappel ce jour-là"),
+            agendaActivity("agenda/detail-acces-refuse", .denied, detail: true,
+                           note: "vue « Appels et agenda » : macOS refuse l’accès, bouton « Ouvrir… »"),
+            agendaActivity("agenda/detail-non-demande", .notAsked, detail: true,
+                           note: "vue « Appels et agenda » : accès pas encore demandé, bouton « Autoriser… »"),
             agendaSettings("agenda/reglages-acces-refuse", .denied, note: "Réglages › Enregistrement : accès refusé, « Ouvrir Réglages Système… »"),
             agendaSettings("agenda/reglages-acces-non-demande", .notAsked, note: "Réglages › Enregistrement : accès à demander, « Autoriser l’accès… »"),
         ]
