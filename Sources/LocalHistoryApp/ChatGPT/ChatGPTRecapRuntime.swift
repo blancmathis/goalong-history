@@ -1305,7 +1305,7 @@
                     if let runDirectory { try? self.fileManager.removeItem(at: runDirectory) }
                     if !(error is RecapGenerationInterruption) {
                         let detail = CodexAppServerLimits.boundedUTF8(
-                            ActivitySemanticTextSanitizer.redact(GoalongUserFacingError.message(error)) ?? "",
+                            ActivitySemanticTextSanitizer.redact(error.localizedDescription) ?? "",
                             maximumBytes: CodexAppServerLimits.production.maximumErrorBytes
                         )
                         Diagnostics.write("ChatGPT recap generation failed: \(detail)")
