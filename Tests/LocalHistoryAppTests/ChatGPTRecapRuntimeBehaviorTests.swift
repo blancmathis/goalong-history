@@ -48,11 +48,11 @@
             defer { try? FileManager.default.removeItem(at: container) }
             let runtime = makeRuntime(container: container)
             let today = Calendar.current.startOfDay(for: Date())
-            let yesterday = today.addingTimeInterval(-86_400)
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
             runtime.selectDay(today)
 
             runtime.beginRunForTesting(streamed: "", automatic: true, day: yesterday)
-            runtime.selectDay(today.addingTimeInterval(-2 * 86_400))
+            runtime.selectDay(Calendar.current.date(byAdding: .day, value: -2, to: today)!)
             XCTAssertTrue(runtime.hasActiveRunForTesting)
             XCTAssertTrue(runtime.isGenerating)
             XCTAssertFalse(runtime.isGeneratingSelectedDay)
@@ -241,7 +241,7 @@
             XCTAssertTrue(runtime.isConnecting)
             try waitUntil { FileManager.default.fileExists(atPath: marker.path) }
 
-            runtime.selectDay(today.addingTimeInterval(-86_400))
+            runtime.selectDay(Calendar.current.date(byAdding: .day, value: -1, to: today)!)
             RunLoop.current.run(until: Date().addingTimeInterval(0.5))
             XCTAssertTrue(runtime.isConnecting, "a day change must not close the sign-in session")
 
@@ -260,7 +260,7 @@
             defer { release.signal() }
             runtime.blockQueueForTesting(reads: false, until: release)
             let today = Calendar.current.startOfDay(for: Date())
-            runtime.selectDay(today.addingTimeInterval(-86_400))
+            runtime.selectDay(Calendar.current.date(byAdding: .day, value: -1, to: today)!)
             XCTAssertTrue(runtime.isLoadingDayOverview)
             try waitUntil { !runtime.isLoadingDayOverview }
             XCTAssertTrue(runtime.dayOverview != nil || runtime.dayOverviewError != nil)
@@ -271,7 +271,7 @@
             defer { try? FileManager.default.removeItem(at: container) }
             let runtime = makeRuntime(container: container)
             runtime.configure(deviceID: DeviceIdentityInfo.unavailableDeviceID)
-            runtime.selectDay(Calendar.current.startOfDay(for: Date()).addingTimeInterval(-86_400))
+            runtime.selectDay(Calendar.current.date(byAdding: .day, value: -1, to: Calendar.current.startOfDay(for: Date()))!)
             XCTAssertFalse(runtime.isLoadingDayOverview)
             XCTAssertEqual(runtime.dayOverviewBuildCountForTesting, 0)
         }
@@ -284,11 +284,11 @@
             let release = DispatchSemaphore(value: 0)
             runtime.blockQueueForTesting(reads: true, until: release)
             let today = Calendar.current.startOfDay(for: Date())
-            for offset in 1...3 { runtime.selectDay(today.addingTimeInterval(Double(-offset) * 86_400)) }
+            for offset in 1...3 { runtime.selectDay(Calendar.current.date(byAdding: .day, value: -offset, to: today)!) }
             release.signal()
             try waitUntil { !runtime.isLoadingDayOverview }
             XCTAssertEqual(runtime.dayOverviewBuildCountForTesting, 1)
-            XCTAssertEqual(runtime.selectedDay, Calendar.current.startOfDay(for: today.addingTimeInterval(-3 * 86_400)))
+            XCTAssertEqual(runtime.selectedDay, Calendar.current.date(byAdding: .day, value: -3, to: today)!)
         }
 
         func testFailedDisconnectKeepsAutomaticRecapsAndFreesTheCodexHome() throws {

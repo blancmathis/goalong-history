@@ -1920,7 +1920,7 @@
             XCTAssertTrue(revealedFiles.isEmpty)
 
             runtime.beginRunForTesting(streamed: "old-day-preview")
-            runtime.selectDay(runtime.selectedDay.addingTimeInterval(86_400))
+            runtime.selectDay(Calendar.current.date(byAdding: .day, value: 1, to: runtime.selectedDay)!)
             XCTAssertFalse(runtime.hasActiveRunForTesting)
             XCTAssertFalse(runtime.isGenerating)
             XCTAssertTrue(runtime.streamedMarkdown.isEmpty)
@@ -1999,7 +1999,7 @@
             )
             runtime.automaticRecapsEnabled = true
             runtime.start()
-            let day = Calendar.current.startOfDay(for: Date()).addingTimeInterval(-86_400)
+            let day = Calendar.current.date(byAdding: .day, value: -1, to: Calendar.current.startOfDay(for: Date()))!
             for _ in 0..<4 {
                 runtime.scheduleAutomaticRetryForTesting(
                     for: day,

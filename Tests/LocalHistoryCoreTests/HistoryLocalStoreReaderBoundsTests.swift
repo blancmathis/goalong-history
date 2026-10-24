@@ -64,7 +64,7 @@ final class HistoryLocalStoreReaderBoundsTests: XCTestCase {
             let issue = loaded.issues.first { $0.path.hasSuffix("memories/2027-01-15.json") }
             XCTAssertNotNil(issue)
             // The size bound must be what rejected it, not a JSON decode failure on the zero bytes.
-            XCTAssertTrue(issue?.message.contains("exceedsLimit") ?? false, issue?.message ?? "")
+            XCTAssertTrue(issue?.message.contains("exceeds the 16777216-byte safety limit") ?? false, issue?.message ?? "")
         }
     }
 }
