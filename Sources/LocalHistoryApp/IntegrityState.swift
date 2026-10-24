@@ -216,7 +216,8 @@
         /// The checkpoint is redundant: startup rebuilds a missing, torn or older one from the
         /// journal tails, without an integrity alarm. A barrier is enough because it is written
         /// only after its journal reached its own barrier (events) or full sync (seals), so it can
-        /// never become durable ahead of them; the next seal's full sync flushes it to the drive.
+        /// never become durable ahead of them. The next full sync (normally the next seal) flushes
+        /// it; until then a power loss leaves an older one, which startup rebuilds from the tails.
         static let checkpointSync = DurableSync.Kind.barrier
 
         private static func persistDurably(_ data: Data, to fileURL: URL) throws {
