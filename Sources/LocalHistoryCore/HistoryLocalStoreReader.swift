@@ -1250,7 +1250,8 @@ public struct HistoryLocalStoreReader {
                     HistoryLoadIssue(
                         path: captureHealthFile.path,
                         line: nil,
-                        message: "Could not decode capture health: \(error)"
+                        message:
+                            "Could not decode capture health: \((error as? LocalizedError)?.errorDescription ?? "\(error)")"
                     )
                 ]
             )
