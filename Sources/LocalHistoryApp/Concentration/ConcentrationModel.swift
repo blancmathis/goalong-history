@@ -224,6 +224,11 @@ struct FocusCommitment: Codable, Equatable, Identifiable {
     var createdAt: Date
     var edits: [Edit] = []
     var result: FocusCommitmentResult?
+    /// Wall and continuous time at creation: the free window closes after real elapsed time even if the
+    /// wall clock is set back in the same boot (T-044 C1-02). nil in documents of older builds.
+    var createdClock: BlockingClockState? = nil
+    /// First moment the free window was seen closed. Set once, never cleared: a clock set back cannot reopen it.
+    var lockedAt: Date? = nil
     static func validTarget(_ target: Int, kind: Kind, period: FocusCommitmentPeriod.Kind) -> Bool {
         switch (kind, period) {
         case (.work, .day): return (30...960).contains(target) && target % 15 == 0

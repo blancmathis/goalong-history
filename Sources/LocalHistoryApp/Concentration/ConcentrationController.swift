@@ -61,6 +61,8 @@ struct FocusPanel: Equatable {
 
     private let store: FocusStore
     private let clock: () -> Date
+    private let continuous: () -> Double
+    private let boot: () -> String
     private let calendar: Calendar
     private let blocking: () -> BlockingController?
     private let audio: FocusSessionAudio
@@ -109,8 +111,9 @@ struct FocusPanel: Equatable {
     }
 
     init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
-         blocking: @escaping () -> BlockingController? = { nil }, audio: FocusSessionAudio = NoOpFocusSessionAudio(), runsTimers: Bool = false) throws {
-        self.store = store; self.clock = clock; self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
+         blocking: @escaping () -> BlockingController? = { nil }, audio: FocusSessionAudio = NoOpFocusSessionAudio(), runsTimers: Bool = false,
+         continuous: @escaping () -> Double = BlockingClock.continuous, boot: @escaping () -> String = BlockingClock.bootID) throws {
+        self.store = store; self.clock = clock; self.continuous = continuous; self.boot = boot; self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
         let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day
         status = FocusStatus(since: clock()); plan = FocusPlan(day: day); promptState = FocusPromptState(day: day)
         try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
@@ -654,17 +657,30 @@ extension ConcentrationController {
     var todayCommitment: FocusCommitmentCard? { commitmentCards.first { $0.commitment.period == .init(kind: .day, key: currentDay) } }
     var weekCommitment: FocusCommitmentCard? { commitmentCards.first { $0.commitment.period == .init(kind: .week, key: FocusCalendar.weekKey(clock(), calendar: calendar)) } }
     func commitCheck(_ value: FocusCommitment, replacing old: FocusCommitment) -> FocusCommitRule.Check {
-        FocusCommitRule.check(old: old, new: value, now: clock(), calendar: calendar)
+        FocusCommitRule.check(old: old, new: value, now: clock(), clock: clockState(), calendar: calendar)
+    }
+    private func clockState() -> BlockingClockState { .init(wall: clock(), continuous: continuous(), boot: boot()) }
+    /// Persists `lockedAt` on every commitment whose free window is seen closed (T-044 C1-02).
+    private func latchCommitmentLocks() throws {
+        let now = clock(), state = clockState()
+        var next = commitments
+        for i in next.indices where next[i].result == nil && next[i].lockedAt == nil {
+            guard let deadline = FocusCommitRule.editUntil(next[i], calendar: calendar),
+                  FocusCommitRule.windowClosed(next[i], deadline: deadline, now: now, clock: state) else { continue }
+            next[i].lockedAt = now
+        }
+        if next != commitments { try saveCommitmentValues(next) }
     }
     @discardableResult func setCommitment(period: FocusCommitmentPeriod, kind: FocusCommitment.Kind, target: Int,
                                          task: String? = nil, stake: FocusStake? = nil) throws -> FocusCommitment {
-        try admit()
+        try admit(); try latchCommitmentLocks()
         let old = commitments.first { $0.period == period }
         var value = FocusCommitment(id: old?.id ?? UUID(), period: period, kind: kind, target: target, task: task, stake: stake,
-                                    createdAt: old?.createdAt ?? clock(), edits: old?.edits ?? [], result: old?.result)
+                                    createdAt: old?.createdAt ?? clock(), edits: old?.edits ?? [], result: old?.result,
+                                    createdClock: old == nil ? clockState() : old?.createdClock, lockedAt: old?.lockedAt)
         guard value.valid else { throw FocusFailure.invalidArgument }
         if let old {
-            if case .locked = FocusCommitRule.check(old: old, new: value, now: clock(), calendar: calendar) { throw FocusFailure.locked }
+            if case .locked = FocusCommitRule.check(old: old, new: value, now: clock(), clock: clockState(), calendar: calendar) { throw FocusFailure.locked }
             if old == value { return old }
             value.edits.append(.init(at: clock(), target: target, stake: stake))
             guard value.valid else { throw FocusFailure.invalidArgument }
@@ -677,9 +693,9 @@ extension ConcentrationController {
         measurementRefresh?(); return value
     }
     func deleteCommitment(period: FocusCommitmentPeriod) throws {
-        try admit()
+        try admit(); try latchCommitmentLocks()
         guard let old = commitments.first(where: { $0.period == period }) else { throw FocusFailure.notFound }
-        guard FocusCommitRule.check(old: old, new: nil, now: clock(), calendar: calendar) == .free else { throw FocusFailure.locked }
+        guard FocusCommitRule.check(old: old, new: nil, now: clock(), clock: clockState(), calendar: calendar) == .free else { throw FocusFailure.locked }
         try saveCommitmentValues(commitments.filter { $0.id != old.id }); refreshCommitmentCards()
     }
     func useCommitmentJoker(period: FocusCommitmentPeriod) throws { try resolveCommitment(period: period, declare: false) }
@@ -782,6 +798,7 @@ extension ConcentrationController {
     }
     private func refreshCommitmentCards() {
         do {
+            try latchCommitmentLocks()
             let day = FocusCommitmentPeriod(kind: .day, key: FocusCalendar.dayKey(clock(), calendar: calendar))
             let week = FocusCommitmentPeriod(kind: .week, key: FocusCalendar.weekKey(clock(), calendar: calendar))
             let series = FocusJokerSettings(day: FocusCommitmentRules.series(commitments, kind: .day, calendar: calendar), week: FocusCommitmentRules.series(commitments, kind: .week, calendar: calendar))
@@ -795,7 +812,7 @@ extension ConcentrationController {
                 reserves[reserveKey] = jokers
                 let limit = value.period.kind == .day ? settings.limits.dailyHours : settings.limits.weeklyHours
                 let editMode: String
-                switch FocusCommitRule.check(old: value, new: value, now: clock(), calendar: calendar) {
+                switch FocusCommitRule.check(old: value, new: value, now: clock(), clock: clockState(), calendar: calendar) {
                 case .free: editMode = "free"
                 case .harderOnly: editMode = "harderOnly"
                 case .locked: editMode = "locked"
@@ -803,7 +820,7 @@ extension ConcentrationController {
                 return FocusCommitmentCard(commitment: value, progress: try commitmentProgress(value), series: value.period.kind == .day ? series.day : series.week,
                     jokersLeft: jokers, canUseJoker: open && jokers > 0, canDeclare: open && FocusCommitmentRules.mayDeclare(value), exitUntil: end,
                     limitHours: (value.kind == .work || value.kind == .task) && limit.map({ value.target > $0 * 60 }) == true ? limit : nil,
-                    editMode: editMode, editUntil: max(value.createdAt.addingTimeInterval(600), value.period.interval(calendar: calendar)!.start))
+                    editMode: editMode, editUntil: FocusCommitRule.editUntil(value, calendar: calendar)!)
             }
             if commitmentSeries != series { commitmentSeries = series }; if commitmentJokersLeft != left { commitmentJokersLeft = left }
             if commitmentCards != cards { commitmentCards = cards }; lastCommitmentCardRefresh = clock()

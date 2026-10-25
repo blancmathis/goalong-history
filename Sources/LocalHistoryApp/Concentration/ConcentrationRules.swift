@@ -215,10 +215,11 @@ enum FocusLimitRules {
 
 enum FocusCommitRule {
     enum Check: Equatable { case free, harderOnly, locked(String) }
-    static func check(old: FocusCommitment, new: FocusCommitment?, now: Date, calendar: Calendar = .current) -> Check {
+    static func check(old: FocusCommitment, new: FocusCommitment?, now: Date, clock: BlockingClockState? = nil,
+                      calendar: Calendar = .current) -> Check {
         guard old.result == nil else { return .locked("Cet engagement est déjà réglé.") }
-        guard let interval = old.period.interval(calendar: calendar) else { return .locked("Période invalide.") }
-        if now < max(old.createdAt.addingTimeInterval(600), interval.start) { return .free }
+        guard let deadline = editUntil(old, calendar: calendar) else { return .locked("Période invalide.") }
+        if !windowClosed(old, deadline: deadline, now: now, clock: clock) { return .free }
         guard let new else { return .locked("La fenêtre de modification est terminée.") }
         guard new.id == old.id, new.period == old.period, new.kind == old.kind, new.task == old.task,
               new.createdAt == old.createdAt, new.target >= old.target else { return .locked("L’engagement peut seulement devenir plus exigeant.") }
@@ -227,6 +228,18 @@ enum FocusCommitRule {
                   (next.minute ?? -1) >= (stake.minute ?? 1440) else { return .locked("L’enjeu ne peut pas être réduit.") }
         }
         return .harderOnly
+    }
+    static func editUntil(_ value: FocusCommitment, calendar: Calendar = .current) -> Date? {
+        value.period.interval(calendar: calendar).map { max(value.createdAt.addingTimeInterval(600), $0.start) }
+    }
+    /// The free window closes once and for good (T-044 C1-02): by the wall clock, by continuous time since
+    /// creation in the same boot (the anchor of L-05), or by a latched `lockedAt`. Setting the clock back
+    /// never reopens it. A forward jump closes it early only when the wall clock passes the deadline, the
+    /// stricter side, like an L-05 compensation that only makes a block longer.
+    static func windowClosed(_ value: FocusCommitment, deadline: Date, now: Date, clock: BlockingClockState?) -> Bool {
+        if value.lockedAt != nil || now >= deadline { return true }
+        guard let anchor = value.createdClock, let clock, anchor.boot == clock.boot, clock.continuous >= anchor.continuous else { return false }
+        return anchor.wall.addingTimeInterval(clock.continuous - anchor.continuous) >= deadline
     }
 }
 
