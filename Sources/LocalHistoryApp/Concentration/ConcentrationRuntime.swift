@@ -130,7 +130,6 @@ import LocalHistoryQueryCLI
         let verdicts = GoalongWorkStore.shared.verdicts, hasDefinition = !GoalongWorkStore.shared.definition.isEmpty
         let generation = measurementGeneration
         measurementTask = Task { [weak self, weak controller] in
-            let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.timeZone = calendar.timeZone
             var measured: [String: GoalongLocalAnalytics.Day] = [:]
             do {
                 let week = FocusCalendar.weekInterval(now, calendar: calendar).start
@@ -159,7 +158,7 @@ import LocalHistoryQueryCLI
                 for day in try store.planDays().reversed() {
                     try Task.checkCancellation()
                     if !canRead { break }
-                    guard let plan = try store.plan(day), plan.items.contains(where: { $0.estimateMinutes != nil }), let date = f.date(from: day) else { continue }
+                    guard let plan = try store.plan(day), plan.items.contains(where: { $0.estimateMinutes != nil }), let date = GoalongDayParser.date(day, timeZone: calendar.timeZone) else { continue }
                     let value: GoalongLocalAnalytics.Day
                     if let cached = measured[day] { value = cached }
                     else { value = try await GoalongAnalyticsReader.shared.focusDay(date, verdicts: verdicts); measured[day] = value }
@@ -293,6 +292,9 @@ import LocalHistoryQueryCLI
         guard let card = controller.commitmentCards.first(where: { $0.commitment.period == period }) else { return NSNull() }
         var object = try JSONSerialization.jsonObject(with: FocusJSON.encode(card.commitment)) as! [String: Any]
         object["createdClock"] = nil; object["lockedAt"] = nil   // internal lock state (T-044 C1-02), not part of the CLI contract
+        if var result = object["result"] as? [String: Any] {   // same for the exit lock (T-044 C2-02)
+            result["settledClock"] = nil; result["exitClosedAt"] = nil; object["result"] = result
+        }
         object["progress"] = try JSONSerialization.jsonObject(with: FocusJSON.encode(card.progress))
         object["series"] = card.series; object["jokersLeft"] = card.jokersLeft
         object["canUseJoker"] = card.canUseJoker; object["canDeclare"] = card.canDeclare

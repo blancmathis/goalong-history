@@ -204,6 +204,11 @@ struct FocusCommitmentResult: Codable, Equatable {
     var stake = Stake()
     /// Keep the source label truthful if the work definition changes after settlement.
     var usesActiveTime: Bool?
+    /// Wall and continuous time at settle: the exits close after real elapsed time even if the wall clock
+    /// is set back in the same boot (T-044 C2-02). nil in documents of older builds.
+    var settledClock: BlockingClockState? = nil
+    /// First moment the exits were seen closed. Set once, never cleared: a clock set back cannot reopen them.
+    var exitClosedAt: Date? = nil
     var valid: Bool {
         measured.isFinite && measured >= 0 && unmeasuredMinutes.isFinite && unmeasuredMinutes >= 0 && stake.valid
             && (!declared || outcome == .held) && !(declared && jokerAt != nil)
