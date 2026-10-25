@@ -4,7 +4,8 @@ import LocalHistoryCore
 @testable import LocalHistoryQueryCLI
 
 final class GoalongConversationEvidenceTests: XCTestCase {
-    let start = Calendar.current.startOfDay(for: Date())
+    // Computed per use: XCTest builds every case at suite start, which can be before midnight.
+    var start: Date { Calendar.current.startOfDay(for: Date()) }
     func page(id: String = "one", role: String = "user", status: String = "available", next: Int? = nil, truncated: Bool = false) throws -> Data {
         try JSONSerialization.data(withJSONObject: ["status": status, "nextCandidateOffset": next as Any? ?? NSNull(), "issues": [], "conversations": [[
             "id": id, "providerName": "Agent", "title": "Projet Atlas", "readStatus": "available", "messagesTruncated": truncated,
