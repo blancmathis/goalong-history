@@ -116,8 +116,7 @@ public enum GoalongProfileAnalysis {
     }
     public static func prepare(date day: String, timezone: String, evidence: [Evidence], policy: Policy, selected: [String], includeConversations: Bool = false) throws -> Request {
         try policy.validate()
-        let df = DateFormatter(); df.locale = Locale(identifier: "en_US_POSIX"); df.dateFormat = "yyyy-MM-dd"; df.isLenient = false
-        guard let d = df.date(from: day), df.string(from: d) == day, TimeZone(identifier: timezone) != nil,
+        guard GoalongDayParser.date(day) != nil, TimeZone(identifier: timezone) != nil,
               !selected.isEmpty, selected.count <= 10, Set(selected).count == selected.count, Set(selected).isSubset(of: Set(modules)),
               !evidence.isEmpty, evidence.count <= 1500 else { throw invalid("Choisissez une période, des preuves et au moins une rubrique valide.") }
         for e in evidence {

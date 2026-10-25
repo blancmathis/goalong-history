@@ -1,6 +1,7 @@
 #if os(macOS)
     import Darwin
     import Foundation
+    import LocalHistoryCore
 
     /// Removes only old, hidden atomic-write artifacts whose names are owned by Goalong.
     /// It never opens transcript/event bodies and never traverses user-source directories.
@@ -114,16 +115,7 @@
                     })
                 else { return false }
 
-                var calendar = Calendar(identifier: .gregorian)
-                calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-                let formatter = DateFormatter()
-                formatter.calendar = calendar
-                formatter.locale = Locale(identifier: "en_US_POSIX")
-                formatter.timeZone = calendar.timeZone
-                formatter.dateFormat = "yyyy-MM-dd"
-                formatter.isLenient = false
-                guard let date = formatter.date(from: day) else { return false }
-                return formatter.string(from: date) == day
+                return GoalongDayParser.date(day, timeZone: TimeZone(secondsFromGMT: 0)!) != nil
             }
         }
 

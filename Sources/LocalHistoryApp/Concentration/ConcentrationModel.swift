@@ -147,9 +147,7 @@ enum FocusValidation {
             && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
     }
     static func day(_ value: String) -> Bool {
-        guard value.count == 10 else { return false }
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
-        return f.date(from: value).map { f.string(from: $0) == value } ?? false
+        GoalongDayParser.date(value) != nil
     }
 }
 typealias FocusCalendar = GoalongFocusCalendar

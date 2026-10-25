@@ -1612,7 +1612,7 @@
 
         private static func isKnownEventFileName(_ name: String) -> Bool {
             guard name.count == 16, name.hasSuffix(".jsonl") else { return false }
-            return dayFormatter.date(from: String(name.prefix(10))) != nil
+            return GoalongDayParser.date(String(name.prefix(10))) != nil
         }
 
         /// Keeps the errno of a failed system call so StorageHealth can tell a full disk
@@ -1719,15 +1719,5 @@
                 }
             }
         }
-
-        private static let dayFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = .current
-            formatter.dateFormat = "yyyy-MM-dd"
-            formatter.isLenient = false
-            return formatter
-        }()
     }
 #endif

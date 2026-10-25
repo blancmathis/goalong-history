@@ -124,9 +124,7 @@ public struct GoalongActivityDayStore: Sendable {
         if foreign {
             guard sourceRevision == nil, let timeZone = TimeZone(identifier: e.timeZone) else { throw Failure.invalidSummary }
             zone.timeZone = timeZone
-            let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.timeZone = timeZone
-            f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
-            guard let parsed = f.date(from: key) else { throw Failure.invalidSummary }
+            guard let parsed = GoalongDayParser.date(key, timeZone: timeZone) else { throw Failure.invalidSummary }
             start = zone.startOfDay(for: parsed)
         } else {
             start = calendar.startOfDay(for: day)
@@ -485,12 +483,10 @@ public struct GoalongActivityDayStore: Sendable {
         guard lstat(folder.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else { throw Failure.unsafePath }
         let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
         guard names.count <= 20_000 else { throw Failure.unavailable }
-        let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.timeZone = calendar.timeZone
-        f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
         return names.compactMap { name in
             guard name.hasSuffix(".jsonl"), name.count == 16 else { return nil }
             let key = String(name.prefix(10))
-            guard let date = f.date(from: key), Self.dayKey(date, calendar: calendar) == key,
+            guard let date = GoalongDayParser.date(key, timeZone: calendar.timeZone), Self.dayKey(date, calendar: calendar) == key,
                   date < calendar.startOfDay(for: now) else { return nil }
             return date
         }.sorted()

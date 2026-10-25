@@ -220,12 +220,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
                 draft.includeApplications = true
                 draft.applicationIDs = Set(value.devices.filter { draft.deviceIDs.contains($0.id) }.flatMap { $0.applications.map(\.id) })
                 // Keep the selected calendar date when its archive uses another zone.
-                let dateParser = DateFormatter()
-                dateParser.calendar = Calendar(identifier: .gregorian)
-                dateParser.locale = Locale(identifier: "en_US_POSIX")
-                dateParser.dateFormat = "yyyy-MM-dd"
-                dateParser.timeZone = TimeZone(identifier: value.timezone)
-                let sameCalendarDate = dateParser.date(from: snapshot.day)
+                let sameCalendarDate = GoalongDayParser.date(snapshot.day, timeZone: TimeZone(identifier: value.timezone) ?? NSTimeZone.default)
                 draft.timezone = value.timezone
                 if let sameCalendarDate { draft.date = sameCalendarDate }
                 needsInitialSuggestion = false
