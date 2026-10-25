@@ -210,7 +210,11 @@ the card shows when it was set.
 start of its period. After that, only harder: raise `target`, add a stake list, move `until` later.
 Delete and any easier change answer `locked`, in the page and in the CLI. One pure function
 (`FocusCommitRule.check(old, new, now)`) returns `free`, `harderOnly` or `locked` with the reason;
-the UI greys controls from it.
+the UI greys controls from it. The free window closes once and for good: by the wall clock, by
+continuous time since creation in the same boot (`createdClock`, the L-05 anchor), and a stored
+`lockedAt` once seen closed. Setting the Mac clock back never reopens it; a forward jump closes it
+only when the wall clock passes the deadline (the stricter side). Limit: a rollback across a reboot
+before the app ever saw the deadline falls back to the wall clock.
 
 **Stake** (optional; offered only when Blocking is on and has lists): one or more Blocking lists and
 an end time `until` (`HH:mm`, default 12:00; « toute la journée » = 23:59). When the result is

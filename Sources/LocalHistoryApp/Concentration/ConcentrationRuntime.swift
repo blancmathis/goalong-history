@@ -292,6 +292,7 @@ import LocalHistoryQueryCLI
     private func commitmentObject(_ period: FocusCommitmentPeriod, controller: ConcentrationController) throws -> Any {
         guard let card = controller.commitmentCards.first(where: { $0.commitment.period == period }) else { return NSNull() }
         var object = try JSONSerialization.jsonObject(with: FocusJSON.encode(card.commitment)) as! [String: Any]
+        object["createdClock"] = nil; object["lockedAt"] = nil   // internal lock state (T-044 C1-02), not part of the CLI contract
         object["progress"] = try JSONSerialization.jsonObject(with: FocusJSON.encode(card.progress))
         object["series"] = card.series; object["jokersLeft"] = card.jokersLeft
         object["canUseJoker"] = card.canUseJoker; object["canDeclare"] = card.canDeclare
