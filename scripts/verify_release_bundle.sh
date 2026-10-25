@@ -16,7 +16,7 @@ test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO")" = "$PR
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO")" = "$PRODUCT"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO")" = "$EXPECTED_VERSION"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")" = "$EXPECTED_BUILD"
-for locale in en fr; do
+for locale in fr; do
   STRINGS="$APP/Contents/Resources/$locale.lproj/InfoPlist.strings"
   test "$(plutil -extract CFBundleDisplayName raw -o - "$STRINGS")" = "$PRODUCT"
   test "$(plutil -extract CFBundleName raw -o - "$STRINGS")" = "$PRODUCT"

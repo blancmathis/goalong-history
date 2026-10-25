@@ -63,7 +63,7 @@ fi
   "$INFO_PLIST"
 /usr/bin/plutil -lint "$INFO_PLIST" >/dev/null
 
-for locale in en fr; do
+for locale in fr; do
   locale_dir="$RESOURCES/$locale.lproj"
   mkdir -p "$locale_dir"
   cat > "$locale_dir/InfoPlist.strings" <<STRINGS
@@ -106,7 +106,7 @@ fi
 
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")" = "$DISPLAY_NAME"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")" = "$BUNDLE_NAME"
-for locale in en fr; do
+for locale in fr; do
   localized="$RESOURCES/$locale.lproj/InfoPlist.strings"
   test "$(/usr/bin/plutil -extract CFBundleDisplayName raw -o - "$localized")" = "$DISPLAY_NAME"
   test "$(/usr/bin/plutil -extract CFBundleName raw -o - "$localized")" = "$BUNDLE_NAME"

@@ -24,6 +24,16 @@ if /usr/bin/grep -Eq 'APPLE_API_|notarytool|stapler' "$WORKFLOW" "$STABLE_WORKFL
   exit 1
 fi
 
+# The interface is French only: an en.lproj in the app bundle makes AppKit show its
+# injected menu items (Window menu...) in English on English Macs.
+for bundle_script in build_app.sh verify_release_bundle.sh; do
+  if /usr/bin/grep -Eq 'for locale in .*\ben\b' "$ROOT_DIR/scripts/$bundle_script"; then
+    echo "$bundle_script still ships or requires an English localization (en.lproj)." >&2
+    exit 1
+  fi
+  /usr/bin/grep -Fq 'for locale in fr; do' "$ROOT_DIR/scripts/$bundle_script"
+done
+
 /usr/bin/grep -Fq 'The public artifact does not have Goalong’s pinned stable signing identity.' "$INSTALLER"
 /usr/bin/grep -Fq 'Never disable Gatekeeper globally' "$INSTALLER"
 /usr/bin/grep -Fq 'Migrating from an old ad-hoc build to the pinned stable identity' "$INSTALLER"
