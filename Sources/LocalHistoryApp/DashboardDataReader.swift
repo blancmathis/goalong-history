@@ -2446,12 +2446,7 @@
                 }
             }
 
-            let formatter = DateFormatter()
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = .current
-            formatter.dateFormat = "yyyy-MM-dd"
-            return names.compactMap(formatter.date(from:)).sorted(by: >)
+            return names.compactMap { GoalongDayParser.date($0) }.sorted(by: >)
         }
 
         private func dayKey(for date: Date) -> String {

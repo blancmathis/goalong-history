@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import LocalHistoryCore
 
 public enum GoalongFocusError: String, Error, CustomStringConvertible {
     case appNotRunning, moduleDisabled, invalidArgument, locked, notFound, storageFailed, tooManyWatchers
@@ -47,8 +48,7 @@ public enum GoalongFocusCLI {
     }
     private static func day(_ value: String) -> Bool {
         if value == "today" || value == "yesterday" { return true }
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
-        return value.count == 10 && f.date(from: value).map { f.string(from: $0) == value } == true
+        return GoalongDayParser.date(value) != nil
     }
     public static func parse(command: String, arguments: [String], readFile: (String) throws -> Data = readInput) throws -> GoalongFocusRequest {
         guard commands.contains(command), arguments.count <= 420, arguments.allSatisfy({ text($0, max: 4096) }) else { throw GoalongFocusError.invalidArgument }

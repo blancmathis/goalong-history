@@ -1042,11 +1042,7 @@ public enum GoalongQueryCLI {
                   let zone = TimeZone(identifier: zoneName) else {
                 throw CLIError.usage("Use \(command) --file PATH --from YYYY-MM-DD --to YYYY-MM-DD [--groups sleep,heart,activity,workouts] [--timezone IANA].")
             }
-            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.calendar = Calendar(identifier: .gregorian); formatter.timeZone = zone
-            formatter.dateFormat = "yyyy-MM-dd"; formatter.isLenient = false
-            guard let first = formatter.date(from: from), let last = formatter.date(from: through),
-                  formatter.string(from: first) == from, formatter.string(from: last) == through else {
+            guard let first = GoalongDayParser.date(from, timeZone: zone), let last = GoalongDayParser.date(through, timeZone: zone) else {
                 throw CLIError.usage("Health dates must use YYYY-MM-DD.")
             }
             let result = try GoalongHealthImport.read(file: expandedFileURL(path), options: .init(from: first, through: last, timezone: zone, groups: groups))
@@ -3949,13 +3945,7 @@ public enum GoalongQueryCLI {
         case "yesterday": return calendar.date(byAdding: .day, value: -1, to: today)!
         default: break
         }
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.isLenient = false
-        guard let value = formatter.date(from: raw), formatter.string(from: value) == raw else {
+        guard let value = GoalongDayParser.date(raw) else {
             throw CLIError.invalidDate(raw)
         }
         return Calendar.current.startOfDay(for: value)
