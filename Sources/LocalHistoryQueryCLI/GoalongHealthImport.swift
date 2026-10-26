@@ -97,6 +97,10 @@ private final class HealthFileStream: InputStream {
         let fd = Darwin.open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
         guard fd >= 0 else { throw GoalongHealthImport.invalid("Le fichier Santé sélectionné ne peut pas être ouvert.") }
         var info = stat()
+        if fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_size == 0 {
+            Darwin.close(fd)
+            throw GoalongHealthImport.invalid("Le fichier Santé sélectionné est vide. Choisissez l’export.xml complet de l’app Santé.")
+        }
         guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
               info.st_size > 0, info.st_size <= 2 * 1024 * 1024 * 1024 else {
             Darwin.close(fd)

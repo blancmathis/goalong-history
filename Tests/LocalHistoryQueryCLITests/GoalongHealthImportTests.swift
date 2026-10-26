@@ -124,6 +124,31 @@ final class GoalongHealthImportTests: XCTestCase {
         XCTAssertEqual(try metrics(result)["steps"], 100)
         XCTAssertEqual(result.warnings.count, 2)
     }
+    func testEmptyHealthFileSaysItIsEmpty() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("export.xml")
+        try Data().write(to: file)
+        XCTAssertThrowsError(try GoalongHealthImport.read(file: file, options: options())) {
+            XCTAssertTrue(goalongUserMessage($0).contains("vide"), goalongUserMessage($0))
+        }
+    }
+    func testOutOfSpaceWriteErrorsBecomeTheFrenchDiskFullMessage() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let result = try GoalongHealthImport.read(data: xml(record("HKQuantityTypeIdentifierStepCount", value: "100")), options: options())
+        let posix = NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))
+        let injected: [Error] = [posix, CocoaError(.fileWriteOutOfSpace),
+                                 CocoaError(.fileWriteUnknown, userInfo: [NSUnderlyingErrorKey: posix])]
+        for failure in injected {
+            XCTAssertThrowsError(try GoalongHealthArchive.save(result, root: root, write: { _, _ in throw failure })) {
+                XCTAssertTrue(goalongUserMessage($0).contains("disque est plein"), goalongUserMessage($0))
+            }
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("health").path), [])
+    }
     func testProtectedArchiveReplacesOnlySelectedHealthDays() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
