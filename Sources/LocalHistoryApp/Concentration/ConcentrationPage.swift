@@ -1322,6 +1322,7 @@ enum FocusUIError {
         case .invalidArgument: return "Vérifiez le texte et les durées."
         case .notFound: return "Cet élément n’existe plus."
         case .planFull: return "Le plan compte déjà dix tâches."
+        case .itemFinished: return "Une tâche terminée ou abandonnée ne se déplace pas. Rouvrez-la d’abord."
         case .storageFailed: return "Enregistrement impossible. Les données déjà enregistrées restent intactes ; Goalong réessaie chaque minute."
         case .moduleDisabled: return "Activez Blocage dans Réglages › Modules pour bloquer pendant une séance."
         case .appNotRunning: return "Goalong ne répond pas."
