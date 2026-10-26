@@ -108,17 +108,17 @@ private final class BlockingFreezePanel: NSPanel {
     private func currentLoginStatus() -> SMAppService.Status {
         guard let status = loginStatus else {
             let status = SMAppService.mainApp.status
-            loginStatus = status; loginStatusRead = Date()
+            loginStatus = status; loginStatusRead = Date() // wall: login-status cache
             return status
         }
-        if Date().throttleElapsed(since: loginStatusRead) > 30, !loginStatusReading {
+        if Date().throttleElapsed(since: loginStatusRead) > 30, !loginStatusReading { // wall: login-status cache
             loginStatusReading = true
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let next = SMAppService.mainApp.status
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.loginStatusReading = false
-                    if self.loginStatus != nil { self.loginStatus = next; self.loginStatusRead = Date() }
+                    if self.loginStatus != nil { self.loginStatus = next; self.loginStatusRead = Date() } // wall: login-status cache
                 }
             }
         }
@@ -270,7 +270,7 @@ private final class BlockingFreezePanel: NSPanel {
             if !wasFreezing { lockSession() }
             let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self, self.freeze?.end ?? .distantPast > Date() else { return }
+                    guard let self, self.freeze?.end ?? .distantPast > Date() else { return } // wall: the controller sends the freeze in the wall frame
                     if ForegroundSessionAvailability.isAvailable() { self.lockSession() }
                 }
             }
@@ -370,7 +370,7 @@ private final class BlockingFreezePanel: NSPanel {
         guard accessibilityAvailable, let application = NSRunningApplication(processIdentifier: target.pid),
               application.bundleIdentifier == target.bundleIdentifier, !application.isTerminated else { return }
         invalidateSiteActions()
-        guard let deadline = siteActionDeadline?(target), deadline > Date() else { return }
+        guard let deadline = siteActionDeadline?(target), deadline > Date() else { return } // wall: the controller sends the deadline in the wall frame
         let rulePermit = tabRuleAuthority.permit(until: deadline)
         let permit = AXRequestPermit(); tabPermit = permit
         tabIsRenounce = renounce
@@ -383,7 +383,7 @@ private final class BlockingFreezePanel: NSPanel {
             guard let self, permit.isValid else { completion(false); return }
             let veiled = self.veilTarget.map {
                 $0.pid == target.pid && $0.windowBoundary == target.windowBoundary && $0.url == target.url
-                    && $0.privateWindow == target.privateWindow && (self.veilPresentation?.end ?? .distantPast) > Date()
+                    && $0.privateWindow == target.privateWindow && (self.veilPresentation?.end ?? .distantPast) > Date() // wall: the controller sends the veil in the wall frame
             } ?? false
             let renounced = self.renouncedTarget.map {
                 $0.pid == target.pid && $0.windowBoundary == target.windowBoundary && $0.url == target.url

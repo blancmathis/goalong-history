@@ -13,7 +13,8 @@ import SwiftUI
     private var pulse = 0
     private var tick: Timer?
 
-    init(clock: @escaping () -> Date = Date.init, input: @escaping () -> BlockingTimerInput?) {
+    init(clock: @escaping () -> Date = Date.init, // wall: tests; the app passes the controller's trusted now
+         input: @escaping () -> BlockingTimerInput?) {
         self.clock = clock; self.input = input
     }
 

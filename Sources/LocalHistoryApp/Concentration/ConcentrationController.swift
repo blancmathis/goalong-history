@@ -95,13 +95,15 @@ struct FocusPanel: Equatable {
     var hasTimer: Bool { timer != nil }
     var hasLockedSessionBlock: Bool { hasLockedPhaseBlock }
     var hasLockedBlock: Bool {
-        hasLockedPhaseBlock || blocking()?.activeBlocks.contains { block in
-            if case .commitment = block.origin { return block.end > clock() }; return false
-        } == true
+        guard !hasLockedPhaseBlock else { return true }
+        guard let b = blocking() else { return false }
+        return b.activeBlocks.contains { block in
+            if case .commitment = block.origin { return block.end > b.now }; return false
+        }
     }
     private var hasLockedPhaseBlock: Bool {
-        guard let id = phaseBlockID else { return false }
-        return blocking()?.activeBlocks.contains { $0.id == id && $0.lock == .locked && $0.end > clock() } == true
+        guard let id = phaseBlockID, let b = blocking() else { return false }
+        return b.activeBlocks.contains { $0.id == id && $0.lock == .locked && $0.end > b.now }
     }
     var blockLists: [BlockList] { blocking()?.lists ?? [] }
     var sessionStartLimitWarnings: [FocusLimitMark] {
@@ -114,7 +116,7 @@ struct FocusPanel: Equatable {
         return (phase.isWork ? "Concentration" : "Pause") + (seconds.map { " \($0 / 60):\(String(format: "%02d", $0 % 60))" } ?? "")
     }
 
-    init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
+    init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent, // wall: the raw clock; stake decisions read `stakeNow()`
          blocking: @escaping () -> BlockingController? = { nil }, audio: FocusSessionAudio = NoOpFocusSessionAudio(), runsTimers: Bool = false,
          continuous: @escaping () -> Double = BlockingClock.continuous, boot: @escaping () -> String = BlockingClock.bootID) throws {
         self.store = store; self.clock = clock; self.continuous = continuous; self.boot = boot; launchClock = .init(wall: clock(), continuous: continuous(), boot: boot()); self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
@@ -519,8 +521,8 @@ struct FocusPanel: Equatable {
         if let value = currentSession {
             var p = FocusPhases.phase(value, at: now)
             // Blocking's clock protection may move a locked deadline. Focus cannot cut it short.
-            if hasLockedPhaseBlock, let id = phaseBlockID, let block = blocking()?.activeBlocks.first(where: { $0.id == id }), p.kind == .ended || phaseKey(p) != phaseBlockKey {
-                p = phase ?? p; p.endsAt = block.end
+            if hasLockedPhaseBlock, let id = phaseBlockID, let b = blocking(), let block = b.activeBlocks.first(where: { $0.id == id }), p.kind == .ended || phaseKey(p) != phaseBlockKey {
+                p = phase ?? p; p.endsAt = b.wallFrame(block.end)
             }
             if p.kind == .ended {
                 do { try finish(value, at: p.startedAt, reason: .completed) } catch {
@@ -560,7 +562,7 @@ struct FocusPanel: Equatable {
         guard !value.blockListIds.isEmpty else { return }
         guard let b = blocking() else { throw FocusFailure.moduleDisabled }
         let key = phaseKey(p)
-        if phaseBlockKey == key, let id = phaseBlockID, b.activeBlocks.contains(where: { $0.id == id && $0.end > clock().addingTimeInterval(p.endsAt == nil ? 20 : 0) }) { return }
+        if phaseBlockKey == key, let id = phaseBlockID, b.activeBlocks.contains(where: { $0.id == id && $0.end > b.now.addingTimeInterval(p.endsAt == nil ? 20 : 0) }) { return }
         if let id = phaseBlockID {
             if hasLockedPhaseBlock { throw FocusFailure.locked }; b.stop(id)
         }
@@ -666,13 +668,13 @@ extension ConcentrationController {
     var todayCommitment: FocusCommitmentCard? { commitmentCards.first { $0.commitment.period == .init(kind: .day, key: currentDay) } }
     var weekCommitment: FocusCommitmentCard? { commitmentCards.first { $0.commitment.period == .init(kind: .week, key: FocusCalendar.weekKey(clock(), calendar: calendar)) } }
     func commitCheck(_ value: FocusCommitment, replacing old: FocusCommitment) -> FocusCommitRule.Check {
-        FocusCommitRule.check(old: old, new: value, now: clock(), clock: clockState(), calendar: calendar)
+        FocusCommitRule.check(old: old, new: value, now: stakeNow(), clock: clockState(), calendar: calendar)
     }
     private func clockState() -> BlockingClockState { .init(wall: clock(), continuous: continuous(), boot: boot()) }
     /// Persists `lockedAt` on every commitment whose free window is seen closed (T-044 C1-02), and
     /// `exitClosedAt` on every missed result whose exits are seen closed (C2-02).
     private func latchCommitmentLocks() throws {
-        let now = clock(), state = clockState()
+        let now = stakeNow(), state = clockState()
         var next = commitments
         for i in next.indices where next[i].result == nil && next[i].lockedAt == nil {
             guard let deadline = FocusCommitRule.editUntil(next[i], calendar: calendar),
@@ -693,7 +695,7 @@ extension ConcentrationController {
                                     createdClock: old == nil ? clockState() : old?.createdClock, lockedAt: old?.lockedAt)
         guard value.valid else { throw FocusFailure.invalidArgument }
         if let old {
-            if case .locked = FocusCommitRule.check(old: old, new: value, now: clock(), clock: clockState(), calendar: calendar) { throw FocusFailure.locked }
+            if case .locked = FocusCommitRule.check(old: old, new: value, now: stakeNow(), clock: clockState(), calendar: calendar) { throw FocusFailure.locked }
             if old == value { return old }
             value.edits.append(.init(at: clock(), target: target, stake: stake))
             guard value.valid else { throw FocusFailure.invalidArgument }
@@ -708,7 +710,7 @@ extension ConcentrationController {
     func deleteCommitment(period: FocusCommitmentPeriod) throws {
         try admit(); try latchCommitmentLocks()
         guard let old = commitments.first(where: { $0.period == period }) else { throw FocusFailure.notFound }
-        guard FocusCommitRule.check(old: old, new: nil, now: clock(), clock: clockState(), calendar: calendar) == .free else { throw FocusFailure.locked }
+        guard FocusCommitRule.check(old: old, new: nil, now: stakeNow(), clock: clockState(), calendar: calendar) == .free else { throw FocusFailure.locked }
         try saveCommitmentValues(commitments.filter { $0.id != old.id }); refreshCommitmentCards()
     }
     func useCommitmentJoker(period: FocusCommitmentPeriod) throws { try resolveCommitment(period: period, declare: false) }
@@ -737,13 +739,26 @@ extension ConcentrationController {
         var retained = values
         try saving { retained = try store.saveCommitments(values) }; commitments = retained
     }
-    private func stakeBlockEnd(_ value: FocusCommitment) -> Date? { blocking()?.activeBlocks.first { $0.id == value.result?.stake.blockId }?.end }
+    /// In the wall frame of this controller: Blocking keeps its ends in its trusted frame.
+    private func stakeBlockEnd(_ value: FocusCommitment) -> Date? {
+        guard let b = blocking() else { return nil }
+        return b.activeBlocks.first { $0.id == value.result?.stake.blockId }.map { b.wallFrame($0.end) }
+    }
     private func exitUntil(_ value: FocusCommitment) -> Date? {
         FocusCommitmentRules.stakeWindow(value, blockEnd: stakeBlockEnd(value), calendar: calendar)
     }
+    /// A running stake block is compared in Blocking's trusted frame (its end with `b.now`), anything else
+    /// in this controller's frame.
     private func exitOpen(_ value: FocusCommitment) -> Bool {
-        FocusCommitmentRules.exitOpen(value, blockEnd: stakeBlockEnd(value), now: clock(), clock: clockState(), calendar: calendar)
+        if let b = blocking(), let block = b.activeBlocks.first(where: { $0.id == value.result?.stake.blockId }) {
+            return FocusCommitmentRules.exitOpen(value, blockEnd: block.end, now: b.now, clock: clockState(), calendar: calendar)
+        }
+        return FocusCommitmentRules.exitOpen(value, blockEnd: nil, now: stakeNow(), clock: clockState(), calendar: calendar)
     }
+    /// The trusted now of stake decisions (T-044 r5, same rule as `BlockingClock.trusted`): the wall clock,
+    /// never earlier than the time proven by continuous time in this boot. A clock set back cannot delay a
+    /// settlement, reopen an exit or an edit. Stored dates stay in the wall frame.
+    private func stakeNow() -> Date { max(clock(), realNow() ?? .distantPast) }
     /// Latest moment proven by continuous time since a stored anchor or the launch of this boot (T-044 C2-02).
     private func realNow() -> Date? {
         let state = clockState()
@@ -777,7 +792,7 @@ extension ConcentrationController {
         do {
             var next = commitments, ids: [UUID] = []
             for i in next.indices where next[i].result == nil {
-                guard let bounds = next[i].period.interval(calendar: calendar), bounds.end <= clock() else { continue }
+                guard let bounds = next[i].period.interval(calendar: calendar), bounds.end <= stakeNow() else { continue }
                 let progress = try commitmentProgress(next[i])
                 next[i].result = FocusCommitmentRules.settle(next[i], progress: progress, at: clock(), blockingOn: blocking() != nil,
                     listIDs: Set(blockLists.map(\.id)), calendar: calendar)
@@ -801,10 +816,10 @@ extension ConcentrationController {
                 let end = FocusCommitmentRules.stakeEnd(stake, settledAt: result.settledAt, calendar: calendar)!
                 if active != nil {
                     if result.stake.at == nil { next[i].result?.stake.at = clock() }
-                } else if result.stake.at == nil || end > clock() {
+                } else if result.stake.at == nil || end > stakeNow() {
                     let ids = stake.listIds.filter { b?.list($0) != nil }
                     let reason: FocusCommitmentResult.Stake.Reason?
-                    if end <= clock() { reason = .late }
+                    if end <= stakeNow() { reason = .late }
                     else if b == nil { reason = .blockingOff }
                     else if ids.isEmpty { reason = .noList }
                     else { reason = nil }
@@ -836,7 +851,7 @@ extension ConcentrationController {
                 reserves[reserveKey] = jokers
                 let limit = value.period.kind == .day ? settings.limits.dailyHours : settings.limits.weeklyHours
                 let editMode: String
-                switch FocusCommitRule.check(old: value, new: value, now: clock(), clock: clockState(), calendar: calendar) {
+                switch FocusCommitRule.check(old: value, new: value, now: stakeNow(), clock: clockState(), calendar: calendar) {
                 case .free: editMode = "free"
                 case .harderOnly: editMode = "harderOnly"
                 case .locked: editMode = "locked"
