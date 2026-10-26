@@ -280,7 +280,7 @@
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.secondary)
                             }
-                            Label("Confiance des preuves : \(confidence) %", systemImage: "checkmark.shield")
+                            Label("Confiance des preuves : \(GoalongUIFormat.percent(confidence))", systemImage: "checkmark.shield")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.secondary)
                             Text(isToday ? "La journée est encore en cours" : "Bilan de la journée terminée")
@@ -390,7 +390,7 @@
                     metric(
                         title: "Conversations IA",
                         value: "\(overview.agentSessions)",
-                        detail: "\(overview.agentMessages) messages"
+                        detail: GoalongUIFormat.count(overview.agentMessages, "message")
                     )
                 }
             }
@@ -523,7 +523,7 @@
                         Text("Couverture des preuves")
                             .font(.system(size: 11, weight: .semibold))
                         Text(
-                            "\(GoalongUIFormat.number(overview.sourceEventCount)) événements · \(overview.privateMinutes) min privées ou masquées · \(overview.analyzedAgentSessions)/\(overview.agentSessions) sessions IA analysées"
+                            "\(GoalongUIFormat.count(overview.sourceEventCount, "événement")) · \(overview.privateMinutes) min privées ou masquées · \(overview.analyzedAgentSessions)/\(overview.agentSessions) session\(overview.agentSessions > 1 ? "s" : "") IA analysée\(overview.analyzedAgentSessions > 1 ? "s" : "")"
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)

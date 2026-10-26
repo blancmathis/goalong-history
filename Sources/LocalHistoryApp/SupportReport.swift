@@ -223,7 +223,7 @@ enum SupportFindings {
         if let storage, storage.lowSpace, let free = storage.freeMB {
             findings.append(SupportFinding(severity: .warning, code: .lowDiskSpace,
                 title: "Espace disque faible",
-                detail: "Il reste \(free) Mo sur le disque. Sous environ 1 Go, macOS peut refuser les écritures de Goalong."))
+                detail: "Il reste \(free) Mo sur le disque. Sous environ \(StorageHealth.lowSpaceThresholdText), macOS peut refuser les écritures de Goalong."))
         }
         let unclean = timeline.filter { $0.event == .appStarted && $0.values[SupportKey.previousExitUnclean.rawValue] == .flag(true) }.count
         if unclean > 0 {

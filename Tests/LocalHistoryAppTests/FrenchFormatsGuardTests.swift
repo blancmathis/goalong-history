@@ -50,7 +50,12 @@ final class FrenchFormatsGuardTests: XCTestCase {
                          "dateFormat = \"[HhKk]:mm", "dateFormat = \"HH:mm\"", "String\\(format: \"%d:%02d\", value / 60",
                          // A stored « 09:30 » cut to « 9:30 » (T-044 C4-04).
                          "hasPrefix\\(\"0\"\\)", "trimmingPrefix\\(\"0\"\\)", "drop\\(while: \\{ \\$0 == \"0\" \\}\\)",
-                         "(du|reçue :) \\\\\\((\\w+\\.)*day\\)", "\"\\\\\\((\\w+\\.)*day\\) · "]
+                         "(du|reçue :) \\\\\\((\\w+\\.)*day\\)", "\"\\\\\\((\\w+\\.)*day\\) · ",
+                         // Naive French plurals and « (s) » (T-044 C9-22/C9-24): use GoalongUIFormat.count.
+                         "\\) (événements|fichiers|jours|demandes|messages|outils|interactions|instantanés|conversations|erreurs|appels|sessions)\\b",
+                         "[a-zéèê]\\(s\\)[^\"]*[éèêàùç’]|[éèêàùç’][^\"]*[a-zéèê]\\(s\\)",
+                         // A percent with a plain space (T-044 C9-23): use GoalongUIFormat.percent (U+00A0).
+                         "\\\\\\([^\"]*\\) %(\\W|$)", "%\\.0f %%", "\\d %(\"| [a-zéèàâ’])"]
         let regexes = try forbidden.map { try NSRegularExpression(pattern: $0) }
         var hits: [String] = []
         let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)!.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
@@ -58,7 +63,8 @@ final class FrenchFormatsGuardTests: XCTestCase {
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
             for line in text.split(separator: "\n", omittingEmptySubsequences: false) where !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
-                let s = String(line)
+                // Trailing line comments are not UI text.
+                let s = String(line).components(separatedBy: " // ")[0]
                 for r in regexes where r.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil {
                     // `.formatted()` on a non-number (e.g. a Date style) is the risk; allow GoalongUIFormat's own helpers.
                     if file.lastPathComponent == "GoalongPresentationRequests.swift" { continue }

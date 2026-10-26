@@ -79,7 +79,7 @@ struct GoalongAttentionBanner: View {
         case .storage:
             return "Goalong réessaie automatiquement. Si cela dure, envoyez-nous un rapport : il contient la cause technique, pas votre activité."
         case .lowSpace(let free):
-            return "Il reste \(StorageHealth.formatted(free)). En dessous d’environ 1 Go, macOS peut empêcher Goalong d’enregistrer."
+            return "Il reste \(StorageHealth.formatted(free)). En dessous d’environ \(StorageHealth.lowSpaceThresholdText), macOS peut empêcher Goalong d’enregistrer."
         case .updated(let previous, _):
             return "La mise à jour depuis la version \(previous) s’est bien déroulée. Vos réglages et votre historique sont conservés."
         }

@@ -108,7 +108,7 @@ struct GoalongActivityUsageRow: View {
                         Text(GoalongAnalyticsFormatting.duration(item.seconds))
                             .font(.system(size: 13, weight: .semibold)).monospacedDigit()
                             .frame(minWidth: 58, alignment: .trailing).fixedSize()
-                        Text(String(format: "%.0f %%", share * 100))
+                        Text(GoalongUIFormat.percent(share * 100))
                             .font(.system(size: 12)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
                             .frame(width: 40, alignment: .trailing)
                     }

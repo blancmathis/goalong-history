@@ -37,7 +37,7 @@ struct GoalongActivityHeader: View {
             }
             if let previous = selection.returnContext {
                 Button(action: onReturn) {
-                    Label("Retour aux \(previous.period) jours", systemImage: "arrow.uturn.backward")
+                    Label("Retour aux \(GoalongUIFormat.count(previous.period, "jour"))", systemImage: "arrow.uturn.backward")
                 }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                     .accessibilityIdentifier("activity-return-period")
             }
@@ -49,7 +49,7 @@ struct GoalongActivityHeader: View {
 
     private var period: some View {
         GoalongSegmentedControl("Période", selection: Binding(get: { selection.period }, set: onPeriod),
-                                options: [1, 7, 28]) { $0 == 1 ? "Jour" : "\($0) jours" }
+                                options: [1, 7, 28]) { $0 == 1 ? "Jour" : GoalongUIFormat.count($0, "jour") }
             .accessibilityIdentifier("analytics-period")
     }
 

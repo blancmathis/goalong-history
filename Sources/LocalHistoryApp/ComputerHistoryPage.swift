@@ -846,9 +846,9 @@
         }
 
         private var recordingSummary: String {
-            let events = GoalongUIFormat.number(snapshot.eventCount)
+            let events = snapshot.eventCount
             if isPreparingTimeline {
-                return "Préparation des tranches de 10 minutes à partir de \(events) événements."
+                return "Préparation des tranches de 10 minutes à partir de \(GoalongUIFormat.count(events, "événement"))."
             }
             switch model.sourceStatus {
             case .checking:
@@ -1460,7 +1460,7 @@
                                         )
                                 }
                                 Spacer(minLength: 0)
-                                Text("\(ConfidencePercent.whole(suggestion.confidence)) %")
+                                Text(GoalongUIFormat.percent(ConfidencePercent.whole(suggestion.confidence)))
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.secondary)
                             }
@@ -1479,7 +1479,7 @@
                         Text("Preuves et incertitudes")
                             .font(.system(size: 11, weight: .semibold))
                         Text(
-                            "\(memory.coverage.sourceEventCount) événements sources · \(memory.coverage.semanticSnapshotCount) instantanés de contenu · \(memory.coverage.suppressedEventCount) événements masqués. Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
+                            "\(GoalongUIFormat.count(memory.coverage.sourceEventCount, "événement")) source\(memory.coverage.sourceEventCount > 1 ? "s" : "") · \(GoalongUIFormat.count(memory.coverage.semanticSnapshotCount, "instantané")) de contenu · \(GoalongUIFormat.count(memory.coverage.suppressedEventCount, "événement")) masqué\(memory.coverage.suppressedEventCount > 1 ? "s" : ""). Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -1537,7 +1537,7 @@
 
         private func semanticPairValue(_ coverage: ComputerHistoryCoverage) -> String {
             guard let ratio = coverage.semanticPairCoverage else { return "—" }
-            return "\(ConfidencePercent.whole(ratio)) %"
+            return GoalongUIFormat.percent(ConfidencePercent.whole(ratio))
         }
 
         private func hitIcon(_ kind: ComputerHistorySearchHitKind) -> String {
@@ -1871,7 +1871,7 @@
                             }
                         }
                         Text(
-                            "Preuves : \(episode.provenance.sourceEventIDs.count) identifiants d’événements · \(episode.provenance.sourceSequences.count) séquences d’intégrité · confiance \(ConfidencePercent.whole(episode.statusConfidence))\u{00A0}%"
+                            "Preuves : \(episode.provenance.sourceEventIDs.count) identifiants d’événements · \(episode.provenance.sourceSequences.count) séquences d’intégrité · confiance \(GoalongUIFormat.percent(ConfidencePercent.whole(episode.statusConfidence)))"
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
@@ -1894,12 +1894,12 @@
             let interactions: String
             if episode.totalInteractionCount > episode.interactions.count {
                 interactions =
-                    "\(episode.totalInteractionCount) interactions "
-                    + "(\(episode.interactions.count) représentatives)"
+                    "\(GoalongUIFormat.count(episode.totalInteractionCount, "interaction")) "
+                    + "(\(episode.interactions.count) représentative\(episode.interactions.count > 1 ? "s" : ""))"
             } else {
-                interactions = "\(episode.totalInteractionCount) interactions"
+                interactions = GoalongUIFormat.count(episode.totalInteractionCount, "interaction")
             }
-            return "\(interval) · \(interactions) · \(episode.eventCount) événements"
+            return "\(interval) · \(interactions) · \(GoalongUIFormat.count(episode.eventCount, "événement"))"
         }
 
         private func detailSection(title: String, values: [String]) -> some View {

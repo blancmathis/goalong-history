@@ -43,13 +43,13 @@ import LocalHistoryCore
                     } label: {
                         VStack(spacing: 4) {
                             Text(strength.title).fontWeight(.semibold)
-                            Text("\(strength.intensities[0]) % puis \(strength.intensities[1]) %")
+                            Text("\(GoalongUIFormat.percent(strength.intensities[0])) puis \(GoalongUIFormat.percent(strength.intensities[1]))")
                                 .font(.caption)
                         }.frame(maxWidth: .infinity).padding(.vertical, 5)
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
                     .accessibilityIdentifier("jev-strength-\(strength.rawValue)")
-                    .accessibilityLabel("\(strength.title) : palier 1 à \(strength.intensities[0]) %, palier 2 à \(strength.intensities[1]) %")
+                    .accessibilityLabel("\(strength.title) : palier 1 à \(GoalongUIFormat.percent(strength.intensities[0])), palier 2 à \(GoalongUIFormat.percent(strength.intensities[1]))")
                 }
             }
             Text("Ces préréglages changent uniquement les intensités. Les délais et vos choix d’activation sont conservés. Vous pouvez les préparer avant d’activer les effets.")
@@ -87,9 +87,9 @@ import LocalHistoryCore
                         .accessibilityIdentifier("jev-stage-\(index)-effect")
                 }
                 Spacer(minLength: 0)
-                Text("\(stages[index].intensity) %")
+                Text(GoalongUIFormat.percent(stages[index].intensity))
                     .font(.system(.body, design: .monospaced).weight(.semibold))
-                    .accessibilityLabel("Intensité du palier \(index + 1) : \(stages[index].intensity) %")
+                    .accessibilityLabel("Intensité du palier \(index + 1) : \(GoalongUIFormat.percent(stages[index].intensity))")
             }.disabled(!stages[index].enabled)
             Slider(value: Binding(
                 get: { Double(preferences.settings.stages[index].intensity) },
@@ -99,7 +99,7 @@ import LocalHistoryCore
                     preferences.update { $0.stages[index].intensity = intensity }
                 }), in: Double(JevInterventionSettings.intensityRange.lowerBound)...Double(JevInterventionSettings.intensityRange.upperBound), step: 5)
                 .accessibilityLabel("Intensité du palier \(index + 1)")
-                .accessibilityValue("\(stages[index].intensity) %")
+                .accessibilityValue(GoalongUIFormat.percent(stages[index].intensity))
                 .accessibilityIdentifier("jev-stage-\(index)-intensity")
                 .disabled(!stages[index].enabled)
         }

@@ -286,7 +286,7 @@ struct SupportRequestView: View {
                                 "Jamais : votre historique, les apps ou sites visités, titres, textes, conversations, captures d’écran, e-mails, mots de passe ou clés.")
                     if case .ready(_, _, let bytes, let events) = controller.phase {
                         HStack(spacing: 12) {
-                            Text("\(events) événements techniques · \(GoalongUIFormat.bytes(Int64(bytes)))")
+                            Text("\(GoalongUIFormat.count(events, "événement")) technique\(events > 1 ? "s" : "") · \(GoalongUIFormat.bytes(Int64(bytes)))")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
                             Button("Afficher le fichier") { controller.revealReport() }
