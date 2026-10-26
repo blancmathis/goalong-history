@@ -229,8 +229,10 @@ enum FocusCommitRule {
         }
         return .harderOnly
     }
+    /// The 10-minute grace never outlives the period (T-044 C10-21): a day created at 23:55 locks at midnight,
+    /// so its finished target cannot be lowered or deleted before settlement.
     static func editUntil(_ value: FocusCommitment, calendar: Calendar = .current) -> Date? {
-        value.period.interval(calendar: calendar).map { max(value.createdAt.addingTimeInterval(600), $0.start) }
+        value.period.interval(calendar: calendar).map { min(max(value.createdAt.addingTimeInterval(600), $0.start), $0.end) }
     }
     /// The free window closes once and for good (T-044 C1-02): by the wall clock, by continuous time since
     /// creation in the same boot (the anchor of L-05), or by a latched `lockedAt`. Setting the clock back
