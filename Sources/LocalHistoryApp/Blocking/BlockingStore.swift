@@ -191,6 +191,11 @@ enum BlockingClock {
         }
         return min(0, now.wall.timeIntervalSince(previous.wall))
     }
+    /// The wall clock went back against continuous time in this boot (T-044 C4-01). Protected blocks then
+    /// keep their wall end, so they last longer and never pause (spec K §4).
+    static func isSetBack(previous: BlockingClockState, now: BlockingClockState) -> Bool {
+        previous.boot == now.boot && now.continuous >= previous.continuous && now.offset - previous.offset < -jumpTolerance
+    }
     /// `now` with the anchor the next refresh measures from: kept while no jump was compensated in
     /// this boot, moved to `now` after a compensation, a reboot or without any previous sample.
     static func advanced(previous: BlockingClockState?, now: BlockingClockState, adjusted: TimeInterval) -> BlockingClockState {

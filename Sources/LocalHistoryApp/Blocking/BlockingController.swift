@@ -822,6 +822,7 @@ import LocalHistoryQueryCLI
         if let previous = lastClock {
             jump = BlockingClock.adjustment(previous: previous, now: currentClock)
             if jump != 0 { extendLocks(by: jump, at: previous.wall) }
+            else if BlockingClock.isSetBack(previous: previous, now: currentClock) { keepLocks(from: previous.wall, at: now) }
         }
         currentClock = BlockingClock.advanced(previous: lastClock, now: currentClock, adjusted: jump)
         lastClock = currentClock
@@ -1011,6 +1012,20 @@ import LocalHistoryQueryCLI
         }
         if var freeze = document.freeze { if jump < 0 { freeze.start = freeze.start.addingTimeInterval(jump) }; freeze.end = freeze.end.addingTimeInterval(jump); document.freeze = freeze }
     }
+    /// Clock set back in this boot (T-044 C4-01): each protected block in progress at `oldWall` starts no
+    /// later than `now` and keeps its wall end. It stays on and only gets longer; the anchor is kept, so
+    /// setting the clock forward again later is not compensated twice.
+    private func keepLocks(from oldWall: Date, at now: Date) {
+        holdProgramWindows(at: oldWall, jump: 0)
+        func kept(_ value: BlockSession) -> BlockSession {
+            var value = value
+            if effectiveLock(value.lock).protectsLists, value.start <= oldWall, value.end > oldWall { value.start = min(value.start, now) }
+            return value
+        }
+        document.sessions = document.sessions.map(kept)
+        document.heldPrograms = document.heldPrograms?.map(kept)
+        if var freeze = document.freeze, freeze.start <= oldWall, freeze.end > oldWall { freeze.start = min(freeze.start, now); document.freeze = freeze }
+    }
     /// Turns each protected program window in progress at `wall` into a held session, so a later
     /// recomputation (clock jump, zone change) cannot end it early.
     private func holdProgramWindows(at wall: Date, jump: Double) {
@@ -1107,7 +1122,7 @@ import LocalHistoryQueryCLI
             if siteRules && target.isActivation && target.url == nil { unreadableSince[target.pid] = nil }
             else if siteRules && !target.isInternalPage && target.url == nil {
                 let first = unreadableSince[target.pid] ?? target.at; unreadableSince[target.pid] = first
-                if !siteBlockingAvailable || target.at.timeIntervalSince(first) >= 3 { special = .unsupportedBrowser(NSRunningApplication(processIdentifier: target.pid)?.localizedName ?? target.bundleIdentifier) }
+                if !siteBlockingAvailable || target.at.throttleElapsed(since: first) >= 3 { special = .unsupportedBrowser(NSRunningApplication(processIdentifier: target.pid)?.localizedName ?? target.bundleIdentifier) }
             } else { unreadableSince[target.pid] = nil }
             guard special != nil || BlockingRules.wouldBlock(target, list: list) else { continue }
             // Unreadable addresses cannot establish eligible quota use: fail closed.
@@ -1164,7 +1179,7 @@ import LocalHistoryQueryCLI
             guard let end = activeBlocks.filter({ $0.listIDs.contains(list.id) && $0.start <= now && $0.end > now }).map(\.end).max(),
                   usage.breakEnds[list.id].map({ $0 > now }) != true else { continue }
             let special = BlockingRules.hasSites(list) && !target.isInternalPage && target.url == nil && (!siteBlockingAvailable
-                || unreadableSince[target.pid].map({ now.timeIntervalSince($0) >= 3 }) == true)
+                || unreadableSince[target.pid].map({ now.throttleElapsed(since: $0) >= 3 }) == true)
             let required = special || (BlockingRules.wouldBlock(target, list: list)
                 && (list.effectiveAction == .slowDown
                     || (BlockingRules.effectiveQuotaSeconds(list, usage: usage).map({ (usage.quotaSecondsUsed[list.id] ?? 0) >= $0 }) ?? true)))
@@ -1190,8 +1205,8 @@ import LocalHistoryQueryCLI
         if target.isForeground { presentedAttempt = key } else { presentedAppAttempts[target.pid] = key }
         guard previous != key || target.isActivation else { return feedback(for: listID) }
         let now = clock()
-        lastAttemptAt = lastAttemptAt.filter { now.timeIntervalSince($0.value) < 10 }
-        guard lastAttemptAt[key].map({ now.timeIntervalSince($0) < 10 }) != true else { return feedback(for: listID) }
+        lastAttemptAt = lastAttemptAt.filter { now.throttleElapsed(since: $0.value) < 10 }
+        guard lastAttemptAt[key].map({ now.throttleElapsed(since: $0) < 10 }) != true else { return feedback(for: listID) }
         lastAttemptAt[key] = now
         var usage = todayUsage(); usage.blocked = usage.blocked ?? [:]
         let count = usage.blocked?[listID] ?? 0

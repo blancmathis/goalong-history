@@ -89,7 +89,7 @@ final class JevVisibleContextSampler {
                     revalidate { evidence in
                         defer { finish() }
                         guard ownPermit.isValid, let current = evidence?.snapshot,
-                              Date().timeIntervalSince(capturedAt) < 2,
+                              Date().throttleElapsed(since: capturedAt) < 2,
                               self.generation == ownGeneration, self.inbox.generation == ingressGeneration,
                               Self.sameBoundary(current, context), evidence?.boundary == evidenceBoundary, let freshPresence = current.foregroundUsage,
                               Self.eligible(remoteText: self.inbox.wantsVisibleText,

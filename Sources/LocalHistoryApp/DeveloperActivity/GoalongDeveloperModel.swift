@@ -29,7 +29,7 @@ actor GoalongDeveloperReader {
         let fingerprint = aiEnabled ? T3CodeMetadataReader.fingerprint(at: t3URL) : "disabled"
         let key = "\(start.timeIntervalSince1970)|\(fingerprint)|\(aiEnabled)|\(Int(Date().timeIntervalSince1970 / 60))"
         let t3: T3CodeDay
-        if let entry = cache[key], Date().timeIntervalSince(entry.0) < 60 { t3 = entry.1 }
+        if let entry = cache[key], Date().throttleElapsed(since: entry.0) < 60 { t3 = entry.1 }
         else {
             t3 = T3CodeMetadataReader.read(at: t3URL, day: start, enabled: aiEnabled, shouldContinue: { !Task.isCancelled && !GoalongGlobalPause.isPaused(in: self.root) })
             if cache.count >= 56 { cache.removeAll() }

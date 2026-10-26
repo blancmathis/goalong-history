@@ -282,7 +282,7 @@ struct JevRecentCheck: Identifiable {
         let clockJump = abs(now.timeIntervalSince(previousWall) - (uptime - previousUptime)) > 2
         previousWall = now; previousUptime = uptime
         let end = boundary.addingTimeInterval(15)
-        guard !clockJump, now >= end, now.timeIntervalSince(end) < 3 else { reconfigure(); return }
+        guard !clockJump, now >= end, now.throttleElapsed(since: end) < 3 else { reconfigure(); return }
         let start = boundary; boundary = end
         guard request == nil else { SupportDiagnostics.shared.record(.monitorCycle, component: .monitoring, level: .warning, values: [.state: .state(.timedOut)]); cancelPending(); status = "Analyse trop lente : série remise à zéro"; return }
         guard let window = inbox.take(start: start, end: end), window.hasActivity else {
@@ -314,7 +314,7 @@ struct JevRecentCheck: Identifiable {
                 self.request = nil
                 guard self.gate == nil, self.inbox.generation == generation, workStore.revision == workRevision,
                       self.focusSessionID == focusID,
-                      Date().timeIntervalSince(end) < 15,
+                      Date().throttleElapsed(since: end) < 15,
                       GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == policy.revision,
                       GoalongGlobalPause.load().revision == pause.revision else {
                     self.resetInterventions(); return
