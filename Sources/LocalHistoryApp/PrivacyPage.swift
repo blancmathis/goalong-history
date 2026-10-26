@@ -423,13 +423,13 @@
                     infoRow(
                         symbol: "lock.fill",
                         title: "Permissions des fichiers",
-                        value: "Dossiers 0700 · fichiers 0600"
+                        value: "Accès réservé à votre compte macOS"
                     )
 
                     HStack {
                         Button("Ouvrir le dossier") { model.openDataFolder() }
                             .buttonStyle(LHSecondaryButtonStyle())
-                        Button("Ouvrir le JSONL") { model.openTodayJSON() }
+                        Button("Ouvrir le fichier d’activité") { model.openTodayJSON() }
                             .buttonStyle(LHSecondaryButtonStyle())
                         Button("Diagnostics") { model.openDiagnostics() }
                             .buttonStyle(LHSecondaryButtonStyle())

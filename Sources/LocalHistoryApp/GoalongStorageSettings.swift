@@ -73,7 +73,7 @@ import Foundation
     var body: some View {
         GoalongSettingsGroup(title: "Actions distinctes des envois quotidiens") {
             Button("Exporter un fichier signé…") { model.selectSection(.share) }.buttonStyle(LHSecondaryButtonStyle())
-            Button("Partager un récap relu…") { advancedShare = true }.buttonStyle(LHSecondaryButtonStyle())
+            Button("Partager un bilan relu…") { advancedShare = true }.buttonStyle(LHSecondaryButtonStyle())
             Button("Comprendre mon travail") { model.profileStudio.show() }.buttonStyle(LHSecondaryButtonStyle())
             Button("Analyser une demande du site…") { siteAnalysis = true }.buttonStyle(LHSecondaryButtonStyle())
             Button("Importer Apple Santé…") { health = true }.buttonStyle(LHSecondaryButtonStyle())

@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
+import LocalHistoryCore
 
 /// The whole module on one page: what is blocked now, start a block (or freeze the whole Mac),
 /// the lists and the week where programs are drawn. Protection sits in a pill by the title.
@@ -278,7 +279,7 @@ struct BlockingStopRequest: Identifiable {
                 Button { controller.takeBreak(listID: list.id) } label: {
                     Label("Pause de \(breaks.minutes) min", systemImage: "cup.and.saucer")
                 }
-                .help("\(block.breaksLeft[list.id] ?? 0) sur \(breaks.count) restantes aujourd’hui")
+                .help("\(FrenchCount.count(block.breaksLeft[list.id] ?? 0, "pause restante", "pauses restantes")) sur \(breaks.count) aujourd’hui")
                 .accessibilityIdentifier("blocking-take-break")
             }
             switch block.lock {
@@ -795,9 +796,9 @@ struct BlockingLockExplainer: View {
     private var defaultText: String {
         switch lock {
         case .free: return "Vous pouvez arrêter à tout moment."
-        case .typing: return "Pour arrêter, recopier un texte de 120 caractères."
+        case .typing: return "Pour arrêter, recopiez un texte de 120 caractères."
         case .password: return "Pour arrêter, il faut le mot de passe de blocage. Confiez-le à un proche."
-        case .locked: return "Impossible d’arrêter avant la fin, même en quittant Goalong."
+        case .locked: return "Goalong ne propose aucun moyen d’arrêter avant la fin."
         }
     }
 }
@@ -904,7 +905,7 @@ struct BlockingLockExplainer: View {
     static func levelLabel(_ protection: BlockingProtectionState) -> String {
         if protection.level == .strict { return "Renforcé" }
         switch protection.guardian {
-        case .awaitingApproval: return "À autoriser dans Réglages › Général › Ouverture"
+        case .awaitingApproval: return "À autoriser dans Réglages Système › Général › Ouverture"
         case .failed: return "Indisponible"
         case .running, .notInstalled: return "Standard"
         }

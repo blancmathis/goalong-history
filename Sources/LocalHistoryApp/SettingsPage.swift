@@ -239,7 +239,7 @@ import AppKit
                     GoalongRowDivider()
                     GoalongSettingsLink(title: "Diagnostic et preuves", value: "", symbol: "checkmark.shield") { model.selectSection(.privacy) }
                 }
-                Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
+                Button("Ouvrir le fichier de configuration") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
                     .font(.system(size: 13))
             }
             GoalongSettingsGroup(title: "Mises à jour") {
@@ -377,7 +377,7 @@ enum SettingsPane: Hashable {
                     .font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
-                    Button("Ouvrir config.json") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
+                    Button("Ouvrir le fichier de configuration") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
                     Button("Recharger") { model.reloadConfigurationFromSettings() }.buttonStyle(LHSecondaryButtonStyle())
                     if model.configLocked {
                         Button("Réinitialiser les réglages…") { confirmingReset = true }.buttonStyle(LHQuietButtonStyle())
@@ -417,7 +417,7 @@ enum SettingsPane: Hashable {
             if updates.isChecking || updates.isPreparingAvailableUpdate {
                 ProgressView().controlSize(.small)
             } else if let version = updates.availableVersion {
-                Button("Installer la \(version)") { updates.showAvailableUpdate() }
+                Button("Installer la version \(version)") { updates.showAvailableUpdate() }
                     .buttonStyle(LHPrimaryButtonStyle())
             } else {
                 // Always enabled: an unavailable updater explains why and links to the releases.

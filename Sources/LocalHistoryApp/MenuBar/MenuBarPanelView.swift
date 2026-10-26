@@ -609,7 +609,7 @@
             .disabled(!source.isAvailable)
             .onHover { hovered = $0 }
             .animation(LHTheme.hover, value: hovered)
-            .help(source.isAvailable ? source.title : "\(source.title) : pack à installer dans l’app")
+            .help(source.isAvailable ? source.title : "\(source.title) : à télécharger dans Ambiance")
             .accessibilityAddTraits(selected ? .isSelected : [])
         }
     }

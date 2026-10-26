@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
+import LocalHistoryCore
 
 /// Puts « Ralentir » on screen: a veil over the browser window for a site, a small panel centred
 /// on the screen for an app. Non-activating, so the member's app keeps the keyboard.
@@ -89,7 +90,7 @@ struct SlowDownCountdown: View {
         }
         .frame(height: 18)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(progress >= 1 ? "Attente terminée" : "Attente : encore \(seconds(at: date)) secondes")
+        .accessibilityLabel(progress >= 1 ? "Attente terminée" : "Attente : encore \(FrenchCount.count(seconds(at: date), "seconde", "secondes"))")
     }
 
     func seconds(at date: Date) -> Int { max(0, Int(ceil(presentation.readyAt.timeIntervalSince(date)))) }
