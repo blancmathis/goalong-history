@@ -327,13 +327,13 @@
                 }
                 if let snapshot {
                     Text(
-                        "Dernière saisie : \(snapshot.lastInputEventAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · clic : \(snapshot.lastClickAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · frappe : \(snapshot.lastTypingBurstAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · défilement : \(snapshot.lastScrollAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · raccourci : \(snapshot.lastShortcutAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
+                        "Dernière saisie : \(snapshot.lastInputEventAt.map { GoalongUIFormat.time($0) } ?? "jamais") · clic : \(snapshot.lastClickAt.map { GoalongUIFormat.time($0) } ?? "jamais") · frappe : \(snapshot.lastTypingBurstAt.map { GoalongUIFormat.time($0) } ?? "jamais") · défilement : \(snapshot.lastScrollAt.map { GoalongUIFormat.time($0) } ?? "jamais") · raccourci : \(snapshot.lastShortcutAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
                     )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     Text(
-                        "Accessibilité : \(snapshot.lastAXContextSuccessAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.frenchLabel ?? "aucun") à \(snapshot.lastSuppressionAt.map { DashboardFormatters.shortTime.string(from: $0) } ?? "jamais")"
+                        "Accessibilité : \(snapshot.lastAXContextSuccessAt.map { GoalongUIFormat.time($0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { GoalongUIFormat.time($0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.frenchLabel ?? "aucun") à \(snapshot.lastSuppressionAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
                     )
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -558,7 +558,7 @@
                 Alert(
                     title: Text("Supprimer la dernière session d’application ?"),
                     message: Text(
-                        "Goalong supprimera les événements locaux de \(session.appName) entre \(DashboardFormatters.shortTime.string(from: session.start)) et \(DashboardFormatters.shortTime.string(from: session.end)) et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
+                        "Goalong supprimera les événements locaux de \(session.appName) entre \(GoalongUIFormat.time(session.start)) et \(GoalongUIFormat.time(session.end)) et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
                     ),
                     primaryButton: .destructive(Text("Supprimer la session")) {
                         model.deleteActivitySession(session)

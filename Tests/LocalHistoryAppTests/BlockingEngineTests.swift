@@ -1187,7 +1187,7 @@ final class BlockingEngineTests: XCTestCase {
     func testRangeLabelAndLongRemaining() {
         XCTAssertEqual(BlockingFormat.rangeLabel(name: "Vidéo", weekday: 1, start: 1_320, end: 1_440, lock: .locked),
                        "Vidéo, lundi, 22:00 à 24:00, verrouillé")
-        XCTAssertEqual(BlockingFormat.rangeLabel(name: "Vidéo", weekday: 7, start: 540, end: 600, lock: .free), "Vidéo, dimanche, 9:00 à 10:00")
+        XCTAssertEqual(BlockingFormat.rangeLabel(name: "Vidéo", weekday: 7, start: 540, end: 600, lock: .free), "Vidéo, dimanche, 09:00 à 10:00")
         XCTAssertEqual(BlockingFormat.remaining(86_400), "1 jour")
         XCTAssertEqual(BlockingFormat.remaining(86_400 + 2_400), "1 jour 40 min")
         XCTAssertEqual(BlockingFormat.remaining(86_400 + 3 * 3_600 + 2_400), "1 jour 3 h 40")

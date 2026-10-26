@@ -301,7 +301,7 @@
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(tint(for: event))
                         .frame(width: 22)
-                    Text(DashboardFormatters.shortTime.string(from: event.timestamp))
+                    Text(GoalongUIFormat.time(event.timestamp))
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.secondary)
                     Text(ActivityEventLabels.kind(event.kind))

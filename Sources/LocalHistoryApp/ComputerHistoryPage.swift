@@ -1737,9 +1737,9 @@
         }
 
         private var windowTimeLabel: String {
-            DashboardFormatters.shortTime.string(from: group.start)
+            GoalongUIFormat.time(group.start)
                 + "\n–"
-                + DashboardFormatters.shortTime.string(from: group.end)
+                + GoalongUIFormat.time(group.end)
         }
 
         private func durationLabel(_ seconds: TimeInterval) -> String {
@@ -1752,8 +1752,8 @@
             _ session: ComputerHistoryTenMinuteGroup.SessionSlice
         ) -> String {
             let interval =
-                "\(DashboardFormatters.shortTime.string(from: session.start))–"
-                + DashboardFormatters.shortTime.string(from: session.end)
+                "\(GoalongUIFormat.time(session.start))–"
+                + GoalongUIFormat.time(session.end)
             let details = session.sourceSessionCount == 1
                 ? "1 segment enregistré"
                 : "\(session.sourceSessionCount) segments enregistrés"
@@ -1849,7 +1849,7 @@
                                 .foregroundStyle(.secondary)
                             ForEach(episode.interactions) { interaction in
                                 HStack(alignment: .top, spacing: 9) {
-                                    Text(timeFormatter.string(from: interaction.start))
+                                    Text(GoalongUIFormat.time(interaction.start))
                                         .font(.system(size: 11, design: .monospaced))
                                         .foregroundStyle(.tertiary)
                                         .frame(width: 56, alignment: .leading)
@@ -1890,7 +1890,7 @@
 
         private var episodeMetrics: String {
             let interval =
-                "\(timeFormatter.string(from: episode.start))–\(timeFormatter.string(from: episode.end))"
+                "\(GoalongUIFormat.time(episode.start))–\(GoalongUIFormat.time(episode.end))"
             let interactions: String
             if episode.totalInteractionCount > episode.interactions.count {
                 interactions =
@@ -1936,14 +1936,5 @@
             case .unknown: return .secondary
             }
         }
-
-        private let timeFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.locale = GoalongUIFormat.locale
-            formatter.timeZone = .current
-            formatter.dateStyle = .none
-            formatter.timeStyle = .short
-            return formatter
-        }()
     }
 #endif
