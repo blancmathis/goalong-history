@@ -985,7 +985,7 @@
                 runtimeState = .storageUnavailable(healthSnapshot.storageFailureKind ?? .unavailable)
             }
 
-            if freeDiskCheckedAt.map({ now().timeIntervalSince($0) >= 60 }) ?? true {
+            if freeDiskCheckedAt.map({ now().throttleElapsed(since: $0) >= 60 }) ?? true {
                 freeDiskCheckedAt = now()
                 let free = availableBytes()
                 if free != freeDiskBytes { freeDiskBytes = free }

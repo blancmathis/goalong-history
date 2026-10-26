@@ -634,7 +634,7 @@
         static let powerOffWindow: TimeInterval = 120
         static func isPowerOffRecent(_ at: Date?, now: Date) -> Bool {
             guard let at else { return false }
-            return now >= at && now.timeIntervalSince(at) <= powerOffWindow
+            return now >= at && now.throttleElapsed(since: at) <= powerOffWindow
         }
 
         /// The token that tells the guard not to reopen Goalong. Only loginwindow (or a recent power-off

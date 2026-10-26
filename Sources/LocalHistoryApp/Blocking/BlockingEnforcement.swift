@@ -111,7 +111,7 @@ private final class BlockingFreezePanel: NSPanel {
             loginStatus = status; loginStatusRead = Date()
             return status
         }
-        if Date().timeIntervalSince(loginStatusRead) > 30, !loginStatusReading {
+        if Date().throttleElapsed(since: loginStatusRead) > 30, !loginStatusReading {
             loginStatusReading = true
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let next = SMAppService.mainApp.status

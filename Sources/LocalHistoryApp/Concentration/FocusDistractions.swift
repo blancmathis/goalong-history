@@ -39,7 +39,7 @@ struct FocusDistractionRecord: Codable, Equatable {
         guard suggestedTargetIDs == nil, verdict == .procrastination, window.hasActivity,
               window.start.timeIntervalSince1970.isFinite, window.end.timeIntervalSince1970.isFinite,
               abs(window.end.timeIntervalSince(window.start) - 15) < 0.01,
-              window.start >= sessionStart, window.end <= now, now.timeIntervalSince(window.end) < 15,
+              window.start >= sessionStart, window.end <= now, now.throttleElapsed(since: window.end) < 15,
               lastWindowEnd.map({ window.start >= $0 }) ?? true,
               !window.samples.isEmpty, window.samples.allSatisfy({ $0.distractionTarget?.isValid == true }) else { return false }
         // A window verdict does not identify the distracting row in a mixed window.

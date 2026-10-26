@@ -154,7 +154,7 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
             let today = calendar.isDate(day.date, inSameDayAs: now)
             if let attempt = attempts[day.date] {
                 let wait: TimeInterval = attempt.failed ? 1_800 : (today ? 900 : .infinity)
-                guard now.timeIntervalSince(attempt.date) >= wait else { continue }
+                guard now.throttleElapsed(since: attempt.date) >= wait else { continue }
             }
             classify(day: day.date, userInitiated: false)
             return

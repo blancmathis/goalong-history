@@ -313,7 +313,7 @@
             guard known || isBrowser(app: app, config: parameters.config) || AXReader.containsWebArea(window) else { return result }
             // Every app that may show a page is checked for a private window before any address read.
             let key = BlockingWindowKey(pid: running.processIdentifier, window: result.windowIdentity)
-            if parameters.blockingKeywords.isEmpty, let cached = blockingPrivateWindows[key], result.at.timeIntervalSince(cached.at) < 30 {
+            if parameters.blockingKeywords.isEmpty, let cached = blockingPrivateWindows[key], result.at.throttleElapsed(since: cached.at) < 30 {
                 result.privateWindow = cached.isPrivate
             } else {
                 var signals: [String?] = [AXReader.string(window, attribute: "AXTitle" as CFString),
