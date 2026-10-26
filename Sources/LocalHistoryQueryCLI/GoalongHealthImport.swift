@@ -290,7 +290,7 @@ private final class HealthXMLReader: NSObject, XMLParserDelegate {
     func converted(_ raw: String?, _ unit: String?, to target: String) -> Double? {
         guard let raw, let n = Double(raw), n.isFinite, n >= 0, let unit else { return nil }
         let factors: [String: [String: Double]] = ["count": ["count": 1], "s": ["s": 1, "min": 60, "hr": 3600],
-            "m": ["m": 1, "km": 1000, "mi": 1609.344], "kcal": ["kcal": 1, "kJ": 1 / 4.184, "cal": 0.001],
+            "m": ["m": 1, "km": 1000, "mi": 1609.344], "kcal": ["kcal": 1, "Cal": 1, "kJ": 1 / 4.184, "cal": 0.001],
             "bpm": ["count/min": 1], "count/min": ["count/min": 1], "ms": ["ms": 1, "s": 1000],
             "%": ["%": 100], "mL/kg/min": ["mL/min·kg": 1, "ml/kg*min": 1, "mL/kg/min": 1]]
         guard let factor = factors[target]?[unit] else { warnings.insert("Certaines unités inconnues ont été ignorées."); return nil }

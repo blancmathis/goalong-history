@@ -1015,7 +1015,8 @@ import LocalHistoryQueryCLI
     /// A trusted date moved back to the wall frame, for the shields and Concentration's own clock.
     func wallFrame(_ date: Date) -> Date { date.addingTimeInterval(-skew) }
     /// Stores the sample, so `clock()` measures from it. After a reboot to an earlier wall clock, protected
-    /// ends move back with it (L-05); in one boot a clock change never enters T, so nothing moves (T-044 r6).
+    /// ends move back with it (L-05), and forward again up to the proven floor at a later reboot (C7-01);
+    /// in one boot a clock change never enters T, so nothing moves (T-044 r6).
     private func syncClock() {
         let current = BlockingClockState(wall: wallClock(), continuous: continuous(), boot: boot()) // wall: the sample
         var jump: TimeInterval = 0
@@ -1048,6 +1049,9 @@ import LocalHistoryQueryCLI
             document.passwordLock?.retryAfter = until.addingTimeInterval(jump)
         }
         if var freeze = document.freeze { if jump < 0 { freeze.start = freeze.start.addingTimeInterval(jump) }; freeze.end = freeze.end.addingTimeInterval(jump); document.freeze = freeze }
+        // A break keeps its real length too: one in progress must not outlive a reboot behind (C7-02), and a
+        // finished one, moved back with the clock, must not run again (r2).
+        for (id, end) in document.usage?.breakEnds ?? [:] where jump < 0 || end > oldWall { document.usage?.breakEnds[id] = end.addingTimeInterval(jump) }
     }
     /// Turns each protected program window in progress at `wall` into a held session, so a later
     /// recomputation (clock jump, zone change) cannot end it early.
