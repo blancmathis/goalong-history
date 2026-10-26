@@ -21,6 +21,22 @@ enum GoalongUIFormat {
     static func day(_ date: Date) -> String {
         date.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "fr_FR")))
     }
+    /// « 1 234 » — French grouping whatever the system region.
+    static func number<T: BinaryInteger>(_ value: T) -> String {
+        Int(value).formatted(.number.locale(locale))
+    }
+    /// « 1,5 » — French decimal comma, at most one decimal.
+    static func number(_ value: Double) -> String {
+        value.formatted(.number.locale(locale).precision(.fractionLength(0...1)))
+    }
+    /// « 14:05 » — 24-hour clock whatever the system region.
+    static func time(_ date: Date) -> String {
+        date.formatted(.dateTime.locale(locale).hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+    }
+    /// « 26 oct. 2026 ».
+    static func dayAbbreviated(_ date: Date) -> String {
+        date.formatted(.dateTime.day().month(.abbreviated).year().locale(locale))
+    }
 }
 
 #endif

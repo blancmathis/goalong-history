@@ -243,7 +243,7 @@
                 sealingSuspendedItem.isHidden = true
             }
             if let rotation = DeviceIdentityRotation.load() {
-                technicalStatusItem.title += " · Identité changée le \(rotation.at.formatted(date: .abbreviated, time: .omitted))"
+                technicalStatusItem.title += " · Identité changée le \(GoalongUIFormat.dayAbbreviated(rotation.at))"
             }
             globalPauseItem.title = GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité · tout suspendre…"
             pauseMenuItem.title = !localEnabled

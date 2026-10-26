@@ -116,7 +116,7 @@ struct GoalongActivityUsageDetail: View {
                 AxisValueLabel { if let hour = value.as(Int.self) { Text("\(hour) h") } }
             } }
             .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
-                AxisGridLine(); AxisValueLabel { if let amount = value.as(Double.self) { Text(unit == 3600 ? "\(amount.formatted()) h" : "\(Int(amount)) min") } }
+                AxisGridLine(); AxisValueLabel { if let amount = value.as(Double.self) { Text(unit == 3600 ? "\(GoalongUIFormat.number(amount)) h" : "\(Int(amount)) min") } }
             } }
             .frame(height: 110)
         }.accessibilityIdentifier("activity-usage-detail-hours")

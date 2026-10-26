@@ -52,8 +52,8 @@ struct JevRecentChecksView: View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(checks) { check in
                 HStack {
-                    Text(check.start, style: .time).monospacedDigit()
-                    Text("–"); Text(check.end, style: .time).monospacedDigit()
+                    Text(GoalongUIFormat.time(check.start)).monospacedDigit()
+                    Text("–"); Text(GoalongUIFormat.time(check.end)).monospacedDigit()
                     Spacer()
                     Label(check.verdict == .procrastination ? "Distraction repérée" : check.verdict == .productive ? "Travail" : "Indéterminé",
                           systemImage: check.verdict == .procrastination ? "exclamationmark.circle" : check.verdict == .productive ? "checkmark.circle" : "questionmark.circle")
