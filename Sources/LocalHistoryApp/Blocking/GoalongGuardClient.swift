@@ -71,12 +71,12 @@ enum GoalongGuardFiles {
     /// Written only while the guard is armed, so nothing changes for a member without a severe block.
     static func writeLease(_ reason: String, seconds: TimeInterval, files: GuardFiles = standard) {
         guard files.markerExists() else { return }
-        files.writeLease(GuardLease(pid: getpid(), reason: reason, until: Date().timeIntervalSince1970 + seconds))
+        files.writeLease(GuardLease(pid: getpid(), reason: reason, until: Date().timeIntervalSince1970 + seconds)) // wall: guard protocol (spec K §4, wall)
     }
 
     /// An installer runs with the documented override (`--unregister-guard` wrote `guard-override`):
     /// the app neither re-registers the guard nor ignores SIGTERM until the token is stale.
-    static func overrideActive(_ files: GuardFiles = standard, now: Date = Date()) -> Bool {
+    static func overrideActive(_ files: GuardFiles = standard, now: Date = Date()) -> Bool { // wall: guard protocol (spec K §4, wall)
         files.readOverride()?.isFresh(now: now.timeIntervalSince1970) == true
     }
 
@@ -89,7 +89,7 @@ enum GoalongGuardFiles {
 
     /// Written once the blocking runtime runs: from now on this process may lower or remove the marker.
     static func reportHealth(_ files: GuardFiles = standard) {
-        files.writeHealth(GuardHealth(pid: getpid(), at: Date().timeIntervalSince1970))
+        files.writeHealth(GuardHealth(pid: getpid(), at: Date().timeIntervalSince1970)) // wall: guard protocol (spec K §4, wall)
     }
 }
 
@@ -115,15 +115,15 @@ enum GuardUnregisterCommand {
     static func run() -> Never {
         guard let identity = GoalongGuardGate.identity else { exit(0) }
         let files = GoalongGuardFiles.standard
-        let marker = files.readMarker(now: Date())
-        if isRefused(marker: marker, now: Date(), environment: ProcessInfo.processInfo.environment) {
+        let marker = files.readMarker(now: Date()) // wall: guard protocol (spec K §4, wall)
+        if isRefused(marker: marker, now: Date(), environment: ProcessInfo.processInfo.environment) { // wall: guard protocol (spec K §4, wall)
             FileHandle.standardError.write(Data("Un blocage sévère est actif : le service de protection reste en place.\n".utf8))
             exit(refusedExitCode)
         }
         // Override during a severe block: tell the running app first, so it does not register the guard
         // again when its XPC connection drops, and honours the installer's SIGTERM.
-        if writesOverride(marker: marker, now: Date()) {
-            files.writeOverride(GuardOverride(pid: getpid(), writtenAt: Date().timeIntervalSince1970))
+        if writesOverride(marker: marker, now: Date()) { // wall: guard protocol (spec K §4, wall)
+            files.writeOverride(GuardOverride(pid: getpid(), writtenAt: Date().timeIntervalSince1970)) // wall: guard protocol (spec K §4, wall)
         }
         let service = SMAppService.agent(plistName: identity.plistName)
         if service.status != .notRegistered { try? service.unregister() }
@@ -350,10 +350,10 @@ struct GuardEscalation {
             work { client in client.registerThenPing() }
         case .requiresApproval?:
             component = .awaitingApproval
-            if Date().throttleElapsed(since: statusRead) > pingInterval { readStatus() }
+            if Date().throttleElapsed(since: statusRead) > pingInterval { readStatus() } // wall: status poll throttle
         case .enabled?:
-            if Date().throttleElapsed(since: lastPing) >= pingInterval {
-                lastPing = Date()
+            if Date().throttleElapsed(since: lastPing) >= pingInterval { // wall: ping throttle
+                lastPing = Date() // wall: ping throttle
                 work { client in client.pingEscalating() }
             }
         @unknown default:
@@ -431,7 +431,7 @@ struct GuardEscalation {
     private func finish(status next: SMAppService.Status, component next2: BlockingProtectionState.Component) {
         isWorking = false
         let changed = status != next || component != next2
-        status = next; statusRead = Date(); component = armed ? next2 : .notInstalled
+        status = next; statusRead = Date(); component = armed ? next2 : .notInstalled // wall: status poll throttle
         if next == .enabled, defaults.string(forKey: Self.registeredBuildKey) == nil { defaults.set(build, forKey: Self.registeredBuildKey) }
         if changed { onChange?() }
     }
@@ -466,7 +466,7 @@ struct GuardEscalation {
     fileprivate func noteNotArmed() {
         guard armed, !notArmedRetried else { return }
         notArmedRetried = true
-        lastPing = Date().addingTimeInterval(-pingInterval + 3)
+        lastPing = Date().addingTimeInterval(-pingInterval + 3) // wall: ping throttle
     }
 
     fileprivate func connectionLost() {

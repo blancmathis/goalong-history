@@ -52,7 +52,7 @@ import SwiftUI
     }
 
     var body: some View {
-        TimelineView(.periodic(from: Date(), by: 30)) { context in
+        TimelineView(.periodic(from: Date(), by: 30)) { context in // wall: display tick
             let now = self.now ?? GoalongToday.timeline(context.date)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -488,7 +488,7 @@ struct FocusPlanChip: View {
             }
             Group {
                 if live {
-                    TimelineView(.periodic(from: Date(), by: 1)) { context in clock(at: GoalongToday.timeline(context.date)) }
+                    TimelineView(.periodic(from: Date(), by: 1)) { context in clock(at: GoalongToday.timeline(context.date)) } // wall: display tick
                 } else {
                     clock(at: now)
                 }

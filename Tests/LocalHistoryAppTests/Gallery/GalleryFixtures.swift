@@ -164,14 +164,14 @@ import SwiftUI
 
     static func blockingEmpty() -> BlockingController {
         let now = blockingNow
-        return BlockingController(clock: { now })
+        return BlockingController(clock: { now }, continuous: { now.timeIntervalSince1970 })
     }
 
     static func blockingIdle() -> BlockingController {
         var document = BlockingDocument()
         document.lists = [socialList, videoList, focusList]
         let sunday = sunday
-        return BlockingController(document: document, clock: { sunday })
+        return BlockingController(document: document, clock: { sunday }, continuous: { sunday.timeIntervalSince1970 })
     }
 
     static func blockingActive() -> BlockingController {
@@ -186,7 +186,7 @@ import SwiftUI
         usage.blocked = [socialID: 4, focusID: 3]
         usage.earnedSeconds = [socialID: 600.0]
         document.usage = usage
-        return BlockingController(document: document, clock: { now })
+        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 })
     }
 
     static func blockingTriggered() -> BlockingController {
@@ -195,7 +195,7 @@ import SwiftUI
         document.lists = [socialList, videoList, focusList]
         document.sessions = [BlockSession(listIDs: [socialID], start: now.addingTimeInterval(-25 * 60), end: .distantFuture,
                                           lock: .free, origin: .trigger(socialID))]
-        return BlockingController(document: document, clock: { now })
+        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 })
     }
 
     /// A block protected by the password (stored in the document, never in the keychain) and one set for tonight.
@@ -203,7 +203,7 @@ import SwiftUI
         let now = blockingNow
         var document = BlockingDocument()
         document.lists = [socialList, videoList, focusList]
-        let controller = BlockingController(document: document, clock: { now })
+        let controller = BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 })
         controller.setPassword("rendu-fixe")
         controller.start(listIDs: [socialID], until: now.addingTimeInterval(84 * 60), lock: .password)
         controller.schedule(listIDs: [videoID, focusID], start: now.addingTimeInterval(18 * 3_600 + 50 * 60),
@@ -229,7 +229,7 @@ import SwiftUI
         document.lists = [socialList, videoList, focusList]
         document.sessions = [BlockSession(listIDs: [socialID, focusID], start: now.addingTimeInterval(-50 * 60),
                                           end: now.addingTimeInterval(84 * 60), lock: .locked)]
-        return BlockingController(document: document, clock: { now }, guardClient: GalleryGuardClient(guardian))
+        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 }, guardClient: GalleryGuardClient(guardian))
     }
 
     static var freeze: BlockFreeze {

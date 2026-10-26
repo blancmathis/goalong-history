@@ -35,7 +35,7 @@ import SwiftUI
     }
 
     var body: some View {
-        TimelineView(.periodic(from: Date(), by: 30)) { context in
+        TimelineView(.periodic(from: Date(), by: 30)) { context in // wall: display tick
             let now = self.now ?? GoalongToday.timeline(context.date)
             let frozen = controller.freeze.map { $0.end > now } ?? false
             let blocking = controller.activeBlocks.contains { $0.end > now }
@@ -494,7 +494,7 @@ struct BlockingMeter: View {
     }
 
     private func confirm() {
-        let date = Date()
+        let date = Date() // wall: page input; the controller moves it to its trusted frame
         if wholeMac {
             // The freeze promises what the button showed; its 5 min minimum covers an end time just reached.
             let shown: BlockingNowPlan
@@ -613,7 +613,7 @@ struct BlockingMeter: View {
                 Button("Annuler", role: .cancel) {}
                 Button("Geler") {
                     // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
-                    guard let end = pendingFreeze.end(at: Date()) else { return refuseEndPassed(freeze: true) }
+                    guard let end = pendingFreeze.end(at: Date()) else { return refuseEndPassed(freeze: true) } // wall: page input; the controller moves it to its trusted frame
                     controller.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
                     wholeMac = false
                 }
@@ -628,7 +628,7 @@ struct BlockingMeter: View {
     /// starts the block now. An end already reached is refused, never moved to the next day.
     private func start(_ promised: BlockingNowPlan) {
         let ids = controller.lists.map(\.id).filter(selected.contains)
-        guard let plan = promised.confirmed(at: Date()) else { return refuseEndPassed() }
+        guard let plan = promised.confirmed(at: Date()) else { return refuseEndPassed() } // wall: page input; the controller moves it to its trusted frame
         if plan.startsLater {
             if controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) != nil { later = false }
         } else {

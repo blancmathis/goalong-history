@@ -33,7 +33,8 @@ import LocalHistoryQueryCLI
     private var suppressedAppFriction: Set<String> = []
 
     private var document: BlockingDocument
-    private let clock: () -> Date
+    /// The Mac wall clock. Read only by `clock()`: decisions never see it raw (T-044 r5).
+    private let wallClock: () -> Date
     private let store: BlockingStore?
     private let backend: BlockingEnforcementBackend?
     /// Fixed copy of `calendarProvider()`. `followTimeZone` swaps it after a zone change, once it has held
@@ -93,7 +94,7 @@ import LocalHistoryQueryCLI
         }.flatMap { $0.keywords ?? [] })).sorted()
     }
 
-    init(document: BlockingDocument = BlockingDocument(), clock: @escaping () -> Date = Date.init,
+    init(document: BlockingDocument = BlockingDocument(), clock: @escaping () -> Date = Date.init, // wall: the raw clock, read only by `clock()`
          store: BlockingStore? = nil, backend: BlockingEnforcementBackend? = nil,
          calendar: Calendar = .autoupdatingCurrent, calendarProvider: (() -> Calendar)? = nil, continuous: @escaping () -> Double = BlockingClock.continuous,
          boot: @escaping () -> String = BlockingClock.bootID, runsTimers: Bool = false,
@@ -103,7 +104,7 @@ import LocalHistoryQueryCLI
              Set(NSWorkspace.shared.runningApplications.filter { !$0.isTerminated }.compactMap(\.bundleIdentifier))
          }) {
         self.document = document; self.lists = document.lists; self.freeze = document.freeze
-        self.clock = clock; self.store = store; self.backend = backend
+        self.wallClock = clock; self.store = store; self.backend = backend
         let provider = calendarProvider ?? { calendar }
         self.calendarProvider = provider; self.calendar = Self.frozen(provider())
         self.continuous = continuous; self.boot = boot; self.runsTimers = runsTimers; self.appTriggerPollSeconds = appTriggerPollSeconds
@@ -139,7 +140,7 @@ import LocalHistoryQueryCLI
         }
         guardClient?.onChange = { [weak self] in self?.refresh(enforceLast: false) }
         backend?.siteActionStillRequired = { [weak self] in self?.siteActionStillRequired($0) == true }
-        backend?.siteActionDeadline = { [weak self] in self?.siteActionDeadline($0) }
+        backend?.siteActionDeadline = { [weak self] target in self.flatMap { c in c.siteActionDeadline(target).map(c.wallFrame) } }
         backend?.onBlockPresented = { [weak self] target, id in self?.recordBlockedPresentation(target, listID: id) }
         if runsTimers {
             for name in [Notification.Name.NSSystemTimeZoneDidChange, .NSCalendarDayChanged, Notification.Name("NSSystemClockDidChangeNotification")] {
@@ -521,6 +522,7 @@ import LocalHistoryQueryCLI
     }
 
     func lockProgram(listID: UUID, until date: Date) {
+        let date = trusted(date)
         guard admitEdit(), date > clock() else { return }
         guard let index = document.lists.firstIndex(where: { $0.id == listID }) else { return }
         let current = document.lists[index].program.lockedUntil ?? .distantPast
@@ -540,8 +542,8 @@ import LocalHistoryQueryCLI
     }
     private func createSession(listIDs: [UUID], start: Date?, end: Date, lock: BlockLock) -> UUID? {
         guard admitEdit() else { return nil }
-        let now = clock()
-        let start = start ?? now
+        let now = clock(), end = trusted(end)
+        let start = start.map(trusted) ?? now
         guard !listIDs.isEmpty, Set(listIDs).count == listIDs.count, listIDs.count <= 200,
               Set(listIDs).isSubset(of: Set(lists.map(\.id))), start >= now, end > start else {
             error = "Choisissez une liste, un début présent ou futur et une fin après le début."; return nil
@@ -555,6 +557,7 @@ import LocalHistoryQueryCLI
 
     func startFocusBlock(id: UUID, listIDs: [UUID], until end: Date, lock: BlockLock) throws {
         refresh(enforceLast: false)
+        let end = trusted(end)
         guard !storeFailed else { throw FocusFailure.storageFailed }
         guard lock != .password || hasPassword else { throw FocusFailure.locked }
         guard !listIDs.isEmpty, end > clock(), Set(listIDs).isSubset(of: Set(lists.map(\.id))) else { throw FocusFailure.notFound }
@@ -569,6 +572,7 @@ import LocalHistoryQueryCLI
     /// `id` is the commitment ID; persistent ownership makes relaunch/replay idempotent.
     func startCommitmentBlock(id: UUID, listIDs: [UUID], until end: Date) throws {
         refresh(enforceLast: false)
+        let end = trusted(end)
         guard !storeFailed else { throw FocusFailure.storageFailed }
         if let existing = document.sessions.first(where: { $0.id == id }) {
             guard existing.origin == .commitment(id), existing.lock == .locked else { throw FocusFailure.locked }
@@ -783,7 +787,7 @@ import LocalHistoryQueryCLI
         guard freeze == nil else { error = "Le gel en cours ne peut pas être remplacé."; return }
         if mode == .lockScreen, backend?.canLockScreen == false { error = "Le verrouillage de session nécessite l’accessibilité. Choisissez le bouclier."; return }
         let now = clock()
-        let bounded = BlockingWallClock.freezeEnd(end, now: now)
+        let bounded = BlockingWallClock.freezeEnd(trusted(end), now: now)
         document.freeze = BlockFreeze(start: now, end: bounded, mode: mode, allowedApps: allowedApps)
         commit()
     }
@@ -812,21 +816,12 @@ import LocalHistoryQueryCLI
     // MARK: State
 
     func refresh(enforceLast: Bool = true) {
-        let now = clock()
-        lastRefresh = now
         if let store, !storeFailed {
             do { _ = try store.load() } catch { restoreStore(store) }
         }
-        var currentClock = BlockingClockState(wall: now, continuous: continuous(), boot: boot())
-        var jump: TimeInterval = 0
-        if let previous = lastClock {
-            jump = BlockingClock.adjustment(previous: previous, now: currentClock)
-            if jump != 0 { extendLocks(by: jump, at: previous.wall) }
-            else if BlockingClock.isSetBack(previous: previous, now: currentClock) { keepLocks(from: previous.wall, at: now) }
-        }
-        currentClock = BlockingClock.advanced(previous: lastClock, now: currentClock, adjusted: jump)
-        lastClock = currentClock
-        document.clock = currentClock
+        syncClock()
+        let now = clock()
+        lastRefresh = now
         followTimeZone(at: now)
         let triggersChanged = synchronizeAppTriggers(at: now)
         if !storeFailed, let store, (triggersChanged || now.throttleElapsed(since: lastSavedAt) >= 60), hasPersistedWork {
@@ -903,7 +898,7 @@ import LocalHistoryQueryCLI
                 }
                 if let message, error != message { error = message }
             }
-            backend.updateFreeze(freeze)
+            backend.updateFreeze(freeze.map { var value = $0; value.start = wallFrame(value.start); value.end = wallFrame(value.end); return value })
         }
         let need = needsObservation
         if observing != need {
@@ -995,6 +990,33 @@ import LocalHistoryQueryCLI
         if next == pollDeadline, !exactBoundaries.contains(next) { value.tolerance = 1.5 }
         RunLoop.main.add(value, forMode: .common); timer = value
     }
+    // MARK: Trusted clock (T-044 r5)
+
+    /// The one « now » of every decision here (`BlockingClock.trusted`): sessions, breaks, freeze, programs,
+    /// quotas and their day all live in its frame. A clock set back leaves it running at real speed.
+    private func clock() -> Date {
+        BlockingClock.trusted(wall: wallClock(), continuous: continuous(), boot: boot(), last: lastClock) // wall: the one raw read
+    }
+    /// The trusted now, for callers comparing with `activeBlocks` or `freeze` (Concentration).
+    var now: Date { clock() }
+    /// Trusted minus wall time: 0, or the amount the clock was set back in this boot.
+    private var skew: TimeInterval { let wall = wallClock(); return BlockingClock.trusted(wall: wall, continuous: continuous(), boot: boot(), last: lastClock).timeIntervalSince(wall) } // wall: the one conversion
+    /// A wall date (page, Concentration, observation) moved into the trusted frame.
+    func trusted(_ wall: Date) -> Date { wall.addingTimeInterval(skew) }
+    /// A trusted date moved back to the wall frame, for the shields and Concentration's own clock.
+    func wallFrame(_ date: Date) -> Date { date.addingTimeInterval(-skew) }
+    /// Compensates a forward jump of the wall clock (protected ends move with it, spec K §4) and stores
+    /// the sample, so `clock()` measures from it.
+    private func syncClock() {
+        let current = BlockingClockState(wall: wallClock(), continuous: continuous(), boot: boot()) // wall: the sample
+        var jump: TimeInterval = 0
+        if let previous = lastClock {
+            jump = BlockingClock.adjustment(previous: previous, now: current)
+            if jump != 0 { extendLocks(by: jump, at: previous.trusted) }
+        }
+        lastClock = BlockingClock.advanced(previous: lastClock, now: current, adjusted: jump)
+        document.clock = lastClock
+    }
     private func extendLocks(by jump: Double, at oldWall: Date) {
         for index in document.sessions.indices where effectiveLock(document.sessions[index].lock).protectsLists {
             if jump < 0 || document.sessions[index].start > oldWall { document.sessions[index].start = document.sessions[index].start.addingTimeInterval(jump) }
@@ -1011,20 +1033,6 @@ import LocalHistoryQueryCLI
             document.passwordLock?.retryAfter = until.addingTimeInterval(jump)
         }
         if var freeze = document.freeze { if jump < 0 { freeze.start = freeze.start.addingTimeInterval(jump) }; freeze.end = freeze.end.addingTimeInterval(jump); document.freeze = freeze }
-    }
-    /// Clock set back in this boot (T-044 C4-01): each protected block in progress at `oldWall` starts no
-    /// later than `now` and keeps its wall end. It stays on and only gets longer; the anchor is kept, so
-    /// setting the clock forward again later is not compensated twice.
-    private func keepLocks(from oldWall: Date, at now: Date) {
-        holdProgramWindows(at: oldWall, jump: 0)
-        func kept(_ value: BlockSession) -> BlockSession {
-            var value = value
-            if effectiveLock(value.lock).protectsLists, value.start <= oldWall, value.end > oldWall { value.start = min(value.start, now) }
-            return value
-        }
-        document.sessions = document.sessions.map(kept)
-        document.heldPrograms = document.heldPrograms?.map(kept)
-        if var freeze = document.freeze, freeze.start <= oldWall, freeze.end > oldWall { freeze.start = min(freeze.start, now); document.freeze = freeze }
     }
     /// Turns each protected program window in progress at `wall` into a held session, so a later
     /// recomputation (clock jump, zone change) cannot end it early.
@@ -1071,6 +1079,7 @@ import LocalHistoryQueryCLI
     }
 
     func observe(_ target: BlockingObservation) {
+        var target = target; target.at = trusted(target.at)
         if target.isActivation, hasAppTriggers { refresh(enforceLast: false) }
         if target.isActivation { frictionActivation(target) }
         backend?.observeBrowser(target)
@@ -1138,11 +1147,12 @@ import LocalHistoryQueryCLI
                 let app = list.apps.first { $0.bundleIdentifier == target.bundleIdentifier }
                     ?? BlockAppRule(bundleIdentifier: target.bundleIdentifier, name: target.bundleIdentifier)
                 var presentationBlock = block; presentationBlock.feedback = feedback(for: list.id)
+                presentationBlock.start = wallFrame(block.start); presentationBlock.end = wallFrame(block.end)
                 if list.effectiveAction == .slowDown { backend.blockSlowDownApp(target, app: app, block: presentationBlock, listName: list.name) }
                 else { backend.blockApp(target, app: app, block: presentationBlock, listName: list.name) }
             } else {
                 let reason = special ?? list.quotaMinutesPerDay.map { BlockingVeilPresentation.Reason.quotaUsed(target.url ?? "", minutes: $0) } ?? .site(target.url ?? "")
-                let presentation = BlockingVeilPresentation(reason: reason, listName: list.name, start: block.start, end: block.end,
+                let presentation = BlockingVeilPresentation(reason: reason, listName: list.name, start: wallFrame(block.start), end: wallFrame(block.end),
                     lock: block.lock, breakMinutes: list.breaks?.minutes, breaksLeft: block.breaksLeft[list.id] ?? 0,
                     feedback: feedback(for: list.id))
                 backend.blockSite(target, presentation: presentation) { [weak self] in self?.takeBreak(listID: list.id) }
@@ -1171,6 +1181,7 @@ import LocalHistoryQueryCLI
     }
 
     func siteActionDeadline(_ target: BlockingObservation) -> Date? {
+        syncClock() // a forward jump since the last refresh counts before a tab is closed
         guard target.isBrowser, target.isForeground, target.sessionAvailable, !BlockingRules.exempt(target) else { return nil }
         if let freeze, freeze.mode == .shield, !freeze.allowedApps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { return nil }
         let now = clock(), usage = todayUsage()
@@ -1234,7 +1245,8 @@ import LocalHistoryQueryCLI
         }
         frictionTarget = target
         guard let friction else { return }
-        backend?.slowDown(target, presentation: friction, onRenounce: { [weak self] in self?.renounceFriction() }, onContinue: { [weak self] in self?.continueFriction() })
+        var shown = friction; shown.shownAt = wallFrame(friction.shownAt); shown.readyAt = wallFrame(friction.readyAt)
+        backend?.slowDown(target, presentation: shown, onRenounce: { [weak self] in self?.renounceFriction() }, onContinue: { [weak self] in self?.continueFriction() })
     }
     func renounceFriction() {
         guard let value = friction, let target = frictionTarget else { return }
@@ -1399,7 +1411,7 @@ import LocalHistoryQueryCLI
             if guardClient != nil { GoalongGuardFiles.reportHealth() }
             controller = value
             value.onObservationRequirementChanged = { [weak self] needed in self?.monitor?.setBlockingObservationEnabled(needed) }
-            let hud = BlockingTimerHUD { [weak value] in value?.timerInput }
+            let hud = BlockingTimerHUD(clock: { [weak value] in value?.now ?? .distantPast }) { [weak value] in value?.timerInput }
             timerHUD = hud
             value.onTimerInputChanged = { [weak hud] in hud?.update() }
             hud.update()

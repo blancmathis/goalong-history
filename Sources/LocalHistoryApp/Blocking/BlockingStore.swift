@@ -168,6 +168,11 @@ struct BlockingClockState: Codable, Equatable {
     var anchor: Double? = nil
 
     var offset: Double { wall.timeIntervalSince1970 - continuous }
+    /// This sample read through the trusted-now rule (`BlockingClock.trusted`).
+    var trusted: Date {
+        let proven = continuous + (anchor ?? offset)
+        return Date(timeIntervalSince1970: proven + min(max(0, wall.timeIntervalSince1970 - proven), BlockingClock.jumpTolerance))
+    }
 }
 
 enum BlockingClock {
@@ -191,10 +196,16 @@ enum BlockingClock {
         }
         return min(0, now.wall.timeIntervalSince(previous.wall))
     }
-    /// The wall clock went back against continuous time in this boot (T-044 C4-01). Protected blocks then
-    /// keep their wall end, so they last longer and never pause (spec K §4).
-    static func isSetBack(previous: BlockingClockState, now: BlockingClockState) -> Bool {
-        previous.boot == now.boot && now.continuous >= previous.continuous && now.offset - previous.offset < -jumpTolerance
+    /// The one « now » of every blocking and stake decision (T-044 r5). In the boot of `last`, it is the
+    /// time proven by continuous time since the anchor (wall time at the last compensated jump), plus
+    /// at most `jumpTolerance` of forward drift: a clock set back never moves it back, and a forward jump
+    /// counts only once `refresh` has compensated it (protected ends moved by the same amount, spec K §4).
+    /// Without a sample of this boot there is no proof: the wall clock (L-05).
+    static func trusted(wall: Date, continuous: Double, boot: String, last: BlockingClockState?) -> Date {
+        guard let last, last.boot == boot, continuous >= last.continuous else { return wall }
+        var sample = BlockingClockState(wall: wall, continuous: continuous, boot: boot)
+        sample.anchor = last.anchor ?? last.offset
+        return sample.trusted
     }
     /// `now` with the anchor the next refresh measures from: kept while no jump was compensated in
     /// this boot, moved to `now` after a compensation, a reboot or without any previous sample.

@@ -34,7 +34,7 @@ import LocalHistoryQueryCLI
     private let calendar: Calendar
     /// Set by the app before start(); the CLI and tests keep the silent default.
     var audio: FocusSessionAudio = NoOpFocusSessionAudio()
-    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) {
+    init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) { // wall: the raw clock of the controller
         self.storeFactory = storeFactory; self.factory = factory; self.blockingProvider = blockingProvider; self.presentsPanels = presentsPanels
         self.clock = clock; self.calendar = calendar
     }
@@ -97,7 +97,7 @@ import LocalHistoryQueryCLI
     /// Minutes, not seconds: one wake per minute while a session runs, none otherwise.
     private func updateMenuBar(phase: FocusPhase?, session: FocusSession?) {
         menuBarTimer?.invalidate(); menuBarTimer = nil
-        let now = Date()
+        let now = Date() // wall: menu bar display
         guard let session, let phase, phase.kind != .ended, phase.endsAt.map({ $0 > now }) ?? true else { onMenuBarText?(nil); return }
         let text: String, next: TimeInterval
         if let end = phase.endsAt {
