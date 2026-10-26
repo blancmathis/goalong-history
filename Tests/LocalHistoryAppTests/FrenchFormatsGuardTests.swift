@@ -42,7 +42,7 @@ final class FrenchFormatsGuardTests: XCTestCase {
     func testUISourcesDoNotUseSystemLocaleFormatting() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/LocalHistoryApp")
-        let forbidden = ["Locale.current", "\\.formatted\\(\\)", "\\.formatted\\(date:", "style: \\.time\\)", "style: \\.date\\)", "ByteCountFormatter\\(\\)\\s*\\n\\s*formatter\\.countStyle = \\.file\\n\\s*(?!formatter\\.locale)",
+        let forbidden = ["Locale.current", "\\.formatted\\(\\)", "\\.formatted\\(date:", "style: \\.time\\)", "style: \\.date\\)", "ByteCountFormatter\\(",
                          // « Repère ajouté à 2:39 AM » (T-044 C3-03): the system-region shorthand.
                          "DateFormatter\\.localizedString\\(",
                          // A stored day key in French text, « Aperçu local du 2026-10-26 » (T-044 C3-04): use GoalongUIFormat.day(key:).
