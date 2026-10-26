@@ -96,17 +96,35 @@ final class ClockRollbackThrottleTests: XCTestCase {
         XCTAssertNoThrow(try c.setCommitment(period: .init(kind: .day, key: "2026-10-05"), kind: .work, target: 60))
     }
 
+    /// Commitments (C4-03): the launch anchor survives a relaunch in the same boot. Set the clock back one day,
+    /// quit and relaunch Goalong (no stored commitment): yesterday still cannot be committed.
+    @MainActor func testClockSetBackThenRelaunchCannotOpenAPastDay() throws {
+        let s = FocusStore(directory: URL(fileURLWithPath: "/private/tmp/clock-rollback-relaunch-" + UUID().uuidString))
+        addTeardownBlock { try? FileManager.default.removeItem(at: s.directory) }
+        var settings = FocusSettings(); settings.morningPrompt = false; settings.eveningPrompt = false; try s.saveSettings(settings)
+        var now = FocusCalendar.dayInterval("2026-10-05", calendar: calendar)!.start.addingTimeInterval(8 * 3_600), uptime = 1_000.0
+        _ = try ConcentrationController(store: s, clock: { now }, calendar: calendar, continuous: { uptime }, boot: { "test" })
+        now = now.addingTimeInterval(-86_400); uptime += 10      // same boot, the clock set back one day
+        let relaunched = try ConcentrationController(store: s, clock: { now }, calendar: calendar, continuous: { uptime }, boot: { "test" })
+        XCTAssertThrowsError(try relaunched.setCommitment(period: .init(kind: .day, key: "2026-10-04"), kind: .work, target: 60),
+                             "a relaunch in the same boot reopens a day already over")
+    }
+
     /// Source guard: every wall-clock throttle goes through `throttleElapsed(since:)` (a gap either way counts).
+    /// Any comparison of a gap measured from the current instant (`now`, `now()`, `Date()`, `clock()`, an
+    /// observation `.at`) other than a sign check, any operator, any argument (T-044 C4-02, C4-05).
     func testWallClockThrottlesIgnoreTheDirectionOfTheGap() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/LocalHistoryApp")
-        let r = try NSRegularExpression(pattern: "timeIntervalSince\\((self\\.)?(last\\w*|statusRead)\\)\\s*>")
+        let regexes = try ["timeIntervalSince\\((self\\.)?(last\\w*|statusRead)\\)\\s*[<>]",
+                           "(\\bnow(\\(\\))?|\\bDate\\(\\)|\\bclock\\(\\)|\\w\\.at)\\.timeIntervalSince\\(([^()]|\\([^()]*\\))*\\)\\s*+[<>]=?+\\s*+(?!0(?![\\d.]))",
+                           "timeIntervalSinceNow\\s*[<>]"].map { try NSRegularExpression(pattern: $0) }
         var hits: [String] = []
         let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)!.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
         XCTAssertGreaterThan(files.count, 50)
         for file in files {
             for (i, line) in try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n").enumerated()
-            where r.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil {
+            where regexes.contains(where: { $0.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil }) {
                 hits.append("\(file.lastPathComponent):\(i + 1)")
             }
         }

@@ -64,8 +64,9 @@ struct FocusPanel: Equatable {
     private let continuous: () -> Double
     private let boot: () -> String
     /// Proof of real time from launch on: without a stored commitment anchor, a clock set back later in this
-    /// boot still cannot open a period already over (T-044 C3, #109).
-    private let launchClock: BlockingClockState
+    /// boot still cannot open a period already over (T-044 C3, #109). Stored, so a relaunch in the same
+    /// boot keeps the proof of an earlier launch (C4-03).
+    private var launchClock: BlockingClockState
     private let calendar: Calendar
     private let blocking: () -> BlockingController?
     private let audio: FocusSessionAudio
@@ -120,6 +121,10 @@ struct FocusPanel: Equatable {
         let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day
         status = FocusStatus(since: clock()); plan = FocusPlan(day: day); promptState = FocusPromptState(day: day)
         try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
+        if let proven = FocusCommitRule.anchoredNow(try? store.clockAnchor(), clock: launchClock), proven > launchClock.wall {
+            launchClock.wall = proven
+        }
+        try? store.saveClockAnchor(launchClock)
         // Preserve once-per-week warnings made by the pre-ISO implementation.
         for i in limitMarks.indices where limitMarks[i].kind == "weekly" && FocusValidation.day(limitMarks[i].period) {
             limitMarks[i].period = FocusCalendar.weekKey(limitMarks[i].at, calendar: calendar)
@@ -447,7 +452,7 @@ struct FocusPanel: Equatable {
     func noteInput(at date: Date, count: Int) { if count > 0 { latestInput = date } }
     func observe(_ value: FocusObservation) {
         var value = value
-        value.input = latestInput.map { value.at.timeIntervalSince($0) >= 0 && value.at.timeIntervalSince($0) < 60 } ?? false
+        value.input = latestInput.map { value.at.timeIntervalSince($0) >= 0 && value.at.throttleElapsed(since: $0) < 60 } ?? false
         observation = value
         if settings.detectionEnabled && currentSession == nil { _ = detection.observe(value) } else { detection.reset() }
         refresh()

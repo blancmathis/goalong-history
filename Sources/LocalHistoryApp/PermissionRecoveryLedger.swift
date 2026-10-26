@@ -33,7 +33,7 @@ enum PermissionRecoveryLedger {
               let data = defaults.data(forKey: prefix + service), data.count <= 2048,
               let record = try? JSONDecoder().decode(Record.self, from: data),
               record.scope == scope, now.timeIntervalSince(record.updatedAt) >= 0,
-              now.timeIntervalSince(record.updatedAt) < 86400,
+              now.throttleElapsed(since: record.updatedAt) < 86400,
               [record.progress.settingsVisits, record.progress.relaunches,
                record.progress.resets, record.progress.relaunchesAfterReset].allSatisfy({ (0...9).contains($0) })
         else { return Progress() }

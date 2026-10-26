@@ -689,7 +689,7 @@
             withMetadataLock {
                 if metadataRefreshInProgress { return false }
                 if force || metadata.refreshedAt == nil { return true }
-                return now().timeIntervalSince(metadata.refreshedAt ?? .distantPast)
+                return now().throttleElapsed(since: metadata.refreshedAt ?? .distantPast)
                     >= limits.metadataRefreshInterval
             }
         }
@@ -702,7 +702,7 @@
             let shouldStart = withMetadataLock { () -> Bool in
                 if metadataRefreshInProgress { return false }
                 if !force, let refreshedAt = metadata.refreshedAt,
-                    now().timeIntervalSince(refreshedAt) < limits.metadataRefreshInterval
+                    now().throttleElapsed(since: refreshedAt) < limits.metadataRefreshInterval
                 {
                     return false
                 }

@@ -208,6 +208,9 @@ struct FocusStore {
         guard let fd = try openDirectory(nil, create: false) else { return }; defer { close(fd) }
         guard unlinkat(fd, "pending.json", 0) == 0, fsync(fd) == 0 else { throw FocusFailure.storageFailed }
     }
+    /// Latest launch anchor (T-044 C4-03): a relaunch in the same boot keeps the real time it proved.
+    func clockAnchor() throws -> BlockingClockState? { try load(BlockingClockState.self, area: nil, name: "clock-anchor.json") }
+    func saveClockAnchor(_ value: BlockingClockState) throws { try save(value, area: nil, name: "clock-anchor.json") }
     func prompts() throws -> FocusPromptState? { try load(FocusPromptState.self, area: nil, name: "prompts.json") }
     func savePrompts(_ value: FocusPromptState) throws { try save(value, area: nil, name: "prompts.json") }
     func marks() throws -> [FocusLimitMark] { try load([FocusLimitMark].self, area: nil, name: "limit-marks.json") ?? [] }

@@ -89,7 +89,7 @@ struct FocusDetection {
             let elapsed = value.at.timeIntervalSince(previous.at)
             if elapsed <= rule.maximumSampleGap {
                 let input = previous.input ? elapsed : 0, switches = previous.context != value.context ? 1 : 0
-                if let last = slices.last, value.at.timeIntervalSince(last.start) <= rule.evaluationSeconds {
+                if let last = slices.last, value.at.throttleElapsed(since: last.start) <= rule.evaluationSeconds {
                     let i = slices.count - 1
                     slices[i].end = value.at; slices[i].inputSeconds += input
                     slices[i].other = slices[i].other || previous.verdict == .other; slices[i].switches += switches
@@ -102,15 +102,15 @@ struct FocusDetection {
         let cutoff = value.at.addingTimeInterval(-rule.windowSeconds)
         slices.removeAll { $0.end <= cutoff }
         if value.verdict == .other { otherSince = otherSince ?? value.at } else { otherSince = nil }
-        guard value.at.timeIntervalSince(evaluatedAt) >= rule.evaluationSeconds else { return enteredAt != nil }
+        guard value.at.throttleElapsed(since: evaluatedAt) >= rule.evaluationSeconds else { return enteredAt != nil }
         evaluatedAt = value.at
         let noisy = (0..<rule.noisyMinutes).allSatisfy { minute in
             let end = value.at.addingTimeInterval(-Double(minute * 60))
             return slices.filter { $0.end > end.addingTimeInterval(-60) && $0.end <= end }.reduce(0) { $0 + $1.switches } > rule.switchesPerMinute
         }
         if let enteredAt {
-            let stay = value.at.timeIntervalSince(enteredAt) >= rule.minimumStaySeconds
-            let other = otherSince.map { value.at.timeIntervalSince($0) >= rule.otherSeconds } ?? false
+            let stay = value.at.throttleElapsed(since: enteredAt) >= rule.minimumStaySeconds
+            let other = otherSince.map { value.at.throttleElapsed(since: $0) >= rule.otherSeconds } ?? false
             if stay && (other || noisy) { self.enteredAt = nil }
         } else {
             let input = slices.reduce(0.0) { total, slice in total + slice.inputSeconds * max(0, slice.end.timeIntervalSince(max(slice.start, cutoff))) / max(0.001, slice.end.timeIntervalSince(slice.start)) }

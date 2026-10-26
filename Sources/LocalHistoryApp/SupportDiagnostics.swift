@@ -284,7 +284,7 @@ final class SupportDiagnostics {
         let signature = Self.signature(values, excludingVolatile: true)
         let now = clock()
         lock.lock()
-        if let last = lastPeriodic[key], last.signature == signature, now.timeIntervalSince(last.at) < refreshAfter,
+        if let last = lastPeriodic[key], last.signature == signature, now.throttleElapsed(since: last.at) < refreshAfter,
            now >= last.at {
             lock.unlock(); return
         }
@@ -394,7 +394,7 @@ final class SupportDiagnostics {
         let now = clock()
         var closed: RepeatWindow?
         lock.lock()
-        if var window = repeatWindows[key], now.timeIntervalSince(window.startedAt) < Self.repeatWindow,
+        if var window = repeatWindows[key], now.throttleElapsed(since: window.startedAt) < Self.repeatWindow,
            now >= window.startedAt {
             if window.passed >= Self.repeatAllowance {
                 window.suppressed += 1; suppressedTotal += 1
@@ -424,7 +424,7 @@ final class SupportDiagnostics {
         var due: [RepeatWindow] = []
         lock.lock()
         for (key, window) in repeatWindows {
-            let expired = now.timeIntervalSince(window.startedAt) >= Self.repeatWindow || now < window.startedAt
+            let expired = now.throttleElapsed(since: window.startedAt) >= Self.repeatWindow || now < window.startedAt
             if window.suppressed > 0, expired || force {
                 due.append(window)
                 if expired { repeatWindows[key] = nil } else { repeatWindows[key]?.suppressed = 0 }
