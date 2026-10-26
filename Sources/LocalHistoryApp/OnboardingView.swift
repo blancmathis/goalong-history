@@ -172,7 +172,9 @@
         func finishSetup() {
             // Source activation already saved the user's choices. Do not reset their
             // recording, privacy or analysis preferences when setup is revisited.
-            guard launchAtLogin.setUserPreference(launchAtLoginPreference, surface: .onboarding) else {
+            // Goalong Dev never owns the login item: its refusal must not trap setup on « Prêt ».
+            guard launchAtLogin.setUserPreference(launchAtLoginPreference, surface: .onboarding)
+                    || !GoalongLoginItemGate.isAllowed else {
                 note = launchAtLogin.message ?? "macOS n’a pas enregistré ce choix. Réessayez ou désactivez le démarrage automatique."
                 return
             }

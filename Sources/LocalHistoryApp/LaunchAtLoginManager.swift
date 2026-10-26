@@ -2,6 +2,7 @@
     import AppKit
     import Combine
     import Foundation
+    import LocalHistoryCore
     import ServiceManagement
 
     @MainActor
@@ -100,10 +101,11 @@
         }
 
         @discardableResult
-        func setEnabled(_ enabled: Bool) -> Bool {
-            guard GoalongLoginItemGate.isAllowed else {
+        func setEnabled(_ enabled: Bool, channel: GoalongBuildChannel = .current) -> Bool {
+            guard channel.allowsLoginItems else {
                 message = "Goalong Dev ne gère pas l’ouverture à la connexion : c’est le rôle de Goalong installé."
-                return false
+                // Turning it off needs no change, so it succeeds; only turning it on is refused.
+                return !enabled
             }
             isChanging = true
             message = nil
