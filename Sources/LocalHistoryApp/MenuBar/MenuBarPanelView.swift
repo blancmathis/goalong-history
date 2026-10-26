@@ -121,10 +121,6 @@
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 
-    private let hourFormatter: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.dateFormat = "HH:mm"; return f
-    }()
-
     // MARK: - Header (tracking)
 
     private struct PanelHeader: View {
@@ -354,7 +350,7 @@
         private var meta: String {
             var parts: [String] = []
             if let cycle = run.cycle, let cycles = run.cycles { parts.append("Cycle \(cycle) sur \(cycles)") }
-            if let next = run.nextBreak, !run.isPaused { parts.append("pause à \(hourFormatter.string(from: next))") }
+            if let next = run.nextBreak, !run.isPaused { parts.append("pause à \(GoalongUIFormat.time(next))") }
             if run.isPaused { parts.append("en pause") }
             return parts.joined(separator: ", ")
         }

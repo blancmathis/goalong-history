@@ -9,21 +9,18 @@ enum BlockingFormat {
     static func isOpenEnded(_ end: Date) -> Bool { end.timeIntervalSinceReferenceDate > GoalongToday.now.timeIntervalSinceReferenceDate + 400 * 86_400 }
 
     static func time(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.dateFormat = "H:mm"
-        return formatter.string(from: date)
+        GoalongUIFormat.time(date)
     }
 
-    /// An end at 0:00 reads « minuit », so an all-day block is not shown as « 0:00 → 0:00 ».
+    /// An end at 00:00 reads « minuit », so an all-day block is not shown as « 00:00 → 00:00 ».
     static func endTime(_ date: Date) -> String {
         let value = time(date)
-        return value == "0:00" ? "minuit" : value
+        return value == "00:00" ? "minuit" : value
     }
 
     static func minuteOfDay(_ minute: Int) -> String {
         let value = ((minute % 1_440) + 1_440) % 1_440
-        return String(format: "%d:%02d", value / 60, value % 60)
+        return String(format: "%02d:%02d", value / 60, value % 60)
     }
 
     /// « 1 h 24 », « 24 min », « moins d’une minute ».

@@ -137,7 +137,7 @@ import ServiceManagement
         }
         stateChanged?()
     }
-    static func clockText(_ date: Date) -> String { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f.string(from: date) }
+    static func clockText(_ date: Date) -> String { GoalongUIFormat.time(date) }
     private static func when(_ date: Date) -> String {
         let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.dateFormat = "EEEE 'à' HH:mm"; return f.string(from: date)
     }

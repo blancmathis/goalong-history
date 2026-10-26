@@ -348,7 +348,7 @@
                         .lineLimit(1)
                         .help(title)
                     HStack(spacing: 6) {
-                        Text(Self.timeFormatter.string(from: AgentConversationListPresentation.date(for: record)))
+                        Text(GoalongUIFormat.time(AgentConversationListPresentation.date(for: record)))
                             .monospacedDigit()
                         Text("·")
                         Text(conversationDetail(record))
@@ -417,13 +417,6 @@
             return
                 "\(record.provider.frenchName) · \(counts.prompts) demande\(counts.prompts > 1 ? "s" : "") · \(counts.replies) réponse\(counts.replies > 1 ? "s" : "")"
         }
-
-        private static let timeFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.locale = .current
-            formatter.dateFormat = "HH:mm"
-            return formatter
-        }()
 
         private var localStatusBanner: some View {
             HStack(alignment: .top, spacing: 13) {

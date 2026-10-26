@@ -456,7 +456,7 @@
                                         Text("\(page.clickCount) click\(page.clickCount == 1 ? "" : "s")")
                                         Text("\(page.semanticSnapshotCount) memory snapshot\(page.semanticSnapshotCount == 1 ? "" : "s")")
                                         Text(
-                                            "\(DashboardFormatters.shortTime.string(from: page.firstSeen))–\(DashboardFormatters.shortTime.string(from: page.lastSeen))"
+                                            "\(GoalongUIFormat.time(page.firstSeen))–\(GoalongUIFormat.time(page.lastSeen))"
                                         )
                                     }
                                     .font(.system(size: 11, weight: .medium))
@@ -665,9 +665,9 @@
                             .lineLimit(2)
                     }
                     HStack(spacing: 8) {
-                        Text(DashboardFormatters.shortTime.string(from: interaction.firstSeen))
+                        Text(GoalongUIFormat.time(interaction.firstSeen))
                         if interaction.lastSeen > interaction.firstSeen {
-                            Text("dernière fois à \(DashboardFormatters.shortTime.string(from: interaction.lastSeen))")
+                            Text("dernière fois à \(GoalongUIFormat.time(interaction.lastSeen))")
                         }
                         if let role = interaction.role { Text(role) }
                         if let detail = interaction.detail { Text(detail) }

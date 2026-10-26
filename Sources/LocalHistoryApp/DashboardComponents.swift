@@ -609,12 +609,6 @@
             return formatter
         }()
 
-        static let shortTime: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "HH:mm"
-            return formatter
-        }()
-
         static let fullTimestamp: DateFormatter = {
             let formatter = DateFormatter()
             formatter.locale = GoalongUIFormat.locale
