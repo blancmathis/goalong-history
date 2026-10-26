@@ -216,7 +216,7 @@ private final class BlockingFreezePanel: NSPanel {
         panel.alphaValue = 1; panel.orderFrontRegardless(); veil = panel
         if veilTarget?.pid != target.pid || veilTarget?.windowBoundary != target.windowBoundary
             || veilTarget?.url != target.url || veilTarget?.privateWindow != target.privateWindow
-            || target.at.timeIntervalSince(lastTabClose) >= 1.5 {
+            || target.at.throttleElapsed(since: lastTabClose) >= 1.5 {
             lastTabClose = target.at
             closeTab(target)
         }

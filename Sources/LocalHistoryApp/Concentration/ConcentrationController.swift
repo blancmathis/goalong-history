@@ -63,6 +63,9 @@ struct FocusPanel: Equatable {
     private let clock: () -> Date
     private let continuous: () -> Double
     private let boot: () -> String
+    /// Proof of real time from launch on: without a stored commitment anchor, a clock set back later in this
+    /// boot still cannot open a period already over (T-044 C3, #109).
+    private let launchClock: BlockingClockState
     private let calendar: Calendar
     private let blocking: () -> BlockingController?
     private let audio: FocusSessionAudio
@@ -113,7 +116,7 @@ struct FocusPanel: Equatable {
     init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
          blocking: @escaping () -> BlockingController? = { nil }, audio: FocusSessionAudio = NoOpFocusSessionAudio(), runsTimers: Bool = false,
          continuous: @escaping () -> Double = BlockingClock.continuous, boot: @escaping () -> String = BlockingClock.bootID) throws {
-        self.store = store; self.clock = clock; self.continuous = continuous; self.boot = boot; self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
+        self.store = store; self.clock = clock; self.continuous = continuous; self.boot = boot; launchClock = .init(wall: clock(), continuous: continuous(), boot: boot()); self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
         let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day
         status = FocusStatus(since: clock()); plan = FocusPlan(day: day); promptState = FocusPromptState(day: day)
         try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
@@ -450,7 +453,7 @@ struct FocusPanel: Equatable {
         refresh()
         if value.observing, value.available, value.idleSeconds < 120 { checkPrompts(activity: true) }
         // Also without observation: sessions, plans and period ends still need a measurement (T-044 B2-02).
-        if value.at.timeIntervalSince(lastMeasureRequest) >= 60 { lastMeasureRequest = value.at; measurementRefresh?() }
+        if value.at.throttleElapsed(since: lastMeasureRequest) >= 60 { lastMeasureRequest = value.at; measurementRefresh?() }
     }
     func applyMeasurements(_ days: [GoalongLocalAnalytics.Day], hasDefinition: Bool) {
         measuredDays = Dictionary(uniqueKeysWithValues: days.map { (FocusCalendar.dayKey($0.date, calendar: calendar), $0) })
@@ -502,7 +505,7 @@ struct FocusPanel: Equatable {
         showPanel(.init(kind: .limit, text: mark.kind == "endOfDay" ? "Fin de journée — votre limite." : "\(mark.kind == "weekly" ? settings.limits.weeklyHours ?? 0 : settings.limits.dailyHours ?? 0) h \(mark.usesActiveTime ? "d’activité (sans définition du travail)" : "de travail") — votre limite."))
     }
     func refresh() {
-        if storageFailed, clock().timeIntervalSince(lastStorageRetry) >= 60 { retryStorage() }
+        if storageFailed, clock().throttleElapsed(since: lastStorageRetry) >= 60 { retryStorage() }
         if phaseBlockID != nil || commitments.contains(where: { $0.result?.stake.state == .applied }) { blocking()?.refresh(enforceLast: false) }
         let now = clock(), day = FocusCalendar.dayKey(now, calendar: calendar)
         if day != currentDay {
@@ -536,7 +539,7 @@ struct FocusPanel: Equatable {
             }
         }
         if panel?.expiresAt.map({ $0 <= now }) == true { dismissPanel() }
-        if abs(now.timeIntervalSince(lastCommitmentCardRefresh)) >= 60 || commitmentCards.contains(where: { ($0.editMode == "free" && $0.editUntil <= now) || ($0.exitUntil.map { $0 <= now } == true && ($0.canUseJoker || $0.canDeclare)) }) { refreshCommitmentCards() }
+        if now.throttleElapsed(since: lastCommitmentCardRefresh) >= 60 || commitmentCards.contains(where: { ($0.editMode == "free" && $0.editUntil <= now) || ($0.exitUntil.map { $0 <= now } == true && ($0.canUseJoker || $0.canDeclare)) }) { refreshCommitmentCards() }
         checkPrompts(activity: false); checkLimits(); publishStatus(); scheduleTimer()
     }
     private func phaseKey(_ phase: FocusPhase) -> String { "\(phase.kind.rawValue)|\(phase.cycle)|\(phase.startedAt.timeIntervalSince1970)" }
@@ -736,10 +739,10 @@ extension ConcentrationController {
     private func exitOpen(_ value: FocusCommitment) -> Bool {
         FocusCommitmentRules.exitOpen(value, blockEnd: stakeBlockEnd(value), now: clock(), clock: clockState(), calendar: calendar)
     }
-    /// Latest moment proven by continuous time since a stored anchor of this boot (T-044 C2-02).
+    /// Latest moment proven by continuous time since a stored anchor or the launch of this boot (T-044 C2-02).
     private func realNow() -> Date? {
         let state = clockState()
-        return commitments.flatMap { [$0.createdClock, $0.result?.settledClock] }.compactMap { FocusCommitRule.anchoredNow($0, clock: state) }.max()
+        return (commitments.flatMap { [$0.createdClock, $0.result?.settledClock] } + [launchClock]).compactMap { FocusCommitRule.anchoredNow($0, clock: state) }.max()
     }
     func commitmentProgress(_ value: FocusCommitment) throws -> FocusCommitmentProgress {
         if let result = value.result {

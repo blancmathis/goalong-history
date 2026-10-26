@@ -168,7 +168,7 @@
             if isBrowser {
                 let shouldProbePrivacy =
                     cachedPrivacyIdentity != windowIdentity
-                    || clock.date().timeIntervalSince(lastPrivacyProbe) >= 1.25
+                    || clock.date().throttleElapsed(since: lastPrivacyProbe) >= 1.25
 
                 if shouldProbePrivacy {
                     var privacySignals: [String?] = [
@@ -234,7 +234,7 @@
             if isBrowser, config.captureURLs {
                 let shouldProbeURL =
                     cachedBrowserIdentity != windowIdentity
-                    || clock.date().timeIntervalSince(lastURLProbe) >= 1.25
+                    || clock.date().throttleElapsed(since: lastURLProbe) >= 1.25
 
                 if shouldProbeURL {
                     let rawURL = AXReader.browserURL(

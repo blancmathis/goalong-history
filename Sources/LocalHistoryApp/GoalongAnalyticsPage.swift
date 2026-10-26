@@ -255,7 +255,7 @@ struct GoalongAnalyticsPage: View {
             // Visible-page refresh only. Completed days reuse the existing cache.
             guard model.dashboardIsVisible, !previewActive, !analytics.busy,
                   GoalongToday.isToday(navigation.day),
-                  Date().timeIntervalSince(lastAutomaticRefresh) >= max(30, lastReadSeconds * 10) else { return }
+                  Date().throttleElapsed(since: lastAutomaticRefresh) >= max(30, lastReadSeconds * 10) else { return }
             lastAutomaticRefresh = Date()
             revision += 1
         }

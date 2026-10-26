@@ -350,9 +350,9 @@ struct GuardEscalation {
             work { client in client.registerThenPing() }
         case .requiresApproval?:
             component = .awaitingApproval
-            if Date().timeIntervalSince(statusRead) > pingInterval { readStatus() }
+            if Date().throttleElapsed(since: statusRead) > pingInterval { readStatus() }
         case .enabled?:
-            if Date().timeIntervalSince(lastPing) >= pingInterval {
+            if Date().throttleElapsed(since: lastPing) >= pingInterval {
                 lastPing = Date()
                 work { client in client.pingEscalating() }
             }
