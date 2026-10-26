@@ -5,6 +5,11 @@ import CoreFoundation
 /// Compact, explicitly imported days only. The original Apple export is never copied.
 public enum GoalongHealthArchive {
     public static func save(_ result: GoalongHealthImportResult, root: URL) throws {
+        try save(result, root: root, write: writeAll)
+    }
+
+    /// `write` is injectable so tests can simulate a full disk without filling the real one.
+    static func save(_ result: GoalongHealthImportResult, root: URL, write: (Int32, Data) throws -> Void) throws {
         let directory = try openDirectory(root, create: true)
         defer { close(directory) }
         guard let envelope = try JSONSerialization.jsonObject(with: result.payload) as? [String: Any],
@@ -19,17 +24,42 @@ public enum GoalongHealthArchive {
             let descriptor = openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
             guard descriptor >= 0 else { throw CocoaError(.fileWriteNoPermission) }
             defer { close(descriptor); unlinkat(directory, temporary, 0) }
-            try data.withUnsafeBytes { bytes in
-                var offset = 0
-                while offset < bytes.count {
-                    let n = Darwin.write(descriptor, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
-                    if n < 0, errno == EINTR { continue }
-                    guard n > 0 else { throw CocoaError(.fileWriteUnknown) }; offset += n
-                }
-            }
-            guard fsync(descriptor) == 0, renameat(directory, temporary, directory, date + ".json") == 0 else { throw CocoaError(.fileWriteUnknown) }
+            do {
+                try write(descriptor, data)
+                guard fsync(descriptor) == 0 else { throw writeFailure(errno) }
+                guard renameat(directory, temporary, directory, date + ".json") == 0 else { throw writeFailure(errno) }
+            } catch { throw classified(error) }
         }
-        guard fsync(directory) == 0 else { throw CocoaError(.fileWriteUnknown) }
+        guard fsync(directory) == 0 else { throw classified(writeFailure(errno)) }
+    }
+
+    private static func writeFailure(_ code: Int32) -> Error {
+        CocoaError(.fileWriteUnknown, userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(code))])
+    }
+
+    /// Out-of-space errors (POSIX, Cocoa, or a raw unknown write wrapping ENOSPC) become the app's French disk-full message.
+    private static func classified(_ error: Error) -> Error {
+        var current: NSError? = error as NSError
+        for _ in 0..<4 {
+            guard let value = current else { break }
+            if (value.domain == NSPOSIXErrorDomain && [Int(ENOSPC), Int(EDQUOT)].contains(value.code))
+                || (value.domain == NSCocoaErrorDomain && value.code == NSFileWriteOutOfSpaceError) {
+                return GoalongSiteExportError.localized("The disk is full.", french: "Le disque est plein. Libérez de l’espace puis recommencez : vos données Santé n’ont pas été modifiées.")
+            }
+            current = value.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return error
+    }
+
+    private static func writeAll(_ descriptor: Int32, _ data: Data) throws {
+        try data.withUnsafeBytes { bytes in
+            var offset = 0
+            while offset < bytes.count {
+                let n = Darwin.write(descriptor, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+                if n < 0, errno == EINTR { continue }
+                guard n > 0 else { throw writeFailure(n < 0 ? errno : EIO) }; offset += n
+            }
+        }
     }
 
     public static func dates(root: URL) throws -> [String] {
