@@ -22,6 +22,9 @@ struct GoalongAnalysisSelection: Codable, Equatable {
         guard reviewed, hasSources, !policy.blocked, privacyRevision == policy.revision else { return false }
         do { try validate(); return true } catch { return false }
     }
+    /// One answer for every surface: a stored consent with an unconfirmed or outdated
+    /// selection sends nothing, because the context builder refuses that selection.
+    func allowsAnalysis(consented: Bool, policy: GoalongPrivacyPolicy) -> Bool { consented && isValid(for: policy) }
     static func load(root: URL = AppPaths.applicationSupportDirectory) -> Self {
         let file = root.appendingPathComponent("chatgpt-analysis-selection.json")
         guard let data = try? ChatGPTHistoryStore.readStableSource(at: file, maximumBytes: 1_048_576),

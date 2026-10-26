@@ -167,7 +167,7 @@ public enum GoalongSiteExport {
                 "screenSeconds": mayIncludeTotal ? (total as Any? ?? NSNull()) : NSNull(), "hourly": NSNull(),
                 "apps": try apps.map { app -> [String: Any] in
                     ["id": try text(app.id, maximum: 160),
-                     "name": try text(app.resolvedName, maximum: 100),
+                     "name": try text(app.readableName, maximum: 100),
                      "seconds": try seconds(app.duration), "category": "other"]
                 }
             ]

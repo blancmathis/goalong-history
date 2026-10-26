@@ -22,7 +22,7 @@ import LocalHistoryCore
                 GoalongSettingsLink(title: "Personnaliser le bilan", value: selection.outputGuidance?.isEmpty == false ? "Consignes ajoutées" : "Ton et informations à omettre", symbol: "text.bubble") { open(2) }.accessibilityIdentifier("analysis-open-guidance")
             }
             GoalongSettingsGroup(title: "Quand analyser") {
-                Toggle("Autoriser les analyses", isOn: Binding(get: { consents.isEnabled(.chatGPTAnalysis) && selection.isValid(for: exclusions.policy) }, set: { value in
+                Toggle("Autoriser les analyses", isOn: Binding(get: { selection.allowsAnalysis(consented: consents.isEnabled(.chatGPTAnalysis), policy: exclusions.policy) }, set: { value in
                     if value { open(0) }
                     else {
                         runtime.stop()

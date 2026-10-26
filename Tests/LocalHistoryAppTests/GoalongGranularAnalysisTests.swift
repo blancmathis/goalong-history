@@ -2,11 +2,13 @@
 import XCTest
 import Foundation
 import AgentActivity
+import AppleScreenTime
 import LocalHistoryCore
 @testable import LocalHistoryApp
 
 final class GoalongGranularAnalysisTests: XCTestCase {
-    private let day = Calendar.current.startOfDay(for: Date())
+    // A past day: Activité's foreground intervals never count events after `now`.
+    private let day = Calendar.current.date(byAdding: .day, value: -1, to: Calendar.current.startOfDay(for: Date()))!
     private func event(_ app: String, _ name: String, seconds: Double, title: String = "", text: String = "", url: String? = nil) -> HistoryEvent {
         HistoryEvent(sessionID: "fixture", timestamp: day.addingTimeInterval(36000 + seconds), kind: .applicationActivated,
             app: .init(name: name, bundleIdentifier: app, processIdentifier: 1), window: .init(title: title, role: nil, subrole: nil),
@@ -166,5 +168,48 @@ final class GoalongGranularAnalysisTests: XCTestCase {
         }
     }
 
+
+    /// T-044 B2-03: ChatGPT gets the per-app seconds Activité shows, and refused time
+    /// is not credited to the application before it.
+    func testPerAppSecondsMatchActivityForegroundIntervals() throws {
+        let past = Calendar.current.date(byAdding: .day, value: -2, to: day)!
+        func at(_ app: String, _ name: String, _ seconds: Double) -> HistoryEvent {
+            HistoryEvent(sessionID: "fixture", timestamp: past.addingTimeInterval(36000 + seconds), kind: .applicationActivated,
+                app: .init(name: name, bundleIdentifier: app, processIdentifier: 1))
+        }
+        let events = [at("test.editor", "Editor", 0), at("test.notes", "Notes", 30), at("test.editor", "Editor", 45),
+                      at("test.secret", "Secret", 100), at("test.notes", "Notes", 200), at("test.editor", "Editor", 260),
+                      at("test.editor", "Editor", 290)]
+        var scope = GoalongAnalysisScope(); scope.applicationIDs = ["test.editor", "test.notes"]; scope.detailApplicationIDs = []
+        var selection = GoalongAnalysisSelection(); selection.computer = true; selection.scope = scope
+        let value = try ChatGPTRecapContextBuilder.granularContext(day: past, events: events, snapshots: [:], screenTime: nil,
+            agents: AgentActivityOverview(day: past), selection: selection, privacy: GoalongPrivacyPolicy())
+        let activity = GoalongLocalAnalytics.Period(days: [GoalongLocalAnalytics.build(events: events, day: past)]).usage()
+        let expected = Dictionary(uniqueKeysWithValues: activity.filter { $0.bundleIdentifier != "test.secret" }
+            .map { ($0.name, Int($0.seconds.rounded())) })
+        XCTAssertEqual(expected, ["Editor": 115, "Notes": 75])
+        let sent = Dictionary(uniqueKeysWithValues: value.activity.applications.map { ($0.name, $0.activeSeconds) })
+        XCTAssertEqual(sent, expected)
+        XCTAssertTrue(value.renderedData.contains("\"secondes_actives\" : 115"))
+        XCTAssertFalse(value.renderedData.contains("Secret"))
+    }
+    /// T-044 B2-04: a stored consent with an unconfirmed selection is not « activée ».
+    func testPrivacyOverviewChatGPTStateMatchesTheSettingsSwitch() {
+        let policy = GoalongPrivacyPolicy()
+        XCTAssertFalse(GoalongAnalysisSelection().isValid(for: policy))
+        XCTAssertTrue(PrivacyChoicesOverview.chatGPTAnalysisText(consented: true, selection: GoalongAnalysisSelection(), policy: policy)
+            .hasPrefix("L’analyse ChatGPT est désactivée"))
+        XCTAssertTrue(PrivacyChoicesOverview.chatGPTAnalysisText(consented: false, selection: GoalongAnalysisSelection(), policy: policy)
+            .hasPrefix("L’analyse ChatGPT est désactivée"))
+    }
+    /// T-044 B2-06: an Apple app without a display name never leaves as its raw identifier.
+    func testOutgoingAppleApplicationNameIsNeverARawBundleIdentifier() {
+        XCTAssertEqual(AppleScreenTimeApplicationUsage(bundleIdentifier: "com.apple.SIMSetupUIService", displayName: nil, duration: 30).readableName,
+                       "SIM Setup UI Service")
+        XCTAssertEqual(AppleScreenTimeApplicationUsage(bundleIdentifier: "com.apple.mobiletimer", displayName: "Horloge", duration: 30).readableName,
+                       "Horloge")
+        XCTAssertEqual(AppleScreenTimeApplicationUsage(bundleIdentifier: nil, displayName: nil, duration: 30).readableName,
+                       "Application inconnue")
+    }
 }
 #endif
