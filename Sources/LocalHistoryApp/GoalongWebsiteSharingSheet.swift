@@ -45,7 +45,7 @@ import LocalHistoryQueryCLI
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(autoSender.enabled ? "Envoi quotidien activé" : "Envoi quotidien en pause").font(.system(size: 13, weight: .medium))
-                                if let day = autoSender.lastSuccess { Text("Dernière journée reçue : \(day)").font(.system(size: 12)).foregroundStyle(.secondary) }
+                                if let day = autoSender.lastSuccess { Text("Dernière journée reçue : \(GoalongUIFormat.day(key: day))").font(.system(size: 12)).foregroundStyle(.secondary) }
                             }
                             Spacer()
                             if autoSender.enabled { Button("Mettre en pause") { autoSender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
@@ -234,7 +234,7 @@ import LocalHistoryQueryCLI
     private func preview(_ approved: GoalongWebsiteSharingModel.Preview) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Aperçu local du \(approved.draft.day)").font(.system(size: 14, weight: .medium))
+                Text("Aperçu local du \(GoalongUIFormat.day(key: approved.draft.day))").font(.system(size: 14, weight: .medium))
                 Spacer()
                 Button("Modifier") { model.invalidate() }.buttonStyle(LHSecondaryButtonStyle())
             }

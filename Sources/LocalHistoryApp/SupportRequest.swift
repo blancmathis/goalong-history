@@ -168,7 +168,7 @@ enum SupportReportStore {
             return
         }
         journal.record(.userMarkedIssue, component: .support)
-        report("Repère ajouté à \(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)). Reproduisez le problème puis cliquez sur « Actualiser le rapport ».", .success)
+        report("Repère ajouté à \(GoalongUIFormat.time(Date())). Reproduisez le problème puis cliquez sur « Actualiser le rapport ».", .success)
     }
 
     func close() { window?.close() }

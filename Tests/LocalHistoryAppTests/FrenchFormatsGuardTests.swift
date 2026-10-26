@@ -16,11 +16,21 @@ final class FrenchFormatsGuardTests: XCTestCase {
         let date = calendar.date(from: DateComponents(year: 2026, month: 10, day: 26, hour: 14, minute: 5))!
         XCTAssertEqual(GoalongUIFormat.time(date), "14:05")
     }
+    /// Stored day keys read as French days (T-044 C3-04); an unreadable key is never hidden.
+    func testDayKeysShowAsFrenchDays() {
+        XCTAssertEqual(GoalongUIFormat.day(key: "2026-10-26"), "26 octobre 2026")
+        XCTAssertEqual(GoalongUIFormat.day(key: "2026-03-01"), "1 mars 2026")
+        XCTAssertEqual(GoalongUIFormat.day(key: "bad"), "bad")
+    }
     /// Source guard: forbidden patterns in UI code (comments and `en_US_POSIX` data formats are fine).
     func testUISourcesDoNotUseSystemLocaleFormatting() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/LocalHistoryApp")
-        let forbidden = ["Locale.current", "\\.formatted\\(\\)", "\\.formatted\\(date:", "style: \\.time\\)", "style: \\.date\\)", "ByteCountFormatter\\(\\)\\s*\\n\\s*formatter\\.countStyle = \\.file\\n\\s*(?!formatter\\.locale)"]
+        let forbidden = ["Locale.current", "\\.formatted\\(\\)", "\\.formatted\\(date:", "style: \\.time\\)", "style: \\.date\\)", "ByteCountFormatter\\(\\)\\s*\\n\\s*formatter\\.countStyle = \\.file\\n\\s*(?!formatter\\.locale)",
+                         // « Repère ajouté à 2:39 AM » (T-044 C3-03): the system-region shorthand.
+                         "DateFormatter\\.localizedString\\(",
+                         // A stored day key in French text, « Aperçu local du 2026-10-26 » (T-044 C3-04): use GoalongUIFormat.day(key:).
+                         "(du|reçue :) \\\\\\((\\w+\\.)*day\\)", "\"\\\\\\((\\w+\\.)*day\\) · "]
         let regexes = try forbidden.map { try NSRegularExpression(pattern: $0) }
         var hits: [String] = []
         let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)!.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }

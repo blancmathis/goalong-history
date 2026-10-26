@@ -256,7 +256,7 @@ import LocalHistoryCore
             // Persist before networking. An uncertain receipt never silently retries.
             current.lastAttempt = day
             try store(current)
-            busy = true; status = "Préparation locale du \(day)…"
+            busy = true; status = "Préparation locale du \(GoalongUIFormat.day(key: day))…"
             defer { busy = false }
             let root = root, exporter = exporter, sender = sender, snapshot = current
             let payload = try await Task.detached { try exporter(root, day, snapshot.options) }.value
@@ -267,7 +267,7 @@ import LocalHistoryCore
             }
             try GoalongGlobalPause.revalidate(pause.revision, in: root)
             _ = try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: snapshot.privacyRevision)
-            status = "Envoi du \(day)…"
+            status = "Envoi du \(GoalongUIFormat.day(key: day))…"
             _ = try await Task.detached {
                 try GoalongGlobalPause.revalidate(pause.revision, in: root)
                 _ = try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: snapshot.privacyRevision)
@@ -281,7 +281,7 @@ import LocalHistoryCore
             try store(current)
             lastSuccess = day
             networkRetry = nil
-            status = "Journée du \(day) reçue · prochain envoi après \(Self.timeLabel(current))."
+            status = "Journée du \(GoalongUIFormat.day(key: day)) reçue · prochain envoi après \(Self.timeLabel(current))."
         } catch GoalongSiteSubmissionError.unreachable {
             // Nothing reached the site: try the same day again later, a few times.
             restoreAttempt(previousAttempt, of: current)

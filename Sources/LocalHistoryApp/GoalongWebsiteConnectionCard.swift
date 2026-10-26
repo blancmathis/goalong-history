@@ -52,7 +52,7 @@ extension Notification.Name {
                          : sender.savedConfiguration != nil || sender.pauseReason != nil ? "Envoi quotidien en pause" : "Envois automatiques désactivés")
                         .font(.system(size: 13, weight: .medium))
                     if !sender.enabled, let reason = sender.pauseReason { Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.warning) }
-                    if let day = sender.lastSuccess { Text("Dernière journée reçue : \(day)").font(.system(size: 12)).foregroundStyle(.secondary) }
+                    if let day = sender.lastSuccess { Text("Dernière journée reçue : \(GoalongUIFormat.day(key: day))").font(.system(size: 12)).foregroundStyle(.secondary) }
                 }
                 Spacer()
                 if sender.enabled { Button("Mettre en pause") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
@@ -557,7 +557,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     }
                 }
                 let applications = rows.reduce(0) { $0 + (($1["apps"] as? [Any])?.count ?? 0) }
-                previewSummary = "\(day) · \(FrenchCount.count(rows.count, "appareil", "appareils")) · \(FrenchCount.count(applications, "ligne", "lignes")) d’applications · \(FrenchCount.count(result.count, "octet", "octets")). Vérifiez les champs exacts ci-dessous."
+                previewSummary = "\(GoalongUIFormat.day(date)) · \(FrenchCount.count(rows.count, "appareil", "appareils")) · \(FrenchCount.count(applications, "ligne", "lignes")) d’applications · \(FrenchCount.count(result.count, "octet", "octets")). Vérifiez les champs exacts ci-dessous."
                 payload = result
                 previewPrivacyRevision = reviewed.privacyRevision
             } catch { self.error = goalongUserMessage(error) }
