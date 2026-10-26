@@ -747,8 +747,13 @@ extension ConcentrationController {
     private func exitUntil(_ value: FocusCommitment) -> Date? {
         FocusCommitmentRules.stakeWindow(value, blockEnd: stakeBlockEnd(value), calendar: calendar)
     }
+    /// A running stake block is compared in Blocking's trusted frame (its end with `b.now`), anything else
+    /// in this controller's frame.
     private func exitOpen(_ value: FocusCommitment) -> Bool {
-        FocusCommitmentRules.exitOpen(value, blockEnd: stakeBlockEnd(value), now: stakeNow(), clock: clockState(), calendar: calendar)
+        if let b = blocking(), let block = b.activeBlocks.first(where: { $0.id == value.result?.stake.blockId }) {
+            return FocusCommitmentRules.exitOpen(value, blockEnd: block.end, now: b.now, clock: clockState(), calendar: calendar)
+        }
+        return FocusCommitmentRules.exitOpen(value, blockEnd: nil, now: stakeNow(), clock: clockState(), calendar: calendar)
     }
     /// The trusted now of stake decisions (T-044 r5, same rule as `BlockingClock.trusted`): the wall clock,
     /// never earlier than the time proven by continuous time in this boot. A clock set back cannot delay a

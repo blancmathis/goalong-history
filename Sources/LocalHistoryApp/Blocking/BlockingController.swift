@@ -125,7 +125,8 @@ import LocalHistoryQueryCLI
             do { try store.save(self.document) } catch { failStore() }
         }
         lastGood = self.document
-        lastClock = self.document.clock
+        lastClock = BlockingClock.upgraded(self.document.clock, wall: wallClock(), continuous: continuous(), boot: boot()) // wall: the format upgrade sample
+        self.document.clock = lastClock
         backend?.appStillBlocked = { [weak self] target in
             guard let self else { return false }
             self.refresh(enforceLast: false)
