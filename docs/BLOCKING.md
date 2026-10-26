@@ -26,8 +26,10 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 - On: Concentration › Programme can start blocks and programs. Turning the module on creates
   the controller and reads the store; nothing is blocked until the member starts a block or a
   program.
-- Off is refused while anything is locked (locked session, locked program, freeze). Off with nothing
-  locked stops every block, removes every window and unregisters any system component.
+- Off is refused while anything is locked (locked session, locked program, freeze) and while any
+  started block or program window other than `free` runs, a `typing` one included (C8-04: off would stop
+  it without its text). Off with nothing of this kind stops every block, removes every window and
+  unregisters any system component.
 - Settings › Modules holds the switch (one row per module).
 
 ## Rules from the owner
@@ -137,8 +139,8 @@ before the lock. A break cannot start inside a freeze.
 **Lock kinds (manual sessions).**
 - `free`: « Arrêter » ends it.
 - `typing`: « Arrêter » asks to retype a random 120-character text (letters and digits, no
-  look-alike characters, paste refused). Correct = ends. Only that path ends it: quitting Goalong,
-  turning the module off or restarting the Mac keeps it, and it resumes at the next launch until its end.
+  look-alike characters, paste refused). Correct = ends. Only that path ends it: turning the module off is
+  refused while it runs; quitting Goalong or restarting the Mac keeps it, and it resumes at the next launch until its end.
 - `locked`: cannot be stopped. It ends at `end`.
 
 **Program lock.** While `program.lockedUntil > now`, the list can only get stricter: adding sites or

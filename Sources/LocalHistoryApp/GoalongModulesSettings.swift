@@ -54,13 +54,13 @@ import SwiftUI
 
     private func row(_ module: GoalongModule) -> some View {
         let on = modules.isEnabled(module)
-        let locked = (module == .blocking && blocking.controller?.hasLocks == true) || (module == .concentration && concentration.controller?.hasLockedBlock == true)
+        let locked = (module == .blocking && blocking.controller?.moduleOffRefusal != nil) || (module == .concentration && concentration.controller?.hasLockedBlock == true)
         return HStack(alignment: .center, spacing: 12) {
             Image(systemName: module.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 22).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(module.title).font(.system(size: 13, weight: .medium))
-                Text(locked ? "Un blocage verrouillé est en cours : impossible de désactiver avant la fin." : module.summary)
+                Text(locked ? "Un blocage verrouillé ou « Difficile » est en cours : impossible de désactiver avant sa fin." : module.summary)
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }

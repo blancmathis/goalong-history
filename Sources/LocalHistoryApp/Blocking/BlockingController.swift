@@ -183,6 +183,16 @@ import LocalHistoryQueryCLI
 
     /// Anything the member committed to and cannot undo before its end.
     var hasLocks: Bool { lockedUntil != nil }
+    /// Why the Blocage module cannot be switched off now, or nil. A lock refuses it; so does any started block
+    /// or program window other than « Libre »: switching off once stopped a « Difficile » block without its
+    /// typed text (C8-04). Typing the text ends the block and reopens the switch.
+    var moduleOffRefusal: String? {
+        if hasLocks { return "Le module ne peut pas être désactivé pendant un verrou." }
+        let now = clock()
+        let running = activeBlocks.contains { $0.lock != .free && $0.start <= now && $0.end > now }
+            || document.sessions.contains { $0.lock != .free && $0.start <= now && $0.end > now }
+        return running ? "Le module ne peut pas être désactivé pendant un blocage « Difficile » : arrêtez-le d’abord en retapant le texte." : nil
+    }
     /// End of the latest commitment. A store error is not a lock: it refuses edits, never quitting.
     var lockedUntil: Date? {
         let now = clock()
@@ -1416,9 +1426,10 @@ import LocalHistoryQueryCLI
         self.modules = modules; self.monitor = monitor
         apply(enabled: modules.isEnabled(.blocking))
         modules.blockingDisableCheck = { [weak self] in
-            self?.controller?.refresh(enforceLast: false)
-            if self?.controller?.hasLocks == true {
-                self?.controller?.error = "Le module ne peut pas être désactivé pendant un verrou."
+            guard let controller = self?.controller else { return true }
+            controller.refresh(enforceLast: false)
+            if let refusal = controller.moduleOffRefusal {
+                controller.error = refusal
                 return false
             }
             return true
@@ -1444,8 +1455,8 @@ import LocalHistoryQueryCLI
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
             controller.refresh(enforceLast: false)
-            if controller.hasLocks {
-                controller.error = "Le module ne peut pas être désactivé pendant un verrou."
+            if let refusal = controller.moduleOffRefusal {
+                controller.error = refusal
                 modules?.setEnabled(.blocking, true)
                 return
             }
