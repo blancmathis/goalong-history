@@ -69,7 +69,8 @@ cycle continuity, the G attachment and interruption/reentry across thirteen phas
 For an isolated real SwiftUI window under a running AppKit event loop:
 
 ```sh
-./scripts/test_brand_motion.sh "$PWD/qa/brand-motion"
+./scripts/test_brand_motion.sh            # output in a temporary folder, deleted at exit
+./scripts/test_brand_motion.sh /abs/dir   # or a folder of your choice (never inside the work tree)
 ```
 
 The probe compiles the production theme, model and view directly; it does not

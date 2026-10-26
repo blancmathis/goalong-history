@@ -12,6 +12,9 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <dlfcn.h>
 #import <pwd.h>
+#import <limits.h>
+#import <removefile.h>
+#import <string.h>
 #import <unistd.h>
 #import <objc/runtime.h>
 
@@ -618,6 +621,26 @@ NSDictionary<NSString *, id> *GoalongGalleryGuardsTake(void) {
 
 BOOL GoalongGalleryGuardsInstalled(void) { return galleryLock != nil; }
 
+// A bare `swift test` has no throwaway HOME (scripts/run_swift_tests.sh makes one): the gallery then read this
+// Mac's real agent-activity index and ran 2-3x slower (main thread 8 s against 1.3 s, T-044 C9-02), and any test
+// touching a data folder could meet real data. Without a throwaway HOME, the process makes its own before any test
+// runs, as the runner does (CFFIXED_USER_HOME moves NSHomeDirectory and the Application Support folder).
+static char throwawayHome[PATH_MAX];
+
+static void removeThrowawayHome(void) {
+    if (throwawayHome[0] && strncmp(throwawayHome, "/tmp/goalong-test-", 18) == 0) removefile(throwawayHome, NULL, REMOVEFILE_RECURSIVE);
+}
+
+static void useThrowawayHomeIfNone(void) {
+    if (getenv("GOALONG_TEST_HOME") || getenv("CFFIXED_USER_HOME")) return;
+    char template[] = "/tmp/goalong-test-XXXXXX";
+    if (!mkdtemp(template)) return;
+    strlcpy(throwawayHome, template, sizeof throwawayHome);
+    setenv("GOALONG_TEST_HOME", template, 1);
+    setenv("CFFIXED_USER_HOME", template, 1);
+    atexit(removeThrowawayHome);
+}
+
 @interface GoalongHeadlessTestSupport : NSObject
 @end
 
@@ -625,6 +648,7 @@ BOOL GoalongGalleryGuardsInstalled(void) { return galleryLock != nil; }
 + (void)load {
     NSDictionary *environment = NSProcessInfo.processInfo.environment;
     if (!NSClassFromString(@"XCTestCase") && !environment[@"XCTestConfigurationFilePath"]) return;
+    useThrowawayHomeIfNone();
     trackSuites();
     atexit(failIfWindowsShowed);   // atexit runs in reverse: this exits 1 after the suite cleanup
     atexit(cleanAtExit);
