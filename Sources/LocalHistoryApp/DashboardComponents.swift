@@ -617,11 +617,12 @@
             return formatter
         }()
 
-        static let byteCount: ByteCountFormatter = {
-            let formatter = ByteCountFormatter()
-            formatter.countStyle = .file
-            return formatter
-        }()
+        /// Storage sizes in French (« 10,63 Go ») whatever the system region.
+        static let byteCount = ByteCountFrench()
+
+        struct ByteCountFrench {
+            func string(fromByteCount count: Int64) -> String { GoalongUIFormat.bytes(count) }
+        }
 
         /// French notation with non-breaking spaces: « 42 min », « 2 h », « 5 h 07 ».
         static func duration(minutes: Int) -> String {

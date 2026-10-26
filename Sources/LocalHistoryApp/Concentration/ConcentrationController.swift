@@ -390,7 +390,10 @@ struct FocusPanel: Equatable {
         }
         var destination = try changed[target] ?? plan(on: target)
         var item = source.items[i]; item.status = .open; item.toDay = nil
-        if !destination.items.contains(where: { $0.id == id }) { destination.items.append(item) }
+        if let k = destination.items.firstIndex(where: { $0.id == id }) {
+            // Back to the first day: its entry, left « moved », opens again.
+            if destination.items[k].status == .moved { destination.items[k].status = .open; destination.items[k].toDay = nil }
+        } else { destination.items.append(item) }
         source.items[i].status = .moved; source.items[i].toDay = target
         changed[target] = destination; changed[day] = source
         try savePlanChanges(changed)
@@ -421,19 +424,32 @@ struct FocusPanel: Equatable {
                 guard target != value.day else { throw FocusFailure.invalidArgument }
                 var destination = try changed[target] ?? plan(on: target)
                 var moved = source.items[i]; moved.status = .open; moved.toDay = nil
-                if !destination.items.contains(where: { $0.id == moved.id }) { destination.items.append(moved) }
+                if let k = destination.items.firstIndex(where: { $0.id == moved.id }) {
+                    if destination.items[k].status == .moved { destination.items[k].status = .open; destination.items[k].toDay = nil }
+                } else { destination.items.append(moved) }
                 changed[target] = destination; source.items[i].status = .moved; source.items[i].toDay = target
             } else {
                 source.items[i].status = item.outcome == .done ? .done : .open; source.items[i].toDay = nil
             }
         }
+        let carryID = carryItemID(day: value.day)
         if let title = value.tomorrowFirst, !title.isEmpty {
             let tomorrow = try dayAfter(value.day)
             var next = try changed[tomorrow] ?? plan(on: tomorrow)
-            // Updating the same review replaces its previous carry-forward item, without inventing duplicates.
-            let carryID = carryItemID(day: value.day)
-            next.items.removeAll { $0.id == carryID }
-            next.items.insert(FocusPlanItem(id: carryID, title: title), at: 0); changed[tomorrow] = next
+            // Updating the same review keeps its carry-forward item (and its progress), without inventing duplicates.
+            if let k = next.items.firstIndex(where: { $0.id == carryID }) {
+                next.items[k].title = title
+            } else {
+                next.items.insert(FocusPlanItem(id: carryID, title: title), at: 0)
+            }
+            changed[tomorrow] = next
+        } else {
+            // Clearing the field withdraws the carried task, unless it is already done or moved on.
+            let tomorrow = try dayAfter(value.day)
+            var next = try changed[tomorrow] ?? plan(on: tomorrow)
+            if let k = next.items.firstIndex(where: { $0.id == carryID }), next.items[k].status == .open {
+                next.items.remove(at: k); changed[tomorrow] = next
+            }
         }
         changed[source.day] = source
         try savePlanChanges(changed, review: value)
