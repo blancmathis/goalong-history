@@ -86,7 +86,7 @@ xcrun swiftc -swift-version 5 "$TEST_ROOT/PermissionRecovery.swift" "$TEST_ROOT/
 xcrun swiftc -swift-version 5 "$TEST_ROOT/helper.swift" -o "$TEST_ROOT/Goalong Relaunch Fixture.app/Contents/MacOS/goalong-relauncher"
 codesign --force --sign - "$TEST_ROOT/Goalong Relaunch Fixture.app/Contents/MacOS/goalong-relauncher" >/dev/null 2>&1
 codesign --force --sign - "$TEST_ROOT/Goalong Relaunch Fixture.app" >/dev/null 2>&1
-open -g -n "$TEST_ROOT/Goalong Relaunch Fixture.app"
+open -g -j -n "$TEST_ROOT/Goalong Relaunch Fixture.app"
 for ((i=0;i<160;i++)); do
   if [[ -f "$TEST_ROOT/events.jsonl" ]] && grep -q 'normal-quit' "$TEST_ROOT/events.jsonl"; then break; fi
   if [[ -f "$TEST_ROOT/events.jsonl" ]] && grep -q 'restart-error' "$TEST_ROOT/events.jsonl"; then cat "$TEST_ROOT/events.jsonl"; exit 1; fi
@@ -110,7 +110,7 @@ PY
 # Missing component must leave the app alive long enough to report the error.
 rm "$TEST_ROOT/Goalong Relaunch Fixture.app/Contents/MacOS/goalong-relauncher"
 codesign --force --sign - "$TEST_ROOT/Goalong Relaunch Fixture.app" >/dev/null 2>&1
-open -g -n "$TEST_ROOT/Goalong Relaunch Fixture.app" --args --failure
+open -g -j -n "$TEST_ROOT/Goalong Relaunch Fixture.app" --args --failure
 for ((i=0;i<30;i++)); do
   grep -q 'failure-kept-parent-alive' "$TEST_ROOT/events.jsonl" && break
   sleep 0.5

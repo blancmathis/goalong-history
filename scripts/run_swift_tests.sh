@@ -4,7 +4,8 @@
 #   full [ARGS]     whole suite (ARGS go to swift test, e.g. --sanitize=thread), then the skipped-test report
 #   ui              render and AX opt-ins (GOALONG_*_SNAPSHOTS, *_UI_TESTS), no visible window
 # Every mode runs in a throwaway HOME, so no test can read or write the real LocalHistory folder or
-# leave preference files in ~/Library/Preferences. Set GOALONG_TESTS_VISIBLE=1 to watch windows.
+# leave preference files in ~/Library/Preferences. Every mode runs under the window guard: a test
+# window on screen or a focus change fails the run. Set GOALONG_TESTS_VISIBLE=1 to watch windows.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 2
@@ -46,7 +47,30 @@ start=$SECONDS
 export GOALONG_TEST_HOME="$home" CFFIXED_USER_HOME="$home"
 # --disable-keychain: under the isolated HOME, SwiftPM misses its shared cache. A fresh worktree then downloads
 # the Sparkle artifact, and the keychain lookup for github.com opens a modal prompt that waits forever.
-swift_test() { xcrun swift test --disable-keychain "$@" 2>&1 | tee -a "$log"; return "${PIPESTATUS[0]}"; }
+swift_test() { guarded xcrun swift test --disable-keychain "$@" 2>&1 | tee -a "$log"; return "${PIPESTATUS[0]}"; }
+# Window guard (scripts/window_guard.swift): no test may show a window or take the focus on this Mac.
+# It watches the command and its children through the window server every 50 ms; a visible window
+# or a focus change kills the offender at once and fails the run. GOALONG_TESTS_VISIBLE=1 turns it off.
+window_guard_bin() {
+  local bin="$ROOT/.build/window-guard/window_guard" src="$ROOT/scripts/window_guard.swift"
+  if [[ ! -x "$bin" || "$src" -nt "$bin" ]]; then
+    mkdir -p "${bin%/*}" && xcrun swiftc -O "$src" -o "$bin.$$" && mv "$bin.$$" "$bin" || return 1
+  fi
+  echo "$bin"
+}
+guarded() { # command...
+  if [[ "$(printenv GOALONG_TESTS_VISIBLE)" == 1 ]]; then "$@"; return; fi
+  local bin pid gpid status
+  bin="$(window_guard_bin)" || { echo "error: scripts/window_guard.swift did not compile" >&2; return 1; }
+  "$@" & pid=$!
+  "$bin" watch "$pid" & gpid=$!
+  wait "$pid"; status=$?
+  if ! wait "$gpid"; then
+    echo "error: a test window was visible or took the focus (window guard)" >&2
+    [[ $status -eq 0 ]] && status=1
+  fi
+  return "$status"
+}
 # Highest "Executed N test(s)" in a log: the final XCTest total. 0 also when nothing ran at all.
 executed_count() {
   grep -oE 'Executed [0-9]+ tests?' "$1" 2>/dev/null | awk '{ if ($2 > max) max = $2 } END { print max + 0 }'
@@ -187,7 +211,7 @@ case "$mode" in
         done
         mkdir -p "$out/brand" "$out/design-audit" "$out/sharing" "$out/focus-ui"
         export GOALONG_FOCUS_UI_TESTS=1 GOALONG_FOCUS_UI_SNAPSHOT="$out/focus-ui/disclosures-expanded.png" GOALONG_BLOCKING_UI_TESTS=1
-        xcrun swift test --disable-keychain --filter "$classes" 2>&1 | tee -a "$log" "$group_log"; exit "${PIPESTATUS[0]}"
+        guarded xcrun swift test --disable-keychain --filter "$classes" 2>&1 | tee -a "$log" "$group_log"; exit "${PIPESTATUS[0]}"
       ) || status=$?
       # A group must really have run: some tests, and every expected class in its log.
       if [[ "$(executed_count "$group_log")" -eq 0 ]]; then
@@ -215,5 +239,6 @@ case "$mode" in
     ;;
   classes-in) classes_in "${1:?file}"; exit 0 ;;   # test hook
   ui-verdict) ui_verdict "${1:?skips}" "${2:?state}"; exit $? ;;   # test hook
+  window-guard-bin) window_guard_bin; exit $? ;;   # test hook
   *) echo "usage: $0 check [FILTER] | full | ui" >&2; exit 2 ;;
 esac

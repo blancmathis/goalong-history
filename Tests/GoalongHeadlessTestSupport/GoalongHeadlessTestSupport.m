@@ -1,10 +1,15 @@
 // Test-only: keeps `swift test` invisible to the person working on this Mac.
-// While the xctest process runs, every NSWindow stays at real alpha 0 and ignores the mouse,
-// the app never activates, never gets a Dock icon, never changes the system presentation
-// options, and NSWorkspace opens nothing. Getters return the logical values the code set, so
-// assertions and cacheDisplay snapshots stay unchanged; system frameworks get the real values. GOALONG_TESTS_VISIBLE=1 disables it.
+// While the xctest process runs, every NSWindow stays at real alpha 0, ignores the mouse and has no
+// open/close animation (checked again each time it is ordered in), status items stay out of the menu
+// bar, the process is .prohibited (never active, no Dock icon, never key for the system), it never
+// changes the system presentation options, and NSWorkspace opens nothing. Getters return the
+// logical values the code set, so assertions and cacheDisplay snapshots stay unchanged; system
+// frameworks get the real values. A watchdog asks the window server every 100 ms for a window of
+// this process that is really visible; it hides it at once, prints `[headless-tests] VISIBLE` and the
+// run exits 1. GOALONG_TESTS_VISIBLE=1 disables it all.
 #import "GoalongHeadlessTestSupport.h"
 #import <AppKit/AppKit.h>
+#import <CoreGraphics/CoreGraphics.h>
 #import <dlfcn.h>
 #import <pwd.h>
 #import <unistd.h>
@@ -57,6 +62,19 @@ static void hide(NSWindow *w) {
     objc_setAssociatedObject(w, kLogicalIgnoresMouse, @(getIgnores(w, @selector(ignoresMouseEvents))), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     setAlpha(w, @selector(setAlphaValue:), 0);
     setIgnores(w, @selector(setIgnoresMouseEvents:), YES);
+    // The open/zoom/fade animations of alerts and document windows drive the window server's alpha
+    // directly: with them a window at alpha 0 still flashes on screen.
+    w.animationBehavior = NSWindowAnimationBehaviorNone;
+}
+
+// Every way of putting a window on screen passes here first, whatever initializer made it.
+static void hideBeforeOrderingIn(NSWindow *w) {
+    hide(w);
+    if (getAlpha(w, @selector(alphaValue)) != 0) {
+        headlessLog(@"visible alpha", [NSString stringWithFormat:@"%@ '%@' reset to 0", NSStringFromClass(w.class), w.title]);
+        setAlpha(w, @selector(setAlphaValue:), 0);
+    }
+    if (w.animationBehavior != NSWindowAnimationBehaviorNone) w.animationBehavior = NSWindowAnimationBehaviorNone;
 }
 
 static void hideWindows(void) {
@@ -92,6 +110,126 @@ static void hideWindows(void) {
             hide(result);
             return result;
         });
+
+    static void (*orderWindow)(id, SEL, NSWindowOrderingMode, NSInteger);
+    static void (*orderFront)(id, SEL, id);
+    static void (*orderFrontRegardless)(id, SEL);
+    static void (*makeKeyAndOrderFront)(id, SEL, id);
+    static void (*orderBack)(id, SEL, id);
+    orderWindow = (void *)replace(window, @selector(orderWindow:relativeTo:), ^(NSWindow *w, NSWindowOrderingMode mode, NSInteger other) {
+        if (mode != NSWindowOut) hideBeforeOrderingIn(w);
+        orderWindow(w, @selector(orderWindow:relativeTo:), mode, other);
+    });
+    orderFront = (void *)replace(window, @selector(orderFront:), ^(NSWindow *w, id sender) {
+        hideBeforeOrderingIn(w);
+        orderFront(w, @selector(orderFront:), sender);
+    });
+    orderFrontRegardless = (void *)replace(window, @selector(orderFrontRegardless), ^(NSWindow *w) {
+        hideBeforeOrderingIn(w);
+        orderFrontRegardless(w, @selector(orderFrontRegardless));
+    });
+    makeKeyAndOrderFront = (void *)replace(window, @selector(makeKeyAndOrderFront:), ^(NSWindow *w, id sender) {
+        hideBeforeOrderingIn(w);
+        makeKeyAndOrderFront(w, @selector(makeKeyAndOrderFront:), sender);
+    });
+    orderBack = (void *)replace(window, @selector(orderBack:), ^(NSWindow *w, id sender) {
+        hideBeforeOrderingIn(w);
+        orderBack(w, @selector(orderBack:), sender);
+    });
+}
+
+// A status item would sit in the real menu bar: it stays logically visible, really hidden.
+static const void *kLogicalStatusVisible = &kLogicalStatusVisible;
+static void hideStatusItems(void) {
+    static id (*statusItem)(id, SEL, CGFloat);
+    static void (*setVisible)(id, SEL, BOOL);
+    static BOOL (*getVisible)(id, SEL);
+    Class item = NSStatusItem.class;
+    setVisible = (void *)replace(item, @selector(setVisible:), ^(NSStatusItem *i, BOOL value) {
+        objc_setAssociatedObject(i, kLogicalStatusVisible, @(value), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        setVisible(i, @selector(setVisible:), NO);
+    });
+    getVisible = (void *)replace(item, @selector(isVisible), ^BOOL(NSStatusItem *i) {
+        NSNumber *logical = calledBySystem(__builtin_return_address(0)) ? nil : objc_getAssociatedObject(i, kLogicalStatusVisible);
+        return logical ? logical.boolValue : getVisible(i, @selector(isVisible));
+    });
+    statusItem = (void *)replace(NSStatusBar.class, @selector(statusItemWithLength:), ^id(NSStatusBar *bar, CGFloat length) {
+        NSStatusItem *result = statusItem(bar, @selector(statusItemWithLength:), length);
+        if (result) {
+            objc_setAssociatedObject(result, kLogicalStatusVisible, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            setVisible(result, @selector(setVisible:), NO);
+            hide(result.button.window);
+        }
+        return result;
+    });
+}
+
+// Backstop for any path the hooks above miss: the window server is the judge. A window of this
+// process on screen with alpha > 0 inside a display is hidden at once and counted; the run then
+// exits 1 (the log names the window), so a regression cannot pass unnoticed.
+static volatile int visibleWindows;
+static NSMutableSet<NSNumber *> *reportedWindows;
+
+BOOL GoalongHeadlessWindowInfoIsVisible(NSDictionary *info, pid_t pid, NSArray<NSValue *> *displays) {
+    if ([info[(id)kCGWindowOwnerPID] intValue] != pid || [info[(id)kCGWindowAlpha] doubleValue] <= 0.001) return NO;
+    CGRect bounds;
+    if (![info[(id)kCGWindowBounds] isKindOfClass:NSDictionary.class]
+        || !CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &bounds)
+        || bounds.size.width < 2 || bounds.size.height < 2) return NO;
+    for (NSValue *display in displays) {
+        if (CGRectIntersectsRect(display.rectValue, bounds)) return YES;
+    }
+    return NO;
+}
+
+NSArray<NSValue *> *GoalongHeadlessDisplayBounds(void) {
+    uint32_t count = 0;
+    CGDirectDisplayID ids[16];
+    if (CGGetActiveDisplayList(16, ids, &count) != kCGErrorSuccess) return @[];
+    NSMutableArray *result = [NSMutableArray array];
+    for (uint32_t i = 0; i < count; i++) [result addObject:[NSValue valueWithRect:NSRectFromCGRect(CGDisplayBounds(ids[i]))]];
+    return result;
+}
+
+NSInteger GoalongHeadlessVisibleWindowCount(void) { return visibleWindows; }
+BOOL GoalongHeadlessActive(void) { return reportedWindows != nil; }
+
+static void watchVisibleWindows(void) {
+    reportedWindows = [NSMutableSet set];
+    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0), 100 * NSEC_PER_MSEC, 20 * NSEC_PER_MSEC);
+    pid_t me = getpid();
+    dispatch_source_set_event_handler(timer, ^{
+        CFArrayRef list = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID);
+        if (!list) return;
+        NSArray<NSValue *> *displays = GoalongHeadlessDisplayBounds();
+        for (NSDictionary *info in (__bridge NSArray *)list) {
+            if (!GoalongHeadlessWindowInfoIsVisible(info, me, displays)) continue;
+            NSNumber *number = info[(id)kCGWindowNumber];
+            NSDictionary *boundsInfo = info[(id)kCGWindowBounds];
+            int layer = [info[(id)kCGWindowLayer] intValue];
+            __sync_fetch_and_add(&visibleWindows, 1);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSWindow *w = [NSApp windowWithWindowNumber:number.integerValue];
+                if (w) { hide(w); setAlpha(w, @selector(setAlphaValue:), 0); }
+                if ([reportedWindows containsObject:number]) return;
+                [reportedWindows addObject:number];
+                fprintf(stderr, "[headless-tests] VISIBLE window %ld (%s '%s', layer %d, bounds %s): hidden; this run will fail\n",
+                        (long)number.integerValue, w ? NSStringFromClass(w.class).UTF8String : "not an NSWindow",
+                        w ? w.title.UTF8String : "", layer, boundsInfo.description.UTF8String);
+            });
+        }
+        CFRelease(list);
+    });
+    dispatch_resume(timer);
+    static dispatch_source_t keep;
+    keep = timer;
+}
+
+static void failIfWindowsShowed(void) {
+    if (visibleWindows == 0) return;
+    fprintf(stderr, "[headless-tests] FAILED: a test window was visible on screen %d time(s) (see the VISIBLE lines above)\n", visibleWindows);
+    _exit(1);
 }
 
 static void blockActivation(void) {
@@ -106,11 +244,12 @@ static void blockActivation(void) {
     replace(app, NSSelectorFromString(@"activate"), ^(NSApplication *a) {
         headlessLog(@"activation", @"NSApplication activate");
     });
-    // A Dock icon is visible too: .regular really becomes .accessory.
+    // .regular shows a Dock icon and .accessory can still be activated by AppKit's private paths:
+    // the real policy stays .prohibited (the default of the unbundled xctest process), which the
+    // system never activates nor makes key.
     setPolicy = (void *)replace(app, @selector(setActivationPolicy:), ^BOOL(NSApplication *a, NSApplicationActivationPolicy policy) {
         logicalPolicy = @(policy);
-        NSApplicationActivationPolicy real = policy == NSApplicationActivationPolicyRegular ? NSApplicationActivationPolicyAccessory : policy;
-        setPolicy(a, @selector(setActivationPolicy:), real);
+        setPolicy(a, @selector(setActivationPolicy:), NSApplicationActivationPolicyProhibited);
         return YES;
     });
     getPolicy = (void *)replace(app, @selector(activationPolicy), ^NSApplicationActivationPolicy(NSApplication *a) {
@@ -487,14 +626,17 @@ BOOL GoalongGalleryGuardsInstalled(void) { return galleryLock != nil; }
     NSDictionary *environment = NSProcessInfo.processInfo.environment;
     if (!NSClassFromString(@"XCTestCase") && !environment[@"XCTestConfigurationFilePath"]) return;
     trackSuites();
+    atexit(failIfWindowsShowed);   // atexit runs in reverse: this exits 1 after the suite cleanup
     atexit(cleanAtExit);
     static const int signals[] = {SIGINT, SIGTERM, SIGHUP, SIGABRT, SIGTRAP, SIGSEGV, SIGBUS, SIGILL};
     for (size_t i = 0; i < sizeof signals / sizeof signals[0]; i++) signal(signals[i], cleanOnSignal);
     if ([environment[@"GOALONG_TESTS_VISIBLE"] isEqualToString:@"1"]) return;
     installGalleryGuards();
     hideWindows();
+    hideStatusItems();
     blockActivation();
     blockLaunchServices();
-    fprintf(stderr, "[headless-tests] active: windows hidden, activation and LaunchServices opens blocked\n");
+    watchVisibleWindows();
+    fprintf(stderr, "[headless-tests] active: windows hidden, process prohibited, activation and LaunchServices opens blocked, visible-window watchdog on\n");
 }
 @end
