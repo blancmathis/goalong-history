@@ -48,10 +48,7 @@
         }
 
         static func formatted(_ bytes: Int64) -> String {
-            let formatter = ByteCountFormatter()
-            formatter.countStyle = .file
-            formatter.allowedUnits = [.useGB, .useMB]
-            return formatter.string(fromByteCount: bytes)
+            GoalongUIFormat.bytes(bytes)
         }
     }
 #endif
