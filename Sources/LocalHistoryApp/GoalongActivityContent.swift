@@ -283,7 +283,7 @@ struct GoalongAnalyticsContent: View {
         } else if sparse {
             GoalongNote("Vos premières observations sont déjà visibles. Le graphique adapte son échelle aux petites durées.")
         } else if !isDay && current.daysWithObservations < current.days.count {
-            GoalongNote("\(current.daysWithObservations) jours sur \(current.days.count) ont une activité mesurée. Les jours sans données restent vides : ils ne comptent pas comme des journées à zéro.")
+            GoalongNote("\(GoalongUIFormat.count(current.daysWithObservations, "jour")) sur \(current.days.count) \(current.daysWithObservations > 1 ? "ont" : "a") une activité mesurée. Les jours sans données restent vides : ils ne comptent pas comme des journées à zéro.")
         } else if today && isDay {
             Text("Journée en cours : seules les observations déjà reçues sont incluses.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)

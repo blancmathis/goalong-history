@@ -65,14 +65,14 @@ enum GoalongDeveloperRecap {
             var parts = [name]
             if let agent {
                 if agent.sessions > 0 {
-                    parts.append("\(agent.sessions) conversations")
+                    parts.append(GoalongUIFormat.count(agent.sessions, "conversation"))
                     if !agent.documentIntervals.isEmpty { parts.append("span observé \(Int(agent.documentSpanSeconds)) s") }
                     else { parts.append("durée de conversation inconnue") }
                 }
-                if let t3 = agent.t3 { parts.append("T3 : \(t3.requests) demandes, exécution \(Int(t3.busySeconds)) s, entre demandes \(Int(t3.waitingSeconds)) s, \(t3.maximumParallelTurns) tours simultanés au maximum") }
+                if let t3 = agent.t3 { parts.append("T3 : \(GoalongUIFormat.count(t3.requests, "demande")), exécution \(Int(t3.busySeconds)) s, entre demandes \(Int(t3.waitingSeconds)) s, \(GoalongUIFormat.count(t3.maximumParallelTurns, "tour")) simultané\(t3.maximumParallelTurns > 1 ? "s" : "") au maximum") }
                 if let tokens = agent.tokens { parts.append("\(tokens) jetons observés") }
-                if let calls = agent.toolCalls { parts.append("\(calls) appels d’outils") }
-                if let errors = agent.errors { parts.append("\(errors) erreurs") }
+                if let calls = agent.toolCalls { parts.append("\(GoalongUIFormat.count(calls, "appel")) d’outils") }
+                if let errors = agent.errors { parts.append(GoalongUIFormat.count(errors, "erreur")) }
                 if agent.partial { parts.append("métadonnées partielles") }
             }
             if let git {
@@ -80,7 +80,7 @@ enum GoalongDeveloperRecap {
                 else { parts.append("Git : \(git.status.label)") }
             }
             if value.selectedProjects.contains(where: { $0.id == project.id }) {
-                if value.files.buckets.contains(where: { $0.projectID == project.id }) { parts.append("\(changes) fichiers distincts par tranche de 5 min, cumul des tranches") }
+                if value.files.buckets.contains(where: { $0.projectID == project.id }) { parts.append("\(GoalongUIFormat.count(changes, "fichier")) distinct\(changes > 1 ? "s" : "") par tranche de 5 min, cumul des tranches") }
                 else if value.files.status == .ready { parts.append("aucun fichier modifié observé") }
                 else { parts.append("Fichiers : \(value.files.status.label)") }
             }

@@ -22,7 +22,7 @@ import Foundation
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Espace libre sur le disque")
                             if StorageHealth.isLow(free) {
-                                Text("Sous 1 Go environ, macOS peut empêcher l’enregistrement. Goalong reprendra tout seul dès qu’il y aura de la place.")
+                                Text("Sous \(StorageHealth.lowSpaceThresholdText) environ, macOS peut empêcher l’enregistrement. Goalong reprendra tout seul dès qu’il y aura de la place.")
                                     .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                                     .fixedSize(horizontal: false, vertical: true)
                             }

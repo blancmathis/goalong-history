@@ -163,7 +163,7 @@ struct GoalongActivitySummary {
         let beforeDays = previous.observedDays
         guard let current = averageActivePerDay, !beforeDays.isEmpty else { return nil }
         let average = previous.activeSeconds / Double(beforeDays.count)
-        return Comparison(current: current, previous: average, label: "les \(period.days.count) jours précédents")
+        return Comparison(current: current, previous: average, label: "les \(GoalongUIFormat.count(period.days.count, "jour")) précédent\(period.days.count > 1 ? "s" : "")")
     }
 
     var bestDay: GoalongLocalAnalytics.Day? {
@@ -205,7 +205,7 @@ struct GoalongActivitySummary {
         if let top = topUsage, activeSeconds > 0 {
             let share = Int((top.seconds / activeSeconds * 100).rounded())
             result.append(Insight(id: "top", symbol: top.isWebsite ? "globe" : "app",
-                text: "Usage principal : \(top.displayName) · \(Self.duration(top.seconds)) (\(share) % du temps actif)."))
+                text: "Usage principal : \(top.displayName) · \(Self.duration(top.seconds)) (\(GoalongUIFormat.percent(share)) du temps actif)."))
         }
         if let every = secondsPerChange, let perHour = changesPerActiveHour {
             result.append(Insight(id: "switches", symbol: "arrow.left.arrow.right",
@@ -224,14 +224,14 @@ struct GoalongActivitySummary {
                 text: "Plus forte variation : \(change.displayName) (\(sign)\(Self.duration(abs(delta))))."))
         }
         if workIsMeasurable {
-            var text = "Travail : \(Self.duration(workSeconds)) (\(Int((workShare * 100).rounded())) % du temps actif)"
+            var text = "Travail : \(Self.duration(workSeconds)) (\(GoalongUIFormat.percent(workShare * 100)) du temps actif)"
             if let block = longestWorkBlock, block.workSeconds >= 600 {
                 text += " · plus longue session sur une même tâche \(Self.duration(block.workSeconds))"
             }
             result.append(Insight(id: "work", symbol: "briefcase", text: text + ".", tone: .positive))
         } else if unclassifiedShare >= 0.3 {
             result.append(Insight(id: "classify", symbol: "tag",
-                text: "\(Int((unclassifiedShare * 100).rounded())) % de votre temps n’est pas encore classé. Décrivez votre travail dans Mon travail pour le mesurer.",
+                text: "\(GoalongUIFormat.percent(unclassifiedShare * 100)) de votre temps n’est pas encore classé. Décrivez votre travail dans Mon travail pour le mesurer.",
                 tone: .attention))
         }
         return result

@@ -354,7 +354,7 @@
         private mutating func decode(_ line: Data) throws -> [String: Any] {
             guard messageCount < limits.maximumMessages else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "plus de \(limits.maximumMessages) messages JSON ont été reçus."
+                    "plus de \(GoalongUIFormat.count(limits.maximumMessages, "message")) JSON ont été reçus."
                 )
             }
             messageCount += 1
@@ -410,7 +410,7 @@
             let encoded = try JSONSerialization.data(withJSONObject: message, options: [])
             guard entries.count < limits.maximumDeferredMessages else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "plus de \(limits.maximumDeferredMessages) messages en attente sans demande correspondante."
+                    "plus de \(GoalongUIFormat.count(limits.maximumDeferredMessages, "message")) en attente sans demande correspondante."
                 )
             }
             guard encoded.count <= limits.maximumDeferredBytes - byteCount else {

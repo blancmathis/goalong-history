@@ -82,7 +82,7 @@ extension Notification.Name {
                 guard operation == id else { return }
                 guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source a été désactivée pendant la lecture.") }
                 try Self.revalidate(native: computer, revisions: guardRevisions, root: root)
-                evidence = rows; selectedEvidence = Set(rows.map(\.id)); busy = false; status = "\(rows.count) événements chargés localement. Préparez ensuite le prompt pour appliquer vos règles. \(selection.1)"
+                evidence = rows; selectedEvidence = Set(rows.map(\.id)); busy = false; status = "\(GoalongUIFormat.count(rows.count, "événement")) chargé\(rows.count > 1 ? "s" : "") localement. Préparez ensuite le prompt pour appliquer vos règles. \(selection.1)"
             } catch { guard operation == id else { return }; self.error = goalongUserMessage(error); busy = false }
         }
     }

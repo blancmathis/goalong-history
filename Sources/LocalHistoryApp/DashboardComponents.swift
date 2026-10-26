@@ -649,8 +649,8 @@
         }
 
         static func percentage(_ numerator: Int, _ denominator: Int) -> String {
-            guard denominator > 0 else { return "0 %" }
-            return "\(Int((Double(numerator) / Double(denominator) * 100).rounded())) %"
+            guard denominator > 0 else { return GoalongUIFormat.percent(0) }
+            return GoalongUIFormat.percent(Double(numerator) / Double(denominator) * 100)
         }
     }
 #endif

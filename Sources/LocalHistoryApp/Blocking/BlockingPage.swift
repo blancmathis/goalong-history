@@ -385,7 +385,7 @@ struct BlockingSessionThread: View {
             .font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("De \(BlockingFormat.time(start)) à \(BlockingFormat.endTime(end)), \(Int(progress * 100)) % écoulés")
+        .accessibilityLabel("De \(BlockingFormat.time(start)) à \(BlockingFormat.endTime(end)), \(GoalongUIFormat.percent(progress * 100)) écoulés")
     }
 }
 

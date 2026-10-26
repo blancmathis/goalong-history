@@ -342,7 +342,7 @@ private struct AmbianceOrchestraSetup: View {
                         Text("Téléchargez l’orchestre").font(LHTheme.sheetTitleFont).tracking(-0.4)
                         Group {
                             if case .downloading(let fraction) = pack.status {
-                                Text("\(Int((fraction * 100).rounded())) % de \(size)")
+                                Text("\(GoalongUIFormat.percent(fraction * 100)) de \(size)")
                             } else {
                                 Text("\(size), une seule fois. Les \(pieces) morceaux en ont besoin.")
                             }
@@ -486,7 +486,7 @@ private struct AmbiancePackRow: View {
                 Text(title).font(.system(size: 13, weight: .medium))
                 Group {
                     if case .downloading(let fraction) = pack.status {
-                        Text("\(Int((fraction * 100).rounded())) % de \(size)")
+                        Text("\(GoalongUIFormat.percent(fraction * 100)) de \(size)")
                     } else {
                         Text("\(size), une seule fois.")
                     }

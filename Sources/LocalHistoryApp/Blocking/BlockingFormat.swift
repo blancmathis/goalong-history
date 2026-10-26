@@ -32,7 +32,7 @@ enum BlockingFormat {
         if hours >= 24 {
             // « 1 jour », « 1 jour 3 h », « 1 jour 3 h 40 », « 2 jours 40 min »: never « 0 h », never a lost minute.
             let days = hours / 24, left = minutes - days * 1_440
-            let head = days == 1 ? "1 jour" : "\(days) jours"
+            let head = GoalongUIFormat.count(days, "jour")
             return left == 0 ? head : "\(head) \(duration(minutes: left))"
         }
         return DashboardFormatters.duration(minutes: minutes)

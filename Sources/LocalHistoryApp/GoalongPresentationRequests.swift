@@ -36,6 +36,13 @@ enum GoalongUIFormat {
     static func time(_ date: Date) -> String {
         date.formatted(.dateTime.locale(locale).hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
     }
+    /// « 1 fichier », « 2 fichiers », « 0 fichier » — French plural (zero and one are singular). Pass `plural` for irregular nouns.
+    static func count(_ value: Int, _ singular: String, plural: String? = nil) -> String {
+        "\(number(value)) " + (abs(value) > 1 ? (plural ?? singular + "s") : singular)
+    }
+    /// « 50 % » — French percent: a no-break space (U+00A0) before the sign, never a plain space.
+    static func percent(_ value: Int) -> String { "\(value)\u{00A0}%" }
+    static func percent(_ value: Double) -> String { percent(Int(value.rounded())) }
     /// « 26 oct. 2026 ».
     static func dayAbbreviated(_ date: Date) -> String {
         date.formatted(.dateTime.day().month(.abbreviated).year().locale(locale))
