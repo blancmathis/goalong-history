@@ -417,6 +417,8 @@ struct FocusPanel: Equatable {
         var source = try plan(on: value.day), changed: [String: FocusPlan] = [:]
         for item in value.items {
             guard let i = source.items.firstIndex(where: { $0.id == item.id }) else { throw FocusFailure.notFound }
+            // A dropped task stays dropped: the UI never lists it, but the CLI can name it.
+            if source.items[i].status == .dropped { continue }
             // A new answer replaces an earlier move: its still-open copy leaves the old target day.
             if source.items[i].status == .moved, let previous = source.items[i].toDay, previous != item.toDay {
                 try withdrawMovedCopy(item.id, from: previous, into: &changed)
