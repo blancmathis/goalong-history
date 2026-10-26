@@ -1022,10 +1022,13 @@ import LocalHistoryQueryCLI
             if jump != 0 { extendLocks(by: jump, at: previous.trusted) }
         }
         let before = BlockingClock.trusted(wall: current.wall, continuous: current.continuous, boot: current.boot, last: lastClock)
+        // Only a step in the same boot toward a floor lifts T. A first sample of a boot sets T to the wall
+        // clock: there, wall − continuous rounding alone (≈ 1e-7 s) must not move any end (T-044 r8).
+        let floorStep = jump == 0 && lastClock.map { $0.floor != nil && $0.boot == current.boot && current.continuous >= $0.continuous } == true
         lastClock = BlockingClock.advanced(previous: lastClock, now: current, adjusted: jump)
         document.clock = lastClock
         // A forward step lifted T toward the floor: blocks made while the clock was behind keep their length.
-        if jump == 0, let raised = lastClock?.trusted.timeIntervalSince(before), raised > 0 { extendLocks(by: raised, at: before) }
+        if floorStep, let raised = lastClock?.trusted.timeIntervalSince(before), raised > 0 { extendLocks(by: raised, at: before) }
     }
     private func extendLocks(by jump: Double, at oldWall: Date) {
         for index in document.sessions.indices where effectiveLock(document.sessions[index].lock).protectsLists {

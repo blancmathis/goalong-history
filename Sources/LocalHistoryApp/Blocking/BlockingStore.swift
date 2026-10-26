@@ -202,10 +202,11 @@ enum BlockingClock {
         return String(cString: bytes)
     }
     /// The shift of protected ends at this sample: none in the same boot (T ignores clock changes, so the
-    /// ends need no move: T-044 r6), else a wall clock earlier than the last sample (L-05).
+    /// ends need no move: T-044 r6), else a wall clock earlier than the last trusted time (L-05). The ends
+    /// live in T: a clock set back before the reboot, while T kept real time, moves them too (C6-05).
     static func adjustment(previous: BlockingClockState, now: BlockingClockState) -> TimeInterval {
         if previous.boot == now.boot, now.continuous >= previous.continuous { return 0 }
-        return min(0, now.wall.timeIntervalSince(previous.wall))
+        return min(0, now.wall.timeIntervalSince(previous.trusted))
     }
     /// The one « now » of every blocking and stake decision (T-044 r5, r6). In the boot of `last`, it is
     /// the time proven by continuous time since the anchor, plus at most `jumpTolerance` of forward lead:

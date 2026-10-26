@@ -57,5 +57,21 @@ import XCTest
             XCTAssertFalse(c.hasLocks, "step=\(step): block outlived its hour")
         }
     }
+
+    /// The first sample of a boot sets T to the wall clock: no protected end may move, not even by the
+    /// rounding of wall − continuous (CI r7: a 1.2e-7 s lift made an unchanged lock read as « shortened »).
+    func testFirstSampleOfABootMovesNoEnd() {
+        for previous in [nil, previousBoot(Date(timeIntervalSinceReferenceDate: 811_692_800), before: 300)] {
+            for i in 0..<200 {   // a real `Date()` lives in reference-date seconds: wall − continuous rounds
+                let wall = Date(timeIntervalSinceReferenceDate: 811_692_800.123_456 + Double(i) * 0.000_731)
+                var l = list; l.program.lockedUntil = wall.addingTimeInterval(600)
+                var document = BlockingDocument(lists: [l]); document.clock = previous
+                let uptime = 1_000 + Double(i) * 0.37
+                let c = BlockingController(document: document, clock: { wall }, continuous: { uptime }, boot: { "b" })
+                XCTAssertEqual(c.lists.first?.program.lockedUntil, l.program.lockedUntil, "previous=\(previous != nil) uptime=\(uptime)")
+                XCTAssertEqual(c.editCheck(l), .allowed)
+            }
+        }
+    }
 }
 #endif
