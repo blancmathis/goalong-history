@@ -257,7 +257,8 @@ final class AXAsyncWorkflowTests: XCTestCase {
     @MainActor func testQueuedSiteActionRevalidatesExpiryBeforeTheNextBlockingTimer() {
         var now = Date()
         let list = BlockList(name: "Fixture", sites: [BlockSiteRule(pattern: "example.com")])
-        let controller = BlockingController(document: BlockingDocument(lists: [list]), clock: { now })
+        // Time passes on both clocks: a wall clock alone moving forward is a clock change (T-044 r6).
+        let controller = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, continuous: { now.timeIntervalSince1970 })
         controller.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
         let target = BlockingObservation(bundleIdentifier: "com.apple.Safari", pid: 42, windowFrame: nil,
             isBrowser: true, url: "example.com/work", privateWindow: false, at: now)

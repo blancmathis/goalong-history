@@ -380,7 +380,8 @@ final class BlockingEngineTests: XCTestCase {
             XCTAssertEqual(backend.lastReason, .site(address), raw); XCTAssertEqual(backend.appBlocks, 0, raw)
         }
     }
-    @MainActor func testClockJumpExtendsManualProgramAndFreeze() {
+    /// T-044 r6: a forward jump stays out of the trusted now, so protected ends keep their real time.
+    @MainActor func testClockJumpLeavesManualProgramAndFreezeOnRealTime() {
         var now = date(), uptime = 100.0
         var list = BlockList(name: "Programme", sites: [BlockSiteRule(pattern: "youtube.com")])
         list.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [1], startMinute: 600, endMinute: 780)], lockedUntil: now.addingTimeInterval(7200))
@@ -388,13 +389,14 @@ final class BlockingEngineTests: XCTestCase {
         c.start(listIDs: [list.id], until: now.addingTimeInterval(3600), lock: .locked)
         c.startFreeze(until: now.addingTimeInterval(3600), mode: .shield, allowedApps: [])
         now = now.addingTimeInterval(7210); uptime += 10; c.refresh()
-        XCTAssertEqual(c.snapshot.sessions[0].end, date().addingTimeInterval(10800))
-        XCTAssertEqual(c.freeze?.end, date().addingTimeInterval(10800))
+        XCTAssertEqual(c.snapshot.sessions[0].end, date().addingTimeInterval(3600))
+        XCTAssertEqual(c.freeze?.end, date().addingTimeInterval(3600))
+        XCTAssertEqual(c.now.timeIntervalSince(date()), 11, accuracy: 0.01)
         XCTAssertTrue(c.activeBlocks.contains { if case .program = $0.origin { return true }; return false })
     }
-    /// K3-kill-04: forward steps add up from the anchor and are compensated; a step back then forth
-    /// nets to nothing.
-    @MainActor func testSmallForwardClockStepsAddUpAndAreCompensated() {
+    /// K3-kill-04, T-044 r6: forward steps add up and stay out of the trusted now (ends unchanged, T on
+    /// continuous time); a step back then forth nets to nothing.
+    @MainActor func testSmallForwardClockStepsStayOutOfTrustedTime() {
         var now = date(), uptime = 1000.0
         let list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
         let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, continuous: { uptime }, boot: { "boot" })
@@ -402,14 +404,16 @@ final class BlockingEngineTests: XCTestCase {
         c.start(listIDs: [list.id], until: end, lock: .locked)
         c.refresh()
         for _ in 0..<10 { now = now.addingTimeInterval(15 + 59); uptime += 15; c.refresh() }
-        XCTAssertEqual(c.snapshot.sessions[0].end.timeIntervalSince(end), 590, accuracy: 0.001)
+        XCTAssertEqual(c.snapshot.sessions[0].end, end)
+        XCTAssertEqual(c.now.timeIntervalSince(date()), 151, accuracy: 0.1)   // 150 s real + 1 s tolerance
         // Back one hour, then forward one hour: the real time spent is what counts.
         now = now.addingTimeInterval(-3600); uptime += 15; c.refresh()
         now = now.addingTimeInterval(3615); uptime += 15; c.refresh()
-        XCTAssertEqual(c.snapshot.sessions[0].end.timeIntervalSince(end), 590, accuracy: 0.001)
+        XCTAssertEqual(c.snapshot.sessions[0].end, end)
+        XCTAssertEqual(c.now.timeIntervalSince(date()), 181, accuracy: 0.1)
     }
-    /// L-05: one forward step of less than 60 s is compensated too (spec K §4: « changer l'heure ne
-    /// change rien »). Only sub-second drift stays below the tolerance.
+    /// L-05, T-044 r6: one forward step of less than 60 s stays out of the trusted now too (spec K §4:
+    /// « changer l'heure ne change rien »): the end is unchanged and still 2 min of real time away.
     @MainActor func testOneForwardClockStepUnderAMinuteDoesNotShortenALockedBlock() {
         var now = date(), uptime = 1000.0
         let list = BlockList(name: "Vidéo", sites: [BlockSiteRule(pattern: "youtube.com")])
@@ -418,23 +422,31 @@ final class BlockingEngineTests: XCTestCase {
         c.start(listIDs: [list.id], until: end, lock: .locked)
         c.refresh()
         now = now.addingTimeInterval(15 + 59); uptime += 15; c.refresh()
-        XCTAssertEqual(c.snapshot.sessions[0].end.timeIntervalSince(end), 59, accuracy: 0.001)
+        XCTAssertEqual(c.snapshot.sessions[0].end, end)
         now = now.addingTimeInterval(15 + 0.5); uptime += 15; c.refresh()
-        XCTAssertEqual(c.snapshot.sessions[0].end.timeIntervalSince(end), 59, accuracy: 0.001, "drift under 1 s: nothing")
+        XCTAssertEqual(c.snapshot.sessions[0].end, end, "drift under 1 s: nothing")
         XCTAssertTrue(c.hasLocks)
+        now = now.addingTimeInterval(88); uptime += 88; c.refresh()
+        XCTAssertTrue(c.hasLocks, "118 s of real time: still locked")
+        now = now.addingTimeInterval(4); uptime += 4; c.refresh()
+        XCTAssertFalse(c.hasLocks)
     }
-    func testClockAnchorIsKeptUntilACompensation() {
+    /// T-044 r6: in one boot nothing is compensated; the anchor follows the wall offset by at most
+    /// `driftAbsorption` per second of continuous time, never past it. A reboot resets it.
+    func testClockAnchorFollowsTheWallClockAtABoundedRate() {
         let first = BlockingClockState(wall: date(), continuous: 100, boot: "b")
         let anchored = BlockingClock.advanced(previous: nil, now: first, adjusted: 0)
         XCTAssertEqual(anchored.anchor, first.offset)
         let step = BlockingClockState(wall: date().addingTimeInterval(40.6), continuous: 140, boot: "b")
         XCTAssertEqual(BlockingClock.adjustment(previous: anchored, now: step), 0)
         let kept = BlockingClock.advanced(previous: anchored, now: step, adjusted: 0)
-        XCTAssertEqual(kept.anchor, first.offset)
-        // 0.6 s ahead after the first step, 1.2 s after the second: compensated from the anchor, not from `step`.
-        let next = BlockingClockState(wall: date().addingTimeInterval(81.2), continuous: 180, boot: "b")
-        XCTAssertEqual(BlockingClock.adjustment(previous: kept, now: next), 1.2, accuracy: 0.0001)
-        XCTAssertEqual(BlockingClock.advanced(previous: kept, now: next, adjusted: 1.2).anchor, next.offset)
+        XCTAssertEqual(kept.anchor!, first.offset + 40 * BlockingClock.driftAbsorption, accuracy: 0.0001)
+        let next = BlockingClockState(wall: date().addingTimeInterval(3_681.2), continuous: 180, boot: "b")
+        XCTAssertEqual(BlockingClock.adjustment(previous: kept, now: next), 0)
+        XCTAssertEqual(BlockingClock.advanced(previous: kept, now: next, adjusted: 0).anchor!, first.offset + 80 * BlockingClock.driftAbsorption, accuracy: 0.0001)
+        // A lead smaller than the step is taken whole, not overshot.
+        let close = BlockingClockState(wall: date().addingTimeInterval(3_600 * 24 + 0.5), continuous: 100 + 3_600 * 24, boot: "b")
+        XCTAssertEqual(BlockingClock.anchor(after: anchored, now: close), close.offset, accuracy: 0.0001)
         let rebooted = BlockingClockState(wall: date(), continuous: 5, boot: "c")
         XCTAssertEqual(BlockingClock.advanced(previous: kept, now: rebooted, adjusted: 0).anchor, rebooted.offset)
     }
@@ -794,8 +806,8 @@ final class BlockingEngineTests: XCTestCase {
         let session = BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(600), lock: .password)
         let c = BlockingController(document: .init(lists: [list], sessions: [session], passwordLock: credential), clock: { now }, continuous: { uptime }, boot: { "test" })
         now = now.addingTimeInterval(3601); uptime += 1; c.refresh()
-        XCTAssertEqual(c.activeBlocks.first?.end, date().addingTimeInterval(4200))
-        XCTAssertEqual(c.snapshot.passwordLock?.retryAfter, date().addingTimeInterval(3660))
+        XCTAssertEqual(c.activeBlocks.first?.end, date().addingTimeInterval(600))   // T-044 r6: real time, no shift
+        XCTAssertEqual(c.snapshot.passwordLock?.retryAfter, date().addingTimeInterval(60))
     }
 
     @MainActor func testStoreFailureCannotAuthorizePasswordRelease() throws {

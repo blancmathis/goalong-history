@@ -162,13 +162,17 @@ struct BlockingClockState: Codable, Equatable {
     var wall: Date
     var continuous: Double
     var boot: String
-    /// Wall minus continuous seconds at the last compensated jump (or the first sample of this boot).
-    /// Forward jumps are measured from it, not from the last refresh: small steps add up and are
-    /// compensated once their sum passes `BlockingClock.jumpTolerance`. nil in documents of older builds.
+    /// Wall minus continuous seconds proven in this boot: the offset of its first sample, then following
+    /// the wall offset at most `BlockingClock.driftAbsorption` per second of continuous time, both ways
+    /// (T-044 r6). nil in documents of older builds.
     var anchor: Double? = nil
     /// `BlockingClock.frame` once the document dates are in the trusted frame (T-044 r5). nil: an older
     /// build wrote it, and its anchor may predate a clock set back (`BlockingClock.upgraded`).
     var frame: Int? = nil
+    /// The last trusted time of the previous boot (T-044 r7): already proven, so a wall clock stepped
+    /// forward after a boot with the clock behind may lift T up to it (`BlockingClock.advanced`). nil once
+    /// T has reached it, or without a previous boot.
+    var floor: Date? = nil
 
     var offset: Double { wall.timeIntervalSince1970 - continuous }
     /// This sample read through the trusted-now rule (`BlockingClock.trusted`).
@@ -179,13 +183,12 @@ struct BlockingClockState: Codable, Equatable {
 }
 
 enum BlockingClock {
-    /// Forward drift of the wall clock against continuous time left uncompensated (spec K §4: changing
-    /// the time changes nothing). Above sampling noise and slow crystal drift; a compensation only makes
-    /// a block longer.
+    /// Forward lead of the wall clock over the proven time that T takes at once: sampling noise. Any
+    /// larger lead enters T only through `driftAbsorption` (spec K §4: changing the time changes nothing).
     static let jumpTolerance: TimeInterval = 1
-    /// Backward drift of the wall clock absorbed into the anchor, per second of continuous time (1 s per
-    /// hour): NTP slewing a slow clock (≈ 0.5 s a day) leaves T on the wall clock, while a clock set back
-    /// by hand stays uncompensated for months (spec K §4, L-05).
+    /// Drift of the wall clock absorbed into the anchor, per second of continuous time (1 s per hour), in
+    /// both directions: NTP slewing the clock (≈ 0.5 s a day) leaves T on the wall clock, while a clock set
+    /// back or forward by hand stays out of T for months (spec K §4, L-05, T-044 r6).
     static let driftAbsorption: Double = 1.0 / 3_600
     /// Format mark of `BlockingClockState.frame`.
     static let frame = 1
@@ -198,46 +201,52 @@ enum BlockingClock {
         guard sysctlbyname("kern.bootsessionuuid", &bytes, &size, nil, 0) == 0 else { return "unknown" }
         return String(cString: bytes)
     }
+    /// The shift of protected ends at this sample: none in the same boot (T ignores clock changes, so the
+    /// ends need no move: T-044 r6), else a wall clock earlier than the last trusted time (L-05). The ends
+    /// live in T: a clock set back before the reboot, while T kept real time, moves them too (C6-05).
     static func adjustment(previous: BlockingClockState, now: BlockingClockState) -> TimeInterval {
-        if previous.boot == now.boot, now.continuous >= previous.continuous {
-            let jump = now.offset - (previous.anchor ?? previous.offset)
-            return jump > jumpTolerance ? jump : 0
-        }
-        return min(0, now.wall.timeIntervalSince(previous.wall))
+        if previous.boot == now.boot, now.continuous >= previous.continuous { return 0 }
+        return min(0, now.wall.timeIntervalSince(previous.trusted))
     }
-    /// The one « now » of every blocking and stake decision (T-044 r5). In the boot of `last`, it is the
-    /// time proven by continuous time since the anchor (wall time at the last compensated jump), plus
-    /// at most `jumpTolerance` of forward drift: a clock set back never moves it back, and a forward jump
-    /// counts only once `refresh` has compensated it (protected ends moved by the same amount, spec K §4).
-    /// Without a sample of this boot there is no proof: the wall clock (L-05).
+    /// The one « now » of every blocking and stake decision (T-044 r5, r6). In the boot of `last`, it is
+    /// the time proven by continuous time since the anchor, plus at most `jumpTolerance` of forward lead:
+    /// a clock set back or forward moves it by at most `driftAbsorption` a second, so day keys, breaks and
+    /// program windows keep real time. Without a sample of this boot there is no proof: the wall clock (L-05).
     static func trusted(wall: Date, continuous: Double, boot: String, last: BlockingClockState?) -> Date {
         guard let last, last.boot == boot, continuous >= last.continuous else { return wall }
         var sample = BlockingClockState(wall: wall, continuous: continuous, boot: boot)
         sample.anchor = anchor(after: last, now: sample)
         return sample.trusted
     }
-    /// `now` with the anchor the next refresh measures from: kept while no jump was compensated in
-    /// this boot, moved to `now` after a compensation, a reboot or without any previous sample.
+    /// `now` with the anchor the next refresh measures from: carried over in this boot (`anchor(after:)`),
+    /// reset to `now` after a reboot (and its compensation) or without any previous sample.
+    /// A forward step of the wall clock enters T here only, up to the floor (the last T of the previous
+    /// boot): the caller moves the protected ends by the same amount (T-044 r7).
     static func advanced(previous: BlockingClockState?, now: BlockingClockState, adjusted: TimeInterval) -> BlockingClockState {
         var next = now
         if let previous, adjusted == 0, previous.boot == now.boot, now.continuous >= previous.continuous {
             next.anchor = anchor(after: previous, now: now)
+            if let floor = previous.floor {
+                next.anchor = max(next.anchor ?? now.offset, min(now.offset, floor.timeIntervalSince1970 - now.continuous))
+            }
+            next.floor = previous.floor
         } else {
             next.anchor = now.offset
+            next.floor = previous.map { last in last.floor.map { max($0, last.trusted) } ?? last.trusted }
         }
+        if let floor = next.floor, next.trusted >= floor { next.floor = nil }
         next.frame = frame
         return next
     }
-    /// The anchor of `last`, lowered toward `now.offset` by at most `driftAbsorption` of the continuous
-    /// time between them, never below it (that would be a forward jump).
+    /// The anchor of `last`, moved toward `now.offset` by at most `driftAbsorption` of the continuous
+    /// time between them, never past it.
     static func anchor(after last: BlockingClockState, now: BlockingClockState) -> Double {
-        let anchor = last.anchor ?? last.offset
-        guard now.offset < anchor else { return anchor }
-        return max(now.offset, anchor - max(0, now.continuous - last.continuous) * driftAbsorption)
+        let anchor = last.anchor ?? last.offset, step = max(0, now.continuous - last.continuous) * driftAbsorption
+        return min(max(now.offset, anchor - step), anchor + step)
     }
     /// The stored sample of a document of an older build, read in this frame. Its dates are wall dates:
     /// in the same boot the anchor may not run ahead of the wall clock (S = 0), so a set-back before the
-    /// update cannot shift them. A forward jump not yet compensated is kept.
+    /// update cannot shift them. A forward jump stays out of T, as in this build.
     static func upgraded(_ last: BlockingClockState?, wall: Date, continuous: Double, boot: String) -> BlockingClockState? {
         guard var last, last.frame != frame else { return last }
         last.frame = frame

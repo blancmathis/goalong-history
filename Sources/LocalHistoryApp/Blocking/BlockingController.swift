@@ -445,10 +445,10 @@ import LocalHistoryQueryCLI
         refresh(enforceLast: false)
         guard !storeFailed else { throw FocusFailure.storageFailed }
         guard session.valid, let stop = session.events.last, stop.kind == .stop, stop.reason == .completed,
-              stop.at <= clock() else { return [:] }
+              trusted(stop.at) <= clock() else { return [:] }
         let eligible = lists.filter { $0.earn != nil && $0.quotaMinutesPerDay != nil }
         guard !eligible.isEmpty else { return [:] }
-        let day = usageDay(at: stop.at), today = usageDay(at: clock())
+        let day = usageDay(at: trusted(stop.at)), today = usageDay(at: clock()) // one frame (T-044 C6-04)
         var usage = day == today ? todayUsage() : document.usageHistory?[day] ?? BlockDayUsage(day: day)
         guard !(usage.earnedSessionIDs ?? []).contains(session.id) else { return [:] }
         guard (usage.earnedSessionIDs ?? []).count < 4096 else { throw FocusFailure.invalidArgument }
@@ -862,17 +862,23 @@ import LocalHistoryQueryCLI
         if hasPassword != passwordAvailable { hasPassword = passwordAvailable }
         let needsPassword = blocks.contains { $0.lock == .password }
         if quitRequiresPassword != needsPassword { quitRequiresPassword = needsPassword }
-        if let store, !storeFailed, lockMarker != .some(lockedUntil) {
+        // The markers are read against the wall clock (uninstall.sh, --unregister-guard, the guard): their
+        // ends are written in the wall frame, again whenever the skew moves them (whole seconds, T-044 r7).
+        let markerSkew = (now.timeIntervalSince(wallFrame(now))).rounded()
+        let wall = now.addingTimeInterval(-markerSkew)
+        func wallMarker(_ end: Date) -> Date { Date(timeIntervalSince1970: end.addingTimeInterval(-markerSkew).timeIntervalSince1970.rounded(.up)) }
+        let lockWanted = lockedUntil.map(wallMarker)
+        if let store, !storeFailed, lockMarker != .some(lockWanted) {
             // Memoize only a durable write: a failure retries on the next refresh, or uninstall.sh would miss the lock.
-            if store.writeLockMarker(until: lockedUntil) { lockMarker = .some(lockedUntil) }
+            if store.writeLockMarker(until: lockWanted) { lockMarker = .some(lockWanted) }
         }
         let severe = severeUntil
         if let store, !storeFailed {
             let files = GoalongGuardFiles.files(for: store.directory)
-            let wanted = severe.map { GuardFiles.markerEnd($0, now: now) }
+            let wanted = severe.map { GuardFiles.markerEnd(wallMarker($0), now: wall) }
             // The memo alone is not enough: a deleted, modified or planted marker is put right on every
             // refresh. The guard accepts any end from the healthy app, so a forged value must not stay.
-            if Self.guardMarkerNeedsWrite(memo: guardMarker, wanted: wanted, files: files, now: now) {
+            if Self.guardMarkerNeedsWrite(memo: guardMarker, wanted: wanted, files: files, now: wall) {
                 if files.writeMarker(until: wanted) { guardMarker = .some(wanted) }
             }
         }
@@ -1000,14 +1006,14 @@ import LocalHistoryQueryCLI
     }
     /// The trusted now, for callers comparing with `activeBlocks` or `freeze` (Concentration).
     var now: Date { clock() }
-    /// Trusted minus wall time: 0, or the amount the clock was set back in this boot.
+    /// Trusted minus wall time: 0, or minus the amount the clock was set in this boot (positive after a set-back).
     private var skew: TimeInterval { let wall = wallClock(); return BlockingClock.trusted(wall: wall, continuous: continuous(), boot: boot(), last: lastClock).timeIntervalSince(wall) } // wall: the one conversion
     /// A wall date (page, Concentration, observation) moved into the trusted frame.
     func trusted(_ wall: Date) -> Date { wall.addingTimeInterval(skew) }
     /// A trusted date moved back to the wall frame, for the shields and Concentration's own clock.
     func wallFrame(_ date: Date) -> Date { date.addingTimeInterval(-skew) }
-    /// Compensates a forward jump of the wall clock (protected ends move with it, spec K §4) and stores
-    /// the sample, so `clock()` measures from it.
+    /// Stores the sample, so `clock()` measures from it. After a reboot to an earlier wall clock, protected
+    /// ends move back with it (L-05); in one boot a clock change never enters T, so nothing moves (T-044 r6).
     private func syncClock() {
         let current = BlockingClockState(wall: wallClock(), continuous: continuous(), boot: boot()) // wall: the sample
         var jump: TimeInterval = 0
@@ -1015,8 +1021,14 @@ import LocalHistoryQueryCLI
             jump = BlockingClock.adjustment(previous: previous, now: current)
             if jump != 0 { extendLocks(by: jump, at: previous.trusted) }
         }
+        let before = BlockingClock.trusted(wall: current.wall, continuous: current.continuous, boot: current.boot, last: lastClock)
+        // Only a step in the same boot toward a floor lifts T. A first sample of a boot sets T to the wall
+        // clock: there, wall − continuous rounding alone (≈ 1e-7 s) must not move any end (T-044 r8).
+        let floorStep = jump == 0 && lastClock.map { $0.floor != nil && $0.boot == current.boot && current.continuous >= $0.continuous } == true
         lastClock = BlockingClock.advanced(previous: lastClock, now: current, adjusted: jump)
         document.clock = lastClock
+        // A forward step lifted T toward the floor: blocks made while the clock was behind keep their length.
+        if floorStep, let raised = lastClock?.trusted.timeIntervalSince(before), raised > 0 { extendLocks(by: raised, at: before) }
     }
     private func extendLocks(by jump: Double, at oldWall: Date) {
         for index in document.sessions.indices where effectiveLock(document.sessions[index].lock).protectsLists {
@@ -1182,7 +1194,7 @@ import LocalHistoryQueryCLI
     }
 
     func siteActionDeadline(_ target: BlockingObservation) -> Date? {
-        syncClock() // a forward jump since the last refresh counts before a tab is closed
+        syncClock() // the sample of this decision is stored before a tab is closed
         guard target.isBrowser, target.isForeground, target.sessionAvailable, !BlockingRules.exempt(target) else { return nil }
         if let freeze, freeze.mode == .shield, !freeze.allowedApps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { return nil }
         let now = clock(), usage = todayUsage()
