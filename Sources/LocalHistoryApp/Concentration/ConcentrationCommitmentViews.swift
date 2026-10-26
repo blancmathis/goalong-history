@@ -82,8 +82,8 @@ enum FocusCommitmentFormat {
         date == calendar.startOfDay(for: date) ? "minuit" : BlockingFormat.time(date)
     }
 
-    /// « 09:30 » → « 9:30 », like every other time in the app.
-    static func clock(_ value: String) -> String { value.hasPrefix("0") ? String(value.dropFirst()) : value }
+    /// A stored « 09:30 » shown as is: the two-digit clock of every other time in the app (T-044 B3-01, C4-04).
+    static func clock(_ value: String) -> String { value }
 
     /// « jusqu’à 12:00 », « toute la journée ».
     static func until(_ value: String) -> String { value == "23:59" ? "toute la journée" : "jusqu’à \(clock(value))" }
