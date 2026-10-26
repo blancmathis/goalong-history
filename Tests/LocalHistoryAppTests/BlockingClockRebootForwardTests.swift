@@ -53,10 +53,47 @@ import XCTest
             XCTAssertTrue(c.hasLocks, "cBehind=\(cBehind): locked block lost")
             let left = c.activeBlocks.first.map { $0.end.timeIntervalSince(c.now) } ?? -1
             XCTAssertGreaterThan(left, 6 * 3_600 - elapsed - slack, "cBehind=\(cBehind): block time left")
+            XCTAssertLessThan(left, 6 * 3_600 - elapsed + slack, "cBehind=\(cBehind): block longer than its real end")
             let program = (c.lists.first?.program.lockedUntil).map { $0.timeIntervalSince(c.now) } ?? -1
             XCTAssertGreaterThan(program, 7 * 86_400 - elapsed - slack, "cBehind=\(cBehind): program lock time left")
+            XCTAssertLessThan(program, 7 * 86_400 - elapsed + slack, "cBehind=\(cBehind): program lock longer than its real end")
             let freeze = c.freeze.map { $0.end.timeIntervalSince(c.now) } ?? -1
             XCTAssertGreaterThan(freeze, 6 * 3_600 - elapsed - slack, "cBehind=\(cBehind): freeze time left")
+            XCTAssertLessThan(freeze, 6 * 3_600 - elapsed + slack, "cBehind=\(cBehind): freeze longer than its real end")
+        }
+    }
+
+    /// Boot a right, 6 h locked block. Boot b 8 h behind (10 min). Off 3 h. Boot c: right, or still 8 h behind
+    /// (PR #124 review F2). Real time left at c = 6 h − 3 h − 21 min.
+    /// Clock right: the block keeps its real end. Still behind: the boot cannot tell the downtime from a
+    /// clock set forward (same inputs as the « 4 h behind » branch above), so the ends move forward by the
+    /// wall step, never past the proven floor: at most the downtime added, never a lock shortened.
+    func testRebootStillBehindAddsAtMostTheDowntimeToLocks() throws {
+        let off = 3 * 3_600.0
+        for cBehind in [0.0, 8 * 3_600.0] {
+            let store = try store()
+            try store.save(BlockingDocument(lists: [list]))
+            var wall = real, uptime = 1_000.0, boot = "a"
+            let a = BlockingController(clock: { wall }, store: store, continuous: { uptime }, boot: { boot }, guardClient: Client())
+            a.refresh()
+            a.start(listIDs: [list.id], until: real.addingTimeInterval(6 * 3_600), lock: .locked)
+            a.startFreeze(until: real.addingTimeInterval(6 * 3_600), mode: .shield, allowedApps: [])
+            a.refresh()
+            wall += 600; uptime += 600; a.refresh()
+            boot = "b"; uptime = 30; wall = real.addingTimeInterval(630 - 8 * 3_600)
+            let b = BlockingController(clock: { wall }, store: store, continuous: { uptime }, boot: { boot }, guardClient: Client())
+            b.refresh()
+            wall += 600; uptime += 600; b.refresh()
+            boot = "c"; uptime = 20; wall = real.addingTimeInterval(1_260 + off - cBehind)
+            let c = BlockingController(clock: { wall }, store: store, continuous: { uptime }, boot: { boot }, guardClient: Client())
+            c.refresh()
+            let expected = 6 * 3_600 - off - 1_260, slack = 120.0, added = cBehind == 0 ? 0 : off
+            let left = c.activeBlocks.first.map { $0.end.timeIntervalSince(c.now) } ?? -1
+            XCTAssertGreaterThan(left, expected - slack, "cBehind=\(cBehind): block too short")
+            XCTAssertLessThan(left, expected + added + slack, "cBehind=\(cBehind): block longer than its real end + downtime")
+            let freeze = c.freeze.map { $0.end.timeIntervalSince(c.now) } ?? -1
+            XCTAssertGreaterThan(freeze, expected - slack, "cBehind=\(cBehind): freeze too short")
+            XCTAssertLessThan(freeze, expected + added + slack, "cBehind=\(cBehind): freeze longer than its real end + downtime")
         }
     }
 }

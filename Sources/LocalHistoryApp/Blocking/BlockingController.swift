@@ -1047,8 +1047,9 @@ import LocalHistoryQueryCLI
             document.passwordLock?.retryAfter = until.addingTimeInterval(jump)
         }
         if var freeze = document.freeze { if jump < 0 { freeze.start = freeze.start.addingTimeInterval(jump) }; freeze.end = freeze.end.addingTimeInterval(jump); document.freeze = freeze }
-        // A break in progress keeps its real length too: it must not outlive a reboot behind (C7-02).
-        for (id, end) in document.usage?.breakEnds ?? [:] where end > oldWall { document.usage?.breakEnds[id] = end.addingTimeInterval(jump) }
+        // A break keeps its real length too: one in progress must not outlive a reboot behind (C7-02), and a
+        // finished one, moved back with the clock, must not run again (r2).
+        for (id, end) in document.usage?.breakEnds ?? [:] where jump < 0 || end > oldWall { document.usage?.breakEnds[id] = end.addingTimeInterval(jump) }
     }
     /// Turns each protected program window in progress at `wall` into a held session, so a later
     /// recomputation (clock jump, zone change) cannot end it early.

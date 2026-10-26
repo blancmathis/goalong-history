@@ -46,8 +46,34 @@ import XCTest
             XCTAssertTrue(b.hasLocks, "behind=\(behind): block lost")
             let left = b.activeBlocks.first?.breakEnds[l.id].map { $0.timeIntervalSince(b.now) } ?? 0
             XCTAssertLessThan(left, 300, "behind=\(behind): break time left after the reboot")
+            XCTAssertGreaterThan(left, 240 - 120, "behind=\(behind): break cut short by the reboot")
             wall += 600; uptime += 600; b.refresh()   // real 14:11:30: the break is long over
             XCTAssertNil(b.activeBlocks.first?.breakEnds[l.id], "behind=\(behind): break still running 10 min later")
+        }
+    }
+
+    /// Break taken at 14:00 and over at 14:05. At 14:10 reboot with the clock 8 h behind (06:10 same day):
+    /// the finished break, moved back with the clock, must not run again (PR #124 review F1).
+    /// Witness: reboot with the clock right.
+    func testFinishedBreakDoesNotReviveAfterARebootBehind() throws {
+        let cal = paris
+        let two = cal.date(from: DateComponents(year: 2026, month: 10, day: 27, hour: 14))!
+        for behind in [0.0, 8 * 3_600.0] {
+            let store = try store()
+            var l = list; l.breaks = BlockBreaks(count: 1, minutes: 5)
+            try store.save(BlockingDocument(lists: [l]))
+            var wall = two, uptime = 1_000.0, boot = "a"
+            let a = BlockingController(clock: { wall }, store: store, calendar: cal, continuous: { uptime }, boot: { boot }, guardClient: Client())
+            a.refresh()
+            a.start(listIDs: [l.id], until: two.addingTimeInterval(6 * 3_600), lock: .locked); a.refresh()
+            a.takeBreak(listID: l.id); XCTAssertNil(a.error); a.refresh()
+            wall += 600; uptime += 600; a.refresh()   // 14:10, break over
+            XCTAssertNil(a.activeBlocks.first?.breakEnds[l.id])
+            boot = "b"; uptime = 30; wall = two.addingTimeInterval(630 - behind)
+            let b = BlockingController(clock: { wall }, store: store, calendar: cal, continuous: { uptime }, boot: { boot }, guardClient: Client())
+            b.refresh()
+            XCTAssertTrue(b.hasLocks, "behind=\(behind): block lost")
+            XCTAssertNil(b.activeBlocks.first?.breakEnds[l.id], "behind=\(behind): finished break runs again")
         }
     }
 
