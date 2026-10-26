@@ -5,6 +5,10 @@ struct GoalongActivityHeader: View {
     let selection: GoalongActivityNavigation
     let isPreview: Bool
     let isRefreshing: Bool
+    /// Nil while sharing makes sense; otherwise why the day cannot be shared.
+    var shareBlockedReason: String? = nil
+    /// A stopped recording keeps one action on screen: sharing hides.
+    var hidesShare = false
     var onDay: (Date) -> Void
     var onPeriod: (Int) -> Void
     var onStep: (Int) -> Void
@@ -76,9 +80,12 @@ struct GoalongActivityHeader: View {
             }
             .disabled(isRefreshing).accessibilityIdentifier("activity-refresh")
             .accessibilityLabel("Actualiser").help("Actualiser")
-            Button(action: onShare) { Label("Partager le \(shortDate(selection.day))", systemImage: "square.and.arrow.up") }
-                .disabled(isPreview)
-                .help("Partager la journée du \(shortDate(selection.day)). Rien n’est envoyé sans votre validation.")
+            if !hidesShare {
+                Button(action: onShare) { Label("Partager cette journée…", systemImage: "square.and.arrow.up") }
+                    .disabled(isPreview || shareBlockedReason != nil)
+                    .help(shareBlockedReason ?? "Partager la journée du \(shortDate(selection.day)). Rien n’est envoyé sans votre validation.")
+                    .accessibilityHint(shareBlockedReason ?? "")
+            }
         }
         .controlSize(.regular)
     }

@@ -24,10 +24,11 @@
                 VStack(alignment: .leading, spacing: 18) {
                     header
 
-                    analysisConsentCard
-
+                    // One ChatGPT card, one action: the connection card replaces the data card until connected.
                     if consents.isEnabled(.chatGPTAnalysis), !isConnected {
                         ChatGPTAccountConnectionCard(runtime: recapRuntime)
+                    } else {
+                        analysisConsentCard
                     }
 
                     if recapRuntime.isGenerating, !recapRuntime.isGeneratingSelectedDay,
@@ -72,7 +73,7 @@
                         emptyDataCard
                     }
 
-                    if consents.isEnabled(.chatGPTAnalysis) {
+                    if consents.isEnabled(.chatGPTAnalysis), isConnected {
                         automaticCard
                     }
                 }
@@ -240,6 +241,15 @@
                     }
                     .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(!canGenerate || recapRuntime.isGenerating)
+                    .help(generationBlockedReason ?? "")
+                    .accessibilityHint(generationBlockedReason ?? "")
+                    .overlay(alignment: .bottomLeading) {
+                        // The reason sits under the greyed button without moving the header row.
+                        if let reason = generationBlockedReason, !recapRuntime.isGenerating {
+                            Text(reason).font(.system(size: 11)).foregroundStyle(.secondary)
+                                .fixedSize().offset(y: 18).accessibilityHidden(true)
+                        }
+                    }
                 }
             }
         }
@@ -353,11 +363,7 @@
                             .foregroundStyle(LHTheme.accent.opacity(0.78))
                         Text("Aucun rapport pour ce jour")
                             .font(.system(size: 13, weight: .semibold))
-                        Text(
-                            isConnected
-                                ? "Générez-le maintenant, ou laissez l’analyse automatique des journées terminées."
-                                : "Connectez ChatGPT dans les réglages pour générer le bilan en cinq lignes."
-                        )
+                        Text(emptyReportMessage)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                     }
@@ -580,6 +586,25 @@
         }
 
         private var isConnected: Bool { recapRuntime.isAccountConnected }
+
+        private var needsUpdate: Bool { recapRuntime.connectionState == .codexUnavailable }
+
+        private var generationBlockedReason: String? {
+            if !consents.isEnabled(.chatGPTAnalysis) { return "Activez d’abord l’analyse avec ChatGPT." }
+            if !isConnected { return needsUpdate ? "Mettez d’abord Goalong à jour." : "Connectez d’abord ChatGPT." }
+            if recapRuntime.dayOverview?.hasMeaningfulData == false { return "Aucune activité à analyser ce jour." }
+            return nil
+        }
+
+        private var emptyReportMessage: String {
+            if isConnected { return "Générez-le maintenant, ou laissez l’analyse automatique des journées terminées." }
+            if !consents.isEnabled(.chatGPTAnalysis) {
+                return "Choisissez les données à analyser pour générer le bilan en cinq lignes."
+            }
+            return needsUpdate
+                ? "Mettez Goalong à jour pour générer le bilan en cinq lignes."
+                : "Connectez ChatGPT ci-dessus pour générer le bilan en cinq lignes."
+        }
 
         private var generationButtonTitle: String {
             recapRuntime.recap == nil ? "Analyser la journée" : "Analyser à nouveau"

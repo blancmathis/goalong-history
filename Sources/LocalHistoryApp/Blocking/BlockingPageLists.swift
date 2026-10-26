@@ -338,7 +338,8 @@ import SwiftUI
 
     private var suggestionRow: some View {
         let present = Set(list.sites.map(\.pattern))
-        let options = controller.suggestions.filter { !Set($0.sites).isSubset(of: present) }
+        // A suggestion already named by the list (« Vidéo » in Vidéo) is not offered again.
+        let options = controller.suggestions.filter { !Set($0.sites).isSubset(of: present) && $0.title != list.name }
         return Group {
             if !options.isEmpty {
                 BlockingFlow(spacing: 6) {
@@ -591,9 +592,9 @@ struct BlockingActionPicture: View {
         HStack(spacing: 10) {
             ZStack(alignment: .leading) {
                 if list.effectiveAction == .block {
-                    tile.overlay {
-                        Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(LHTheme.text)
-                    }
+                    // A « no entry » sign, not a box: it must not read as a checkbox or a close button.
+                    Image(systemName: "nosign").font(.system(size: 14, weight: .semibold)).foregroundStyle(LHTheme.text)
+                        .frame(width: 18, height: 18)
                 } else {
                     HStack(spacing: 4) {
                         tile

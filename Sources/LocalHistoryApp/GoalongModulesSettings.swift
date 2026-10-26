@@ -22,12 +22,6 @@ import SwiftUI
                     }
                 }
             }
-            HStack {
-                Spacer()
-                Button("Supprimer les données Concentration", role: .destructive) { confirmingDelete = true }
-                    .buttonStyle(LHQuietButtonStyle())
-                    .disabled(concentration.controller?.hasLockedBlock == true)
-            }
             if let error = concentration.error {
                 Text(FocusUIError.message(raw: error)).font(.callout)
             } else if let deleteMessage {
@@ -63,6 +57,14 @@ import SwiftUI
                 Text(locked ? "Un blocage verrouillé ou « Difficile » est en cours : impossible de désactiver avant sa fin." : module.summary)
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+                // Concentration's data delete sits in its own row, not under every module.
+                if module == .concentration {
+                    Button("Supprimer ses données…", role: .destructive) { confirmingDelete = true }
+                        .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
+                        .disabled(concentration.controller?.hasLockedBlock == true)
+                        .accessibilityLabel("Supprimer les données Concentration")
+                        .padding(.top, 2)
+                }
             }
             Spacer(minLength: 12)
             if on {

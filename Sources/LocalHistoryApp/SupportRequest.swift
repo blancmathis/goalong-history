@@ -318,7 +318,7 @@ struct SupportRequestView: View {
         let ready: URL? = { if case .ready(let url, _, _, _) = controller.phase { return url }; return nil }()
         return HStack(spacing: 10) {
             Menu {
-                Button("Ajouter un repère maintenant") { controller.markIssue() }
+                Button("Noter l’heure du problème") { controller.markIssue() }
                     .disabled(!SupportDiagnostics.shared.isEnabled)
                 Button("Actualiser le rapport") { controller.prepare() }
                 Divider()

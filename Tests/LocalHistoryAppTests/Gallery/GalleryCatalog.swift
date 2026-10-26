@@ -9,7 +9,7 @@ import SwiftUI
         var entries = dashboardEntries + settingsEntries + onboardingEntries + menuBarEntries + concentrationEntries
         entries += blockingEntries + ambianceEntries + systemEntries + recapEntries + sourcesEntries
         entries += accountEntries + previewEntries + agentEntries + agendaEntries + activityDetailEntries
-        entries += conversationEntries + supportRequestEntries
+        entries += conversationEntries + supportRequestEntries + healthImportEntries
         return entries
     }
 
