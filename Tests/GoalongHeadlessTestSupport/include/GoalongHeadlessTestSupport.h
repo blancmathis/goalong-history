@@ -1,5 +1,5 @@
 // Linked into the test bundles only. Its +load hook keeps test windows invisible and
-// blocks activation and LaunchServices opens; no public API.
+// blocks activation and LaunchServices opens.
 #import <Foundation/Foundation.h>
 
 // Deletes the UserDefaults suite plists this test process created (also runs at exit).
@@ -19,3 +19,11 @@ FOUNDATION_EXPORT NSString * _Nullable GoalongHeadlessSuitePlistPath(NSString * 
 FOUNDATION_EXPORT void GoalongGalleryGuardsBegin(void);
 FOUNDATION_EXPORT NSDictionary<NSString *, id> * _Nonnull GoalongGalleryGuardsTake(void);
 FOUNDATION_EXPORT BOOL GoalongGalleryGuardsInstalled(void);
+
+// Visible-window watchdog (on unless GOALONG_TESTS_VISIBLE=1). A CGWindowList entry counts as
+// visible when it belongs to `pid`, has alpha > 0, is at least 2x2 points and meets a display.
+FOUNDATION_EXPORT BOOL GoalongHeadlessActive(void);
+FOUNDATION_EXPORT BOOL GoalongHeadlessWindowInfoIsVisible(NSDictionary * _Nonnull info, pid_t pid, NSArray<NSValue *> * _Nonnull displays);
+FOUNDATION_EXPORT NSArray<NSValue *> * _Nonnull GoalongHeadlessDisplayBounds(void);
+// Windows of this process the watchdog found really visible so far (any > 0 fails the run at exit).
+FOUNDATION_EXPORT NSInteger GoalongHeadlessVisibleWindowCount(void);

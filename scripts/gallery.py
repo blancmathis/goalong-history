@@ -253,9 +253,27 @@ def shard_command(run: Path, shard: int, shards: int, home: str, only: str | Non
             "-XCTest", "LocalHistoryAppTests.GalleryTests", str(xctest)]
 
 
+def window_guard() -> Path:
+    source = CHECKOUT / "scripts" / "window_guard.swift"
+    binary = CHECKOUT / ".build" / "window-guard" / "window_guard"
+    if binary.exists() and binary.stat().st_mtime >= source.stat().st_mtime:
+        return binary
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    temporary = binary.with_name(f".window_guard-{os.getpid()}")
+    result = subprocess.run(["xcrun", "swiftc", "-O", str(source), "-o", str(temporary)],
+                            capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        fail(f"compilation de window_guard.swift impossible :\n{result.stderr[-2000:]}")
+    os.replace(temporary, binary)
+    return binary
+
+
 def render(run: Path, shards: int, only: str | None, homes: Homes) -> list[str]:
-    """Runs the shards in parallel; a shard stopped by the watchdog (code 3) restarts with a fresh HOME."""
+    """Runs the shards in parallel; a shard stopped by the watchdog (code 3) restarts with a fresh HOME.
+    The window guard watches every shard: a window on screen or a focus change kills it and fails the run."""
     problems: list[str] = []
+    guard_log = open(run / "window-guard.log", "w", encoding="utf-8")
+    guard = subprocess.Popen([str(window_guard()), "watch", str(os.getpid())], stdout=guard_log, stderr=subprocess.STDOUT)
     running: dict[int, tuple[subprocess.Popen, str, object]] = {}
     relaunches = {shard: 0 for shard in range(shards)}
 
@@ -295,6 +313,15 @@ def render(run: Path, shards: int, only: str | None, homes: Homes) -> list[str]:
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
             handle.close()  # type: ignore[attr-defined]
+        guard.send_signal(signal.SIGUSR1)
+        try:
+            guard_code = guard.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            guard.kill()
+            guard_code = guard.wait()
+        guard_log.close()
+        if guard_code != 0:
+            problems.append("fenêtre de test visible ou focus pris (voir window-guard.log)")
     return problems
 
 

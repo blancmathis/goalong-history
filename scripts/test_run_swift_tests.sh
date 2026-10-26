@@ -53,4 +53,15 @@ for state in locked unlocked unknown; do
   else echo "ok: ui skips on a $state screen fail"; fi
 done
 if ./scripts/run_swift_tests.sh ui-verdict 0 locked >/dev/null 2>&1; then echo "ok: ui with 0 skips passes"; else echo "FAIL: ui with 0 skips failed" >&2; fail=1; fi
+# Window guard: one look at this shell finds nothing; one look at the Dock (always on screen, never
+# killed: report-only mode) finds a visible window. Proves the guard sees windows without showing one.
+guard_bin="$(./scripts/run_swift_tests.sh window-guard-bin)"
+if [[ -z "$guard_bin" ]]; then echo "FAIL: scripts/window_guard.swift did not compile" >&2; fail=1
+else
+  if "$guard_bin" check $$ >/dev/null; then echo "ok: window guard finds no window in a shell"; else echo "FAIL: window guard flagged a shell" >&2; fail=1; fi
+  dock="$(pgrep -x Dock | head -1)"
+  if [[ -z "$dock" ]]; then echo "skip: no Dock in this session, window guard positive check not run"
+  elif [[ "$(WINDOW_GUARD_NO_KILL=1 "$guard_bin" check "$dock")" == *"VIOLATION visible window"* ]]; then echo "ok: window guard sees the Dock's on-screen window"
+  else echo "FAIL: window guard missed the Dock's on-screen window" >&2; fail=1; fi
+fi
 exit "$fail"
