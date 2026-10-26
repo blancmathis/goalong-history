@@ -169,6 +169,10 @@ struct BlockingClockState: Codable, Equatable {
     /// `BlockingClock.frame` once the document dates are in the trusted frame (T-044 r5). nil: an older
     /// build wrote it, and its anchor may predate a clock set back (`BlockingClock.upgraded`).
     var frame: Int? = nil
+    /// The last trusted time of the previous boot (T-044 r7): already proven, so a wall clock stepped
+    /// forward after a boot with the clock behind may lift T up to it (`BlockingClock.advanced`). nil once
+    /// T has reached it, or without a previous boot.
+    var floor: Date? = nil
 
     var offset: Double { wall.timeIntervalSince1970 - continuous }
     /// This sample read through the trusted-now rule (`BlockingClock.trusted`).
@@ -215,13 +219,21 @@ enum BlockingClock {
     }
     /// `now` with the anchor the next refresh measures from: carried over in this boot (`anchor(after:)`),
     /// reset to `now` after a reboot (and its compensation) or without any previous sample.
+    /// A forward step of the wall clock enters T here only, up to the floor (the last T of the previous
+    /// boot): the caller moves the protected ends by the same amount (T-044 r7).
     static func advanced(previous: BlockingClockState?, now: BlockingClockState, adjusted: TimeInterval) -> BlockingClockState {
         var next = now
         if let previous, adjusted == 0, previous.boot == now.boot, now.continuous >= previous.continuous {
             next.anchor = anchor(after: previous, now: now)
+            if let floor = previous.floor {
+                next.anchor = max(next.anchor ?? now.offset, min(now.offset, floor.timeIntervalSince1970 - now.continuous))
+            }
+            next.floor = previous.floor
         } else {
             next.anchor = now.offset
+            next.floor = previous.map { last in last.floor.map { max($0, last.trusted) } ?? last.trusted }
         }
+        if let floor = next.floor, next.trusted >= floor { next.floor = nil }
         next.frame = frame
         return next
     }

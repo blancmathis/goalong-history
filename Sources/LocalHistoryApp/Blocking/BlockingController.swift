@@ -862,17 +862,23 @@ import LocalHistoryQueryCLI
         if hasPassword != passwordAvailable { hasPassword = passwordAvailable }
         let needsPassword = blocks.contains { $0.lock == .password }
         if quitRequiresPassword != needsPassword { quitRequiresPassword = needsPassword }
-        if let store, !storeFailed, lockMarker != .some(lockedUntil) {
+        // The markers are read against the wall clock (uninstall.sh, --unregister-guard, the guard): their
+        // ends are written in the wall frame, again whenever the skew moves them (whole seconds, T-044 r7).
+        let markerSkew = (now.timeIntervalSince(wallFrame(now))).rounded()
+        let wall = now.addingTimeInterval(-markerSkew)
+        func wallMarker(_ end: Date) -> Date { Date(timeIntervalSince1970: end.addingTimeInterval(-markerSkew).timeIntervalSince1970.rounded(.up)) }
+        let lockWanted = lockedUntil.map(wallMarker)
+        if let store, !storeFailed, lockMarker != .some(lockWanted) {
             // Memoize only a durable write: a failure retries on the next refresh, or uninstall.sh would miss the lock.
-            if store.writeLockMarker(until: lockedUntil) { lockMarker = .some(lockedUntil) }
+            if store.writeLockMarker(until: lockWanted) { lockMarker = .some(lockWanted) }
         }
         let severe = severeUntil
         if let store, !storeFailed {
             let files = GoalongGuardFiles.files(for: store.directory)
-            let wanted = severe.map { GuardFiles.markerEnd($0, now: now) }
+            let wanted = severe.map { GuardFiles.markerEnd(wallMarker($0), now: wall) }
             // The memo alone is not enough: a deleted, modified or planted marker is put right on every
             // refresh. The guard accepts any end from the healthy app, so a forged value must not stay.
-            if Self.guardMarkerNeedsWrite(memo: guardMarker, wanted: wanted, files: files, now: now) {
+            if Self.guardMarkerNeedsWrite(memo: guardMarker, wanted: wanted, files: files, now: wall) {
                 if files.writeMarker(until: wanted) { guardMarker = .some(wanted) }
             }
         }
@@ -1015,8 +1021,11 @@ import LocalHistoryQueryCLI
             jump = BlockingClock.adjustment(previous: previous, now: current)
             if jump != 0 { extendLocks(by: jump, at: previous.trusted) }
         }
+        let before = BlockingClock.trusted(wall: current.wall, continuous: current.continuous, boot: current.boot, last: lastClock)
         lastClock = BlockingClock.advanced(previous: lastClock, now: current, adjusted: jump)
         document.clock = lastClock
+        // A forward step lifted T toward the floor: blocks made while the clock was behind keep their length.
+        if jump == 0, let raised = lastClock?.trusted.timeIntervalSince(before), raised > 0 { extendLocks(by: raised, at: before) }
     }
     private func extendLocks(by jump: Double, at oldWall: Date) {
         for index in document.sessions.indices where effectiveLock(document.sessions[index].lock).protectsLists {
