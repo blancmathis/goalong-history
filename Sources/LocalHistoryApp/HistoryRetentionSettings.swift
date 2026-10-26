@@ -41,7 +41,7 @@ extension HistoryRetentionPolicy {
     var includesProofExpiry: Bool { minuteSeals.days != nil || anchorReceipts.days != nil }
     var retentionDescription: String {
         HistoryDataClass.allCases.map { kind in
-            let duration = duration(for: kind).days.map { $0 == 1 ? "1 jour" : "\($0) jours" } ?? "jusqu’à ce que je supprime"
+            let duration = duration(for: kind).days.map { GoalongUIFormat.count($0, "jour") } ?? "jusqu’à ce que je supprime"
             return "\(kind.retentionTitle) : \(duration)"
         }.joined(separator: "\n")
     }
@@ -121,7 +121,7 @@ extension HistoryRetentionPolicy {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     Picker(kind.retentionTitle, selection: durationBinding(kind)) {
                                         Text(HistoryRetentionPolicy.noLimitLabel).tag(0)
-                                        ForEach(durationOptions(kind), id: \.self) { days in Text(days == 1 ? "1 jour" : "\(days) jours").tag(days) }
+                                        ForEach(durationOptions(kind), id: \.self) { days in Text(GoalongUIFormat.count(days, "jour")).tag(days) }
                                     }.labelsHidden().frame(width: 230)
                                         .accessibilityIdentifier("retention-\(kind.rawValue)")
                                 }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)

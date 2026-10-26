@@ -818,7 +818,7 @@
                         .foregroundStyle(.secondary)
                     HStack(spacing: 5) {
                         compactPill("\(record.summary.messageCount) msg", symbol: "bubble.left")
-                        compactPill("\(record.summary.toolCallCount) outils", symbol: "wrench")
+                        compactPill(GoalongUIFormat.count(record.summary.toolCallCount, "outil"), symbol: "wrench")
                         compactPill(record.availability.frenchName, symbol: statusSymbol(record.availability))
                         compactPill(formatBytes(record.byteCount), symbol: "doc")
                     }

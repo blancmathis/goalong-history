@@ -26,8 +26,10 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 - On: Concentration › Programme can start blocks and programs. Turning the module on creates
   the controller and reads the store; nothing is blocked until the member starts a block or a
   program.
-- Off is refused while anything is locked (locked session, locked program, freeze). Off with nothing
-  locked stops every block, removes every window and unregisters any system component.
+- Off is refused while anything is locked (locked session, locked program, freeze) and while any
+  started block or program window other than `free` runs, a `typing` one included (C8-04: off would stop
+  it without its text). Off with nothing of this kind stops every block, removes every window and
+  unregisters any system component.
 - Settings › Modules holds the switch (one row per module).
 
 ## Rules from the owner
@@ -137,7 +139,8 @@ before the lock. A break cannot start inside a freeze.
 **Lock kinds (manual sessions).**
 - `free`: « Arrêter » ends it.
 - `typing`: « Arrêter » asks to retype a random 120-character text (letters and digits, no
-  look-alike characters, paste refused). Correct = ends.
+  look-alike characters, paste refused). Correct = ends. Only that path ends it: turning the module off is
+  refused while it runs; quitting Goalong or restarting the Mac keeps it, and it resumes at the next launch until its end.
 - `locked`: cannot be stopped. It ends at `end`.
 
 **Program lock.** While `program.lockedUntil > now`, the list can only get stricter: adding sites or
@@ -181,8 +184,9 @@ the next refresh). A protected program window in progress (any lock except « Li
 its current end, like after a clock jump, so the change cannot end it early. The usage day in
 progress (quotas, breaks, attempts, earned time) keeps its key until its old midnight, so a quota
 never resets early; the day can only get longer. After that, future programs, the next usage day
-and the timers use the new zone. This hold lives in memory: if Goalong restarts during the old
-day, it uses the new zone at once. Braise, Concentration and the Screen Time archive also follow
+and the timers use the new zone. The window hold is written to disk at once (no one-minute wait),
+so a kill right after the change keeps it. The usage day carry lives in memory: if Goalong restarts
+during the old day, the usage day uses the new zone at once. Braise, Concentration and the Screen Time archive also follow
 the new zone; the menu bar uses it at its next refresh.
 
 ## Ralentir (friction)

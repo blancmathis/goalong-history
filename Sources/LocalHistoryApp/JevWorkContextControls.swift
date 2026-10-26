@@ -124,7 +124,7 @@ import LocalHistoryCore
                 .font(.system(size: 12)).foregroundStyle(over ? LHTheme.warning : LHTheme.secondaryText)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Longueur de la définition : \(Int(ratio * 100)) % du maximum")
+        .accessibilityLabel("Longueur de la définition : \(GoalongUIFormat.percent(ratio * 100)) du maximum")
     }
 
     private var summary: some View {
