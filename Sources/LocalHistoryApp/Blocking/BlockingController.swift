@@ -164,8 +164,9 @@ import LocalHistoryQueryCLI
         refresh(enforceLast: false)
         if !hasLocks {
             let hadSessions = !document.sessions.isEmpty
-            // Quitting before a one-off start must preserve the scheduled commitment.
-            document.sessions.removeAll { $0.start <= clock() }
+            // Quitting before a one-off start must preserve the scheduled commitment. A started « Difficile »
+            // block survives too: only its typed text ends it (C8-01).
+            document.sessions.removeAll { $0.start <= clock() && $0.lock == .free }
             if hadSessions, let store {
                 do { try store.save(document) } catch { failStore() }
             }
@@ -182,6 +183,16 @@ import LocalHistoryQueryCLI
 
     /// Anything the member committed to and cannot undo before its end.
     var hasLocks: Bool { lockedUntil != nil }
+    /// Why the Blocage module cannot be switched off now, or nil. A lock refuses it; so does any started block
+    /// or program window other than « Libre »: switching off once stopped a « Difficile » block without its
+    /// typed text (C8-04). Typing the text ends the block and reopens the switch.
+    var moduleOffRefusal: String? {
+        if hasLocks { return "Le module ne peut pas être désactivé pendant un verrou." }
+        let now = clock()
+        let running = activeBlocks.contains { $0.lock != .free && $0.start <= now && $0.end > now }
+            || document.sessions.contains { $0.lock != .free && $0.start <= now && $0.end > now }
+        return running ? "Le module ne peut pas être désactivé pendant un blocage « Difficile » : arrêtez-le d’abord en retapant le texte." : nil
+    }
     /// End of the latest commitment. A store error is not a lock: it refuses edits, never quitting.
     var lockedUntil: Date? {
         let now = clock()
@@ -820,12 +831,16 @@ import LocalHistoryQueryCLI
         if let store, !storeFailed {
             do { _ = try store.load() } catch { restoreStore(store) }
         }
+        let locksBefore = (document.sessions, document.heldPrograms, document.freeze, document.lists)
         syncClock()
         let now = clock()
         lastRefresh = now
         followTimeZone(at: now)
         let triggersChanged = synchronizeAppTriggers(at: now)
-        if !storeFailed, let store, (triggersChanged || now.throttleElapsed(since: lastSavedAt) >= 60), hasPersistedWork {
+        // A lock moved by a clock jump or held by a zone change is written at once: a kill within the
+        // minute must not lose it (C8-03).
+        let locksChanged = locksBefore != (document.sessions, document.heldPrograms, document.freeze, document.lists)
+        if !storeFailed, let store, (triggersChanged || locksChanged || now.throttleElapsed(since: lastSavedAt) >= 60), hasPersistedWork {
             do { try store.save(document); lastGood = document; lastSavedAt = now } catch { failStore() }
         }
         document.sessions.removeAll { $0.end <= now }
@@ -1054,14 +1069,15 @@ import LocalHistoryQueryCLI
         for (id, end) in document.usage?.breakEnds ?? [:] where jump < 0 || end > oldWall { document.usage?.breakEnds[id] = end.addingTimeInterval(jump) }
     }
     /// Turns each protected program window in progress at `wall` into a held session, so a later
-    /// recomputation (clock jump, zone change) cannot end it early.
-    private func holdProgramWindows(at wall: Date, jump: Double) {
+    /// recomputation (clock jump, zone change) cannot end it early. A zone change also holds a
+    /// « Difficile » window (any lock except « Libre », C8-02); a clock jump only the protecting locks.
+    private func holdProgramWindows(at wall: Date, jump: Double, zoneChange: Bool = false) {
         for list in document.lists {
             for window in BlockingSchedule.windows(of: list.program, at: wall, calendar: calendar)
                 where window.start <= wall && window.end > wall {
                 let lock = list.program.isLocked(at: wall) ? BlockLock.locked
                     : effectiveLock(list.program.ranges.first { $0.id == window.rangeID }?.effectiveLock ?? .free)
-                guard lock.protectsLists, document.programSkips?[window.rangeID].map({ $0 > wall }) != true,
+                guard zoneChange ? lock != .free : lock.protectsLists, document.programSkips?[window.rangeID].map({ $0 > wall }) != true,
                       document.heldPrograms?.contains(where: { $0.id == window.rangeID }) != true else { continue }
                 document.heldPrograms = (document.heldPrograms ?? []) + [BlockSession(id: window.rangeID, listIDs: [list.id], start: window.start.addingTimeInterval(min(0, jump)),
                     end: window.end.addingTimeInterval(jump), lock: lock, origin: .program(window.rangeID))]
@@ -1074,7 +1090,7 @@ import LocalHistoryQueryCLI
         if let carry = usageDayCarry, carry.end <= now { usageDayCarry = nil }
         let next = Self.frozen(calendarProvider())
         guard next.timeZone.identifier != calendar.timeZone.identifier else { return }
-        holdProgramWindows(at: now, jump: 0)
+        holdProgramWindows(at: now, jump: 0, zoneChange: true)
         let bounds = usageDayBounds(at: now)
         usageDayCarry = (usageDay(at: now), bounds.start, bounds.end)
         calendar = next
@@ -1412,9 +1428,10 @@ import LocalHistoryQueryCLI
         self.modules = modules; self.monitor = monitor
         apply(enabled: modules.isEnabled(.blocking))
         modules.blockingDisableCheck = { [weak self] in
-            self?.controller?.refresh(enforceLast: false)
-            if self?.controller?.hasLocks == true {
-                self?.controller?.error = "Le module ne peut pas être désactivé pendant un verrou."
+            guard let controller = self?.controller else { return true }
+            controller.refresh(enforceLast: false)
+            if let refusal = controller.moduleOffRefusal {
+                controller.error = refusal
                 return false
             }
             return true
@@ -1440,8 +1457,8 @@ import LocalHistoryQueryCLI
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
             controller.refresh(enforceLast: false)
-            if controller.hasLocks {
-                controller.error = "Le module ne peut pas être désactivé pendant un verrou."
+            if let refusal = controller.moduleOffRefusal {
+                controller.error = refusal
                 modules?.setEnabled(.blocking, true)
                 return
             }
