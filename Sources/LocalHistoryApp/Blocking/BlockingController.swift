@@ -934,6 +934,8 @@ import LocalHistoryQueryCLI
     }
 
     private var hasPersistedWork: Bool { !document.lists.isEmpty || !document.sessions.isEmpty || document.freeze != nil || document.passwordLock != nil }
+    /// The running apps, as the triggers read them (the page names the open ones from the same source).
+    func runningAppIDs() -> Set<String> { runningApps() }
     private var hasAppTriggers: Bool { document.lists.contains { !($0.triggers?.apps ?? []).isEmpty } }
     /// Reuses NSWorkspace's running-app inventory; no observer, AX read or history subscription.
     private func synchronizeAppTriggers(at now: Date) -> Bool {
