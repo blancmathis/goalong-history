@@ -462,7 +462,7 @@
             let heartbeatInterval = Self.heartbeatInterval(configuredSeconds: configManager.config.heartbeatSeconds)
             if evidence != lastForegroundEvidence || presence.isActive != lastPresenceActive
                 || presence.idleLimitSeconds != lastIdleLimit
-                || observedAt.timeIntervalSince(lastHeartbeat) >= heartbeatInterval {
+                || observedAt.throttleElapsed(since: lastHeartbeat) >= heartbeatInterval {
                 recorder.record(
                     kind: .heartbeat,
                     context: current,

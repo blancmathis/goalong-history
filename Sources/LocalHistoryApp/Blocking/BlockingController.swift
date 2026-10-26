@@ -828,7 +828,7 @@ import LocalHistoryQueryCLI
         document.clock = currentClock
         followTimeZone(at: now)
         let triggersChanged = synchronizeAppTriggers(at: now)
-        if !storeFailed, let store, (triggersChanged || now.timeIntervalSince(lastSavedAt) >= 60), hasPersistedWork {
+        if !storeFailed, let store, (triggersChanged || now.throttleElapsed(since: lastSavedAt) >= 60), hasPersistedWork {
             do { try store.save(document); lastGood = document; lastSavedAt = now } catch { failStore() }
         }
         document.sessions.removeAll { $0.end <= now }
@@ -1061,7 +1061,7 @@ import LocalHistoryQueryCLI
         backend?.observeBrowser(target)
         // Samples arrive about every second; boundaries have their own timer, so a full refresh
         // (store check, protection, published state) runs at most every 5 s from here.
-        if clock().timeIntervalSince(lastRefresh) >= 5 { refresh(enforceLast: false) }
+        if clock().throttleElapsed(since: lastRefresh) >= 5 { refresh(enforceLast: false) }
         if !target.isForeground { enforce(target); return }
         if let previous = lastObservation, previous.pid == target.pid, previous.url == target.url,
            previous.titleKeywordMatches == target.titleKeywordMatches,
@@ -1078,7 +1078,7 @@ import LocalHistoryQueryCLI
             if document.usage != usage && !usage.quotaSecondsUsed.isEmpty {
                 document.usage = usage
                 // Persist quota use every 15 s at most; enforcement reads the in-memory value.
-                if store == nil || clock().timeIntervalSince(lastSavedAt) >= 15 { commit(reenforce: false) } else { publishQuota(usage) }
+                if store == nil || clock().throttleElapsed(since: lastSavedAt) >= 15 { commit(reenforce: false) } else { publishQuota(usage) }
             }
         }
         lastObservation = target

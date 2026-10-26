@@ -255,7 +255,7 @@
 
         static func shouldCheckInBackground(lastCheck: Date?, now: Date) -> Bool {
             guard let lastCheck else { return true }
-            return now.timeIntervalSince(lastCheck) >= 3600
+            return now.throttleElapsed(since: lastCheck) >= 3600
         }
 
         private func beginBackgroundCheck() {
