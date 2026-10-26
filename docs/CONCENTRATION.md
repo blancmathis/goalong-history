@@ -204,7 +204,10 @@ Durations step by 15 min. `target` is stored in minutes or as a count.
 key ISO `YYYY-Www`. The weekly limit uses the same week (one helper for both; today it follows the
 region, and an en-US Mac starts weeks on Sunday). A day engagement is set for today or one of the
 next 7 days; a week engagement for this week or the next. Setting one during its period is allowed;
-the card shows when it was set.
+the card shows when it was set. A clock set back cannot open a period already over: the lower bound
+also follows continuous time since any stored anchor of the same boot (the 7-day horizon stays on the
+wall clock). Limit: a forward jump then a correction in the same boot keeps that lower bound ahead
+until the next boot (the stricter side, as L-05).
 
 **Commit rule.** Free edit or delete until the later of (a) 10 minutes after creation and (b) the
 start of its period. After that, only harder: raise `target`, add a stake list, move `until` later.
@@ -231,7 +234,10 @@ result stores `measured`, `unmeasuredMinutes` (for `work` and `task`: period tim
 read while the Mac may have been in use — app closed, observation gaps, days without any record,
 hidden contexts, unclassified time; sleep, a locked session, and the time before the first or after
 the last record of a day do not count) and `settledAt`. After `missed`, two exits stay open until
-the stake block ends (no stake: until the end of the settle day):
+the stake block ends (no stake: until the end of the settle day). They close once and for good, like
+the free window: by the wall clock, by continuous time since settle in the same boot
+(`settledClock`), and a stored `exitClosedAt` once seen closed; a running stake block follows its
+own L-05 end. Setting the Mac clock back never reopens them:
 - « Utiliser un joker »: uses one joker, cancels or ends the stake, keeps the series. Jokers per
   calendar month of the period end: day 2, week 1 by default; settings 0…5 and 0…2.
 - « J'ai tenu, hors mesure »: offered only when the shortfall fits in the unmeasured time
