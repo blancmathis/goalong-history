@@ -532,7 +532,9 @@
             defer { try? FileManager.default.removeItem(at: fixture.container) }
             let sourceRoot = fixture.container.appendingPathComponent("Source", isDirectory: true)
             try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
-            let selectedDay = Calendar.current.startOfDay(for: Date()).addingTimeInterval(-86_400)
+            // Calendar arithmetic, not -86 400 s: a 25-hour DST day (2026-10-25 Paris) gave 01:00, not midnight.
+            let today = Calendar.current.startOfDay(for: Date())
+            let selectedDay = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: -1, to: today))
             let sourceCount = 70
             for index in 0..<sourceCount {
                 let source = sourceRoot.appendingPathComponent(String(format: "conversation-%03d.jsonl", index))
