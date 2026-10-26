@@ -24,6 +24,14 @@ final class FrenchFormatsGuardTests: XCTestCase {
         XCTAssertEqual(BlockingFormat.endTime(calendar.startOfDay(for: morning)), "minuit")
         XCTAssertEqual(BlockingFormat.minuteOfDay(6 * 60 + 53), "06:53")
     }
+    /// The stake « jusqu’à » chips use the same clock (T-044 C4-04): « 09:30 », never « 9:30 ».
+    func testCommitmentStakeTimesUseTwoDigitHours() {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = .current
+        let nine = calendar.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 9, minute: 30))!
+        XCTAssertEqual(FocusCommitmentFormat.clock("09:30"), BlockingFormat.time(nine))
+        XCTAssertEqual(FocusCommitmentFormat.until("08:00"), "jusqu’à 08:00")
+        XCTAssertEqual(FocusCommitmentFormat.until("23:59"), "toute la journée")
+    }
     /// Stored day keys read as French days (T-044 C3-04); an unreadable key is never hidden.
     func testDayKeysShowAsFrenchDays() {
         XCTAssertEqual(GoalongUIFormat.day(key: "2026-10-26"), "26 octobre 2026")
@@ -40,6 +48,8 @@ final class FrenchFormatsGuardTests: XCTestCase {
                          // A stored day key in French text, « Aperçu local du 2026-10-26 » (T-044 C3-04): use GoalongUIFormat.day(key:).
                          // A display time as « 6:53 » (T-044 B3-01), or an ad-hoc « HH:mm » formatter: use GoalongUIFormat.time.
                          "dateFormat = \"[HhKk]:mm", "dateFormat = \"HH:mm\"", "String\\(format: \"%d:%02d\", value / 60",
+                         // A stored « 09:30 » cut to « 9:30 » (T-044 C4-04).
+                         "hasPrefix\\(\"0\"\\)", "trimmingPrefix\\(\"0\"\\)", "drop\\(while: \\{ \\$0 == \"0\" \\}\\)",
                          "(du|reçue :) \\\\\\((\\w+\\.)*day\\)", "\"\\\\\\((\\w+\\.)*day\\) · "]
         let regexes = try forbidden.map { try NSRegularExpression(pattern: $0) }
         var hits: [String] = []
