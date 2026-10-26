@@ -7,6 +7,20 @@ import LocalHistoryCore
     import Darwin
     import SwiftUI
 
+    /// One « Accès à vérifier » alert per state change: the view is rebuilt at every visit, so the
+    /// last alerted status lives here. A ready check forgets it, so a later loss alerts again.
+    final class SourceAccessAlertMemory {
+        static let shared = SourceAccessAlertMemory()
+        private var last: [GoalongCapability: SourceAccessStatus] = [:]
+
+        func shouldAlert(_ capability: GoalongCapability, _ status: SourceAccessStatus) -> Bool {
+            if status == .ready { last[capability] = nil; return false }
+            guard last[capability] != status else { return false }
+            last[capability] = status
+            return true
+        }
+    }
+
     enum SourceAccessStatus: Equatable {
         case ready, accessibility, inputMonitoring, fullDiskAccess, screenTimeSetup
         case unavailable(String)
@@ -35,12 +49,14 @@ import LocalHistoryCore
             }
         }
 
-        var message: String {
+        var message: String { message(appName: ProductIdentity.displayName) }
+
+        func message(appName: String) -> String {
             switch self {
             case .ready: return "L’accès nécessaire est disponible."
-            case .accessibility: return "Autorisez Goalong History dans Confidentialité et sécurité → Accessibilité, puis revenez dans Goalong pour terminer. Vos réglages de partage sont inchangés."
+            case .accessibility: return "Autorisez \(appName) dans Confidentialité et sécurité → Accessibilité, puis revenez dans Goalong pour terminer. Vos réglages de partage sont inchangés."
             case .inputMonitoring: return "Autorisez Goalong dans Réglages Système → Surveillance de l’entrée, puis revenez ici pour vérifier l’accès."
-            case .fullDiskAccess: return "Autorisez Goalong History dans Confidentialité et sécurité → Accès complet au disque. Si macOS le propose, choisissez Quitter et rouvrir : Goalong reviendra à cette étape. Vous pouvez continuer sans cette source."
+            case .fullDiskAccess: return "Autorisez \(appName) dans Confidentialité et sécurité → Accès complet au disque. Si macOS le propose, choisissez Quitter et rouvrir : Goalong reviendra à cette étape. Vous pouvez continuer sans cette source."
             case .screenTimeSetup: return "Aucune donnée Temps d’écran n’est encore disponible. Activez « Activité des apps et des sites web » dans Temps d’écran de macOS, puis vérifiez à nouveau."
             case .unavailable(let message): return message
             }
@@ -395,7 +411,7 @@ import LocalHistoryCore
             checkAccess(capability) { status in
                 guard validation == request, consents.isEnabled(capability), !showingActivation,
                       status != .ready else { return }
-                guard activationStatus != status else { return }
+                guard SourceAccessAlertMemory.shared.shouldAlert(capability, status) else { return }
                 activationStatus = status
                 accessIssue = status.message + " Votre choix de source est inchangé. Aucune nouvelle donnée tant que l’accès ne fonctionne pas."
             }

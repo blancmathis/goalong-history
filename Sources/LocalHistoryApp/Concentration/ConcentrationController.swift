@@ -449,7 +449,8 @@ struct FocusPanel: Equatable {
         if settings.detectionEnabled && currentSession == nil { _ = detection.observe(value) } else { detection.reset() }
         refresh()
         if value.observing, value.available, value.idleSeconds < 120 { checkPrompts(activity: true) }
-        if value.observing, value.at.timeIntervalSince(lastMeasureRequest) >= 60 { lastMeasureRequest = value.at; measurementRefresh?() }
+        // Also without observation: sessions, plans and period ends still need a measurement (T-044 B2-02).
+        if value.at.timeIntervalSince(lastMeasureRequest) >= 60 { lastMeasureRequest = value.at; measurementRefresh?() }
     }
     func applyMeasurements(_ days: [GoalongLocalAnalytics.Day], hasDefinition: Bool) {
         measuredDays = Dictionary(uniqueKeysWithValues: days.map { (FocusCalendar.dayKey($0.date, calendar: calendar), $0) })
@@ -717,7 +718,8 @@ extension ConcentrationController {
             result.jokerAt = clock()
         }
         // Persist release intent first. Relaunch/retry can finish a release without losing the joker.
-        result.stake = .init(state: .cancelled, blockId: result.stake.blockId, at: clock())
+        // Only an applied stake is released: none or skipped has no block to lift (T-044 B2-01).
+        if result.stake.state == .applied { result.stake = .init(state: .cancelled, blockId: result.stake.blockId, at: clock()) }
         var next = commitments; next[i].result = result
         try saveCommitmentValues(next)
         try reconcileCommitmentBlocks(); refreshCommitmentCards()

@@ -210,8 +210,8 @@ final class GoalongHistoryCommandBoundsTests: XCTestCase {
 
 final class GoalongScreenTimeMacOnlyTests: XCTestCase {
     func testMacOnlyKeepsOnlyTheCurrentMac() throws {
-        let start = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
-        let end = start.addingTimeInterval(86_400)
+        let start = Calendar.current.startOfDay(for: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
         let current = AppleScreenTimeDevice(id: "current", name: "This Mac", kind: .mac)
         let remote = AppleScreenTimeDevice(id: "remote", name: "Other Mac", kind: .mac)
         let phone = AppleScreenTimeDevice(id: "phone", name: "iPhone", kind: .iPhone)
