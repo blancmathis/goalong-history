@@ -173,6 +173,10 @@ struct BlockingClockState: Codable, Equatable {
     /// forward after a boot with the clock behind may lift T up to it (`BlockingClock.advanced`). nil once
     /// T has reached it, or without a previous boot.
     var floor: Date? = nil
+    /// Continuous time of the first sample of the boot that set `floor` (T-044 r9). That boot proved this
+    /// much more time past the floor, carried into the next boot (`BlockingClock.provenFloor`). nil in
+    /// documents of older builds: nothing carried.
+    var floorSince: Double? = nil
 
     var offset: Double { wall.timeIntervalSince1970 - continuous }
     /// This sample read through the trusted-now rule (`BlockingClock.trusted`).
@@ -204,9 +208,20 @@ enum BlockingClock {
     /// The shift of protected ends at this sample: none in the same boot (T ignores clock changes, so the
     /// ends need no move: T-044 r6), else a wall clock earlier than the last trusted time (L-05). The ends
     /// live in T: a clock set back before the reboot, while T kept real time, moves them too (C6-05).
+    /// A reboot to a later wall clock while T was below the floor moves them forward again, up to the
+    /// proven floor only (C7-01: a boot behind, then a boot right, must not keep the ends early).
     static func adjustment(previous: BlockingClockState, now: BlockingClockState) -> TimeInterval {
         if previous.boot == now.boot, now.continuous >= previous.continuous { return 0 }
-        return min(0, now.wall.timeIntervalSince(previous.trusted))
+        let jump = now.wall.timeIntervalSince(previous.trusted)
+        if jump <= 0 { return jump }
+        guard let floor = provenFloor(previous) else { return 0 }
+        return max(0, min(now.wall, floor).timeIntervalSince(previous.trusted))
+    }
+    /// The floor of `last` plus the continuous time its boot proved since it set the floor: a lower bound
+    /// on real time at `last` (T-044 r9).
+    static func provenFloor(_ last: BlockingClockState) -> Date? {
+        guard let floor = last.floor else { return nil }
+        return floor.addingTimeInterval(max(0, last.continuous - (last.floorSince ?? last.continuous)))
     }
     /// The one « now » of every blocking and stake decision (T-044 r5, r6). In the boot of `last`, it is
     /// the time proven by continuous time since the anchor, plus at most `jumpTolerance` of forward lead:
@@ -230,11 +245,13 @@ enum BlockingClock {
                 next.anchor = max(next.anchor ?? now.offset, min(now.offset, floor.timeIntervalSince1970 - now.continuous))
             }
             next.floor = previous.floor
+            next.floorSince = previous.floorSince
         } else {
             next.anchor = now.offset
-            next.floor = previous.map { last in last.floor.map { max($0, last.trusted) } ?? last.trusted }
+            next.floor = previous.map { last in provenFloor(last).map { max($0, last.trusted) } ?? last.trusted }
+            next.floorSince = next.floor == nil ? nil : now.continuous
         }
-        if let floor = next.floor, next.trusted >= floor { next.floor = nil }
+        if let floor = next.floor, next.trusted >= floor { next.floor = nil; next.floorSince = nil }
         next.frame = frame
         return next
     }
