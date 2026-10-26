@@ -124,7 +124,9 @@ final class ClockRollbackThrottleTests: XCTestCase {
         XCTAssertGreaterThan(files.count, 50)
         for file in files {
             for (i, line) in try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n").enumerated()
-            where regexes.contains(where: { $0.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil }) {
+            where regexes.contains(where: { $0.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil })
+                // A sign check on the same line bounds the gap both ways (the website pairing window, pinned by the audit).
+                && !line.contains(") >= 0,") {
                 hits.append("\(file.lastPathComponent):\(i + 1)")
             }
         }

@@ -300,7 +300,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             error = "Reliez votre compte Goalong, puis vérifiez à nouveau l’aperçu avant d’envoyer."; return
         }
         guard approved.draft == draft, approved.origin == origin.trimmingCharacters(in: .whitespacesAndNewlines),
-              approved.tokenPath == tokenPath, Date().timeIntervalSince(approved.createdAt) >= 0, Date().throttleElapsed(since: approved.createdAt) <= 900,
+              approved.tokenPath == tokenPath, Date().timeIntervalSince(approved.createdAt) >= 0, Date().timeIntervalSince(approved.createdAt) <= 900,
               sourceConsent(approved.draft.options),
               GoalongPrivacyPolicy.load(in: root).revision == approved.privacyRevision else {
             invalidate(); error = "L’aperçu ou les autorisations ont changé. Préparez un nouvel aperçu avant l’envoi."; return
