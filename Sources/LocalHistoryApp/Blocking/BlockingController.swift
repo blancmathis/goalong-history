@@ -539,6 +539,9 @@ import LocalHistoryQueryCLI
         guard let index = document.lists.firstIndex(where: { $0.id == listID }) else { return }
         let current = document.lists[index].program.lockedUntil ?? .distantPast
         document.lists[index].program.lockedUntil = max(current, date)
+        // A lock set later wins over an earlier « Arrêter »: the windows block again until their end.
+        let ranges = Set(document.lists[index].program.ranges.map(\.id))
+        document.programSkips = document.programSkips?.filter { !ranges.contains($0.key) }
         commit()
     }
 
