@@ -249,6 +249,7 @@ enum SupportSourceAllowlist {
         "UsageBreakdownProjection.swift",
         "UsageRulesList.swift",
         "VisibleContextControl.swift",
+        "WallClockThrottle.swift",
         "WebsiteIconView.swift",
         "WorkspaceOpenPolicy.swift",
         "main.swift",

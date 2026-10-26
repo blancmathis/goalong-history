@@ -365,7 +365,7 @@
             now: Date
         ) -> Bool {
             guard let lastCaptureAt else { return true }
-            return now.timeIntervalSince(lastCaptureAt) >= observedContextRecentCaptureCooldown
+            return now.throttleElapsed(since: lastCaptureAt) >= observedContextRecentCaptureCooldown
         }
 
         static func observedContextUsesRecentCaptureCooldown(trigger: String) -> Bool {
@@ -400,7 +400,7 @@
 
         private func captureRichContextIfNeeded() {
             let now = Date(), interval = ActivityAnalysisPreferences.richContextIntervalSeconds
-            guard now.timeIntervalSince(lastRichContextCapture) >= interval,
+            guard now.throttleElapsed(since: lastRichContextCapture) >= interval,
                   ActivityAnalysisPreferences.richContextEnabled, state?.isCapturing == true else { return }
             let generation = interactionCaptureGeneration
             currentContext? { [weak self] evidence in
