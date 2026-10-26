@@ -89,7 +89,7 @@ final class GoalongAnalyticsPreviewTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("analytics-sparse-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let localCalendar = Calendar.current
-        let day = localCalendar.startOfDay(for: Date().addingTimeInterval(-86400))
+        let day = localCalendar.startOfDay(for: localCalendar.date(byAdding: .day, value: -1, to: Date())!)
         let directory = root.appendingPathComponent("events")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let formatter = DateFormatter(); formatter.calendar = localCalendar; formatter.locale = Locale(identifier: "en_US_POSIX")

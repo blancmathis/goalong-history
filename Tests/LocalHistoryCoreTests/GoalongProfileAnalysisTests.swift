@@ -96,7 +96,7 @@ final class GoalongProfileAnalysisTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-profile-load-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("events"), withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-        let day = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        let day = Calendar.current.startOfDay(for: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
         var data = Data()
         for event in events { data.append(try encoder.encode(event)); data.append(10) }
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -110,7 +110,7 @@ final class GoalongProfileAnalysisTests: XCTestCase {
             url: host.map { .init(value: "https://\($0)/page", host: $0, redactionApplied: false) })
     }
     func testLoadOmitsEventsExcludedByGlobalPolicyAndFailsClosedWhenUnreadable() throws {
-        let day = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        let day = Calendar.current.startOfDay(for: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
         let (root, start, end) = try loadRoot([
             event("Keeper", bundle: "test.keeper", at: day, offset: 60),
             event("Secret", bundle: "test.secret", at: day, offset: 120),
@@ -128,7 +128,7 @@ final class GoalongProfileAnalysisTests: XCTestCase {
         XCTAssertThrowsError(try A.load(root: root, start: start, end: end, rich: false))
     }
     func testLoadReadsNothingWhileGlobalPauseIsOn() throws {
-        let day = Calendar.current.startOfDay(for: Date().addingTimeInterval(-86_400))
+        let day = Calendar.current.startOfDay(for: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
         let (root, start, end) = try loadRoot([event("Keeper", bundle: "test.keeper", at: day, offset: 60)])
         defer { try? FileManager.default.removeItem(at: root) }
         try GoalongGlobalPause.setPaused(true, in: root)
