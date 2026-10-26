@@ -29,7 +29,7 @@ struct GoalongAnalyticsChartScale {
         upperBound = hourly && unitSeconds == 60 ? min(60, bound) : bound
     }
     func label(_ value: Double) -> String {
-        value.formatted(.number.locale(Locale(identifier: "fr_FR")).precision(.fractionLength(0...1))) + " " + unit
+        value.formatted(.number.locale(Locale(identifier: "fr_FR")).precision(.fractionLength(0...1))) + "\u{00A0}" + unit
     }
 }
 

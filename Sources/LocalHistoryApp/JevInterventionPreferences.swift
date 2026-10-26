@@ -43,7 +43,7 @@ extension Notification.Name {
     func update(_ edit: (inout JevInterventionSettings) -> Void) {
         var next = settings; edit(&next)
         guard next.isValid, let data = try? JSONEncoder().encode(next) else {
-            error = "Choisissez deux paliers croissants entre 1 et 60 minutes, une intensité de 10 à 85 % et un dernier palier assombrissement + rouge."
+            error = "Choisissez deux paliers croissants entre 1 et 60 minutes, une intensité de 10 à 85\u{00A0}% et un dernier palier assombrissement + rouge."
             return
         }
         defaults.set(data, forKey: Self.storageKey)

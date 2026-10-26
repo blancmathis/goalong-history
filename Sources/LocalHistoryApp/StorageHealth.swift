@@ -8,6 +8,8 @@
     enum StorageHealth {
         /// Below this free space Goalong warns before writes start failing.
         static let lowSpaceThreshold: Int64 = 2 * 1_024 * 1_024 * 1_024
+        /// « 2 Go » — the threshold as shown in texts, always derived from `lowSpaceThreshold`.
+        static var lowSpaceThresholdText: String { GoalongUIFormat.number(lowSpaceThreshold / (1_024 * 1_024 * 1_024)) + "\u{00A0}Go" }
 
         /// Walks at most four levels of underlying errors and reads only numeric codes.
         static func failureKind(for error: Error) -> CaptureStorageFailureKind {

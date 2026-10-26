@@ -72,7 +72,7 @@ struct GoalongActivityUsageDetail: View {
         return LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
             stat("Temps total", duration(item.seconds), "\(Int((share * 100).rounded()))\u{00A0}% du temps actif")
             if period.days.count > 1 {
-                stat("Jours d’utilisation", "\(visibleDays.count)", "sur \(period.days.count) jours")
+                stat("Jours d’utilisation", "\(visibleDays.count)", "sur \(GoalongUIFormat.count(period.days.count, "jour"))")
             } else if let first = sessions.first, let last = sessions.last {
                 stat("Utilisé", "\(GoalongActivitySummary.time(first.start)) – \(GoalongActivitySummary.time(last.end))", "première et dernière fois")
             }

@@ -110,7 +110,7 @@ import SwiftUI
     }
     private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack { Text(title); Spacer(); Text("\(Int((value.wrappedValue * 100).rounded())) %").monospacedDigit().foregroundStyle(LHTheme.secondaryText) }
+            HStack { Text(title); Spacer(); Text(GoalongUIFormat.percent(value.wrappedValue * 100)).monospacedDigit().foregroundStyle(LHTheme.secondaryText) }
             Slider(value: value, in: range, step: 0.01).accessibilityLabel(title).accessibilityValue("\(Int(value.wrappedValue * 100)) pour cent")
         }
     }

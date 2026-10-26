@@ -58,8 +58,8 @@ final class VisibleTextConventionTests: XCTestCase {
     }
 
     func testPercentagesKeepTheSpaceBeforeTheSign() {
-        XCTAssertEqual(DashboardFormatters.percentage(1, 4), "25 %")
-        XCTAssertEqual(DashboardFormatters.percentage(0, 0), "0 %")
+        XCTAssertEqual(DashboardFormatters.percentage(1, 4), "25\u{00A0}%")
+        XCTAssertEqual(DashboardFormatters.percentage(0, 0), "0\u{00A0}%")
         let spots = [
             "Sources/LocalHistoryApp/ComputerHistoryPage.swift",
             "Sources/LocalHistoryApp/DashboardComponents.swift",
