@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import LocalHistoryCore
 
 /// Capture navigation arguments together with presentation identity. A separate
 /// Boolean and payload can otherwise present stale values on the first click.
@@ -21,6 +22,8 @@ enum GoalongUIFormat {
     static func day(_ date: Date) -> String {
         date.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "fr_FR")))
     }
+    /// « 26 octobre 2026 » for a stored day key « 2026-10-26 »; an unreadable key is shown as is.
+    static func day(key: String) -> String { GoalongDayParser.date(key, timeZone: .current).map(day) ?? key }
     /// « 1 234 » — French grouping whatever the system region.
     static func number<T: BinaryInteger>(_ value: T) -> String {
         Int(value).formatted(.number.locale(locale))
