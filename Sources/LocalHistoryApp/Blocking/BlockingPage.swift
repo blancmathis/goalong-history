@@ -231,7 +231,7 @@ struct BlockingStopRequest: Identifiable {
     /// The trigger apps that hold the block (running ones first); nil for a block with an end.
     private func triggerNames(_ block: BlockingActiveBlock) -> [String]? {
         guard case .trigger(let id) = block.origin else { return nil }
-        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        let running = controller.runningAppIDs()
         let apps = controller.list(id)?.triggers?.apps ?? []
         let names = apps.filter { running.contains($0.bundleIdentifier) }.map(\.name)
         return names.isEmpty ? apps.map(\.name) : names
