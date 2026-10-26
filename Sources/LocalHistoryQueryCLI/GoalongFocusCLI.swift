@@ -4,6 +4,8 @@ import LocalHistoryCore
 
 public enum GoalongFocusError: String, Error, CustomStringConvertible {
     case appNotRunning, moduleDisabled, invalidArgument, locked, notFound, storageFailed, tooManyWatchers
+    /// `plan move` on a task already done or dropped.
+    case itemFinished
     /// Client side only: the request reached the app but no answer came back in time.
     case outcomeUnknown
     public var description: String { rawValue }

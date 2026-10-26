@@ -385,6 +385,7 @@ struct FocusPanel: Equatable {
         guard FocusValidation.day(target), target != day else { throw FocusFailure.invalidArgument }
         var source = try plan(on: day), changed: [String: FocusPlan] = [:]
         guard let i = source.items.firstIndex(where: { $0.id == id }) else { throw FocusFailure.notFound }
+        guard source.items[i].status != .done, source.items[i].status != .dropped else { throw FocusFailure.itemFinished }
         if source.items[i].status == .moved, let previous = source.items[i].toDay, previous != target {
             try withdrawMovedCopy(id, from: previous, into: &changed)
         }

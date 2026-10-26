@@ -18,20 +18,39 @@ final class GallerySmokeTests: XCTestCase {
     static var smokeBudget: TimeInterval {
         ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" ? 15 : 5
     }
+    /// A Mac busy with other jobs (load ~70: 6.07 s, T-044 C7-12) stretches the wall time, not the work. There the
+    /// wall time gets the hosted ceiling and the 5 s budget applies to the main thread's CPU time, which the
+    /// render's work sets and the load does not: slower code still fails it.
+    static func wallBudget(load: Double, cores: Int) -> TimeInterval { load > Double(cores) ? 15 : smokeBudget }
+    static var machineLoad: Double {
+        var load = [0.0, 0.0, 0.0]
+        return getloadavg(&load, 3) > 0 ? load[0] : 0
+    }
+    static func threadCPUTime() -> TimeInterval { Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)) / 1e9 }
 
     @MainActor func testKeyEntriesRenderRealContentInvisibly() throws {
         try Self.requireWindowServer()
-        let started = Date()
-        var elapsed: TimeInterval = 0
+        let started = Date(), startedCPU = Self.threadCPUTime()
+        var elapsed: TimeInterval = 0, cpu: TimeInterval = 0
         try GalleryRenderer.withPreparedApplication {
             try renderKeyEntries()
             elapsed = Date().timeIntervalSince(started)  // the spec's budget covers the four key entries
+            cpu = Self.threadCPUTime() - startedCPU
             try renderProbes()
         }
         XCTAssertFalse(NSApp.windows.contains { $0.isVisible }, "a window became visible")
+        let load = Self.machineLoad, cores = ProcessInfo.processInfo.activeProcessorCount
+        let wallBudget = Self.wallBudget(load: load, cores: cores)
         // In the log: the review's budget proof at each version (C3-outil-02).
-        print(String(format: "gallery smoke: key entries %.2f s, with probes %.2f s", elapsed, Date().timeIntervalSince(started)))
-        XCTAssertLessThan(elapsed, Self.smokeBudget, "smoke budget is \(Int(Self.smokeBudget)) s")
+        print(String(format: "gallery smoke: key entries %.2f s (main thread CPU %.2f s, load %.1f on %d cores), with probes %.2f s",
+                     elapsed, cpu, load, cores, Date().timeIntervalSince(started)))
+        XCTAssertLessThan(elapsed, wallBudget, "smoke budget is \(Int(wallBudget)) s at load \(load)")
+        XCTAssertLessThan(cpu, Self.smokeBudget, "smoke CPU budget is \(Int(Self.smokeBudget)) s")
+    }
+
+    func testWallBudgetWidensOnlyOnAnOverloadedMac() {
+        XCTAssertEqual(Self.wallBudget(load: 70, cores: 12), 15)
+        XCTAssertEqual(Self.wallBudget(load: 4, cores: 12), Self.smokeBudget)
     }
 
     /// The smoke test runs inside `make test`: the time zone, identity, toasts and analysis clock it sets for the

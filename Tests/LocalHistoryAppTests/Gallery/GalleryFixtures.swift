@@ -157,6 +157,12 @@ import SwiftUI
                          BlockAppRule(bundleIdentifier: "com.apple.iWork.Pages", name: "Pages")])
     }
 
+    /// The app that holds the social list's trigger block.
+    static let xcodeID = "com.apple.dt.Xcode"
+    /// The running apps the blocking fixtures see: never the host's, or an open Xcode adds or removes the
+    /// trigger block of the social list from one run to the next (T-044 C7-11).
+    static let noApps: () -> Set<String> = { [] }
+
     /// The day before the gallery day, outside every program window for the idle states.
     static var sunday: Date { GalleryClock.at(15, 10, dayOffset: -5) }
     /// Monday afternoon of the gallery week: inside the social list's program.
@@ -164,14 +170,14 @@ import SwiftUI
 
     static func blockingEmpty() -> BlockingController {
         let now = blockingNow
-        return BlockingController(clock: { now }, continuous: { now.timeIntervalSince1970 })
+        return BlockingController(clock: { now }, continuous: { now.timeIntervalSince1970 }, runningApps: noApps)
     }
 
     static func blockingIdle() -> BlockingController {
         var document = BlockingDocument()
         document.lists = [socialList, videoList, focusList]
         let sunday = sunday
-        return BlockingController(document: document, clock: { sunday }, continuous: { sunday.timeIntervalSince1970 })
+        return BlockingController(document: document, clock: { sunday }, continuous: { sunday.timeIntervalSince1970 }, runningApps: noApps)
     }
 
     static func blockingActive() -> BlockingController {
@@ -186,7 +192,7 @@ import SwiftUI
         usage.blocked = [socialID: 4, focusID: 3]
         usage.earnedSeconds = [socialID: 600.0]
         document.usage = usage
-        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 })
+        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 }, runningApps: noApps)
     }
 
     static func blockingTriggered() -> BlockingController {
@@ -195,7 +201,8 @@ import SwiftUI
         document.lists = [socialList, videoList, focusList]
         document.sessions = [BlockSession(listIDs: [socialID], start: now.addingTimeInterval(-25 * 60), end: .distantFuture,
                                           lock: .free, origin: .trigger(socialID))]
-        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 })
+        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 },
+                                  runningApps: { [xcodeID] })
     }
 
     /// A block protected by the password (stored in the document, never in the keychain) and one set for tonight.
@@ -203,7 +210,7 @@ import SwiftUI
         let now = blockingNow
         var document = BlockingDocument()
         document.lists = [socialList, videoList, focusList]
-        let controller = BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 })
+        let controller = BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 }, runningApps: noApps)
         controller.setPassword("rendu-fixe")
         controller.start(listIDs: [socialID], until: now.addingTimeInterval(84 * 60), lock: .password)
         controller.schedule(listIDs: [videoID, focusID], start: now.addingTimeInterval(18 * 3_600 + 50 * 60),
@@ -229,7 +236,8 @@ import SwiftUI
         document.lists = [socialList, videoList, focusList]
         document.sessions = [BlockSession(listIDs: [socialID, focusID], start: now.addingTimeInterval(-50 * 60),
                                           end: now.addingTimeInterval(84 * 60), lock: .locked)]
-        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 }, guardClient: GalleryGuardClient(guardian))
+        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 }, guardClient: GalleryGuardClient(guardian),
+                                  runningApps: noApps)
     }
 
     static var freeze: BlockFreeze {
