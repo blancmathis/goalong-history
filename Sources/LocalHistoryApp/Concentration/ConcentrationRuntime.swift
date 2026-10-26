@@ -26,6 +26,8 @@ import LocalHistoryQueryCLI
     private let storeFactory: () -> FocusStore
     private var measurementTask: Task<Void, Never>?
     private var measurementGeneration = UUID()
+    /// Last sample's `observing`; `nil` until the first sample after start.
+    private var observing: Bool?
     private let blockingProvider: @MainActor () -> BlockingController?
     private let factory: ((FocusStore) throws -> ConcentrationController)?
     private let clock: () -> Date
@@ -60,10 +62,8 @@ import LocalHistoryQueryCLI
                 value.onOpenRequested = { [weak self] _ in self?.onOpen?() }
                 value.onLimitMark = { [weak self] mark in self?.monitor?.recordFocusLimit(mark) }
                 value.measurementRefresh = { [weak self] in self?.refreshMeasurements() }
-                monitor?.concentrationSink = { [weak self, weak value] observation in
-                    value?.observe(observation)
-                    if !observation.observing { self?.measurementTask?.cancel(); self?.measurementTask = nil; self?.measurementGeneration = UUID() }
-                }
+                observing = nil
+                monitor?.concentrationSink = { [weak self] observation in self?.receive(observation) }
                 if let panel = value.panel { value.onPanelChange?(panel) }
                 menuBarSubscription = value.$phase.combineLatest(value.$currentSession).sink { [weak self] phase, session in
                     self?.updateMenuBar(phase: phase, session: session)
@@ -83,6 +83,13 @@ import LocalHistoryQueryCLI
             // Off with no controller: a start failure no longer applies.
             error = nil; measurementError = nil
         }
+    }
+    /// One monitor sample. Only the end of observation cancels a running measurement: a Mac that never observes
+    /// (recording off, no Accessibility) still measures sessions and plans and settles past commitments (T-044 B2-02).
+    func receive(_ observation: FocusObservation) {
+        if observing == true && !observation.observing { measurementTask?.cancel(); measurementTask = nil; measurementGeneration = UUID() }
+        observing = observation.observing
+        controller?.observe(observation)
     }
     /// App quit: save a pending stop (or leave its tombstone). A running session is not ended.
     func flushForTermination() { controller?.flushPendingStop() }

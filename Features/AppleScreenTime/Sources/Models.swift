@@ -167,6 +167,24 @@ public struct AppleScreenTimeApplicationUsage: Codable, Equatable, Hashable, Ide
     public var resolvedName: String {
         displayName ?? bundleIdentifier ?? "Application inconnue"
     }
+
+    /// Name for outgoing payloads: never a raw reverse-DNS identifier.
+    /// "com.apple.SIMSetupUIService" becomes "SIM Setup UI Service".
+    public var readableName: String {
+        guard displayName == nil, let bundleIdentifier, bundleIdentifier.contains("."),
+              let last = bundleIdentifier.split(separator: ".").last, !last.isEmpty else { return resolvedName }
+        let letters = Array(last)
+        var words = ""
+        for (index, character) in letters.enumerated() {
+            if index > 0, character.isUppercase {
+                let previous = letters[index - 1]
+                let nextIsLower = index + 1 < letters.count && letters[index + 1].isLowercase
+                if previous.isLowercase || previous.isNumber || (previous.isUppercase && nextIsLower) { words.append(" ") }
+            }
+            words.append(character)
+        }
+        return words
+    }
 }
 
 public struct AppleScreenTimeSegment: Codable, Equatable, Sendable {

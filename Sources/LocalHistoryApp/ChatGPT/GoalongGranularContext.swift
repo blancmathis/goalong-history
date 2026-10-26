@@ -80,7 +80,12 @@ extension ChatGPTRecapContextBuilder {
                 kind: .heartbeat, suppressionReason: .excludedApplication)
         }
         let activity = ActivityAnalysisEngine.analyze(events: filtered, day: day)
-        let usage = activity.applications.filter { scope.allows(id: $0.bundleIdentifier, name: $0.name) && !privacy.excludes(appID: $0.bundleIdentifier, name: $0.name) }
+        // Per-app seconds come from the foreground intervals of Activité › Par application.
+        // The engine's minute representative credits a whole shared minute to one app.
+        let foreground = GoalongLocalAnalytics.Period(days: [GoalongLocalAnalytics.build(events: filtered, day: day)]).usage()
+            .map { ActivityApplicationSummary(name: $0.name, bundleIdentifier: $0.bundleIdentifier,
+                                              activeSeconds: Int($0.seconds.rounded()), focusBlockCount: 0) }
+        let usage = foreground.filter { scope.allows(id: $0.bundleIdentifier, name: $0.name) && !privacy.excludes(appID: $0.bundleIdentifier, name: $0.name) }
         var document: [String: Any] = [
             "date": ActivityAnalysisPaths.dayString(day),
             "lecture": "Les sources absentes ou exclues sont des lacunes, pas de l’inactivité. Les durées de plusieurs sources peuvent se chevaucher."
@@ -144,7 +149,7 @@ extension ChatGPTRecapContextBuilder {
                 guard !apps.isEmpty else { continue }
                 appleCount += apps.count
                 appleRows.append(["appareil": "Appareil \(appleRows.count + 1)", "applications": try apps.map {
-                    ["application": try text($0.resolvedName, limit: 512), "secondes": max(0, Int($0.duration))] as [String: Any]
+                    ["application": try text($0.readableName, limit: 512), "secondes": max(0, Int($0.duration))] as [String: Any]
                 }])
             }
             document["temps_ecran_Apple"] = appleRows

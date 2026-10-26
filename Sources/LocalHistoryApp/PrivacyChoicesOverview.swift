@@ -6,6 +6,8 @@ import LocalHistoryCore
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
+    @ObservedObject private var exclusions = GoalongExclusionStore.shared
+    @State private var analysisSelection = GoalongAnalysisSelection.load()
     @State private var showingSharing = false
     @State private var showingRetention = false
     @State private var retentionSummary = ""
@@ -51,9 +53,8 @@ import LocalHistoryCore
                     if sender.savedConfiguration != nil {
                         Text(sender.status).font(.system(size: 12)).foregroundStyle(.secondary)
                     }
-                    Text(consents.isEnabled(.chatGPTAnalysis)
-                         ? "L’analyse ChatGPT est activée. Les analyses lancées ou planifiées peuvent envoyer le contexte choisi au service connecté."
-                         : "L’analyse ChatGPT est désactivée. L’activer est un choix distinct de l’enregistrement local.")
+                    Text(Self.chatGPTAnalysisText(consented: consents.isEnabled(.chatGPTAnalysis),
+                                                  selection: analysisSelection, policy: exclusions.policy))
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     Text("Envoyer au site et partager avec d’autres personnes sont deux actions différentes : les règles de destinataires du site s’appliquent après l’envoi. Un export local crée un fichier ; toute personne qui le reçoit peut en garder une copie.")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
@@ -80,12 +81,18 @@ import LocalHistoryCore
                 }.fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .onAppear { refreshRetention() }
+        .onAppear { refreshRetention(); analysisSelection = .load() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongRetentionPolicyDidChange)) { _ in refreshRetention() }
         .sheet(isPresented: $showingSharing) { GoalongWebsiteSharingSheet().goalongControls() }
         .sheet(isPresented: $showingRetention, onDismiss: refreshRetention) {
             HistoryRetentionSettingsSheet(legacyRetentionDays: model.appliedSettings.retentionDays).goalongControls()
         }
+    }
+    /// Same state as the « Autoriser les analyses » switch in Réglages › Analyse ChatGPT.
+    nonisolated static func chatGPTAnalysisText(consented: Bool, selection: GoalongAnalysisSelection, policy: GoalongPrivacyPolicy) -> String {
+        selection.allowsAnalysis(consented: consented, policy: policy)
+            ? "L’analyse ChatGPT est activée. Les analyses lancées ou planifiées peuvent envoyer le contexte choisi au service connecté."
+            : "L’analyse ChatGPT est désactivée. L’activer est un choix distinct de l’enregistrement local."
     }
     private func refreshRetention() {
         let store = HistoryRetentionStore(legacyRetentionDays: model.appliedSettings.retentionDays)

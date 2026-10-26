@@ -229,7 +229,8 @@ deleted), `blockingOff`. Blocking gets two calls: `startCommitmentBlock(id:listI
 locked-block rule also refuses turning Blocking or Concentration off.
 
 **Result.** A period settles at the first measurement refresh after it ends while the app runs
-(usually the next morning's first activity). `held` when measured ≥ target, else `missed`. The
+(usually the next morning's first activity; the refresh runs about once a minute even when Goalong
+does not observe, e.g. recording off or no Accessibility). `held` when measured ≥ target, else `missed`. The
 result stores `measured`, `unmeasuredMinutes` (for `work` and `task`: period time Goalong could not
 read while the Mac may have been in use — app closed, observation gaps, days without any record,
 hidden contexts, unclassified time; sleep, a locked session, and the time before the first or after
@@ -238,7 +239,7 @@ the stake block ends (no stake: until the end of the settle day). They close onc
 the free window: by the wall clock, by continuous time since settle in the same boot
 (`settledClock`), and a stored `exitClosedAt` once seen closed; a running stake block follows its
 own L-05 end. Setting the Mac clock back never reopens them:
-- « Utiliser un joker »: uses one joker, cancels or ends the stake, keeps the series. Jokers per
+- « Utiliser un joker »: uses one joker, cancels or ends the stake (if one was applied), keeps the series. Jokers per
   calendar month of the period end: day 2, week 1 by default; settings 0…5 and 0…2.
 - « J'ai tenu, hors mesure »: offered only when the shortfall fits in the unmeasured time
   (`measured + unmeasuredMinutes >= target`), or for kind `plan` (a status may be set late). Outcome becomes `held` with `declared: true`; cancels or ends the stake; uses no
