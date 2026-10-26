@@ -523,7 +523,7 @@
                         Text("Couverture des preuves")
                             .font(.system(size: 11, weight: .semibold))
                         Text(
-                            "\(overview.sourceEventCount.formatted()) événements · \(overview.privateMinutes) min privées ou masquées · \(overview.analyzedAgentSessions)/\(overview.agentSessions) sessions IA analysées"
+                            "\(GoalongUIFormat.number(overview.sourceEventCount)) événements · \(overview.privateMinutes) min privées ou masquées · \(overview.analyzedAgentSessions)/\(overview.agentSessions) sessions IA analysées"
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)

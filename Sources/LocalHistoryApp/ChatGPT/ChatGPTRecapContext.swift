@@ -1138,7 +1138,7 @@
 
         private static let timeFormatter: DateFormatter = {
             let formatter = DateFormatter()
-            formatter.locale = Locale.current
+            formatter.locale = GoalongUIFormat.locale
             formatter.timeZone = .current
             formatter.dateStyle = .none
             formatter.timeStyle = .short

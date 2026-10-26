@@ -846,7 +846,7 @@
         }
 
         private var recordingSummary: String {
-            let events = snapshot.eventCount.formatted()
+            let events = GoalongUIFormat.number(snapshot.eventCount)
             if isPreparingTimeline {
                 return "Préparation des tranches de 10 minutes à partir de \(events) événements."
             }
@@ -870,7 +870,7 @@
             case .available:
                 break
             }
-            let windows = tenMinuteGroups.count.formatted()
+            let windows = GoalongUIFormat.number(tenMinuteGroups.count)
             let summary = "\(windows) périodes de dix minutes. Ouvrez une période pour voir ses détails."
             return model.isAnalysisPartial ? partialAnalysisNotice + " " + summary : summary
         }
@@ -879,7 +879,7 @@
             guard let end = model.memory?.episodes.map(\.end).max() else {
                 return "Journée très chargée : elle dépasse ce que l’analyse de ce Mac garde en mémoire."
             }
-            return "Journée très chargée : l’analyse de ce Mac s’arrête à \(end.formatted(date: .omitted, time: .shortened))."
+            return "Journée très chargée : l’analyse de ce Mac s’arrête à \(GoalongUIFormat.time(end))."
         }
 
         private var historySection: some View {
@@ -1729,9 +1729,9 @@
                 "\(group.appChangeCount) changement\(group.appChangeCount > 1 ? "s" : "") d’app",
             ]
             if group.inputEventCount > 0 {
-                facts.append("\(group.inputEventCount.formatted()) interaction\(group.inputEventCount > 1 ? "s" : "")")
+                facts.append("\(GoalongUIFormat.number(group.inputEventCount)) interaction\(group.inputEventCount > 1 ? "s" : "")")
             } else if group.recordedEventCount > 0 {
-                facts.append("\(group.recordedEventCount.formatted()) événement\(group.recordedEventCount > 1 ? "s" : "")")
+                facts.append("\(GoalongUIFormat.number(group.recordedEventCount)) événement\(group.recordedEventCount > 1 ? "s" : "")")
             }
             return facts.joined(separator: " · ")
         }
@@ -1939,7 +1939,7 @@
 
         private let timeFormatter: DateFormatter = {
             let formatter = DateFormatter()
-            formatter.locale = Locale.current
+            formatter.locale = GoalongUIFormat.locale
             formatter.timeZone = .current
             formatter.dateStyle = .none
             formatter.timeStyle = .short

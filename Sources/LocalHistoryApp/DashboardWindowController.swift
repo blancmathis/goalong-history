@@ -142,7 +142,7 @@
 
         override func loadWindow() {
             let rootView = LocalHistoryDashboardView(model: viewModel)
-            let hostingController = NSHostingController(rootView: rootView)
+            let hostingController = NSHostingController(rootView: rootView.environment(\.locale, GoalongUIFormat.locale))
             let window = NSWindow(contentViewController: hostingController)
             Self.configure(window)
             window.level = .normal

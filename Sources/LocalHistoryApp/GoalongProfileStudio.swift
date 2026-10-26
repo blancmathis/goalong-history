@@ -222,6 +222,7 @@ extension Notification.Name {
             onSend(data)
         }, onClose: { [weak self] in self?.studioWindow?.close() }, localOnly: localOnly, initialDay: initialDay, model: model)
         return NSHostingController(rootView: view
+            .environment(\.locale, GoalongUIFormat.locale)
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)
             .tint(LHTheme.accent)
@@ -304,12 +305,12 @@ struct GoalongProfileStudio: View {
                             DatePicker("Journée analysée — jusqu’à", selection: $end)
                             Toggle("Historique de ce Mac — activité de l’ordinateur", isOn: $computer)
                             if computer { DatePicker("Activité depuis", selection: $start); Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich) }
-                            Toggle("Conversation History — utiliser les conversations IA comme contexte", isOn: $conversations)
+                            Toggle("Historique des conversations — utiliser les conversations IA comme contexte", isOn: $conversations)
                             if conversations {
                                 DatePicker("Conversations actives depuis", selection: $conversationsFrom, displayedComponents: .date)
-                                Text("Journée analysée et jours précédents, jusqu’à 31 jours. Les échanges peuvent éclairer les projets, décisions et méthodes même si « Usage de l’IA » est décochée. Seules les sources déjà autorisées sont lues. Les dates sélectionnent les conversations ; selon la source, des messages antérieurs peuvent être inclus sans timestamp individuel. Les timestamps fournis par la source sont conservés.").font(.caption).foregroundStyle(.secondary)
+                                Text("Journée analysée et jours précédents, jusqu’à 31 jours. Les échanges peuvent éclairer les projets, décisions et méthodes même si « Usage de l’IA » est décochée. Seules les sources déjà autorisées sont lues. Les dates sélectionnent les conversations ; selon la source, des messages antérieurs peuvent être inclus sans horodatage individuel. Les horodatages fournis par la source sont conservés.").font(.caption).foregroundStyle(.secondary)
                             }
-                            Text("Événements, applications, fenêtres, navigation, interactions et contexte disponibles avec leurs timestamps. Les champs protégés et les événements supprimés sont exclus. Les extraits sont bornés ; les absences restent inconnues.").font(.caption).foregroundStyle(.secondary)
+                            Text("Événements, applications, fenêtres, navigation, interactions et contexte disponibles avec leurs horodatages. Les champs protégés et les événements supprimés sont exclus. Les extraits sont bornés ; les absences restent inconnues.").font(.caption).foregroundStyle(.secondary)
                             HStack { Button("Charger les sources choisies") { model.load(start: start, end: end, rich: rich, computer: computer, conversations: conversations, conversationsFrom: conversationsFrom) }; Button("Ajouter des preuves (mesures, IA, historique)…") { importEvidence() } }.disabled(model.busy)
                             if !model.evidence.isEmpty { GoalongDisclosureGroup("Choisir les événements (\(model.selectedEvidence.count)/\(model.evidence.count))") {
                                 HStack { Button("Tout sélectionner") { model.selectedEvidence = Set(model.evidence.map(\.id)); model.invalidate() }; Button("Tout décocher") { model.selectedEvidence = []; model.invalidate() } }

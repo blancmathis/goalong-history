@@ -685,6 +685,7 @@
         func goalongControls() -> some View {
             buttonStyle(LHSecondaryButtonStyle())
                 .textFieldStyle(GoalongFieldStyle())
+                .environment(\.locale, GoalongUIFormat.locale)
         }
     }
 #endif

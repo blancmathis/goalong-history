@@ -142,7 +142,7 @@
         }
 
         var notice: String {
-            let date = at.formatted(date: .abbreviated, time: .omitted)
+            let date = GoalongUIFormat.dayAbbreviated(at)
             return "Nouvelle identité de vérification depuis le \(date) (\(Self.tierTitle(previousTier)) → \(Self.tierTitle(newTier))). Les preuves précédentes restent liées à l’ancienne identité."
         }
     }
@@ -168,7 +168,7 @@
             guard suspendedStatus != nil else { return nil }
             if retryInFlight { return "Nouvelle tentative en cours…" }
             guard let failedAt = lastRetryFailedAt else { return nil }
-            return "Échec à \(failedAt.formatted(date: .omitted, time: .shortened)) : trousseau toujours inaccessible. Déverrouillez-le puis réessayez."
+            return "Échec à \(GoalongUIFormat.time(failedAt)) : trousseau toujours inaccessible. Déverrouillez-le puis réessayez."
         }
 
         var isRetryInFlight: Bool {
