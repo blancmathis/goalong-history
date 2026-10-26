@@ -140,6 +140,8 @@ enum FocusFailure: String, Error {
     case moduleDisabled, invalidArgument, locked, notFound, storageFailed, appNotRunning
     /// A day plan holds at most `FocusPlan.maximumItems`; the CLI reports it as invalidArgument.
     case planFull
+    /// A done or dropped task cannot be moved; reopen it first.
+    case itemFinished
 }
 enum FocusValidation {
     static func text(_ value: String, maximum: Int, required: Bool = false) -> Bool {

@@ -634,6 +634,8 @@ public enum GoalongQueryCLI {
         var payload = GoalongCLIErrorEnvelope(error: errorMessage(for: error))
         if let focus = error as? GoalongFocusError, focus == .outcomeUnknown {
             payload.hint = "Goalong did not answer in time and may have applied the request; run `goalong focus status` before retrying"
+        } else if let focus = error as? GoalongFocusError, focus == .itemFinished {
+            payload.hint = "Une tâche terminée ou abandonnée ne se déplace pas ; rouvrez-la d’abord."
         }
         return try? encodedJSON(payload)
     }
