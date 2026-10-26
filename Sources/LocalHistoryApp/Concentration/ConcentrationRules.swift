@@ -238,18 +238,24 @@ enum FocusCommitRule {
     /// stricter side, like an L-05 compensation that only makes a block longer.
     static func windowClosed(_ value: FocusCommitment, deadline: Date, now: Date, clock: BlockingClockState?) -> Bool {
         if value.lockedAt != nil || now >= deadline { return true }
-        guard let anchor = value.createdClock, let clock, anchor.boot == clock.boot, clock.continuous >= anchor.continuous else { return false }
-        return anchor.wall.addingTimeInterval(clock.continuous - anchor.continuous) >= deadline
+        return anchoredNow(value.createdClock, clock: clock).map { $0 >= deadline } ?? false
+    }
+    /// Wall time of `anchor` plus the continuous time since, when both come from this boot; else nil (L-05 limit).
+    static func anchoredNow(_ anchor: BlockingClockState?, clock: BlockingClockState?) -> Date? {
+        guard let anchor, let clock, anchor.boot == clock.boot, clock.continuous >= anchor.continuous else { return nil }
+        return anchor.wall.addingTimeInterval(clock.continuous - anchor.continuous)
     }
 }
 
 enum FocusCommitmentRules {
-    static func mayCreate(_ period: FocusCommitmentPeriod, at now: Date, calendar: Calendar = .current) -> Bool {
+    /// `realNow`: the latest moment proven by continuous time in this boot (T-044 C2-02). A clock set back
+    /// cannot open a period already over; the 7-day horizon stays on the wall clock.
+    static func mayCreate(_ period: FocusCommitmentPeriod, at now: Date, realNow: Date? = nil, calendar: Calendar = .current) -> Bool {
         guard let interval = period.interval(calendar: calendar) else { return false }
         let c = FocusCalendar.civil(calendar)
-        let start = period.kind == .day ? c.startOfDay(for: now) : FocusCalendar.weekInterval(now, calendar: calendar).start
-        let last = c.date(byAdding: .day, value: 7, to: start)!
-        return interval.start >= start && interval.start <= last
+        let first = { (date: Date) in period.kind == .day ? c.startOfDay(for: date) : FocusCalendar.weekInterval(date, calendar: calendar).start }
+        let start = first(now), last = c.date(byAdding: .day, value: 7, to: start)!
+        return interval.start >= max(start, realNow.map(first) ?? start) && interval.start <= last
     }
     static func progress(_ commitment: FocusCommitment, days: [GoalongLocalAnalytics.Day], sessions: [FocusSession],
                          plans: [FocusPlan], at now: Date, hasDefinition: Bool, calendar: Calendar = .current) -> FocusCommitmentProgress {
@@ -342,6 +348,16 @@ enum FocusCommitmentRules {
             return blockEnd ?? stakeEnd(stake, settledAt: result.settledAt, calendar: calendar)
         }
         return FocusCalendar.civil(calendar).date(byAdding: .day, value: 1, to: FocusCalendar.civil(calendar).startOfDay(for: result.settledAt))
+    }
+    /// The exits after `missed` close once and for good (T-044 C2-02), like the free window of C1-02: by the
+    /// wall clock, by continuous time since settle in the same boot, or by a latched `exitClosedAt`. A running
+    /// stake block already follows real time (L-05), so its end is used alone.
+    static func exitOpen(_ commitment: FocusCommitment, blockEnd: Date? = nil, now: Date, clock: BlockingClockState?,
+                         calendar: Calendar = .current) -> Bool {
+        guard let result = commitment.result, result.exitClosedAt == nil,
+              let end = stakeWindow(commitment, blockEnd: blockEnd, calendar: calendar), now < end else { return false }
+        if blockEnd != nil { return true }
+        return FocusCommitRule.anchoredNow(result.settledClock, clock: clock).map { $0 < end } ?? true
     }
 }
 #endif
