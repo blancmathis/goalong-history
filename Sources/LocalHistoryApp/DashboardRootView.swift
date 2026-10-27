@@ -97,7 +97,8 @@
                 GoalongScreenTimePage(model: model)
                     .safeAreaInset(edge: .top, spacing: 0) { secondaryReturnBar }
             case .agentActivity:
-                AgentActivityPage(agents: model.agentActivityRuntime)
+                AgentActivityPage(agents: model.agentActivityRuntime, dashboardDay: model.selectedDay,
+                                  onSelectDashboardDay: model.selectDay)
                     .safeAreaInset(edge: .top, spacing: 0) { secondaryReturnBar }
             case .chatGPTRecap:
                 ChatGPTRecapPage(model: model)
