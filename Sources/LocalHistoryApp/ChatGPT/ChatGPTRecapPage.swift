@@ -219,7 +219,11 @@
                     "Comprendre le déroulé et les résultats d’une journée à partir de l’historique, du Temps d’écran et des conversations IA."
             ) {
                 HStack(spacing: 10) {
-                    DateSelectionControl(date: recapRuntime.selectedDay, onChange: recapRuntime.selectDay)
+                    // The dashboard day is the page's day (T-045 H1-01): Historique and a return here keep the choice.
+                    DateSelectionControl(date: recapRuntime.selectedDay, onChange: { day in
+                        model.selectDay(day)
+                        recapRuntime.selectDay(day)
+                    })
                     Button {
                         recapRuntime.revealRecapFiles()
                     } label: {

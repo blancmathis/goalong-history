@@ -429,7 +429,13 @@
         @Published private(set) var isLoadingDayOverview = false
         @Published private(set) var dayOverviewError: String?
         @Published private(set) var streamedMarkdown = ""
-        @Published var selectedDay: Date
+        @Published var selectedDay: Date {
+            didSet { selectedDayKey = GoalongCalendarDay(selectedDay) }
+        }
+        /// The date of `selectedDay`, not an instant: after a time zone change the page moves to that date's
+        /// new midnight instead of reading the day before (T-045 H1-01, like C14-03 for Agents).
+        private var selectedDayKey: GoalongCalendarDay
+        private var timeZoneObserver: NSObjectProtocol?
         @Published var automaticRecapsEnabled: Bool {
             didSet {
                 defaults.set(automaticRecapsEnabled, forKey: Self.automaticRecapsKey)
@@ -581,15 +587,24 @@
             self.dayOverviewReader = dayOverviewReader
             let today = Calendar.current.startOfDay(for: Date())
             selectedDay = today
+            selectedDayKey = GoalongCalendarDay(today)
             automaticRecapsEnabled =
                 defaults.object(forKey: Self.automaticRecapsKey) == nil
                 ? false
                 : defaults.bool(forKey: Self.automaticRecapsKey)
             recap = ChatGPTRecapPersistence.load(for: today, from: recapsDirectory)
             proofReport = nil
+            timeZoneObserver = NotificationCenter.default.addObserver(
+                forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
+            ) { [weak self] _ in
+                // Same date, same recap file: only the instant moves, so a running recap is not cancelled.
+                guard let self, self.selectedDay != self.selectedDayKey.start() else { return }
+                self.selectedDay = self.selectedDayKey.start()
+            }
         }
 
         deinit {
+            if let timeZoneObserver { NotificationCenter.default.removeObserver(timeZoneObserver) }
             for observer in systemClockObservers { observer.center.removeObserver(observer.token) }
             timer?.invalidate()
             delayedAutomaticWorkItem?.cancel()
