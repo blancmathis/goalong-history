@@ -211,6 +211,9 @@ struct FocusStore {
     /// Latest launch anchor (T-044 C4-03): a relaunch in the same boot keeps the real time it proved.
     func clockAnchor() throws -> BlockingClockState? { try load(BlockingClockState.self, area: nil, name: "clock-anchor.json") }
     func saveClockAnchor(_ value: BlockingClockState) throws { try save(value, area: nil, name: "clock-anchor.json") }
+    /// Latest clock set right soon after boot (T-044 C5-05): proof recorded before it is superseded.
+    func clockCorrection() throws -> BlockingClockState? { try load(BlockingClockState.self, area: nil, name: "clock-correction.json") }
+    func saveClockCorrection(_ value: BlockingClockState) throws { try save(value, area: nil, name: "clock-correction.json") }
     func prompts() throws -> FocusPromptState? { try load(FocusPromptState.self, area: nil, name: "prompts.json") }
     func savePrompts(_ value: FocusPromptState) throws { try save(value, area: nil, name: "prompts.json") }
     func marks() throws -> [FocusLimitMark] { try load([FocusLimitMark].self, area: nil, name: "limit-marks.json") ?? [] }
