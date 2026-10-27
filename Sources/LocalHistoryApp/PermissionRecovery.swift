@@ -107,8 +107,10 @@
             relaunch = handshake
             handshake.start { error in
                 if error != nil { relaunch = nil }
-                else if let permission = permission ?? PermissionRecoveryLedger.activePermission() {
+                else if let permission {
                     PermissionRecoveryLedger.record(.relaunchPrepared, for: permission)
+                } else {
+                    PermissionRecoveryLedger.recordRelaunchForOpenedPermissions()
                 }
                 completion(error)
             }
