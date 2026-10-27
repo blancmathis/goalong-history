@@ -1,4 +1,5 @@
 import Foundation
+import os
 import OndeCore
 
 public struct AmbianceSource: Identifiable, Equatable {
@@ -43,12 +44,13 @@ public struct AmbianceDiagnostics: Equatable {
 }
 
 public enum AmbianceError: Error, LocalizedError {
-    case invalidPack(String), cancelled, unavailable, disabled, audioBoundary, networkBoundary, network, tooSlow, serverUnavailable
+    case invalidPack(String), cancelled, unavailable, disabled, audioBoundary, networkBoundary, network, tooSlow, serverUnavailable, diskFull
     public var errorDescription: String? {
         switch self {
         case .invalidPack(let detail): return "Pack invalide : \(detail)"
         case .cancelled: return "Téléchargement annulé."
         case .network: return "Connexion impossible. Vérifiez Internet puis réessayez."
+        case .diskFull: return "Espace disque insuffisant. Libérez de la place (environ 90 Mo) puis réessayez."
         case .tooSlow: return "Téléchargement trop lent. Réessayez avec une connexion plus rapide."
         case .serverUnavailable: return "Le pack est indisponible pour le moment. Réessayez plus tard."
         case .unavailable: return "Cette source est indisponible. Installez son pack ou retrouvez le fichier."
@@ -56,5 +58,15 @@ public enum AmbianceError: Error, LocalizedError {
         case .audioBoundary: return "La lecture audio attend la revue de la frontière de sécurité de Goalong."
         case .networkBoundary: return "Le téléchargement HTTPS attend la revue de la frontière réseau de Goalong. Un pack local vérifié peut être installé."
         }
+    }
+}
+
+extension AmbianceError {
+    private static let log = Logger(subsystem: "app.goalong", category: "Ambiance")
+    /// The member sees a short French sentence; the raw system error stays in the log.
+    static func userMessage(_ prefix: String, _ error: Error) -> String {
+        log.error("\(prefix, privacy: .public): \(String(describing: error), privacy: .private)")
+        if let known = error as? AmbianceError, let text = known.errorDescription { return "\(prefix) : \(text)" }
+        return "\(prefix). Réessayez, ou choisissez une autre source."
     }
 }

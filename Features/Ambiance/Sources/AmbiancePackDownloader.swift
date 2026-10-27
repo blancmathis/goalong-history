@@ -50,7 +50,11 @@ enum AmbiancePackDownloader {
     /// (blocked or silent server) is a connection failure. Other transport errors are never exposed:
     /// they may contain the signed failing URL.
     static func transportFailure(_ error: Error, bytesReceived: Int64) -> AmbianceError {
-        (error as? URLError)?.code == .timedOut && bytesReceived > 0 ? .tooSlow : .network
+        switch (error as? URLError)?.code {
+        case .cannotWriteToFile, .cannotCreateFile: return .diskFull
+        case .timedOut where bytesReceived > 0: return .tooSlow
+        default: return .network
+        }
     }
 
     static func progressFailure(status: Int?, written: Int64, expected: Int64, packBytes: Int64) -> AmbianceError? {

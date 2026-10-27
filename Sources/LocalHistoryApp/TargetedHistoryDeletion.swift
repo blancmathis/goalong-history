@@ -171,7 +171,7 @@
                     "L’élément choisi ne correspond plus à la source actuelle. Actualisez l’historique et réessayez."
             case .selectionExceedsLimit(let actual, let maximum):
                 return
-                    "L’élément choisi contient \(GoalongUIFormat.count(actual, "événement")), au-delà de la limite de suppression de \(maximum)."
+                    "L’élément choisi contient \(GoalongUIFormat.count(actual, "événement")), au-delà de la limite de suppression de \(GoalongUIFormat.count(maximum, "événement")). Choisissez une période plus courte."
             case .sourceChangedDuringCommit:
                 return
                     "La source a changé avant la fin de la suppression. Goalong a invalidé les vues dérivées ; actualisez avant de réessayer."
