@@ -17,6 +17,7 @@
         @State private var linkCommandCopied = false
         @State private var showsInstructionPreview = false
         @State private var installationReport: GoalongCLIInstallationReport
+        @State private var installOutcome: GoalongCLIInstallOutcome?
 
         init(onBack: @escaping () -> Void = {}) {
             self.onBack = onBack
@@ -42,6 +43,7 @@
                     }
 
                     readinessBanner
+                    if installationReport.canInstall || installOutcome != nil { installRow }
                     if let command = installationReport.linkCommand { linkCommandRow(command) }
                     agentCard
                     quickCommandsCard
@@ -71,6 +73,33 @@
                 .help("Vérifier de nouveau le lien de la commande goalong")
                 .accessibilityLabel("Vérifier le lien")
             }
+        }
+
+        /// C14-01: one click creates ~/.local/bin/goalong (or repairs a link to an old Goalong). The line to copy stays as fallback.
+        private var installRow: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                if installationReport.canInstall {
+                    Button(action: installCommand) {
+                        Label("Installer la commande", systemImage: "arrow.down.app")
+                    }
+                    .buttonStyle(LHPrimaryButtonStyle())
+                    .help("Crée le lien ~/.local/bin/goalong vers cette app, sans mot de passe administrateur")
+                }
+                if let installOutcome {
+                    Label(installOutcome.message, systemImage: installOutcome.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(installOutcome.succeeded ? LHTheme.success : LHTheme.warning)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+
+        private func installCommand() {
+            let outcome = GoalongCLIInstallation.install()
+            installOutcome = outcome
+            installationReport = GoalongCLIInstallation.inspect()
+            announce(outcome.message)
         }
 
         /// The DMG and Sparkle do not create the command: the exact line to paste, built from this app's path.
@@ -259,7 +288,7 @@
         private var readinessTitle: String {
             switch installationReport.state {
             case .ready: return "Vérifiée pour le Terminal"
-            case .missing: return "Créez la commande dans le Terminal"
+            case .missing: return "Installez la commande goalong"
             case .conflict: return "Le lien de la commande n’est pas fiable"
             case .development: return "La commande goalong sert Goalong installé"
             }

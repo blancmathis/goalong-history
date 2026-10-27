@@ -136,6 +136,77 @@
             XCTAssertNil(missing.resolvedTargetPath)
         }
 
+        // C14-01: « Installer la commande » creates the folder and the link, with no administrator rights.
+        func testInstallCreatesTheFolderAndALinkToThisApp() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let link = fixture.root.appendingPathComponent("home/.local/bin/goalong", isDirectory: false)
+            XCTAssertTrue(GoalongCLIInstallation.inspect(linkURL: link, expectedExecutableURL: fixture.executable, isDevelopment: false).canInstall)
+
+            let outcome = GoalongCLIInstallation.install(linkURL: link, executableURL: fixture.executable, directoryOnPath: { _ in true })
+
+            XCTAssertTrue(outcome.succeeded, outcome.message)
+            XCTAssertTrue(outcome.message.hasPrefix("Commande installée"))
+            XCTAssertTrue(outcome.message.contains("goalong status"))
+            let report = GoalongCLIInstallation.inspect(linkURL: link, expectedExecutableURL: fixture.executable, isDevelopment: false)
+            XCTAssertEqual(report.state, .ready)
+            XCTAssertFalse(report.canInstall)
+            let again = GoalongCLIInstallation.install(linkURL: link, executableURL: fixture.executable, directoryOnPath: { _ in true })
+            XCTAssertTrue(again.succeeded); XCTAssertTrue(again.message.contains("déjà installée"))
+        }
+
+        func testInstallNeverReplacesAForeignFileOrLink() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            try Data("mine".utf8).write(to: fixture.link)
+            let file = GoalongCLIInstallation.install(linkURL: fixture.link, executableURL: fixture.executable, directoryOnPath: { _ in true })
+            XCTAssertFalse(file.succeeded); XCTAssertTrue(file.message.contains("ne le remplace jamais"))
+            XCTAssertEqual(try Data(contentsOf: fixture.link), Data("mine".utf8))
+            XCTAssertFalse(GoalongCLIInstallation.inspect(linkURL: fixture.link, expectedExecutableURL: fixture.executable, isDevelopment: false).canInstall)
+
+            try FileManager.default.removeItem(at: fixture.link)
+            try FileManager.default.createSymbolicLink(atPath: fixture.link.path, withDestinationPath: "/usr/local/bin/other-goalong")
+            let foreign = GoalongCLIInstallation.install(linkURL: fixture.link, executableURL: fixture.executable, directoryOnPath: { _ in true })
+            XCTAssertFalse(foreign.succeeded); XCTAssertTrue(foreign.message.contains("autre programme"))
+            XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: fixture.link.path), "/usr/local/bin/other-goalong")
+            XCTAssertFalse(GoalongCLIInstallation.inspect(linkURL: fixture.link, expectedExecutableURL: fixture.executable, isDevelopment: false).canInstall)
+        }
+
+        func testInstallRepairsALinkToAnOldOrDeletedGoalongApp() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let old = fixture.root.appendingPathComponent("Old/Goalong History.app/Contents/MacOS/Goalong History").path
+            try FileManager.default.createSymbolicLink(atPath: fixture.link.path, withDestinationPath: old)
+            let before = GoalongCLIInstallation.inspect(linkURL: fixture.link, expectedExecutableURL: fixture.executable, isDevelopment: false)
+            XCTAssertEqual(before.state, .conflict); XCTAssertTrue(before.canInstall)
+
+            let outcome = GoalongCLIInstallation.install(linkURL: fixture.link, executableURL: fixture.executable, directoryOnPath: { _ in true })
+
+            XCTAssertTrue(outcome.succeeded, outcome.message); XCTAssertTrue(outcome.message.hasPrefix("Commande réparée"))
+            XCTAssertEqual(GoalongCLIInstallation.inspect(linkURL: fixture.link, expectedExecutableURL: fixture.executable, isDevelopment: false).state, .ready)
+            let leftovers = try FileManager.default.contentsOfDirectory(atPath: fixture.link.deletingLastPathComponent().path)
+            XCTAssertEqual(leftovers, ["goalong"])
+        }
+
+        func testInstallSaysWhenTheFolderIsNotOnThePath() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let outcome = GoalongCLIInstallation.install(linkURL: fixture.link, executableURL: fixture.executable, directoryOnPath: { _ in false })
+            XCTAssertTrue(outcome.succeeded)
+            XCTAssertTrue(outcome.message.contains("n’est pas dans le PATH"))
+            XCTAssertTrue(outcome.message.contains("export PATH=\"$HOME/.local/bin:$PATH\""))
+        }
+
+        func testInstallRefusesABinFolderThatIsAFile() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let blocker = fixture.root.appendingPathComponent("blocker", isDirectory: false)
+            try Data("x".utf8).write(to: blocker)
+            let outcome = GoalongCLIInstallation.install(linkURL: blocker.appendingPathComponent("goalong"), executableURL: fixture.executable,
+                                                         directoryOnPath: { _ in true })
+            XCTAssertFalse(outcome.succeeded); XCTAssertTrue(outcome.message.contains("n’a pas été installée"))
+        }
+
         private func makeFixture() throws -> (root: URL, executable: URL, link: URL) {
             let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
                 .appendingPathComponent("goalong-cli-installation-\(UUID().uuidString)", isDirectory: true)
