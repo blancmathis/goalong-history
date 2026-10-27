@@ -288,6 +288,8 @@
                 Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium))
                     .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
                 TextField(prompt, text: $text).textFieldStyle(.plain).focused($focused)
+                    // Its own text height, as in GoalongFieldStyle: a layout pass that offers 17 pt for a 16 pt line sizes the field from another font.
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel(accessibilityLabel ?? prompt)
                     .accessibilityIdentifier(identifier ?? "")
                 if !text.isEmpty {

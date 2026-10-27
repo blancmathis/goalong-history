@@ -292,7 +292,8 @@ private final class HealthXMLReader: NSObject, XMLParserDelegate {
     }
 
     func converted(_ raw: String?, _ unit: String?, to target: String) -> Double? {
-        guard let raw, let n = Double(raw), n.isFinite, n >= 0, let unit else { return nil }
+        // Plain decimals and exponents only (T-044 C10-22): `Double` would also read hex ("0x10"), "inf" and "nan".
+        guard let raw, raw.allSatisfy({ "0123456789.eE+-".contains($0) }), let n = Double(raw), n.isFinite, n >= 0, let unit else { return nil }
         let factors: [String: [String: Double]] = ["count": ["count": 1], "s": ["s": 1, "min": 60, "hr": 3600],
             "m": ["m": 1, "km": 1000, "mi": 1609.344, "yd": 0.9144, "ft": 0.3048, "in": 0.0254, "cm": 0.01], "kcal": ["kcal": 1, "Cal": 1, "kJ": 1 / 4.184, "cal": 0.001],
             "bpm": ["count/min": 1], "count/min": ["count/min": 1], "ms": ["ms": 1, "s": 1000],
