@@ -799,6 +799,19 @@ final class AgentActivityTests: XCTestCase {
         return output.sorted { $0.path < $1.path }
     }
 
+    /// C13-12 (T-044 r13). The alert reads « <path>: <text> »: sizes in French units, no « configuré »
+    /// (the member never set a limit), the path once.
+    func testTooLargeSourceMessageGivesSizesInMegabytesAndThePathOnce() {
+        let path = "/Users/marie/.claude/projects/app/9f2c.jsonl"
+        let text = AgentSourceReadError.fileTooLarge(path: path, bytes: 125_829_120, maximum: 67_108_864).errorDescription ?? ""
+        let alert = "\(path): \(text)"
+        XCTAssertTrue(text.contains("125,8") && text.contains("Mo"), text)
+        XCTAssertTrue(text.contains("67,1") && text.contains("Mo"), text)
+        XCTAssertFalse(text.contains("125829120") || text.contains("67108864"), text)
+        XCTAssertFalse(text.contains("configuré"), text)
+        XCTAssertEqual(alert.components(separatedBy: path).count - 1, 1, alert)
+    }
+
     private func makeTemporaryDirectory(_ name: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("AgentActivityTests-\(name)-\(UUID().uuidString)", isDirectory: true)

@@ -44,5 +44,25 @@ final class ErrorTextMappingTests: XCTestCase {
         XCTAssertEqual(SoftwareUpdateManager.errorSummary(NSError(domain: "Other", code: 7)), unknown)
         XCTAssertFalse(unknown.contains(where: \.isNumber))
     }
+
+    /// C13-13 (T-044 r13). A full disk while Sparkle downloads, unpacks or makes its temporary folder:
+    /// the sentence speaks of the disk, not of the network and not « erreur inconnue ».
+    @MainActor func testUpdateFailureOnAFullDiskNamesTheDisk() {
+        let sparkle = "SUSparkleErrorDomain"
+        let cases: [(String, NSError, String)] = [
+            ("download -3003", NSError(domain: sparkle, code: 2001, userInfo: [NSUnderlyingErrorKey:
+                NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotWriteToFile)]), SoftwareUpdateManager.cannotWriteSummary),
+            ("url -3000", NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotCreateFile), SoftwareUpdateManager.cannotWriteSummary),
+            ("unarchive ENOSPC", NSError(domain: sparkle, code: 3000, userInfo: [NSUnderlyingErrorKey:
+                NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))]), SoftwareUpdateManager.diskFullSummary),
+            ("temp dir out of space", NSError(domain: sparkle, code: 2000, userInfo: [NSUnderlyingErrorKey:
+                NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)]), SoftwareUpdateManager.diskFullSummary),
+        ]
+        for (name, error, expected) in cases {
+            let text = SoftwareUpdateManager.errorSummary(error)
+            XCTAssertEqual(text, expected, name)
+            XCTAssertTrue(text.contains("disque"), "\(name): \(text)")
+        }
+    }
 }
 #endif

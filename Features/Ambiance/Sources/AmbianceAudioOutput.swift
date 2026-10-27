@@ -52,10 +52,11 @@ final class AmbianceAudioOutput {
     var volume: Double = 1 {
         didSet { engine?.mainMixerNode.outputVolume = Float(AmbianceSettings.clamp(volume)) }
     }
+    /// The output device's sample rate; 0 when macOS has no usable output (unplugged, broken aggregate device).
+    var outputSampleRate: (AVAudioEngine) -> Double = { $0.outputNode.outputFormat(forBus: 0).sampleRate }
     func start(volume: Double) throws {
-        guard let engine, !stopped, engine.outputNode.outputFormat(forBus: 0).sampleRate > 0 else {
-            throw AmbianceError.unavailable
-        }
+        guard let engine, !stopped else { throw AmbianceError.unavailable }
+        guard outputSampleRate(engine) > 0 else { throw AmbianceError.noAudioOutput }
         self.volume = volume
         if player != nil { scheduleFile() }
         engine.prepare()

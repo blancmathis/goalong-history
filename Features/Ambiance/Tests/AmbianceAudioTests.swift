@@ -74,4 +74,30 @@ final class AmbianceAudioTests: XCTestCase {
         controller.outputInterrupted()
         XCTAssertEqual(controller.state, .idle)
     }
+
+    /// C13-15 (T-044 r13). No audio output (sample rate 0: output unplugged, broken aggregate device) with an
+    /// installed, present file: the message speaks of the audio output, not of a pack or a file.
+    func testNoAudioOutputIsNotReportedAsAMissingPackOrFile() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-no-output-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("son.caf")
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2))
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_410))
+            buffer.frameLength = 4_410
+            try file.write(from: buffer)
+        }
+        let output = try AmbianceAudioOutput(fileURL: url, looping: false) {}
+        defer { output.stop() }
+        output.outputSampleRate = { _ in 0 }
+        XCTAssertThrowsError(try output.start(volume: 0)) { error in
+            guard case .noAudioOutput? = error as? AmbianceError else { return XCTFail("\(error)") }
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains("sortie audio"), message)
+            XCTAssertFalse(message.contains("pack") || message.contains("fichier"), message)
+        }
+        XCTAssertFalse(output.running)
+    }
 }
