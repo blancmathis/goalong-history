@@ -49,6 +49,12 @@ struct GoalongAnalyticsPage: View {
     @State private var lastAutomaticRefresh = Date.distantPast
 
     private var previewActive: Bool { developerMode && showingPreview }
+    /// Disk full or unwritable: « Gérer le stockage… » in the top banner stays the only action.
+    private var recordingInterrupted: Bool { !previewActive && model.runtime.storageFailure != nil }
+    private var shareBlockedReason: String? {
+        guard !previewActive, let payload = analytics.payload, selection.matches(payload, preview: false) else { return nil }
+        return payload.current.observedSeconds > 0 ? nil : "Rien à partager ce jour-là"
+    }
     private var selection: GoalongActivityNavigation { previewActive ? previewNavigation : navigation }
     private var selectionID: String { "\(selection.day.timeIntervalSince1970)|\(selection.period)|\(previewActive)" }
     private var loadRequest: GoalongAnalyticsLoadRequest {
@@ -59,6 +65,7 @@ struct GoalongAnalyticsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
+                shareBlockedReason: shareBlockedReason, hidesShare: recordingInterrupted,
                 onDay: { day in updateSelection { $0.selectDay(day) } },
                 onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
                 onStep: { direction in updateSelection { $0.step(direction) } },
@@ -78,7 +85,8 @@ struct GoalongAnalyticsPage: View {
                         if !previewActive {
                             GoalongRecordingStateNotice(model: model)
                             GoalongRecordingCoverageNotice(model: model, dismissible: true,
-                                hidden: !GoalongRecordingCoverageNotice.showsOnActivity(recording: recordingKind, globallyPaused: analytics.paused))
+                                hidden: recordingInterrupted
+                                    || !GoalongRecordingCoverageNotice.showsOnActivity(recording: recordingKind, globallyPaused: analytics.paused))
                             ConcentrationActivityMarks(day: selection.day)
                         }
                         if developerMode { previewControl }
@@ -102,7 +110,7 @@ struct GoalongAnalyticsPage: View {
                         }
                         if detail != nil && !showsContent {
                             // While reading or after an error, a named view still offers its way back.
-                            Button { detail = nil } label: { Label("Synthèse", systemImage: "chevron.left") }
+                            Button { detail = nil } label: { Label("Activité", systemImage: "chevron.left") }
                                 .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                         }
                         if let payload = analytics.payload, selection.matches(payload, preview: previewActive) {

@@ -908,7 +908,7 @@
                             .foregroundStyle(.secondary)
                     }
                     Button(action: openSourceJSON) {
-                        Label("Journal original", systemImage: "curlybraces")
+                        Label("Voir le fichier brut", systemImage: "doc.text")
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
                     .controlSize(.regular)
