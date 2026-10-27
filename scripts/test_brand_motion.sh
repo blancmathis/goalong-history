@@ -18,4 +18,17 @@ xcrun swiftc -parse-as-library -swift-version 5 \
   "$ROOT/Sources/LocalHistoryApp/GoalongMotionView.swift" \
   "$ROOT/scripts/GoalongMotionProbe.swift" \
   -framework AppKit -framework SwiftUI -o "$BUILD/GoalongMotionProbe"
-"$BUILD/GoalongMotionProbe" "$OUTPUT"
+# Window guard: a visible window or a focus change kills the probe and fails the run.
+if [[ "$(printenv GOALONG_TESTS_VISIBLE)" == 1 ]]; then
+  "$BUILD/GoalongMotionProbe" "$OUTPUT"
+  exit $?
+fi
+GUARD="$("$ROOT/scripts/run_swift_tests.sh" window-guard-bin)"
+"$BUILD/GoalongMotionProbe" "$OUTPUT" & pid=$!
+"$GUARD" watch "$pid" & gpid=$!
+status=0; wait "$pid" || status=$?
+if ! wait "$gpid"; then
+  echo "error: the probe showed a window or took the focus (window guard)" >&2
+  [[ $status -eq 0 ]] && status=1
+fi
+exit "$status"

@@ -6,6 +6,11 @@ import LocalHistoryCore
 import SQLite3
 
 public enum AgentSourceReadError: Error, LocalizedError, Sendable {
+    /// « 125,8 Mo », like `GoalongUIFormat.bytes` in the app.
+    static func size(_ bytes: Int64) -> String {
+        bytes.formatted(.byteCount(style: .file, spellsOutZero: false).locale(Locale(identifier: "fr_FR")))
+    }
+
     case missing(String)
     case inaccessible(String)
     case fileTooLarge(path: String, bytes: Int64, maximum: Int64)
@@ -18,8 +23,10 @@ public enum AgentSourceReadError: Error, LocalizedError, Sendable {
             return "La source d’origine de l’agent n’est plus présente : \(source)"
         case .inaccessible(let source):
             return "La source d’origine de l’agent n’est pas lisible : \(source)"
-        case .fileTooLarge(let path, let bytes, let maximum):
-            return "La source \(path) fait \(bytes) octets ; le maximum configuré est \(maximum)."
+        case .fileTooLarge(_, let bytes, let maximum):
+            // The alert already starts with the path; sizes in French units whatever the system region.
+            return "Ce fichier fait \(Self.size(bytes)), au-delà de la limite de lecture de Goalong (\(Self.size(maximum))). "
+                + "Il est ignoré ; les autres conversations restent lues."
         case .changedDuringRead(let source):
             return "La source d’origine de l’agent a changé pendant la lecture ; nouvelle tentative plus tard : \(source)"
         case .unsupported(let detail):

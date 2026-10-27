@@ -56,7 +56,7 @@ import OndeCore
                 } catch {
                     guard let self, self.playTicket == ticket else { return }
                     self.playTask = nil; self.playTicket = nil
-                    self.state = .error("Lecture impossible : \(error.localizedDescription)")
+                    self.state = .error(AmbianceError.userMessage("Lecture impossible", error))
                     return
                 }
                 guard let self, self.playTicket == ticket, !Task.isCancelled else { prepared.discard(); return }
@@ -75,7 +75,7 @@ import OndeCore
                 self?.stop()
             }, canonical)
         } catch {
-            stop(); state = .error("Lecture impossible : \(error.localizedDescription)")
+            stop(); state = .error(AmbianceError.userMessage("Lecture impossible", error))
         }
     }
     private func begin(_ prepared: AmbianceRuntime, _ canonical: AmbianceSource) {
@@ -85,7 +85,7 @@ import OndeCore
             try prepared.startOutput()
             settings.lastSource = canonical.id; state = .playing(canonical)
         } catch {
-            stop(); state = .error("Lecture impossible : \(error.localizedDescription)")
+            stop(); state = .error(AmbianceError.userMessage("Lecture impossible", error))
         }
     }
     /// The audio device changed under a playing source: release everything and say so.
@@ -158,7 +158,7 @@ import OndeCore
                 var wasCancelled = error is CancellationError
                 if case AmbianceError.cancelled = error { wasCancelled = true }
                 if wasCancelled { self.setStatus(id, .notInstalled); self.refresh(); return }
-                self.setStatus(id, .failed("Installation impossible : \(error.localizedDescription)")); self.refreshSources()
+                self.setStatus(id, .failed(AmbianceError.userMessage("Installation impossible", error))); self.refreshSources()
             }
         }
     }
@@ -173,7 +173,7 @@ import OndeCore
         guard downloadTasks[id] == nil else { cancelDownload(id); return }
         stop()
         do { try store.remove(pack); refresh() }
-        catch { setStatus(id, .failed("Suppression impossible : \(error.localizedDescription)")) }
+        catch { setStatus(id, .failed(AmbianceError.userMessage("Suppression impossible", error))) }
     }
     /// Most own files kept in the list, and most directory entries looked at in one import.
     public nonisolated static let ownFilesLimit = 500

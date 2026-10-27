@@ -450,10 +450,16 @@
         /// The numeric code stays in the support log (`recordCheckResult`), never in the sentence.
         static let unknownErrorSummary = "erreur inconnue ; réessayez plus tard"
 
+        static let diskFullSummary = "le disque est plein ; libérez de l’espace puis réessayez"
+        static let cannotWriteSummary = "la mise à jour n’a pas pu être écrite sur le disque ; vérifiez l’espace libre puis réessayez"
+
         static func errorSummary(_ error: any Error) -> String {
             let error = error as NSError
+            // Sparkle wraps a full disk (download, unpacking, temporary folder) in its own codes.
+            if StorageHealth.failureKind(for: error) == .diskFull { return diskFullSummary }
             if error.domain == NSURLErrorDomain {
                 switch error.code {
+                case NSURLErrorCannotWriteToFile, NSURLErrorCannotCreateFile: return cannotWriteSummary
                 case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
                     return "pas de connexion Internet"
                 case NSURLErrorTimedOut: return "le serveur n’a pas répondu à temps"

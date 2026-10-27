@@ -34,7 +34,7 @@ public enum GoalongConversationEvidence {
     }
     static func collect(start: Date, end: Date, read: (Date, Int) throws -> Data) throws -> Selection {
         let calendar = Calendar.current, first = calendar.startOfDay(for: start)
-        guard end > start, end.timeIntervalSince(first) <= 31 * 86400 else {
+        guard end > start, let limit = calendar.date(byAdding: .day, value: 31, to: first), end <= limit else {
             throw GoalongProfileAnalysis.invalid("Choisissez au plus 31 jours de contexte conversationnel.")
         }
         let iso = ISO8601DateFormatter(), dayFormat = DateFormatter()
