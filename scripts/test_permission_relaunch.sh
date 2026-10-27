@@ -26,6 +26,7 @@ enum SourceAccessStatus { case accessibility }
 enum PermissionRecoveryLedger {
     enum Action { case relaunchPrepared }
     static func activePermission() -> SourceAccessStatus? { nil }
+    static func recordRelaunchForOpenedPermissions() {}
     static func record(_ action: Action, for permission: SourceAccessStatus) {}
 }
 // Guard leases have unit coverage too. The fixture must not write the real guard files.
