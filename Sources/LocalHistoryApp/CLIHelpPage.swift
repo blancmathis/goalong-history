@@ -14,6 +14,7 @@
         let onBack: () -> Void
         @State private var copyState: CopyState = .idle
         @State private var copiedCommandID: String?
+        @State private var linkCommandCopied = false
         @State private var showsInstructionPreview = false
         @State private var installationReport: GoalongCLIInstallationReport
 
@@ -41,6 +42,7 @@
                     }
 
                     readinessBanner
+                    if let command = installationReport.linkCommand { linkCommandRow(command) }
                     agentCard
                     quickCommandsCard
                     evidenceCard
@@ -69,6 +71,27 @@
                 .help("Vérifier de nouveau le lien de la commande goalong")
                 .accessibilityLabel("Vérifier le lien")
             }
+        }
+
+        /// The DMG and Sparkle do not create the command: the exact line to paste, built from this app's path.
+        private func linkCommandRow(_ command: String) -> some View {
+            HStack(alignment: .center, spacing: 12) {
+                Text(command)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    linkCommandCopied = GoalongClipboardWriter.copy(command)
+                    announce(linkCommandCopied ? "Commande copiée" : "La commande n’a pas pu être copiée")
+                } label: {
+                    Label(linkCommandCopied ? "Copiée" : "Copier", systemImage: linkCommandCopied ? "checkmark" : "doc.on.doc")
+                }
+                .controlSize(.small)
+                .help("Copier la commande qui crée ~/.local/bin/goalong")
+            }
+            .padding(12)
+            .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
 
         private var agentCard: some View {
@@ -236,7 +259,7 @@
         private var readinessTitle: String {
             switch installationReport.state {
             case .ready: return "Vérifiée pour le Terminal"
-            case .missing: return "Réinstallez Goalong"
+            case .missing: return "Créez la commande dans le Terminal"
             case .conflict: return "Le lien de la commande n’est pas fiable"
             case .development: return "La commande goalong sert Goalong installé"
             }

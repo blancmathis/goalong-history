@@ -39,6 +39,37 @@
             XCTAssertFalse(report.detail.contains("absent"))
         }
 
+        // C14-01: the DMG and Sparkle never create the link. The page says so and gives the exact line,
+        // built from the running app's path, and that line really creates a working link.
+        func testMissingLinkGivesTheExactTerminalCommandThatCreatesIt() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let link = fixture.root.appendingPathComponent("new bin/goalong", isDirectory: false)
+
+            let report = GoalongCLIInstallation.inspect(linkURL: link, expectedExecutableURL: fixture.executable)
+
+            XCTAssertEqual(report.state, .missing)
+            XCTAssertTrue(report.detail.contains("(DMG)"))
+            XCTAssertTrue(report.detail.contains("Sparkle ne créent pas"))
+            XCTAssertFalse(report.detail.contains("recrée"))
+            let command = try XCTUnwrap(report.linkCommand)
+            XCTAssertEqual(
+                command,
+                "mkdir -p '\(link.deletingLastPathComponent().path)' && ln -s '\(fixture.executable.path)' '\(link.path)'")
+            XCTAssertEqual(GoalongCLIInstallation.shellQuoted("it's"), "'it'\\''s'")
+
+            let shell = Process()
+            shell.executableURL = URL(fileURLWithPath: "/bin/sh")
+            shell.arguments = ["-c", command]
+            try shell.run()
+            shell.waitUntilExit()
+            XCTAssertEqual(shell.terminationStatus, 0)
+            XCTAssertEqual(
+                GoalongCLIInstallation.inspect(linkURL: link, expectedExecutableURL: fixture.executable).state, .ready)
+            XCTAssertNil(
+                GoalongCLIInstallation.inspect(linkURL: link, expectedExecutableURL: fixture.executable).linkCommand)
+        }
+
         func testUnrelatedExecutableAndRegularFileAreConflicts() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }
