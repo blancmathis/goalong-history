@@ -17,3 +17,6 @@ __pycache__/
 
 # Private Ambiance measurements and pack preparation.
 .ambiance-work/
+
+# Brand-motion probe output (CI uploads it; a local run writes to a temporary folder).
+qa/brand-motion/
