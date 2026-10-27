@@ -129,8 +129,11 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
                 ("key", "Il le garde. Sans lui, un blocage « Mot de passe » va jusqu’à sa fin."),
                 ("arrow.counterclockwise", "Oublié ? Le blocage finit à son heure. Goalong ne peut pas le retrouver."),
             ].enumerated()), id: \.offset) { _, line in
-                Label(line.1, systemImage: line.0)
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.text)
+                // A fixed icon column keeps the three texts on one left edge.
+                Label { Text(line.1).fixedSize(horizontal: false, vertical: true) } icon: {
+                    Image(systemName: line.0).frame(width: 18)
+                }
+                .font(.system(size: 12)).foregroundStyle(LHTheme.text)
             }
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)

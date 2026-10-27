@@ -307,14 +307,15 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
+                // Same order and labels as the Concentration page: Libre first, « 1 h 30 ».
                 GoalongSegmentedControl("Type de séance", selection: $model.focusKind,
-                                        options: MenuBarPanelModel.FocusKind.allCases, fills: true) {
+                                        options: [.free, .pomodoro], fills: true) {
                     $0 == .pomodoro ? "Pomodoro" : "Libre"
                 }
                 if model.focusKind == .pomodoro {
                     HStack(spacing: 6) {
                         ForEach(model.focusMinuteChoices, id: \.self) { minutes in
-                            ChoiceChip(title: "\(minutes) min", selected: model.focusMinutes == minutes) {
+                            ChoiceChip(title: BlockingFormat.duration(minutes: minutes), selected: model.focusMinutes == minutes) {
                                 model.focusMinutes = minutes
                             }
                         }

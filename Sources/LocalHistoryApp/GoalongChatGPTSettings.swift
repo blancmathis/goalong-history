@@ -31,7 +31,7 @@ import LocalHistoryCore
                         }
                     }
                 })).toggleStyle(.goalongSwitch)
-                Toggle("Analyser automatiquement la veille", isOn: Binding(
+                Toggle("Analyser automatiquement la journée d’hier", isOn: Binding(
                     get: { runtime.automaticRecapsEnabled && selection.isValid(for: exclusions.policy) },
                     set: { runtime.automaticRecapsEnabled = $0; if $0 { runtime.start() } }))
                     .toggleStyle(.goalongSwitch).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis))
@@ -44,7 +44,10 @@ import LocalHistoryCore
                     }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating || model.knownDeviceID == nil)
                 }
                 if !runtime.isAccountConnected {
-                    Text("Connectez ChatGPT d’abord pour analyser une journée.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    // The hint names the action the card above really offers.
+                    Text(runtime.connectionState == .codexUnavailable
+                         ? "Mettez Goalong à jour (carte ChatGPT ci-dessus) pour analyser une journée."
+                         : "Connectez ChatGPT (carte ci-dessus) pour analyser une journée.").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Text("ChatGPT reçoit uniquement votre sélection. Le bilan n’est pas envoyé au site automatiquement.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)

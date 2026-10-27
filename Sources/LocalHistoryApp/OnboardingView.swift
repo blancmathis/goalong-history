@@ -40,7 +40,7 @@
                         // A soft fade tells the reader that the list goes on under the footer.
                         LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground],
                                        startPoint: .top, endPoint: .bottom)
-                            .frame(height: 28).allowsHitTesting(false).accessibilityHidden(true)
+                            .frame(height: 56).allowsHitTesting(false).accessibilityHidden(true)
                     }
                     Rectangle().fill(LHTheme.separator).frame(height: 1)
                     footer
@@ -128,8 +128,8 @@
                 }
                 Spacer()
                 if !checkingSources.isEmpty { ProgressView("Vérification des accès…").controlSize(.small) }
-                Button(step == .privacy && localRecordingDraft && !consents.isEnabled(.localComputerHistory)
-                       ? "Valider et démarrer" : step.actionTitle) {
+                // Two steps follow « Vos données »: its button never says « démarrer ».
+                Button(step.actionTitle) {
                     note = nil
                     if step == .ready { finishSetup() }
                     else {

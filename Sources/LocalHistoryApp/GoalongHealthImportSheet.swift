@@ -30,6 +30,26 @@ struct GoalongHealthImportSheet: View {
     @AppStorage("goalong.website.origin") private var origin = ""
     @AppStorage("goalong.website.tokenFilePath") private var tokenFilePath = ""
 
+    init() {}
+    /// Gallery only: the sheet as a step leaves it, without a real file, task or panel.
+    enum GalleryStage { case reading, imported(GoalongHealthImportResult, message: String?), failed(String) }
+    init(gallery stage: GalleryStage) {
+        _file = State(initialValue: URL(fileURLWithPath: "/Users/lea/Downloads/apple_health_export/export.xml"))
+        switch stage {
+        case .reading:
+            _busy = State(initialValue: true)
+            _readTask = State(initialValue: Task { try await Task.sleep(nanoseconds: 3_600_000_000_000); throw CancellationError() })
+        case let .imported(result, message):
+            let object = (try? JSONSerialization.jsonObject(with: result.payload)) as? [String: Any]
+            let rows = object?["days"] as? [[String: Any]] ?? []
+            _result = State(initialValue: result); _sourceChoices = State(initialValue: result.sources)
+            _payload = State(initialValue: result.payload); _days = State(initialValue: rows)
+            _previewDate = State(initialValue: rows.last?["date"] as? String ?? ""); _message = State(initialValue: message)
+        case let .failed(text):
+            _error = State(initialValue: text)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
@@ -50,7 +70,7 @@ struct GoalongHealthImportSheet: View {
                         HStack {
                             Picker("Déjà sur ce Mac", selection: $savedDate) {
                                 Text("Choisir une journée").tag("")
-                                ForEach(savedDates, id: \.self) { Text($0).tag($0) }
+                                ForEach(savedDates, id: \.self) { Text(GoalongUIFormat.day(key: $0)).tag($0) }
                             }
                             Button("Afficher") { readSaved() }.disabled(savedDate.isEmpty)
                             Button("Mettre à la corbeille") { trashSavedDay() }.disabled(savedDate.isEmpty)
@@ -58,8 +78,6 @@ struct GoalongHealthImportSheet: View {
                     }
                     if file != nil { selectionSection }
                     if !days.isEmpty { previewSection }
-                    if let message { Label(message, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success).textSelection(.enabled) }
-                    if let error { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(.red).textSelection(.enabled) }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }.disabled(busy)
             Divider()
@@ -68,6 +86,13 @@ struct GoalongHealthImportSheet: View {
                     ProgressView().controlSize(.small)
                     Text(readTask != nil ? "Lecture locale de l’export…" : "Opération en cours…").font(.caption)
                     if readTask != nil { Button("Annuler la lecture") { readTask?.cancel() } }
+                // The outcome stays in sight in the footer: the buttons that cause it sit far down the scroll.
+                } else if let error {
+                    Label(error, systemImage: "exclamationmark.circle").foregroundStyle(LHTheme.danger).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let message {
+                    Label(message, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else { Text("Données déclaratives · aucun score de productivité calculé").font(.caption).foregroundStyle(.secondary) }
                 Spacer()
             }.padding(16)
@@ -130,11 +155,11 @@ struct GoalongHealthImportSheet: View {
             Text("Les moyennes cardiaques décrivent les échantillons disponibles. Les entraînements et l’activité quotidienne peuvent se recouper : leurs durées et calories ne s’additionnent pas.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker("Journée", selection: $previewDate) {
-                ForEach(days.compactMap { $0["date"] as? String }, id: \.self) { Text($0).tag($0) }
+                ForEach(days.compactMap { $0["date"] as? String }, id: \.self) { Text(GoalongUIFormat.day(key: $0)).tag($0) }
             }
             ForEach(Array(days.filter { $0["date"] as? String == previewDate }.enumerated()), id: \.offset) { _, day in
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(day["date"] as? String ?? "Journée").font(.headline)
+                    Text((day["date"] as? String).map { GoalongUIFormat.day(key: $0) } ?? "Journée").font(.headline)
                     let health = day["health"] as? [String: Any] ?? [:]
                     let metrics = health["metrics"] as? [[String: Any]] ?? []
                     ForEach(Array(metrics.enumerated()), id: \.offset) { _, metric in
