@@ -19,7 +19,7 @@ public enum GoalongConversationEvidence {
     }
     public static func load(root: URL, start: Date, end: Date) throws -> Selection {
         guard GoalongQueryCLI.capabilityConsentEnabled(rootDirectory: root, capability: "aiConversations") else {
-            throw GoalongProfileAnalysis.invalid("Activez Conversation History dans les réglages avant de lire cette source.")
+            throw GoalongProfileAnalysis.invalid("Activez l’historique des conversations dans Réglages › Enregistrement avant de lire cette source.")
         }
         let selection = try collect(start: start, end: end) { day, offset in
             var bytes = Data()
@@ -34,7 +34,7 @@ public enum GoalongConversationEvidence {
     }
     static func collect(start: Date, end: Date, read: (Date, Int) throws -> Data) throws -> Selection {
         let calendar = Calendar.current, first = calendar.startOfDay(for: start)
-        guard end > start, end.timeIntervalSince(first) <= 31 * 86400 else {
+        guard end > start, let limit = calendar.date(byAdding: .day, value: 31, to: first), end <= limit else {
             throw GoalongProfileAnalysis.invalid("Choisissez au plus 31 jours de contexte conversationnel.")
         }
         let iso = ISO8601DateFormatter(), dayFormat = DateFormatter()
@@ -79,7 +79,7 @@ public enum GoalongConversationEvidence {
             } while true
             day = nextDay
         }
-        let notice = "Conversation History : \(rows.count) extraits sélectionnables. " + (partial ? "Lecture partielle : certains échanges sont tronqués ou indisponibles. " : "") + "Les messages horodatés conservent leur timestamp ; les autres portent explicitement une fenêtre de sélection. Aucune durée ni exhaustivité de la journée n’est déduite."
+        let notice = "Conversation History : \(FrenchCount.count(rows.count, "extrait sélectionnable", "extraits sélectionnables")). " + (partial ? "Lecture partielle : certains échanges sont tronqués ou indisponibles. " : "") + "Les messages horodatés conservent leur timestamp ; les autres portent explicitement une fenêtre de sélection. Aucune durée ni exhaustivité de la journée n’est déduite."
         rows.insert(.init(id: "c0", start: iso.string(from: first), end: iso.string(from: end), kind: "ai", application: "Conversation History", text: notice), at: 0)
         return Selection(evidence: rows, notice: notice)
     }

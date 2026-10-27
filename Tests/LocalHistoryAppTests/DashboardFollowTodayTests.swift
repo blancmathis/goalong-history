@@ -55,5 +55,51 @@ final class DashboardFollowTodayTests: XCTestCase {
         NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
         XCTAssertEqual(model.selectedDay, calendar.startOfDay(for: at(day: 8, 0, 0)), "A past day chosen by the user stays")
     }
+
+    /// C13-11 (T-044 r13). Paris → New York while the member looks at a past day (25 October): the page keeps
+    /// the 25th, at its New York midnight. An instant kept from Paris would read 24 October on every day page.
+    @MainActor func testPastDayKeepsItsDateAfterATimeZoneChange() throws {
+        let saved = NSTimeZone.default
+        defer { NSTimeZone.default = saved }
+        let paris = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+        let newYork = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        let tokyo = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+        NSTimeZone.default = paris
+        clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-27T11:00:00Z")) // 12:00 Paris, 07:00 New York
+        let model = try model()
+        var parisCalendar = Calendar(identifier: .gregorian); parisCalendar.timeZone = paris
+        model.selectDay(try XCTUnwrap(parisCalendar.date(from: DateComponents(year: 2026, month: 10, day: 25, hour: 12))))
+
+        for zone in [newYork, tokyo, paris] {
+            NSTimeZone.default = zone
+            NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+            NSTimeZone.default = zone // the observer resets the system zone; keep the test zone
+            model.followToday()
+            var local = Calendar(identifier: .gregorian); local.timeZone = zone
+            XCTAssertEqual(local.component(.day, from: model.selectedDay), 25, "\(zone.identifier): \(model.selectedDay)")
+            XCTAssertEqual(model.selectedDay, local.startOfDay(for: model.selectedDay), "\(zone.identifier): not a midnight")
+            // The Screen Time page reads this interval (AppleScreenTimeDashboardModel).
+            let interval = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: model.selectedDay))
+            XCTAssertEqual(local.component(.day, from: interval.start), 25, zone.identifier)
+            XCTAssertFalse(model.isTodaySelected)
+        }
+    }
+
+    /// C13-11: a page left on today still follows the new zone's today.
+    @MainActor func testTodayFollowsTheNewZoneAfterATimeZoneChange() throws {
+        let saved = NSTimeZone.default
+        defer { NSTimeZone.default = saved }
+        let paris = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+        let newYork = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        NSTimeZone.default = paris
+        clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-27T02:00:00Z")) // 03:00 Paris, 22:00 New York (26th)
+        let model = try model()
+        NSTimeZone.default = newYork
+        model.followToday()
+        var local = Calendar(identifier: .gregorian); local.timeZone = newYork
+        XCTAssertEqual(local.component(.day, from: model.selectedDay), 26)
+        XCTAssertEqual(model.selectedDay, local.startOfDay(for: clock))
+        XCTAssertTrue(model.isTodaySelected)
+    }
 }
 #endif

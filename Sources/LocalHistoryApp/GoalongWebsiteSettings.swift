@@ -25,7 +25,7 @@ import LocalHistoryQueryCLI
                     Text(Self.planSummary(plan.options))
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     if let hour = plan.hour {
-                        Text(String(format: "Horaire : %02d:%02d · %@", hour, plan.minute ?? 0, plan.timeZoneIdentifier ?? ""))
+                        Text(GoalongWebsiteSettings.scheduleLabel(hour: hour, minute: plan.minute ?? 0, zone: plan.timeZoneIdentifier))
                             .font(.system(size: 13)).foregroundStyle(.secondary)
                     }
                 }
@@ -40,6 +40,14 @@ import LocalHistoryQueryCLI
             }
         }
         .sheet(item: $presentation) { request in GoalongWebsiteSharingSheet(initialDay: request.day).id(request.id).goalongControls() }
+    }
+
+    /// « 8 h 00 (heure de Paris) » rather than the raw `Europe/Paris` identifier.
+    static func scheduleLabel(hour: Int, minute: Int, zone: String?) -> String {
+        let time = String(format: "%d h %02d", hour, minute)
+        guard let zone, let tz = TimeZone(identifier: zone),
+              let city = tz.localizedName(for: .generic, locale: Locale(identifier: "fr_FR")) else { return time }
+        return "\(time) (\(city))"
     }
 
     /// A nil selection means "no filter" (every app or site), never zero.

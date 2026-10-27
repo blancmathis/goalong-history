@@ -174,7 +174,7 @@ final class MenuBarPanelModelTests: XCTestCase {
         XCTAssertNotEqual(model.headerActionLabel, "Reprendre le suivi")
         f.globallyPaused.paused = false; model.refreshRuntimeState()
         XCTAssertFalse(model.globalPaused)
-        XCTAssertEqual(model.headerActionLabel, "Mettre le suivi en pause")
+        XCTAssertEqual(model.headerActionLabel, "Mettre en pause")
     }
 
     @MainActor func testConsentOffFlagIsSetOnlyForConsent() {

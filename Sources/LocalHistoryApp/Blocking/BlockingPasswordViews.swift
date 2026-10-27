@@ -186,7 +186,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         }
         let result: BlockingPasswordResult
         switch purpose {
-        case .create: result = controller.setPassword(new) ? .ok : .refused(reason: controller.error ?? "Mot de passe refusé.")
+        case .create: result = controller.setPassword(new) ? .ok : .refused(reason: controller.error ?? "Mot de passe refusé : choisissez-en un non vide, plus court.")
         case .unlock(let id, _): result = controller.unlockWithPassword(old, blockID: id)
         case .change: result = controller.changePassword(old: old, new: new)
         case .remove: result = controller.removePassword(old: old)

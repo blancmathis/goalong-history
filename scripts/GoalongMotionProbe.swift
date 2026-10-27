@@ -58,6 +58,7 @@ private struct ProbePage: View {
     let fixture = Fixture()
     var window: NSWindow!
     var host: NSHostingController<ProbeMarks>!
+    var windowShown: Bool { window.occlusionState.contains(.visible) }
     var captures = [String: String]()
     var failures = [String]()
     var activeA = Data(), restA = Data(), reducedA = Data()
@@ -67,21 +68,35 @@ private struct ProbePage: View {
 
     init(folder: URL) { self.folder = folder }
     func applicationDidFinishLaunching(_ notification: Notification) {
-        window = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 440, height: 200),
-                          styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        // Invisible by construction (CLAUDE.md « Tests invisibles »): borderless, alpha 0, far outside every
+        // display, never key, never activated. Captures come from the view, not from the screen.
+        window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 440, height: 200),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.hasShadow = false
+        window.animationBehavior = .none
+        window.collectionBehavior = [.transient, .ignoresCycle, .stationary]
         host = NSHostingController(rootView: ProbeMarks(fixture: fixture))
         window.contentViewController = host
         window.appearance = NSAppearance(named: .darkAqua)
-        window.makeKeyAndOrderFront(nil)
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        window.orderBack(nil)
         after(1.0) {
             print("WINDOW visible=\(self.window.isVisible) occluded=\(!self.window.occlusionState.contains(.visible)) running=\(NSApp.isRunning)")
             self.activeA = try self.capture("native-active-a")
         }
         after(1.45) {
             let activeB = try self.capture("native-active-b")
-            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            // The probe window is invisible by design, so the window server reports it occluded and the
+            // production views must stop their display clock: pixels stay fixed. The motion itself is
+            // checked on the model, which does not depend on a screen.
+            var model = GoalongMotion.State()
+            model.setBusy(true, at: 0)
+            self.expect(model.sample(at: 0.3) != model.sample(at: 0.75), "Busy motion model changes between samples")
+            if !self.windowShown {
+                self.expect(self.activeA == activeB, "Occluded window pauses the display clock (pixels fixed)")
+            } else if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                 self.expect(self.activeA == activeB, "System reduced motion keeps active-operation pixels fixed")
             } else {
                 self.expect(self.activeA != activeB, "Visible activity changes actual pixels")
@@ -127,8 +142,9 @@ private struct ProbePage: View {
         }
         after(5.1) {
             let next = try self.capture("page-access-loading-next", view: self.window.contentView!)
-            self.expect(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? next == self.pageA : next != self.pageA,
-                        "Page wait follows actual motion preference")
+            let mustMove = self.windowShown && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            self.expect(mustMove ? next != self.pageA : next == self.pageA,
+                        "Page wait follows window visibility and motion preference")
             self.fixture.pageLoading = false
         }
         after(5.55) {
@@ -220,7 +236,7 @@ private struct ProbePage: View {
         let folder = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let app = NSApplication.shared
-        app.setActivationPolicy(.accessory)
+        app.setActivationPolicy(.prohibited)
         let delegate = Probe(folder: folder)
         app.delegate = delegate
         withExtendedLifetime(delegate) { app.run() }

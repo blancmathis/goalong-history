@@ -487,7 +487,7 @@ struct FocusCommitmentEditRequest: Identifiable {
         var parts: [String] = []
         let value = card.commitment
         if card.canDeclare, value.kind == .work || value.kind == .task, card.progress.unmeasuredMinutes >= 1 {
-            parts.append("\(BlockingFormat.duration(minutes: Int(card.progress.unmeasuredMinutes.rounded(.down)))) non vue par Goalong")
+            parts.append("\(BlockingFormat.duration(minutes: Int(card.progress.unmeasuredMinutes.rounded(.down)))) non observées par Goalong")
         }
         parts.append(card.jokersLeft == 0 ? "plus de joker ce mois-ci" : card.jokersLeft == 1 ? "1 joker ce mois-ci" : "\(card.jokersLeft) jokers ce mois-ci")
         if let end = card.exitUntil { parts.append("possible jusqu’à \(FocusCommitmentFormat.time(end))") }

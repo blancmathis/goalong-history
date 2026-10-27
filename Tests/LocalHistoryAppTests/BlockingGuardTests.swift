@@ -125,7 +125,7 @@ import XCTest
         c.refresh()
         XCTAssertEqual(c.protection.guardian, .awaitingApproval)
         XCTAssertEqual(c.protection.level, .standard, "only a running guard makes the protection strict")
-        XCTAssertEqual(BlockingProtectionDetails.levelLabel(c.protection), "À autoriser dans Réglages › Général › Ouverture")
+        XCTAssertEqual(BlockingProtectionDetails.levelLabel(c.protection), "À autoriser dans Réglages Système › Général › Ouverture")
         XCTAssertNil(c.error, "the guard never raises an error message")
         clockNow = now.addingTimeInterval(3601)
         c.refresh()

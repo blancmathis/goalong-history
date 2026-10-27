@@ -7,6 +7,14 @@ struct GoalongActivityNavigation: Equatable {
     struct Context: Equatable {
         let day: Date
         let period: Int
+        /// The date of `day`: after a time zone change the context moves to that date's new midnight.
+        fileprivate let dayKey: GoalongCalendarDay
+
+        fileprivate init(day: Date, period: Int, calendar: Calendar) {
+            self.day = day
+            self.period = period
+            dayKey = GoalongCalendarDay(day, calendar: calendar)
+        }
     }
 
     private(set) var day: Date
@@ -15,11 +23,16 @@ struct GoalongActivityNavigation: Equatable {
     /// The calendar day this navigation last saw as today. It lives with the navigation, not the
     /// page, so a page rebuilt after midnight still knows that « aujourd’hui » was yesterday.
     private(set) var seenToday: Date
+    /// The dates of `day` and `seenToday`, not instants: a time zone change keeps them.
+    private var dayKey: GoalongCalendarDay
+    private var seenTodayKey: GoalongCalendarDay
 
     init(day: Date = GoalongToday.now, period: Int = 1, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         self.day = calendar.startOfDay(for: day)
         self.period = [1, 7, 28].contains(period) ? period : 1
         seenToday = calendar.startOfDay(for: now)
+        dayKey = GoalongCalendarDay(self.day, calendar: calendar)
+        seenTodayKey = GoalongCalendarDay(seenToday, calendar: calendar)
     }
 
     func interval(calendar: Calendar = .current) -> DateInterval {
@@ -29,9 +42,9 @@ struct GoalongActivityNavigation: Equatable {
     }
 
     mutating func selectDay(_ value: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) {
-        day = min(calendar.startOfDay(for: value), calendar.startOfDay(for: now))
+        setDay(min(calendar.startOfDay(for: value), calendar.startOfDay(for: now)), calendar: calendar)
         returnContext = nil
-        seenToday = calendar.startOfDay(for: now)
+        setSeenToday(now, calendar: calendar)
     }
 
     mutating func selectPeriod(_ value: Int) {
@@ -47,39 +60,54 @@ struct GoalongActivityNavigation: Equatable {
     }
 
     mutating func today(now: Date = GoalongToday.now, calendar: Calendar = .current) {
-        day = calendar.startOfDay(for: now)
+        setDay(calendar.startOfDay(for: now), calendar: calendar)
         period = 1
         returnContext = nil
-        seenToday = day
+        setSeenToday(now, calendar: calendar)
     }
 
     mutating func openDay(_ value: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) {
-        if period > 1 { returnContext = Context(day: day, period: period) }
-        day = min(calendar.startOfDay(for: value), calendar.startOfDay(for: now))
+        if period > 1 { returnContext = Context(day: day, period: period, calendar: calendar) }
+        setDay(min(calendar.startOfDay(for: value), calendar.startOfDay(for: now)), calendar: calendar)
         period = 1
-        seenToday = calendar.startOfDay(for: now)
+        setSeenToday(now, calendar: calendar)
     }
 
     /// After midnight, a navigation left on the old today moves to the new today (same period,
-    /// return context kept and moved too). A past day chosen by the user stays. Returns true
-    /// when the calendar day changed since this navigation last saw it (a zone moved west gives an earlier day).
+    /// return context kept and moved too). A past day chosen by the user keeps its date; after a time
+    /// zone change it moves to that date's new midnight. Returns true when the calendar day or the
+    /// zone changed since this navigation last saw it (a zone moved west gives an earlier day).
     @discardableResult
     mutating func followToday(now: Date = GoalongToday.now, calendar: Calendar = .current) -> Bool {
         let today = calendar.startOfDay(for: now)
         guard today != seenToday else { return false }
-        if calendar.isDate(day, inSameDayAs: seenToday) { day = today }
-        if let context = returnContext, calendar.isDate(context.day, inSameDayAs: seenToday) {
-            returnContext = Context(day: today, period: context.period)
+        let todayKey = GoalongCalendarDay(today, calendar: calendar)
+        setDay(dayKey == seenTodayKey ? today : dayKey.start(calendar: calendar), calendar: calendar)
+        if let context = returnContext {
+            let moved = context.dayKey == seenTodayKey ? today : context.dayKey.start(calendar: calendar)
+            returnContext = Context(day: moved, period: context.period, calendar: calendar)
         }
         seenToday = today
+        seenTodayKey = todayKey
         return true
     }
 
     mutating func restorePeriod() {
         guard let previous = returnContext else { return }
         day = previous.day
+        dayKey = previous.dayKey
         period = previous.period
         returnContext = nil
+    }
+
+    private mutating func setDay(_ value: Date, calendar: Calendar) {
+        day = value
+        dayKey = GoalongCalendarDay(value, calendar: calendar)
+    }
+
+    private mutating func setSeenToday(_ now: Date, calendar: Calendar) {
+        seenToday = calendar.startOfDay(for: now)
+        seenTodayKey = GoalongCalendarDay(seenToday, calendar: calendar)
     }
 
     /// Also guards the frame before the asynchronous task has cleared its old payload.

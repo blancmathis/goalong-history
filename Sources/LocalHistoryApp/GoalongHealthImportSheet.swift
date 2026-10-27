@@ -198,7 +198,7 @@ struct GoalongHealthImportSheet: View {
                 Text("Envoyer au site Goalong").font(.headline)
                 TextField("Adresse du site Goalong (https://…)", text: $origin).textFieldStyle(GoalongFieldStyle())
                 HStack {
-                    Button("Choisir mon fichier d’accès…", action: chooseToken)
+                    Button("Choisir mon fichier de connexion…", action: chooseToken)
                     if !tokenFilePath.isEmpty { Text(URL(fileURLWithPath: tokenFilePath).lastPathComponent).font(.caption); Button("Oublier") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = "" }.help("Le fichier d’accès est supprimé de ce Mac. Pour révoquer l’accès, utilisez les réglages du site.") }
                 }
                 Text("Créez cet accès depuis Sources et connexions sur le site. Seules les mesures de cet aperçu seront transmises ; vos autorisations Santé explicites sur le site détermineront leur visibilité.")
@@ -308,7 +308,7 @@ struct GoalongHealthImportSheet: View {
                 let review = try GoalongSiteSubmission.reviewTokenFile(file: url)
                 if review.requiresProtection {
                     let alert = NSAlert(); alert.messageText = "Protéger ce fichier d’accès ?"
-                    alert.informativeText = "Seul votre compte macOS pourra lire ce fichier (permissions 0600)."
+                    alert.informativeText = "Seul votre compte macOS pourra lire ce fichier."
                     alert.addButton(withTitle: "Protéger ce fichier"); alert.addButton(withTitle: "Annuler")
                     alert.beginSheetModal(for: window) { choice in
                         guard choice == .alertFirstButtonReturn else { return }
@@ -342,8 +342,8 @@ struct GoalongHealthImportSheet: View {
     }
     static let metricNames = ["steps": "Pas", "walkingRunningMeters": "Distance à pied / course", "cyclingMeters": "Distance à vélo",
         "activeEnergyKcal": "Énergie active", "exerciseSeconds": "Exercice", "standSeconds": "Temps debout", "flights": "Étages montés",
-        "sleepSeconds": "Sommeil", "inBedSeconds": "Au lit", "awakeSeconds": "Éveillé", "sleepUnspecifiedSeconds": "Sommeil sans stade",
-        "sleepCoreSeconds": "Sommeil léger", "sleepDeepSeconds": "Sommeil profond", "sleepREMSeconds": "Sommeil paradoxal",
+        "sleepSeconds": "Sommeil", "inBedSeconds": "Au lit", "awakeSeconds": "Éveillé", "sleepUnspecifiedSeconds": "Sommeil sans phase",
+        "sleepCoreSeconds": "Sommeil essentiel", "sleepDeepSeconds": "Sommeil profond", "sleepREMSeconds": "Sommeil paradoxal",
         "heartRateBPM": "Fréquence cardiaque moyenne", "heartRateMinBPM": "Fréquence minimale observée", "heartRateMaxBPM": "Fréquence maximale observée",
         "restingHeartRateBPM": "Fréquence au repos", "walkingHeartRateBPM": "Fréquence moyenne à la marche", "heartRateVariabilityMS": "Variabilité cardiaque (SDNN)",
         "respiratoryRate": "Fréquence respiratoire", "oxygenPercent": "Oxygène sanguin", "vo2Max": "VO₂ max estimée"]
