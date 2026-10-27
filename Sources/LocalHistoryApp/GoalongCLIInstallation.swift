@@ -17,12 +17,26 @@
         let detail: String
         /// Goalong Dev only: its own CLI inside its bundle, which reads LocalHistory-Dev.
         var developmentCLIPath: String? = nil
+        /// Missing state only: the one-line Terminal command that creates the link to this app's executable.
+        var linkCommand: String? = nil
     }
 
     enum GoalongCLIInstallation {
         static var defaultLinkURL: URL {
             FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".local/bin/goalong", isDirectory: false)
+        }
+
+        /// The DMG and Sparkle never create `~/.local/bin/goalong`; only the source installer does (C14-01).
+        /// `ln -s` without `-f` never replaces an item already at the link path.
+        static func linkCommand(executableURL: URL, linkURL: URL = defaultLinkURL) -> String {
+            let link = linkURL.standardizedFileURL
+            return "mkdir -p \(shellQuoted(link.deletingLastPathComponent().path)) && ln -s "
+                + "\(shellQuoted(executableURL.standardizedFileURL.path)) \(shellQuoted(link.path))"
+        }
+
+        static func shellQuoted(_ value: String) -> String {
+            "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
         }
 
         static func inspect(
@@ -66,7 +80,8 @@
                     state: .missing,
                     linkPath: linkPath,
                     resolvedTargetPath: nil,
-                    detail: "Cela recrée en toute sécurité le lien de la commande goalong dans le Terminal."
+                    detail: "L’installation par l’image disque (DMG) et les mises à jour Sparkle ne créent pas la commande goalong. Seule l’installation depuis la source la crée. Pour la créer, collez cette ligne dans le Terminal :",
+                    linkCommand: expectedExecutableURL.map { linkCommand(executableURL: $0, linkURL: linkURL) }
                 )
             }
 
