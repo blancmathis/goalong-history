@@ -91,15 +91,19 @@
         public func storeActiveDay(
             _ collection: AppleSystemScreenTimeCollection,
             for day: Date,
-            storedAt: Date = Date()
+            storedAt: Date = Date(),
+            dayCalendar: Calendar? = nil
         ) throws -> AppleSystemScreenTimeDailyArchiveRecord? {
-            try queue.sync {
+            // `dayCalendar` is the zone frozen when the read started: a zone change during the Apple read
+            // must not file the requested day under another day's name (C14-02).
+            let calendar = dayCalendar ?? self.calendar
+            return try queue.sync {
                 guard let storedExport = collection.storedExport else {
-                    return try loadRecordLocked(for: day)
+                    return try loadRecordLocked(for: day, calendar: calendar)
                 }
                 try AppleScreenTimeValidator.validate(storedExport.envelope)
-                let interval = try dayInterval(for: day)
-                let url = fileURL(for: interval.start)
+                let interval = try dayInterval(for: day, calendar: calendar)
+                let url = fileURL(for: interval.start, calendar: calendar)
                 // A malformed active-day record from an older build must not block a valid
                 // Apple refresh. It is replaced only after the new payload validates.
                 let existing = try? loadRecordLocked(at: url)
@@ -239,9 +243,11 @@
             }
         }
 
-        private func loadRecordLocked(for day: Date) throws -> AppleSystemScreenTimeDailyArchiveRecord? {
-            let interval = try dayInterval(for: day)
-            return try loadRecordLocked(at: fileURL(for: interval.start))
+        private func loadRecordLocked(for day: Date, calendar: Calendar? = nil) throws
+            -> AppleSystemScreenTimeDailyArchiveRecord?
+        {
+            let interval = try dayInterval(for: day, calendar: calendar)
+            return try loadRecordLocked(at: fileURL(for: interval.start, calendar: calendar))
         }
 
         private func loadRecordLocked(at url: URL) throws -> AppleSystemScreenTimeDailyArchiveRecord? {
@@ -306,15 +312,15 @@
             }
         }
 
-        private func dayInterval(for day: Date) throws -> DateInterval {
-            guard let interval = calendar.dateInterval(of: .day, for: day) else {
+        private func dayInterval(for day: Date, calendar: Calendar? = nil) throws -> DateInterval {
+            guard let interval = (calendar ?? self.calendar).dateInterval(of: .day, for: day) else {
                 throw AppleSystemScreenTimeDailyArchiveError.invalidDay
             }
             return interval
         }
 
-        private func fileURL(for dayStart: Date) -> URL {
-            daysDirectory.appendingPathComponent(Self.dayString(dayStart, calendar: calendar) + ".json")
+        private func fileURL(for dayStart: Date, calendar: Calendar? = nil) -> URL {
+            daysDirectory.appendingPathComponent(Self.dayString(dayStart, calendar: calendar ?? self.calendar) + ".json")
         }
 
         private static func dayString(_ date: Date, calendar: Calendar) -> String {
@@ -418,6 +424,11 @@
             queue.sync {
                 guard let admission = activityAdmission() else { return pausedCollection() }
                 let now = nowProvider()
+                // Freeze the zone for this whole collection: the Mac may change zone during the Apple read.
+                var calendar = Calendar(identifier: self.calendar.identifier)
+                calendar.timeZone = TimeZone(identifier: self.calendar.timeZone.identifier) ?? self.calendar.timeZone
+                calendar.locale = self.calendar.locale
+                calendar.firstWeekday = self.calendar.firstWeekday
                 let today = calendar.startOfDay(for: now)
                 let requestedDay = calendar.startOfDay(for: day)
                 if lastFinalizationDay != today {
@@ -440,7 +451,8 @@
                 guard activityAdmission() == admission else { return pausedCollection() }
                 if live.storedExport != nil {
                     do {
-                        let stored = try archive.storeActiveDay(live, for: requestedDay, storedAt: now)
+                        let stored = try archive.storeActiveDay(
+                            live, for: requestedDay, storedAt: now, dayCalendar: calendar)
                         if stored?.state == .completed {
                             // The day was archived as completed in another time zone: show the
                             // live read without claiming it was stored.

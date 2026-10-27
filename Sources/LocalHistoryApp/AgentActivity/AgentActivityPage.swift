@@ -70,15 +70,31 @@
         @State private var editingFolder: AgentWatchedFolder?
         private let presentation: AgentActivityPresentation
         private let onManageSources: (() -> Void)?
+        /// The dashboard's day when this page is a dashboard route: the page follows it and writes back to it.
+        private let dashboardDay: Date?
+        private let onSelectDashboardDay: ((Date) -> Void)?
 
         init(
             agents: AgentActivityRuntime,
             presentation: AgentActivityPresentation = .management,
-            onManageSources: (() -> Void)? = nil
+            onManageSources: (() -> Void)? = nil,
+            dashboardDay: Date? = nil,
+            onSelectDashboardDay: ((Date) -> Void)? = nil
         ) {
             self.agents = agents
             self.presentation = presentation
             self.onManageSources = onManageSources
+            self.dashboardDay = dashboardDay
+            self.onSelectDashboardDay = onSelectDashboardDay
+        }
+
+        private func selectDay(_ day: Date) {
+            onSelectDashboardDay?(day)
+            agents.selectDay(day)
+        }
+
+        private func followDashboardDay() {
+            if let dashboardDay, agents.selectedDay != dashboardDay { agents.selectDay(dashboardDay) }
         }
 
         var body: some View {
@@ -119,6 +135,7 @@
             }
             .background(LHTheme.pageBackground)
             .onAppear {
+                followDashboardDay()
                 if consents.isEnabled(.aiConversations) {
                     agents.scanNow(
                         forceFullDiscovery: false,
@@ -126,6 +143,7 @@
                     )
                 }
             }
+            .onChange(of: dashboardDay) { _ in followDashboardDay() }
             .onChange(of: availableProviders) { providers in
                 // Drop a stale provider filter (for example after a day change) so the picker,
                 // the list and the empty state agree.
@@ -167,7 +185,7 @@
             ) {
                 if consents.isEnabled(.aiConversations) {
                     HStack(spacing: 9) {
-                        DateSelectionControl(date: agents.selectedDay, onChange: agents.selectDay)
+                        DateSelectionControl(date: agents.selectedDay, onChange: selectDay)
                         Button {
                             agents.scanNow(
                                 forceFullDiscovery: true,
