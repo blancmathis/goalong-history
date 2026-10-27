@@ -108,6 +108,9 @@
                 switch error as? DeviceIdentityError {
                 case .cannotLoadKey(let value), .cannotCreateKey(let value), .identityUnavailable(let value):
                     status = value
+                // Not the keychain: the notice must not ask to unlock it. The raw error goes to the log below.
+                case .cannotPersistSoftwareKey: status = errSecIO
+                case .cannotCopyPublicKey, .cannotExportPublicKey: status = errSecInvalidKeyRef
                 default: break
                 }
                 Diagnostics.write("Signing identity unavailable at startup, sealing suspended for this launch: \(error)")
@@ -158,7 +161,34 @@
 
         var sealingSuspendedNotice: String? {
             lock.lock(); defer { lock.unlock() }
-            return suspendedStatus == nil ? nil : "Preuves suspendues : Trousseau inaccessible"
+            return suspendedStatus.map { "Preuves suspendues : " + Self.cause($0).notice }
+        }
+
+        /// The cause named in the notice and after a failed retry, from the startup status.
+        private enum Cause {
+            case keychain, keyNotSaved, keyUnreadable
+            var notice: String {
+                switch self {
+                case .keychain: return "Trousseau inaccessible"
+                case .keyNotSaved: return "clé de vérification non enregistrée"
+                case .keyUnreadable: return "clé de vérification illisible"
+                }
+            }
+            var retryFailure: String {
+                switch self {
+                case .keychain: return "trousseau toujours inaccessible. Déverrouillez-le puis réessayez."
+                case .keyNotSaved: return "la clé de vérification ne peut toujours pas être enregistrée. Libérez de l’espace disque puis réessayez."
+                case .keyUnreadable: return "la clé de vérification reste illisible. Réessayez ; si cela continue, ouvrez l’aide."
+                }
+            }
+        }
+
+        private static func cause(_ status: OSStatus) -> Cause {
+            switch status {
+            case errSecIO, errSecDiskFull, errSecWrPerm: return .keyNotSaved
+            case errSecInvalidKeyRef: return .keyUnreadable
+            default: return .keychain
+            }
         }
 
         /// Secondary line shown under the notice after a failed « Réessayer ». The notice
@@ -167,8 +197,8 @@
             lock.lock(); defer { lock.unlock() }
             guard suspendedStatus != nil else { return nil }
             if retryInFlight { return "Nouvelle tentative en cours…" }
-            guard let failedAt = lastRetryFailedAt else { return nil }
-            return "Échec à \(GoalongUIFormat.time(failedAt)) : trousseau toujours inaccessible. Déverrouillez-le puis réessayez."
+            guard let failedAt = lastRetryFailedAt, let status = suspendedStatus else { return nil }
+            return "Échec à \(GoalongUIFormat.time(failedAt)) : " + Self.cause(status).retryFailure
         }
 
         var isRetryInFlight: Bool {

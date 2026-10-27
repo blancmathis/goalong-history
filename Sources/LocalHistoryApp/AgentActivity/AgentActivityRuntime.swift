@@ -46,7 +46,13 @@
         @Published private(set) var lastScanResult = AgentScanResult()
         @Published private(set) var storageBytes: Int64 = 0
         @Published private(set) var indexIsValid: Bool
-        @Published var selectedDay: Date
+        @Published var selectedDay: Date {
+            didSet { selectedDayKey = GoalongCalendarDay(selectedDay) }
+        }
+        /// The date of `selectedDay`, not an instant: after a time zone change the page moves to that date's
+        /// new midnight instead of showing the day before (C14-03).
+        private var selectedDayKey: GoalongCalendarDay
+        private var timeZoneObserver: NSObjectProtocol?
         @Published var alert: AgentActivityAlert?
         /// Read failures already shown in an alert. Main thread only. A source that stays
         /// unreadable is retried by the scanner; it must not raise the same modal on each retry.
@@ -132,15 +138,23 @@
             configuration = initialConfiguration
             scanConfiguration = initialConfiguration
             selectedDay = initialDay
+            selectedDayKey = GoalongCalendarDay(initialDay)
             scanSelectedDay = initialDay
             overview = store.overview(for: initialDay)
             integrationStatuses = AgentIntegrationKind.allCases.map(installer.status)
             storageBytes = store.storageBytes()
             indexIsValid = store.indexIsValid(maximumEntries: initialConfiguration.maximumIndexEntries)
             workQueue.setSpecific(key: workQueueSpecificKey, value: 1)
+            timeZoneObserver = NotificationCenter.default.addObserver(
+                forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.selectDay(self.selectedDayKey.start())
+            }
         }
 
         deinit {
+            if let timeZoneObserver { NotificationCenter.default.removeObserver(timeZoneObserver) }
             scanTimer?.cancel()
             signalWatcher?.cancel()
             signalScanTimer?.cancel()
