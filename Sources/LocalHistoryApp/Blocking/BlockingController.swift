@@ -646,8 +646,9 @@ import LocalHistoryQueryCLI
         }
         if let block, case .program = block.origin {
             document.programSkips = document.programSkips ?? [:]
+            // A held window stays held under its skip: a later `lockProgram` clears the skip and the
+            // window blocks again until its own end (C10-31).
             document.programSkips?[id] = block.end
-            document.heldPrograms?.removeAll { $0.id == id }
         } else {
             document.sessions.removeAll { $0.id == id }
         }
@@ -860,7 +861,8 @@ import LocalHistoryQueryCLI
         if earnedMinutesToday != earned { earnedMinutesToday = earned }
         document.usage = document.usage == nil && usage.quotaSecondsUsed.isEmpty && usage.breaksTaken.isEmpty && usage.slowDownShown == nil
             && usage.blocked == nil && usage.earnedSeconds == nil && usage.earnedSessionIDs == nil ? nil : usage
-        let blocks = (document.sessions + (document.heldPrograms ?? [])).filter { $0.start <= now && $0.end > now }.map { session in
+        let held = (document.heldPrograms ?? []).filter { document.programSkips?[$0.id].map { $0 > now } != true }
+        let blocks = (document.sessions + held).filter { $0.start <= now && $0.end > now }.map { session in
             // A held window keeps the strictest of its own lock and its program's current lock (C10-01).
             var lock = effectiveLock(session.lock)
             if case .program = session.origin, session.listIDs.contains(where: { list($0)?.program.isLocked(at: now) == true }) { lock = .locked }
@@ -1062,6 +1064,8 @@ import LocalHistoryQueryCLI
         document.heldPrograms = (document.heldPrograms ?? []).filter { $0.end > oldWall }.map { value in
             var value = value; if jump < 0 { value.start = value.start.addingTimeInterval(jump) }; value.end = value.end.addingTimeInterval(jump); return value
         }
+        // The skip of a stopped held window covers it to its moved end; it never shrinks (the window must not come back).
+        for value in document.heldPrograms ?? [] { if let skip = document.programSkips?[value.id], skip > oldWall { document.programSkips?[value.id] = max(skip, value.end) } }
         holdProgramWindows(at: oldWall, jump: jump)
         for index in document.lists.indices where document.lists[index].program.isLocked(at: oldWall) {
             document.lists[index].program.lockedUntil = document.lists[index].program.lockedUntil?.addingTimeInterval(jump)
