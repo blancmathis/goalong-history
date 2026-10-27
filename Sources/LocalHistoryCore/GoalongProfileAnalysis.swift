@@ -210,7 +210,7 @@ public enum GoalongProfileAnalysis {
     }
     /// Read actual events with their timestamps. Suppressed and secure observations never enter the request.
     public static func load(root: URL, start: Date, end: Date, rich: Bool) throws -> [Evidence] {
-        guard end > start, end.timeIntervalSince(start) <= 31*86400 else { throw invalid("Choisissez une période de 31 jours maximum.") }
+        guard end > start, let limit = Calendar.current.date(byAdding: .day, value: 31, to: start), end <= limit else { throw invalid("Choisissez une période de 31 jours maximum.") }
         // Global pause and global exclusions apply to this read: nothing excluded or paused may reach the agent.
         _ = try GoalongGlobalPause.admit(in: root)
         let privacy = GoalongPrivacyPolicy.load(in: root)
