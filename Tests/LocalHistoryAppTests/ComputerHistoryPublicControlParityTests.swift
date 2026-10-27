@@ -68,7 +68,7 @@
             XCTAssertTrue(computerHistory.contains("Supprimer cet élément…"))
             XCTAssertTrue(computerHistory.contains("supprime ses événements exacts"))
             XCTAssertTrue(computerHistory.contains("La note du jour, les sceaux"))
-            XCTAssertTrue(computerHistory.contains("Journal original"))
+            XCTAssertTrue(computerHistory.contains("Voir le fichier brut"))
             XCTAssertTrue(computerHistory.contains("Enregistré sur ce Mac"))
             XCTAssertTrue(computerHistory.contains("Historique local conservé"))
             XCTAssertTrue(computerHistory.contains("Détails de la journée indisponibles"))
@@ -131,7 +131,7 @@
                 contentsOf: repositoryRoot.appendingPathComponent("Sources/LocalHistoryApp/DayNavigationHeader.swift"),
                 encoding: .utf8
             )
-            XCTAssertTrue(dayHeader.contains("Label(\"Envoyer à Goalong\", systemImage: \"square.and.arrow.up\")"))
+            XCTAssertTrue(dayHeader.contains("Label(\"Partager cette journée…\", systemImage: \"square.and.arrow.up\")"))
 
             let settings = try String(
                 contentsOf: repositoryRoot

@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import ServiceManagement
 import SwiftUI
 import LocalHistoryCore
 
@@ -67,9 +68,17 @@ import LocalHistoryCore
                     }
                     // Lists are made in Distractions; with none yet, the composer only offers the whole Mac.
                     if controller.lists.isEmpty {
-                        BlockingNoteButton(note: GoalongNote("Aucune liste pour l’instant. Créez-en une dans Distractions, ou avec « Nouvelle liste… ».",
-                                                             symbol: "list.bullet"),
-                                           hint: "Ouvrir Distractions", action: onOpenLists)
+                        // The empty state carries its own way out: a list made here opens in its editor.
+                        HStack(spacing: 12) {
+                            GoalongNote("Aucune liste pour l’instant. Créez-en une ici ou dans Distractions.", symbol: "list.bullet")
+                            Button {
+                                let list = BlockList(name: "Ma liste", sites: [], apps: [])
+                                controller.save(list)
+                                if controller.lists.contains(where: { $0.id == list.id }) { editingList = list.id }
+                            } label: { Label("Nouvelle liste", systemImage: "plus") }
+                                .buttonStyle(LHSecondaryButtonStyle())
+                                .accessibilityIdentifier("blocking-empty-new-list")
+                        }
                     }
                     if !frozen {
                         if blocking && !composing {
@@ -311,7 +320,7 @@ struct BlockingStopRequest: Identifiable {
                 Image(systemName: "hourglass").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
                 Text((left > 0 ? "\(list.name) : encore \(BlockingFormat.remaining(left)) aujourd’hui"
                                : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota + earned)) du jour sont passées")
-                     + (earned > 0 ? " · +\(earned) min gagnées" : ""))
+                     + (earned > 0 ? " · +\(earned) min de pause gagnées en concentration" : ""))
                 Spacer(minLength: 8)
                 BlockingMeter(fraction: 1 - left / Double(max(1, (quota + earned) * 60))).frame(width: 120)
             }
@@ -396,7 +405,9 @@ struct BlockingMeter: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
+                // The outline keeps an untouched quota visible on the cream card (≥ 3:1).
                 Capsule().fill(LHTheme.insetBackground)
+                    .overlay(Capsule().strokeBorder(LHTheme.text.opacity(0.4), lineWidth: 1))
                 Capsule().fill(LHTheme.text.opacity(0.75)).frame(width: proxy.size.width * min(1, max(0, fraction)))
             }
         }
@@ -850,7 +861,8 @@ struct BlockingLockExplainer: View {
             VStack(spacing: 0) {
                 statusRow(symbol: "arrow.clockwise", title: "Relance à l’ouverture de session",
                           ok: controller.protection.launchAtLogin,
-                          value: controller.protection.launchAtLogin ? "Active" : "Pas encore")
+                          value: controller.protection.launchAtLogin ? "Active" : "Pas encore",
+                          action: controller.protection.launchAtLogin ? nil : loginItemsButton)
                 GoalongRowDivider()
                 statusRow(symbol: "globe", title: "Lecture des adresses",
                           ok: controller.siteBlockingAvailable,
@@ -866,9 +878,13 @@ struct BlockingLockExplainer: View {
                           ok: Self.levelIsSettled(controller.protection),
                           value: Self.levelLabel(controller.protection))
                 if let help = Self.levelHelp(controller.protection) {
-                    Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // A failed service names where to repair it: its background item in Ouverture.
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        loginItemsButton
+                    }
                         .padding(.leading, 32).padding(.bottom, 8)
                         .accessibilityIdentifier("blocking-level-help")
                 }
@@ -929,7 +945,7 @@ struct BlockingLockExplainer: View {
     /// Why the start button is off, or nil when it is on.
     static func startHint(wholeMac: Bool, frozen: Bool, hasLists: Bool, anySelected: Bool, needsPassword: Bool) -> String? {
         if wholeMac { return frozen ? "Le Mac est déjà gelé." : nil }
-        if !hasLists { return "Créez d’abord une liste." }
+        if !hasLists { return "Créez une liste, ou choisissez « Tout le Mac »." }
         if !anySelected { return "Choisissez au moins une liste." }
         if needsPassword { return "Choisissez d’abord un mot de passe de blocage." }
         return nil
@@ -968,18 +984,29 @@ struct BlockingLockExplainer: View {
         "Un autre compte utilisateur du Mac n’est pas bloqué.",
     ]
 
-    private func statusRow(symbol: String, title: String, ok: Bool, value: String) -> some View {
+    /// Réglages › Général › Ouverture, where macOS lets Goalong start and run in the background.
+    private var loginItemsButton: AnyView {
+        AnyView(Button("Ouvrir Réglages…") { SMAppService.openSystemSettingsLoginItems() }
+            .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
+            .help("Autorisez Goalong dans Réglages › Général › Ouverture.")
+            .accessibilityIdentifier("blocking-open-login-items"))
+    }
+
+    private func statusRow(symbol: String, title: String, ok: Bool, value: String, action: AnyView? = nil) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                .frame(width: 20).accessibilityHidden(true)
-            Text(title).font(.system(size: 13, weight: .medium))
-            Spacer(minLength: 12)
-            Image(systemName: ok ? "checkmark.circle.fill" : "circle.dashed")
-                .foregroundStyle(ok ? LHTheme.success : LHTheme.tertiaryText).accessibilityHidden(true)
-            Text(value).foregroundStyle(LHTheme.secondaryText)
+            HStack(spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                    .frame(width: 20).accessibilityHidden(true)
+                Text(title).font(.system(size: 13, weight: .medium))
+                Spacer(minLength: 12)
+                Image(systemName: ok ? "checkmark.circle.fill" : "circle.dashed")
+                    .foregroundStyle(ok ? LHTheme.success : LHTheme.tertiaryText).accessibilityHidden(true)
+                Text(value).foregroundStyle(LHTheme.secondaryText)
+            }
+            .accessibilityElement(children: .combine)
+            if let action { action }
         }
         .frame(minHeight: 38)
-        .accessibilityElement(children: .combine)
     }
 
     private var browsersRow: some View {

@@ -116,6 +116,11 @@
                             detail: "Facultatif. Conversations enregistrées par vos outils IA.")
                     }
                 }
+                // Warn here, not only on the last step: with every source off, Activité stays empty.
+                if ![GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations].contains(where: { consents.isEnabled($0) }) {
+                    GoalongNote("Aucune source : Activité restera vide.", symbol: "exclamationmark.circle", tone: .warning)
+                        .accessibilityIdentifier("onboarding-no-source-note")
+                }
             }
         }
 

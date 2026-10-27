@@ -533,9 +533,9 @@ struct GoalongAnalyticsContent: View {
     // MARK: - Named views
 
     @ViewBuilder private func detailView(_ shown: GoalongActivityDetail, summary: GoalongActivitySummary) -> some View {
-        Button { detail.wrappedValue = nil } label: { Label("Synthèse", systemImage: "chevron.left") }
+        Button { detail.wrappedValue = nil } label: { Label("Activité", systemImage: "chevron.left") }
             .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
-            .help("Revenir à la synthèse de la \(isDay ? "journée" : "période")")
+            .help("Revenir à l’activité de la \(isDay ? "journée" : "période")")
             .accessibilityIdentifier("activity-detail-back")
         if shown.needsObservations && current.observedSeconds == 0 {
             emptyState

@@ -469,7 +469,7 @@ import XCTest
     func testStartHintSaysWhyTheButtonIsOff() {
         let hint = BlockingProtectionDetails.startHint
         XCTAssertNil(hint(false, false, true, true, false))
-        XCTAssertEqual(hint(false, false, false, false, false), "Créez d’abord une liste.")
+        XCTAssertEqual(hint(false, false, false, false, false), "Créez une liste, ou choisissez « Tout le Mac ».")
         XCTAssertEqual(hint(false, false, true, false, false), "Choisissez au moins une liste.")
         XCTAssertEqual(hint(false, false, true, true, true), "Choisissez d’abord un mot de passe de blocage.")
         XCTAssertEqual(hint(true, true, true, true, false), "Le Mac est déjà gelé.")
