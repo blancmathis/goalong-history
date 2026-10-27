@@ -102,7 +102,7 @@
         }
 
         @MainActor static func prepareRelaunch(permission: SourceAccessStatus? = nil, completion: @escaping (String?) -> Void) {
-            guard relaunch == nil else { completion("Goalong prépare déjà sa réouverture."); return }
+            guard relaunch == nil else { completion("Goalong prépare déjà sa relance."); return }
             let handshake = PermissionRelaunchHandshake()
             relaunch = handshake
             handshake.start { error in
@@ -141,7 +141,7 @@
                   helper.resolvingSymlinksInPath() == helper.standardizedFileURL,
                   FileManager.default.isExecutableFile(atPath: helper.path),
                   let launched = NSRunningApplication.current.launchDate else {
-                completion("Le composant de redémarrage est indisponible. Goalong est resté ouvert ; installez la dernière mise à jour puis réessayez.")
+                completion("Le composant de relance est indisponible. Goalong est resté ouvert ; installez la dernière mise à jour puis réessayez.")
                 return
             }
             // The relauncher reopens Goalong: the guard waits for it while it lives (spec K §8).
@@ -165,17 +165,17 @@
                     if self.received == Data("READY\n".utf8) {
                         self.finish(error: nil, completion: completion)
                     } else if bytes.isEmpty || self.received.count > 32 {
-                        self.finish(error: "Le redémarrage n’a pas pu être préparé. Goalong est resté ouvert. Réessayez.", completion: completion)
+                        self.finish(error: "La relance n’a pas pu être préparé. Goalong est resté ouvert. Réessayez.", completion: completion)
                     }
                 }
             }
             let deadline = DispatchWorkItem { [weak self] in
-                self?.finish(error: "Le composant de redémarrage n’a pas répondu. Goalong est resté ouvert. Réessayez.", completion: completion)
+                self?.finish(error: "Le composant de relance n’a pas répondu. Goalong est resté ouvert. Réessayez.", completion: completion)
             }
             timeout = deadline
             DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: deadline)
             do { try child.run() }
-            catch { finish(error: "Le redémarrage n’a pas pu être préparé : \(error.localizedDescription)", completion: completion) }
+            catch { finish(error: "La relance n’a pas pu être préparé : \(error.localizedDescription)", completion: completion) }
         }
 
         private func finish(error: String?, completion: (String?) -> Void) {

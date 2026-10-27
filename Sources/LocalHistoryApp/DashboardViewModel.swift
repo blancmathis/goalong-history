@@ -159,8 +159,10 @@
         )
 
         private(set) var selectedDay: Date
+        /// The date of `selectedDay`. A time zone change moves `selectedDay` to this date's new midnight.
+        private var selectedCalendarDay: GoalongCalendarDay
         /// The « aujourd’hui » this model last saw; `followToday` compares it with the clock.
-        private var seenToday: Date
+        private var seenToday: GoalongCalendarDay
         private var clockObservers: [NSObjectProtocol] = []
         private var savedSettingsDraft: DashboardSettingsDraft
 
@@ -265,7 +267,8 @@
 
             let today = Calendar.current.startOfDay(for: now())
             selectedDay = today
-            seenToday = today
+            selectedCalendarDay = GoalongCalendarDay(today)
+            seenToday = selectedCalendarDay
             snapshot = .empty(day: today)
             let draft = DashboardSettingsDraft(config: configManager.config)
             settingsDraft = draft
@@ -434,23 +437,32 @@
         }
 
         /// After midnight or a time zone change, a page left on the old « aujourd’hui » moves to the new one.
-        /// A day chosen by the user stays. Also called by the 60 s pass, which catches a sleep across midnight.
+        /// A day chosen by the user keeps its date: after a time zone change it moves to that date's new midnight.
+        /// Also called by the 60 s pass, which catches a sleep across midnight.
         func followToday() {
-            let today = Calendar.current.startOfDay(for: now())
-            guard today != seenToday else { return }
-            let wasOnToday = Calendar.current.isDate(selectedDay, inSameDayAs: seenToday)
+            let today = GoalongCalendarDay(now())
+            guard today != seenToday || selectedDay != selectedCalendarDay.start() else { return }
+            let wasOnToday = selectedCalendarDay == seenToday
             seenToday = today
-            if wasOnToday { selectDay(today) } else { updateRefreshSchedule() }
+            if wasOnToday { show(today) } else if !show(selectedCalendarDay) { updateRefreshSchedule() }
         }
 
 
         func selectDay(_ date: Date) {
-            let normalized = Calendar.current.startOfDay(for: date)
-            guard normalized != selectedDay else { return }
-            selectedDay = normalized
+            show(GoalongCalendarDay(date))
+        }
+
+        /// Shows `day` at its midnight in the current zone. False when that is already shown.
+        @discardableResult
+        private func show(_ day: GoalongCalendarDay) -> Bool {
+            let start = day.start()
+            selectedCalendarDay = day
+            guard start != selectedDay else { return false }
+            selectedDay = start
             selectedSessionID = nil
             updateRefreshSchedule()
             refreshData(force: true)
+            return true
         }
 
         /// Opens Réglages on one pane. `selectSection(.settings)` resets the pane, so it is set after.

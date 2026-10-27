@@ -80,7 +80,7 @@ struct GoalongActivityGaps: Equatable {
         switch reason {
         case .beforeFirstObservation: return "Avant la première observation"
         case .afterLastObservation: return "Après la dernière observation"
-        case .gap: return "Plus de 2 min entre deux observations"
+        case .gap: return "Plus de deux minutes entre deux observations"
         case .observationGap: return "Collecte interrompue"
         case .recorderStopped: return "Goalong arrêté"
         case .paused: return "Enregistrement en pause"

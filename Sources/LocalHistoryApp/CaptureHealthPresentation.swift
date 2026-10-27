@@ -38,7 +38,7 @@
             case .healthyButIdle:
                 return "Tout fonctionne ; aucune interaction n’a été reçue depuis quelques minutes."
             case .awaitingInputEvidence:
-                return "La capture est prête ; elle sera confirmée dès la première interaction réelle (clic ou frappe)."
+                return "L’enregistrement est prêt ; elle sera confirmée dès la première interaction réelle (clic ou frappe)."
             case .storageUnavailable:
                 return "L’historique ne peut pas être écrit (disque plein ?). L’enregistrement reprendra tout seul dès que possible."
             }

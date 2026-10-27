@@ -91,6 +91,30 @@ final class GoalongActivityTests: XCTestCase {
         XCTAssertEqual(selection.day, date(20))
     }
 
+    /// C13-11 (T-044 r13). Paris → New York on the Activité page: a past day and its return context keep their
+    /// dates; today follows the new zone.
+    func testNavigationKeepsChosenDatesAfterATimeZoneChange() throws {
+        var paris = Calendar(identifier: .gregorian); paris.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+        var newYork = Calendar(identifier: .gregorian); newYork.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-27T11:00:00Z"))
+        let day25 = try XCTUnwrap(paris.date(from: DateComponents(year: 2026, month: 10, day: 25, hour: 12)))
+
+        var past = GoalongActivityNavigation(day: day25, period: 7, now: now, calendar: paris)
+        past.openDay(try XCTUnwrap(paris.date(byAdding: .day, value: -2, to: day25)), now: now, calendar: paris)
+        XCTAssertTrue(past.followToday(now: now, calendar: newYork))
+        XCTAssertEqual(past.day, newYork.date(from: DateComponents(year: 2026, month: 10, day: 23)))
+        XCTAssertEqual(past.returnContext?.day, newYork.date(from: DateComponents(year: 2026, month: 10, day: 25)))
+        XCTAssertFalse(past.followToday(now: now, calendar: newYork), "same zone, same day: nothing moves")
+        past.restorePeriod()
+        XCTAssertEqual(past.day, newYork.date(from: DateComponents(year: 2026, month: 10, day: 25)))
+        XCTAssertEqual(past.period, 7)
+
+        var today = GoalongActivityNavigation(now: now, calendar: paris)
+        today.today(now: now, calendar: paris)
+        XCTAssertTrue(today.followToday(now: now, calendar: newYork))
+        XCTAssertEqual(today.day, newYork.startOfDay(for: now))
+    }
+
     func testPreviewNavigationDoesNotMutateRealSelection() {
         let real = GoalongActivityNavigation(day: date(20), period: 7, calendar: calendar)
         var preview = real
