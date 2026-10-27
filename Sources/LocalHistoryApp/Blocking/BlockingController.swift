@@ -255,7 +255,7 @@ import LocalHistoryQueryCLI
     // MARK: Lists
 
     func editCheck(_ next: BlockList) -> BlockingEditCheck {
-        if storeFailed { return .refused("Le fichier de blocage doit être réparé avant toute modification.") }
+        if storeFailed { return .refused("Le fichier de blocage est illisible. Relancez Goalong avant toute modification.") }
         if let reason = next.reason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            BlockingRules.normalizeReason(reason) == nil { return .refused("La raison doit contenir de 1 à 140 caractères.") }
         if next.triggers?.focus == true { return .refused("Les filtres Focus ne sont pas disponibles dans cette version.") }
@@ -616,7 +616,7 @@ import LocalHistoryQueryCLI
 
     @discardableResult
     func cancelScheduled(id: UUID, typed: String? = nil, password: String? = nil) -> BlockingPasswordResult {
-        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        guard admitEdit() else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong pour le recharger.") }
         guard document.sessions.contains(where: { $0.id == id && $0.start > clock() }) else {
             return refusePassword("Ce blocage n’est plus programmé : actualisez la page.")
         }
@@ -624,7 +624,7 @@ import LocalHistoryQueryCLI
     }
 
     private func endBlock(_ id: UUID, typed: String?, password: String?) -> BlockingPasswordResult {
-        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        guard admitEdit() else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong pour le recharger.") }
         let block = activeBlocks.first { $0.id == id }
         let session = document.sessions.first { $0.id == id }
         guard let lock = block?.lock ?? session.map({ effectiveLock($0.lock) }) else {
@@ -670,28 +670,28 @@ import LocalHistoryQueryCLI
     func setPassword(_ password: String) -> Bool {
         guard admitEdit() else { return false }
         guard document.passwordLock == nil, !hasPasswordBlocks else {
-            error = "Le mot de passe existe déjà, ou un blocage par mot de passe doit d’abord finir."; return false
+            error = document.passwordLock != nil ? "Un mot de passe existe déjà." : "Terminez d’abord le blocage par mot de passe en cours."; return false
         }
         guard let credential = BlockPasswordLock.make(password, at: clock()) else {
-            error = "Choisissez un mot de passe non vide de 4 096 octets maximum."; return false
+            error = "Choisissez un mot de passe non vide (environ 1 000 caractères maximum)."; return false
         }
         document.passwordLock = credential; commit(); return !storeFailed
     }
 
     @discardableResult
     func changePassword(old: String, new: String) -> BlockingPasswordResult {
-        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        guard admitEdit() else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong pour le recharger.") }
         guard !hasPasswordBlocks else { return refusePassword("Le mot de passe ne change pas tant qu’un blocage par mot de passe est actif ou à venir.") }
         let result = verifyPassword(old)
         guard result == .ok else { return result }
-        guard let credential = BlockPasswordLock.make(new, at: clock()) else { return refusePassword("Choisissez un mot de passe non vide de 4 096 octets maximum.") }
+        guard let credential = BlockPasswordLock.make(new, at: clock()) else { return refusePassword("Choisissez un mot de passe non vide (environ 1 000 caractères maximum).") }
         document.passwordLock = credential; commit()
         return storeFailed ? refusePassword("Le mot de passe n’a pas pu être enregistré.") : .ok
     }
 
     @discardableResult
     func removePassword(old: String) -> BlockingPasswordResult {
-        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        guard admitEdit() else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong pour le recharger.") }
         guard !hasPasswordBlocks else { return refusePassword("Le mot de passe reste nécessaire pour un blocage actif ou à venir.") }
         let result = verifyPassword(old)
         guard result == .ok else { return result }
@@ -701,7 +701,7 @@ import LocalHistoryQueryCLI
 
     @discardableResult
     func unlockWithPassword(_ password: String, blockID: UUID) -> BlockingPasswordResult {
-        guard admitEdit() else { return refusePassword("Le fichier de blocage doit être réparé.") }
+        guard admitEdit() else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong pour le recharger.") }
         let lock = activeBlocks.first(where: { $0.id == blockID })?.lock
             ?? document.sessions.first(where: { $0.id == blockID }).map { effectiveLock($0.lock) }
         guard lock == .password else { return refusePassword("Ce blocage ne peut pas être arrêté par mot de passe.") }
@@ -738,7 +738,7 @@ import LocalHistoryQueryCLI
     }
 
     private func verifyPassword(_ password: String) -> BlockingPasswordResult {
-        guard !storeFailed else { return refusePassword("Le fichier de blocage doit être réparé avant un essai.") }
+        guard !storeFailed else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong avant un essai.") }
         guard var credential = document.passwordLock, credential.isValid else {
             return refusePassword("Le mot de passe est illisible : les blocages restent verrouillés jusqu’à leur fin.")
         }
@@ -755,7 +755,7 @@ import LocalHistoryQueryCLI
         document.passwordLock = credential; commit()
         guard !storeFailed else { return refusePassword("L’essai de mot de passe n’a pas pu être enregistré.") }
         if matches { return .ok }
-        if let until = credential.retryAfter { error = "Trop d’essais : attendez avant de réessayer."; return .wait(until: until) }
+        if let until = credential.retryAfter { error = "Trop d’essais. Réessayez dans \(max(1, Int((until.timeIntervalSince(clock()) / 60).rounded(.up)))) min."; return .wait(until: until) }
         error = "Le mot de passe ne correspond pas."
         return .wrong(remaining: max(0, 5 - credential.failedAttempts))
     }
@@ -801,7 +801,7 @@ import LocalHistoryQueryCLI
     func startFreeze(until end: Date, mode: BlockFreeze.Mode, allowedApps: [BlockAppRule]) {
         guard admitEdit() else { return }
         guard freeze == nil else { error = "Le gel en cours ne peut pas être remplacé."; return }
-        if mode == .lockScreen, backend?.canLockScreen == false { error = "Le verrouillage de session nécessite l’accessibilité. Choisissez le bouclier."; return }
+        if mode == .lockScreen, backend?.canLockScreen == false { error = "Le verrouillage de session nécessite l’accessibilité. Choisissez l’Écran Goalong."; return }
         let now = clock()
         let bounded = BlockingWallClock.freezeEnd(trusted(end), now: now)
         document.freeze = BlockFreeze(start: now, end: bounded, mode: mode, allowedApps: allowedApps)
@@ -922,7 +922,7 @@ import LocalHistoryQueryCLI
             if !storeFailed {
                 let message: String?
                 switch protection.component {
-                case .awaitingApproval: message = "Autorisez Goalong dans les éléments d’ouverture pour reprendre les verrous à la connexion."
+                case .awaitingApproval: message = "Autorisez Goalong dans Réglages Système › Général › Ouverture pour reprendre les verrous à la connexion."
                 case .failed(let reason): message = reason
                 default: message = nil
                 }

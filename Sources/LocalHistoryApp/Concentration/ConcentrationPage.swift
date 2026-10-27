@@ -330,7 +330,7 @@ struct FocusComposerDraft: Equatable {
     private var previewDescription: String {
         let mode = draft.mode
         if mode.kind == .free { return mode.minutes.map { "Une séance de \(BlockingFormat.duration(minutes: $0))" } ?? "Une séance sans fin" }
-        return "\(mode.workMinutes) min de travail, \(mode.shortBreakMinutes) min de pause, \(mode.longBreakMinutes) min toutes les \(mode.longBreakEvery) phases"
+        return "\(mode.workMinutes) min de travail, \(mode.shortBreakMinutes) min de pause, puis \(mode.longBreakMinutes) min de pause longue toutes les \(mode.longBreakEvery) phases"
     }
 
     private var freeOptions: some View {
@@ -1041,7 +1041,7 @@ struct FocusThreadModel: Equatable {
                 LHCard(padding: 0) {
                     VStack(spacing: 0) {
                         switchRow("Détecter la concentration",
-                                  detail: "Hors séance, le statut passe à « concentré » après 16 minutes actives sur 20, sans « hors travail » devant.",
+                                  detail: "Hors séance, le statut passe à « concentré » après 16 minutes actives sur 20, sans l’étiquette « hors travail ».",
                                   isOn: setting(\.detectionEnabled))
                         GoalongRowDivider(inset: LHTheme.cardInset)
                         switchRow("Son au changement de phase", detail: nil, isOn: setting(\.phaseSound))
@@ -1220,7 +1220,7 @@ struct FocusThreadModel: Equatable {
         if endValue.isEmpty { next.limits.endMinute = nil } else if let minute = FocusUIFormat.minute(endValue) {
             next.limits.endMinute = minute
             if next.limits.weekdays.isEmpty { next.limits.weekdays = Set(1...5) }
-        } else if endValue.count >= 4 { limitError = "Fin de journée : une heure comme 18:30."; return } else { return }
+        } else if endValue.count >= 4 { limitError = "Fin de journée : écrivez l’heure au format 18:30."; return } else { return }
         guard next != controller.settings else { limitError = nil; return }
         save(next)
     }
@@ -1306,7 +1306,7 @@ enum FocusUIFormat {
 enum FocusUIError {
     static func message(_ error: Error) -> String {
         if let failure = error as? FocusFailure { return message(raw: failure.rawValue) }
-        return "L’action n’a pas abouti."
+        return "L’action n’a pas abouti. Réessayez ; si cela continue, relancez Goalong."
     }
 
     /// The controller also stores finished French sentences. A bare case name (`unsafePath`) or a debug dump
@@ -1327,7 +1327,7 @@ enum FocusUIError {
         case .itemFinished: return "Une tâche terminée ou abandonnée ne se déplace pas. Rouvrez-la d’abord."
         case .storageFailed: return "Enregistrement impossible. Les données déjà enregistrées restent intactes ; Goalong réessaie chaque minute."
         case .moduleDisabled: return "Activez Blocage dans Réglages › Modules pour bloquer pendant une séance."
-        case .appNotRunning: return "Goalong ne répond pas."
+        case .appNotRunning: return "Goalong ne répond pas. Réessayez ; si cela continue, relancez Goalong."
         case nil: return isReadableSentence(raw) ? raw : "L’action n’a pas abouti. Réessayez."
         }
     }

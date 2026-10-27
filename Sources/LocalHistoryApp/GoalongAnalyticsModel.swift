@@ -297,7 +297,7 @@ actor GoalongAnalyticsReader {
             } catch { rejected += 1 }
         }
         let notice = (visited > 512 || files.count > 64 || rejected > 0)
-            ? "Lecture limitée aux 64 dossiers récents valides. Certains dossiers anciens ou illisibles ne sont pas affichés." : nil
+            ? "Seuls les 64 jours les plus récents sont lus. Les jours plus anciens ou illisibles ne sont pas affichés." : nil
         return (cards, notice)
     }
 }

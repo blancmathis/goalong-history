@@ -427,7 +427,7 @@ struct GoalongWebsiteConnectionSheet: View {
             if reviewed.requiresProtection {
                 let confirmation = NSAlert()
                 confirmation.messageText = "Protéger ce fichier ?"
-                confirmation.informativeText = "Goalong limitera l’accès à « \(file.lastPathComponent) » à votre compte macOS (permissions 0600), puis le sélectionnera pour la connexion. Seul ce fichier sera modifié. Son contenu ne sera pas envoyé."
+                confirmation.informativeText = "Goalong limitera l’accès à « \(file.lastPathComponent) » à votre compte macOS, puis le sélectionnera pour la connexion. Seul ce fichier sera modifié. Son contenu ne sera pas envoyé."
                 confirmation.alertStyle = .informational
                 confirmation.addButton(withTitle: "Protéger ce fichier")
                 confirmation.addButton(withTitle: "Annuler")

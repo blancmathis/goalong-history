@@ -42,7 +42,7 @@ import LocalHistoryCore
         if globalPaused { return "\(GoalongGlobalPauseText.resume)…" }
         if consentOff { return "Configurer l’enregistrement…" }
         if case .paused = tracking { return "Reprendre le suivi" }
-        return "Mettre le suivi en pause"
+        return "Mettre en pause"
     }
 
     struct DaySegment: Identifiable {

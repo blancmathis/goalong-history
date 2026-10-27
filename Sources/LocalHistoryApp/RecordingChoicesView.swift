@@ -117,7 +117,7 @@ enum PrivacyScopeInput {
                   host.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({
                       !$0.isEmpty && $0.count <= 63 && !$0.hasPrefix("-") && !$0.hasSuffix("-")
                       && $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
-                  }) else { throw invalid("Indiquez un domaine ou une adresse de site par ligne, par exemple example.com. Entrée invalide : \(line.prefix(100))") }
+                  }) else { throw invalid("Indiquez un domaine ou une adresse de site par ligne, par exemple exemple.fr. Entrée invalide : \(line.prefix(100))") }
             if !output.contains(host) { output.append(host) }
         }
         return output
