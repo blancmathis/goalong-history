@@ -106,10 +106,19 @@ struct GoalongActivitySummary {
     var typicalBounds: (start: TimeInterval, end: TimeInterval)? {
         let complete = observedDays.filter { !calendar.isDate($0.date, inSameDayAs: now) }
         let days = complete.count >= 2 ? complete : observedDays
-        let starts = days.compactMap { day in firstActivity(day).map { $0.timeIntervalSince(day.date) } }
-        let ends = days.compactMap { day in day.lastActiveEnd.map { $0.timeIntervalSince(day.date) } }
+        let starts = days.compactMap { day in firstActivity(day).map { clockSeconds($0, of: day) } }
+        let ends = days.compactMap { day in day.lastActiveEnd.map { clockSeconds($0, of: day) } }
         guard starts.count >= 2, ends.count >= 2 else { return nil }
         return (Self.median(starts), Self.median(ends))
+    }
+
+    /// Clock time of `date` in seconds after midnight, 24 h for the day's end. Elapsed time since midnight
+    /// is one hour off on the days the clocks change (T-045 H1-04).
+    private func clockSeconds(_ date: Date, of day: GoalongLocalAnalytics.Day) -> TimeInterval {
+        guard date < day.end else { return 86_400 }
+        let parts = calendar.dateComponents([.hour, .minute, .second], from: date)
+        let hours: Int = parts.hour ?? 0, minutes: Int = parts.minute ?? 0, seconds: Int = parts.second ?? 0
+        return TimeInterval(hours * 3600 + minutes * 60 + seconds)
     }
 
     // MARK: - Hours
@@ -151,8 +160,12 @@ struct GoalongActivitySummary {
             guard let day = period.days.first, day.state == .ready, day.activeSeconds > 0,
                   let before = previous.days.last, before.state == .ready, before.activeSeconds > 0 else { return nil }
             if calendar.isDate(day.date, inSameDayAs: now) {
-                let elapsed = now.timeIntervalSince(day.date)
-                let cutoff = before.date.addingTimeInterval(elapsed)
+                // Same clock time yesterday, not midnight + elapsed time: the two differ by an hour on the
+                // days the clocks change (T-045 H1-03).
+                let clock = calendar.dateComponents([.hour, .minute, .second], from: now)
+                let cutoff = calendar.date(bySettingHour: clock.hour ?? 0, minute: clock.minute ?? 0, second: clock.second ?? 0,
+                    of: before.date, matchingPolicy: .nextTime, repeatedTimePolicy: .first, direction: .forward)
+                    ?? before.date.addingTimeInterval(now.timeIntervalSince(day.date))
                 let earlier = before.segments.filter(\.kind.isActive).reduce(0.0) {
                     $0 + max(0, min($1.end, cutoff).timeIntervalSince($1.start))
                 }
@@ -208,8 +221,10 @@ struct GoalongActivitySummary {
                 text: "Usage principal : \(top.displayName) · \(Self.duration(top.seconds)) (\(GoalongUIFormat.percent(share)) du temps actif)."))
         }
         if let every = secondsPerChange, let perHour = changesPerActiveHour {
+            // Under one change an hour the rate rounds to « 0 fois » (T-045 H1-05): the interval says it alone.
+            let rate = Int(perHour.rounded()) >= 1 ? " (\(Int(perHour.rounded())) fois par heure active)" : ""
             result.append(Insight(id: "switches", symbol: "arrow.left.arrow.right",
-                text: "Vous changez d’app ou de site toutes les \(Self.shortInterval(every)) en moyenne (\(Int(perHour.rounded())) fois par heure active).",
+                text: "Vous changez d’app ou de site toutes les \(Self.shortInterval(every)) en moyenne\(rate).",
                 tone: every < 60 ? .attention : .neutral))
         }
         if let comparison, abs(comparison.delta) >= 300 {
