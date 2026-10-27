@@ -1,6 +1,7 @@
 import Dispatch
 import Foundation
 import LocalHistoryCore
+import OSLog
 
 struct AgentScannerCycleMetrics: Equatable, Sendable {
     var metadataResolutionCount = 0
@@ -426,7 +427,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             }
         } catch {
             pendingDiscoveryByFolderID.removeAll(keepingCapacity: true)
-            appendFailure("Impossible d’enregistrer l’analyse de l’activité des agents : \(error.localizedDescription)", result: &result)
+            appendFailure(userMessage(for: error, path: nil, fallback: "Goalong n’a pas pu enregistrer l’analyse de l’activité des agents."), result: &result)
         }
         if analyzeContent, analysisPassIsActive {
             let hasDiscoveryWork =
@@ -649,7 +650,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
                 rootObservation: rootObservation,
                 result: &result
             )
-            appendFailure("\(folder.path): \(error.localizedDescription)", result: &result)
+            appendFailure(userMessage(for: error, path: folder.path), result: &result)
             pendingDiscoveryByFolderID.removeValue(forKey: folder.id)
             if analyzeContent { completeAnalysisPass(for: folder.id) }
             return FolderScanOutcome(
@@ -763,7 +764,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
                         rootObservation: rootObservation,
                         result: &result
                     ) && completed
-                appendFailure("\(folder.path): \(error.localizedDescription)", result: &result)
+                appendFailure(userMessage(for: error, path: folder.path), result: &result)
                 if analyzeContent { completeAnalysisPass(for: folder.id) }
                 return FolderScanOutcome(
                     completed: completed,
@@ -839,7 +840,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
                     } else {
                         recordUnavailableRetry(folderID: folder.id, at: observedAt)
                     }
-                    appendFailure("\(folder.path): \(error.localizedDescription)", result: &result)
+                    appendFailure(userMessage(for: error, path: folder.path), result: &result)
                     pendingDiscoveryByFolderID.removeValue(forKey: folder.id)
                     if analyzeContent { completeAnalysisPass(for: folder.id) }
                     return FolderScanOutcome(
@@ -881,7 +882,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
                                 maximumEntries: configuration.maximumIndexEntries
                             )
                             appendFailure(
-                                "\(resolution.entry.reference.path): \(error.localizedDescription)",
+                                userMessage(for: error, path: resolution.entry.reference.path),
                                 result: &result
                             )
                             continue
@@ -891,13 +892,13 @@ public final class AgentActivityScanner: @unchecked Sendable {
                             AgentAvailabilityObservation(
                                 entryID: resolution.entry.id,
                                 availability: availability(for: error),
-                                detail: error.localizedDescription,
+                                detail: userMessage(for: error, path: resolution.entry.reference.path),
                                 observedAt: observedAt,
                                 expectedReference: resolution.entry.reference
                             )
                         )
                         appendFailure(
-                            "\(resolution.entry.reference.path): \(error.localizedDescription)",
+                            userMessage(for: error, path: resolution.entry.reference.path),
                             result: &result
                         )
                     }
@@ -927,7 +928,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
                         discoveryAttempt: nil,
                         result: &result
                     ) && completed
-                appendFailure("\(folder.path): \(error.localizedDescription)", result: &result)
+                appendFailure(userMessage(for: error, path: folder.path), result: &result)
                 if analyzeContent { completeAnalysisPass(for: folder.id) }
                 return FolderScanOutcome(
                     completed: false,
@@ -1190,7 +1191,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
                         AgentAvailabilityObservation(
                             entryID: previous.id,
                             availability: availability(for: error),
-                            detail: error.localizedDescription,
+                            detail: userMessage(for: error, path: previous.reference.path),
                             observedAt: observedAt,
                             expectedReference: previous.reference
                         )
@@ -1207,7 +1208,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
                         AgentPreparedCapture(record: placeholder, retainFullSummary: false)
                     )
                 }
-                appendFailure("\(candidate.reference.path): \(error.localizedDescription)", result: &result)
+                appendFailure(userMessage(for: error, path: candidate.reference.path), result: &result)
             }
         }
 
@@ -1230,7 +1231,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             seenStableIDs = seenStableIDsBeforeCurrentBatch
             if isDiscoveryWork { deferredCandidates = candidates }
             if analyzeContent, !isDiscoveryWork { analysisSliceWasInterrupted = true }
-            appendFailure("\(folder.path): \(error.localizedDescription)", result: &result)
+            appendFailure(userMessage(for: error, path: folder.path), result: &result)
         }
 
         for projection in selectedIntervalProjections {
@@ -1239,7 +1240,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             } catch {
                 analysisSliceWasInterrupted = true
                 appendFailure(
-                    "\(projection.sourcePath) : la projection du jour sélectionné n’a pas pu être conservée : \(error.localizedDescription)",
+                    userMessage(for: error, path: nil, fallback: "Goalong n’a pas pu conserver la projection du jour sélectionné pour « \(projection.sourcePath) »."),
                     result: &result
                 )
             }
@@ -1688,7 +1689,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             byteCount: max(0, candidate.byteCount ?? 0),
             sha256: "",
             availability: availability(for: error),
-            statusDetail: error.localizedDescription
+            statusDetail: userMessage(for: error, path: candidate.reference.path)
         )
         return AgentCaptureRecord(index: entry, isAnalyzed: false)
     }
@@ -1704,7 +1705,7 @@ public final class AgentActivityScanner: @unchecked Sendable {
             return AgentAvailabilityObservation(
                 entryID: $0.id,
                 availability: availability,
-                detail: error.localizedDescription,
+                detail: userMessage(for: error, path: $0.reference.path),
                 observedAt: observedAt,
                 expectedReference: $0.reference
             )
@@ -1831,6 +1832,36 @@ public final class AgentActivityScanner: @unchecked Sendable {
             return .missing
         }
         return .inaccessible
+    }
+
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "ai.goalong.localhistory",
+        category: "AgentActivityScanner"
+    )
+
+    /// Short French sentence for the user. The raw system error goes to the log only.
+    private func userMessage(for error: Error, path: String?, fallback: String? = nil) -> String {
+        Self.logger.error(
+            "Agent scan failure at \(path ?? "-", privacy: .private): \(String(describing: error), privacy: .private)"
+        )
+        if let sourceError = error as? AgentSourceReadError, let description = sourceError.errorDescription {
+            return description
+        }
+        if let fallback { return fallback }
+        let target = path.map { "« \($0) »" } ?? "cette source"
+        let nsError = error as NSError
+        let code = nsError.code
+        if (nsError.domain == NSCocoaErrorDomain && (code == NSFileReadNoPermissionError || code == NSFileWriteNoPermissionError))
+            || (nsError.domain == NSPOSIXErrorDomain && (code == Int(EACCES) || code == Int(EPERM)))
+        {
+            return "Goalong n’a pas le droit de lire \(target)."
+        }
+        if (nsError.domain == NSCocoaErrorDomain && (code == NSFileNoSuchFileError || code == NSFileReadNoSuchFileError))
+            || (nsError.domain == NSPOSIXErrorDomain && code == Int(ENOENT))
+        {
+            return "Goalong ne trouve plus \(target)."
+        }
+        return "Goalong n’a pas pu lire \(target)."
     }
 
     private func appendFailure(_ failure: String, result: inout AgentScanResult) {
