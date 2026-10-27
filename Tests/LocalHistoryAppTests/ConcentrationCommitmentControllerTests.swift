@@ -243,6 +243,10 @@ final class ConcentrationCommitmentControllerTests: XCTestCase {
         }
         XCTAssertThrowsError(try set("\(a.id.uuidString),typo")) { XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument) }
         XCTAssertThrowsError(try set(a.id.uuidString, until: "00:00")) { XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument) }
+        let body = Data(#"{"kind":"work","target":360,"stake":{"listIds":["\#(a.id.uuidString)"],"until":"00:00"}}"#.utf8)
+        XCTAssertThrowsError(try runtime.handle(.init(command: "commitment set", options: ["--day": "2026-10-04"], body: body))) {
+            XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument)
+        }
         XCTAssertTrue(c.commitments.isEmpty)
         func locked() throws -> [String: Bool] {
             let json = try JSONSerialization.jsonObject(with: runtime.handle(.init(command: "block-lists"))) as! [String: Any]

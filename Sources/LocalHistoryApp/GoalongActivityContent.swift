@@ -241,7 +241,7 @@ struct GoalongAnalyticsContent: View {
         let sameTask = current.sameTaskChanges
         return figure("Changements d’app", value: "\(Int(perHour.rounded()))", unit: "/ h",
                       detail: "Un toutes les \(GoalongActivitySummary.shortInterval(every))",
-                      help: "\(summary.contextChanges) changements d’app ou de site au total"
+                      help: "\(FrenchCount.count(summary.contextChanges, "changement", "changements")) d’app ou de site au total"
                         + (sameTask > 0 ? ", dont \(sameTask) sans quitter la tâche." : "."))
     }
 
@@ -478,7 +478,7 @@ struct GoalongAnalyticsContent: View {
         case .reports:
             let count = payload.cards.count
             return count == 0 ? "Aucun bilan enregistré · analyse facultative"
-                : "\(count) élément\(count > 1 ? "s" : "") enregistré\(count > 1 ? "s" : "")"
+                : "\(FrenchCount.count(count, "bilan ou projet enregistré", "bilans ou projets enregistrés"))"
         case .screenTime: return "Source Apple distincte, jamais additionnée"
         }
     }

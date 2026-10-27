@@ -186,13 +186,13 @@
                 display = ("Enregistrement désactivé", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
             } else if health == .storageUnavailable {
                 display = ("Enregistrement interrompu", "externaldrive.badge.exclamationmark",
-                           "L’historique ne peut pas être écrit (disque plein ?). Reprise automatique dès que possible")
+                           "L’historique ne peut pas être écrit (disque plein ?). Libérez de l’espace sur le Mac : la reprise est automatique.")
             } else if health == .permissionRequired
                 || health == .permissionAppearsEnabledButStaleForBuild
                 || health == .accessibilityContextUnavailable
             {
                 display = ("Autorisation macOS à vérifier", "exclamationmark.triangle.fill",
-                           "Ouvrez Goalong pour rétablir l’accès : rien n’est enregistré en attendant")
+                           "Ouvrez Goalong pour rétablir l’accès. Rien n’est enregistré en attendant.")
             } else if !recording {
                 display = ("Enregistrement en pause", "pause.circle.fill", "\(ProductIdentity.displayName) est en pause")
             } else if let suppression, suppression == .accessibilityUnavailable {
@@ -205,7 +205,7 @@
                 display = (health.frenchTitle, "exclamationmark.triangle.fill", health.frenchDetail)
             } else if health == .awaitingInputEvidence {
                 display = ("Interactions en attente", "waveform.path.ecg",
-                           "Les clics et la frappe seront comptés dès le premier événement reçu")
+                           "Les clics et la frappe seront comptés dès le premier événement reçu.")
             } else {
                 display = ("Enregistrement local actif", "record.circle.fill",
                            "Votre activité reste sur ce Mac")
@@ -248,7 +248,7 @@
             globalPauseItem.title = GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité · tout suspendre…"
             pauseMenuItem.title = !localEnabled
                 ? "Configurer l’enregistrement…"
-                : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Arrêter l’enregistrement local…")
+                : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Mettre l’enregistrement en pause…")
             Task { @MainActor in
                 let updates = SoftwareUpdateManager.shared
                 self.updateMenuItem.title = updates.availableVersion.map { "Installer la version \($0)…" }
@@ -331,7 +331,7 @@
             advanced.addItem(technicalStatusItem)
             advanced.addItem(.separator())
             advanced.addItem(makeItem("Partager une journée signée…", action: #selector(openShare)))
-            advanced.addItem(makeItem("Ouvrir le fichier du jour (JSONL)", action: #selector(openTodayFile)))
+            advanced.addItem(makeItem("Ouvrir le fichier d’activité du jour", action: #selector(openTodayFile)))
             advanced.addItem(makeItem("Ouvrir le dossier des données", action: #selector(openDataFolder)))
             advanced.addItem(makeItem("Ouvrir la configuration", action: #selector(openConfiguration)))
             advanced.addItem(makeItem("Recharger la configuration", action: #selector(reloadConfiguration)))
@@ -396,10 +396,10 @@
         private func confirmRecordingStop(allSources: Bool) -> Bool {
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert()
-            alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Arrêter l’enregistrement local ?"
+            alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Mettre l’enregistrement en pause ?"
             alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour suspendre seulement les rappels de surveillance, utilisez plutôt « Faire une pause » : l’historique continue."
             alert.addButton(withTitle: "Annuler")
-            alert.addButton(withTitle: allSources ? "Suspendre le suivi" : "Arrêter l’enregistrement")
+            alert.addButton(withTitle: allSources ? "Suspendre le suivi" : "Mettre en pause")
             return alert.runModal() == .alertSecondButtonReturn
         }
         @objc private func retryKeychain() { onRetryKeychain() }

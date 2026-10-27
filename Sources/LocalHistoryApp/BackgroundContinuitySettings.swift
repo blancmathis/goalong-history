@@ -35,7 +35,7 @@
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                         }
                         if login.requiresApproval || login.state == .unavailable {
-                            Button("Ouvrir les éléments de connexion…") { login.openLoginItemsSettings() }
+                            Button("Ouvrir les éléments d’ouverture…") { login.openLoginItemsSettings() }
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
                         if let message = login.message {

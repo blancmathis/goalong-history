@@ -344,7 +344,8 @@ import LocalHistoryQueryCLI
         case "commitment set":
             if let body = request.body {
                 let input = try FocusJSON.decode(CommitmentInput.self, from: body)
-                guard input.period == nil || input.period == period else { throw FocusFailure.invalidArgument }
+                // Same rule as `--until` below (T-044 C10-23): a stake ending at midnight is always late at settle time.
+                guard input.period == nil || input.period == period, input.stake?.minute != 0 else { throw FocusFailure.invalidArgument }
                 _ = try controller.setCommitment(period: period, kind: input.kind, target: input.target, task: input.task, stake: input.stake)
             } else {
                 guard let kind = o["--kind"].flatMap(FocusCommitment.Kind.init(rawValue:)),

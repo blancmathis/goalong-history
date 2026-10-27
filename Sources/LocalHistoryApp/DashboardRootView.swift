@@ -298,7 +298,7 @@
                     VStack(alignment: .leading, spacing: 1) {
                         Text(updates.isPreparingAvailableUpdate ? "Préparation…" : "Mise à jour disponible")
                             .font(.system(size: 11, weight: .semibold))
-                        Text("Installer la \(version)")
+                        Text("Installer la version \(version)")
                             .font(.system(size: 11, weight: .medium))
                             .opacity(0.76)
                     }

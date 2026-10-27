@@ -546,7 +546,7 @@
 
         var displayDetail: String {
             if isBackgroundPrivacyRule {
-                return "Le suivi respecte vos exclusions. Modifiez-les dans Réglages → Apps et sites."
+                return "Le suivi respecte vos exclusions. Modifiez-les dans Réglages › Apps et sites."
             }
             switch state {
             case .recording:

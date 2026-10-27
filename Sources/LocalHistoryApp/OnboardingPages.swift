@@ -155,7 +155,7 @@
                          ? "Tout le suivi est suspendu : rien n’est enregistré pour l’instant. Reprenez-le pour que votre fil apparaisse dans Activité."
                          : consents.isEnabled(.localComputerHistory)
                          ? "Votre fil apparaîtra dans Activité dès les premières minutes d’utilisation de ce Mac."
-                         : "L’enregistrement local est désactivé : rien n’apparaîtra dans Activité. Vous pourrez l’activer dans Réglages, Enregistrement local.")
+                         : "L’enregistrement local est désactivé : rien n’apparaîtra dans Activité. Vous pourrez l’activer dans Réglages › Enregistrement.")
                         .font(.system(size: 14)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -188,7 +188,7 @@
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 if let note { GoalongNote(note, tone: .warning) }
                 if launchAtLoginPreference && launchAtLogin.requiresApproval {
-                    Button("Ouvrir les éléments de connexion") { launchAtLogin.openLoginItemsSettings() }
+                    Button("Ouvrir les éléments d’ouverture") { launchAtLogin.openLoginItemsSettings() }
                 }
             }
         }
