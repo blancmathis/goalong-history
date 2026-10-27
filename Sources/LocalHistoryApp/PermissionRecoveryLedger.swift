@@ -79,6 +79,18 @@ enum PermissionRecoveryLedger {
         defaults.removeObject(forKey: prefix + service)
         if defaults.string(forKey: prefix + "active") == service { defaults.removeObject(forKey: prefix + "active") }
     }
+    /// A restart that names no permission counts for every permission the user opened Settings for
+    /// during this attempt, not only the last one (`active`), so none asks for a second restart.
+    static func recordRelaunchForOpenedPermissions(defaults: UserDefaults = .standard) {
+        let opened = [SourceAccessStatus.accessibility, .inputMonitoring, .fullDiskAccess]
+            .filter { load($0, defaults: defaults) != Progress() }
+        let active = activePermission(defaults: defaults)
+        for permission in opened { record(.relaunchPrepared, for: permission, defaults: defaults) }
+        if let active, let service = PermissionRepair.service(for: active) {
+            lock.lock(); defer { lock.unlock() }
+            defaults.set(service, forKey: prefix + "active")
+        }
+    }
     static func activePermission(defaults: UserDefaults = .standard) -> SourceAccessStatus? {
         lock.lock(); defer { lock.unlock() }
         let status: SourceAccessStatus
