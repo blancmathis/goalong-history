@@ -19,6 +19,12 @@ final class C044R11C2EdgeTests: XCTestCase {
         defer { NSTimeZone.default = saved }
         return try body()
     }
+    /// Other test classes swap NSTimeZone.default, which can leave TimeZone.current and Calendar.current out of step
+    /// with the process zone. The TZ variable cannot be polluted, so it decides whether the system zone is Paris.
+    private func requireParisSystemZone() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["TZ"] == "Europe/Paris",
+                          "needs TZ=Europe/Paris (run by the Timezone regression checks)")
+    }
     private func tmp() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("c044r11c2-\(UUID())")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -31,7 +37,8 @@ final class C044R11C2EdgeTests: XCTestCase {
     /// « --start 2026-10-01 --end 2026-10-31 » is 31 calendar days. The cap compares seconds (31 × 86 400),
     /// but the range holds a 25-hour day, so it is 31 days + 1 h and is refused as « more than 31 days ».
     /// Witness: the same 31 days in June pass.
-    func testConversationRangeOf31DaysAcrossFallBackIsAccepted() {
+    func testConversationRangeOf31DaysAcrossFallBackIsAccepted() throws {
+        try requireParisSystemZone()
         withParis {
             XCTAssertEqual(Calendar.current.timeZone.identifier, "Europe/Paris")
             for (label, start, end) in [("juin", at(2026, 6, 1, 0), at(2026, 7, 2, 0)),
@@ -69,7 +76,7 @@ final class C044R11C2EdgeTests: XCTestCase {
     func testMidnightRolloverAndDSTNightEventFiles() throws {
         // The store names files with TimeZone.current, which NSTimeZone.default does not move.
         // CI runs this class again under TZ=Europe/Paris (Timezone regression checks).
-        try XCTSkipUnless(TimeZone.current.identifier == "Europe/Paris", "needs a Europe/Paris system zone")
+        try requireParisSystemZone()
         let root = try tmp(); let events = root.appendingPathComponent("events")
         try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
         try withParis {
