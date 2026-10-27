@@ -95,11 +95,14 @@ struct JevActivationAvailability: Equatable {
                         .disabled(!availability.canToggle(isEnabled: enabled))
                         .accessibilityIdentifier("jev-enabled")
                 }
-                // Always show the runtime's real status, including protected/idle/error states.
-                Label(monitor.status, systemImage: monitor.timedBreak != nil ? "pause.circle" : "circle.dotted")
-                    .font(.system(size: 13, weight: .medium))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("jev-status")
+                // Always show the runtime's real status, including protected/idle/error states;
+                // a switch already off says « désactivée » by itself.
+                if enabled || monitor.timedBreak != nil {
+                    Label(monitor.status, systemImage: monitor.timedBreak != nil ? "pause.circle" : "circle.dotted")
+                        .font(.system(size: 13, weight: .medium))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("jev-status")
+                }
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 JevScopeControl()
                 Rectangle().fill(LHTheme.separator).frame(height: 1)

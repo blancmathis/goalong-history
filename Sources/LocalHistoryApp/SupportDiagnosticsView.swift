@@ -37,9 +37,9 @@ import SwiftUI
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Ajouter un repère") {
+                Button("Noter l’heure du problème") {
                     SupportDiagnostics.shared.record(.userMarkedIssue, component: .support)
-                    feedback = "Repère ajouté. Reproduisez le problème puis signalez-le."
+                    feedback = "Heure notée. Reproduisez le problème puis signalez-le."
                 }.disabled(!enabled)
                     .help("Marque l’instant où le problème se produit pour le retrouver dans le rapport.")
                 Button("Effacer les journaux…") { confirmClear = true }

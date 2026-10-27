@@ -43,10 +43,10 @@
             HStack(spacing: 8) {
                 DateSelectionControl(date: day, onChange: onSelectDay)
                 Button(action: onShare) {
-                    Label("Envoyer à Goalong", systemImage: "square.and.arrow.up")
+                    Label("Partager cette journée…", systemImage: "square.and.arrow.up")
                 }
                 .disabled(!sharingEnabled)
-                .help(sharingEnabled ? "Envoyer à Goalong" : "Les données fictives ne peuvent pas être envoyées")
+                .help(sharingEnabled ? "Partager cette journée. Rien n’est envoyé sans votre validation." : "Les données fictives ne peuvent pas être partagées")
                 Button(action: onRefresh) {
                     Group {
                         if isRefreshing { ProgressView().controlSize(.small) }

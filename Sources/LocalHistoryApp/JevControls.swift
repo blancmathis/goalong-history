@@ -100,7 +100,7 @@ struct JevRecentChecksView: View {
                  : monitor.enabled
                  ? "Une pause arrête la surveillance et ses rappels pendant la durée choisie. L’historique continue s’il est activé."
                  : "La surveillance est désactivée : il n’y a aucun rappel à mettre en pause.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }
 }
