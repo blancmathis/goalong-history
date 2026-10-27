@@ -44,7 +44,7 @@ public struct AmbianceDiagnostics: Equatable {
 }
 
 public enum AmbianceError: Error, LocalizedError {
-    case invalidPack(String), cancelled, unavailable, disabled, audioBoundary, networkBoundary, network, tooSlow, serverUnavailable, diskFull
+    case invalidPack(String), cancelled, unavailable, noAudioOutput, disabled, audioBoundary, networkBoundary, network, tooSlow, serverUnavailable, diskFull
     public var errorDescription: String? {
         switch self {
         case .invalidPack(let detail): return "Pack invalide : \(detail)"
@@ -54,6 +54,7 @@ public enum AmbianceError: Error, LocalizedError {
         case .tooSlow: return "Téléchargement trop lent. Réessayez avec une connexion plus rapide."
         case .serverUnavailable: return "Le pack est indisponible pour le moment. Réessayez plus tard."
         case .unavailable: return "Cette source est indisponible. Installez son pack ou retrouvez le fichier."
+        case .noAudioOutput: return "Aucune sortie audio disponible. Branchez un casque ou des haut-parleurs, ou choisissez une sortie dans Réglages Système > Son, puis relancez."
         case .disabled: return "Le module Ambiance est désactivé."
         case .audioBoundary: return "La lecture audio attend la revue de la frontière de sécurité de Goalong."
         case .networkBoundary: return "Le téléchargement HTTPS attend la revue de la frontière réseau de Goalong. Un pack local vérifié peut être installé."

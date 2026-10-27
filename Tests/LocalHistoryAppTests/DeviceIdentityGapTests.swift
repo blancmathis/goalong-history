@@ -63,7 +63,7 @@ final class DeviceIdentityGapTests: XCTestCase {
         XCTAssertEqual(second.info.knownDeviceID, "dev-1")
 
         let other = DeviceIdentityStartup.resolve(provider: { throw DeviceIdentityError.cannotCopyPublicKey }, defaults: defaults)
-        XCTAssertEqual(other.unavailableStatus, errSecInteractionNotAllowed, "Unknown errors suspend as « interaction not allowed »")
+        XCTAssertEqual(other.unavailableStatus, errSecInvalidKeyRef, "A public-key failure is not a locked keychain (C13-14)")
     }
 
     func testRotationNoticeIsKeptUntilAcknowledgedAndMalformedValuesAreIgnored() throws {
@@ -103,6 +103,32 @@ final class DeviceIdentityGapTests: XCTestCase {
         state.setSealingSuspended(status: nil)
         XCTAssertNil(state.retryFeedback, "Recovery clears the failure line")
         XCTAssertNil(state.sealingSuspendedNotice)
+    }
+
+    /// C13-14 (T-044 r13). The local key file cannot be written, or the public key cannot be exported:
+    /// the notice names that cause and never asks to unlock the keychain.
+    func testNonKeychainIdentityFailureIsNotReportedAsALockedKeychain() throws {
+        let cases: [(DeviceIdentityError, String)] = [
+            (.cannotPersistSoftwareKey, "Libérez de l’espace disque"),
+            (.cannotCopyPublicKey, "reste illisible"),
+            (.cannotExportPublicKey(-25300), "reste illisible"),
+        ]
+        for (error, advice) in cases {
+            let startup = DeviceIdentityStartup.resolve(provider: { throw error },
+                defaults: try XCTUnwrap(UserDefaults(suiteName: "device-identity-cause.\(UUID().uuidString)")))
+            XCTAssertTrue(startup.isDegraded)
+            XCTAssertNotEqual(startup.unavailableStatus, errSecInteractionNotAllowed, "\(error)")
+            let state = DeviceTrustState()
+            state.setSealingSuspended(status: startup.unavailableStatus)
+            state.markRetryFailed(at: Date())
+            let shown = [state.sealingSuspendedNotice, state.retryFeedback].compactMap { $0 }.joined(separator: " / ")
+            XCTAssertFalse(shown.contains("rousseau"), "\(error): \(shown)")
+            XCTAssertFalse(shown.contains("Déverrouillez"), "\(error): \(shown)")
+            XCTAssertTrue(shown.contains(advice), "\(error): \(shown)")
+        }
+        let locked = DeviceTrustState()
+        locked.setSealingSuspended(status: errSecInteractionNotAllowed)
+        XCTAssertEqual(locked.sealingSuspendedNotice, "Preuves suspendues : Trousseau inaccessible")
     }
 }
 #endif
