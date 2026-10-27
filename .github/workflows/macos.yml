@@ -168,6 +168,7 @@ jobs:
           for timezone in UTC America/Chicago Europe/Paris; do
             TZ="$timezone" xcrun swift test --skip-build --filter GoalongSiteExportTests
           done
+          TZ=Europe/Paris xcrun swift test --skip-build --filter C044R11C2EdgeTests
 
       - name: Build installable app bundle
         env:

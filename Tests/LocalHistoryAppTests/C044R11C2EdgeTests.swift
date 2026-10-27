@@ -33,7 +33,7 @@ final class C044R11C2EdgeTests: XCTestCase {
     /// Witness: the same 31 days in June pass.
     func testConversationRangeOf31DaysAcrossFallBackIsAccepted() {
         withParis {
-            XCTAssertEqual(TimeZone.current.identifier, "Europe/Paris")
+            XCTAssertEqual(Calendar.current.timeZone.identifier, "Europe/Paris")
             for (label, start, end) in [("juin", at(2026, 6, 1, 0), at(2026, 7, 2, 0)),
                                         ("octobre", at(2026, 10, 1, 0), at(2026, 11, 1, 0))] {
                 var refused: String?
@@ -67,6 +67,9 @@ final class C044R11C2EdgeTests: XCTestCase {
 
     /// Rollover, two days in two files, DST ambiguous hour (02:30 twice) in one file, reader sees the right day.
     func testMidnightRolloverAndDSTNightEventFiles() throws {
+        // The store names files with TimeZone.current, which NSTimeZone.default does not move.
+        // CI runs this class again under TZ=Europe/Paris (Timezone regression checks).
+        try XCTSkipUnless(TimeZone.current.identifier == "Europe/Paris", "needs a Europe/Paris system zone")
         let root = try tmp(); let events = root.appendingPathComponent("events")
         try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
         try withParis {
