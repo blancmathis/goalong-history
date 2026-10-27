@@ -861,8 +861,11 @@ import LocalHistoryQueryCLI
         document.usage = document.usage == nil && usage.quotaSecondsUsed.isEmpty && usage.breaksTaken.isEmpty && usage.slowDownShown == nil
             && usage.blocked == nil && usage.earnedSeconds == nil && usage.earnedSessionIDs == nil ? nil : usage
         let blocks = (document.sessions + (document.heldPrograms ?? [])).filter { $0.start <= now && $0.end > now }.map { session in
+            // A held window keeps the strictest of its own lock and its program's current lock (C10-01).
+            var lock = effectiveLock(session.lock)
+            if case .program = session.origin, session.listIDs.contains(where: { list($0)?.program.isLocked(at: now) == true }) { lock = .locked }
             var block = BlockingActiveBlock(id: session.id, listIDs: session.listIDs, start: session.start,
-                                            end: session.end, lock: effectiveLock(session.lock), origin: session.origin)
+                                            end: session.end, lock: lock, origin: session.origin)
             for id in session.listIDs {
                 guard let list = list(id) else { continue }
                 if let breaks = list.breaks { block.breaksLeft[id] = max(0, breaks.count - (usage.breaksTaken[id] ?? 0)) }
