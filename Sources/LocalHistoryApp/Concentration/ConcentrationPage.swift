@@ -286,7 +286,7 @@ struct FocusComposerDraft: Equatable {
                             $0 == .free ? "Libre" : "Pomodoro"
                         }
                         if draft.kind == .free { freeOptions } else { pomodoroOptions }
-                        FocusSessionThread(model: preview, now: nil, showsEnd: plannedEnd == nil)
+                        FocusSessionThread(model: preview, now: nil)
                             .accessibilityLabel(previewDescription)
                     }
                 }
@@ -597,7 +597,9 @@ struct FocusSessionThread: View {
                     let b = max(a + 8, x(segment.end))
                     let capsule = Path(roundedRect: CGRect(x: a, y: mid - 4, width: b - a, height: 8), cornerRadius: 4)
                     guard let now else {
-                        context.fill(capsule, with: .color(LHTheme.text.opacity(0.55))); continue
+                        // A preview is a plan, not progress: dashed outlines, never a filled bar.
+                        context.stroke(capsule, with: .color(LHTheme.text.opacity(0.45)),
+                                       style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])); continue
                     }
                     context.fill(capsule, with: .color(LHTheme.text.opacity(0.18)))
                     let split = min(b, max(a, x(now)))

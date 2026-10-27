@@ -28,8 +28,8 @@ extension GalleryCatalog {
         }, configure: { model, _ in installConversations(.projects, model) })
     }
 
-    /// An Apple Health import of the gallery day, written through the product's own import and archive.
-    private static func installHealthImport() throws {
+    /// An Apple Health import of the gallery day, read through the product's own import.
+    static func galleryHealthImport() throws -> GoalongHealthImportResult {
         let zone = GalleryClock.timeZone
         let format = DateFormatter()
         format.locale = Locale(identifier: "en_US_POSIX"); format.timeZone = zone; format.dateFormat = "yyyy-MM-dd HH:mm:ss xx"
@@ -52,7 +52,12 @@ extension GalleryCatalog {
         let xml = Data("<?xml version=\"1.0\"?><HealthData locale=\"fr_FR\"><ExportDate value=\"\(format.string(from: GalleryClock.at(9, 20)))\"/>\(body)</HealthData>".utf8)
         let day = GalleryClock.today
         let options = GoalongHealthImportOptions(from: day, through: GalleryClock.at(23, 59), timezone: zone)
-        try GoalongHealthArchive.save(GoalongHealthImport.read(data: xml, options: options), root: AppPaths.applicationSupportDirectory)
+        return try GoalongHealthImport.read(data: xml, options: options)
+    }
+
+    /// The same import, written through the product's own archive.
+    private static func installHealthImport() throws {
+        try GoalongHealthArchive.save(galleryHealthImport(), root: AppPaths.applicationSupportDirectory)
     }
 
     private static var sleepEntry: GalleryEntry {
