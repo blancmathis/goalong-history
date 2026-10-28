@@ -336,6 +336,16 @@ import LocalHistoryQueryCLI
         return storeFailed ? (error ?? "Le fichier de blocage est indisponible.") : nil
     }
 
+    /// Renames a list. An empty name is refused here, with its own reason, before the generic validation.
+    @discardableResult func rename(_ listID: UUID, to name: String) -> String? {
+        let trimmed = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+        guard !trimmed.isEmpty else { return "Le nom ne peut pas être vide." }
+        guard var next = list(listID) else { return "Liste introuvable." }
+        guard next.name != trimmed else { return nil }
+        next.name = trimmed
+        return save(next)
+    }
+
     private struct EditRefusal: Error { var reason: String }
 
     /// One list checked and cleaned up (reason, sites, exceptions, keywords), without writing anything.

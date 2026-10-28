@@ -49,6 +49,24 @@ private final class BlockingFreezePanel: NSPanel {
     override var canBecomeMain: Bool { true }
 }
 
+/// What a blocked app is asked to do. No force-quit here on purpose: unsaved work is never lost.
+protocol BlockingQuittableApp: AnyObject {
+    var isTerminated: Bool { get }
+    func terminate() -> Bool
+    func hide() -> Bool
+}
+extension NSRunningApplication: BlockingQuittableApp {}
+
+enum BlockingAppQuit {
+    /// After the polite quit request: an app still open (for example a save dialog) is hidden, never killed.
+    /// Returns true when the app was hidden, so the notice stays on screen.
+    @discardableResult static func followUp(_ app: BlockingQuittableApp, stillBlocked: Bool) -> Bool {
+        guard stillBlocked, !app.isTerminated else { return false }
+        _ = app.hide()
+        return true
+    }
+}
+
 /// In-process, user-session enforcement only. No system service or network access.
 @MainActor final class StandardBlockingBackend: BlockingEnforcementBackend {
     var accessibilityAvailable: Bool { AXIsProcessTrusted() }
@@ -163,9 +181,10 @@ private final class BlockingFreezePanel: NSPanel {
             _ = running.terminate()
             let work = DispatchWorkItem { [weak self, running] in
                 // Retain and revalidate the original object, never a potentially recycled PID.
-                if !running.isTerminated, running.activationPolicy == .regular,
-                   running.bundleIdentifier == target.bundleIdentifier, self?.appStillBlocked?(target) == true {
-                    _ = running.forceTerminate()
+                let stillBlocked = running.activationPolicy == .regular && running.bundleIdentifier == target.bundleIdentifier
+                    && self?.appStillBlocked?(target) == true
+                if BlockingAppQuit.followUp(running, stillBlocked: stillBlocked) {
+                    self?.showAppNotice(target, app: app, block: block, listName: listName, held: true)
                 }
                 self?.terminations[target.pid] = nil
             }
@@ -174,15 +193,16 @@ private final class BlockingFreezePanel: NSPanel {
         }
         showAppNotice(target, app: app, block: block, listName: listName)
     }
-    private func showAppNotice(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) {
+    private func showAppNotice(_ target: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String,
+                               held: Bool = false) {
         let screen = target.windowFrame.flatMap { frame in NSScreen.screens.first { $0.frame.intersects(Self.appKitFrame(frame)) } } ?? NSScreen.main
         guard let screen else { return }
         if let id = block.feedback?.listID { appNoticeFeedback = onBlockPresented?(target, id) ?? block.feedback }
-        let height = BlockedAppNotice.height(appNoticeFeedback)
+        let height = BlockedAppNotice.height(appNoticeFeedback, held: held)
         let frame = NSRect(x: screen.visibleFrame.midX - 190, y: screen.visibleFrame.maxY - 16 - height, width: 380, height: height)
         let panel = notice ?? makePanel(frame: frame)
         panel.contentView = host(BlockedAppNotice(app: app, end: block.end, lock: block.lock, listName: listName,
-                                                  feedback: appNoticeFeedback), frame: frame)
+                                                  feedback: appNoticeFeedback, held: held), frame: frame)
         panel.setFrame(frame, display: true); panel.orderFrontRegardless(); notice = panel
         noticeClear?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.notice?.close(); self?.notice = nil; self?.appNoticeFeedback = nil }
