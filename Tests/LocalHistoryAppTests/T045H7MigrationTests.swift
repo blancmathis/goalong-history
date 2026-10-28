@@ -51,4 +51,18 @@ final class T045H7MigrationTests: XCTestCase {
         GoalongLegacyDayFiles.migrate(root: root, calendar: calendar(.gregorian), now: noon)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("calls").path), ["2569-10-27.jsonl"])
     }
+
+    /// H7-04: the `seen` field of work corrections is a Gregorian day, whatever the system calendar.
+    @MainActor func testWorkAgentDayStringIsGregorianUnderOtherCalendars() {
+        for identifier in [Calendar.Identifier.buddhist, .japanese] {
+            XCTAssertEqual(GoalongWorkAgent.dayString(noon, calendar: calendar(identifier)), "2026-10-28", "\(identifier)")
+        }
+    }
+
+    func testStoredBuddhistSeenDayReadsAsGregorian() throws {
+        let json = #"{"verdict":"work","task":null,"byOwner":false,"seen":"2569-10-27","attempts":1,"lastAskedDay":"2569-10-27"}"#
+        let entry = try JSONDecoder().decode(GoalongWorkStore.Entry.self, from: Data(json.utf8))
+        XCTAssertEqual(entry.seen, "2026-10-27")
+        XCTAssertEqual(entry.lastAskedDay, "2026-10-27")
+    }
 }
