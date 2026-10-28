@@ -64,6 +64,8 @@ extension Notification.Name {
 
     @Published private(set) var verdicts = GoalongWorkVerdicts()
     @Published private(set) var lastError: String?
+    /// Set by a rename that went through but left Plan du jour days on the old name (T-045 L3-3). The page shows it once.
+    @Published var renameNotice: String?
     /// Set once when the saved file could not be read: it was kept aside (or left in place,
     /// and nothing is written over it) instead of being silently replaced.
     @Published private(set) var storageNotice: String?
@@ -81,7 +83,7 @@ extension Notification.Name {
     /// Nil: its file is unreadable, so any agent verdict may still be measured.
     private let committedTasks: @MainActor () -> [String]?
     /// Called after a task rename or merge, so Plan du jour items linked to that project follow (T-045 H5-04).
-    private let renamedTask: @MainActor (String, String) -> Void
+    private let renamedTask: @MainActor (String, String) -> [String]
     private var observer: NSObjectProtocol?
     private var commitmentObserver: NSObjectProtocol?
     /// True when an unreadable file could not be moved aside: writing would destroy it.
@@ -94,9 +96,9 @@ extension Notification.Name {
          committedTasks: @escaping @MainActor () -> [String]? = {
              GoalongWorkStore.openTaskNames(controller: ConcentrationRuntime.shared.controller, store: .standard)
          },
-         renamedTask: @escaping @MainActor (String, String) -> Void = { old, new in
-             if let controller = ConcentrationRuntime.shared.controller { controller.renamePlanProject(from: old, to: new) }
-             else { _ = try? FocusStore.standard.renamePlanProject(from: old, to: new) }
+         renamedTask: @escaping @MainActor (String, String) -> [String] = { old, new in
+             if let controller = ConcentrationRuntime.shared.controller { return controller.renamePlanProject(from: old, to: new) }
+             return (try? FocusStore.standard.renamePlanProjectReporting(from: old, to: new).skipped) ?? []
          }) {
         self.renamedTask = renamedTask
         self.fileURL = fileURL
@@ -231,8 +233,23 @@ extension Notification.Name {
             document.corrections[index].task = name
         }
         publish(); persist()
-        renamedTask(old, name)
+        let skipped = renamedTask(old, name)
+        renameNotice = Self.skippedDaysNotice(skipped)
+        if !skipped.isEmpty { NSLog("Goalong: renaming « %@ » skipped unreadable plan days: %@", old, skipped.joined(separator: ", ")) }
         return nil
+    }
+
+    /// Tells the owner which Plan du jour days an unreadable file kept on the old task name; nil when none.
+    static func skippedDaysNotice(_ days: [String]) -> String? {
+        guard !days.isEmpty else { return nil }
+        let names = days.sorted().map { day -> String in
+            let part = day.split(separator: "-")
+            return part.count == 3 ? "\(part[2])/\(part[1])/\(part[0])" : day
+        }
+        let list = names.joined(separator: ", ")
+        return days.count == 1
+            ? "La tâche est renommée, mais le Plan du jour du \(list) est illisible : il garde l’ancien nom. Réparez ou supprimez ce jour dans Concentration, puis renommez-y la tâche à la main."
+            : "La tâche est renommée, mais les Plans du jour suivants sont illisibles : \(list). Ils gardent l’ancien nom. Réparez ou supprimez ces jours dans Concentration, puis renommez-y la tâche à la main."
     }
 
     /// Forgets the agent's verdicts (corrections stay) so every context is classified again.

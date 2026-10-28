@@ -369,11 +369,13 @@ struct FocusPanel: Equatable {
         try saving { try store.savePlans([value]) }; if value.day == currentDay { plan = value }; updateMeasures()
     }
     /// A task renamed in « Vérifier et corriger »: linked plan items follow, or their project minutes read 0 (T-045 H5-04).
-    func renamePlanProject(from old: String, to new: String) {
-        var changed: [FocusPlan] = []
-        try? saving { changed = try store.renamePlanProject(from: old, to: new) }
+    /// Returns the unreadable days left on the old name (T-045 L3-3).
+    @discardableResult func renamePlanProject(from old: String, to new: String) -> [String] {
+        var changed: [FocusPlan] = [], skipped: [String] = []
+        try? saving { (changed, skipped) = try store.renamePlanProjectReporting(from: old, to: new) }
         if let today = changed.first(where: { $0.day == currentDay }) { plan = today }
         if !changed.isEmpty { updateMeasures() }
+        return skipped
     }
     @discardableResult func addPlanItem(title: String, day: String, project: String? = nil, estimateMinutes: Int? = nil) throws -> FocusPlanItem {
         var value = try plan(on: day)
