@@ -42,6 +42,30 @@
             XCTAssertEqual(GoalongUserFacingError.historyIOMessage(code: EIO), GoalongUserFacingError.historyIOMessage)
         }
 
+        /// D-150b: the Computer History page showed the store's English sentence and the private path
+        /// when a day could not be written (`ComputerHistoryPageModel.displayMessage`).
+        func testComputerHistoryStorageFailuresShowFrenchTextWithoutPaths() {
+            let url = URL(fileURLWithPath: "/Users/someone/Library/Application Support/Goalong/computer-history/2026-10-28.json")
+            let failures: [ComputerHistoryStore.StorageError] = [
+                .incompleteRecentMemoryListing,
+                .incompleteSourceEvidence("the bounded source pass was cancelled"),
+                .memoryTooLarge(actualBytes: 9_000_000, maximumBytes: 8_000_000),
+                .storedMemoryChangedDuringRead(url),
+                .unsafeStoragePath(url),
+                .posix(operation: "openat", URL: url, code: ENOSPC),
+                .posix(operation: "openat", URL: url, code: EACCES),
+                .posix(operation: "openat", URL: url, code: EIO),
+            ]
+            for failure in failures {
+                let text = ComputerHistoryPageModel.displayMessage(for: failure)
+                assertFrenchAlert(failure, hiding: url.path)
+                XCTAssertFalse(text.contains("Computer History"), text)
+                XCTAssertFalse(text.contains("bytes"), text)
+                XCTAssertNotNil(failure.errorDescription)
+            }
+            XCTAssertTrue(ComputerHistoryStore.StorageError.unsafeStoragePath(url).errorDescription?.contains(url.path) == true)
+        }
+
         private func assertFrenchAlert(_ error: Error, hiding path: String, line: UInt = #line) {
             let text = GoalongUserFacingError.message(error)
             for english in ["The ", "Could not", "Refusing", "failed for", "Deletion", "Owned path"] {
