@@ -45,6 +45,33 @@ final class GoalongWebsiteAutoSenderH11Tests: XCTestCase {
         XCTAssertEqual(sentDays, ["2026-09-12"], "The skipped day is not retried")
     }
 
+    /// The skipped day stays named after a restart, until the next received day names it.
+    @MainActor func testSkippedDayNoticeSurvivesARestart() async throws {
+        let root = hermeticDataRoot()
+        XCTAssertTrue(GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("capability-consent.json")).set(.appleScreenTime, enabled: true, surface: .settings))
+        let (defaults, suite) = try scheduled("restart", root: root) { $0.lastAttempt = "2026-09-10"; $0.lastSuccess = "2026-09-10" }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var sentDays: [String] = []
+        func make() -> GoalongWebsiteAutoSender {
+            GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { root, day, options in
+                if day == "2026-09-11" { return try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: day, options: options) }
+                return Data(day.utf8)
+            }, sender: { payload, _, _, _ in sentDays.append(String(decoding: payload, as: UTF8.self)); return Data() },
+               sourceConsent: { _ in true }, sharingRulesReadable: { true })
+        }
+        let now = ISO8601DateFormatter().date(from: "2026-09-13T15:00:00Z")!
+        await make().tick(now: now)
+        let restarted = make()
+        XCTAssertTrue(restarted.enabled, restarted.status)
+        XCTAssertTrue(restarted.status.contains("Aucun relevé"), restarted.status)
+        XCTAssertTrue(restarted.status.contains(GoalongUIFormat.day(key: "2026-09-11")), restarted.status)
+        await restarted.tick(now: now.addingTimeInterval(60))
+        XCTAssertEqual(sentDays, ["2026-09-12"])
+        XCTAssertTrue(restarted.status.contains(GoalongUIFormat.day(key: "2026-09-11")), restarted.status)
+        let again = make()
+        XCTAssertFalse(again.status.contains("Aucun relevé"), "Named once with the next received day: \(again.status)")
+    }
+
     /// D-AS2: the user pauses while the day is being prepared. The day is not marked as tried,
     /// so it goes once the plan runs again.
     @MainActor func testPauseDuringPreparationKeepsTheDayToSendLater() async throws {
@@ -77,6 +104,7 @@ final class GoalongWebsiteAutoSenderH11Tests: XCTestCase {
         XCTAssertFalse(reason.contains("historique du site"), reason)
         XCTAssertTrue(reason.contains("Rien n’a été envoyé"), reason)
         XCTAssertTrue(reason.contains("2 Mio"), reason)
+        XCTAssertNil(local.savedConfiguration?.lastAttempt, "Nothing left this Mac: the day is not marked as tried")
 
         let root2 = hermeticDataRoot()
         let (defaults2, suite2) = try scheduled("uncertain", root: root2)
