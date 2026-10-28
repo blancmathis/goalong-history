@@ -38,6 +38,10 @@ import LocalHistoryCore
         var pauseReason: String?
         /// Days skipped because no record was saved, comma-separated. Shown until the next received day names them too.
         var missingDay: String?
+        /// Day being prepared or sent, and the last attempt before it. Still set at launch: Goalong
+        /// quit or crashed during that send, so the day is tried again (the site replaces a day it already has).
+        var sendingDay: String?
+        var attemptBeforeSending: String?
     }
     var savedConfiguration: Configuration? { configuration() }
     private static let globalPauseStatus = "Pause globale : envoi suspendu, programmation conservée."
@@ -77,6 +81,12 @@ import LocalHistoryCore
         self.sourceConsent = sourceConsent
         var saved = configuration()
         lastSuccess = saved?.lastSuccess
+        // Quit or crash during a send: try that day again. The usual checks of the next tick still apply.
+        if var value = saved, let day = value.sendingDay {
+            if value.lastAttempt == day { value.lastAttempt = value.attemptBeforeSending }
+            value.sendingDay = nil; value.attemptBeforeSending = nil
+            try? store(value); saved = value
+        }
         // Exclusions changed while the app was closed: pause with the reason, and keep it after a restart.
         if var value = saved, value.policyVersion == 3, value.paused != true,
            value.privacyRevision != GoalongPrivacyPolicy.load(in: root).revision {
@@ -259,7 +269,11 @@ import LocalHistoryCore
             }
             // Persist before networking. An uncertain receipt never silently retries.
             current.lastAttempt = day
-            try store(current)
+            var sending = current
+            sending.sendingDay = day; sending.attemptBeforeSending = previousAttempt
+            try store(sending)
+            // Every outcome below is handled while the app runs: only a quit or a crash keeps the marker.
+            defer { clearSendingDay(of: current) }
             busy = true; status = "Préparation locale du \(GoalongUIFormat.day(key: day))…"
             defer { busy = false }
             let root = root, exporter = exporter, sender = sender, snapshot = current
@@ -354,6 +368,11 @@ import LocalHistoryCore
     }
     private static func sentence(_ error: Error) -> String {
         goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))
+    }
+    private func clearSendingDay(of attempt: Configuration) {
+        guard var saved = configuration(), saved.identifier == attempt.identifier, saved.sendingDay != nil else { return }
+        saved.sendingDay = nil; saved.attemptBeforeSending = nil
+        try? store(saved)
     }
     /// Puts back the last attempt saved before the send, so the same day is tried again.
     private func restoreAttempt(_ previous: String?, of attempt: Configuration) {
