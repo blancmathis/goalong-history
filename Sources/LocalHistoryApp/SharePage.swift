@@ -69,7 +69,7 @@
                 )
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(model.snapshot.sealedMinutes) minute\(model.snapshot.sealedMinutes > 1 ? "s" : "") scellée\(model.snapshot.sealedMinutes > 1 ? "s" : "")")
+                    Text("\(model.snapshot.sealedMinutes) minute\(model.snapshot.sealedMinutes > 1 ? "s" : "") avec preuve")
                         .font(.system(size: 11, weight: .semibold))
                     Text("Les règles s’appliquent événement par événement")
                         .font(.system(size: 11))
@@ -101,7 +101,7 @@
                     Text(
                         model.snapshot.sealedMinutes > 0
                             ? "Prêt à créer un fichier selon vos règles"
-                            : "Aucune minute scellée pour ce jour"
+                            : "Aucune donnée avec preuve pour ce jour"
                     )
                     .font(.system(size: 11, weight: .semibold))
                     Text(

@@ -663,7 +663,7 @@
                 alert = DashboardAlert(
                     kind: .information,
                     title: "Rien à exporter",
-                    message: "Aucune minute scellée n’est encore disponible pour ce jour."
+                    message: "Aucune donnée avec preuve pour ce jour."
                 )
                 return
             }
@@ -712,9 +712,9 @@
                         self.isExportingShare = false
                         self.alert = DashboardAlert(
                             kind: .information,
-                            title: "Paquet signé exporté",
+                            title: "Fichier signé exporté",
                             message:
-                                "Goalong a vérifié chaque signature de l’appareil et la chaîne d’intégrité avant l’export. Le paquet suit vos règles d’apps et de sites ; les champs masqués restent sur ce Mac."
+                                "Goalong a vérifié chaque signature de l’appareil et la chaîne d’intégrité avant l’export. Le fichier suit vos règles d’apps et de sites ; les champs masqués restent sur ce Mac."
                         )
                         NSWorkspace.shared.activateFileViewerSelecting([destination])
                     }

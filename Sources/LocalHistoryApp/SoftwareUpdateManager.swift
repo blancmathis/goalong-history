@@ -453,7 +453,11 @@
         static let diskFullSummary = "le disque est plein ; libérez de l’espace puis réessayez"
         static let cannotWriteSummary = "la mise à jour n’a pas pu être écrite sur le disque ; vérifiez l’espace libre puis réessayez"
 
-        static func errorSummary(_ error: any Error) -> String {
+        /// Below this much free space an install or unpack failure is reported as a full disk: Sparkle's
+        /// installer runs in another process and often reports a bare installation error without ENOSPC.
+        static let lowDiskBytes: Int64 = 500_000_000
+
+        static func errorSummary(_ error: any Error, freeBytes: () -> Int64? = { StorageHealth.availableBytes() }) -> String {
             let error = error as NSError
             // Sparkle wraps a full disk (download, unpacking, temporary folder) in its own codes.
             if StorageHealth.failureKind(for: error) == .diskFull { return diskFullSummary }
@@ -469,7 +473,7 @@
                 }
             }
             if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError, underlying.domain == NSURLErrorDomain {
-                return errorSummary(underlying)
+                return errorSummary(underlying, freeBytes: freeBytes)
             }
             if error.domain == SUSparkleErrorDomain {
                 switch Int32(error.code) {
@@ -477,8 +481,13 @@
                     return "la liste des versions est illisible"
                 case SUError.signatureError.rawValue, SUError.validationError.rawValue:
                     return "la signature de la mise à jour n’a pas pu être vérifiée ; rien n’a été installé"
-                case SUError.downloadError.rawValue: return "le téléchargement a échoué"
-                case SUError.installationError.rawValue, SUError.installationCanceledError.rawValue:
+                case SUError.downloadError.rawValue, SUError.unarchivingError.rawValue, SUError.installationError.rawValue:
+                    if let free = freeBytes(), free < lowDiskBytes { return diskFullSummary }
+                    if Int32(error.code) == SUError.installationError.rawValue {
+                        return "l’installation n’a pas abouti ; la version actuelle est conservée"
+                    }
+                    return Int32(error.code) == SUError.downloadError.rawValue ? "le téléchargement a échoué" : "la mise à jour n’a pas pu être décompressée"
+                case SUError.installationCanceledError.rawValue:
                     return "l’installation n’a pas abouti ; la version actuelle est conservée"
                 case SUError.runningFromDiskImageError.rawValue:
                     return "Goalong est ouvert depuis l’image disque ; glissez-le d’abord dans Applications"

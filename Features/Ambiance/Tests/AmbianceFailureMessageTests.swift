@@ -44,4 +44,14 @@ final class AmbianceFailureMessageTests: XCTestCase {
             XCTAssertFalse(message.contains("Internet"), "code \(code.rawValue): \(message)")
         }
     }
+
+    /// The figure comes from the pack being downloaded, never from a hard-coded number.
+    func testDiskFullMessageUsesTheRealPackSize() {
+        let message = AmbiancePackDownloader.transportFailure(URLError(.cannotWriteToFile), bytesReceived: 1, packBytes: 81_234_567).errorDescription ?? ""
+        XCTAssertTrue(message.contains("environ 82 Mo"), message)
+        XCTAssertFalse(message.contains("90"), message)
+        let unknown = AmbiancePackDownloader.transportFailure(URLError(.cannotWriteToFile), bytesReceived: 1).errorDescription ?? ""
+        XCTAssertFalse(unknown.contains(" Mo"), "no size claimed when it is unknown: \(unknown)")
+        XCTAssertTrue(unknown.contains("Espace disque"), unknown)
+    }
 }

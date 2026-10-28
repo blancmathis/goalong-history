@@ -32,7 +32,7 @@
         private var heading: some View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).goalongPageTitle()
-                Text(day.formatted(.dateTime.weekday(.wide).month(.wide).day().locale(Locale(identifier: "fr_FR"))))
+                Text(day.formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "fr_FR"))).capitalized(with: Locale(identifier: "fr_FR")))
                     .font(.system(size: 13))
                     .foregroundStyle(LHTheme.secondaryText)
             }

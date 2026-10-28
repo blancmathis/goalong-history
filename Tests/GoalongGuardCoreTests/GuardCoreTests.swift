@@ -81,6 +81,28 @@ final class GuardDecisionTests: XCTestCase {
         XCTAssertEqual(GuardDecision.decide(input { $0.lease = lease; $0.leaseProofAlive = true }), .waitForLease(until: 1_000_060))
     }
 
+    /// The Sparkle update lease (`SoftwareUpdateManager.updaterWillRelaunchApplication` writes
+    /// `until = write time + GuardLease.maximumDuration`): the guard waits for it, but never past 180 s.
+    /// An install that outlasts the lease (sleep during the install) ends with the old app relaunched.
+    func testSparkleUpdateLeaseOf180SecondsIsHonouredThenExpires() {
+        XCTAssertEqual(GuardLease.maximumDuration, 180)
+        let death = GuardInput.Death(pid: 42, at: 1_000_000)
+        let written = 1_000_000.0
+        let lease = GuardLease(pid: 42, reason: GuardLease.update, until: written + GuardLease.maximumDuration)
+        func decide(at now: Double, lease: GuardLease = lease) -> GuardAction {
+            GuardDecision.decide(input { $0.now = now; $0.death = death; $0.lease = lease; $0.leaseProofAlive = true })
+        }
+        // Read right after it was written: the full 180 s are granted.
+        XCTAssertEqual(decide(at: written), .waitForLease(until: 1_000_180))
+        XCTAssertEqual(decide(at: written + 179), .waitForLease(until: 1_000_180))
+        // The install is still running at 180 s (or the Mac slept): the wait is over, the app is relaunched.
+        XCTAssertEqual(decide(at: written + 180), .relaunch(after: 0))
+        XCTAssertEqual(decide(at: written + 600), .relaunch(after: 0))
+        // A lease asking for more than 180 s from the read is refused at once.
+        var greedy = lease; greedy.until = written + 180.5
+        XCTAssertEqual(decide(at: written, lease: greedy), .relaunch(after: 0))
+    }
+
     func testArmingKeepsTheHighestEndWhileTheAppIsDead() {
         let wall = Date(timeIntervalSince1970: 1_000_000)
         var arming = GuardArming()

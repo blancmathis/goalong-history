@@ -112,7 +112,7 @@ import AppKit
                     }
                 }
             }
-            GoalongSettingsGroup(title: "Suivi du temps d’écran") {
+            GoalongSettingsGroup(title: "Enregistrement de l’activité") {
                 Text("Lire, réfléchir ou regarder sans cliquer compte aussi. Seule la fenêtre au premier plan est suivie.")
                     .font(.callout).foregroundStyle(.secondary)
                 Picker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds) {
@@ -200,6 +200,8 @@ import AppKit
                     GoalongSettingsLink(title: "Envoi à Goalong", value: "Compte, données et fréquence", symbol: "arrow.up.circle") { pane = .website }
                     GoalongRowDivider()
                     GoalongSettingsLink(title: "Analyse ChatGPT", value: "Données et personnalisation", symbol: "sparkles") { pane = .chatGPT }
+                    GoalongRowDivider()
+                    GoalongSettingsLink(title: "Jev", value: "Surveillance de vos séances", symbol: "eye.circle") { pane = .jev }
                 }
             }
         case .website:

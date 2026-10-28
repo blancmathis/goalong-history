@@ -216,7 +216,7 @@ enum GoalongKnownApplications {
                                              ? "Non installée · protégée par défaut" : "Non installée sur ce Mac")
                                             .font(.system(size: 12)).foregroundStyle(.secondary)
                                     } else if model.isApplicationExcludedFromCapture(app.id) && !exclusions.policy.excludes(appID: app.id) {
-                                        Text("Exclue de l’enregistrement détaillé").font(.system(size: 12)).foregroundStyle(.secondary)
+                                        Text("Exclue de l’enregistrement").font(.system(size: 12)).foregroundStyle(.secondary)
                                     }
                                 }
                                 Spacer()

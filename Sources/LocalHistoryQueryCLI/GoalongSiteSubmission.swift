@@ -43,7 +43,7 @@ public enum GoalongSiteSubmissionError: Error, LocalizedError, CustomStringConve
     public var errorDescription: String? {
         switch self {
         case .unreachable: return "Le site n’a pas pu être joint ; rien n’a été envoyé."
-        case .accessRefused: return "Ce Mac n’est plus relié au site. Reliez-le de nouveau avec « Relier mon Mac »."
+        case .accessRefused: return "Ce Mac n’est plus connecté au site. Reconnectez-le avec « Relier mon Mac »."
         }
     }
 }
@@ -53,14 +53,14 @@ public enum GoalongSiteSubmission {
     public static func tokenFileURL(path raw: String) throws -> URL {
         let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty, path.utf8.count <= 4096 else {
-            throw GoalongSiteExportError.localized("Enter the full local path of the downloaded token file.", french: "Saisissez le chemin complet du fichier de jeton téléchargé.")
+            throw GoalongSiteExportError.localized("Enter the full local path of the downloaded token file.", french: "Saisissez le chemin complet du fichier d’accès téléchargé.")
         }
         if path.hasPrefix("file:") {
             guard let parts = URLComponents(string: path), parts.scheme == "file",
                   parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil,
                   parts.host == nil || parts.host == "" || parts.host == "localhost",
                   let url = parts.url, url.isFileURL, url.path.hasPrefix("/") else {
-                throw GoalongSiteExportError.localized("The token must be a local file path, without a remote host, query or fragment.", french: "Le jeton doit être un chemin de fichier local, sans hôte distant, requête ni fragment.")
+                throw GoalongSiteExportError.localized("The token must be a local file path, without a remote host, query or fragment.", french: "Le fichier d’accès doit être un chemin de fichier local, sans hôte distant, requête ni fragment.")
             }
             return url.standardizedFileURL
         }
@@ -85,7 +85,7 @@ public enum GoalongSiteSubmission {
     /// This neither reads the credential nor changes anything on disk.
     public static func reviewTokenFile(file: URL) throws -> GoalongSiteTokenFileReview {
         let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
-        guard fd >= 0 else { throw GoalongSiteExportError.localized("The upload-token file cannot be opened safely.", french: "Le fichier de jeton d’envoi ne peut pas être ouvert en toute sécurité.") }
+        guard fd >= 0 else { throw GoalongSiteExportError.localized("The upload-token file cannot be opened safely.", french: "Le fichier d’accès ne peut pas être ouvert en toute sécurité.") }
         defer { close(fd) }
         let metadata = try ownedRegularTokenMetadata(fd)
         return GoalongSiteTokenFileReview(requiresProtection: metadata.st_mode & 0o777 != 0o600,
@@ -98,7 +98,7 @@ public enum GoalongSiteSubmission {
     /// cause this operation to chmod a different path target between review and confirmation.
     public static func protectTokenFile(file: URL, reviewed: GoalongSiteTokenFileReview) throws {
         let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
-        guard fd >= 0 else { throw GoalongSiteExportError.localized("The chosen token file is no longer available safely.", french: "Le fichier de jeton choisi n’est plus disponible en toute sécurité.") }
+        guard fd >= 0 else { throw GoalongSiteExportError.localized("The chosen token file is no longer available safely.", french: "Le fichier d’accès choisi n’est plus disponible en toute sécurité.") }
         defer { close(fd) }
         let metadata = try ownedRegularTokenMetadata(fd)
         guard metadata.st_dev == reviewed.device, metadata.st_ino == reviewed.inode,
@@ -108,11 +108,11 @@ public enum GoalongSiteSubmission {
             throw GoalongSiteExportError.localized("The chosen file changed after review. Choose it again before changing its permissions.", french: "Le fichier choisi a changé après la vérification. Choisissez-le de nouveau avant de modifier ses droits.")
         }
         guard fchmod(fd, 0o600) == 0 else {
-            throw GoalongSiteExportError.localized("Goalong could not protect the chosen token file.", french: "Goalong n’a pas pu protéger le fichier de jeton choisi.")
+            throw GoalongSiteExportError.localized("Goalong could not protect the chosen token file.", french: "Goalong n’a pas pu protéger le fichier d’accès choisi.")
         }
         let protected = try ownedRegularTokenMetadata(fd)
         guard protected.st_mode & 0o777 == 0o600 else {
-            throw GoalongSiteExportError.localized("The token file permissions could not be confirmed as 0600.", french: "Les droits du fichier de jeton n’ont pas pu être confirmés (0600).")
+            throw GoalongSiteExportError.localized("The token file permissions could not be confirmed as 0600.", french: "Les droits du fichier d’accès n’ont pas pu être confirmés (0600).")
         }
     }
 
@@ -129,13 +129,13 @@ public enum GoalongSiteSubmission {
     /// The token is never included in process arguments, returned JSON, or error text.
     public static func readToken(file: URL) throws -> String {
         let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
-        guard fd >= 0 else { throw GoalongSiteExportError.localized("The upload-token file cannot be opened safely.", french: "Le fichier de jeton d’envoi ne peut pas être ouvert en toute sécurité.") }
+        guard fd >= 0 else { throw GoalongSiteExportError.localized("The upload-token file cannot be opened safely.", french: "Le fichier d’accès ne peut pas être ouvert en toute sécurité.") }
         defer { close(fd) }
         var metadata = stat()
         guard fstat(fd, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG,
               metadata.st_uid == getuid(), metadata.st_mode & 0o777 == 0o600,
               metadata.st_size > 0, metadata.st_size <= 4096 else {
-            throw GoalongSiteExportError.localized("The upload-token file must be owned by you, regular, mode 0600, and at most 4096 bytes.", french: "Le fichier de jeton d’envoi doit vous appartenir, être ordinaire, en mode 0600 et faire 4096 octets au plus.")
+            throw GoalongSiteExportError.localized("The upload-token file must be owned by you, regular, mode 0600, and at most 4096 bytes.", french: "Le fichier d’accès doit vous appartenir, être ordinaire, en mode 0600 et faire 4096 octets au plus.")
         }
         var bytes = [UInt8](repeating: 0, count: Int(metadata.st_size))
         var offset = 0
@@ -145,7 +145,7 @@ public enum GoalongSiteSubmission {
                 read(fd, pointer.baseAddress!.advanced(by: offset), remaining)
             }
             if count < 0 && errno == EINTR { continue }
-            guard count > 0 else { throw GoalongSiteExportError.localized("The upload-token file changed or could not be read.", french: "Le fichier de jeton d’envoi a changé ou n’a pas pu être lu.") }
+            guard count > 0 else { throw GoalongSiteExportError.localized("The upload-token file changed or could not be read.", french: "Le fichier d’accès a changé ou n’a pas pu être lu.") }
             offset += count
         }
         var after = stat()
@@ -153,12 +153,12 @@ public enum GoalongSiteSubmission {
               metadata.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec,
               metadata.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec,
               after.st_mode & 0o777 == 0o600 else {
-            throw GoalongSiteExportError.localized("The upload-token file changed during the read.", french: "Le fichier de jeton d’envoi a changé pendant la lecture.")
+            throw GoalongSiteExportError.localized("The upload-token file changed during the read.", french: "Le fichier d’accès a changé pendant la lecture.")
         }
-        guard let raw = String(bytes: bytes, encoding: .utf8) else { throw GoalongSiteExportError.localized("Invalid upload-token encoding.", french: "Encodage du jeton d’envoi invalide.") }
+        guard let raw = String(bytes: bytes, encoding: .utf8) else { throw GoalongSiteExportError.localized("Invalid upload-token encoding.", french: "Encodage du fichier d’accès invalide.") }
         let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (16...4096).contains(token.count), token.utf8.allSatisfy({ (33...126).contains($0) }) else {
-            throw GoalongSiteExportError.localized("The upload-token file must contain one nonempty token without embedded whitespace.", french: "Le fichier de jeton d’envoi doit contenir un seul jeton non vide, sans espace.")
+            throw GoalongSiteExportError.localized("The upload-token file must contain one nonempty token without embedded whitespace.", french: "Le fichier d’accès doit contenir un seul jeton non vide, sans espace.")
         }
         return token
     }

@@ -62,13 +62,13 @@
         var protectionSummary: String {
             switch trustTier {
             case "secure_enclave":
-                return "Les engagements minute par minute sont signés par une clé P-256 non exportable de la Secure Enclave."
+                return "Les preuves minute par minute sont signées par une clé P-256 non exportable de la Secure Enclave."
             case "keychain_software":
-                return "Les engagements minute par minute sont signés par une clé P-256 logicielle conservée dans le Trousseau."
+                return "Les preuves minute par minute sont signées par une clé P-256 logicielle conservée dans le Trousseau."
             case "unavailable":
-                return "Le Trousseau est inaccessible : les engagements minute par minute ne sont pas signés pendant ce lancement."
+                return "Le Trousseau est inaccessible : les preuves minute par minute ne sont pas signées pendant ce lancement."
             default:
-                return "Les engagements minute par minute sont signés par une clé P-256 locale réservée à votre compte (version compilée localement)."
+                return "Les preuves minute par minute sont signées par une clé P-256 locale réservée à votre compte (version compilée localement)."
             }
         }
     }

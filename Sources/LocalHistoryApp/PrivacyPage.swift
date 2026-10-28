@@ -171,17 +171,17 @@
                         flowNode(
                             symbol: "internaldrive.fill",
                             title: "2. Conservé localement",
-                            message: "Événements détaillés (JSONL) et sels d’engagement privés"
+                            message: "Événements détaillés (JSONL) et clés de preuve privées"
                         )
                         flowArrow
                         flowNode(
                             symbol: "number.square.fill",
-                            title: "3. Ancré",
+                            title: "3. Preuve enregistrée",
                             message: GoalongBuildCapabilities.permitsRemoteVerification
                                 ? (model.runtime.verificationEnabled
-                                    ? "Uniquement des engagements signés opaques"
-                                    : "Conservés localement tant que la vérification n’est pas activée")
-                                : "Les engagements locaux ne quittent jamais cette version"
+                                    ? "Uniquement des preuves signées, sans contenu"
+                                    : "Preuves conservées localement tant que la vérification n’est pas activée")
+                                : "Les preuves locales ne quittent jamais cette version"
                         )
                         flowArrow
                         flowNode(
@@ -196,8 +196,8 @@
                             .foregroundStyle(LHTheme.accent)
                         Text(
                             GoalongBuildCapabilities.permitsRemoteVerification
-                                ? "Un engagement opaque ne contient ni l’application, ni l’adresse, ni le titre de fenêtre, ni les clics, ni la catégorie. Lorsque les engagements sont activés, votre serveur voit nécessairement des métadonnées de connexion comme l’heure d’arrivée et l’adresse IP."
-                                : "Les engagements locaux vérifient l’intégrité sans exposer l’enregistrement détaillé ni contacter de serveur. Cette version ne transmet aucun engagement."
+                                ? "Une preuve signée ne contient ni l’application, ni l’adresse, ni le titre de fenêtre, ni les clics, ni la catégorie. Lorsque l’envoi des preuves est activé, votre serveur voit nécessairement des métadonnées de connexion comme l’heure d’arrivée et l’adresse IP."
+                                : "Les preuves locales vérifient l’intégrité sans exposer l’enregistrement détaillé ni contacter de serveur. Cette version ne transmet aucune preuve."
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -443,7 +443,7 @@
                 VStack(alignment: .leading, spacing: 14) {
                     SectionTitle(
                         title: "Identité de vérification",
-                        subtitle: "Sert à signer les engagements minute par minute sans exposer l’activité"
+                        subtitle: "Sert à signer les preuves minute par minute sans exposer l’activité"
                     )
 
                     HStack(spacing: 13) {

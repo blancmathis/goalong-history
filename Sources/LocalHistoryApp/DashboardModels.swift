@@ -30,7 +30,7 @@
             case .analytics: return "Activité"
             case .work: return "Mon travail"
             case .history: return "Historique"
-            case .monitoring: return "Surveillance temps réel"
+            case .monitoring: return "Jev"
             case .blocking: return "Blocage"
             case .concentration: return "Concentration"
             case .distractions: return "Distractions"

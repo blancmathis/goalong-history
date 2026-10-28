@@ -166,7 +166,7 @@ final class GoalongWebsiteFixRound3Tests: XCTestCase {
                 XCTAssertFalse(text.contains(english), "\(error): \(text)")
             }
         }
-        XCTAssertEqual(DashboardViewModel.userFacingMessage(ShareBuildError.noSeals), "Aucune minute scellée n’est disponible pour ce jour.")
+        XCTAssertEqual(DashboardViewModel.userFacingMessage(ShareBuildError.noSeals), "Aucune donnée avec preuve pour ce jour.")
     }
 }
 #endif

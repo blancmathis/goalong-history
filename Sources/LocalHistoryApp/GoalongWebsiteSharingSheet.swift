@@ -96,7 +96,7 @@ import LocalHistoryQueryCLI
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(connected ? "Votre compte Goalong" : "Compte non relié").font(.system(size: 14, weight: .medium))
-                    Text(connected ? (URL(string: origin)?.host ?? "Liaison enregistrée") : "Relier le compte ne transmet aucune activité.")
+                    Text(connected ? (URL(string: origin)?.host ?? "Connexion enregistrée") : "La connexion du compte ne transmet aucune activité.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
