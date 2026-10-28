@@ -282,7 +282,10 @@
                 )
                 return
             }
-            save(merged, successMessage: "Les sources locales disponibles ont été ajoutées.")
+            let addedSource = merged.watchedFolders.count > configuration.watchedFolders.count
+            save(merged, successMessage: addedSource
+                ? "Les sources locales disponibles ont été ajoutées."
+                : "Les sources locales disponibles ont été réactivées.")
         }
 
         func chooseFolder() {

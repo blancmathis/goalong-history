@@ -126,7 +126,7 @@ extension Notification.Name {
     func importResult(_ url: URL) {
         do { guard let request, sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Préparez ou rouvrez d’abord la sélection locale.") }
             result = try GoalongProfileAnalysis.apply(GoalongProfileAnalysis.parseResult(GoalongSiteAnalysisRequest.readSelectedBytes(url)), to: request)
-            selectedItems = []; reviewed = false; status = "Réponse contrôlée. Aucun résultat n’a été envoyé."
+            error = nil; selectedItems = []; reviewed = false; status = "Réponse contrôlée. Aucun résultat n’a été envoyé."
         } catch { self.error = goalongUserMessage(error) }
     }
     func save() {
