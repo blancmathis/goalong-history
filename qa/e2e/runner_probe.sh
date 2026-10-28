@@ -75,18 +75,13 @@ try "P1 continue -> done" "$DRIVER" press "$BUNDLE" "onboarding-continue"; sleep
 shot "P1-setup-done"; dump "P1-setup-done"
 try "windows" "$DRIVER" windows "$BUNDLE"
 
-log "== path 2: sidebar navigation"
-for s in overview work history concentration settings; do
-  try "P2 sidebar-$s" "$DRIVER" press "$BUNDLE" "sidebar-$s"; sleep 3
-  shot "P2-$s"; dump "P2-$s"
-done
-
 log "== synthetic activity for the app's own capture"
 open -a TextEdit "$RUNNER_TEMP/synthetic-note.txt"; sleep 6; open -a Finder; sleep 6
 shot "A-activity"
 
 log "== path 3: permissions refused, then granted (runner TCC.db), relaunch"
-try "P3 Autorisations macOS" "$DRIVER" press "$BUNDLE" "Autorisations macOS"; sleep 3
+try "P3 sidebar-settings" "$DRIVER" press "$BUNDLE" "sidebar-settings"; sleep 2
+try "P3 settings-permissions" "$DRIVER" press "$BUNDLE" "settings-permissions"; sleep 3
 shot "P3-before-grant"; dump "P3-before-grant"
 copy_state before
 quit_app
@@ -105,12 +100,50 @@ try "restart tccd" sudo killall tccd; killall tccd 2>/dev/null; sleep 2
 launch
 try "P3 status item" "$DRIVER" status-item "$BUNDLE"; sleep 3
 shot "P3-panel-after-grant"
-try "P3 open dashboard" "$DRIVER" press "$BUNDLE" "Ouvrir Goalong Dev"; sleep 4
-try "P3 sidebar-settings" "$DRIVER" press "$BUNDLE" "sidebar-settings"; sleep 3
-try "P3 Autorisations macOS" "$DRIVER" press "$BUNDLE" "Autorisations macOS"; sleep 3
+try "P3 open dashboard" "$DRIVER" press "$BUNDLE" "Ouvrir Goalong Dev" AXButton; sleep 4
+try "P3 sidebar-settings" "$DRIVER" press "$BUNDLE" "sidebar-settings"; sleep 2
+try "P3 settings-permissions" "$DRIVER" press "$BUNDLE" "settings-permissions"; sleep 3
 shot "P3-after-grant"; dump "P3-after-grant"
 open -a TextEdit "$RUNNER_TEMP/synthetic-note.txt"; sleep 6; open -a Finder; sleep 8
 shot "B-activity"
+
+log "== lot 1: one step per matrix row (qa/e2e/lot1_steps.sh)"
+ROWS="$OUT/rows"; RESULTS="$OUT/results.tsv"; mkdir -p "$ROWS/ax"
+printf 'row\tresult\tcapture\tmissing_required\tmissing_optional\n' > "$RESULTS"
+front() { osascript -e "tell application id \"$BUNDLE\" to activate" >/dev/null 2>&1; sleep 0.5; }
+esc() { front; osascript -e 'tell application "System Events" to key code 53' >/dev/null 2>&1; sleep 1; }
+rowshot() { screencapture -x "$ROWS/$1.png"; "$DRIVER" dump "$BUNDLE" "$ROWS/ax/$1.txt" >/dev/null 2>&1; }
+# A step passes when every required control was found and pressed; optional misses are listed.
+step() {
+  local row="$1"; shift; local req="" opt="" c o s
+  pgrep -x "$EXE" >/dev/null || { launch; "$DRIVER" press "$BUNDLE" "Ouvrir Goalong Dev" AXButton >/dev/null 2>&1; sleep 3; }
+  front
+  for c in "$@"; do
+    case "$c" in
+      nav:*) o="$("$DRIVER" press "$BUNDLE" "sidebar-${c#nav:}" 2>&1)" || req+="$c;"; sleep 2 ;;
+      pane:*) "$DRIVER" press "$BUNDLE" sidebar-settings >/dev/null 2>&1 || req+="sidebar-settings;"; sleep 1
+              "$DRIVER" press "$BUNDLE" settings-back >/dev/null 2>&1 && sleep 1
+              if [[ "${c#pane:}" != home ]]; then "$DRIVER" press "$BUNDLE" "settings-${c#pane:}" >/dev/null 2>&1 || req+="$c;"; sleep 2; fi ;;
+      p:*) o="$("$DRIVER" press "$BUNDLE" "${c#p:}" 2>&1)" || req+="${c#p:};"; sleep 1 ;;
+      b:*) o="$("$DRIVER" press "$BUNDLE" "${c#b:}" AXCheckBox 2>&1)" || o="$("$DRIVER" press "$BUNDLE" "${c#b:}" AXButton 2>&1)" || req+="${c#b:};"; sleep 1 ;;
+      o:*) o="$("$DRIVER" press "$BUNDLE" "${c#o:}" 2>&1)" || opt+="${c#o:};"; sleep 1 ;;
+      m:*) s="${c#m:}"; if [[ "$s" == *">"* ]]; then o="$("$DRIVER" menu "$BUNDLE" "${s%%>*}" "${s#*>}" 2>&1)"; else o="$("$DRIVER" menu "$BUNDLE" "$s" 2>&1)"; fi || req+="$c;"; sleep 1 ;;
+      si) o="$("$DRIVER" status-item "$BUNDLE" 2>&1)" || req+="status-item;"; sleep 2 ;;
+      sm) o="$("$DRIVER" status-menu "$BUNDLE" 2>&1)" || req+="status-menu;"; sleep 1 ;;
+      esc) esc ;;
+      w:*) sleep "${c#w:}" ;;
+      s:*) rowshot "$row-${c#s:}" ;;
+    esac
+    log "[$row] $c -> ${o:0:200}"; o=""
+  done
+  sleep 1; rowshot "$row"; esc
+  printf '%s\t%s\t%s\t%s\t%s\n' "$row" "$([[ -z $req ]] && echo pass || echo fail)" "$row.png" "$req" "$opt" >> "$RESULTS"
+}
+for f in 04-P1-setup-1-donnees 05-P1-setup-2-sources 06-P1-setup-3-pret 07-P1-setup-done; do
+  cp "$OUT/shots/$f.png" "$ROWS/ONB-01-${f#*-P1-}.png" 2>/dev/null
+done
+source "$(dirname "$0")/lot1_steps.sh"
+log "== lot 1 results"; cat "$RESULTS" | tee -a "$SUMMARY"
 
 log "== app capture inventory"
 {
