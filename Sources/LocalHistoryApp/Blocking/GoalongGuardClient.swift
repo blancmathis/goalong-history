@@ -25,7 +25,7 @@ enum GuardConsent {
     /// Adds the sentence only while the guard was never registered.
     static func message(_ base: String, needed: Bool) -> String { needed ? base + "\n\n" + text : base }
 
-    static let text = "Pour que ce blocage tienne même si Goalong est forcé à quitter, Goalong ajoute un petit service d’arrière-plan. macOS l’annoncera une fois. Aucun mot de passe n’est demandé. Il ne tourne que pendant les blocages verrouillés ou protégés par mot de passe."
+    static let text = "Pour que ce blocage tienne même si Goalong est forcé à quitter, Goalong ajoute un petit service d’arrière-plan. macOS l’annonce, et peut l’annoncer de nouveau après une mise à jour. Aucun mot de passe n’est demandé. Il ne tourne que pendant les blocages verrouillés ou protégés par mot de passe."
 }
 
 /// Only an installed copy of Goalong or Goalong Dev may register its guard: never a translocated
@@ -99,6 +99,17 @@ enum GuardUnregisterCommand {
     static let argument = "--unregister-guard"
     static let refusedExitCode: Int32 = 3
     static let overrides = ["GOALONG_UNINSTALL_DURING_LOCK", "GOALONG_INSTALL_DURING_LOCK"]
+    /// The service is still registered afterwards (or this bundle has no guard identity).
+    static let failedExitCode: Int32 = 4
+
+    /// 0 only when the service is gone afterwards: an installer must not believe a guard left in place is gone.
+    static func unregister(_ service: any GuardServiceControlling) -> Int32 {
+        if service.status != .notRegistered { try? service.unregister() }
+        switch service.status {
+        case .notRegistered, .notFound: return 0
+        default: return failedExitCode
+        }
+    }
 
     static func isRefused(marker: GuardMarker, now: Date, environment: [String: String]) -> Bool {
         guard case .date(let end) = marker, end > now else { return false }
@@ -113,7 +124,10 @@ enum GuardUnregisterCommand {
 
     /// Runs the command and exits. Never touches another copy's guard: the plist name is this bundle's own.
     static func run() -> Never {
-        guard let identity = GoalongGuardGate.identity else { exit(0) }
+        guard let identity = GoalongGuardGate.identity else {
+            FileHandle.standardError.write(Data("Cette copie n’a pas de service de protection connu.\n".utf8))
+            exit(failedExitCode)
+        }
         let files = GoalongGuardFiles.standard
         let marker = files.readMarker(now: Date()) // wall: guard protocol (spec K §4, wall)
         if isRefused(marker: marker, now: Date(), environment: ProcessInfo.processInfo.environment) { // wall: guard protocol (spec K §4, wall)
@@ -125,9 +139,9 @@ enum GuardUnregisterCommand {
         if writesOverride(marker: marker, now: Date()) { // wall: guard protocol (spec K §4, wall)
             files.writeOverride(GuardOverride(pid: getpid(), writtenAt: Date().timeIntervalSince1970)) // wall: guard protocol (spec K §4, wall)
         }
-        let service = SMAppService.agent(plistName: identity.plistName)
-        if service.status != .notRegistered { try? service.unregister() }
-        exit(0)
+        let code = unregister(SMAppService.agent(plistName: identity.plistName))
+        if code != 0 { FileHandle.standardError.write(Data("Le service de protection n’a pas pu être retiré.\n".utf8)) }
+        exit(code)
     }
 }
 
@@ -185,7 +199,7 @@ struct GuardLaunchProbes: Sendable {
 /// failed. A bootout seen in this arming (kickstart 113) is final until the next arming. Never an alert.
 struct GuardEscalation {
     static let stoppedUntilLogin = "Service de protection arrêté jusqu’à la prochaine ouverture de session."
-    static let unreachable = "Service de protection injoignable."
+    static let unreachable = "Service de protection injoignable. Réessayez dans Réglages Système › Général › Ouverture."
 
     var status: () -> SMAppService.Status
     var ping: () -> GuardPingOutcome
@@ -242,6 +256,26 @@ struct GuardEscalation {
     }
 }
 
+/// A copy of Goalong outside /Applications and ~/Applications (disk image, Downloads, translocated, external
+/// volume) may not register its guard. A severe block still starts; « Niveau » says why it would not hold
+/// through a forced quit. Never an alert, never a refusal.
+@MainActor final class GoalongGuardMissing: GoalongGuardClienting {
+    static let reason = "Installez Goalong dans Applications pour que le verrou tienne si l’app est forcée à quitter."
+
+    /// Goalong or Goalong Dev only: a test runner or a foreign bundle has no guard at all.
+    static func make(identity: GuardIdentity? = GoalongGuardGate.identity) -> GoalongGuardMissing? {
+        identity == nil ? nil : GoalongGuardMissing()
+    }
+
+    var onChange: (() -> Void)?
+    var needsConsent: Bool { false }
+    var canRemove: Bool { false }
+    func update(severeUntil: Date?) -> BlockingProtectionState.Component {
+        severeUntil == nil ? .notInstalled : .failed(Self.reason)
+    }
+    func removeService() {}
+}
+
 /// SMAppService agent client. Every SMAppService and XPC call runs on its own serial queue.
 @MainActor final class GoalongGuardClient: GoalongGuardClienting {
     static let registeredBuildKey = "goalong.guard.registeredBuild"
@@ -252,6 +286,7 @@ struct GuardEscalation {
     nonisolated static let stopCheckInterval: TimeInterval = 2
     /// `launchctl kickstart` exit status when the label is not loaded: someone ran `launchctl bootout`.
     nonisolated static let launchctlServiceNotFound: Int32 = 113
+    static let removalFailed = "Le service de protection n’a pas pu être retiré."
 
     var onChange: (() -> Void)?
     private let identity: GuardIdentity
@@ -270,6 +305,8 @@ struct GuardEscalation {
     private var lastPing = Date.distantPast
     /// The badge state of the last update or finished round.
     private(set) var component: BlockingProtectionState.Component = .notInstalled
+    /// The last removal left the service registered: said under « Niveau » until a removal works or a block arms.
+    private var removalFailedNotice = false
     /// register() failed in this launch: no retry until the next launch (an unsigned copy would loop).
     private var registerFailed = false
     /// `launchctl kickstart` already ran for this arming.
@@ -327,10 +364,10 @@ struct GuardEscalation {
             // Spec §3.4 "nil : rien": no BTM call while idle. One status read when a block ends, so the
             // "remove the service" button sees the current state; otherwise only the read at launch.
             if wasArmed { closeConnection(); readStatus() }
-            component = .notInstalled
+            component = idleComponent
             return component
         }
-        if !wasArmed { lastPing = .distantPast; kickstartUsed = false; bootedOut = false; notArmedRetried = false }
+        if !wasArmed { lastPing = .distantPast; kickstartUsed = false; bootedOut = false; notArmedRetried = false; removalFailedNotice = false }
         if overrideActive() {
             // An installer is replacing or removing this copy with the override: never bring the guard back.
             stopWatch.setActive(false)
@@ -363,7 +400,8 @@ struct GuardEscalation {
     }
 
     func removeService() {
-        guard !armed else { return }
+        // A BTM call in flight could register the service again right after this removal.
+        guard !armed, !isWorking else { return }
         closeConnection()
         defaults.removeObject(forKey: Self.registeredBuildKey)
         let service = service
@@ -371,8 +409,16 @@ struct GuardEscalation {
         queue.async { [weak self] in
             try? service.unregister()
             let next = service.status
-            DispatchQueue.main.async { self?.finish(status: next, component: .notInstalled) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.removalFailedNotice = next != .notRegistered && next != .notFound
+                self.finish(status: next, component: self.idleComponent)
+            }
         }
+    }
+
+    private var idleComponent: BlockingProtectionState.Component {
+        removalFailedNotice ? .failed(Self.removalFailed) : .notInstalled
     }
 
     /// Re-register only when `launchctl kickstart` ran in this round and found the job loaded. A job
@@ -431,7 +477,7 @@ struct GuardEscalation {
     private func finish(status next: SMAppService.Status, component next2: BlockingProtectionState.Component) {
         isWorking = false
         let changed = status != next || component != next2
-        status = next; statusRead = Date(); component = armed ? next2 : .notInstalled // wall: status poll throttle
+        status = next; statusRead = Date(); component = armed ? next2 : idleComponent // wall: status poll throttle
         if next == .enabled, defaults.string(forKey: Self.registeredBuildKey) == nil { defaults.set(build, forKey: Self.registeredBuildKey) }
         if changed { onChange?() }
     }
@@ -445,7 +491,7 @@ struct GuardEscalation {
 
     /// Re-register at most once per build: an unregister/register pair may show the notification again.
     fileprivate func claimReregister() -> Bool {
-        guard defaults.string(forKey: Self.reregisteredBuildKey) != build else { return false }
+        guard armed, defaults.string(forKey: Self.reregisteredBuildKey) != build else { return false }
         defaults.set(build, forKey: Self.reregisteredBuildKey)
         return true
     }
@@ -457,6 +503,7 @@ struct GuardEscalation {
         return true
     }
 
+    fileprivate var isArmed: Bool { armed }
     fileprivate func noteRegisterFailed() { registerFailed = true }
     fileprivate func noteBootedOut() { if armed { bootedOut = true } }
     fileprivate var isBootedOut: Bool { bootedOut }
@@ -484,6 +531,11 @@ struct GuardEscalation {
         let probes: GuardLaunchProbes?
 
         func registerThenPing() -> (SMAppService.Status, BlockingProtectionState.Component) {
+            // The block may have ended while this job waited: never register for nothing.
+            let client = client
+            guard DispatchQueue.main.sync(execute: { MainActor.assumeIsolated { client?.isArmed == true } }) else {
+                return (service.status, .notInstalled)
+            }
             try? service.register()
             let status = service.status
             switch status {
