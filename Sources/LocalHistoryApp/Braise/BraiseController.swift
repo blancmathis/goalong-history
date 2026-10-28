@@ -138,7 +138,7 @@ import ServiceManagement
         stateChanged?()
     }
     static func clockText(_ date: Date) -> String { GoalongUIFormat.time(date) }
-    private static func when(_ date: Date) -> String { whenText(date, now: Date()) }
+    private static func when(_ date: Date) -> String { whenText(date, now: GoalongToday.now) }
     /// The weekday alone is clear for the next six days. A week away it is today's weekday again: add the date.
     nonisolated static func whenText(_ date: Date, now: Date) -> String {
         let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: now),
