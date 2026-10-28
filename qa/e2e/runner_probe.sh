@@ -56,11 +56,15 @@ launch
 shot "A-launched"; dump "A-launched"
 try "windows" "$DRIVER" windows "$BUNDLE"
 
-log "== path 1: status item -> panel -> open dashboard"
+log "== path 1: status item -> panel -> open -> three-step setup -> dashboard"
 try "P1 status item" "$DRIVER" status-item "$BUNDLE"; sleep 3
 shot "P1-panel"; dump "P1-panel"
 try "P1 open dashboard" "$DRIVER" press "$BUNDLE" "Ouvrir"; sleep 4
-shot "P1-dashboard"; dump "P1-dashboard"
+shot "P1-setup-1-donnees"; dump "P1-setup-1-donnees"
+for step in 2-sources 3-pret done; do
+  try "P1 continue -> $step" "$DRIVER" press "$BUNDLE" "onboarding-continue"; sleep 4
+  shot "P1-setup-$step"; dump "P1-setup-$step"
+done
 try "windows" "$DRIVER" windows "$BUNDLE"
 
 log "== path 2: sidebar navigation"
