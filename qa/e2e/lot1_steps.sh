@@ -3,16 +3,17 @@
 # Commands: nav:SECTION  pane:PANE  p:LABEL (must press)  o:LABEL (optional press)
 #           b:LABEL (must press, buttons only)  m:TOP>ITEM (app menu)  si / sm (status item / its menu)
 #           esc  pc (the status panel closed itself)  w:N (sleep)  s:NAME (extra capture ROW-NAME)
+#           mi:ID (must press a menu item by id)  has:REGEX (must find REGEX in the app's AX tree: data, not structure)
 
 # --- Menu bar (status item, panel, context menu)
 step MNB-01 si
 step MNB-02 si w:2 s:panel o:"Activer dans Réglages" w:2 pc
 step MNB-03 si o:"Voir la journée" w:2 pc
-step MNB-04 si p:"Plus d’options" w:1 s:menu mi:toggleGlobalPause w:2 s:sheet o:Annuler esc
-step MNB-05 si p:"Plus d’options" w:1 mi:clearLastTenMinutes w:2 s:alert o:Annuler esc
-step MNB-06 si p:"Plus d’options" w:1 mi:requestPermissions w:2 s:perm esc pc
-step MNB-07 si p:"Plus d’options" w:1 mi:reloadConfiguration w:2 s:reload esc
-step MNB-08 si p:"Plus d’options" w:1 mi:openMonitoring w:2 pc
+step MNB-04 si p:"Plus d’options" pc w:1 s:menu mi:toggleGlobalPause w:2 s:sheet o:Annuler esc
+step MNB-05 si p:"Plus d’options" pc w:1 mi:clearLastTenMinutes w:2 s:alert o:Annuler esc
+step MNB-06 si p:"Plus d’options" pc w:1 mi:requestPermissions w:2 s:perm esc pc
+step MNB-07 si p:"Plus d’options" pc w:1 mi:reloadConfiguration w:2 s:reload esc
+step MNB-08 si p:"Plus d’options" pc w:1 mi:openMonitoring w:2 pc
 step MNB-09 si p:"Réglages" w:2 pc
 
 # --- Main window, sidebar, banner, day picker
@@ -22,10 +23,10 @@ step WIN-03 pane:home p:settings-privacy-stop w:1 o:"Tout suspendre" w:1 s:confi
 step WIN-04 nav:overview p:"Jour précédent" w:1 p:Aujourd’hui p:"Choisir un jour" w:1 s:calendar esc
 
 # --- Activité
-step ACT-01 nav:overview p:"7 jours" w:1 s:7j p:"28 jours" w:1 s:28j p:Jour
+step ACT-01 nav:overview has:"sur [0-9]+ min actives" p:"7 jours" w:1 s:7j p:"28 jours" w:1 s:28j p:Jour
 step ACT-02 nav:overview p:"Bilans et projets" w:2 s:bilans o:activity-detail-back o:Retour
 step ACT-03 nav:overview p:"Couverture et sources" w:2 s:couverture o:activity-detail-back o:Retour
-step ACT-04 nav:overview o:activity-usage-sort o:activity-usage-show-all w:1
+step ACT-04 nav:overview has:"TextEdit" o:activity-usage-sort o:activity-usage-show-all w:1
 step ACT-05 nav:overview p:"Ajouter une note sur cette journée" w:1 s:note esc
 step ACT-06 nav:overview p:"Comment lire ces chiffres" w:1
 
@@ -36,8 +37,8 @@ step WRK-03 nav:work o:"Nouvelle tâche…" w:1 s:sheet esc o:monitoring-save-go
 step WRK-04 nav:work o:"Filtre" w:1
 
 # --- Historique (Ce Mac, Temps d'écran Apple, Conversations locales)
-step HIS-01 nav:history p:"Ce Mac" o:"Rechercher dans la chronologie" o:"Ordre de la chronologie" w:1 s:ordre esc o:"Effacer la recherche"
-step HIS-02 nav:history p:"Ce Mac" o:"Afficher les détails de" w:1 s:detail o:"Voir le fichier brut" w:2 esc
+step HIS-01 nav:history p:"Ce Mac" has:"TextEdit, [0-9]+ min" has:"Safari, [0-9]+ min" o:"Rechercher dans la chronologie" o:"Ordre de la chronologie" w:1 s:ordre esc o:"Effacer la recherche"
+step HIS-02 nav:history p:"Ce Mac" has:"[0-9]+ min d’activité" o:"Afficher les détails de" w:1 s:detail o:"Voir le fichier brut" w:2 esc
 step HIS-03 nav:history p:"Ce Mac" o:"Filtrer le contexte" w:1
 step HIS-04 nav:history p:"Ce Mac" o:Supprimer w:1 s:alert esc
 step STE-01 nav:history p:"Temps d’écran Apple" w:2 o:source-appleScreenTime w:1 s:toggle o:screen-time-open-settings w:1 esc
