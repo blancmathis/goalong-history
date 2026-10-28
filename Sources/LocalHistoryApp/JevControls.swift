@@ -110,7 +110,7 @@ struct JevRecentChecksView: View {
     private var onOpenMonitoring: () -> Void = {}
     func install(in parent: NSMenu, onOpenMonitoring: @escaping () -> Void) {
         self.onOpenMonitoring = onOpenMonitoring
-        let item = NSMenuItem(title: "Surveillance temps réel", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: "Jev", action: nil, keyEquivalent: "")
         let menu = NSMenu(); menu.delegate = self; item.submenu = menu
         parent.addItem(item)
     }
