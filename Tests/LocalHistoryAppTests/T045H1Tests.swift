@@ -83,5 +83,18 @@
             XCTAssertFalse(text.isEmpty, "fixture must produce a switch insight")
             XCTAssertFalse(text.contains("(0 fois"), text)
         }
+
+        // H1-06: a past commitment not yet settled (Goalong closed at midnight) still shows its stake.
+        // Its day count is 0 or negative, so it named today's weekday (« mercredi ») or a past one (« mardi »).
+        func testUnsettledPastCommitmentStakeRunsToday() {
+            let now = paris.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 9))!
+            for offset in [-1, -2] {
+                let day = paris.date(byAdding: .day, value: offset, to: now)!
+                let period = FocusCommitmentPeriod(kind: .day, key: FocusCalendar.dayKey(day, calendar: paris))
+                XCTAssertEqual(FocusCommitmentFormat.stakeDay(period, now: now, calendar: paris), "aujourd’hui", "offset \(offset)")
+            }
+            let today = FocusCommitmentPeriod(kind: .day, key: FocusCalendar.dayKey(now, calendar: paris))
+            XCTAssertEqual(FocusCommitmentFormat.stakeDay(today, now: now, calendar: paris), "demain")
+        }
     }
 #endif
