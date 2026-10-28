@@ -19,7 +19,15 @@ final class T045T1CLICommandsTests: XCTestCase {
 
     // MARK: helpers
 
-    private func makeRoot(events: Bool = false, consent: Bool = false) throws -> URL {
+    /// Local midnight of 2026-08-31 in the zone the run uses; every fixture time and window derives from it.
+    private static let fixtureMidnight = Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 31))!
+    private static func utc(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: date)
+    }
+
+    private func makeRoot(events: Bool = false, consent: Bool = false, allConsents: Bool = false) throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("goalong-t045t1-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("events"), withIntermediateDirectories: true)
@@ -28,8 +36,14 @@ final class T045T1CLICommandsTests: XCTestCase {
             try Data(#"{"schemaVersion":1,"policyVersion":1,"capabilities":{"localComputerHistory":{"enabled":true}}}"#.utf8)
                 .write(to: root.appendingPathComponent("capability-consent.json"))
         }
+        if allConsents {
+            let names = ["localComputerHistory", "appleScreenTime", "aiConversations", "chatGPTAnalysis"]
+            let caps = names.map { "\"\($0)\":{\"enabled\":true}" }.joined(separator: ",")
+            try Data(#"{"schemaVersion":1,"policyVersion":1,"capabilities":{\#(caps)}}"#.utf8)
+                .write(to: root.appendingPathComponent("capability-consent.json"))
+        }
         if events {
-            let midnight = Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 31))!
+            let midnight = Self.fixtureMidnight
             let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
             var lines = Data()
             for (index, app) in [("Safari", "test.Safari"), ("Xcode", "test.Xcode")].enumerated() {
@@ -48,17 +62,25 @@ final class T045T1CLICommandsTests: XCTestCase {
         return root
     }
 
-    /// Runs the CLI against `root` and returns what it printed, or the thrown error.
+    /// Runs the CLI against `root` and returns what it printed, or the thrown error. The CLI writes to file
+    /// descriptor 1, so it is pointed at a private temporary file (no 64 KB pipe limit, no reader thread) and
+    /// restored before returning. The lock keeps two runs from ever sharing the redirection.
+    private static let stdoutLock = NSLock()
     private func run(_ arguments: [String], root: URL) -> (out: Data, error: Error?) {
-        let pipe = Pipe()
+        Self.stdoutLock.lock(); defer { Self.stdoutLock.unlock() }
+        let capture = FileManager.default.temporaryDirectory.appendingPathComponent("goalong-t045t1-out-\(UUID().uuidString)")
+        cleanup.append(capture)
+        let descriptor = open(capture.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+        XCTAssertGreaterThanOrEqual(descriptor, 0)
+        fflush(stdout)
         let saved = dup(STDOUT_FILENO)
-        dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
+        dup2(descriptor, STDOUT_FILENO)
         var failure: Error?
         do { try GoalongQueryCLI.run(arguments: ["--root", root.path] + arguments) } catch { failure = error }
+        fflush(stdout)
         dup2(saved, STDOUT_FILENO)
-        close(saved)
-        try? pipe.fileHandleForWriting.close()
-        return (pipe.fileHandleForReading.readDataToEndOfFile(), failure)
+        close(saved); close(descriptor)
+        return ((try? Data(contentsOf: capture)) ?? Data(), failure)
     }
 
     private func json(_ arguments: [String], root: URL, file: StaticString = #filePath, line: UInt = #line) throws -> [String: Any] {
@@ -87,13 +109,24 @@ final class T045T1CLICommandsTests: XCTestCase {
 
     // MARK: status
 
+    private func consents(_ status: [String: Any]) throws -> [String: Bool] {
+        let sources = try XCTUnwrap(status["sources"] as? [String: Any])
+        var result: [String: Bool] = [:]
+        for key in ["computerHistory", "screenTime", "aiConversations", "chatGPTAnalysis"] {
+            result[key] = try XCTUnwrap((sources[key] as? [String: Any])?["consentEnabled"] as? Bool, key)
+        }
+        return result
+    }
+
     func testStatusReportsConsentsOffOnAnEmptyRootAndRefusesArguments() throws {
         let root = try makeRoot()
         let result = run(["status"], root: root)
         XCTAssertNil(result.error)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: result.out) as? [String: Any])
         XCTAssertEqual(object["rootDirectory"] as? String, root.path)
-        XCTAssertFalse(String(decoding: result.out, as: UTF8.self).contains("\"enabled\" : true"))
+        XCTAssertEqual(try consents(object), ["computerHistory": false, "screenTime": false, "aiConversations": false, "chatGPTAnalysis": false])
+        let on = try json(["status"], root: try makeRoot(allConsents: true))
+        XCTAssertEqual(try consents(on), ["computerHistory": true, "screenTime": true, "aiConversations": true, "chatGPTAnalysis": true])
         XCTAssertEqual(message(["status", "x"], root: root), "status does not accept arguments")
     }
 
@@ -103,7 +136,10 @@ final class T045T1CLICommandsTests: XCTestCase {
         let root = try makeRoot(events: true)
         let full = try json(["summary", "2026-08-31"], root: root)
         XCTAssertNil(full["error"] as? String)
-        XCTAssertNotNil(full["memory"] as? [String: Any])
+        let memory = try XCTUnwrap(full["memory"] as? [String: Any])
+        XCTAssertEqual(memory["applications"] as? [String], ["Safari", "Xcode"])
+        XCTAssertEqual(memory["title"] as? String, "Activity in Safari")
+        XCTAssertEqual((memory["coverage"] as? [String: Any])?["sourceEventCount"] as? Int, 6)
         let empty = try json(["summary", "2026-08-30"], root: root)
         XCTAssertEqual(empty["error"] as? String, "No events were loaded for that day.")
         XCTAssertEqual(message(["summary", "today", "extra"], root: root), "Use summary [today|yesterday|YYYY-MM-DD]")
@@ -115,7 +151,22 @@ final class T045T1CLICommandsTests: XCTestCase {
     func testActivitiesListsTheDayPagesItAndRejectsBadArguments() throws {
         let root = try makeRoot(events: true)
         let object = try json(["activities", "2026-08-31"], root: root)
-        XCTAssertNotNil(object["activities"] as? [Any])
+        let all = try XCTUnwrap(object["activities"] as? [[String: Any]])
+        let total = try XCTUnwrap(object["totalActivityCount"] as? Int)
+        XCTAssertEqual(total, 2, "one activity per fixture app")
+        XCTAssertEqual(all.count, total)
+        XCTAssertNil(object["nextActivityOffset"])
+        let first = try json(["activities", "2026-08-31", "--limit", "1"], root: root)
+        XCTAssertEqual(first["returnedActivityCount"] as? Int, 1)
+        XCTAssertEqual(first["totalActivityCount"] as? Int, total)
+        XCTAssertEqual(first["nextActivityOffset"] as? Int, 1)
+        XCTAssertEqual((first["activities"] as? [[String: Any]])?.first?["id"] as? String, all[0]["id"] as? String)
+        XCTAssertTrue((first["nextStep"] as? String ?? "").contains("--offset 1 --limit 1"))
+        let second = try json(["activities", "2026-08-31", "--limit", "1", "--offset", "1"], root: root)
+        XCTAssertEqual(second["activityOffset"] as? Int, 1)
+        XCTAssertEqual((second["activities"] as? [[String: Any]])?.first?["id"] as? String, all[1]["id"] as? String)
+        XCTAssertNil(second["nextActivityOffset"])
+        XCTAssertNotEqual(all[0]["id"] as? String, all[1]["id"] as? String)
         XCTAssertEqual(message(["activities", "--limit", "0"], root: root), "activities requires --limit 1...1000 and --offset >= 0")
         XCTAssertEqual(message(["activities", "--limit", "1001"], root: root), "activities requires --limit 1...1000 and --offset >= 0")
         XCTAssertEqual(message(["activities", "--offset", "-1"], root: root), "activities requires --limit 1...1000 and --offset >= 0")
@@ -138,8 +189,15 @@ final class T045T1CLICommandsTests: XCTestCase {
 
     func testAnalysisEvidenceExportsTheWindowAndRefusesBadArguments() throws {
         let root = try makeRoot(events: true, consent: true)
-        let object = try json(["analysis-evidence", "--start-utc", "2026-08-30T22:00:00Z", "--end-utc", "2026-08-31T22:00:00Z"], root: root)
-        XCTAssertNotNil(object["evidence"] as? [Any])
+        let nextMidnight = Calendar.current.date(byAdding: .day, value: 1, to: Self.fixtureMidnight)!
+        let window = ["--start-utc", Self.utc(Self.fixtureMidnight), "--end-utc", Self.utc(nextMidnight)]
+        let object = try json(["analysis-evidence"] + window, root: root)
+        let rows = try XCTUnwrap(object["evidence"] as? [[String: Any]])
+        XCTAssertEqual(rows.map { $0["id"] as? String }, ["e1", "e2", "e3", "e4", "e5", "e6"])
+        XCTAssertEqual(rows.map { $0["application"] as? String }, ["Safari", "Safari", "Safari", "Xcode", "Xcode", "Xcode"])
+        XCTAssertEqual(rows.first?["text"] as? String, #"{"kind":"applicationActivated","window":{"title":"Zephyrfoo Safari 0"}}"#)
+        XCTAssertEqual(rows.last?["text"] as? String, #"{"kind":"windowChanged","window":{"title":"Zephyrfoo Xcode 2"}}"#)
+        XCTAssertEqual(object["timezone"] as? String, Calendar.current.timeZone.identifier)
         XCTAssertEqual(object["date"] as? String, "2026-08-31")
         let usage = "analysis-evidence --start-utc ISO-8601Z --end-utc ISO-8601Z [--include-rich-context] [--include-conversations --conversations-from YYYY-MM-DD] [--conversations-only]"
         XCTAssertEqual(message(["analysis-evidence", "--start-utc", "2026-08-31T00:00:00+02:00", "--end-utc", "2026-08-31T22:00:00Z"], root: root), usage)
@@ -183,7 +241,11 @@ final class T045T1CLICommandsTests: XCTestCase {
         let result = run(["analysis-prompt", "--request", files.request.path], root: root)
         XCTAssertNil(result.error)
         let prompt = String(decoding: result.out, as: UTF8.self)
-        XCTAssertFalse(prompt.isEmpty)
+        XCTAssertTrue(prompt.hasPrefix("Tu analyses uniquement les éléments explicitement sélectionnés ci-dessous. Réponds en français."))
+        XCTAssertTrue(prompt.contains("Format JSON exact, sans autre clé :"))
+        XCTAssertTrue(prompt.contains("\"request_id\":\"\(files.selected.request_id)\",\"evidence_digest\":\"\(files.selected.evidence_digest)\""))
+        XCTAssertTrue(prompt.contains("Projet secret"), "the replacement stands in for the private term")
+        XCTAssertTrue(prompt.contains("Safari"))
         for term in ["Discord", "Message privé", "Atlas"] { XCTAssertFalse(prompt.contains(term), term) }
         XCTAssertEqual(message(["analysis-prompt"], root: root), "analysis-prompt --request LOCAL_REQUEST.json [--file RESPONSE.json] [--items i1,i3]")
         XCTAssertEqual(message(["analysis-prompt", "--request", files.request.path, "--file", files.response.path], root: root), "analysis-prompt accepts only --request.")
