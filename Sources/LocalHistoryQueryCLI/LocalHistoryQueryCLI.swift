@@ -600,6 +600,13 @@ private struct Arguments {
 }
 
 public enum GoalongQueryCLI {
+    static let missingSavedDayMessage = "No saved Screen Time record exists for this day. Open Goalong History to collect it; export-site never reads Apple's stores or starts a refresh."
+    /// True when the export stopped because Goalong saved no Screen Time record for the day
+    /// (Mac off or Goalong closed). Such a day stays missing: it is never collected later.
+    public static func isMissingSavedDay(_ error: Error) -> Bool {
+        if case .unsafeSource(let value)? = error as? CLIError { return value == missingSavedDayMessage }
+        return false
+    }
     public static func main(arguments rawArguments: [String] = Array(CommandLine.arguments.dropFirst())) {
         do {
             try run(arguments: rawArguments)
@@ -1947,7 +1954,7 @@ public enum GoalongQueryCLI {
             createIfMissing: false
         )
         guard let record = try archive.storedRecord(for: requestedDay) else {
-            throw CLIError.unsafeSource("No saved Screen Time record exists for this day. Open Goalong History to collect it; export-site never reads Apple's stores or starts a refresh.")
+            throw CLIError.unsafeSource(missingSavedDayMessage)
         }
         let sourceDate = DateFormatter()
         sourceDate.calendar = Calendar(identifier: .gregorian)
