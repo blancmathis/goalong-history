@@ -56,6 +56,28 @@ final class T045H6Tests: XCTestCase {
         XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), alias.path)
     }
 
+    /// Review #162 limit: « .. » after a linked folder goes up from the link's target, as the system does.
+    /// The lexical reading named a missing file and refused a link that opens this app.
+    func testLinkWithDotDotAfterALinkedFolderIsThisApp() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("h6-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("real/app", isDirectory: true)
+        let bin = root.appendingPathComponent("bin", isDirectory: true)
+        let other = root.appendingPathComponent("other", isDirectory: true)
+        for folder in [app, bin, other] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let executable = app.appendingPathComponent("Goalong History", isDirectory: false)
+        try Data("x".utf8).write(to: executable)
+        XCTAssertEqual(chmod(executable.path, 0o700), 0)
+        try FileManager.default.createSymbolicLink(atPath: other.appendingPathComponent("linked").path, withDestinationPath: app.path)
+        let link = bin.appendingPathComponent("goalong", isDirectory: false)
+        let raw = other.path + "/linked/../app/Goalong History"
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: raw)
+        XCTAssertEqual(GoalongCLIInstallation.inspect(linkURL: link, expectedExecutableURL: executable, isDevelopment: false).state, .ready)
+        let outcome = GoalongCLIInstallation.install(linkURL: link, executableURL: executable, directoryOnPath: { _ in true }, isDevelopment: false)
+        XCTAssertTrue(outcome.message.contains("déjà installée"), outcome.message)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), raw)
+    }
+
     /// Review #162: frequent Apple Watch workouts missing from the first table.
     func testFrequentWatchWorkoutsAreFrench() {
         XCTAssertEqual(GoalongHealthImportSheet.sport("HKWorkoutActivityTypeMixedCardio"), "Cardio mixte")
