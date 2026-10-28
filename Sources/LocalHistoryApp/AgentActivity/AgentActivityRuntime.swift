@@ -72,6 +72,8 @@
         /// Goalong Dev never installs or removes agent hooks: they are shared with the installed Goalong.
         let allowsHookChanges: Bool
         private let sourceDiscovery: () -> [AgentWatchedFolder]
+        /// Folder of global-pause.json; tests pass a temporary folder.
+        private let pauseRoot: URL
         private let workQueue = DispatchQueue(
             label: "ai.goalong.localhistory.agent-activity",
             qos: .utility
@@ -115,12 +117,14 @@
                 AgentDefaultSourceDiscovery.discover()
             },
             channel: GoalongBuildChannel = .current,
+            pauseRoot: URL = GoalongGlobalPause.defaultRoot,
             onCaptured: @escaping ([AgentCaptureRecord]) -> Void
         ) throws {
             self.rootDirectory = rootDirectory
             allowsHookChanges = channel.allowsAgentHookChanges
             self.onCaptured = onCaptured
             self.sourceDiscovery = sourceDiscovery
+            self.pauseRoot = pauseRoot
             store = try AgentActivityStore(rootDirectory: rootDirectory)
             scanner = AgentActivityScanner(store: store)
             installer = AgentIntegrationInstaller(executableURL: executableURL)
@@ -165,7 +169,7 @@
         }
 
         func start() {
-            guard !GoalongGlobalPause.isPaused() else { return }
+            guard !GoalongGlobalPause.isPaused(in: pauseRoot) else { return }
             guard !started else { return }
             if !initialDiscoveryPerformed {
                 let merged = AgentDefaultSourceDiscovery.merging(
@@ -216,7 +220,7 @@
             forceFullDiscovery: Bool = false,
             analyzeSelectedDay: Bool = false
         ) {
-            guard started, !GoalongGlobalPause.isPaused() else { return }
+            guard started, !GoalongGlobalPause.isPaused(in: pauseRoot) else { return }
             enqueueScan(
                 forceFullDiscovery: forceFullDiscovery,
                 clearTransientAnalyses: false,
@@ -255,12 +259,12 @@
 
         func detectCommonSources() {
             // Privacy: no detection while tracking is paused or not running. Tell the user why.
-            guard started, !GoalongGlobalPause.isPaused() else {
+            guard started, !GoalongGlobalPause.isPaused(in: pauseRoot) else {
                 alert = AgentActivityAlert(
                     title: "Détection indisponible",
-                    message: GoalongGlobalPause.isPaused()
+                    message: GoalongGlobalPause.isPaused(in: pauseRoot)
                         ? "Suivi en pause — reprenez le suivi pour détecter des sources."
-                        : "Le suivi des agents n’est pas démarré — reprenez le suivi pour détecter des sources."
+                        : "Le suivi des agents n’est pas actif — activez la lecture des conversations locales pour détecter des sources."
                 )
                 return
             }
@@ -626,7 +630,7 @@
         }
 
         private func performScan(_ request: ScanRequest) {
-            guard !GoalongGlobalPause.isPaused() else { return }
+            guard !GoalongGlobalPause.isPaused(in: pauseRoot) else { return }
             let snapshot = currentScanSnapshot()
 
             if request.clearTransientAnalyses {
@@ -741,7 +745,7 @@
         private func scanIsStopping() -> Bool {
             scanStateLock.lock()
             defer { scanStateLock.unlock() }
-            return isStopping || GoalongGlobalPause.isPaused()
+            return isStopping || GoalongGlobalPause.isPaused(in: pauseRoot)
         }
 
         private func enqueueScan(
@@ -923,7 +927,7 @@
         }
 
         private func rescheduleTimer() {
-            guard started, !GoalongGlobalPause.isPaused() else { return }
+            guard started, !GoalongGlobalPause.isPaused(in: pauseRoot) else { return }
             scanTimer?.cancel()
             scanTimer = nil
             scheduleTimer()
