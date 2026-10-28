@@ -92,6 +92,27 @@
             XCTAssertNil(store.verdicts.assignment(for: xcode.key), "A settled commitment no longer holds the verdict")
         }
 
+        /// D-154b: past the entry limit the oldest agent verdicts went first, those of an open commitment too.
+        @MainActor func testPruningKeepsTheContextsOfAnOpenCommitment() throws {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
+            defer { try? FileManager.default.removeItem(at: file) }
+            let period = FocusCommitmentPeriod(kind: .day, key: "2026-10-28")
+            let commitment = FocusCommitment(period: period, kind: .task, target: 60, task: "Goalong",
+                                             createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+            let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") },
+                                         committedTasks: { FocusCommitmentRules.openTaskNames([commitment]) })
+            let xcode = GoalongWorkContext.Label(application: "Xcode", bundleIdentifier: "fixture.Xcode", host: nil, title: "Goalong")
+            store.merge([xcode.key: GoalongWorkAssignment(verdict: .work, task: "Goalong", byOwner: false)],
+                        revision: store.revision, day: "2026-10-01")
+            var others: [String: GoalongWorkAssignment] = [:]
+            for index in 0..<GoalongWorkStore.maximumEntries {
+                others["fixture-\(index)"] = GoalongWorkAssignment(verdict: .other, task: nil, byOwner: false)
+            }
+            store.merge(others, revision: store.revision, day: "2026-10-28")
+            XCTAssertEqual(store.verdicts.assignment(for: xcode.key)?.task, "Goalong",
+                           "The open commitment must keep finding its task")
+        }
+
         /// H3-01: the work review starts on `GoalongToday.now`, an instant with its time. Past midnight
         /// « Jour suivant » was enabled (the day is no longer today) yet did nothing until that hour.
         func testNextDayStepsToTodayAfterMidnight() throws {

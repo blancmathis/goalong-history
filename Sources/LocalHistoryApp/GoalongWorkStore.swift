@@ -262,9 +262,11 @@ extension Notification.Name {
         NotificationCenter.default.post(name: .goalongWorkVerdictsDidChange, object: self)
     }
 
+    /// Drops the oldest agent verdicts past the limit; those an open « tâche » commitment measures stay.
     private func prune() {
         guard document.entries.count > Self.maximumEntries else { return }
-        let removable = document.entries.filter { !$0.value.byOwner }
+        let kept = keptAcrossReclassification(document.entries)
+        let removable = document.entries.filter { kept[$0.key] == nil }
             .sorted { $0.value.seen == $1.value.seen ? $0.key < $1.key : $0.value.seen < $1.value.seen }
         for (key, _) in removable.prefix(document.entries.count - Self.maximumEntries) {
             document.entries.removeValue(forKey: key)
