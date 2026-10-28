@@ -36,6 +36,8 @@
                             }
                             .buttonStyle(LHSecondaryButtonStyle())
                             .disabled(screenTime.isBusy)
+                            .help("Actualiser le temps d’écran")
+                            .accessibilityLabel("Actualiser le temps d’écran")
                         }
                     }
 
