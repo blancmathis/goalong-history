@@ -298,6 +298,16 @@ final class AXAsyncWorkflowTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
     }
 
+    func testH19DragThatComesBackToTheStartIsStillADrag() throws {
+        let rows = try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 130, 1), (.leftMouseDragged, 101, 1), (.leftMouseUp, 100, 1)])
+        XCTAssertEqual(rows.first?.metadata?["pointer_gesture"], "drag", "The farthest point counts, not only the release point")
+    }
+
+    func testH19FourPointsIsTheDragThreshold() throws {
+        XCTAssertNil(try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 103, 1), (.leftMouseUp, 103, 1)]).first?.metadata?["pointer_gesture"])
+        XCTAssertEqual(try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 104, 1), (.leftMouseUp, 104, 1)]).first?.metadata?["pointer_gesture"], "drag")
+    }
+
     func testH19RealDragIsStillADrag() throws {
         let rows = try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 130, 1), (.leftMouseUp, 160, 1)])
         XCTAssertEqual(rows.first?.metadata?["pointer_gesture"], "drag")
