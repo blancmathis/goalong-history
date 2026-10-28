@@ -1617,10 +1617,11 @@
 
         /// Keeps the errno of a failed system call so StorageHealth can tell a full disk
         /// or a permission error from an unsafe file. Only the numeric code is added.
-        private struct POSIXFailure: LocalizedError, CustomNSError {
+        private struct POSIXFailure: LocalizedError, CustomNSError, GoalongFrenchDescribable {
             let base: JSONLStoreError
             let code: Int32
             var errorDescription: String? { base.errorDescription }
+            var frenchDescription: String { base.frenchDescription }
             static var errorDomain: String { "LocalHistory.JSONLStore" }
             var errorCode: Int { Int(code) }
             var errorUserInfo: [String: Any] {
@@ -1634,7 +1635,7 @@
             code == 0 ? base : POSIXFailure(base: base, code: code)
         }
 
-        private enum JSONLStoreError: LocalizedError {
+        private enum JSONLStoreError: LocalizedError, GoalongFrenchDescribable {
             case unsafeEventsDirectory(URL)
             case unsafeEventFile(URL)
             case couldNotOpenEventFile(URL)
@@ -1716,6 +1717,29 @@
                 case .writeOutcomeRequiresRecovery:
                     return
                         "A previous event write had an unknown partial outcome; the durable tail must be reconciled before appending another sequence."
+                }
+            }
+
+            var frenchDescription: String {
+                switch self {
+                case .unsafeEventsDirectory, .unsafeEventFile, .unsafeCommitLock:
+                    return GoalongUserFacingError.unsafeHistoryPathMessage
+                case .sourceUnavailableDuringDeletion, .sourceChangedDuringDeletion:
+                    return GoalongUserFacingError.historyChangedMessage
+                case .invalidTargetedDeletionInterval:
+                    return GoalongUserFacingError.invalidPeriodMessage
+                case .targetedDeletionExceedsLimit:
+                    return GoalongUserFacingError.tooManySelectedMessage
+                case .unclassifiableTargetedDeletionRow:
+                    return GoalongUserFacingError.inexactDeletionMessage
+                case .targetedEventsUnavailable:
+                    return "Certains éléments choisis n’existent plus. Aucune suppression n’a été faite : actualisez, puis réessayez."
+                case .couldNotOpenEventFile, .missingEventHandle, .couldNotInspectEventTail,
+                     .couldNotSeparateIncompleteEventTail, .eventRowExceedsMaximum, .couldNotLockEventsDirectory,
+                     .couldNotLockDeletionTemporary, .couldNotListEventsDirectory, .couldNotScavengeDeletionTemporary,
+                     .couldNotCreateDeletionTemporaryFile, .couldNotSecureDeletionTemporaryFile, .couldNotReadEventFile,
+                     .couldNotWriteDeletionTemporaryFile, .couldNotSynchronizeDeletion, .writeOutcomeRequiresRecovery:
+                    return GoalongUserFacingError.historyIOMessage
                 }
             }
         }

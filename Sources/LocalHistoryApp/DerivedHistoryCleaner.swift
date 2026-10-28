@@ -427,13 +427,15 @@
                 code: Int(code),
                 userInfo: [
                     NSFilePathErrorKey: URL.path,
-                    NSLocalizedDescriptionKey: "\(operation) failed for \(URL.path): "
+                    // The alert shows this sentence (T-045 H2-01); the English detail stays for diagnostics.
+                    NSLocalizedDescriptionKey: GoalongUserFacingError.historyIOMessage,
+                    NSLocalizedFailureReasonErrorKey: "\(operation) failed for \(URL.path): "
                         + String(cString: strerror(code)),
                 ]
             )
         }
 
-        enum SafetyError: LocalizedError {
+        enum SafetyError: LocalizedError, GoalongFrenchDescribable {
             case unsafeDirectory(URL)
             case unsafeOwnedPath(URL)
             case directoryChanged(URL)
@@ -452,6 +454,15 @@
                     return "Owned path changed after validation: \(URL.path)"
                 case let .pathEscapesTrustedAncestor(URL, ancestor):
                     return "Deletion path \(URL.path) is outside trusted ancestor \(ancestor.path)"
+                }
+            }
+
+            var frenchDescription: String {
+                switch self {
+                case .unsafeDirectory, .unsafeOwnedPath, .pathEscapesTrustedAncestor:
+                    return GoalongUserFacingError.unsafeHistoryPathMessage
+                case .directoryChanged, .ownedPathChanged:
+                    return GoalongUserFacingError.historyChangedMessage
                 }
             }
         }
