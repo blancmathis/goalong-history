@@ -97,13 +97,23 @@
                 computerHistoryEpisodes: nil, computerHistoryResources: nil, workflowSuggestions: nil)
         }
 
+        /// The data root is fixed per process (`AppPaths`), so a test cannot point it elsewhere. The test process moves it
+        /// to a throwaway HOME (the run script, or the headless support under a bare `swift test`). A test that reads the
+        /// data root fails here, before any read, if that did not happen: it never touches the real folder.
+        static func requireThrowawayDataRoot() throws {
+            let path = AppPaths.applicationSupportDirectory.standardizedFileURL.resolvingSymlinksInPath().path
+            guard path.hasPrefix("/tmp/goalong-") || path.hasPrefix("/private/tmp/goalong-") else {
+                struct NotThrowaway: Error, CustomStringConvertible {
+                    let description: String
+                }
+                throw NotThrowaway(description: "data root \(path) is not a throwaway HOME: refusing to read it")
+            }
+        }
+
         /// Turns one capability off for the test and restores it afterwards. Only in the throwaway HOME: the shared
         /// consent store lives under the data root.
         static func disableConsent(_ capability: GoalongCapability, in test: XCTestCase) throws {
-            let path = AppPaths.applicationSupportDirectory.path
-            guard path.hasPrefix("/tmp/goalong-") || path.hasPrefix("/private/tmp/goalong-") else {
-                throw XCTSkip("data root \(path) is not a throwaway HOME")
-            }
+            try requireThrowawayDataRoot()
             let store = GoalongCapabilityConsentStore.shared
             let was = store.isEnabled(capability)
             XCTAssertTrue(store.set(capability, enabled: false, surface: .settings))

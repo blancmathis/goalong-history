@@ -7,6 +7,8 @@
     /// data root; the run script gives it a throwaway HOME.
     final class T045T2GranularContextTests: XCTestCase {
         private let day = T045T2Fixtures.date(2026, 3, 10)
+        override func setUpWithError() throws { try T045T2Fixtures.requireThrowawayDataRoot() }
+
         private let refusal = "Vérifiez les données autorisées pour ChatGPT."
 
         private func selection(reviewed: Bool = true, scope: GoalongAnalysisScope? = GoalongAnalysisScope(conversationFolderIDs: [])) -> GoalongAnalysisSelection {
@@ -58,8 +60,9 @@
             let dayKey = ActivityAnalysisPaths.dayString(day)
             XCTAssertEqual(dayKey, "2026-03-10")
             XCTAssertTrue(context.renderedData.contains("\"date\" : \"\(dayKey)\""))
-            XCTAssertTrue(context.renderedData.contains("\"conversations_choisies\" : [\n\n  ]") ||
-                context.renderedData.contains("\"conversations_choisies\" : ["))
+            let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(context.renderedData.utf8)) as? [String: Any])
+            let chosen = try XCTUnwrap(payload["conversations_choisies"] as? [Any], "the key must hold a list")
+            XCTAssertTrue(chosen.isEmpty, "no conversation was chosen: \(chosen)")
             XCTAssertFalse(context.renderedData.contains("applications_sur_ce_Mac"), "computer data was not selected")
             XCTAssertFalse(context.renderedData.contains("temps_ecran_Apple"), "Screen Time was not selected")
             XCTAssertEqual(context.digest, SHA256Digest.hashHex(context.renderedData))

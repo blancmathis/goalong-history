@@ -13,10 +13,11 @@
             directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("t045t2-workagent-\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try T045T2Fixtures.requireThrowawayDataRoot()
         }
 
         override func tearDown() {
-            try? FileManager.default.removeItem(at: directory)
+            if let directory { try? FileManager.default.removeItem(at: directory) }
         }
 
         private func agent(definition: GoalongWorkDefinition) -> GoalongWorkAgent {
