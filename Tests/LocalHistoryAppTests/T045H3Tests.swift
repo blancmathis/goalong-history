@@ -59,6 +59,39 @@
             XCTAssertNil(store.verdicts.assignment(for: xcode.key), "A settled commitment no longer holds the verdict")
         }
 
+        /// D-154b: a changed work definition dropped every agent verdict, so the agent could file the contexts
+        /// of an open « tâche » commitment under another name: the commitment counted zero and its stake ran.
+        @MainActor func testChangingTheDefinitionKeepsTheContextsOfAnOpenCommitment() throws {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
+            defer { try? FileManager.default.removeItem(at: file) }
+            let period = FocusCommitmentPeriod(kind: .day, key: "2026-10-28")
+            var commitment = FocusCommitment(period: period, kind: .task, target: 60, task: "Goalong",
+                                             createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+            var goals = "Goalong"
+            let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: goals) },
+                                         committedTasks: { FocusCommitmentRules.openTaskNames([commitment]) })
+            let xcode = GoalongWorkContext.Label(application: "Xcode", bundleIdentifier: "fixture.Xcode", host: nil, title: "Goalong")
+            let mail = GoalongWorkContext.Label(application: "Mail", bundleIdentifier: "fixture.Mail", host: nil, title: "Boîte")
+            store.merge([xcode.key: GoalongWorkAssignment(verdict: .work, task: "goalong", byOwner: false),
+                         mail.key: GoalongWorkAssignment(verdict: .work, task: "Courriels", byOwner: false)],
+                        revision: store.revision, day: "2026-10-28")
+
+            goals = "Goalong et Atlas"
+            store.reconcileDefinition()
+            XCTAssertEqual(store.verdicts.assignment(for: xcode.key)?.task, "goalong",
+                           "The open commitment must keep finding its task")
+            XCTAssertNil(store.verdicts.assignment(for: mail.key), "Other contexts are classified again")
+            let reopened = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: goals) },
+                                            committedTasks: { FocusCommitmentRules.openTaskNames([commitment]) })
+            XCTAssertEqual(reopened.verdicts.assignment(for: xcode.key)?.task, "goalong", "The kept verdict is saved")
+
+            commitment.result = FocusCommitmentResult(settledAt: Date(timeIntervalSince1970: 1_800_090_000), measured: 60,
+                                                      unmeasuredMinutes: 0, outcome: .held)
+            goals = "Atlas"
+            store.reconcileDefinition()
+            XCTAssertNil(store.verdicts.assignment(for: xcode.key), "A settled commitment no longer holds the verdict")
+        }
+
         /// H3-01: the work review starts on `GoalongToday.now`, an instant with its time. Past midnight
         /// « Jour suivant » was enabled (the day is no longer today) yet did nothing until that hour.
         func testNextDayStepsToTodayAfterMidnight() throws {

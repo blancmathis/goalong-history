@@ -201,13 +201,19 @@ extension Notification.Name {
     /// Contexts filed under the task of an open « tâche » commitment stay: the agent could file them
     /// under another name, and the commitment, which finds its task by name, would measure 0.
     func forgetAgentVerdicts() {
+        document.entries = keptAcrossReclassification(document.entries)
+        publish(); persist()
+    }
+
+    /// Owner corrections, plus the agent verdicts filed under the task of an open « tâche » commitment:
+    /// that commitment finds its task by name and would measure 0 if they were classified again.
+    private func keptAcrossReclassification(_ entries: [String: Entry]) -> [String: Entry] {
         let committed = committedTasks()
-        document.entries = document.entries.filter { _, entry in
+        return entries.filter { _, entry in
             entry.byOwner || entry.task.map { task in
                 committed.contains { $0.localizedCaseInsensitiveCompare(task) == .orderedSame }
             } == true
         }
-        publish(); persist()
     }
 
     #if DEBUG
@@ -232,13 +238,14 @@ extension Notification.Name {
         removeDamagedCopies()
     }
 
-    /// Re-reads the definition. A changed meaning invalidates the agent's verdicts.
+    /// Re-reads the definition. A changed meaning invalidates the agent's verdicts, except those an
+    /// open « tâche » commitment measures, until it is settled (T-045 D-154b).
     func reconcileDefinition() {
         let revision = definition.revision
         if revision != document.revision {
             let hadAgentVerdicts = document.entries.values.contains { !$0.byOwner }
             document.revision = revision
-            document.entries = document.entries.filter { $0.value.byOwner }
+            document.entries = keptAcrossReclassification(document.entries)
             if hadAgentVerdicts || !FileManager.default.fileExists(atPath: fileURL.path) { persist() }
         }
         publish()
@@ -286,7 +293,7 @@ extension Notification.Name {
     /// Merges a repaired file under the changes made while it was unreadable. An owner correction
     /// always wins over an agent verdict, as in `merge`: the agent saw an empty file meanwhile.
     private func adopt(_ saved: Document) {
-        var entries = saved.revision == document.revision ? saved.entries : saved.entries.filter { $0.value.byOwner }
+        var entries = saved.revision == document.revision ? saved.entries : keptAcrossReclassification(saved.entries)
         entries.merge(document.entries) { kept, current in current.byOwner || !kept.byOwner ? current : kept }
         let changed = Set(document.entries.filter { $0.value.byOwner }.keys)
         var corrections = saved.corrections.filter { !changed.contains($0.key) }
