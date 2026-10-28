@@ -525,21 +525,21 @@
         }
 
         var displayTitle: String {
-            if isBackgroundPrivacyRule { return "Enregistrement local actif" }
+            if isBackgroundPrivacyRule { return "Enregistrement actif" }
             switch state {
-            case .recording: return "Enregistrement local actif"
-            case .paused: return "Suivi en pause"
+            case .recording: return "Enregistrement actif"
+            case .paused: return "Enregistrement en pause"
             case .permissionsMissing: return "Accès à configurer"
             case .inputTapUnavailable: return "Saisie non reçue"
             case .storageUnavailable(.diskFull): return "Disque plein"
-            case .storageUnavailable: return "Suivi interrompu"
+            case .storageUnavailable: return "Enregistrement arrêté"
             case .suppressed(let reason):
                 switch reason {
-                case .manualPause: return "Suivi en pause"
+                case .manualPause: return "Enregistrement en pause"
                 case .sessionUnavailable: return "Session Mac inactive"
                 case .accessibilityUnavailable: return "Navigateur non accessible"
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:
-                    return "Enregistrement local actif"
+                    return "Enregistrement actif"
                 }
             }
         }

@@ -196,8 +196,8 @@
                             .foregroundStyle(LHTheme.accent)
                         Text(
                             GoalongBuildCapabilities.permitsRemoteVerification
-                                ? "Un engagement opaque ne contient ni l’application, ni l’adresse, ni le titre de fenêtre, ni les clics, ni la catégorie. Lorsque les engagements sont activés, votre serveur voit nécessairement des métadonnées de connexion comme l’heure d’arrivée et l’adresse IP."
-                                : "Les engagements locaux vérifient l’intégrité sans exposer l’enregistrement détaillé ni contacter de serveur. Cette version ne transmet aucun engagement."
+                                ? "Une preuve signée ne contient ni l’application, ni l’adresse, ni le titre de fenêtre, ni les clics, ni la catégorie. Lorsque l’envoi des preuves est activé, votre serveur voit nécessairement des métadonnées de connexion comme l’heure d’arrivée et l’adresse IP."
+                                : "Les preuves locales vérifient l’intégrité sans exposer l’enregistrement détaillé ni contacter de serveur. Cette version ne transmet aucune preuve."
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)

@@ -31,7 +31,7 @@ extension Notification.Name {
                 Image(systemName: "link").font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 22).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(credentialAvailable ? "Liaison enregistrée" : accessRefused ? "Accès refusé par le site" : "Compte non relié").font(.system(size: 13, weight: .semibold))
+                    Text(credentialAvailable ? "Connexion enregistrée" : accessRefused ? "Accès refusé par le site" : "Compte non relié").font(.system(size: 13, weight: .semibold))
                     Text(credentialAvailable ? (URL(string: origin)?.host ?? "Goalong")
                          : accessRefused ? "Reliez de nouveau ce Mac pour reprendre les envois." : "La connexion ne transmet aucune activité.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -226,7 +226,7 @@ struct GoalongWebsiteConnectionSheet: View {
                         TextField("Adresse du site, par exemple https://votre-hote-goalong", text: $origin)
                             .textFieldStyle(GoalongFieldStyle())
                             .accessibilityLabel("Adresse HTTPS du site Goalong")
-                        Text("Créez un accès en envoi seul dans la page Sources du site, puis choisissez ici le fichier téléchargé. Si besoin, Goalong propose « Protéger ce fichier » pour en limiter l’accès à votre compte. Le fichier reste sur votre Mac ; le jeton autorise uniquement les envois que vous demandez vers ce site et peut y être révoqué.")
+                        Text("Créez un accès en envoi seul dans la page Sources du site, puis choisissez ici le fichier téléchargé. Si besoin, Goalong propose « Protéger ce fichier » pour en limiter l’accès à votre compte. Le fichier reste sur votre Mac ; il autorise uniquement les envois que vous demandez vers ce site et peut y être révoqué.")
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack {

@@ -43,7 +43,7 @@ public enum GoalongSiteSubmissionError: Error, LocalizedError, CustomStringConve
     public var errorDescription: String? {
         switch self {
         case .unreachable: return "Le site n’a pas pu être joint ; rien n’a été envoyé."
-        case .accessRefused: return "Ce Mac n’est plus connecté au site. Reconnectez-le de nouveau avec « Relier mon Mac »."
+        case .accessRefused: return "Ce Mac n’est plus connecté au site. Reconnectez-le avec « Relier mon Mac »."
         }
     }
 }
@@ -60,7 +60,7 @@ public enum GoalongSiteSubmission {
                   parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil,
                   parts.host == nil || parts.host == "" || parts.host == "localhost",
                   let url = parts.url, url.isFileURL, url.path.hasPrefix("/") else {
-                throw GoalongSiteExportError.localized("The token must be a local file path, without a remote host, query or fragment.", french: "Le jeton doit être un chemin de fichier local, sans hôte distant, requête ni fragment.")
+                throw GoalongSiteExportError.localized("The token must be a local file path, without a remote host, query or fragment.", french: "Le fichier d’accès doit être un chemin de fichier local, sans hôte distant, requête ni fragment.")
             }
             return url.standardizedFileURL
         }
