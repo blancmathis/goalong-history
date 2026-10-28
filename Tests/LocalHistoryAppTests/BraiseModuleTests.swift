@@ -160,6 +160,17 @@ final class BraiseModuleTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
         XCTAssertThrowsError(try BraiseStore(directory: link, legacySettings: root.appendingPathComponent("missing")).load())
     }
+    /// T-045 review #195: an absent folder under a symlinked parent passed the first check; it is refused
+    /// once created, so no settings file is written through the link.
+    func testAbsentFolderUnderSymlinkedParentIsRefusedAndNothingIsWrittenThroughIt() throws {
+        let root = try root(), real = root.appendingPathComponent("real", isDirectory: true)
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("Linked", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        let store = BraiseStore(directory: link.appendingPathComponent("Braise", isDirectory: true), legacySettings: root.appendingPathComponent("missing"))
+        XCTAssertThrowsError(try store.load())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: real.appendingPathComponent("Braise/settings.json").path))
+    }
     @MainActor func testStartFailureIsJournaledWithoutTextAndRetryRecovers() throws {
         let root = try root(), name = "braise-diagnostics-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))

@@ -17,6 +17,8 @@ struct BraiseStore {
     func loadRecovering() throws -> (preferences: Preferences, notice: String?) {
         guard Self.isFreeOfSymlinks(directory) else { throw CocoaError(.fileReadNoPermission) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        // An absent folder under a symlinked parent passes the first check; refuse it once it exists.
+        guard Self.isFreeOfSymlinks(directory) else { throw CocoaError(.fileReadNoPermission) }
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         var value: Preferences
         var notice: String?
