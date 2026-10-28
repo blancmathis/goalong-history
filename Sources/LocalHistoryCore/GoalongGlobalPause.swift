@@ -60,6 +60,11 @@ public struct GoalongGlobalPause: Codable, Equatable {
         var next = previous
         next.paused = paused; next.revision = UUID().uuidString; next.changedAt = Date()
         if paused { next.recordingWasPaused = recordingWasPaused ?? false }
+        try write(next, in: root)
+        NotificationCenter.default.post(name: .goalongGlobalPauseDidChange, object: root.standardizedFileURL.path)
+        return next
+    }
+    private static func write(_ next: Self, in root: URL) throws {
         let fm = FileManager.default
         try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let target = file(in: root), temporary = root.appendingPathComponent(".pause-\(UUID().uuidString)")
@@ -69,16 +74,37 @@ public struct GoalongGlobalPause: Codable, Equatable {
         else { try fm.moveItem(at: temporary, to: target) }
         lock.lock(); cache.removeValue(forKey: target.path); lock.unlock()
         guard load(in: root) == next else { throw PauseError.writeFailed }
+    }
+    /// Sets an unreadable pause file aside (as `SharingRulesStore` does) and resumes with a fresh revision.
+    /// A readable file is never touched: only a damaged one can be repaired.
+    @discardableResult public static func repairAndResume(in root: URL = defaultRoot) throws -> Self {
+        guard load(in: root).invalid else { throw PauseError.notDamaged }
+        let fm = FileManager.default, target = file(in: root)
+        if (try? fm.attributesOfItem(atPath: target.path)) != nil {
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            var name = "global-pause.damaged-\(stamp).json", index = 1
+            while (try? fm.attributesOfItem(atPath: root.appendingPathComponent(name).path)) != nil {
+                name = "global-pause.damaged-\(stamp)-\(index).json"; index += 1
+            }
+            let aside = root.appendingPathComponent(name)
+            try fm.moveItem(at: target, to: aside)
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: aside.path)
+            lock.lock(); cache.removeValue(forKey: target.path); lock.unlock()
+        }
+        var next = Self()
+        next.revision = UUID().uuidString; next.changedAt = Date()
+        try write(next, in: root)
         NotificationCenter.default.post(name: .goalongGlobalPauseDidChange, object: root.standardizedFileURL.path)
         return next
     }
     public enum PauseError: Error, LocalizedError {
-        case active, changed, unreadable, writeFailed
+        case active, changed, unreadable, notDamaged, writeFailed
         public var errorDescription: String? {
             switch self {
             case .active: return "Pause globale active : les sources et les envois sont suspendus."
             case .changed: return "La pause globale a changé. Recommencez cette action après la reprise."
-            case .unreadable: return "Le réglage de pause est illisible. Goalong reste en pause par sécurité."
+            case .unreadable: return "Le réglage de pause est abîmé. Goalong reste en pause par sécurité : utilisez « Réparer et reprendre »."
+            case .notDamaged: return "Le réglage de pause n’est pas abîmé : rien à réparer."
             case .writeFailed: return "Le changement de pause n’a pas pu être enregistré."
             }
         }

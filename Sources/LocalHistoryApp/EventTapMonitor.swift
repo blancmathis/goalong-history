@@ -654,7 +654,11 @@
             var lastY: Double
             var eventCount: Int
             var origin: InputOriginSnapshot
+            /// Farthest the pointer got from the press point, so a drag that comes back to its start is still a drag.
+            var maxDistance: Double = 0
         }
+        /// A press that moves less than this (in points) is a click, not a drag: trackpad clicks jitter by 1-3 px.
+        private static let dragThreshold: Double = 4
 
         private var pointerDownStates: [String: PointerDownState] = [:]
         private var activeDragStates: [String: ActiveDragState] = [:]
@@ -1367,6 +1371,11 @@
             drag.lastY = input.lastLocationY
             drag.eventCount += input.occurrences
             drag.origin = mergeOrigin(drag.origin, origin)
+            drag.maxDistance = max(
+                drag.maxDistance,
+                hypot(input.locationX - down.startX, input.locationY - down.startY),
+                hypot(input.lastLocationX - down.startX, input.lastLocationY - down.startY)
+            )
             activeDragStates[button] = drag
         }
 
@@ -1380,7 +1389,10 @@
             }
             guard configManager.config.captureClicks else { return }
 
-            if var drag = activeDragStates[button] {
+            if var drag = activeDragStates[button],
+                max(drag.maxDistance, hypot(input.lastLocationX - drag.down.startX, input.lastLocationY - drag.down.startY))
+                    >= Self.dragThreshold
+            {
                 completeDrag(drag: &drag, input: input, context: context, button: button, target: target)
                 return
             }

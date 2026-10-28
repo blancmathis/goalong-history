@@ -61,6 +61,8 @@ struct JevRecentCheck: Identifiable {
         UserDefaults.standard.bool(forKey: Self.excerptKey)
             && UserDefaults.standard.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey)
     }
+    /// One name for an unreadable break.json, in the monitor error and in the pause controls.
+    static let unreadableBreakNotice = "Minuterie illisible : surveillance suspendue, historique inchangé."
     init(scopePreferences: JevMonitoringPreferences? = nil, consents: GoalongCapabilityConsentStore? = nil,
          sessionProvider: (() -> UUID?)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true,
          localRoot: URL? = nil) {
@@ -99,7 +101,7 @@ struct JevRecentCheck: Identifiable {
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
             breakStorageInvalid = true
-            messages.append("Réglages illisibles : surveillance suspendue.")
+            messages.append(Self.unreadableBreakNotice)
         }
         if !messages.isEmpty { error = messages.joined(separator: " "); errorIsTransient = false }
     }

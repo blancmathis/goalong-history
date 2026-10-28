@@ -40,6 +40,34 @@ final class GoalongGlobalPauseTests: XCTestCase {
         XCTAssertNoThrow(try GoalongGlobalPause.revalidate(current, in: root))
         XCTAssertEqual(try GoalongGlobalPause.setPaused(false, in: root).revision, current)
     }
+    func testRepairSetsDamagedFileAsideAndResumes() throws {
+        let root = try root(), file = GoalongGlobalPause.file(in: root)
+        try Data("bad json".utf8).write(to: file)
+        XCTAssertTrue(GoalongGlobalPause.isPaused(in: root), "Damaged file keeps tracking paused until repair")
+        let repaired = try GoalongGlobalPause.repairAndResume(in: root)
+        XCTAssertFalse(repaired.blocksActivity)
+        XCTAssertFalse(GoalongGlobalPause.isPaused(in: root))
+        let names = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        let aside = names.filter { $0.hasPrefix("global-pause.damaged-") }
+        XCTAssertEqual(aside.count, 1)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(aside[0])), Data("bad json".utf8))
+        XCTAssertFalse(names.contains { $0.hasPrefix(".pause-") })
+    }
+    func testRepairHandlesOversizedAndNonRegularFilesAndLeavesHealthyOnesAlone() throws {
+        let root = try root(), file = GoalongGlobalPause.file(in: root)
+        try Data(repeating: 65, count: 9000).write(to: file)
+        XCTAssertFalse(try GoalongGlobalPause.repairAndResume(in: root).blocksActivity)
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+        XCTAssertTrue(GoalongGlobalPause.isPaused(in: root))
+        XCTAssertFalse(try GoalongGlobalPause.repairAndResume(in: root).blocksActivity)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { $0.hasPrefix("global-pause.damaged-") }.count, 2)
+        try GoalongGlobalPause.setPaused(true, in: root)
+        let healthy = try Data(contentsOf: file)
+        XCTAssertThrowsError(try GoalongGlobalPause.repairAndResume(in: root), "A readable pause is never overwritten by repair")
+        XCTAssertEqual(try Data(contentsOf: file), healthy)
+        XCTAssertTrue(GoalongGlobalPause.isPaused(in: root))
+    }
     func testUnreadableAndOversizedPauseFailClosed() throws {
         let root = try root(), file = GoalongGlobalPause.file(in: root)
         try Data("bad json".utf8).write(to: file)

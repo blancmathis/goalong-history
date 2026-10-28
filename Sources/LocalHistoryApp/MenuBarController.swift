@@ -245,7 +245,7 @@
             if let rotation = DeviceIdentityRotation.load() {
                 technicalStatusItem.title += " · Identité changée le \(GoalongUIFormat.dayAbbreviated(rotation.at))"
             }
-            globalPauseItem.title = GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité · tout suspendre…"
+            globalPauseItem.title = GoalongGlobalPause.load().invalid ? GoalongGlobalPauseText.repair + "…" : GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité · tout suspendre…"
             pauseMenuItem.title = !localEnabled
                 ? "Configurer l’enregistrement…"
                 : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Mettre l’enregistrement en pause…")
@@ -382,6 +382,7 @@
         }
 
         @objc private func toggleGlobalPause() {
+            if GoalongGlobalPause.load().invalid { repairGlobalPause(); return }
             if !GoalongGlobalPause.isPaused(), !confirmRecordingStop(allSources: true) { return }
             do {
                 try GoalongGlobalPause.setPaused(!GoalongGlobalPause.isPaused(), recordingWasPaused: state.isManuallyPaused)
@@ -390,6 +391,24 @@
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert(); alert.messageText = GoalongGlobalPauseText.failureTitle; alert.informativeText = GoalongUserFacingError.message(error)
                 alert.runModal()
+            }
+        }
+
+        private func repairGlobalPause() {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = GoalongGlobalPauseText.repairTitle
+            alert.informativeText = GoalongGlobalPauseText.repairMessage
+            alert.addButton(withTitle: GoalongGlobalPauseText.repair)
+            alert.addButton(withTitle: "Annuler")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            do {
+                try GoalongGlobalPause.repairAndResume()
+                updateStatus()
+            } catch {
+                let failure = NSAlert(); failure.messageText = GoalongGlobalPauseText.repairFailureTitle
+                failure.informativeText = GoalongUserFacingError.message(error)
+                failure.runModal()
             }
         }
 

@@ -115,7 +115,7 @@ struct GoalongAgendaSection: View {
                             .disabled(isPreview)
                     }
                 }
-                Text("Un appel compte quand le micro ou la caméra sert à une app : ce n’est pas une preuve de réunion, et aucun son ni image n’est lu. Les titres de l’agenda sont lus à l’affichage et jamais enregistrés. Rien de tout cela ne s’ajoute au temps actif.")
+                Text("Un appel compte quand le micro ou la caméra sert à une app : ce n’est pas une preuve de réunion. Aucun son ni image n’est lu. Avec une exclusion globale, la caméra n’est pas enregistrée et le jour reste partiel. Les titres de l’agenda sont lus à l’affichage et jamais enregistrés. Rien de tout cela ne s’ajoute au temps actif.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }

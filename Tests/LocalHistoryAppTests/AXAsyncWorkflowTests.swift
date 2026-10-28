@@ -266,5 +266,51 @@ final class AXAsyncWorkflowTests: XCTestCase {
         now = now.addingTimeInterval(601)
         XCTAssertFalse(controller.siteActionStillRequired(target), "The old decision cannot close a tab after its rules expired")
     }
+
+    private func replayPointer(_ points: [(EventTapPendingInput.Kind, Double, Int)]) throws -> [HistoryEvent] {
+        richConsent(false)
+        let date = Date().addingTimeInterval(-0.2), parameters = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+        let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: parameters).snapshot })
+        let tap = monitor(rig, provider: ContextProvider(client: tree.client, parameters: { parameters }))
+        let inputs = points.enumerated().map { index, point in
+            EventTapPendingInput(kind: point.0, observedAt: date.addingTimeInterval(Double(index) / 100),
+                locationX: point.1, locationY: 20, clickCount: point.2, targetProcessIdentifier: 42, observedContext: snapshot)
+        }
+        let done = expectation(description: "pointer replay")
+        tap.replayInputsForTesting(inputs) { done.fulfill() }
+        wait(for: [done], timeout: 3)
+        tap.stop()
+        let rows = try events(stream(rig, date: date))
+        try rig.recorder.closeAndWait()
+        return rows
+    }
+
+    func testH19OnePixelJitterClickIsRecordedAsClickKeepingItsClickCount() throws {
+        let rows = try replayPointer([(.leftMouseDown, 100, 2), (.leftMouseDragged, 101, 1), (.leftMouseUp, 101, 2)])
+        XCTAssertEqual(rows.map(\.kind), [.mouseClick])
+        XCTAssertNil(rows.first?.metadata?["pointer_gesture"])
+        XCTAssertEqual(rows.first?.pointer?.clickCount, 2)
+    }
+
+    func testH19JitterThatReturnsToTheStartIsStillAClick() throws {
+        let rows = try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 102, 1), (.leftMouseDragged, 100, 1), (.leftMouseUp, 100, 1)])
+        XCTAssertNil(rows.first?.metadata?["pointer_gesture"])
+        XCTAssertEqual(rows.count, 1)
+    }
+
+    func testH19DragThatComesBackToTheStartIsStillADrag() throws {
+        let rows = try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 130, 1), (.leftMouseDragged, 101, 1), (.leftMouseUp, 100, 1)])
+        XCTAssertEqual(rows.first?.metadata?["pointer_gesture"], "drag", "The farthest point counts, not only the release point")
+    }
+
+    func testH19FourPointsIsTheDragThreshold() throws {
+        XCTAssertNil(try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 103, 1), (.leftMouseUp, 103, 1)]).first?.metadata?["pointer_gesture"])
+        XCTAssertEqual(try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 104, 1), (.leftMouseUp, 104, 1)]).first?.metadata?["pointer_gesture"], "drag")
+    }
+
+    func testH19RealDragIsStillADrag() throws {
+        let rows = try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 130, 1), (.leftMouseUp, 160, 1)])
+        XCTAssertEqual(rows.first?.metadata?["pointer_gesture"], "drag")
+    }
 }
 #endif

@@ -57,7 +57,7 @@ Avant macOS 14.2, le bit matériel `DeviceIsRunningSomewhere` n’indique pas un
 Seuls les périphériques audio d’entrée sans flux de sortie peuvent donc prouver un usage micro ;
 un périphérique duplex est omis et la source est partielle. Sur macOS 14.2+, les processus
 utilisant l’entrée sont identifiés puis rattachés à leur app extérieure. La caméra est connue
-seulement au niveau du périphérique ; elle ne peut pas être attribuée à une application.
+seulement au niveau du périphérique ; elle ne peut pas être attribuée à une application. Dès qu’une exclusion globale d’app ou de site, ou une liste « autoriser uniquement », existe, cet usage caméra (et le micro avant macOS 14.2) n’est pas enregistré et le jour reste partiel. Une exclusion faite seulement dans les réglages d’enregistrement ne bloque pas la caméra.
 Ce sont des usages micro/caméra, pas une preuve de réunion. Aucun flux n’est ouvert.
 Une couverture partielle du jour reste partielle même sans intervalle détecté ; le statut
 matériel courant ne remplace pas celui des archives des jours précédents.

@@ -189,6 +189,7 @@ struct GoalongWebsiteConnectionSheet: View {
     @State private var busy = false
     @State private var showsExactData = false
     @State private var showsTokenPath = false
+    @State private var confirmsForgetFile = false
     @State private var tokenPathInput = ""
 
     var body: some View {
@@ -234,11 +235,13 @@ struct GoalongWebsiteConnectionSheet: View {
                             if !tokenFilePath.isEmpty {
                                 Text(URL(fileURLWithPath: tokenFilePath).lastPathComponent)
                                     .font(.caption).lineLimit(1).truncationMode(.middle)
-                                Button("Oublier le fichier") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = ""; status = nil }
+                                Button("Oublier le fichier") { confirmsForgetFile = true }
                                     .buttonStyle(LHQuietButtonStyle())
-                                    .help(GoalongWebsitePairingCoordinator.isManagedTokenPath(tokenFilePath)
-                                          ? "Le fichier d’accès est supprimé de ce Mac. Pour révoquer l’accès, utilisez les réglages du site."
-                                          : "Goalong oublie ce fichier sans le supprimer. Pour révoquer l’accès, utilisez les réglages du site.")
+                                    .alert("Déconnecter ce compte ?", isPresented: $confirmsForgetFile) {
+                                        Button("Annuler", role: .cancel) {}
+                                        Button("Déconnecter") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = ""; status = nil }
+                                    } message: { Text(GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: tokenFilePath)) }
+                                    .help(GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: tokenFilePath))
                             }
                         }
                         GoalongDisclosureGroup("Autre méthode : coller le chemin du fichier", isExpanded: $showsTokenPath) {
@@ -435,12 +438,12 @@ struct GoalongWebsiteConnectionSheet: View {
                     guard response == .alertFirstButtonReturn else { return }
                     do {
                         try GoalongSiteSubmission.protectTokenFile(file: file, reviewed: reviewed)
-                        selectTokenFile(file)
+                        selectTokenFile(file, in: window)
                     } catch { self.error = goalongUserMessage(error) }
                 }
                 return
             }
-            selectTokenFile(file)
+            selectTokenFile(file, in: window)
         } catch { self.error = goalongUserMessage(error) }
     }
 
@@ -455,17 +458,20 @@ struct GoalongWebsiteConnectionSheet: View {
         } catch { self.error = goalongUserMessage(error) }
     }
 
-    private func selectTokenFile(_ file: URL) {
+    private func selectTokenFile(_ file: URL, in window: NSWindow) {
         do {
             _ = try GoalongSiteSubmission.readToken(file: file)
             // The paired credential is replaced here; the old managed file would stay valid yet unreachable.
-            let previous = tokenFilePath
-            tokenFilePath = file.path
-            if !previous.isEmpty, previous != file.path { GoalongWebsitePairingCoordinator.forgetStoredToken(path: previous) }
-            tokenPathInput = ""
-            showsTokenPath = false
-            error = nil
-            status = nil
+            GoalongWebsitePairingCoordinator.replaceToken(previous: tokenFilePath, with: file.path,
+                confirm: { GoalongWebsitePairingCoordinator.confirmDisconnect(of: $0, in: window, answer: $1) },
+                forget: { GoalongWebsitePairingCoordinator.forgetStoredToken(path: $0) },
+                apply: {
+                    tokenFilePath = file.path
+                    tokenPathInput = ""
+                    showsTokenPath = false
+                    error = nil
+                    status = nil
+                })
         } catch { self.error = goalongUserMessage(error) }
     }
 
