@@ -602,6 +602,11 @@
                 // Same date, same recap file: only the instant moves, so a running recap is not cancelled.
                 guard let self, self.selectedDay != self.selectedDayKey.start() else { return }
                 self.selectedDay = self.selectedDayKey.start()
+                // The overview was measured between the old zone's bounds of this date: read it again.
+                self.discardPendingDayOverview()
+                self.dayOverview = nil
+                self.dayOverviewError = nil
+                self.refreshDayOverview()
             }
         }
 
