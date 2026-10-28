@@ -122,6 +122,8 @@ import LocalHistoryQueryCLI
         if controller?.hasLockedBlock == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
         let wasEnabled = modules?.isEnabled(.concentration) == true
         apply(enabled: false)
+        // The commitments are gone (or partly): tell the kept task verdicts now, not at the next launch (T-045 D-156a).
+        defer { NotificationCenter.default.post(name: .goalongFocusCommitmentsDidChange, object: self) }
         do { try storeFactory().deleteData() } catch {
             // Re-enable first: `apply(enabled: true)` resets `error`, which must keep the failure.
             if wasEnabled { apply(enabled: true) }

@@ -176,6 +176,31 @@
             XCTAssertNil(store.verdicts.assignment(for: xcode.key), "Once settled, the context is classified again")
         }
 
+        /// D-156a: deleting the Concentration data empties the commitments: the kept verdicts go at once,
+        /// not at the next launch or the next commitment save.
+        @MainActor func testDeletingConcentrationDataReleasesKeptVerdicts() throws {
+            let root = URL(fileURLWithPath: "/private/tmp/t045-d156a-" + UUID().uuidString)
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
+            defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: file) }
+            let focus = FocusStore(directory: root)
+            let open = FocusCommitment(period: FocusCommitmentPeriod(kind: .day, key: "2026-10-28"), kind: .task, target: 60,
+                                       task: "Goalong", createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+            try focus.saveCommitments([open])
+            var goals = "Goalong"
+            let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: goals) },
+                                         committedTasks: { GoalongWorkStore.openTaskNames(controller: nil, store: FocusStore(directory: root)) })
+            let xcode = GoalongWorkContext.Label(application: "Xcode", bundleIdentifier: "fixture.Xcode", host: nil, title: "Goalong")
+            store.merge([xcode.key: GoalongWorkAssignment(verdict: .work, task: "goalong", byOwner: false)],
+                        revision: store.revision, day: "2026-10-28")
+            goals = "Atlas"
+            store.reconcileDefinition()
+            XCTAssertEqual(store.verdicts.assignment(for: xcode.key)?.task, "goalong", "Kept while the commitment is open")
+
+            let runtime = ConcentrationRuntime(storeFactory: { FocusStore(directory: root) }, presentsPanels: false)
+            try runtime.deleteData()
+            XCTAssertNil(store.verdicts.assignment(for: xcode.key), "Released as soon as the data is deleted")
+        }
+
         /// D-154d: with Concentration off, no controller: the kept verdicts filter saw no commitment, so a definition
         /// change or « Tout reclasser » dropped them, and the commitment settled low once Concentration was on again.
         @MainActor func testOpenTaskNamesAreReadFromDiskWhenConcentrationIsOff() throws {
