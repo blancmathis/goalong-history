@@ -103,8 +103,13 @@ struct BlockedAppNotice: View {
     let lock: BlockLock
     var listName: String
     var feedback: BlockingListFeedback? = nil
+    /// The app did not quit (it may ask to save): it is hidden, never force-quit.
+    var held = false
 
-    static func height(_ feedback: BlockingListFeedback?) -> CGFloat { feedback?.reasonLine == nil ? 68 : 86 }
+    static let heldLine = "Masquée, pas fermée : votre travail non enregistré est gardé."
+    static func height(_ feedback: BlockingListFeedback?, held: Bool = false) -> CGFloat {
+        68 + (feedback?.reasonLine == nil ? 0 : 18) + (held ? 18 : 0)
+    }
 
     private var untilText: String {
         BlockingFormat.isOpenEnded(end) ? "Pendant votre travail" : "Jusqu’à \(BlockingFormat.endTime(end))"
@@ -123,6 +128,10 @@ struct BlockedAppNotice: View {
                 if let reason = feedback?.reasonLine {
                     Text(reason).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 }
+                if held {
+                    Text(Self.heldLine).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                        .minimumScaleFactor(0.9)
+                }
                 // The attempt count matters more than the list name when both do not fit.
                 ViewThatFits(in: .horizontal) {
                     detail([untilText, listName, feedback?.attemptLine])
@@ -135,7 +144,7 @@ struct BlockedAppNotice: View {
                     .accessibilityLabel("Verrouillé")
             }
         }
-        .padding(.horizontal, 16).frame(width: 380, height: Self.height(feedback))
+        .padding(.horizontal, 16).frame(width: 380, height: Self.height(feedback, held: held))
         .background(GoalongSurface(corner: 14, fill: LHTheme.elevatedBackground, highlighted: true))
         .foregroundStyle(LHTheme.text)
         .accessibilityElement(children: .combine)
