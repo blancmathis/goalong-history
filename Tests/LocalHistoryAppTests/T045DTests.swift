@@ -38,5 +38,18 @@
             lock.lock(); let last = requested.last; lock.unlock()
             XCTAssertEqual(last, runtime.selectedDay, "The overview still holds the old zone's day bounds")
         }
+
+        // D-150a: a switch exactly a week away named only its weekday, the same one as today.
+        func testBraiseSwitchAWeekAwayNamesItsDate() throws {
+            let originalZone = NSTimeZone.default
+            defer { NSTimeZone.default = originalZone }
+            NSTimeZone.default = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+            let calendar = Calendar.current
+            let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 23)))  // mercredi
+            let tomorrow = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 29, hour: 22)))
+            let nextWeek = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 4, hour: 22)))
+            XCTAssertEqual(BraiseController.whenText(tomorrow, now: now), "jeudi à 22:00")
+            XCTAssertEqual(BraiseController.whenText(nextWeek, now: now), "mercredi 4 novembre à 22:00")
+        }
     }
 #endif

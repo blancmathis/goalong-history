@@ -138,8 +138,13 @@ import ServiceManagement
         stateChanged?()
     }
     static func clockText(_ date: Date) -> String { GoalongUIFormat.time(date) }
-    private static func when(_ date: Date) -> String {
-        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.dateFormat = "EEEE 'à' HH:mm"; return f.string(from: date)
+    private static func when(_ date: Date) -> String { whenText(date, now: Date()) }
+    /// The weekday alone is clear for the next six days. A week away it is today's weekday again: add the date.
+    nonisolated static func whenText(_ date: Date, now: Date) -> String {
+        let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: now),
+                                                   to: Calendar.current.startOfDay(for: date)).day ?? 0
+        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR")
+        f.dateFormat = days >= 7 ? "EEEE d MMMM 'à' HH:mm" : "EEEE 'à' HH:mm"; return f.string(from: date)
     }
     private func saveSoon() {
         saveTask?.cancel()
