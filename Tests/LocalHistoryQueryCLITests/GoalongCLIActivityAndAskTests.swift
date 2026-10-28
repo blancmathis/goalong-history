@@ -14,17 +14,7 @@ final class GoalongCLIActivityAndAskTests: XCTestCase {
     }
 
     private func output(_ arguments: [String]) throws -> [String: Any] {
-        let pipe = Pipe()
-        let saved = dup(STDOUT_FILENO)
-        dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
-        var failure: Error?
-        do { try GoalongQueryCLI.run(arguments: arguments) } catch { failure = error }
-        dup2(saved, STDOUT_FILENO)
-        close(saved)
-        try pipe.fileHandleForWriting.close()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        if let failure { throw failure }
-        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        try CLIStdoutCapture.json { try GoalongQueryCLI.run(arguments: arguments) }
     }
 
     /// One journal for the fixed day: three apps used one after another, each with several window changes.

@@ -20,17 +20,7 @@ final class GoalongCLIArgumentGuardTests: XCTestCase {
     }
 
     private func output(_ arguments: [String]) throws -> [String: Any] {
-        let pipe = Pipe()
-        let saved = dup(STDOUT_FILENO)
-        dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
-        var thrown: Error?
-        do { try GoalongQueryCLI.run(arguments: ["--root", root.path] + arguments) } catch { thrown = error }
-        dup2(saved, STDOUT_FILENO)
-        close(saved)
-        try pipe.fileHandleForWriting.close()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        if let thrown { throw thrown }
-        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        try CLIStdoutCapture.json { try GoalongQueryCLI.run(arguments: ["--root", root.path] + arguments) }
     }
 
     func testWebsitesRejectsOutOfRangePagingAndExtraArguments() {
