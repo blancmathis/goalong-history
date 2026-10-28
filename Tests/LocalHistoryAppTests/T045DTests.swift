@@ -51,5 +51,36 @@
             XCTAssertEqual(BraiseController.whenText(tomorrow, now: now), "jeudi à 22:00")
             XCTAssertEqual(BraiseController.whenText(nextWeek, now: now), "mercredi 4 novembre à 22:00")
         }
+
+        // D-149b: the Bilan page date picker writes the dashboard day too, so Historique and a return keep the choice.
+        @MainActor func testBilanDatePickerWritesTheDashboardDay() throws {
+            guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
+                throw XCTSkip("Dashboard tests require an isolated test HOME")
+            }
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let config = ConfigManager(), permissions = PermissionManager(), health = CaptureHealthStore(permissions: PermissionManager())
+            let agents = try AgentActivityRuntime(rootDirectory: AppPaths.agentActivityDirectory,
+                executableURL: URL(fileURLWithPath: "/nonexistent/t045d-test"), performInitialDiscovery: false,
+                sourceDiscovery: { [] }, onCaptured: { _ in })
+            let model = DashboardViewModel(state: CaptureState(), permissions: permissions, configManager: config,
+                sharingRulesStore: SharingRulesStore(), agentActivityRuntime: agents,
+                deviceInfo: DeviceIdentityInfo(deviceID: "t045d-fixture", publicKeyBase64: "", trustTier: "test", algorithm: "test"),
+                eventTapStatus: { false }, currentSuppression: { nil }, captureHealthSnapshot: { health.snapshot },
+                onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
+                onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
+                onDeleteTargetedDetails: { _, done in done(.success(0)) })
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(rootDirectory: root.appendingPathComponent("history")),
+                recapsDirectory: root.appendingPathComponent("recaps"),
+                executableLocator: { nil },
+                sessionFactory: { _ in throw NSError(domain: "T045D", code: 1) },
+                delayedAutomaticScheduler: { _ in })
+            let picked = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: -3, to: Calendar.current.startOfDay(for: Date())))
+            ChatGPTRecapPage.chooseDay(picked, model: model, runtime: runtime)
+            XCTAssertEqual(model.selectedDay, picked)
+            XCTAssertEqual(runtime.selectedDay, picked)
+        }
     }
 #endif
