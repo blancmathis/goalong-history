@@ -27,6 +27,7 @@ struct GoalongHealthImportSheet: View {
     @State private var sourceChoices: [GoalongHealthGroup: [String]] = [:]
     @State private var exactData = false
     @State private var consent = false
+    @State private var confirmsForget = false
     @AppStorage("goalong.website.origin") private var origin = ""
     @AppStorage("goalong.website.tokenFilePath") private var tokenFilePath = ""
 
@@ -199,7 +200,12 @@ struct GoalongHealthImportSheet: View {
                 TextField("Adresse du site Goalong (https://…)", text: $origin).textFieldStyle(GoalongFieldStyle())
                 HStack {
                     Button("Choisir mon fichier de connexion…", action: chooseToken)
-                    if !tokenFilePath.isEmpty { Text(URL(fileURLWithPath: tokenFilePath).lastPathComponent).font(.caption); Button("Oublier") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = "" }.help("Le fichier d’accès est supprimé de ce Mac. Pour révoquer l’accès, utilisez les réglages du site.") }
+                    if !tokenFilePath.isEmpty { Text(URL(fileURLWithPath: tokenFilePath).lastPathComponent).font(.caption); Button("Oublier") { confirmsForget = true }
+                        .help(GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: tokenFilePath))
+                        .alert("Déconnecter ce compte ?", isPresented: $confirmsForget) {
+                            Button("Annuler", role: .cancel) {}
+                            Button("Déconnecter") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = "" }
+                        } message: { Text(GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: tokenFilePath)) } }
                 }
                 Text("Créez cet accès depuis Sources et connexions sur le site. Seules les mesures de cet aperçu seront transmises ; vos autorisations Santé explicites sur le site détermineront leur visibilité.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -322,8 +328,16 @@ struct GoalongHealthImportSheet: View {
     /// Selecting another file replaces the paired credential: drop the old managed token file.
     private func replaceTokenFile(with url: URL) {
         let previous = tokenFilePath
-        tokenFilePath = url.path
-        if !previous.isEmpty, previous != url.path { GoalongWebsitePairingCoordinator.forgetStoredToken(path: previous) }
+        guard !previous.isEmpty, previous != url.path else { tokenFilePath = url.path; return }
+        guard let window = host.window else { return }
+        let alert = NSAlert(); alert.messageText = "Déconnecter ce compte ?"
+        alert.informativeText = GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: previous)
+        alert.addButton(withTitle: "Déconnecter"); alert.addButton(withTitle: "Annuler")
+        alert.beginSheetModal(for: window) { choice in
+            guard choice == .alertFirstButtonReturn else { return }
+            tokenFilePath = url.path
+            GoalongWebsitePairingCoordinator.forgetStoredToken(path: previous)
+        }
     }
     private func sendReviewedHealth() {
         guard let payload, consent else { return }

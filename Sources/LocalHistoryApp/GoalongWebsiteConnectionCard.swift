@@ -189,6 +189,7 @@ struct GoalongWebsiteConnectionSheet: View {
     @State private var busy = false
     @State private var showsExactData = false
     @State private var showsTokenPath = false
+    @State private var confirmsForgetFile = false
     @State private var tokenPathInput = ""
 
     var body: some View {
@@ -234,11 +235,13 @@ struct GoalongWebsiteConnectionSheet: View {
                             if !tokenFilePath.isEmpty {
                                 Text(URL(fileURLWithPath: tokenFilePath).lastPathComponent)
                                     .font(.caption).lineLimit(1).truncationMode(.middle)
-                                Button("Oublier le fichier") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = ""; status = nil }
+                                Button("Oublier le fichier") { confirmsForgetFile = true }
                                     .buttonStyle(LHQuietButtonStyle())
-                                    .help(GoalongWebsitePairingCoordinator.isManagedTokenPath(tokenFilePath)
-                                          ? "Le fichier d’accès est supprimé de ce Mac. Pour révoquer l’accès, utilisez les réglages du site."
-                                          : "Goalong oublie ce fichier sans le supprimer. Pour révoquer l’accès, utilisez les réglages du site.")
+                                    .alert("Déconnecter ce compte ?", isPresented: $confirmsForgetFile) {
+                                        Button("Annuler", role: .cancel) {}
+                                        Button("Déconnecter") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = ""; status = nil }
+                                    } message: { Text(GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: tokenFilePath)) }
+                                    .help(GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: tokenFilePath))
                             }
                         }
                         GoalongDisclosureGroup("Autre méthode : coller le chemin du fichier", isExpanded: $showsTokenPath) {

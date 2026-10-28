@@ -66,7 +66,7 @@ final class GoalongSiteAnalysisModel: ObservableObject {
 
     func connect() {
         guard !busy, consent() else {
-            error = "Activez d’abord ChatGPT analysis dans les capacités facultatives des Réglages."
+            error = "Activez d’abord « Autoriser les analyses » dans Réglages › Analyse ChatGPT."
             return
         }
         let id = begin()
@@ -251,7 +251,7 @@ struct GoalongSiteAnalysisSheet: View {
                     Text("Votre abonnement ChatGPT est utilisé via Codex sur ce Mac. Cette connexion est propre aux demandes du site : vos identifiants restent gérés par Codex, sans être transmis à Goalong en ligne.")
                         .font(.subheadline).foregroundStyle(.secondary)
                     if !consents.isEnabled(.chatGPTAnalysis) {
-                        Text("Avant de vous connecter, activez ChatGPT analysis dans les capacités facultatives des Réglages. Vous pourrez ensuite autoriser chaque analyse ici.")
+                        Text("Avant de vous connecter, activez « Autoriser les analyses » dans Réglages › Analyse ChatGPT. Vous pourrez ensuite autoriser chaque analyse ici.")
                             .font(.subheadline).foregroundStyle(LHTheme.warning)
                     }
                     HStack {

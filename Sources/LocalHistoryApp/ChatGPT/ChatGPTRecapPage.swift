@@ -591,7 +591,7 @@
         }
 
         private var canGenerate: Bool {
-            isConnected && recapRuntime.dayOverview?.hasMeaningfulData != false
+            consents.isEnabled(.chatGPTAnalysis) && isConnected && recapRuntime.dayOverview?.hasMeaningfulData != false
         }
 
         private var isConnected: Bool { recapRuntime.isAccountConnected }
@@ -606,9 +606,9 @@
         }
 
         private var emptyReportMessage: String {
-            if isConnected { return "Générez-le maintenant, ou laissez l’analyse automatique des journées terminées." }
+            if isConnected, consents.isEnabled(.chatGPTAnalysis) { return "Générez-le maintenant, ou laissez l’analyse automatique des journées terminées." }
             if !consents.isEnabled(.chatGPTAnalysis) {
-                return "Choisissez les données à analyser pour générer le bilan en cinq lignes."
+                return "Les analyses sont désactivées. Activez « Autoriser les analyses » dans Réglages › Analyse ChatGPT pour générer le bilan en cinq lignes."
             }
             return needsUpdate
                 ? "Mettez Goalong à jour pour générer le bilan en cinq lignes."

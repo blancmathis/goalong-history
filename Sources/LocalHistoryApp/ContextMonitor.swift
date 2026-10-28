@@ -50,6 +50,8 @@
         private var timer: Timer?
         private var accessibilityEventMonitor: AccessibilityEventMonitor?
         private var previous: ContextSnapshot?
+        /// Secure Input already written to history; independent of `latestSnapshot`, which may be nil.
+        private var secureInputReported = false
         private var lastHeartbeat = Date.distantPast
         private var sampleGeneration = UUID()
         private var sampleJobs = Set<UUID>()
@@ -163,6 +165,7 @@
             provider.invalidateHistory()
             concentrationSink?(FocusObservation(at: Date(), observing: false))
             previous = nil
+            secureInputReported = false
             setLatest(nil)
             jevVisibleContext.invalidate()
             lastForegroundEvidence = nil
@@ -354,9 +357,10 @@
                         privacyRevision: current.privacyRevision, globalPauseRevision: current.globalPauseRevision
                     )
                 }
-                if previous?.suppressionReason != .secureInput {
+                if previous?.suppressionReason != .secureInput, !secureInputReported {
                     recorder.record(kind: .captureSuppressed, context: safeContext, suppressionReason: .secureInput)
                 }
+                secureInputReported = true
                 setLatest(safeContext)
                 lastPresenceActive = nil
                 JevIngress.shared.boundary()
@@ -366,6 +370,7 @@
                 finish(safeContext); return
             }
             publishesFocusSynchronously = false
+            secureInputReported = false
             let blockingID = blockingObservationEnabled ? UUID() : nil
             if let blockingID { mixedBlockingJobs.insert(blockingID) }
             provider.requestCaptureOutcome(blockingSink: blockingObservationEnabled ? { [weak self] observation in

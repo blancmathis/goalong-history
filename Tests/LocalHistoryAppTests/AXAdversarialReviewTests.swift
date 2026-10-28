@@ -228,6 +228,22 @@ final class AXAdversarialReviewTests: XCTestCase {
         try rig.recorder.closeAndWait()
     }
 
+    func testSecureInputWithoutPriorSnapshotRecordsOneSuppression() throws {
+        richConsent(false)
+        let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+        let provider = ContextProvider(client: tree.client, parameters: { params })
+        let monitor = contextMonitor(rig, provider, hostGate: HostCaptureGate(sessionAvailable: { true }, secureInput: { true }))
+        monitor.configureForAdversarialReview(blocking: false, polling: false)
+        for _ in 0..<5 {
+            let done = expectation(description: "suppressed sample")
+            monitor.sampleNow { _ in done.fulfill() }
+            wait(for: [done], timeout: 3)
+        }
+        XCTAssertEqual(try events(stream(rig, date: date)).filter { $0.kind == .captureSuppressed }.count, 1,
+                       "Secure Input already reported must not write a new line at every poll")
+        try rig.recorder.closeAndWait()
+    }
+
     func testInjectedUnavailableSessionGateReturnsNilAndMarksObservationGap() throws {
         richConsent(false)
         let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
