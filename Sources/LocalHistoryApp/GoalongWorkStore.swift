@@ -212,7 +212,8 @@ extension Notification.Name {
         publish(); persist()
     }
 
-    /// Renames (or merges into an existing name) one task everywhere. Returns why it refused, if it did:
+    /// Renames (or merges into an existing name) one task everywhere. Case variants of the old name
+    /// (« Goalong », « goalong ») merge into the new name, as the plan measure and `renamePlanProject` match. Returns why it refused, if it did:
     /// an open « tâche » commitment finds its task by name and would measure 0 after the rename.
     /// Unknown commitments (unreadable file) refuse too: one of them may measure this task.
     @discardableResult func renameTask(_ old: String, to new: String) -> String? {
@@ -225,8 +226,8 @@ extension Notification.Name {
                 return "« \(old) » a un engagement Concentration en cours, qui suit la tâche par son nom. Renommez-la une fois l’engagement réglé."
             }
         }
-        for (key, entry) in document.entries where entry.task == old { document.entries[key]?.task = name }
-        for index in document.corrections.indices where document.corrections[index].task == old {
+        for (key, entry) in document.entries where entry.task?.localizedCaseInsensitiveCompare(old) == .orderedSame { document.entries[key]?.task = name }
+        for index in document.corrections.indices where document.corrections[index].task?.localizedCaseInsensitiveCompare(old) == .orderedSame {
             document.corrections[index].task = name
         }
         publish(); persist()

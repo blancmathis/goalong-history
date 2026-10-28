@@ -61,6 +61,25 @@
             XCTAssertNil(FocusCommitmentRules.definitionChangeWarning([work], at: now, calendar: calendar))
         }
 
+        /// D-R3d: the plan rename and the plan measure match task names ignoring case, but the store renamed only the
+        /// exact name: « goalong » entries kept the old name while their plan items moved, so plan minutes were short.
+        @MainActor func testRenamingATaskMergesItsCaseVariants() throws {
+            let root = URL(fileURLWithPath: "/private/tmp/t045h5-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = GoalongWorkStore(fileURL: root.appendingPathComponent("work.json"),
+                                         definition: { GoalongWorkDefinition(goals: "Goalong") }, committedTasks: { [] })
+            let upper = GoalongWorkContext.Label(application: "Editor", bundleIdentifier: "fixture.Editor", host: nil, title: "A")
+            let lower = GoalongWorkContext.Label(application: "Editor", bundleIdentifier: "fixture.Editor", host: nil, title: "B")
+            let owner = GoalongWorkContext.Label(application: "Editor", bundleIdentifier: "fixture.Editor", host: nil, title: "C")
+            store.merge([upper.key: GoalongWorkAssignment(verdict: .work, task: "Goalong"),
+                         lower.key: GoalongWorkAssignment(verdict: .work, task: "goalong")], revision: store.revision, day: "2026-10-28")
+            store.correct(key: owner.key, label: owner, verdict: .work, task: "GOALONG", day: "2026-10-28")
+            XCTAssertNil(store.renameTask("Goalong", to: "Atlas"))
+            for label in [upper, lower, owner] {
+                XCTAssertEqual(store.verdicts.assignment(for: label.key)?.task, "Atlas", label.title ?? "")
+            }
+        }
+
         /// Review #164: unreadable commitments must not be stated as an open one; one colon per sentence at most.
         func testOpenWorkWarningsDoNotClaimAnUnknownCommitment() throws {
             var calendar = Calendar(identifier: .gregorian)
