@@ -634,10 +634,14 @@
             let proofsDirectory = rootDirectory
                 .appendingPathComponent("chatgpt", isDirectory: true)
                 .appendingPathComponent("proofs", isDirectory: true)
+            // Saved profile analyses keep the selected activity excerpts and their result.
+            let profileAnalysesDirectory = rootDirectory
+                .appendingPathComponent("chatgpt", isDirectory: true)
+                .appendingPathComponent("profile-analyses", isDirectory: true)
             let evidenceDirectory = proofsDirectory
                 .appendingPathComponent("private-evidence", isDirectory: true)
             let trustedAncestor = OwnedFileDeletionPlan.trustedAncestor(
-                for: [analysisDirectory, memoryDirectory, chatGPTRecapsDirectory, proofsDirectory]
+                for: [analysisDirectory, memoryDirectory, chatGPTRecapsDirectory, proofsDirectory, profileAnalysesDirectory]
                     + computerHistoryStore.memoryDeletionDirectories
             )
             let analysisPlan = try deletionPlan(
@@ -680,7 +684,10 @@
             let chatGPTRecapPlan = try deletionPlan(in: chatGPTRecapsDirectory,
                 trustedAncestor: trustedAncestor, suffixes: [".chatgpt-recap.json", ".chatgpt-recap.md"],
                 cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
-            let analysisPlans = [analysisPlan, developerPlan, chatGPTRecapPlan].compactMap { $0 }
+            let profileAnalysisPlan = try deletionPlan(in: profileAnalysesDirectory,
+                trustedAncestor: trustedAncestor, suffixes: [], cutoffKey: cutoffKey,
+                matchingDayKeys: matchingDayKeys, nameKey: { [self] name in profileAnalysisDayKey(name, in: profileAnalysesDirectory) })
+            let analysisPlans = [analysisPlan, developerPlan, chatGPTRecapPlan, profileAnalysisPlan].compactMap { $0 }
             // The day note is user-written content for a whole day, not activity of a
             // period: only a full history clear removes it. Calls and developer counts
             // have no per-record rewrite, so a partial clear erases their whole day file.
@@ -780,6 +787,26 @@
             // immediately before the caller is permitted to begin deleting raw stores.
             try plan.validate()
             return plan
+        }
+
+        /// Analysed day of a saved profile analysis (`<uuid>.request.json` or `.analysis.json`): the
+        /// `date` of its context, else the file's modification day (never before the analysed day).
+        /// Other names are not ours and stay.
+        private func profileAnalysisDayKey(_ name: String, in directory: URL) -> String? {
+            guard name.hasSuffix(".request.json") || name.hasSuffix(".analysis.json") else { return nil }
+            let url = directory.appendingPathComponent(name)
+            if let data = try? ChatGPTHistoryStore.readStableSource(at: url, maximumBytes: 1_048_576),
+                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            {
+                let request = (object["request"] as? [String: Any]) ?? object
+                if let text = request["context_json"] as? String,
+                    let context = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+                    let key = (context["date"] as? String).flatMap(validDayKey)
+                {
+                    return key
+                }
+            }
+            return modificationDayKey(of: url)
         }
 
         /// Execution id of the proof a recap JSON references, only when it is a valid UUID.

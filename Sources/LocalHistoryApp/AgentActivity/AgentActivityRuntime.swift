@@ -261,6 +261,14 @@
                 discovered: discovered,
                 reallowSuppressedSources: true
             )
+            // Nothing new found: say so instead of claiming an addition that did not happen.
+            guard merged != configuration else {
+                alert = AgentActivityAlert(
+                    title: "Aucune nouvelle source",
+                    message: "Aucune nouvelle source locale n’a été trouvée."
+                )
+                return
+            }
             save(merged, successMessage: "Les sources locales disponibles ont été ajoutées.")
         }
 

@@ -391,6 +391,45 @@
             XCTAssertTrue(FileManager.default.fileExists(atPath: foreign.path))
         }
 
+        func testHistoryClearsEraseTheSavedProfileAnalysesOfTheClearedDays() throws {
+            let container = FileManager.default.temporaryDirectory
+                .appendingPathComponent("goalong-derived-profile-\(UUID().uuidString)", isDirectory: true)
+            let root = container.appendingPathComponent("LocalHistory", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: container) }
+            let folder = root.appendingPathComponent("chatgpt/profile-analyses", isDirectory: true)
+            let today = Calendar.current.startOfDay(for: Date())
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+            func file(_ day: Date, _ suffix: String) -> URL {
+                folder.appendingPathComponent("\(UUID(uuidString: day == today ? "00000000-0000-0000-0000-000000000001" : "00000000-0000-0000-0000-000000000002")!.uuidString.lowercased())\(suffix)")
+            }
+            func body(_ day: Date, archive: Bool) -> Data {
+                let context = "{\"date\":\"\(dayKey(day))\",\"evidence\":[{\"text\":\"SECRET\"}]}"
+                let escaped = context.replacingOccurrences(of: "\"", with: "\\\"")
+                let request = "{\"context_json\":\"\(escaped)\"}"
+                return Data((archive ? "{\"request\":\(request)}" : request).utf8)
+            }
+            let all = [file(today, ".request.json"), file(yesterday, ".analysis.json")]
+            let cleaner = DerivedHistoryCleaner(rootDirectory: root, codexMemoryDirectory: container.appendingPathComponent("codex"))
+            func seed() throws {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try body(today, archive: false).write(to: all[0])
+                try body(yesterday, archive: true).write(to: all[1])
+            }
+            func exists() -> [Bool] { all.map { FileManager.default.fileExists(atPath: $0.path) } }
+
+            try seed()
+            _ = try cleaner.prepareDeletion(since: today).execute()
+            XCTAssertEqual(exists(), [false, true])
+
+            try seed()
+            _ = try cleaner.prepareDeletion(days: [yesterday]).execute()
+            XCTAssertEqual(exists(), [true, false])
+
+            try seed()
+            _ = try cleaner.prepareDeletion(since: nil).execute()
+            XCTAssertEqual(exists(), [false, false])
+        }
+
         func testHistoryClearsEraseTheProofPackagesOfTheClearedRecaps() throws {
             let container = FileManager.default.temporaryDirectory
                 .appendingPathComponent("goalong-derived-proofs-\(UUID().uuidString)", isDirectory: true)
