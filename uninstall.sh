@@ -13,6 +13,8 @@ DEV_APP_PATH="$HOME/Applications/Goalong Dev.app"
 DEV_EXECUTABLE_NAME="Goalong History Dev"
 DEV_BUNDLE_ID="$BUNDLE_ID.dev"
 DEV_DATA_DIR="$DATA_DIR-Dev"
+# The standalone Braise app's folder: Goalong imports its settings once (docs/BRAISE.md). Only --purge-data removes it.
+LEGACY_BRAISE_DIR="$HOME/Library/Application Support/Braise"
 PURGE_DATA=false
 TCC_SERVICES=(Accessibility ListenEvent SystemPolicyAllFiles Calendar Reminders)
 
@@ -149,6 +151,11 @@ purge_goalong_dev() {
   while security delete-generic-password -s "goalong.evidence.v1.dev" >/dev/null 2>&1; do :; done
 }
 
+# rm -rf removes a symlink itself, never its target.
+remove_legacy_braise_data() {
+  rm -rf "$LEGACY_BRAISE_DIR"
+}
+
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 
 case "${1:-}" in
@@ -229,10 +236,11 @@ for service in "${TCC_SERVICES[@]}"; do tccutil reset "$service" "$BUNDLE_ID" >/
 if [[ "$PURGE_DATA" == true ]]; then
   purge_goalong_dev
   rm -rf "$DATA_DIR"
+  remove_legacy_braise_data
   rm -rf "$HOME/Library/Caches/$BUNDLE_ID"
   defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
   while security delete-generic-password -s "goalong.evidence.v1" >/dev/null 2>&1; do :; done
-  echo "Goalong History, its permissions, its recorded history, logs, preferences and caches were removed."
+  echo "Goalong History, its permissions, its recorded history, logs, preferences, caches and the old Braise settings were removed."
   goalong_dev_purge_summary
   echo "The device identity key in the Keychain is not removed by this script."
 else
