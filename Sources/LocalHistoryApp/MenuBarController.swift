@@ -527,9 +527,10 @@
         }
 
         /// An open Concentration commitment measured from this history: the clear can make it fail.
+        /// Read from disk when Concentration is off (T-045 D-FR1).
         private static func commitmentWarning(since cutoff: Date?) -> String {
             MainActor.assumeIsolated {
-                FocusCommitmentRules.historyClearWarning(ConcentrationRuntime.shared.controller?.commitments ?? [],
+                FocusCommitmentRules.historyClearWarning(GoalongWorkStore.openCommitments(controller: ConcentrationRuntime.shared.controller, store: .standard),
                                                          since: cutoff, at: Date()).map { "\n\n" + $0 } ?? ""
             }
         }

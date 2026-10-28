@@ -123,8 +123,13 @@ extension Notification.Name {
     /// from its saved file: they still settle, from this history, once it is on again (T-045 D-154d).
     /// Nil when that file cannot be read.
     static func openTaskNames(controller: ConcentrationController?, store: @autoclosure () -> FocusStore) -> [String]? {
-        if let controller { return FocusCommitmentRules.openTaskNames(controller.commitments) }
-        return (try? store().commitments()).map(FocusCommitmentRules.openTaskNames)
+        openCommitments(controller: controller, store: store()).map(FocusCommitmentRules.openTaskNames)
+    }
+
+    /// Concentration's commitments, read from disk when Concentration is off. Nil: its file is unreadable.
+    static func openCommitments(controller: ConcentrationController?, store: @autoclosure () -> FocusStore) -> [FocusCommitment]? {
+        if let controller { return controller.commitments }
+        return try? store().commitments()
     }
 
     var definition: GoalongWorkDefinition { definitionSource() }
@@ -202,11 +207,16 @@ extension Notification.Name {
 
     /// Renames (or merges into an existing name) one task everywhere. Returns why it refused, if it did:
     /// an open « tâche » commitment finds its task by name and would measure 0 after the rename.
+    /// Unknown commitments (unreadable file) refuse too: one of them may measure this task.
     @discardableResult func renameTask(_ old: String, to new: String) -> String? {
         guard let name = GoalongWorkClassification.cleanTask(new), name != old else { return nil }
-        if name.localizedCaseInsensitiveCompare(old) != .orderedSame,
-           committedTasks()?.contains(where: { $0.localizedCaseInsensitiveCompare(old) == .orderedSame }) == true {
-            return "« \(old) » a un engagement Concentration en cours, qui suit la tâche par son nom. Renommez-la une fois l’engagement réglé."
+        if name.localizedCaseInsensitiveCompare(old) != .orderedSame {
+            guard let committed = committedTasks() else {
+                return "Les engagements Concentration n’ont pas pu être lus : l’un d’eux suit peut-être « \(old) » par son nom. Renommez-la une fois Concentration de nouveau lisible."
+            }
+            if committed.contains(where: { $0.localizedCaseInsensitiveCompare(old) == .orderedSame }) {
+                return "« \(old) » a un engagement Concentration en cours, qui suit la tâche par son nom. Renommez-la une fois l’engagement réglé."
+            }
         }
         for (key, entry) in document.entries where entry.task == old { document.entries[key]?.task = name }
         for index in document.corrections.indices where document.corrections[index].task == old {
@@ -308,9 +318,10 @@ extension Notification.Name {
     }
 
     /// Drops the oldest agent verdicts past the limit; those an open « tâche » commitment measures stay.
+    /// With unknown commitments, nothing goes until they can be read again.
     private func prune() {
         guard document.entries.count > Self.maximumEntries else { return }
-        let kept = keptAcrossReclassification(document.entries, committed: committedTasks() ?? [])
+        let kept = keptAcrossReclassification(document.entries, committed: committedTasks())
         let removable = document.entries.filter { kept[$0.key] == nil }
             .sorted { $0.value.seen == $1.value.seen ? $0.key < $1.key : $0.value.seen < $1.value.seen }
         for (key, _) in removable.prefix(document.entries.count - Self.maximumEntries) {
