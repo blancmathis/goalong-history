@@ -223,9 +223,9 @@ struct GoalongAnalyticsContent: View {
     private func concentrationFigure(_ summary: GoalongActivitySummary) -> some View {
         if summary.workIsMeasurable, let block = summary.longestWorkBlock {
             let blocks = summary.workBlocks.count
-            return figure("Plus longue session de travail", value: duration(block.workSeconds),
+            return figure("Plus longue séance de travail", value: duration(block.workSeconds),
                           detail: block.task.map { "Sur \($0)" } ?? "Sur une même tâche",
-                          help: "Plus longue session sur une même tâche. \(blocks) session\(blocks > 1 ? "s" : "") de 25 min ou plus.")
+                          help: "Plus longue séance sur une même tâche. \(blocks) séance\(blocks > 1 ? "s" : "") de 25 min ou plus.")
         }
         let longest = summary.longestSequence
         return figure("Plus longue séquence", value: longest.map { duration($0.seconds) } ?? "—",
@@ -469,7 +469,7 @@ struct GoalongAnalyticsContent: View {
         switch item {
         case .rhythm: return isDay ? "À quel moment, dans quelle app" : "Le détail de chaque jour"
         case .usage: return "Le temps passé dans chaque app et chaque site"
-        case .sessions: return "Plus longues sessions, changements d’app, comparaison"
+        case .sessions: return "Plus longues séances, changements d’app, comparaison"
         case .texture: return GoalongActivityTexture.caption(current.breakdown)
         case .agenda: return lanes.agenda?.caption ?? ""
         case .code: return lanes.code?.caption ?? ""

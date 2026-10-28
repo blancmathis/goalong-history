@@ -171,17 +171,17 @@
                         flowNode(
                             symbol: "internaldrive.fill",
                             title: "2. Conservé localement",
-                            message: "Événements détaillés (JSONL) et sels d’engagement privés"
+                            message: "Événements détaillés (JSONL) et clés de preuve privées"
                         )
                         flowArrow
                         flowNode(
                             symbol: "number.square.fill",
-                            title: "3. Ancré",
+                            title: "3. Preuve enregistrée",
                             message: GoalongBuildCapabilities.permitsRemoteVerification
                                 ? (model.runtime.verificationEnabled
-                                    ? "Uniquement des engagements signés opaques"
-                                    : "Conservés localement tant que la vérification n’est pas activée")
-                                : "Les engagements locaux ne quittent jamais cette version"
+                                    ? "Uniquement des preuves signées, sans contenu"
+                                    : "Preuves conservées localement tant que la vérification n’est pas activée")
+                                : "Les preuves locales ne quittent jamais cette version"
                         )
                         flowArrow
                         flowNode(
@@ -443,7 +443,7 @@
                 VStack(alignment: .leading, spacing: 14) {
                     SectionTitle(
                         title: "Identité de vérification",
-                        subtitle: "Sert à signer les engagements minute par minute sans exposer l’activité"
+                        subtitle: "Sert à signer les preuves minute par minute sans exposer l’activité"
                     )
 
                     HStack(spacing: 13) {

@@ -33,7 +33,7 @@ enum GoalongActivityTexture {
     static func phrase(_ mode: GoalongActivityBreakdown.Mode, seconds: TimeInterval) -> String {
         let value = GoalongAnalyticsFormatting.duration(seconds)
         switch mode {
-        case .keyboard: return "\(value) au clavier"
+        case .keyboard: return "\(value) de présence au clavier"
         case .pointer: return "\(value) à la souris"
         case .reading: return "\(value) sans saisie"
         case .call: return "\(value) en appel"

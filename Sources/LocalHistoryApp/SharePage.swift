@@ -101,7 +101,7 @@
                     Text(
                         model.snapshot.sealedMinutes > 0
                             ? "Prêt à créer un fichier selon vos règles"
-                            : "Aucune minute scellée pour ce jour"
+                            : "Aucune donnée avec preuve pour ce jour"
                     )
                     .font(.system(size: 11, weight: .semibold))
                     Text(

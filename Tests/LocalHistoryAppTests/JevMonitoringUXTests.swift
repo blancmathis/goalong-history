@@ -9,7 +9,7 @@ final class JevMonitoringUXTests: XCTestCase {
         XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .concentration, .settings])
         XCTAssertEqual(DashboardSection.monitoring.sidebarParent, .settings)
         XCTAssertFalse(ConcentrationHubPage.tabs.contains(.monitoring))
-        XCTAssertEqual(DashboardSection.monitoring.simpleTitle, "Surveillance temps réel")
+        XCTAssertEqual(DashboardSection.monitoring.simpleTitle, "Jev")
         XCTAssertEqual(DashboardSection(rawValue: "monitoring"), .monitoring)
         XCTAssertEqual(DashboardSection.analytics.sidebarParent, .overview)
         XCTAssertEqual(DashboardSection.privacy.sidebarParent, .settings)

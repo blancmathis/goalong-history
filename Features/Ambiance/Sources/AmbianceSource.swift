@@ -44,13 +44,17 @@ public struct AmbianceDiagnostics: Equatable {
 }
 
 public enum AmbianceError: Error, LocalizedError {
-    case invalidPack(String), cancelled, unavailable, noAudioOutput, disabled, audioBoundary, networkBoundary, network, tooSlow, serverUnavailable, diskFull
+    case invalidPack(String), cancelled, unavailable, noAudioOutput, disabled, audioBoundary, networkBoundary, network, tooSlow, serverUnavailable
+    /// `needed`: the size of the pack being downloaded; nil when unknown (no figure is claimed then).
+    case diskFull(needed: Int64?)
     public var errorDescription: String? {
         switch self {
         case .invalidPack(let detail): return "Pack invalide : \(detail)"
         case .cancelled: return "Téléchargement annulé."
         case .network: return "Connexion impossible. Vérifiez Internet puis réessayez."
-        case .diskFull: return "Espace disque insuffisant. Libérez de la place (environ 90 Mo) puis réessayez."
+        case .diskFull(let needed):
+            guard let needed, needed > 0 else { return "Espace disque insuffisant. Libérez de la place puis réessayez." }
+            return "Espace disque insuffisant. Libérez de la place (environ \((needed + 999_999) / 1_000_000) Mo) puis réessayez."
         case .tooSlow: return "Téléchargement trop lent. Réessayez avec une connexion plus rapide."
         case .serverUnavailable: return "Le pack est indisponible pour le moment. Réessayez plus tard."
         case .unavailable: return "Cette source est indisponible. Installez son pack ou retrouvez le fichier."

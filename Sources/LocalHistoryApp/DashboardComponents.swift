@@ -525,9 +525,9 @@
         }
 
         var displayTitle: String {
-            if isBackgroundPrivacyRule { return "Suivi local actif" }
+            if isBackgroundPrivacyRule { return "Enregistrement local actif" }
             switch state {
-            case .recording: return "Suivi local actif"
+            case .recording: return "Enregistrement local actif"
             case .paused: return "Suivi en pause"
             case .permissionsMissing: return "Accès à configurer"
             case .inputTapUnavailable: return "Saisie non reçue"
@@ -539,7 +539,7 @@
                 case .sessionUnavailable: return "Session Mac inactive"
                 case .accessibilityUnavailable: return "Navigateur non accessible"
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:
-                    return "Suivi local actif"
+                    return "Enregistrement local actif"
                 }
             }
         }

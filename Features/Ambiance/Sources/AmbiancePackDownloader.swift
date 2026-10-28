@@ -49,9 +49,9 @@ enum AmbiancePackDownloader {
     /// A timeout after some pack bytes means the link is too slow. A timeout before the first byte
     /// (blocked or silent server) is a connection failure. Other transport errors are never exposed:
     /// they may contain the signed failing URL.
-    static func transportFailure(_ error: Error, bytesReceived: Int64) -> AmbianceError {
+    static func transportFailure(_ error: Error, bytesReceived: Int64, packBytes: Int64? = nil) -> AmbianceError {
         switch (error as? URLError)?.code {
-        case .cannotWriteToFile, .cannotCreateFile: return .diskFull
+        case .cannotWriteToFile, .cannotCreateFile: return .diskFull(needed: packBytes)
         case .timedOut where bytesReceived > 0: return .tooSlow
         default: return .network
         }
@@ -170,7 +170,7 @@ enum AmbiancePackDownloader {
             // Foundation transport errors may contain the signed failing URL.
             // Never retain or expose them through the controller's public error.
             if let error {
-                finish(.failure(failure ?? AmbiancePackDownloader.transportFailure(error, bytesReceived: bytesReceived)))
+                finish(.failure(failure ?? AmbiancePackDownloader.transportFailure(error, bytesReceived: bytesReceived, packBytes: pack.bytes)))
             }
         }
     }

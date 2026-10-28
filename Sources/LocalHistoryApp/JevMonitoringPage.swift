@@ -83,7 +83,7 @@ struct JevActivationAvailability: Equatable {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Surveillance du travail").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
-                        Text("Facultative. Toutes les 15 secondes, Goalong vérifie que vous restez sur vos projets et affiche un rappel dès qu’une distraction est détectée de façon fiable.")
+                        Text("Facultative. Jev est le service d’analyse partenaire de Goalong. Toutes les 15 secondes, Goalong vérifie que vous restez sur vos projets et affiche un rappel dès qu’une distraction est détectée de façon fiable.")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }

@@ -330,7 +330,7 @@
             technicalStatusItem.isEnabled = false
             advanced.addItem(technicalStatusItem)
             advanced.addItem(.separator())
-            advanced.addItem(makeItem("Partager une journée signée…", action: #selector(openShare)))
+            advanced.addItem(makeItem("Exporter un fichier signé…", action: #selector(openShare)))
             advanced.addItem(makeItem("Ouvrir le fichier d’activité du jour", action: #selector(openTodayFile)))
             advanced.addItem(makeItem("Ouvrir le dossier des données", action: #selector(openDataFolder)))
             advanced.addItem(makeItem("Ouvrir la configuration", action: #selector(openConfiguration)))

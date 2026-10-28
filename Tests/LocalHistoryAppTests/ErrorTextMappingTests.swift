@@ -64,5 +64,18 @@ final class ErrorTextMappingTests: XCTestCase {
             XCTAssertTrue(text.contains("disque"), "\(name): \(text)")
         }
     }
+
+    /// Réserve #141: Sparkle's installer runs in its own process and reports a bare installation error
+    /// (no ENOSPC). With almost no free space the sentence names the disk; with space it stays the install one.
+    @MainActor func testSparkleInstallFailureOnAFullDiskNamesTheDisk() {
+        let install = NSError(domain: "SUSparkleErrorDomain", code: 4005)
+        XCTAssertEqual(SoftwareUpdateManager.errorSummary(install, freeBytes: { 20_000_000 }), SoftwareUpdateManager.diskFullSummary)
+        XCTAssertEqual(SoftwareUpdateManager.errorSummary(install, freeBytes: { 50_000_000_000 }),
+                       "l’installation n’a pas abouti ; la version actuelle est conservée")
+        XCTAssertEqual(SoftwareUpdateManager.errorSummary(install, freeBytes: { nil }),
+                       "l’installation n’a pas abouti ; la version actuelle est conservée")
+        let unarchive = NSError(domain: "SUSparkleErrorDomain", code: 3000)
+        XCTAssertEqual(SoftwareUpdateManager.errorSummary(unarchive, freeBytes: { 1 }), SoftwareUpdateManager.diskFullSummary)
+    }
 }
 #endif

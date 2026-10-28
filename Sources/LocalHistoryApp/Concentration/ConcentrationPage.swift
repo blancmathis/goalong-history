@@ -64,7 +64,7 @@ import SwiftUI
                             FocusComposer(controller: controller, now: now, draft: $draft,
                                           blockingEnabled: modules.isEnabled(.blocking))
                             FocusDistractionSuggestionsCard(controller: controller)
-                            JevConnectHint(text: "Avec Jev, Goalong repère vos distractions pendant la séance et vous propose de les bloquer.")
+                            JevConnectHint(text: "Avec Jev, le service d’analyse partenaire, Goalong repère vos distractions pendant la séance et vous propose de les bloquer.")
                         }
                         if let error = controller.error {
                             GoalongNote(FocusUIError.message(raw: error), tone: .warning)
