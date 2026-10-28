@@ -1,7 +1,7 @@
 // E2E driver for GitHub-hosted macOS runners only (T-045). Never run it on a personal Mac:
 // it presses real controls in the target app.
 // Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT [ROLE] | menu BUNDLE TOP [ITEM]
-//        | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE
+//        | close-extra BUNDLE MAIN_TITLE | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE
 import AppKit
 import ApplicationServices
 
@@ -68,8 +68,11 @@ case "press":
             var budget = 6000
             var hit: AXUIElement?
             _ = walk(root, budget: &budget) { e, _ in
-                let match = (role.isEmpty || text(e, kAXRoleAttribute) == role) && (exact ? text(e, "AXIdentifier") == needle
-                    : [kAXTitleAttribute, kAXDescriptionAttribute].contains { text(e, $0).contains(needle) })
+                // Without ROLE, menu items never match: « Rechercher » must not press « Rechercher les mises à jour… ».
+                let r = text(e, kAXRoleAttribute)
+                let roleOK = role.isEmpty ? !["AXMenuItem", "AXMenuBarItem"].contains(r) : r == role
+                let match = roleOK && (exact ? text(e, "AXIdentifier") == needle
+                    : [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute].contains { text(e, $0).contains(needle) })
                 if match { hit = e }
                 return match
             }
@@ -102,6 +105,14 @@ case "menu":
     let status = AXUIElementPerformAction(hit, kAXPressAction as CFString)
     print("menu '\(args[3])' > \(describe(hit)) : \(status.rawValue)")
     exit(status == .success ? 0 : 4)
+case "close-extra":
+    // Close every window of the app except the main one (support report, about, update windows).
+    let main = args[3]
+    var closed = 0
+    for w in (attr(app(args[2]), kAXWindowsAttribute) as? [AXUIElement]) ?? [] where text(w, kAXTitleAttribute) != main {
+        if let b = attr(w, kAXCloseButtonAttribute) { AXUIElementPerformAction(b as! AXUIElement, kAXPressAction as CFString); closed += 1 }
+    }
+    print("closed \(closed) extra window(s)")
 case "status-menu":
     guard let extras = attr(app(args[2]), "AXExtrasMenuBar") else { print("no AXExtrasMenuBar"); exit(6) }
     guard let item = children(extras as! AXUIElement).first else { print("no status item"); exit(6) }
