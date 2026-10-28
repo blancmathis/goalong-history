@@ -70,6 +70,43 @@ final class BlockingFrictionTests: XCTestCase {
         c.takeBreak(listID: list.id, password: "fixture"); XCTAssertNil(c.snapshot.usage?.breakEnds[list.id])
     }
 
+    /// H28 D1: once the day's breaks are used, a password block offers « Pause supplémentaire… » on the page and the veil.
+    @MainActor func testPasswordBlockOffersExtraBreakThroughPasswordSheet() throws {
+        var now = Date()
+        let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org")], breaks: .init(count: 1, minutes: 1))
+        let backend = FrictionBackend(), credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        var opened = 0; c.onOpen = { opened += 1 }
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .password)
+        XCTAssertFalse(c.offersExtraBreak(listID: list.id), "a planned break is still left")
+        c.observe(target(now)); XCTAssertEqual(backend.veil?.extraBreak, false)
+        c.takeBreak(listID: list.id)
+        XCTAssertFalse(c.offersExtraBreak(listID: list.id), "a break is running")
+        now = now.addingTimeInterval(61); c.refresh()
+        XCTAssertTrue(c.offersExtraBreak(listID: list.id))
+        c.observe(target(now)); XCTAssertEqual(backend.veil?.extraBreak, true)
+        // The veil's button asks for the password in Goalong; it never takes the break by itself.
+        backend.veilBreak?()
+        XCTAssertEqual(c.extraBreakRequest, list.id); XCTAssertEqual(opened, 1)
+        XCTAssertEqual(c.snapshot.usage?.breaksTaken[list.id], 1)
+        guard case .wrong = c.takeBreak(listID: list.id, password: "wrong") else { return XCTFail("wrong password") }
+        XCTAssertEqual(c.snapshot.usage?.breaksTaken[list.id], 1)
+        XCTAssertEqual(c.takeBreak(listID: list.id, password: "fixture"), .ok)
+        XCTAssertEqual(c.snapshot.usage?.breaksTaken[list.id], 2)
+        XCTAssertFalse(c.offersExtraBreak(listID: list.id))
+        c.endBreak(listID: list.id)
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .locked)
+        XCTAssertFalse(c.offersExtraBreak(listID: list.id), "a hard lock wins over the password")
+    }
+
+    @MainActor func testExtraBreakSheetSaysWhyAWrongPasswordFailed() {
+        let purpose = BlockingPasswordSheet.Purpose.extraBreak(UUID(), what: "")
+        XCTAssertEqual(BlockingPasswordSheet.wrongMessage(remaining: 4, purpose: purpose),
+                       "Mot de passe incorrect : pas de pause supplémentaire. Encore 4 essais avant une attente.")
+        XCTAssertEqual(BlockingPasswordSheet.wrongMessage(remaining: 0, purpose: purpose), "Mot de passe incorrect : pas de pause supplémentaire.")
+        XCTAssertEqual(BlockingPasswordSheet.wrongMessage(remaining: 1, purpose: .change), "Mot de passe incorrect. Encore 1 essai avant une attente.")
+    }
+
     @MainActor func testPasswordSlowDownCannotBecomeEasierButKeepsChosenAllowance() throws {
         var now = Date()
         let list = BlockList(name: "Slow", sites: [.init(pattern: "example.org")], action: .slowDown, slowDownSeconds: 3, continueMinutes: 1)
@@ -118,7 +155,8 @@ private final class FrictionBackend: BlockingEnforcementBackend {
     func updateProtection(locked: Bool) -> BlockingProtectionState { .init() }
     func blockApp(_ t: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) { blocks += 1 }
     func blockSlowDownApp(_ t: BlockingObservation, app: BlockAppRule, block: BlockingActiveBlock, listName: String) { heldApps += 1 }
-    func blockSite(_ t: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) { blocks += 1 }
+    var veil: BlockingVeilPresentation?; var veilBreak: (() -> Void)?
+    func blockSite(_ t: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) { blocks += 1; veil = presentation; veilBreak = onBreak }
     func clearSite() {}; func updateFreeze(_ f: BlockFreeze?) {}; func returnToShield() { shields += 1 }; func shutdown() {}
     func slowDown(_ t: BlockingObservation, presentation: BlockingFrictionPresentation, onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void) {}
     func clearSlowDown() {}; func renounceSlowDown(_ t: BlockingObservation) { renounces += 1 }; func continueSlowDown(_ t: BlockingObservation) { continues += 1 }

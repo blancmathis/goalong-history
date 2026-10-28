@@ -65,6 +65,8 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         case unlock(UUID, what: String)
         case change
         case remove
+        /// One break more for a password block whose breaks of the day are used.
+        case extraBreak(UUID, what: String)
     }
 
     @ObservedObject var controller: BlockingController
@@ -146,6 +148,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         case .unlock: return "Débloquer avec le mot de passe"
         case .change: return "Changer le mot de passe"
         case .remove: return "Supprimer le mot de passe"
+        case .extraBreak: return "Pause supplémentaire"
         }
     }
 
@@ -153,7 +156,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         switch purpose {
         case .create:
             return "Un seul mot de passe pour tous les blocages « Mot de passe ». Il faut le taper pour les arrêter, alléger leurs listes, couper le module ou quitter Goalong."
-        case .unlock(_, let what): return what
+        case .unlock(_, let what), .extraBreak(_, let what): return what
         case .change: return "Possible seulement quand aucun blocage « Mot de passe » n’est actif ou prévu."
         case .remove: return "Possible seulement quand aucun blocage « Mot de passe » n’est actif ou prévu."
         }
@@ -165,11 +168,15 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         case .unlock: return "Débloquer"
         case .change: return "Changer"
         case .remove: return "Supprimer"
+        case .extraBreak: return "Prendre la pause"
         }
     }
 
     private var cancelTitle: String {
-        if case .unlock = purpose { return "Garder le blocage" }
+        switch purpose {
+        case .unlock, .extraBreak: return "Garder le blocage"
+        default: break
+        }
         return "Annuler"
     }
 
@@ -190,6 +197,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         case .unlock(let id, _): result = controller.unlockWithPassword(old, blockID: id)
         case .change: result = controller.changePassword(old: old, new: new)
         case .remove: result = controller.removePassword(old: old)
+        case .extraBreak(let id, _): result = controller.takeBreak(listID: id, password: old)
         }
         switch result {
         case .ok:
@@ -198,9 +206,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         case .wrong(let remaining):
             controller.error = nil
             old = ""
-            message = remaining > 0
-                ? "Mot de passe incorrect. Encore \(remaining) essai\(remaining > 1 ? "s" : "") avant une attente."
-                : "Mot de passe incorrect."
+            message = Self.wrongMessage(remaining: remaining, purpose: purpose)
         case .wait(let until):
             controller.error = nil
             old = ""
@@ -212,6 +218,12 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
     }
 
     private func clear() { old = ""; new = ""; again = "" }
+
+    static func wrongMessage(remaining: Int, purpose: Purpose) -> String {
+        var text = "Mot de passe incorrect"
+        if case .extraBreak = purpose { text += " : pas de pause supplémentaire" }
+        return remaining > 0 ? text + ". Encore \(GoalongUIFormat.count(remaining, "essai")) avant une attente." : text + "."
+    }
 }
 
 /// One-time blocks set for later, under the state: each can be cancelled at the price of its lock.

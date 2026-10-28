@@ -54,7 +54,8 @@ import LocalHistoryCore
                                           onStop: { stopping = BlockingStopRequest(id: $0.id, what: "") },
                                           onUnlock: { block in
                                               unlocking = BlockingStopRequest(id: block.id, what: unlockText(block.origin, end: block.end))
-                                          })
+                                          },
+                                          onExtraBreak: { controller.extraBreakRequest = $0.id })
                         BlockingScheduledList(controller: controller, now: now,
                                               onTyping: { stopping = BlockingStopRequest(id: $0.id, what: "") },
                                               onPassword: { session in
@@ -109,6 +110,11 @@ import LocalHistoryCore
             BlockingPasswordSheet(controller: controller, purpose: .unlock(request.id, what: request.what)) { unlocking = nil }
                 .goalongControls()
         }
+        .sheet(item: Binding(get: { controller.extraBreakRequest.flatMap(controller.list).map(extraBreakRequest) },
+                             set: { if $0 == nil { controller.extraBreakRequest = nil } })) { request in
+            BlockingPasswordSheet(controller: controller, purpose: .extraBreak(request.id, what: request.what)) { controller.extraBreakRequest = nil }
+                .goalongControls()
+        }
         .sheet(item: $stopping) { block in
             BlockingTypingChallengeSheet(text: controller.typingChallenge(for: block.id)) { typed in
                 controller.stop(block.id, typed: typed)
@@ -122,6 +128,10 @@ import LocalHistoryCore
                     .goalongControls()
             }
         }
+    }
+
+    private func extraBreakRequest(_ list: BlockList) -> BlockingStopRequest {
+        BlockingStopRequest(id: list.id, what: "Toutes les pauses de « \(list.name) » sont prises aujourd’hui. Le mot de passe en accorde une de \(list.breaks?.minutes ?? 0) min de plus.")
     }
 
     private func unlockText(_ origin: BlockSession.Origin, end: Date) -> String {
@@ -159,6 +169,7 @@ struct BlockingStopRequest: Identifiable {
     let now: Date
     var onStop: (BlockingActiveBlock) -> Void
     var onUnlock: (BlockingActiveBlock) -> Void = { _ in }
+    var onExtraBreak: (BlockList) -> Void = { _ in }
 
     /// The strongest block leads, then the one that lasts longest.
     private var blocks: [BlockingActiveBlock] {
@@ -283,7 +294,13 @@ struct BlockingStopRequest: Identifiable {
     @ViewBuilder private func actions(_ block: BlockingActiveBlock, lists: [BlockList], breaks: Bool = false) -> some View {
         // Breaks belong to lists: offered once, on the leading block.
         let breakList = breaks ? lists.first { (block.breaksLeft[$0.id] ?? 0) > 0 && block.breakEnds[$0.id] == nil } : nil
+        let extraList = breaks && breakList == nil ? lists.first { controller.offersExtraBreak(listID: $0.id) } : nil
         HStack(spacing: 8) {
+            if let list = extraList {
+                Button { onExtraBreak(list) } label: { Label("Pause supplémentaire…", systemImage: "cup.and.saucer") }
+                    .help("Pauses du jour prises. Le mot de passe en accorde une de plus.")
+                    .accessibilityIdentifier("blocking-extra-break")
+            }
             if let list = breakList, let breaks = list.breaks {
                 Button { controller.takeBreak(listID: list.id) } label: {
                     Label("Pause de \(breaks.minutes) min", systemImage: "cup.and.saucer")

@@ -64,6 +64,8 @@ struct BlockingVeilPresentation: Equatable {
     var breakMinutes: Int?
     var breaksLeft = 0
     var feedback: BlockingListFeedback?
+    /// No break left, but the password block grants one more (« Pause supplémentaire… »).
+    var extraBreak = false
 }
 
 extension BlockingRules {

@@ -45,6 +45,13 @@ struct BlockedSiteVeil: View {
                         Text(presentation.breaksLeft == 1 ? "Dernière pause du jour" : "\(presentation.breaksLeft) pauses restantes aujourd’hui")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                     }
+                } else if presentation.breakMinutes != nil, presentation.extraBreak {
+                    VStack(spacing: 6) {
+                        Button(action: onBreak) { Label("Pause supplémentaire…", systemImage: "key") }
+                            .accessibilityIdentifier("blocking-veil-extra-break")
+                        Text("Pauses du jour prises. Le mot de passe en accorde une de plus.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
+                    }
                 }
             }
             .padding(32)
