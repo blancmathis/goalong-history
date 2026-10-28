@@ -27,5 +27,18 @@ final class T045H4Tests: XCTestCase {
         XCTAssertFalse(text.contains("pu être préparé.") || text.contains("pu être préparé :"), "accord : la relance … préparée")
         XCTAssertFalse(text.contains("localizedDescription"), "aucun texte d’erreur système dans le message")
     }
+
+    /// Two help texts named a settings path that does not exist: « Réglages › Général › Ouverture »
+    /// (it is the macOS one) and « Réglages › Aide et diagnostic » (the group sits in Avancé).
+    func testSettingsPathsInHelpTextsAreComplete() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let sources = root.appendingPathComponent("Sources/LocalHistoryApp")
+        let blocking = try String(contentsOf: sources.appendingPathComponent("Blocking/BlockingPage.swift"), encoding: .utf8)
+        XCTAssertFalse(blocking.contains("dans Réglages › Général › Ouverture"), "chemin macOS : Réglages Système › Général › Ouverture")
+        XCTAssertTrue(blocking.contains("Autorisez Goalong dans Réglages Système › Général › Ouverture."))
+        let support = try String(contentsOf: sources.appendingPathComponent("SupportRequest.swift"), encoding: .utf8)
+        XCTAssertFalse(support.contains("Réglages › Aide et diagnostic"), "chemin complet : Réglages › Avancé › Aide et diagnostic")
+        XCTAssertTrue(support.contains("« Conserver les journaux techniques sur ce Mac » dans Réglages › Avancé › Aide et diagnostic"))
+    }
 }
 #endif

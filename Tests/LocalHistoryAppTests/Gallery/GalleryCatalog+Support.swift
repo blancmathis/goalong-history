@@ -48,7 +48,7 @@ extension GalleryCatalog {
                          feedback: "Aucune app de messagerie n’est configurée. Utilisez « Partager » ou « Enregistrer une copie ».",
                          kind: .problem),
             supportPanel("support/retour-journal-desactive", note: "retour d’information : journal technique désactivé", phase: supportReport(),
-                         feedback: "Le journal technique est désactivé : activez-le dans Réglages › Aide et diagnostic pour ajouter un repère.",
+                         feedback: "Le journal technique est désactivé : activez « Conserver les journaux techniques sur ce Mac » dans Réglages › Avancé › Aide et diagnostic pour ajouter un repère.",
                          kind: .problem),
         ]
     }

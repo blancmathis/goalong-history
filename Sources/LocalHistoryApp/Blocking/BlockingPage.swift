@@ -984,11 +984,11 @@ struct BlockingLockExplainer: View {
         "Un autre compte utilisateur du Mac n’est pas bloqué.",
     ]
 
-    /// Réglages › Général › Ouverture, where macOS lets Goalong start and run in the background.
+    /// Réglages Système › Général › Ouverture, where macOS lets Goalong start and run in the background.
     private var loginItemsButton: AnyView {
         AnyView(Button("Ouvrir Réglages…") { SMAppService.openSystemSettingsLoginItems() }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
-            .help("Autorisez Goalong dans Réglages › Général › Ouverture.")
+            .help("Autorisez Goalong dans Réglages Système › Général › Ouverture.")
             .accessibilityIdentifier("blocking-open-login-items"))
     }
 

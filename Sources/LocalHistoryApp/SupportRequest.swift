@@ -164,7 +164,7 @@ enum SupportReportStore {
 
     func markIssue(journal: SupportDiagnostics = .shared) {
         guard journal.isEnabled else {
-            report("Le journal technique est désactivé : activez-le dans Réglages › Aide et diagnostic pour ajouter un repère.", .problem)
+            report("Le journal technique est désactivé : activez « Conserver les journaux techniques sur ce Mac » dans Réglages › Avancé › Aide et diagnostic pour ajouter un repère.", .problem)
             return
         }
         journal.record(.userMarkedIssue, component: .support)
