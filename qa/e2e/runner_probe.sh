@@ -152,6 +152,15 @@ step() {
                o="$(hasgrep "${c#has:}" "$RUNNER_TEMP/has.txt")" && break; sleep 3
              done
              [[ -n $o ]] || req+="has(${c#has:});" ;;
+      hs:*) for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do  # Like has:, scrolling down between tries (lazy usage card).
+               "$DRIVER" dump "$BUNDLE" "$RUNNER_TEMP/has.txt" >/dev/null 2>&1
+               o="$(hasgrep "${c#hs:}" "$RUNNER_TEMP/has.txt")" && break; "$DRIVER" scroll "$BUNDLE" >/dev/null 2>&1; sleep 1.5
+             done
+             [[ -n $o ]] || req+="has(${c#hs:});" ;;
+      no:*) "$DRIVER" dump "$BUNDLE" "$RUNNER_TEMP/has.txt" >/dev/null 2>&1
+            o="$(hasgrep "${c#no:}" "$RUNNER_TEMP/has.txt")" && req+="present(${c#no:});" || o="absent" ;;
+      set:*) o="$("$DRIVER" set "$BUNDLE" ${c#set:} 2>&1)" || req+="$c;"; sleep 1 ;;
+      dir:*) if [[ -d "$HOME/Library/Application Support/${c#dir:}" ]]; then o="$(ls -ldO "$HOME/Library/Application Support/${c#dir:}")"; else req+="dir(${c#dir:});"; fi ;;
       w:*) sleep "${c#w:}" ;;
       s:*) rowshot "$row-${c#s:}" ;;
     esac

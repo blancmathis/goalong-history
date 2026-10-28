@@ -2,7 +2,7 @@
 // it presses real controls in the target app.
 // Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT [ROLE] | menu BUNDLE TOP [ITEM]
 //        | close-extra BUNDLE MAIN_TITLE | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE | input SECONDS
-//        | dismiss-alerts BUNDLE
+//        | dismiss-alerts BUNDLE | scroll BUNDLE | set BUNDLE ID 0|1
 import AppKit
 import ApplicationServices
 
@@ -144,6 +144,47 @@ case "dismiss-alerts":
         }
     }
     print("dismissed \(closed) alert(s)")
+case "scroll":
+    // One scroll step down in the main window: the usage card is lazy and absent from the AX tree until scrolled into view.
+    // Scroll bars first (AX), then synthetic wheel events over the window (runner only: the cursor is moved there).
+    let a = app(args[2])
+    var budget = 6000
+    _ = walk(a, budget: &budget) { e, _ in
+        if text(e, kAXRoleAttribute) == "AXScrollArea", let bar = attr(e, "AXVerticalScrollBar"),
+           let v = attr(bar as! AXUIElement, kAXValueAttribute) as? Double {
+            AXUIElementSetAttributeValue(bar as! AXUIElement, kAXValueAttribute as CFString, min(1.0, v + 0.25) as CFNumber)
+        }
+        return false
+    }
+    if let w = (attr(a, kAXWindowsAttribute) as? [AXUIElement])?.first,
+       let pos = attr(w, kAXPositionAttribute), let size = attr(w, kAXSizeAttribute) {
+        var p = CGPoint.zero, sz = CGSize.zero
+        AXValueGetValue(pos as! AXValue, .cgPoint, &p); AXValueGetValue(size as! AXValue, .cgSize, &sz)
+        CGWarpMouseCursorPosition(CGPoint(x: p.x + sz.width * 0.6, y: p.y + sz.height * 0.6))
+        for _ in 0..<3 {
+            CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -150, wheel2: 0, wheel3: 0)?.post(tap: .cghidEventTap)
+            usleep(100_000)
+        }
+    }
+    print("scrolled")
+case "set":
+    // Put a checkbox/switch (by AXIdentifier) in the wanted state: press only when its AXValue differs.
+    var budget = 6000
+    var hit: AXUIElement?
+    for root in roots(args[2]) {
+        _ = walk(root, budget: &budget) { e, _ in
+            let ok = text(e, "AXIdentifier") == args[3]
+            if ok { hit = e }
+            return ok
+        }
+    }
+    guard let hit else { print("set '\(args[3])': not found"); exit(5) }
+    let now = (attr(hit, kAXValueAttribute) as? NSNumber)?.intValue ?? -1
+    var status = AXError.success
+    if now != Int(args[4]) { status = AXUIElementPerformAction(hit, kAXPressAction as CFString); usleep(500_000) }
+    let after = (attr(hit, kAXValueAttribute) as? NSNumber)?.intValue ?? -1
+    print("set '\(args[3])' \(now) -> \(after) (wanted \(args[4])) : \(status.rawValue)")
+    exit(after == Int(args[4]) ? 0 : 4)
 case "input":
     // Synthetic HID input into the frontmost app (runner only): mouse moves and letter keys, so the
     // app's listen-only event tap counts active time. Typed text goes into the runner's synthetic note.

@@ -4,6 +4,8 @@
 #           b:LABEL (must press, buttons only)  m:TOP>ITEM (app menu)  si / sm (status item / its menu)
 #           esc  pc (the status panel closed itself)  w:N (sleep)  s:NAME (extra capture ROW-NAME)
 #           mi:ID (must press a menu item by id)  has:REGEX (must find REGEX in the app's AX tree: data, not structure)
+#           hs:REGEX (like has:, scrolling down between tries)  no:REGEX (must not find it)
+#           set:ID\ 0|1 (switch to that state)  dir:PATH (must exist under ~/Library/Application Support)
 
 # --- Menu bar (status item, panel, context menu)
 step MNB-01 si
@@ -26,7 +28,7 @@ step WIN-04 nav:overview p:"Jour précédent" w:1 p:Aujourd’hui p:"Choisir un 
 step ACT-01 nav:overview has:"sur [0-9]+ min actives" p:"7 jours" w:1 s:7j p:"28 jours" w:1 s:28j p:Jour
 step ACT-02 nav:overview p:"Bilans et projets" w:2 s:bilans o:activity-detail-back o:Retour
 step ACT-03 nav:overview p:"Couverture et sources" w:2 s:couverture o:activity-detail-back o:Retour
-step ACT-04 nav:overview has:"TextEdit" o:activity-usage-sort o:activity-usage-show-all w:1
+step ACT-04 nav:overview hs:"TextEdit" o:activity-usage-sort o:activity-usage-show-all w:1
 step ACT-05 nav:overview p:"Ajouter une note sur cette journée" w:1 s:note esc
 step ACT-06 nav:overview p:"Comment lire ces chiffres" w:1
 
@@ -96,7 +98,7 @@ step BLK-02 pane:modules o:settings-module-open-blocking w:1 o:blocking-week w:1
 step BLK-03 pane:modules o:settings-module-open-blocking w:1 o:blocking-empty-new-list w:1 s:sheet esc
 step BLK-04 pane:modules o:settings-module-open-blocking w:1 o:"Mot de passe" w:1 s:sheet esc
 step BLK-05 pane:modules o:settings-module-open-blocking o:blocking-protection w:1 esc
-step BRS-01 pane:modules p:settings-module-open-braise w:4 o:"Pause 15 min" w:1 o:Reprendre
+step BRS-01 pane:modules "set:settings-module-braise 0" w:2 "set:settings-module-braise 1" w:5 s:enabled no:"pas pu démarrer" dir:LocalHistory-Dev/Braise p:settings-module-open-braise w:4 s:page no:"pas pu démarrer" has:"Rétablir les couleurs" o:"Pause 15 min" w:1 o:Reprendre
 step BRS-02 pane:modules o:settings-module-open-braise o:"Ajouter un horaire" w:1
 step AMB-01 pane:modules o:settings-module-open-ambiance w:2
 step AMB-02 pane:modules o:settings-module-open-ambiance w:1 o:Ambre w:3 s:play o:Ambre
