@@ -20,6 +20,7 @@ final class T045H8Tests: XCTestCase {
         XCTAssertEqual(alert.buttons.map(\.title), ["Annuler", "Effacer"])
         XCTAssertTrue(alert.buttons[1].hasDestructiveAction)
         XCTAssertFalse(alert.buttons[0].hasDestructiveAction)
+        XCTAssertFalse(alert.buttons.contains { $0.title == "Effacer" && $0.keyEquivalent == "\r" }, "Return must not erase")
     }
 
     /// The icon-only refresh button of « Temps d’écran » must be named for VoiceOver and the tooltip.
