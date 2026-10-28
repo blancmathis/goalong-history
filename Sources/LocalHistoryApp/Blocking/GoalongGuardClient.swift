@@ -437,6 +437,11 @@ struct GuardEscalation {
         return resumed
     }
 
+    /// Only an interrupted connection is still valid once dropped; an invalid one is already torn down.
+    nonisolated static func cancelsDroppedConnection(after event: xpc_object_t) -> Bool {
+        event === XPC_ERROR_CONNECTION_INTERRUPTED
+    }
+
     /// A remembered pid may have been reused: signal it only while it still runs this guard executable.
     nonisolated static func isGuardProcess(_ pid: Int32, executable: String,
                                            path: (Int32) -> String? = GuardProcesses.path(of:)) -> Bool {
@@ -581,6 +586,8 @@ struct GuardEscalation {
                     queue.async {
                         guard let client, client.connection === value else { return }
                         client.connection = nil
+                        // Interrupted stays alive and this handler keeps it: cancel once, here, like every drop.
+                        if GoalongGuardClient.cancelsDroppedConnection(after: event) { xpc_connection_cancel(value) }
                         DispatchQueue.main.async { MainActor.assumeIsolated { client.connectionLost() } }
                     }
                 }
