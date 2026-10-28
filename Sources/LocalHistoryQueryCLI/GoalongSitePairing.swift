@@ -167,8 +167,8 @@ final class PairingResponse: NSObject, URLSessionDataDelegate, @unchecked Sendab
             return "Le site ne répond pas pour le moment. Réessayez avec le même lien dans quelques instants."
         }
         if (400...499).contains(status) {
-            return "La connexion n’a pas été confirmée. Le lien de connexion peut avoir expiré ou déjà été utilisé. Relancez la connexion depuis Goalong."
+            return "La connexion n’a pas été confirmée. Le lien de connexion peut avoir expiré ou déjà été utilisé. Relancez la connexion depuis le site."
         }
-        return "La connexion n’a pas été confirmée. Relancez la connexion depuis Goalong."
+        return "La connexion n’a pas été confirmée. Relancez la connexion depuis le site."
     }
 }
