@@ -112,10 +112,32 @@
             try focus.savePlans([plan])
             let damaged = root.appendingPathComponent("focus/plans/2026-10-27.json")
             try Data("{ pas du JSON".utf8).write(to: damaged)
+            XCTAssertEqual(chmod(damaged.path, 0o600), 0, "Private like the store's own files: the JSON itself is what fails")
             XCTAssertEqual(try focus.planDays().sorted(), ["2026-10-27", "2026-10-28"], "The damaged day is listed")
             XCTAssertEqual(try focus.renamePlanProject(from: "Goalong", to: "Atlas").map(\.day), ["2026-10-28"])
             XCTAssertEqual(try XCTUnwrap(focus.plan("2026-10-28")).items.map(\.project), ["Atlas"])
             XCTAssertEqual(try String(contentsOf: damaged, encoding: .utf8), "{ pas du JSON")
+        }
+
+        /// Review 20628b87: without Concentration running, the rename saved its plans over a pending.json left by
+        /// an interrupted change, and the days that change still held were lost. The pending change is replayed first.
+        @MainActor func testRenameReplaysAnInterruptedPlanChangeFirst() throws {
+            let root = URL(fileURLWithPath: "/private/tmp/t045h5-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let focusRoot = root.appendingPathComponent("focus")
+            let focus = FocusStore(directory: focusRoot)
+            var saved = FocusPlan(day: "2026-10-28")
+            saved.items = [FocusPlanItem(title: "A", project: "Goalong")]
+            try focus.savePlans([saved])
+            var interrupted = FocusPlan(day: "2026-10-29")
+            interrupted.items = [FocusPlanItem(title: "B", project: "Goalong")]
+            let pending = focusRoot.appendingPathComponent("pending.json")
+            try FocusJSON.encode(FocusStore.Transaction(plans: [interrupted], review: nil)).write(to: pending)
+            XCTAssertEqual(chmod(pending.path, 0o600), 0)
+            try focus.renamePlanProject(from: "Goalong", to: "Atlas")
+            XCTAssertEqual(try XCTUnwrap(focus.plan("2026-10-28")).items.map(\.project), ["Atlas"])
+            XCTAssertEqual(try XCTUnwrap(focus.plan("2026-10-29"), "The interrupted day is kept").items.map(\.project), ["Atlas"])
+            XCTAssertFalse(FileManager.default.fileExists(atPath: pending.path))
         }
     }
 #endif
