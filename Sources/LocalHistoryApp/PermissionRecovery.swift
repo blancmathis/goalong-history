@@ -165,7 +165,7 @@
                     if self.received == Data("READY\n".utf8) {
                         self.finish(error: nil, completion: completion)
                     } else if bytes.isEmpty || self.received.count > 32 {
-                        self.finish(error: "La relance n’a pas pu être préparé. Goalong est resté ouvert. Réessayez.", completion: completion)
+                        self.finish(error: "La relance n’a pas pu être préparée. Goalong est resté ouvert. Réessayez.", completion: completion)
                     }
                 }
             }
@@ -175,7 +175,11 @@
             timeout = deadline
             DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: deadline)
             do { try child.run() }
-            catch { finish(error: "La relance n’a pas pu être préparé : \(error.localizedDescription)", completion: completion) }
+            catch {
+                // The cause goes to the support log; the alert stays French and free of file names.
+                SupportDiagnostics.shared.failure(error, component: .permissions)
+                finish(error: "La relance n’a pas pu être préparée. Goalong est resté ouvert. Réessayez.", completion: completion)
+            }
         }
 
         private func finish(error: String?, completion: (String?) -> Void) {

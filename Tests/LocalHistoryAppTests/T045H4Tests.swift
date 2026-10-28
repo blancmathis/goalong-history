@@ -17,5 +17,15 @@ final class T045H4Tests: XCTestCase {
         XCTAssertTrue(title.contains("du 26 octobre 2026 de ce Mac"), title)
         XCTAssertFalse(title.contains("2026-10-26"))
     }
+
+    /// A failed permission relaunch said « La relance n’a pas pu être préparé » and could append
+    /// the system error text (English or with a file name) to the alert.
+    func testPermissionRelaunchFailureTextIsFrenchAndClean() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/PermissionRecovery.swift"), encoding: .utf8)
+        XCTAssertTrue(text.contains("PermissionRelaunchHandshake"))
+        XCTAssertFalse(text.contains("pu être préparé.") || text.contains("pu être préparé :"), "accord : la relance … préparée")
+        XCTAssertFalse(text.contains("localizedDescription"), "aucun texte d’erreur système dans le message")
+    }
 }
 #endif
