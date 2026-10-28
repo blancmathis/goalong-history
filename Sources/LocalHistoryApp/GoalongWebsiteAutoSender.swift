@@ -36,6 +36,8 @@ import LocalHistoryCore
         var paused: Bool? = false
         var credentialFingerprint: String?
         var pauseReason: String?
+        /// A day skipped because no record was saved. Shown until the next received day names it too.
+        var missingDay: String?
     }
     var savedConfiguration: Configuration? { configuration() }
     private static let globalPauseStatus = "Pause globale : envoi suspendu, programmation conservée."
@@ -51,8 +53,6 @@ import LocalHistoryCore
     /// Network failures for one day. In memory only: a restart allows a fresh try.
     private var networkRetry: (day: String, failures: Int, notBefore: Date)?
     private let sharingRulesReadable: () -> Bool
-    /// A day skipped because no record was saved. Shown until the next received day names it too.
-    private var missingDayNotice: String?
     /// The send started: the site may have received the day. Other errors are local, nothing left this Mac.
     private struct ReceiptUncertain: Error { let underlying: Error }
 
@@ -90,6 +90,7 @@ import LocalHistoryCore
                 status = "Ancienne synchronisation suspendue : relisez la sélection avant de la réactiver."
             } else if enabled {
                 status = "Activée · la veille à partir de \(Self.timeLabel(saved)), lorsque Goalong est ouvert."
+                    + (saved.missingDay.map { " " + Self.missingDayNotice($0) } ?? "")
             } else if let reason = saved.pauseReason, saved.paused == true {
                 pauseReason = reason; status = reason
             } else { status = "Synchronisation en pause · vos choix sont conservés sur ce Mac." }
@@ -289,20 +290,20 @@ import LocalHistoryCore
                 catch { throw ReceiptUncertain(underlying: error) }
             }.value
             guard enabled, configuration()?.identifier == snapshot.identifier else { return }
+            let skipped = configuration()?.missingDay
             current.lastSuccess = day
+            current.missingDay = nil
             try store(current)
             lastSuccess = day
             networkRetry = nil
             status = "Journée du \(GoalongUIFormat.day(key: day)) reçue · prochain envoi après \(Self.timeLabel(current))."
-                + (missingDayNotice.map { " " + $0 } ?? "")
-            missingDayNotice = nil
+                + (skipped.map { " " + Self.missingDayNotice($0) } ?? "")
         } catch where GoalongQueryCLI.isMissingSavedDay(error) {
             // Mac off or Goalong closed that day: no record, and none will come later. Send nothing
             // (never an invented zero), keep the day marked as tried, and keep the plan running.
             networkRetry = nil
-            let notice = "Aucun relevé enregistré pour le \(GoalongUIFormat.day(key: day)) (Mac éteint ou Goalong fermé) : rien n’a été envoyé pour ce jour."
-            missingDayNotice = notice
-            status = notice + " L’envoi quotidien continue."
+            if var saved = configuration(), saved.identifier == current.identifier { saved.missingDay = day; try? store(saved) }
+            status = Self.missingDayNotice(day) + " L’envoi quotidien continue."
         } catch GoalongSiteSubmissionError.unreachable {
             // Nothing reached the site: try the same day again later, a few times.
             restoreAttempt(previousAttempt, of: current)
@@ -330,6 +331,9 @@ import LocalHistoryCore
             restoreAttempt(previousAttempt, of: current)
             stopAutomatically("Synchronisation en pause : \(Self.sentence(error)). Rien n’a été envoyé. Corrigez ce point, puis relisez l’aperçu pour reprendre.")
         }
+    }
+    private static func missingDayNotice(_ day: String) -> String {
+        "Aucun relevé enregistré pour le \(GoalongUIFormat.day(key: day)) (Mac éteint ou Goalong fermé) : rien n’a été envoyé pour ce jour."
     }
     private static func sentence(_ error: Error) -> String {
         goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))
