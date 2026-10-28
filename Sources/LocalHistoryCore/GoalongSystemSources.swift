@@ -27,8 +27,9 @@ public enum GoalongSourceIntervals {
 /// Small private stores. Paths are fixed by the caller, leaf names validated, links refused,
 /// bytes bounded and stable reads verified. No source directory is created by a read.
 public enum GoalongSystemSourceFiles {
+    /// Gregorian key in the calendar's time zone: retention and history clears compare Gregorian keys (R1-231).
     public static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let formatter = DateFormatter(); formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
+        let formatter = DateFormatter(); formatter.calendar = Calendar(identifier: .gregorian); formatter.timeZone = calendar.timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
