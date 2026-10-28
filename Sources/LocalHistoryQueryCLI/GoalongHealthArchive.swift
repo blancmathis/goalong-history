@@ -16,6 +16,10 @@ public enum GoalongHealthArchive {
               let days = envelope["days"] as? [[String: Any]], days.count <= 366 else {
             throw GoalongSiteExportError.invalid("L’aperçu Santé est invalide. Recréez-le.")
         }
+        // Two phases: every day is validated, written and synced to a temporary file first, and only then
+        // renamed into place, so a full disk or a bad day leaves every saved day unchanged.
+        var staged: [(temporary: String, name: String)] = []
+        defer { for item in staged { unlinkat(directory, item.temporary, 0) } }
         for day in days {
             guard let date = day["date"] as? String, validDay(date) else { throw GoalongSiteExportError.invalid("Date Santé invalide.") }
             let data = try JSONSerialization.data(withJSONObject: ["version": 2, "source": "apple-health", "days": [day]], options: [.sortedKeys])
@@ -23,12 +27,15 @@ public enum GoalongHealthArchive {
             let temporary = ".health-\(UUID().uuidString)"
             let descriptor = openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
             guard descriptor >= 0 else { throw CocoaError(.fileWriteNoPermission) }
-            defer { close(descriptor); unlinkat(directory, temporary, 0) }
+            defer { close(descriptor) }
+            staged.append((temporary, date + ".json"))
             do {
                 try write(descriptor, data)
                 guard fsync(descriptor) == 0 else { throw writeFailure(errno) }
-                guard renameat(directory, temporary, directory, date + ".json") == 0 else { throw writeFailure(errno) }
             } catch { throw classified(error) }
+        }
+        for item in staged {
+            guard renameat(directory, item.temporary, directory, item.name) == 0 else { throw classified(writeFailure(errno)) }
         }
         guard fsync(directory) == 0 else { throw classified(writeFailure(errno)) }
     }
