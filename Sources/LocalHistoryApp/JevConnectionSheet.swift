@@ -13,7 +13,7 @@ import SwiftUI
         VStack(alignment: .leading, spacing: 18) {
             Text("Connexion à Jev").font(LHTheme.sheetTitleFont)
                 .accessibilityAddTraits(.isHeader)
-            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API Jev pour utiliser Jev.")
+            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API pour utiliser Jev.")
                 .font(.callout).foregroundStyle(.secondary)
             Text("Clé API").font(.callout.weight(.medium))
             SecureField("", text: $key)

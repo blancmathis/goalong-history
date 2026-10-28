@@ -135,7 +135,7 @@ La fenêtre principale compte cinq rubriques (raccourcis ⌘1 à ⌘4 et ⌘,) :
 - **Mon travail** (⌘2) — votre définition du travail et le classement de vos usages, que vous pouvez corriger ;
 - **Historique** (⌘3) — la chronologie d’une date, par source : ce Mac, Temps d’écran Apple et conversations locales ;
 - **Concentration** (⌘4) — avec ses onglets **Maintenant** (séances), **Distractions** (vos listes) et **Programme** (le blocage) ;
-- **Réglages** (⌘,) — enregistrement, envoi à Goalong, analyse ChatGPT, apps et sites, autorisations macOS, stockage et options avancées. **Jev**, le service d’analyse partenaire (facultatif, avec ses rappels, ses pauses et ses effets) se règle dans **Réglages → Jev**.
+- **Réglages** (⌘,) — enregistrement, envoi à Goalong, analyse ChatGPT, apps et sites, autorisations macOS, stockage et options avancées. **Jev**, le service d’analyse partenaire (facultatif, avec ses rappels, ses pauses et ses effets), se règle dans **Réglages → Jev**.
 
 Ambiance et Braise, quand vous activez ces modules, s’ajoutent dans la barre latérale avant Réglages ; ils n’ont pas de raccourci numéroté.
 
