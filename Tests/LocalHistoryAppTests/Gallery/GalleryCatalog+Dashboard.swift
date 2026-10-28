@@ -5,6 +5,15 @@ import SwiftUI
 
 /// Main window pages (spec C §6: shell, Activité, Mon travail, Historique, Temps d'écran, Conversations IA, Bilan…).
 extension GalleryCatalog {
+    /// `homeDirectoryForCurrentUser` answers `/Users/exemple` until the entry ends. Set last, after the fixture is
+    /// written in the shard HOME: only text read from the home (a command to copy) changes.
+    static func showFixedHome(_ ctx: GalleryContext) {
+        let key = "CFFIXED_USER_HOME"
+        let previous = ProcessInfo.processInfo.environment[key]
+        setenv(key, "/Users/exemple", 1)
+        ctx.cleanups.append { if let previous { setenv(key, previous, 1) } else { unsetenv(key) } }
+    }
+
     /// The day's contexts by task with the member's verdicts (Mon travail › Vérifier et corriger, and the sheet
     /// Activité opens with « Corriger »), loaded from the classified fixture.
     static var workReviewEntry: GalleryEntry {
@@ -82,7 +91,9 @@ extension GalleryCatalog {
             dashboard("confidentialite/choix-par-defaut", section: .privacy),
             dashboard("confidentialite/pause-globale", section: .privacy, paused: true),
             dashboard("confidentialite/suivi-actif", section: .privacy, fixture: .realistic),
-            dashboard("terminal/aide", section: .cli),
+            // The page shows the install command with the home folder: a fixed displayed home, not the shard's
+            // `/tmp/goalong-gallery-<run>/shard-N-…`, which changes every run.
+            dashboard("terminal/aide", section: .cli, configure: { _, ctx in showFixedHome(ctx) }),
             // Without a key but with history on and a work definition: not the same image as Réglages › Jev, which
             // the section opens (C2-couverture-01).
             dashboard("surveillance/a-configurer", section: .monitoring, fixture: .recordingOn, configure: { _, _ in
