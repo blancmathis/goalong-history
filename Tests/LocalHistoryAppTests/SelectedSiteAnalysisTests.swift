@@ -379,6 +379,8 @@ final class SelectedSiteAnalysisTests: XCTestCase {
         })
         defer { model.cancel() }
         model.connect()
+        XCTAssertEqual(model.error, "Activez d’abord « Autoriser les analyses » dans Réglages › Analyse ChatGPT.",
+                       "Name the real switch and its place, in French")
         model.analyze()
         XCTAssertEqual(calls, 0)
         XCTAssertThrowsError(try model.reviewedExport())

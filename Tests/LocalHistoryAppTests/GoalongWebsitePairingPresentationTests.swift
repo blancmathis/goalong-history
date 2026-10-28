@@ -27,6 +27,27 @@ final class GoalongWebsitePairingPresentationTests: XCTestCase {
         XCTAssertNil(window.attachedSheet)
     }
     @MainActor
+    func testAnotherTokenFileAsksBeforeDisconnectingTheAccount() {
+        var asked: [String] = [], forgotten: [String] = [], applied = 0, answer = false
+        func choose(_ new: String, previous: String) {
+            GoalongWebsitePairingCoordinator.replaceToken(previous: previous, with: new,
+                confirm: { asked.append($0); $1(answer) }, forget: { forgotten.append($0) }, apply: { applied += 1 })
+        }
+        choose("/new.token", previous: "/old.token")
+        XCTAssertEqual(asked, ["/old.token"], "Replacing the file disconnects the account: ask first")
+        XCTAssertEqual(forgotten, [], "Cancel keeps the old account and its daily sending")
+        XCTAssertEqual(applied, 0)
+        answer = true
+        choose("/new.token", previous: "/old.token")
+        XCTAssertEqual(forgotten, ["/old.token"])
+        XCTAssertEqual(applied, 1)
+        choose("/same.token", previous: "/same.token")
+        choose("/first.token", previous: "")
+        XCTAssertEqual(asked.count, 2, "The same file, or a first file, disconnects nothing: no question")
+        XCTAssertEqual(applied, 3)
+        XCTAssertEqual(forgotten, ["/old.token"])
+    }
+    @MainActor
     func testOnlyTheSameAccountOnTheSameSiteKeepsTheDailyPlan() {
         XCTAssertTrue(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "acc", newOrigin: "https://a.example", newAccountID: "acc"))
         XCTAssertFalse(GoalongWebsitePairingCoordinator.keepsSchedule(savedOrigin: "https://a.example", savedAccountID: "acc", newOrigin: "https://a.example", newAccountID: "other"))

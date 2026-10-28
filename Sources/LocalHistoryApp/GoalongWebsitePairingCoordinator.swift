@@ -20,6 +20,25 @@ final class GoalongWebsitePairingCoordinator {
         }
         return deleted
     }
+    /// Choosing another file replaces the paired credential: the old account is disconnected (daily
+    /// sending stopped, managed file deleted), so ask first, as « Déconnecter » does. Same file: no question.
+    static func replaceToken(previous: String, with new: String,
+                             confirm: (_ previous: String, _ answer: @escaping (Bool) -> Void) -> Void,
+                             forget: @escaping (String) -> Void, apply: @escaping () -> Void) {
+        guard !previous.isEmpty, previous != new else { apply(); return }
+        confirm(previous) { accepted in
+            guard accepted else { return }
+            apply()
+            forget(previous)
+        }
+    }
+    /// The question asked by `replaceToken`, with the words of the account card.
+    static func confirmDisconnect(of previous: String, in window: NSWindow, answer: @escaping (Bool) -> Void) {
+        let alert = NSAlert(); alert.messageText = "Déconnecter ce compte ?"
+        alert.informativeText = GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: previous)
+        alert.addButton(withTitle: "Déconnecter"); alert.addButton(withTitle: "Annuler")
+        alert.beginSheetModal(for: window) { answer($0 == .alertFirstButtonReturn) }
+    }
     /// True for a file that « Relier mon Mac » created (<UUID>.token in the connections folder).
     /// Only such a file is deleted on disconnect; a file the user picked stays.
     static func isManagedTokenPath(_ path: String, directory: URL? = nil) -> Bool {

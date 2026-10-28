@@ -206,7 +206,8 @@
                 configuredInterval: configuredInterval,
                 idleSeconds: idleSeconds(),
                 isCapturing: historyRequested && state.isCapturing,
-                suppressionReason: latestSnapshot?.suppressionReason,
+                // Secure Input without a prior snapshot leaves no snapshot to carry the reason.
+                suppressionReason: latestSnapshot?.suppressionReason ?? (secureInputReported ? .secureInput : nil),
                 eventDrivenCoverageAvailable: eventDrivenCoverageAvailable
             ) else {
                 timer = nil
@@ -578,5 +579,6 @@ extension ContextMonitor {
         if !polling { timer?.invalidate(); timer = nil }
     }
     var hasPollForAdversarialReview: Bool { timer != nil }
+    var pollDelayForAdversarialReview: TimeInterval? { timer.map { $0.fireDate.timeIntervalSinceNow } }
 }
 #endif

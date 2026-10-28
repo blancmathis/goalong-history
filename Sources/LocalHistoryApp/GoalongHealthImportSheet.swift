@@ -318,26 +318,20 @@ struct GoalongHealthImportSheet: View {
                     alert.addButton(withTitle: "Protéger ce fichier"); alert.addButton(withTitle: "Annuler")
                     alert.beginSheetModal(for: window) { choice in
                         guard choice == .alertFirstButtonReturn else { return }
-                        do { try GoalongSiteSubmission.protectTokenFile(file: url, reviewed: review); replaceTokenFile(with: url) }
+                        do { try GoalongSiteSubmission.protectTokenFile(file: url, reviewed: review); replaceTokenFile(with: url, in: window) }
                         catch { self.error = goalongUserMessage(error) }
                     }
-                } else { _ = try GoalongSiteSubmission.readToken(file: url); replaceTokenFile(with: url) }
+                } else { _ = try GoalongSiteSubmission.readToken(file: url); replaceTokenFile(with: url, in: window) }
             } catch { self.error = goalongUserMessage(error) }
         }
     }
-    /// Selecting another file replaces the paired credential: drop the old managed token file.
-    private func replaceTokenFile(with url: URL) {
+    /// Selecting another file replaces the paired credential: confirm, then drop the old managed token file.
+    private func replaceTokenFile(with url: URL, in window: NSWindow) {
         let previous = tokenFilePath
-        guard !previous.isEmpty, previous != url.path else { tokenFilePath = url.path; return }
-        guard let window = host.window else { return }
-        let alert = NSAlert(); alert.messageText = "Déconnecter ce compte ?"
-        alert.informativeText = GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: previous)
-        alert.addButton(withTitle: "Déconnecter"); alert.addButton(withTitle: "Annuler")
-        alert.beginSheetModal(for: window) { choice in
-            guard choice == .alertFirstButtonReturn else { return }
-            tokenFilePath = url.path
-            GoalongWebsitePairingCoordinator.forgetStoredToken(path: previous)
-        }
+        GoalongWebsitePairingCoordinator.replaceToken(previous: previous, with: url.path,
+            confirm: { GoalongWebsitePairingCoordinator.confirmDisconnect(of: $0, in: window, answer: $1) },
+            forget: { GoalongWebsitePairingCoordinator.forgetStoredToken(path: $0) },
+            apply: { tokenFilePath = url.path })
     }
     private func sendReviewedHealth() {
         guard let payload, consent else { return }

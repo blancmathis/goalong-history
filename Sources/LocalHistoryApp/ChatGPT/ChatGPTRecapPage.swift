@@ -590,26 +590,34 @@
             }
         }
 
-        private var canGenerate: Bool {
-            consents.isEnabled(.chatGPTAnalysis) && isConnected && recapRuntime.dayOverview?.hasMeaningfulData != false
-        }
+        private var canGenerate: Bool { generationBlockedReason == nil }
 
         private var isConnected: Bool { recapRuntime.isAccountConnected }
 
         private var needsUpdate: Bool { recapRuntime.connectionState == .codexUnavailable }
 
         private var generationBlockedReason: String? {
-            if !consents.isEnabled(.chatGPTAnalysis) { return "Activez d’abord l’analyse avec ChatGPT." }
-            if !isConnected { return needsUpdate ? "Mettez d’abord Goalong à jour." : "Connectez d’abord ChatGPT." }
-            if recapRuntime.dayOverview?.hasMeaningfulData == false { return "Aucune activité à analyser ce jour." }
-            return nil
+            Self.generationBlockedReason(analysesEnabled: consents.isEnabled(.chatGPTAnalysis), connected: isConnected,
+                                         needsUpdate: needsUpdate, hasMeaningfulData: recapRuntime.dayOverview?.hasMeaningfulData)
         }
 
         private var emptyReportMessage: String {
-            if isConnected, consents.isEnabled(.chatGPTAnalysis) { return "Générez-le maintenant, ou laissez l’analyse automatique des journées terminées." }
-            if !consents.isEnabled(.chatGPTAnalysis) {
+            Self.emptyReportMessage(analysesEnabled: consents.isEnabled(.chatGPTAnalysis), connected: isConnected, needsUpdate: needsUpdate)
+        }
+
+        /// The button is enabled only when this is nil, so it never contradicts the reason shown below it.
+        static func generationBlockedReason(analysesEnabled: Bool, connected: Bool, needsUpdate: Bool, hasMeaningfulData: Bool?) -> String? {
+            if !analysesEnabled { return "Activez d’abord l’analyse avec ChatGPT." }
+            if !connected { return needsUpdate ? "Mettez d’abord Goalong à jour." : "Connectez d’abord ChatGPT." }
+            if hasMeaningfulData == false { return "Aucune activité à analyser ce jour." }
+            return nil
+        }
+
+        static func emptyReportMessage(analysesEnabled: Bool, connected: Bool, needsUpdate: Bool) -> String {
+            if !analysesEnabled {
                 return "Les analyses sont désactivées. Activez « Autoriser les analyses » dans Réglages › Analyse ChatGPT pour générer le bilan en cinq lignes."
             }
+            if connected { return "Générez-le maintenant, ou laissez l’analyse automatique des journées terminées." }
             return needsUpdate
                 ? "Mettez Goalong à jour pour générer le bilan en cinq lignes."
                 : "Connectez ChatGPT ci-dessus pour générer le bilan en cinq lignes."
