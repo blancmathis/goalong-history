@@ -225,7 +225,7 @@ struct FocusPanel: Equatable {
     private func endInMemory(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) {
         if pendingStop == nil { pendingStop = (session, end, reason) }
         if let id = phaseBlockID, !hasLockedPhaseBlock { blocking()?.stop(id); phaseBlockID = nil; phaseBlockKey = nil }
-        currentSession = nil; phase = nil; phaseIdentity = nil; audio.stop()
+        currentSession = nil; phase = nil; phaseIdentity = nil; lastSyncErrorShown = nil; audio.stop()
     }
     private func saving(_ action: () throws -> Void) throws {
         try admit()
