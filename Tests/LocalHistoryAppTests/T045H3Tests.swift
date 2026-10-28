@@ -44,5 +44,29 @@
             XCTAssertNil(DateSelectionControl.steppedDay(from: now, by: 1, now: now, calendar: calendar), "Tomorrow stays out of reach")
             XCTAssertNotNil(DateSelectionControl.steppedDay(from: now, by: -1, now: now, calendar: calendar))
         }
+        /// H3-03: « Bilan du soir » says the end of day replaces it, but the end of day only runs on its
+        /// weekdays. On the other days the evening review never came at all.
+        @MainActor func testEveningReviewStillComesOnDaysWithoutEndOfDay() throws {
+            let root = URL(fileURLWithPath: "/private/tmp/focus-h3-" + UUID().uuidString)
+            addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+            let store = FocusStore(directory: root)
+            var settings = FocusSettings(); settings.morningPrompt = false; settings.eveningPrompt = true
+            settings.eveningMinute = 21 * 60; settings.limits.endMinute = 18 * 60 + 30; settings.limits.weekdays = Set(1...5)
+            try store.saveSettings(settings)
+            var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+            // Saturday 10 October 2026: outside the end-of-day weekdays, the evening time applies.
+            var now = calendar.date(from: .init(year: 2026, month: 10, day: 10, hour: 18, minute: 40))!
+            let weekend = try ConcentrationController(store: store, clock: { now }, calendar: calendar)
+            weekend.refresh(); XCTAssertNil(weekend.panel, "The end of day does not run on Saturday")
+            now = calendar.date(from: .init(year: 2026, month: 10, day: 10, hour: 21, minute: 5))!
+            weekend.refresh(); XCTAssertEqual(weekend.panel?.kind, .evening)
+
+            // Monday 12 October: the end of day replaces the evening time (its « limite » panel shows).
+            let weekday = FocusStore(directory: root.appendingPathComponent("monday"))
+            try weekday.saveSettings(settings)
+            now = calendar.date(from: .init(year: 2026, month: 10, day: 12, hour: 18, minute: 35))!
+            let monday = try ConcentrationController(store: weekday, clock: { now }, calendar: calendar)
+            monday.refresh(); XCTAssertNotNil(monday.panel, "The end of day still prompts at 18:30 on Monday")
+        }
     }
 #endif

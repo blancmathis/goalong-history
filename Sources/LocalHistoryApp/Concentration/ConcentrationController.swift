@@ -622,17 +622,22 @@ struct FocusPanel: Equatable {
     }
     private func checkPrompts(activity: Bool) {
         let minute = calendar.component(.hour, from: clock()) * 60 + calendar.component(.minute, from: clock())
-        let evening = settings.limits.endMinute ?? settings.eveningMinute
-        let allowedEvening = settings.limits.endMinute == nil || settings.limits.weekdays.contains(BlockingSchedule.isoWeekday(clock(), calendar: calendar))
+        let evening = eveningMinute(on: clock())
         var request: FocusPanel.Kind?
         if settings.morningPrompt, activity, minute >= settings.morningMinute, plan.items.isEmpty, !promptState.morningShown { promptState.morningShown = true; request = .morning }
-        if settings.eveningPrompt, allowedEvening, minute >= evening, review == nil, !promptState.eveningShown { promptState.eveningShown = true; request = .evening }
+        if settings.eveningPrompt, minute >= evening, review == nil, !promptState.eveningShown { promptState.eveningShown = true; request = .evening }
         if settings.morningPrompt, plan.items.isEmpty, let at = promptState.morningReminderAt, at <= clock(), !promptState.morningReminded { promptState.morningReminded = true; request = .morning }
         if settings.eveningPrompt, review == nil, let at = promptState.eveningReminderAt, at <= clock(), !promptState.eveningReminded { promptState.eveningReminded = true; request = .evening }
         if let request {
             do { try saving { try store.savePrompts(promptState) } } catch { return }
             showPanel(.init(kind: request, text: request == .morning ? "Plan du matin" : "Bilan du soir"))
         }
+    }
+    /// The end of day replaces the evening review time, but only on its weekdays.
+    private func eveningMinute(on date: Date) -> Int {
+        guard let end = settings.limits.endMinute,
+              settings.limits.weekdays.contains(BlockingSchedule.isoWeekday(date, calendar: calendar)) else { return settings.eveningMinute }
+        return end
     }
     func promptLater() {
         guard let kind = panel?.kind, kind == .morning || kind == .evening else { return }
@@ -663,7 +668,7 @@ struct FocusPanel: Equatable {
         if storageFailed { boundaries.append(max(now.addingTimeInterval(1), lastStorageRetry.addingTimeInterval(60))) }
         if currentSession?.mode.kind == .free, currentSession?.mode.minutes == nil, phaseBlockID != nil { boundaries.append(now.addingTimeInterval(45)) }
         if settings.eveningPrompt || settings.limits.endMinute != nil {
-            let minute = settings.limits.endMinute ?? settings.eveningMinute
+            let minute = eveningMinute(on: now)
             let end = calendar.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: now)!
             if end > now { boundaries.append(end) }
         }
