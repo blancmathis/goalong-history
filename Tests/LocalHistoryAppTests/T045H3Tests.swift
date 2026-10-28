@@ -148,6 +148,50 @@
             XCTAssertNil(blocked.verdicts.assignment(for: mail.key), "Other verdicts of the older definition go")
         }
 
+        /// D-154d: after a definition change, the verdicts kept for an open « tâche » commitment stayed for good
+        /// once it settled: nothing asks the agent again about a context that has a verdict, so the older
+        /// definition kept counting those contexts as work (Activité, next commitments).
+        @MainActor func testKeptVerdictsGoOnceTheCommitmentSettles() throws {
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
+            defer { try? FileManager.default.removeItem(at: file) }
+            let period = FocusCommitmentPeriod(kind: .day, key: "2026-10-28")
+            var commitment = FocusCommitment(period: period, kind: .task, target: 60, task: "Goalong",
+                                             createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+            var goals = "Goalong"
+            let committed: @MainActor () -> [String] = { FocusCommitmentRules.openTaskNames([commitment]) }
+            let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: goals) }, committedTasks: committed)
+            let xcode = GoalongWorkContext.Label(application: "Xcode", bundleIdentifier: "fixture.Xcode", host: nil, title: "Goalong")
+            store.merge([xcode.key: GoalongWorkAssignment(verdict: .work, task: "goalong", byOwner: false)],
+                        revision: store.revision, day: "2026-10-28")
+            goals = "Atlas"
+            store.reconcileDefinition()
+            NotificationCenter.default.post(name: .goalongFocusCommitmentsDidChange, object: nil)
+            XCTAssertEqual(store.verdicts.assignment(for: xcode.key)?.task, "goalong", "Kept while the commitment is open")
+
+            commitment.result = FocusCommitmentResult(settledAt: Date(timeIntervalSince1970: 1_800_090_000), measured: 60,
+                                                      unmeasuredMinutes: 0, outcome: .held)
+            let relaunched = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: goals) }, committedTasks: committed)
+            XCTAssertNil(relaunched.verdicts.assignment(for: xcode.key), "At launch, a settled commitment no longer holds it")
+            NotificationCenter.default.post(name: .goalongFocusCommitmentsDidChange, object: nil)
+            XCTAssertNil(store.verdicts.assignment(for: xcode.key), "Once settled, the context is classified again")
+        }
+
+        /// D-154d: with Concentration off, no controller: the kept verdicts filter saw no commitment, so a definition
+        /// change or « Tout reclasser » dropped them, and the commitment settled low once Concentration was on again.
+        @MainActor func testOpenTaskNamesAreReadFromDiskWhenConcentrationIsOff() throws {
+            let root = URL(fileURLWithPath: "/private/tmp/t045-d154d-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let focus = FocusStore(directory: root)
+            var settled = FocusCommitment(period: FocusCommitmentPeriod(kind: .day, key: "2026-10-27"), kind: .task, target: 60,
+                                          task: "Atlas", createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+            settled.result = FocusCommitmentResult(settledAt: Date(timeIntervalSince1970: 1_800_090_000), measured: 60,
+                                                   unmeasuredMinutes: 0, outcome: .held)
+            let open = FocusCommitment(period: FocusCommitmentPeriod(kind: .day, key: "2026-10-28"), kind: .task, target: 60,
+                                       task: "Goalong", createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+            try focus.saveCommitments([settled, open])
+            XCTAssertEqual(GoalongWorkStore.openTaskNames(controller: nil, store: focus), ["Goalong"])
+        }
+
         /// D-154c: clearing history during an open « travail » or « tâche » commitment erases what it measures,
         /// so it could be missed and its stake applied without a word in the confirmation.
         func testHistoryClearWarnsAboutAnOpenCommitment() throws {
