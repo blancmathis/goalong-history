@@ -85,12 +85,22 @@ public enum GoalongSystemSourceFiles {
         guard data.count <= maximumBytes else { throw CocoaError(.fileWriteOutOfSpace) }
         let dir = try directory(root: root, folder: folder, create: true); defer { close(dir) }
         let leaf = append ? name : "source-\(UUID().uuidString)"
-        let fd = openat(dir, leaf, O_WRONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK | (append ? O_APPEND | O_CREAT : O_CREAT | O_EXCL), 0o600)
+        let fd = openat(dir, leaf, O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK | (append ? O_RDWR | O_APPEND | O_CREAT : O_WRONLY | O_CREAT | O_EXCL), 0o600)
         guard fd >= 0 else { throw CocoaError(.fileWriteNoPermission) }
         defer { close(fd); if !append { unlinkat(dir, leaf, 0) } }
         var info = stat()
         guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_nlink == 1, info.st_uid == getuid(),
               info.st_mode & 0o777 == 0o600, !append || info.st_size + Int64(data.count) <= maximumBytes else { throw CocoaError(.fileWriteNoPermission) }
+        var data = data
+        if append, info.st_size > 0 {
+            // A write cut short (disk full, crash) left a torn last line: start the new one on its own line.
+            var last: UInt8 = 0
+            guard pread(fd, &last, 1, info.st_size - 1) == 1 else { throw CocoaError(.fileReadUnknown) }
+            if last != 10 {
+                guard info.st_size + Int64(data.count) + 1 <= maximumBytes else { throw CocoaError(.fileWriteNoPermission) }
+                data.insert(10, at: 0)
+            }
+        }
         try data.withUnsafeBytes { bytes in
             var offset = 0
             while offset < bytes.count {
@@ -189,14 +199,17 @@ public enum GoalongCallStore {
         do {
             let bytes = try GoalongSystemSourceFiles.read(root: root, folder: "calls", name: GoalongSystemSourceFiles.dayKey(day) + ".jsonl", maximumBytes: maximumBytes)
             let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-            var rows = live
+            var rows = live, torn = false
             if let bytes {
-                guard bytes.isEmpty || bytes.last == 10 else { throw CocoaError(.fileReadCorruptFile) }
                 let lines = bytes.split(separator: 10); guard lines.count <= 10_000 else { throw CocoaError(.fileReadTooLarge) }
-                rows += try lines.map { try decoder.decode(GoalongCallInterval.self, from: Data($0)) }
+                // A torn line (write cut short) costs that call only; the day stays readable, marked partial.
+                // A file with no readable line at all is not a torn tail: it fails as before.
+                let stored = lines.compactMap { try? decoder.decode(GoalongCallInterval.self, from: Data($0)) }
+                guard lines.isEmpty || !stored.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+                torn = stored.count < lines.count; rows += stored
             }
             guard let interval = Calendar.current.dateInterval(of: .day, for: day) else { return .init(status: .failed("Date invalide.")) }
-            let interrupted = rows.contains { $0.interrupted }
+            let interrupted = torn || rows.contains { $0.interrupted }
             var clipped: [GoalongCallInterval] = []
             for row in rows {
                 guard row.end >= row.start, row.end.timeIntervalSince(row.start) <= 31 * 86400,
