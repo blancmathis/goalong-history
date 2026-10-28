@@ -89,8 +89,7 @@ import LocalHistoryCore
             if saved.policyVersion != 3 {
                 status = "Ancienne synchronisation suspendue : relisez la sélection avant de la réactiver."
             } else if enabled {
-                status = "Activée · la veille à partir de \(Self.timeLabel(saved)), lorsque Goalong est ouvert."
-                    + (saved.missingDay.map { " " + Self.missingDayNotice($0) } ?? "")
+                status = Self.activeStatus(saved)
             } else if let reason = saved.pauseReason, saved.paused == true {
                 pauseReason = reason; status = reason
             } else { status = "Synchronisation en pause · vos choix sont conservés sur ce Mac." }
@@ -228,7 +227,7 @@ import LocalHistoryCore
         }
         // The pause ended: drop its message even when this tick sends nothing. Other statuses stay.
         if status == Self.globalPauseStatus, enabled, let saved = configuration(), saved.policyVersion == 3, saved.paused != true {
-            status = "Activée · la veille à partir de \(Self.timeLabel(saved)), lorsque Goalong est ouvert."
+            status = Self.activeStatus(saved)
         }
         guard !busy, enabled, var current = configuration(), current.policyVersion == 3, current.paused != true,
               let zone = TimeZone(identifier: current.timeZoneIdentifier ?? "") else { return }
@@ -306,13 +305,16 @@ import LocalHistoryCore
             // (never an invented zero), keep the day marked as tried, and keep the plan running.
             networkRetry = nil
             // A weekend skips two days: keep naming each one, not only the last.
-            if var saved = configuration(), saved.identifier == current.identifier {
-                saved.missingDay = (saved.missingDay.map { $0 + "," } ?? "") + day; try? store(saved)
-            }
-            status = Self.missingDayNotice(configuration()?.missingDay ?? day) + " L’envoi quotidien continue."
+            guard var saved = configuration(), saved.identifier == current.identifier else { return }
+            saved.missingDay = (saved.missingDay.map { $0 + "," } ?? "") + day; try? store(saved)
+            // Paused while the day was read: the pause text stays, the day is named on resume or restart.
+            guard enabled else { return }
+            status = Self.missingDayNotice(saved.missingDay ?? day) + " L’envoi quotidien continue."
         } catch GoalongSiteSubmissionError.unreachable {
             // Nothing reached the site: try the same day again later, a few times.
             restoreAttempt(previousAttempt, of: current)
+            // Paused during the try: no new try is announced on a paused plan.
+            guard enabled else { networkRetry = nil; return }
             let failures = (networkRetry?.day == day ? networkRetry?.failures ?? 0 : 0) + 1
             guard failures <= Self.networkRetryDelays.count else { stopAutomatically(Self.unreachableReason); return }
             let delay = Self.networkRetryDelays[failures - 1]
@@ -335,8 +337,14 @@ import LocalHistoryCore
             // A local step failed before the send: nothing left this Mac, the day stays to send.
             SupportDiagnostics.shared.failure(error, component: .sharing)
             restoreAttempt(previousAttempt, of: current)
-            stopAutomatically("Synchronisation en pause : \(Self.sentence(error)). Rien n’a été envoyé. Corrigez ce point, puis relisez l’aperçu pour reprendre.")
+            // Some local messages already say it: say it once.
+            let reason = Self.sentence(error).replacingOccurrences(of: ". Aucun envoi n’a été effectué", with: "")
+            stopAutomatically("Synchronisation en pause : \(reason). Rien n’a été envoyé. Corrigez ce point, puis relisez l’aperçu pour reprendre.")
         }
+    }
+    private static func activeStatus(_ saved: Configuration) -> String {
+        "Activée · la veille à partir de \(timeLabel(saved)), lorsque Goalong est ouvert."
+            + (saved.missingDay.map { " " + missingDayNotice($0) } ?? "")
     }
     private static func missingDayNotice(_ days: String) -> String {
         let names = days.split(separator: ",").map { "le " + GoalongUIFormat.day(key: String($0)) }
