@@ -1,6 +1,7 @@
 #if os(macOS)
     import Foundation
     import XCTest
+    import LocalHistoryCore
     @testable import LocalHistoryApp
 
     /// T-045 H2: defects found in zones no earlier round audited.
@@ -40,6 +41,60 @@
             XCTAssertEqual(GoalongUserFacingError.historyIOMessage(code: ENOSPC), GoalongUserFacingError.historyDiskFullMessage)
             XCTAssertEqual(GoalongUserFacingError.historyIOMessage(code: EACCES), GoalongUserFacingError.historyAccessDeniedMessage)
             XCTAssertEqual(GoalongUserFacingError.historyIOMessage(code: EIO), GoalongUserFacingError.historyIOMessage)
+        }
+
+        /// D-150b: the Computer History page showed the store's English sentence and the private path
+        /// when a day could not be written (`ComputerHistoryPageModel.displayMessage`).
+        func testComputerHistoryStorageFailuresShowFrenchTextWithoutPaths() {
+            let url = URL(fileURLWithPath: "/Users/someone/Library/Application Support/Goalong/computer-history/2026-10-28.json")
+            let failures: [ComputerHistoryStore.StorageError] = [
+                .incompleteRecentMemoryListing,
+                .incompleteSourceEvidence("the bounded source pass was cancelled"),
+                .memoryTooLarge(actualBytes: 9_000_000, maximumBytes: 8_000_000),
+                .storedMemoryChangedDuringRead(url),
+                .unsafeStoragePath(url),
+                .posix(operation: "openat", URL: url, code: ENOSPC),
+                .posix(operation: "openat", URL: url, code: EACCES),
+                .posix(operation: "openat", URL: url, code: EIO),
+            ]
+            for failure in failures {
+                let text = ComputerHistoryPageModel.displayMessage(for: failure)
+                assertFrenchAlert(failure, hiding: url.path)
+                XCTAssertFalse(text.contains("Computer History"), text)
+                XCTAssertFalse(text.contains("bytes"), text)
+                XCTAssertNotNil(failure.errorDescription)
+            }
+            XCTAssertTrue(ComputerHistoryStore.StorageError.unsafeStoragePath(url).errorDescription?.contains(url.path) == true)
+        }
+
+        /// Review #152: the retention sheet showed the private path of its rule file, then « .. ».
+        @MainActor func testRetentionSaveFailureShowsFrenchTextWithoutPath() throws {
+            let root = try makeDirectory()
+            let activation = root.appendingPathComponent("activation.json")
+            try FileManager.default.createDirectory(at: activation, withIntermediateDirectories: false)
+            let storage = HistoryRetentionStorage(
+                policyFile: root.appendingPathComponent("policy.json"),
+                activationFile: activation, artifactDirectories: [], prepare: {})
+            let model = HistoryRetentionSettingsModel(store: HistoryRetentionStore(legacyRetentionDays: 30, storage: storage))
+            model.automaticCleanup = true
+            XCTAssertFalse(model.apply(proofDeletionConfirmed: false))
+            let text = try XCTUnwrap(model.error)
+            XCTAssertFalse(text.contains(root.path), text)
+            XCTAssertFalse(text.contains(".."), text)
+        }
+
+        /// Review #152: « Exporter la preuve » showed the archive's English sentence.
+        func testProofArchiveFailuresShowFrenchText() {
+            let failures: [GoalongProofArchiveError] = [
+                .tooLarge, .tooManyEntries, .unsafePath("a/../b"), .duplicatePath("run.jws"),
+                .unsupportedZIP, .malformedZIP, .checksumMismatch("run.jws"), .manifestMismatch,
+            ]
+            for failure in failures {
+                let text = GoalongUserFacingError.message(failure)
+                XCTAssertFalse(text.contains("The "), text)
+                XCTAssertFalse(text.contains("Goalong proof package"), text)
+                XCTAssertNotNil(failure.errorDescription)
+            }
         }
 
         private func assertFrenchAlert(_ error: Error, hiding path: String, line: UInt = #line) {

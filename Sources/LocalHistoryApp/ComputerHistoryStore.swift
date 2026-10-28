@@ -2026,7 +2026,7 @@
             }
         }
 
-        enum StorageError: LocalizedError {
+        enum StorageError: LocalizedError, GoalongFrenchDescribable {
             case incompleteRecentMemoryListing
             case incompleteSourceEvidence(String)
             case memoryTooLarge(actualBytes: Int, maximumBytes: Int)
@@ -2051,6 +2051,22 @@
                 case let .posix(operation, URL, code):
                     return "Computer History \(operation) failed for \(URL.path): "
                         + String(cString: strerror(code))
+                }
+            }
+
+            /// French text for the interface; `errorDescription` stays English (with paths) for logs.
+            var frenchDescription: String {
+                switch self {
+                case .incompleteRecentMemoryListing, .incompleteSourceEvidence:
+                    return GoalongUserFacingError.computerHistoryIncompleteMessage
+                case .memoryTooLarge:
+                    return GoalongUserFacingError.computerHistoryTooLargeMessage
+                case .storedMemoryChangedDuringRead:
+                    return GoalongUserFacingError.historyChangedMessage
+                case .unsafeStoragePath:
+                    return GoalongUserFacingError.unsafeHistoryPathMessage
+                case let .posix(_, _, code):
+                    return GoalongUserFacingError.historyIOMessage(code: code)
                 }
             }
         }

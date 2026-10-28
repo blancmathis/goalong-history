@@ -103,7 +103,7 @@
         }
     }
 
-    private enum HistoryRetentionStoreError: LocalizedError {
+    private enum HistoryRetentionStoreError: LocalizedError, GoalongFrenchDescribable {
         case unsupportedPolicy
         case oversizedMetadata(URL)
         case unsafeMetadataPath(URL)
@@ -116,6 +116,18 @@
                 return "Le fichier des règles de conservation est anormalement volumineux (\(url.path))."
             case let .unsafeMetadataPath(url):
                 return "Le fichier des règles de conservation doit être un fichier ordinaire, pas un lien ni un dossier : \(url.path)."
+            }
+        }
+
+        /// Interface text: `errorDescription` keeps the path for logs, the sheet must not show it.
+        var frenchDescription: String {
+            switch self {
+            case .unsupportedPolicy:
+                return "Cette règle de conservation ne permet pas le nettoyage automatique."
+            case .oversizedMetadata:
+                return "Le fichier des règles de conservation est anormalement volumineux."
+            case .unsafeMetadataPath:
+                return "Le fichier des règles de conservation doit être un fichier ordinaire, pas un lien ni un dossier."
             }
         }
     }

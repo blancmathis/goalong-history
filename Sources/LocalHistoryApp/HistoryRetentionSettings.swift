@@ -78,7 +78,7 @@ extension HistoryRetentionPolicy {
             NotificationCenter.default.post(name: .goalongRetentionPolicyDidChange, object: nil)
             return true
         } catch {
-            self.error = "La modification de conservation n’a pas été confirmée : \(GoalongUserFacingError.message(error)). Rouvrez ce panneau pour vérifier la règle enregistrée avant de réessayer."
+            self.error = "La modification de conservation n’a pas été confirmée. \(GoalongUserFacingError.message(error)) Rouvrez ce panneau pour vérifier la règle enregistrée avant de réessayer."
             return false
         }
     }

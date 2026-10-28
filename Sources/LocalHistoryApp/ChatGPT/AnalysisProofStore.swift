@@ -42,6 +42,20 @@
         }
     }
 
+    /// « Exporter la preuve » shows this text; `errorDescription` stays English for the CLI and logs.
+    extension GoalongProofArchiveError: GoalongFrenchDescribable {
+        var frenchDescription: String {
+            switch self {
+            case .tooLarge: return "Le fichier de preuve dépasse la taille autorisée."
+            case .tooManyEntries: return "Le fichier de preuve contient trop d’éléments."
+            case .unsafePath, .duplicatePath, .unsupportedZIP, .malformedZIP:
+                return "Le fichier de preuve est mal formé."
+            case .checksumMismatch, .manifestMismatch:
+                return "Le fichier de preuve n’a pas passé la vérification locale."
+            }
+        }
+    }
+
     final class AnalysisProofStore {
         private struct ChainHead: Codable {
             let schemaVersion: Int

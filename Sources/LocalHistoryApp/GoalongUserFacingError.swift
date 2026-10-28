@@ -25,6 +25,12 @@ enum GoalongUserFacingError {
     static let inexactDeletionMessage =
         "Une ligne illisible empêche une suppression exacte. Aucune suppression n’a été faite pour cette sélection."
 
+    /// Computer History day files (D-150b): no English, no private path.
+    static let computerHistoryIncompleteMessage =
+        "Goalong a gardé la dernière mémoire valide de l’ordinateur : les données de cette journée étaient incomplètes. Réessayez plus tard."
+    static let computerHistoryTooLargeMessage =
+        "La mémoire de cette journée dépasse la taille prévue. Les dernières vues valides sont conservées."
+
     /// Keeps what the old English `strerror` text told the user: a full disk or a refused access.
     static func historyIOMessage(code: Int32) -> String {
         switch code {
