@@ -313,6 +313,19 @@ enum FocusCommitmentRules {
         let base = "Attention : un engagement Concentration en cours mesure votre travail à partir de cet historique. Le temps effacé ne comptera plus"
         return hit.contains { $0.stake != nil } ? base + " : si l’engagement n’est plus tenu, son enjeu s’appliquera." : base + "."
     }
+    /// Warning for « Tout reclasser »: only today is classified again at once, other days when opened in Activité.
+    /// An unsettled « travail » commitment counts that time as unclassified meanwhile (T-045 H5-02). A « tâche »
+    /// commitment keeps its contexts (D-154a). Nil commitments: they cannot be read, so it warns anyway.
+    static func reclassifyWarning(_ commitments: [FocusCommitment]?, at now: Date, calendar: Calendar = .current) -> String? {
+        let base = "Attention : un engagement « travail » en cours mesure ce classement. Les jours non reclassés (chacun l’est à son ouverture dans Activité) ne comptent pas comme travail"
+        guard let commitments else { return base + " : si l’engagement n’est plus tenu, son enjeu pourra s’appliquer." }
+        let hit = commitments.filter { c in
+            guard c.result == nil, c.kind == .work, let period = c.period.interval(calendar: calendar) else { return false }
+            return period.start < now
+        }
+        guard !hit.isEmpty else { return nil }
+        return hit.contains { $0.stake != nil } ? base + " : si l’engagement n’est plus tenu, son enjeu s’appliquera." : base + "."
+    }
     /// Time Goalong saw, or saw the Mac was not in use (asleep, locked, before the first or after the last record).
     static func isKnown(_ s: GoalongLocalAnalytics.Segment) -> Bool {
         switch s.kind {

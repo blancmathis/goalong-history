@@ -11,6 +11,8 @@ import SwiftUI
     @ObservedObject private var blocking = BlockingRuntime.shared
     @State private var confirmingDelete = false
     @State private var deleteMessage: String?
+    /// Commitments live in the same folder: open ones go too, without a result (T-045 H5-01).
+    static let concentrationDeleteMessage = "Séances, plans, bilans, engagements (en cours compris) et réglages de ce module. Le reste de Goalong ne change pas."
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -43,7 +45,7 @@ import SwiftUI
                     deleteMessage = FocusUIError.message(error)
                 }
             }
-        } message: { Text("Séances, plans, bilans et réglages de ce module. Le reste de Goalong ne change pas.") }
+        } message: { Text(Self.concentrationDeleteMessage) }
     }
 
     private func row(_ module: GoalongModule) -> some View {

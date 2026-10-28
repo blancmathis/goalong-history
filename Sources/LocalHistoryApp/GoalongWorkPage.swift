@@ -75,7 +75,9 @@ import SwiftUI
         .confirmationDialog("Tout reclasser avec votre définition actuelle ?", isPresented: $confirmingForget) {
             Button("Tout reclasser") { work.forgetAgentVerdicts(); agent.classify(day: GoalongToday.now) }
         } message: {
-            Text("Les verdicts de l’agent sont effacés et les contextes seront renvoyés au fil de vos consultations d’Activité. Vos corrections sont conservées, ainsi que les contextes d’une tâche suivie par un engagement Concentration en cours.")
+            Text(["Les verdicts de l’agent sont effacés et les contextes seront renvoyés au fil de vos consultations d’Activité. Vos corrections sont conservées, ainsi que les contextes d’une tâche suivie par un engagement Concentration en cours.",
+                  FocusCommitmentRules.reclassifyWarning(GoalongWorkStore.openCommitments(controller: ConcentrationRuntime.shared.controller, store: .standard),
+                                                         at: GoalongToday.now)].compactMap { $0 }.joined(separator: "\n\n"))
         }
     }
 
