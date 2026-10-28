@@ -195,7 +195,10 @@
                 guard let raw = try? fileManager.destinationOfSymbolicLink(atPath: link.path) else {
                     return fail("Un fichier qui n’est pas un lien de Goalong occupe déjà \(shown). Goalong ne le remplace jamais.")
                 }
-                if raw == executable.path {
+                // A relative link (« ../Goalong History ») or one through another link to this app is the same link
+                // as `inspect` calls ready: both sides are resolved as `inspect` does.
+                let resolved = URL(fileURLWithPath: raw, relativeTo: directory).standardizedFileURL.resolvingSymlinksInPath().path
+                if raw == executable.path || resolved == executable.resolvingSymlinksInPath().path {
                     return finish("La commande était déjà installée : \(shown) pointe vers cette app.", link: link, executable: executable, fileManager: fileManager, directoryOnPath: directoryOnPath)
                 }
                 guard isGoalongTarget(raw) else {

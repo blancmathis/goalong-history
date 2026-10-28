@@ -57,6 +57,8 @@
 
             let refusal = store.renameTask("Goalong", to: "Atlas")
             XCTAssertNotNil(refusal, "Unknown commitments: the task may be measured by name")
+            XCTAssertTrue(refusal?.contains("efface aussi les engagements, leurs enjeux et les séances") == true,
+                          "The way out deletes commitments too: say so before the owner does it")
             XCTAssertEqual(store.verdicts.assignment(for: docs.key)?.task, "Goalong")
             XCTAssertNil(store.renameTask("Goalong", to: "goalong"), "A change of case keeps any match")
             open = []

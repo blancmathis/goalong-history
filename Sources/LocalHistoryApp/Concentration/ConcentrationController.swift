@@ -368,6 +368,13 @@ struct FocusPanel: Equatable {
         guard value.valid, !value.items.isEmpty else { throw FocusFailure.invalidArgument }
         try saving { try store.savePlans([value]) }; if value.day == currentDay { plan = value }; updateMeasures()
     }
+    /// A task renamed in « Vérifier et corriger »: linked plan items follow, or their project minutes read 0 (T-045 H5-04).
+    func renamePlanProject(from old: String, to new: String) {
+        var changed: [FocusPlan] = []
+        try? saving { changed = try store.renamePlanProject(from: old, to: new) }
+        if let today = changed.first(where: { $0.day == currentDay }) { plan = today }
+        if !changed.isEmpty { updateMeasures() }
+    }
     @discardableResult func addPlanItem(title: String, day: String, project: String? = nil, estimateMinutes: Int? = nil) throws -> FocusPlanItem {
         var value = try plan(on: day)
         let item = FocusPlanItem(title: title, project: project, estimateMinutes: estimateMinutes)

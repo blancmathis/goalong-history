@@ -15,6 +15,7 @@ import LocalHistoryCore
     @State private var procrastination = ""
     @State private var editing = false
     @State private var error: String?
+    @State private var changeWarning: String?
     private var draftBytes: Int { draft.utf8.count + applications.utf8.count + content.utf8.count + procrastination.utf8.count }
 
     init(store: JevWorkContextStore? = nil, purpose: Purpose = .monitoring) {
@@ -37,7 +38,12 @@ import LocalHistoryCore
                 }
                 if let message = error ?? store.error { GoalongNote(message, tone: .warning) }
             }
-        }.onAppear {
+        }
+        .alert("Changer la définition du travail ?", isPresented: Binding(get: { changeWarning != nil }, set: { if !$0 { changeWarning = nil } })) {
+            Button("Annuler", role: .cancel) { changeWarning = nil }
+            Button("Enregistrer") { changeWarning = nil; saveDraft() }
+        } message: { Text(changeWarning ?? "") }
+        .onAppear {
             if !editing { loadDraft() }
             // Former per-app choices become a starting point, never a silent rule.
             if purpose == .workDefinition, store.context.isEmpty, draft.isEmpty, applications.isEmpty,
@@ -97,11 +103,12 @@ import LocalHistoryCore
                         .accessibilityIdentifier("monitoring-cancel-goals")
                 }
                 Button(purpose == .workDefinition ? "Enregistrer ma définition" : "Enregistrer les critères") {
-                    do {
-                        try store.save(draft, applications: applications, content: content, procrastination: procrastination)
-                        loadDraft(); editing = false; error = nil; prefilledFromLegacy = false
-                        GoalongToastCenter.shared.show(purpose == .workDefinition ? "Définition enregistrée" : "Critères enregistrés")
-                    } catch { self.error = GoalongUserFacingError.message(error) }
+                    // Only a change of meaning drops verdicts; an open « travail » commitment then needs a warning (T-045 H5-03).
+                    let next = try? JevWorkContext(summary: draft, applications: applications, content: content, procrastination: procrastination)
+                    let changes = next.map { GoalongWorkDefinition($0).revision != GoalongWorkDefinition(store.context).revision } ?? false
+                    changeWarning = changes ? FocusCommitmentRules.definitionChangeWarning(
+                        GoalongWorkStore.openCommitments(controller: ConcentrationRuntime.shared.controller, store: .standard), at: GoalongToday.now) : nil
+                    if changeWarning == nil { saveDraft() }
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
                 .disabled(draftBytes > JevWorkContext.maximumBytes)
@@ -164,6 +171,14 @@ import LocalHistoryCore
     private var procrastinationText: String {
         "Des exemples clairs, pas une liste complète. La surveillance continue de repérer les autres distractions. Un usage qui correspond clairement à un exemple prime sur une autorisation générale ; précisez l’usage plutôt que seulement le site."
     }
+    private func saveDraft() {
+        do {
+            try store.save(draft, applications: applications, content: content, procrastination: procrastination)
+            loadDraft(); editing = false; error = nil; prefilledFromLegacy = false
+            GoalongToastCenter.shared.show(purpose == .workDefinition ? "Définition enregistrée" : "Critères enregistrés")
+        } catch { self.error = GoalongUserFacingError.message(error) }
+    }
+
     private func loadDraft() {
         draft = store.context.summary; applications = store.context.applications
         content = store.context.content; procrastination = store.context.procrastination

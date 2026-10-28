@@ -369,9 +369,20 @@ struct GoalongHealthImportSheet: View {
     static func duration(_ seconds: Double) -> String {
         DashboardFormatters.duration(seconds: seconds)
     }
+    static let sportNames = ["Running": "Course", "Walking": "Marche", "Cycling": "Vélo", "Swimming": "Natation", "Hiking": "Randonnée", "Yoga": "Yoga",
+        "TraditionalStrengthTraining": "Musculation", "FunctionalStrengthTraining": "Renforcement", "Other": "Entraînement",
+        "HighIntensityIntervalTraining": "Fractionné (HIIT)", "CoreTraining": "Gainage", "CrossTraining": "Entraînement croisé",
+        "Elliptical": "Elliptique", "Rowing": "Aviron", "Dance": "Danse", "SocialDance": "Danse", "Soccer": "Football", "Tennis": "Tennis",
+        "Basketball": "Basket", "Pilates": "Pilates", "StairClimbing": "Escaliers", "Stairs": "Escaliers", "Golf": "Golf", "Boxing": "Boxe",
+        "Climbing": "Escalade", "Skiing": "Ski", "DownhillSkiing": "Ski alpin", "CrossCountrySkiing": "Ski de fond", "Surfing": "Surf",
+        "Badminton": "Badminton", "TableTennis": "Tennis de table", "Volleyball": "Volley-ball", "Cooldown": "Retour au calme",
+        "MindAndBody": "Corps et esprit", "Flexibility": "Souplesse", "JumpRope": "Corde à sauter", "Rugby": "Rugby", "Handball": "Handball",
+        "MixedCardio": "Cardio mixte", "CardioDance": "Danse cardio", "Barre": "Barre au sol", "Kickboxing": "Kick-boxing",
+        "MartialArts": "Arts martiaux", "Snowboarding": "Snowboard", "PaddleSports": "Sports de pagaie", "WaterFitness": "Aquagym",
+        "Squash": "Squash", "Gymnastics": "Gymnastique", "SkatingSports": "Patinage", "Hockey": "Hockey"]
+    /// A sport the table does not know is named « Entraînement »: the English Apple identifier is never shown.
     static func sport(_ raw: String) -> String {
-        let kind = raw.replacingOccurrences(of: "HKWorkoutActivityType", with: "")
-        return ["Running": "Course", "Walking": "Marche", "Cycling": "Vélo", "Swimming": "Natation", "Hiking": "Randonnée", "Yoga": "Yoga", "TraditionalStrengthTraining": "Musculation", "FunctionalStrengthTraining": "Renforcement", "Other": "Entraînement"][kind] ?? kind
+        sportNames[raw.replacingOccurrences(of: "HKWorkoutActivityType", with: "")] ?? "Entraînement"
     }
 }
 #endif
