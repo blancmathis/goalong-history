@@ -80,6 +80,8 @@ extension Notification.Name {
     /// Task names measured by an unsettled « tâche » commitment of Concentration (T-045 H3-02).
     /// Nil: its file is unreadable, so any agent verdict may still be measured.
     private let committedTasks: @MainActor () -> [String]?
+    /// Called after a task rename or merge, so Plan du jour items linked to that project follow (T-045 H5-04).
+    private let renamedTask: @MainActor (String, String) -> Void
     private var observer: NSObjectProtocol?
     private var commitmentObserver: NSObjectProtocol?
     /// True when an unreadable file could not be moved aside: writing would destroy it.
@@ -91,7 +93,12 @@ extension Notification.Name {
          definition: @escaping @MainActor () -> GoalongWorkDefinition = { GoalongWorkDefinition(JevWorkContextStore.shared.context) },
          committedTasks: @escaping @MainActor () -> [String]? = {
              GoalongWorkStore.openTaskNames(controller: ConcentrationRuntime.shared.controller, store: .standard)
+         },
+         renamedTask: @escaping @MainActor (String, String) -> Void = { old, new in
+             if let controller = ConcentrationRuntime.shared.controller { controller.renamePlanProject(from: old, to: new) }
+             else { _ = try? FocusStore.standard.renamePlanProject(from: old, to: new) }
          }) {
+        self.renamedTask = renamedTask
         self.fileURL = fileURL
         self.definitionSource = definition
         self.committedTasks = committedTasks
@@ -223,6 +230,7 @@ extension Notification.Name {
             document.corrections[index].task = name
         }
         publish(); persist()
+        renamedTask(old, name)
         return nil
     }
 

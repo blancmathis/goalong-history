@@ -198,6 +198,20 @@ struct FocusStore {
         try save(transaction, area: nil, name: "pending.json")
         try apply(transaction)
     }
+    /// Renames the project of every linked plan item (case-insensitive, like the measure). Returns the plans changed.
+    @discardableResult func renamePlanProject(from old: String, to new: String) throws -> [FocusPlan] {
+        var changed: [FocusPlan] = []
+        for day in try planDays() {
+            guard var value = try plan(day) else { continue }
+            var touched = false
+            for i in value.items.indices where value.items[i].project?.localizedCaseInsensitiveCompare(old) == .orderedSame && value.items[i].project != new {
+                value.items[i].project = new; touched = true
+            }
+            if touched { changed.append(value) }
+        }
+        if !changed.isEmpty { try savePlans(changed) }
+        return changed
+    }
     func recover() throws {
         if let value = try load(Transaction.self, area: nil, name: "pending.json") { try apply(value) }
     }
