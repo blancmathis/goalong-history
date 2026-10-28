@@ -1,7 +1,7 @@
 // E2E driver for GitHub-hosted macOS runners only (T-045). Never run it on a personal Mac:
 // it presses real controls in the target app.
 // Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT [ROLE] | menu BUNDLE TOP [ITEM]
-//        | close-extra BUNDLE MAIN_TITLE | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE
+//        | close-extra BUNDLE MAIN_TITLE | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE | input SECONDS
 import AppKit
 import ApplicationServices
 
@@ -133,6 +133,26 @@ case "windows":
     for w in list where (w[kCGWindowOwnerPID as String] as? Int32) == pid {
         print("id=\(w[kCGWindowNumber as String] ?? "") layer=\(w[kCGWindowLayer as String] ?? "") onscreen=\(w[kCGWindowIsOnscreen as String] ?? 0) name=\(w[kCGWindowName as String] ?? "-") bounds=\(w[kCGWindowBounds as String] ?? "")")
     }
+case "input":
+    // Synthetic HID input into the frontmost app (runner only): mouse moves and letter keys, so the
+    // app's listen-only event tap counts active time. Typed text goes into the runner's synthetic note.
+    let seconds = Double(args.count > 2 ? args[2] : "60") ?? 60
+    let source = CGEventSource(stateID: .hidSystemState)
+    let keys: [CGKeyCode] = [0x0E, 0x11, 0x01, 0x11, 0x31]  // e t s t space
+    let end = Date().addingTimeInterval(seconds)
+    var i = 0, posted = 0
+    while Date() < end {
+        let p = CGPoint(x: 400 + Double(i % 40) * 5, y: 300 + Double(i % 25) * 4)
+        CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+        if i % 3 == 0 {
+            let k = keys[(i / 3) % keys.count]
+            CGEvent(keyboardEventSource: source, virtualKey: k, keyDown: true)?.post(tap: .cghidEventTap)
+            CGEvent(keyboardEventSource: source, virtualKey: k, keyDown: false)?.post(tap: .cghidEventTap)
+        }
+        posted += 1; i += 1
+        usleep(200_000)
+    }
+    print("input: \(posted) synthetic events in \(Int(seconds)) s")
 default:
-    print("usage: ax_driver trusted | dump B F | press B TEXT [ROLE] | menu B TOP ITEM | status-item B | status-menu B | windows B"); exit(2)
+    print("usage: ax_driver trusted | dump B F | press B TEXT [ROLE] | menu B TOP ITEM | status-item B | status-menu B | windows B | input S"); exit(2)
 }

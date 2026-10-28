@@ -143,6 +143,8 @@ step() {
       sm) o="$("$DRIVER" status-menu "$BUNDLE" 2>&1)" || req+="status-menu;"; sleep 1 ;;
       esc) esc ;;
       pc) panel=0 ;;
+      has:*) "$DRIVER" dump "$BUNDLE" "$RUNNER_TEMP/has.txt" >/dev/null 2>&1
+             o="$(grep -Em1 -- "${c#has:}" "$RUNNER_TEMP/has.txt")" || req+="has(${c#has:});" ;;
       w:*) sleep "${c#w:}" ;;
       s:*) rowshot "$row-${c#s:}" ;;
     esac
@@ -156,7 +158,13 @@ for f in 04-P1-setup-1-donnees 05-P1-setup-2-sources 06-P1-setup-3-pret 07-P1-se
 done
 step CNF-REC pane:recording p:source-localComputerHistory w:3 s:sheet o:recording-setup-confirm w:3
 log "== synthetic activity with recording on (runner only)"
-open -a TextEdit "$RUNNER_TEMP/synthetic-note.txt"; sleep 20; open -a Finder; sleep 20; open -a Safari; sleep 20
+# Synthetic HID input while each app is frontmost, so active time and per-app minutes are non-zero
+# (run 5: no input event ever reached the app, every app showed « < 1 min »).
+open -a TextEdit "$RUNNER_TEMP/synthetic-note.txt"; sleep 4; try "input TextEdit" "$DRIVER" input 180
+open -a Safari; sleep 4; try "input Safari" "$DRIVER" input 90
+open -a Finder; sleep 4; try "input Finder" "$DRIVER" input 30
+copy_state input
+log "[input] $(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print({k: v for k, v in d.items() if "nput" in k or "uppress" in k})' "$OUT/state-input/capture-health.json" 2>&1)"
 front; sleep 5
 source "$(dirname "$0")/lot1_steps.sh"
 log "== lot 1 results"; cat "$RESULTS" | tee -a "$SUMMARY"
@@ -180,6 +188,9 @@ PY
 } > "$OUT/capture-inventory.txt" 2>&1
 log "$(tail -2 "$OUT/capture-inventory.txt")"
 copy_state after
+# Braise start failure (run 5: « Braise n’a pas pu démarrer »): the folder and its path, as tccd and the app see them.
+{ ls -la@eO "$DATA/Braise" "$HOME/Library/Application Support/Braise"; stat -f '%N %HT %Sp %Su' "$HOME" "$HOME/Library" "$HOME/Library/Application Support" "$DATA" "$DATA/Braise"
+  grep -i braise "$DATA"/SupportDiagnostics/*/diagnostics.log | tail -20; } > "$OUT/braise-diagnostic.txt" 2>&1
 cp "$HOME/Library/Logs/DiagnosticReports/"*Goalong* "$OUT/" 2>/dev/null
 quit_app
 log "== done: $n screenshots"
