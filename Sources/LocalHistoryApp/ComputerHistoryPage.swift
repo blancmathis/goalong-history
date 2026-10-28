@@ -607,6 +607,38 @@
             return searching ? "\(visible) sur \(totalLabel)" : totalLabel
         }
 
+        /// « Page web » rather than the Swift identifier « webPage ».
+        static func resourceKindLabel(_ kind: ComputerHistoryResourceKind) -> String {
+            switch kind {
+            case .file: return "Fichier"
+            case .webPage: return "Page web"
+            case .conversation: return "Conversation"
+            case .issue: return "Ticket"
+            case .document: return "Document"
+            case .terminalSession: return "Session de terminal"
+            case .application: return "Application"
+            case .unknown: return "Ressource inconnue"
+            }
+        }
+
+        static func tenMinuteSummary(count: Int) -> String {
+            "\(GoalongUIFormat.count(count, "période")) de dix minutes. Ouvrez une période pour voir ses détails."
+        }
+
+        static func retainedEpisodesLabel(_ count: Int) -> String {
+            GoalongUIFormat.count(count, "épisode représentatif conservé", plural: "épisodes représentatifs conservés")
+        }
+
+        static func retainedResourcesLabel(_ count: Int) -> String {
+            GoalongUIFormat.count(count, "lien source représentatif conservé", plural: "liens sources représentatifs conservés")
+        }
+
+        static func provenanceLabel(events: Int, sequences: Int, confidence: Int) -> String {
+            "Preuves : \(GoalongUIFormat.count(events, "identifiant d’événement", plural: "identifiants d’événements")) · "
+                + "\(GoalongUIFormat.count(sequences, "séquence d’intégrité", plural: "séquences d’intégrité")) · "
+                + "confiance \(GoalongUIFormat.percent(confidence))"
+        }
+
         /// With an empty timeline, one place explains why. The timeline card does it for a day without
         /// data; the status card does it when it also offers « Réessayer ».
         static func timelineExplainsEmptyDay(_ status: ComputerHistorySourceStatus) -> Bool {
@@ -870,8 +902,7 @@
             case .available:
                 break
             }
-            let windows = GoalongUIFormat.number(tenMinuteGroups.count)
-            let summary = "\(windows) périodes de dix minutes. Ouvrez une période pour voir ses détails."
+            let summary = ComputerHistoryPageCopy.tenMinuteSummary(count: tenMinuteGroups.count)
             return model.isAnalysisPartial ? partialAnalysisNotice + " " + summary : summary
         }
 
@@ -1326,14 +1357,14 @@
             else {
                 return "Travail chronologique, par tâche"
             }
-            return "\(retained) épisodes représentatifs conservés"
+            return ComputerHistoryPageCopy.retainedEpisodesLabel(retained)
         }
 
         private func resourceCoverageDetail(_ memory: ComputerHistoryDayMemory) -> String {
             guard let retained = memory.coverage.retainedResourceCount else {
                 return "Fichiers, pages, conversations et tickets"
             }
-            return "\(retained) liens sources représentatifs conservés"
+            return ComputerHistoryPageCopy.retainedResourcesLabel(retained)
         }
 
         private func episodes(_ memory: ComputerHistoryDayMemory) -> some View {
@@ -1565,7 +1596,7 @@
             _ resource: ComputerHistoryResourceReference
         ) -> String {
             let percentage = ConfidencePercent.whole(resource.locatorConfidence)
-            return "\(resource.kind.rawValue) · confiance \(percentage)\u{00A0}%"
+            return "\(ComputerHistoryPageCopy.resourceKindLabel(resource.kind)) · confiance \(percentage)\u{00A0}%"
         }
     }
 
@@ -1871,7 +1902,10 @@
                             }
                         }
                         Text(
-                            "Preuves : \(episode.provenance.sourceEventIDs.count) identifiants d’événements · \(episode.provenance.sourceSequences.count) séquences d’intégrité · confiance \(GoalongUIFormat.percent(ConfidencePercent.whole(episode.statusConfidence)))"
+                            ComputerHistoryPageCopy.provenanceLabel(
+                                events: episode.provenance.sourceEventIDs.count,
+                                sequences: episode.provenance.sourceSequences.count,
+                                confidence: ConfidencePercent.whole(episode.statusConfidence))
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)

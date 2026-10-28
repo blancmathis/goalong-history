@@ -768,24 +768,45 @@ import LocalHistoryQueryCLI
         return value
     }
 
-    func takeBreak(listID: UUID, password: String? = nil) {
-        guard admitEdit() else { return }
-        guard freeze == nil else { error = "Aucune pause pendant le gel du Mac."; return }
-        guard activeBlocks.contains(where: { $0.listIDs.contains(listID) }), let breaks = list(listID)?.breaks else { error = "Cette liste n’a pas de pause disponible."; return }
+    /// The password lets one break more pass once the day's breaks are used: never under a hard lock or a freeze.
+    func offersExtraBreak(listID: UUID) -> Bool {
+        guard freeze == nil, hasPassword, let breaks = list(listID)?.breaks else { return false }
+        let usage = todayUsage()
+        guard usage.breakEnds[listID].map({ $0 > clock() }) != true, (usage.breaksTaken[listID] ?? 0) >= breaks.count else { return false }
+        let locks = activeBlocks.filter { $0.listIDs.contains(listID) }.map(\.lock)
+        return locks.contains(.password) && !locks.contains(.locked)
+    }
+
+    /// The list whose extra break waits for the password sheet of the Blocking page.
+    @Published var extraBreakRequest: UUID?
+    /// Brings the Blocking page to the front (set by the app).
+    var onOpen: (() -> Void)?
+
+    /// The veil's button: a planned break is taken at once; an extra one asks for the password in Goalong.
+    func breakFromVeil(listID: UUID) {
+        if offersExtraBreak(listID: listID) { extraBreakRequest = listID; onOpen?() } else { takeBreak(listID: listID) }
+    }
+
+    @discardableResult func takeBreak(listID: UUID, password: String? = nil) -> BlockingPasswordResult {
+        guard admitEdit() else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong pour le recharger.") }
+        guard freeze == nil else { return refusePassword("Aucune pause pendant le gel du Mac.") }
+        guard activeBlocks.contains(where: { $0.listIDs.contains(listID) }), let breaks = list(listID)?.breaks else { return refusePassword("Cette liste n’a pas de pause disponible.") }
         var usage = todayUsage()
-        guard usage.breakEnds[listID].map({ $0 > clock() }) != true else { error = "Une pause est déjà en cours."; return }
+        guard usage.breakEnds[listID].map({ $0 > clock() }) != true else { return refusePassword("Une pause est déjà en cours.") }
         let taken = usage.breaksTaken[listID] ?? 0
         if taken >= breaks.count {
             let locks = activeBlocks.filter { $0.listIDs.contains(listID) }.map(\.lock)
             guard locks.contains(.password), !locks.contains(.locked), let password else {
-                error = "Toutes les pauses du jour sont utilisées. Un mot de passe est exigé pour une pause supplémentaire."; return
+                return refusePassword("Toutes les pauses du jour sont utilisées. Un mot de passe est exigé pour une pause supplémentaire.")
             }
-            guard verifyPassword(password) == .ok else { return }
+            let result = verifyPassword(password)
+            guard result == .ok else { return result }
         }
         usage.breaksTaken[listID] = taken + 1
         usage.breakEnds[listID] = min(usageDayBounds(at: clock()).end, clock().addingTimeInterval(TimeInterval(breaks.minutes * 60)))
         document.usage = usage
         commit()
+        return storeFailed ? .refused(reason: error ?? "La pause n’a pas pu être enregistrée.") : .ok
     }
 
     func endBreak(listID: UUID) {
@@ -1199,8 +1220,8 @@ import LocalHistoryQueryCLI
                 let reason = special ?? list.quotaMinutesPerDay.map { BlockingVeilPresentation.Reason.quotaUsed(target.url ?? "", minutes: $0) } ?? .site(target.url ?? "")
                 let presentation = BlockingVeilPresentation(reason: reason, listName: list.name, start: wallFrame(block.start), end: wallFrame(block.end),
                     lock: block.lock, breakMinutes: list.breaks?.minutes, breaksLeft: block.breaksLeft[list.id] ?? 0,
-                    feedback: feedback(for: list.id))
-                backend.blockSite(target, presentation: presentation) { [weak self] in self?.takeBreak(listID: list.id) }
+                    feedback: feedback(for: list.id), extraBreak: offersExtraBreak(listID: list.id))
+                backend.blockSite(target, presentation: presentation) { [weak self] in self?.breakFromVeil(listID: list.id) }
             }
             return
         }
@@ -1434,6 +1455,8 @@ import LocalHistoryQueryCLI
     private var modules: GoalongModuleStore?
     private weak var monitor: ContextMonitor?
     private var timerHUD: BlockingTimerHUD?
+    /// Shows the Blocking page (set by the app): the veil's extra break asks for the password there.
+    var onOpen: (() -> Void)?
     func start(modules: GoalongModuleStore = .shared, monitor: ContextMonitor? = nil) {
         self.modules = modules; self.monitor = monitor
         apply(enabled: modules.isEnabled(.blocking))
@@ -1456,6 +1479,7 @@ import LocalHistoryQueryCLI
             // From now on this process may lower or remove `guard-until` (an installed copy only).
             if guardClient != nil { GoalongGuardFiles.reportHealth() }
             controller = value
+            value.onOpen = { [weak self] in self?.onOpen?() }
             value.onObservationRequirementChanged = { [weak self] needed in self?.monitor?.setBlockingObservationEnabled(needed) }
             let hud = BlockingTimerHUD(clock: { [weak value] in value?.now ?? .distantPast }) { [weak value] in value?.timerInput }
             timerHUD = hud
