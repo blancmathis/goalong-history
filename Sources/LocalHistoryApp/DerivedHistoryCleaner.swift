@@ -428,7 +428,7 @@
                 userInfo: [
                     NSFilePathErrorKey: URL.path,
                     // The alert shows this sentence (T-045 H2-01); the English detail stays for diagnostics.
-                    NSLocalizedDescriptionKey: GoalongUserFacingError.historyIOMessage,
+                    NSLocalizedDescriptionKey: GoalongUserFacingError.historyIOMessage(code: code),
                     NSLocalizedFailureReasonErrorKey: "\(operation) failed for \(URL.path): "
                         + String(cString: strerror(code)),
                 ]

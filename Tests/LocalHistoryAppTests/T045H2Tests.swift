@@ -35,6 +35,13 @@
             }
         }
 
+        /// H2-01: the French I/O sentence keeps what `strerror` told before (full disk, refused access).
+        func testHistoryIOMessageKeepsTheErrnoMeaning() {
+            XCTAssertEqual(GoalongUserFacingError.historyIOMessage(code: ENOSPC), GoalongUserFacingError.historyDiskFullMessage)
+            XCTAssertEqual(GoalongUserFacingError.historyIOMessage(code: EACCES), GoalongUserFacingError.historyAccessDeniedMessage)
+            XCTAssertEqual(GoalongUserFacingError.historyIOMessage(code: EIO), GoalongUserFacingError.historyIOMessage)
+        }
+
         private func assertFrenchAlert(_ error: Error, hiding path: String, line: UInt = #line) {
             let text = GoalongUserFacingError.message(error)
             for english in ["The ", "Could not", "Refusing", "failed for", "Deletion", "Owned path"] {

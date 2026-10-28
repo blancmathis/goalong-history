@@ -1621,7 +1621,11 @@
             let base: JSONLStoreError
             let code: Int32
             var errorDescription: String? { base.errorDescription }
-            var frenchDescription: String { base.frenchDescription }
+            var frenchDescription: String {
+                let text = base.frenchDescription
+                return text == GoalongUserFacingError.historyIOMessage
+                    ? GoalongUserFacingError.historyIOMessage(code: code) : text
+            }
             static var errorDomain: String { "LocalHistory.JSONLStore" }
             var errorCode: Int { Int(code) }
             var errorUserInfo: [String: Any] {
