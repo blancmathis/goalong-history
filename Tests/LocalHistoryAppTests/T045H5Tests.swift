@@ -54,10 +54,31 @@
             work.stake = FocusStake(listIds: [UUID()])
             XCTAssertTrue(FocusCommitmentRules.definitionChangeWarning([work], at: now, calendar: calendar)?.contains("enjeu") == true)
             XCTAssertNotNil(FocusCommitmentRules.definitionChangeWarning(nil, at: now, calendar: calendar))
+            XCTAssertFalse(plain.contains("verdicts"), "Owner words, not the agent's jargon: \(plain)")
             let task = FocusCommitment(period: week, kind: .task, target: 60, task: "Goalong", createdAt: now)
             XCTAssertNil(FocusCommitmentRules.definitionChangeWarning([task], at: now, calendar: calendar))
             work.result = FocusCommitmentResult(settledAt: now, measured: 1_200, unmeasuredMinutes: 0, outcome: .held)
             XCTAssertNil(FocusCommitmentRules.definitionChangeWarning([work], at: now, calendar: calendar))
+        }
+
+        /// Review #164: unreadable commitments must not be stated as an open one; one colon per sentence at most.
+        func testOpenWorkWarningsDoNotClaimAnUnknownCommitment() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
+            let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 29, hour: 15)))
+            for warning in [FocusCommitmentRules.reclassifyWarning(nil, at: now, calendar: calendar),
+                            FocusCommitmentRules.definitionChangeWarning(nil, at: now, calendar: calendar)] {
+                let text = try XCTUnwrap(warning)
+                XCTAssertTrue(text.contains("n’ont pas pu être lus"), text)
+                XCTAssertFalse(text.contains("un engagement « travail » en cours"), text)
+            }
+            var work = FocusCommitment(period: FocusCommitmentPeriod(kind: .week, key: "2026-W44"), kind: .work, target: 60, createdAt: now)
+            work.stake = FocusStake(listIds: [UUID()])
+            for warning in [FocusCommitmentRules.reclassifyWarning([work], at: now, calendar: calendar),
+                            FocusCommitmentRules.definitionChangeWarning([work], at: now, calendar: calendar)] {
+                let text = try XCTUnwrap(warning)
+                for sentence in text.split(separator: ".") { XCTAssertLessThanOrEqual(sentence.components(separatedBy: " : ").count, 2, text) }
+            }
         }
 
         /// H5-04: a Plan du jour item linked to a project finds its minutes by the task name. Renaming

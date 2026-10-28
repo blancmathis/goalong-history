@@ -318,22 +318,26 @@ enum FocusCommitmentRules {
     /// commitment keeps its contexts (D-154a). Nil commitments: they cannot be read, so it warns anyway.
     static func reclassifyWarning(_ commitments: [FocusCommitment]?, at now: Date, calendar: Calendar = .current) -> String? {
         openWorkWarning(commitments, at: now, calendar: calendar,
-                        base: "Attention : un engagement « travail » en cours mesure ce classement. Les jours non reclassés (chacun l’est à son ouverture dans Activité) ne comptent pas comme travail")
+                        effect: "Les jours non reclassés (chacun l’est à son ouverture dans Activité) ne comptent pas comme travail.")
     }
-    private static func openWorkWarning(_ commitments: [FocusCommitment]?, at now: Date, calendar: Calendar, base: String) -> String? {
-        guard let commitments else { return base + " : si l’engagement n’est plus tenu, son enjeu pourra s’appliquer." }
+    /// Nil commitments: unreadable, so it says so instead of claiming an open one (review #164).
+    private static func openWorkWarning(_ commitments: [FocusCommitment]?, at now: Date, calendar: Calendar, effect: String) -> String? {
+        guard let commitments else {
+            return "Attention : les engagements Concentration n’ont pas pu être lus. " + effect + " Si l’un d’eux mesure votre travail, son enjeu pourra s’appliquer."
+        }
         let hit = commitments.filter { c in
             guard c.result == nil, c.kind == .work, let period = c.period.interval(calendar: calendar) else { return false }
             return period.start < now
         }
         guard !hit.isEmpty else { return nil }
-        return hit.contains { $0.stake != nil } ? base + " : si l’engagement n’est plus tenu, son enjeu s’appliquera." : base + "."
+        let base = "Attention : un engagement « travail » en cours mesure votre temps de travail. " + effect
+        return hit.contains { $0.stake != nil } ? base + " Si l’engagement n’est plus tenu, son enjeu s’appliquera." : base
     }
     /// Warning when the work definition changes: the agent verdicts of past days go (only the contexts of a followed task stay),
     /// so an open « travail » commitment counts that time as unclassified meanwhile (T-045 H5-03).
     static func definitionChangeWarning(_ commitments: [FocusCommitment]?, at now: Date, calendar: Calendar = .current) -> String? {
         openWorkWarning(commitments, at: now, calendar: calendar,
-                        base: "Attention : un engagement « travail » en cours mesure ce classement. Changer la définition du travail efface les verdicts des jours passés (chacun est reclassé à son ouverture dans Activité) : ils ne comptent pas comme travail")
+                        effect: "Avec une nouvelle définition, les jours passés sont reclassés un par un, à leur ouverture dans Activité. D’ici là, ils ne comptent pas comme travail.")
     }
     /// Time Goalong saw, or saw the Mac was not in use (asleep, locked, before the first or after the last record).
     static func isKnown(_ s: GoalongLocalAnalytics.Segment) -> Bool {
