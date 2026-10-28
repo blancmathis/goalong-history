@@ -597,6 +597,8 @@
             timeZoneObserver = NotificationCenter.default.addObserver(
                 forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
             ) { [weak self] _ in
+                // Read the new zone, not the cached one: this observer may run before the others reset it.
+                NSTimeZone.resetSystemTimeZone()
                 // Same date, same recap file: only the instant moves, so a running recap is not cancelled.
                 guard let self, self.selectedDay != self.selectedDayKey.start() else { return }
                 self.selectedDay = self.selectedDayKey.start()
