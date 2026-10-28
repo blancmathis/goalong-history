@@ -207,6 +207,29 @@
             XCTAssertFalse(outcome.succeeded); XCTAssertTrue(outcome.message.contains("n’a pas été installée"))
         }
 
+        // As scripts/install_cli_link.sh: a bin folder that is a symlink is not followed.
+        func testInstallRefusesABinFolderThatIsASymlink() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let real = fixture.root.appendingPathComponent("elsewhere", isDirectory: true)
+            try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+            let bin = fixture.root.appendingPathComponent("linked-bin", isDirectory: true)
+            try FileManager.default.createSymbolicLink(at: bin, withDestinationURL: real)
+            let outcome = GoalongCLIInstallation.install(linkURL: bin.appendingPathComponent("goalong"), executableURL: fixture.executable,
+                                                         directoryOnPath: { _ in true }, isDevelopment: false)
+            XCTAssertFalse(outcome.succeeded, outcome.message)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: real.path), [])
+        }
+
+        func testInstallIsRefusedInGoalongDev() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let outcome = GoalongCLIInstallation.install(linkURL: fixture.link, executableURL: fixture.executable,
+                                                         directoryOnPath: { _ in true }, isDevelopment: true)
+            XCTAssertFalse(outcome.succeeded)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.link.path))
+        }
+
         private func makeFixture() throws -> (root: URL, executable: URL, link: URL) {
             let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
                 .appendingPathComponent("goalong-cli-installation-\(UUID().uuidString)", isDirectory: true)

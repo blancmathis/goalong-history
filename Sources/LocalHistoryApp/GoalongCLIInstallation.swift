@@ -162,9 +162,12 @@
             linkURL: URL = defaultLinkURL,
             executableURL: URL? = Bundle.main.executableURL,
             fileManager: FileManager = .default,
-            directoryOnPath: (URL) -> Bool = directoryIsOnShellPath
+            directoryOnPath: (URL) -> Bool = directoryIsOnShellPath,
+            isDevelopment: Bool = GoalongBuildChannel.current.isDevelopment
         ) -> GoalongCLIInstallOutcome {
             let fail = { GoalongCLIInstallOutcome(succeeded: false, message: $0 + " La commande n’a pas été installée.") }
+            // Goalong Dev never points the real command at itself (see `inspect`), even if called directly.
+            guard !isDevelopment else { return fail("Goalong Dev ne réinstalle pas la commande de Goalong installé.") }
             let link = linkURL.standardizedFileURL, directory = link.deletingLastPathComponent()
             guard let executable = executableURL?.standardizedFileURL,
                   (try? fileManager.attributesOfItem(atPath: executable.path)[.type] as? FileAttributeType) == .typeRegular,
