@@ -622,6 +622,40 @@
             runtime.stop()
         }
 
+        func testDetectWithNothingFoundDoesNotClaimAddition() throws {
+            let fixture = try makeFixture("detect-nothing")
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let runtime = try AgentActivityRuntime(
+                rootDirectory: fixture.metadata,
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                sourceDiscovery: { [] },
+                onCaptured: { _ in }
+            )
+            runtime.start()
+            runtime.detectCommonSources()
+            runtime.stop()
+            XCTAssertEqual(runtime.alert?.message, "Aucune nouvelle source locale n’a été trouvée.")
+        }
+
+        func testDetectWithANewSourceStillReportsAddition() throws {
+            let fixture = try makeFixture("detect-found")
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let root = fixture.container.appendingPathComponent("Home/.codex", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let discovered = defaultFolder(path: root, provider: .codex)
+            let runtime = try AgentActivityRuntime(
+                rootDirectory: fixture.metadata,
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                sourceDiscovery: { [discovered] in [discovered] },
+                onCaptured: { _ in }
+            )
+            runtime.start()
+            runtime.setFolderEnabled(false, id: discovered.id)
+            runtime.detectCommonSources()
+            runtime.stop()
+            XCTAssertEqual(runtime.alert?.message, "Les sources locales disponibles ont été ajoutées.")
+        }
+
         private func makeFixture(_ name: String) throws -> (container: URL, metadata: URL) {
             let container = FileManager.default.temporaryDirectory.appendingPathComponent(
                 "AgentActivityDiscoveryConsentTests-\(name)-\(UUID().uuidString)",
