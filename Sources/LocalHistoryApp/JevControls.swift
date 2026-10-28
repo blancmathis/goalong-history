@@ -71,7 +71,7 @@ struct JevRecentChecksView: View {
     var body: some View {
         GoalongSettingsGroup(title: "Faire une pause") {
             if monitor.breakStorageInvalid {
-                Text("Minuterie illisible : surveillance suspendue, historique inchangé.").foregroundStyle(.secondary)
+                Text(JevMonitor.unreadableBreakNotice).foregroundStyle(.secondary)
                 Button("Réinitialiser la pause") { monitor.endBreak() }
             } else if monitor.timedBreak != nil {
                 HStack {
