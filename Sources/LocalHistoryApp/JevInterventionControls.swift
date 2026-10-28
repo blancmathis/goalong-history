@@ -110,14 +110,19 @@ import LocalHistoryCore
 @MainActor struct JevQuickPauseControl: View {
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    /// With Jev off, "Pause de N min" does nothing (startBreak needs monitoring on): only "Reprendre" stays.
+    nonisolated static func menuItems(enabled: Bool, breakRunning: Bool) -> (resume: Bool, durations: [Int]) {
+        (breakRunning, enabled ? [5, 10, 15, 30] : [])
+    }
     var body: some View {
+        let items = Self.menuItems(enabled: consents.isEnabled(.jevMonitoring), breakRunning: monitor.timedBreak != nil)
         VStack(alignment: .leading, spacing: 6) {
             Text("Jev").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
             Menu {
-                if monitor.timedBreak != nil {
+                if items.resume {
                     Button("Reprendre la surveillance") { monitor.endBreak() }
                 }
-                ForEach([5, 10, 15, 30], id: \.self) { minutes in
+                ForEach(items.durations, id: \.self) { minutes in
                     Button("Pause de \(minutes) min") { monitor.startBreak(minutes: minutes) }
                 }
             } label: {

@@ -81,6 +81,12 @@ final class GoalongCallPresenceMonitor {
         guard let statusDay, !calendar.isDate(statusDay, inSameDayAs: now) else { return (status, statusDay) }
         return structuralPartial ? (.partial, calendar.startOfDay(for: now)) : (.ready, nil)
     }
+    /// Camera, and microphone before macOS 14.2, are known per device, never per app. With an exclusion or an
+    /// "allow only" list the use cannot be proven to stay outside the excluded app: it is not written.
+    static func deviceOnlyUse(hasExclusions: Bool, hasAllowList: Bool) -> (record: Bool, partial: Bool) {
+        let blocked = hasExclusions || hasAllowList
+        return (!blocked, blocked)
+    }
     /// Downgrades today's coverage; a write failure is never softened to partial.
     private func degrade(_ status: GoalongSystemSourceStatus, structural: Bool = false) {
         if structural { structuralPartial = true }
@@ -262,8 +268,10 @@ final class GoalongCallPresenceMonitor {
         } else {
             for id in audioIDs(selector: kAudioHardwarePropertyDevices) where isInputOnlyDevice(id) {
                 var input: UInt32 = 0
-                if audioValue(id, kAudioDevicePropertyDeviceIsRunningSomewhere, value: &input), input != 0, !privacy.hasExclusions, config.includedBundleIdentifiers?.isEmpty != false {
-                    next["microphone"] = .init(start: now, end: now, bundleIdentifier: nil, application: nil, microphone: true, camera: false)
+                if audioValue(id, kAudioDevicePropertyDeviceIsRunningSomewhere, value: &input), input != 0 {
+                    let use = Self.deviceOnlyUse(hasExclusions: privacy.hasExclusions, hasAllowList: config.includedBundleIdentifiers?.isEmpty == false)
+                    if use.partial { degrade(.partial) }
+                    if use.record { next["microphone"] = .init(start: now, end: now, bundleIdentifier: nil, application: nil, microphone: true, camera: false) }
                 }
             }
         }
@@ -272,8 +280,10 @@ final class GoalongCallPresenceMonitor {
             var size: UInt32 = 4; var value: UInt32 = 0
             let cameraRead = CMIOObjectGetPropertyData(id, &address, 0, nil, 4, &size, &value)
             if cameraRead != noErr { degrade(.partial) }
-            if cameraRead == noErr, value != 0, !privacy.hasExclusions, config.includedBundleIdentifiers?.isEmpty != false {
-                next["camera"] = .init(start: now, end: now, bundleIdentifier: nil, application: nil, microphone: false, camera: true)
+            if cameraRead == noErr, value != 0 {
+                let use = Self.deviceOnlyUse(hasExclusions: privacy.hasExclusions, hasAllowList: config.includedBundleIdentifiers?.isEmpty == false)
+                if use.partial { degrade(.partial) }
+                if use.record { next["camera"] = .init(start: now, end: now, bundleIdentifier: nil, application: nil, microphone: false, camera: true) }
             }
         }
         guard Set(next.keys) != Set(active.keys) else {
