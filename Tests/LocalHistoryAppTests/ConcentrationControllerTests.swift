@@ -103,6 +103,53 @@ final class ConcentrationControllerTests: XCTestCase {
         b.delete(social.id)
         XCTAssertNotNil(b.list(social.id)); XCTAssertEqual(b.error, "La séance de concentration en cours bloque cette liste. Arrêtez la séance pour la supprimer.")
     }
+    /// H31 L1: a block error the member closed stays closed while it is the same failure.
+    @MainActor func testClosedBlockErrorIsNotRepublishedByTheNextRefresh() throws {
+        let s = store(); try quiet(s); var now = Date(timeIntervalSince1970: 1791201600)
+        let social = BlockList(name: "Réseaux", sites: [.init(pattern: "example.org")])
+        let b = BlockingController(document: BlockingDocument(lists: [social]), clock: { now }, continuous: { now.timeIntervalSince1970 })
+        let c = try ConcentrationController(store: s, clock: { now }, blocking: { b })
+        var mode = FocusMode(); mode.kind = .pomodoro; mode.workMinutes = 5
+        try c.startSession(intent: "Travail", mode: mode, blockListIds: [social.id])
+        now = now.addingTimeInterval(300); c.refresh(); b.delete(social.id)
+        now = now.addingTimeInterval(300); c.refresh()
+        XCTAssertNotNil(c.error)
+        c.error = nil; now = now.addingTimeInterval(5); c.refresh(); c.refresh()
+        XCTAssertNil(c.error)
+    }
+    /// H31 L2: answering for an older session leaves the panel of another one alone.
+    @MainActor func testOutcomeOfAnOlderSessionKeepsTheOtherPanel() throws {
+        let s = store(); try quiet(s); let now = Date(timeIntervalSince1970: 1791201600)
+        let c = try ConcentrationController(store: s, clock: { now })
+        try c.startSession(intent: "Un", mode: FocusMode(minutes: nil)); let first = try XCTUnwrap(c.currentSession).id; try c.stopSession(outcome: nil, note: nil)
+        try c.startSession(intent: "Deux", mode: FocusMode(minutes: nil)); let second = try XCTUnwrap(c.currentSession).id; try c.stopSession(outcome: nil, note: nil)
+        XCTAssertEqual(c.panel?.sessionID, second)
+        try c.recordOutcome(sessionID: first, outcome: .done)
+        XCTAssertEqual(c.panel?.sessionID, second)
+        try c.recordOutcome(sessionID: second, outcome: .done)
+        XCTAssertNil(c.panel)
+    }
+    /// H31 L3: the session question survives the evening time; the evening review comes after it.
+    @MainActor func testEveningReviewWaitsForTheSessionQuestion() throws {
+        let s = store(); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var settings = FocusSettings(); settings.morningPrompt = false; settings.eveningPrompt = true; settings.eveningMinute = 18 * 60 + 30; try s.saveSettings(settings)
+        var now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 17, minute: 50))!
+        let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: 45))
+        let id = try XCTUnwrap(c.currentSession).id
+        now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 18, minute: 35))!; c.refresh()
+        XCTAssertEqual(c.panel?.kind, .sessionReview); XCTAssertEqual(c.panel?.sessionID, id)
+        try c.recordOutcome(sessionID: id, outcome: .done); XCTAssertNil(c.panel)
+        c.refresh(); XCTAssertEqual(c.panel?.kind, .evening)
+    }
+    /// H31: the socket path re-parses every request app side (ConcentrationRuntime.handle → validated()), so a short `--pomodoro` never reaches `n[3]`.
+    func testSocketPomodoroNeedsFourValuesAppSide() throws {
+        for value in ["25", "25/5", "25/5/15", "25//15/4", "25/5/15/4/9", "25/5/15/x"] {
+            let request = GoalongFocusRequest(command: "session start", options: ["--intent": "Lire", "--pomodoro": value])
+            XCTAssertThrowsError(try request.validated(), value) { XCTAssertEqual($0 as? GoalongFocusError, .invalidArgument) }
+        }
+        XCTAssertNoThrow(try GoalongFocusRequest(command: "session start", options: ["--intent": "Lire", "--pomodoro": "25/5/15/4"]).validated())
+    }
     /// R4-concentration-02: a link to an item done since it was chosen is dropped; the session starts.
     @MainActor func testStalePlanLinkIsDroppedAtStart() throws {
         let s = store(); try quiet(s); let c = try ConcentrationController(store: s)

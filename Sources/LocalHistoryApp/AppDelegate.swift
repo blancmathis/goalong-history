@@ -395,6 +395,7 @@
             SupportDiagnosticsRuntime.shared.start { [weak self] in self?.supportSnapshot() ?? [:] }
             applyDailyRetentionCleanupIfNeeded()
             MainActor.assumeIsolated {
+                BlockingRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .blocking) }
                 BlockingRuntime.shared.start(monitor: contextMonitor)
                 ConcentrationRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .concentration) }
                 ConcentrationRuntime.shared.onMenuBarText = { [weak self] text in self?.menuBarController?.setFocusTitle(text) }

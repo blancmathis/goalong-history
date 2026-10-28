@@ -225,7 +225,7 @@ struct FocusPanel: Equatable {
     private func endInMemory(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) {
         if pendingStop == nil { pendingStop = (session, end, reason) }
         if let id = phaseBlockID, !hasLockedPhaseBlock { blocking()?.stop(id); phaseBlockID = nil; phaseBlockKey = nil }
-        currentSession = nil; phase = nil; phaseIdentity = nil; audio.stop()
+        currentSession = nil; phase = nil; phaseIdentity = nil; lastSyncErrorShown = nil; audio.stop()
     }
     private func saving(_ action: () throws -> Void) throws {
         try admit()
@@ -298,7 +298,7 @@ struct FocusPanel: Equatable {
         // The stop is on disk: the session ends in memory too, even if the earned-time credit fails.
         do { try blocking()?.creditEarnedTime(for: value) } catch { self.error = String(describing: error) }
         if let id = phaseBlockID { blocking()?.stop(id) }
-        currentSession = nil; phase = nil; phaseBlockID = nil; phaseBlockKey = nil; phaseIdentity = nil; audio.stop()
+        currentSession = nil; phase = nil; phaseBlockID = nil; phaseBlockKey = nil; phaseIdentity = nil; lastSyncErrorShown = nil; audio.stop()
         sessionFacts = facts(value); reviewedSession = value
         showPanel(.init(kind: .sessionReview, text: "C’est fait ?", sessionID: value.id))
         refresh()
@@ -308,7 +308,7 @@ struct FocusPanel: Equatable {
         guard note.map({ FocusValidation.text($0, maximum: 140) }) ?? true else { throw FocusFailure.invalidArgument }
         for day in try store.sessionDays().reversed() {
             if var value = try store.sessions(day).first(where: { $0.id == sessionID && $0.endedAt != nil }) {
-                value.outcome = outcome; value.note = note; try persist(value); dismissPanel(); return
+                value.outcome = outcome; value.note = note; try persist(value); if panel?.sessionID == sessionID { dismissPanel() }; return
             }
         }
         throw FocusFailure.notFound
@@ -568,10 +568,10 @@ struct FocusPanel: Equatable {
                 }
             } else {
                 let key = phaseKey(p)
-                do { try syncBlock(value, phase: p) } catch {
+                do { try syncBlock(value, phase: p); lastSyncErrorShown = nil } catch {
                     // Refresh runs every few seconds: publish a failure once, not on each tick.
                     let message = String(describing: error)
-                    if self.error != message { self.error = message }
+                    if lastSyncErrorShown != message { lastSyncErrorShown = message; self.error = message }
                 }
                 if phaseIdentity != key {
                     if phaseIdentity != nil { showPanel(.init(kind: .phase, text: p.isWork ? "On reprend : \(value.intent)" : "Pause — \(Int((p.endsAt?.timeIntervalSince(p.startedAt) ?? 0) / 60)) min", expiresAt: now.addingTimeInterval(6))); if settings.phaseSound { onPhaseSound?() } }
@@ -585,6 +585,8 @@ struct FocusPanel: Equatable {
         if now.throttleElapsed(since: lastCommitmentCardRefresh) >= 60 || commitmentCards.contains(where: { ($0.editMode == "free" && $0.editUntil <= now) || ($0.exitUntil.map { $0 <= now } == true && ($0.canUseJoker || $0.canDeclare)) }) { refreshCommitmentCards() }
         checkPrompts(activity: false); checkLimits(); publishStatus(); scheduleTimer()
     }
+    /// The last block failure published: a member who closed it is not shown the same one again.
+    private var lastSyncErrorShown: String?
     private func phaseKey(_ phase: FocusPhase) -> String { "\(phase.kind.rawValue)|\(phase.cycle)|\(phase.startedAt.timeIntervalSince1970)" }
     private func blockID(_ id: UUID, phase: FocusPhase) -> UUID {
         // Stable ownership across relaunch; user-authored Blocking sessions are never adopted.
@@ -630,6 +632,8 @@ struct FocusPanel: Equatable {
         do { try store.appendStatus(FocusJSON.encode(next), day: currentDay) } catch { self.error = String(describing: error) }
     }
     private func checkPrompts(activity: Bool) {
+        // The question about the session that just ended comes first; the prompts return once it is answered or gone.
+        if panel?.kind == .sessionReview { return }
         let minute = calendar.component(.hour, from: clock()) * 60 + calendar.component(.minute, from: clock())
         let evening = eveningMinute(on: clock())
         var request: FocusPanel.Kind?

@@ -262,11 +262,17 @@
             var segmentsByWindow: [Date: [Segment]] = [:]
             for session in sessions {
                 let clippedStart = max(session.start, dayStart)
+                // The 30 s tolerance counts toward active time, but never opens a slot
+                // nor moves a shown end past what was recorded.
                 let clippedEnd = min(session.end.addingTimeInterval(30), dayEnd, max(now, session.end))
+                let recordedEnd = min(session.end, dayEnd)
                 guard clippedEnd > clippedStart else { continue }
 
-                var windowStart = tenMinuteStart(for: clippedStart, calendar: calendar)
-                while windowStart < clippedEnd {
+                let firstWindowStart = tenMinuteStart(for: clippedStart, calendar: calendar)
+                var windowStart = firstWindowStart
+                while windowStart < clippedEnd,
+                    windowStart == firstWindowStart || windowStart < recordedEnd
+                {
                     guard let windowEnd = calendar.date(
                         byAdding: .minute,
                         value: 10,
@@ -286,7 +292,8 @@
                                 session: session,
                                 appKey: appKey,
                                 start: segmentStart,
-                                end: segmentEnd
+                                end: segmentEnd,
+                                shownEnd: max(segmentStart, min(segmentEnd, recordedEnd))
                             )
                         )
                     }
@@ -332,6 +339,8 @@
                 }
                 var sessionSlices: [SessionSlice] = []
                 var previousAppKey: String?
+                // Merging still allows for the 30 s tolerance hidden from `shownEnd`.
+                var previousToleratedEnd = Date.distantPast
                 for segment in ordered {
                     let suppressed = segment.session.suppressionReason != nil
                     let context = suppressed
@@ -343,12 +352,13 @@
                     if
                         previousAppKey == segment.appKey,
                         let previous = sessionSlices.last,
-                        segment.start <= previous.end.addingTimeInterval(30)
+                        segment.start <= previousToleratedEnd.addingTimeInterval(30)
                     {
+                        previousToleratedEnd = max(previousToleratedEnd, segment.end)
                         sessionSlices[sessionSlices.count - 1] = SessionSlice(
                             id: previous.id,
                             start: previous.start,
-                            end: max(previous.end, segment.end),
+                            end: max(previous.end, segment.shownEnd),
                             appName: previous.appName,
                             bundleIdentifier: previous.bundleIdentifier
                                 ?? segment.session.bundleIdentifier,
@@ -361,11 +371,12 @@
                             sourceSessionCount: previous.sourceSessionCount + 1
                         )
                     } else {
+                        previousToleratedEnd = segment.end
                         sessionSlices.append(
                             SessionSlice(
                                 id: "\(segment.session.id)-\(windowStart.timeIntervalSince1970)",
                                 start: segment.start,
-                                end: segment.end,
+                                end: segment.shownEnd,
                                 appName: segment.session.appName,
                                 bundleIdentifier: segment.session.bundleIdentifier,
                                 contexts: [context],
@@ -423,7 +434,10 @@
             let session: ActivitySession
             let appKey: String
             let start: Date
+            /// Includes the 30 s tolerance; counts toward active time.
             let end: Date
+            /// Never after the recorded end; shown to the user.
+            let shownEnd: Date
         }
 
         private static func tenMinuteStart(for date: Date, calendar: Calendar) -> Date {
@@ -605,6 +619,38 @@
         static func periodCountLabel(visible: Int, total: Int, searching: Bool) -> String {
             let totalLabel = total <= 1 ? "\(total) période" : "\(total) périodes"
             return searching ? "\(visible) sur \(totalLabel)" : totalLabel
+        }
+
+        /// « Page web » rather than the Swift identifier « webPage ».
+        static func resourceKindLabel(_ kind: ComputerHistoryResourceKind) -> String {
+            switch kind {
+            case .file: return "Fichier"
+            case .webPage: return "Page web"
+            case .conversation: return "Conversation"
+            case .issue: return "Ticket"
+            case .document: return "Document"
+            case .terminalSession: return "Session de terminal"
+            case .application: return "Application"
+            case .unknown: return "Ressource inconnue"
+            }
+        }
+
+        static func tenMinuteSummary(count: Int) -> String {
+            "\(GoalongUIFormat.count(count, "période")) de dix minutes. Ouvrez une période pour voir ses détails."
+        }
+
+        static func retainedEpisodesLabel(_ count: Int) -> String {
+            GoalongUIFormat.count(count, "épisode représentatif conservé", plural: "épisodes représentatifs conservés")
+        }
+
+        static func retainedResourcesLabel(_ count: Int) -> String {
+            GoalongUIFormat.count(count, "lien source représentatif conservé", plural: "liens sources représentatifs conservés")
+        }
+
+        static func provenanceLabel(events: Int, sequences: Int, confidence: Int) -> String {
+            "Preuves : \(GoalongUIFormat.count(events, "identifiant d’événement", plural: "identifiants d’événements")) · "
+                + "\(GoalongUIFormat.count(sequences, "séquence d’intégrité", plural: "séquences d’intégrité")) · "
+                + "confiance \(GoalongUIFormat.percent(confidence))"
         }
 
         /// With an empty timeline, one place explains why. The timeline card does it for a day without
@@ -870,8 +916,7 @@
             case .available:
                 break
             }
-            let windows = GoalongUIFormat.number(tenMinuteGroups.count)
-            let summary = "\(windows) périodes de dix minutes. Ouvrez une période pour voir ses détails."
+            let summary = ComputerHistoryPageCopy.tenMinuteSummary(count: tenMinuteGroups.count)
             return model.isAnalysisPartial ? partialAnalysisNotice + " " + summary : summary
         }
 
@@ -1326,14 +1371,14 @@
             else {
                 return "Travail chronologique, par tâche"
             }
-            return "\(retained) épisodes représentatifs conservés"
+            return ComputerHistoryPageCopy.retainedEpisodesLabel(retained)
         }
 
         private func resourceCoverageDetail(_ memory: ComputerHistoryDayMemory) -> String {
             guard let retained = memory.coverage.retainedResourceCount else {
                 return "Fichiers, pages, conversations et tickets"
             }
-            return "\(retained) liens sources représentatifs conservés"
+            return ComputerHistoryPageCopy.retainedResourcesLabel(retained)
         }
 
         private func episodes(_ memory: ComputerHistoryDayMemory) -> some View {
@@ -1565,7 +1610,7 @@
             _ resource: ComputerHistoryResourceReference
         ) -> String {
             let percentage = ConfidencePercent.whole(resource.locatorConfidence)
-            return "\(resource.kind.rawValue) · confiance \(percentage)\u{00A0}%"
+            return "\(ComputerHistoryPageCopy.resourceKindLabel(resource.kind)) · confiance \(percentage)\u{00A0}%"
         }
     }
 
@@ -1871,7 +1916,10 @@
                             }
                         }
                         Text(
-                            "Preuves : \(episode.provenance.sourceEventIDs.count) identifiants d’événements · \(episode.provenance.sourceSequences.count) séquences d’intégrité · confiance \(GoalongUIFormat.percent(ConfidencePercent.whole(episode.statusConfidence)))"
+                            ComputerHistoryPageCopy.provenanceLabel(
+                                events: episode.provenance.sourceEventIDs.count,
+                                sequences: episode.provenance.sourceSequences.count,
+                                confidence: ConfidencePercent.whole(episode.statusConfidence))
                         )
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
