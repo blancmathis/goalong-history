@@ -198,8 +198,15 @@ extension Notification.Name {
     }
 
     /// Forgets the agent's verdicts (corrections stay) so every context is classified again.
+    /// Contexts filed under the task of an open « tâche » commitment stay: the agent could file them
+    /// under another name, and the commitment, which finds its task by name, would measure 0.
     func forgetAgentVerdicts() {
-        document.entries = document.entries.filter { $0.value.byOwner }
+        let committed = committedTasks()
+        document.entries = document.entries.filter { _, entry in
+            entry.byOwner || entry.task.map { task in
+                committed.contains { $0.localizedCaseInsensitiveCompare(task) == .orderedSame }
+            } == true
+        }
         publish(); persist()
     }
 
