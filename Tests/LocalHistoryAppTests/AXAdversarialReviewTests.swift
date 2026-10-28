@@ -244,6 +244,21 @@ final class AXAdversarialReviewTests: XCTestCase {
         try rig.recorder.closeAndWait()
     }
 
+    func testSecureInputWithoutPriorSnapshotUsesTheSlowSecureInputCadence() throws {
+        richConsent(false)
+        let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+        let provider = ContextProvider(client: tree.client, parameters: { params })
+        let monitor = contextMonitor(rig, provider, hostGate: HostCaptureGate(sessionAvailable: { true }, secureInput: { true }))
+        monitor.configureForAdversarialReview(blocking: false, polling: true)
+        let done = expectation(description: "suppressed sample")
+        monitor.sampleNow { _ in done.fulfill() }
+        wait(for: [done], timeout: 3)
+        let delay = try XCTUnwrap(monitor.pollDelayForAdversarialReview)
+        monitor.configureForAdversarialReview(blocking: false, polling: false)
+        XCTAssertGreaterThan(delay, 0.9, "Secure Input polls at its 1-5 s step, not at the 0.65 s capture pace")
+        try rig.recorder.closeAndWait()
+    }
+
     func testInjectedUnavailableSessionGateReturnsNilAndMarksObservationGap() throws {
         richConsent(false)
         let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
