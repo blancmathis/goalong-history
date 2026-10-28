@@ -115,5 +115,23 @@ final class GoalongWebsiteAutoSenderH11Tests: XCTestCase {
         XCTAssertFalse(uncertain.enabled)
         XCTAssertTrue(try XCTUnwrap(uncertain.pauseReason).contains("historique du site"))
     }
+    /// H12-01: a local check inside the real send fails before any request leaves (token file gone,
+    /// account changed, exclusions changed). Nothing left this Mac: no site-history advice, the day stays to send.
+    @MainActor func testLocalFailureInsideTheRealSendSaysNothingWasSent() async throws {
+        let root = hermeticDataRoot()
+        let (defaults, suite) = try scheduled("send-local", root: root) {
+            $0.tokenPath = root.appendingPathComponent("missing-token").path
+            $0.lastAttempt = "2026-09-11"; $0.lastSuccess = "2026-09-11"
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, _, _ in Data() },
+            sourceConsent: { _ in true }, sharingRulesReadable: { true })
+        await scheduler.tick(now: ISO8601DateFormatter().date(from: "2026-09-13T15:00:00Z")!)
+        XCTAssertFalse(scheduler.enabled)
+        let reason = try XCTUnwrap(scheduler.pauseReason)
+        XCTAssertFalse(reason.contains("historique du site"), reason)
+        XCTAssertTrue(reason.contains("Rien n’a été envoyé"), reason)
+        XCTAssertEqual(scheduler.savedConfiguration?.lastAttempt, "2026-09-11", "Nothing left this Mac: the day is not marked as tried")
+    }
 }
 #endif

@@ -188,7 +188,8 @@ public enum GoalongSiteSubmission {
     }
 
     public static func send(payload: Data, origin: String, tokenFile: URL, expectedTokenFingerprint: String? = nil,
-                            privacyRoot: URL = GoalongOutgoingPrivacy.defaultRoot, expectedPrivacyRevision: String? = nil) throws -> Data {
+                            privacyRoot: URL = GoalongOutgoingPrivacy.defaultRoot, expectedPrivacyRevision: String? = nil,
+                            willSend: () -> Void = {}) throws -> Data {
         try GoalongDevServerDisabledError.check()
         let pauseTicket = try GoalongGlobalPause.admit(in: privacyRoot)
         guard !payload.isEmpty, payload.count <= 2 * 1024 * 1024 else {
@@ -220,6 +221,8 @@ public enum GoalongSiteSubmission {
             throw GoalongSiteExportError.invalid("Les exclusions ont changé juste avant l’envoi. Refaites l’aperçu.")
         }
         try GoalongGlobalPause.revalidate(pauseTicket, in: privacyRoot)
+        // Every check above is local: an error thrown before this point means nothing left this Mac.
+        willSend()
         session.dataTask(with: requestForNewSubmission(payload: payload, endpoint: destination, token: token)).resume()
         guard delegate.finished.wait(timeout: .now() + 35) == .success else {
             throw GoalongSiteExportError.localized("Upload timed out. Check the site's import history before retrying; receipt status is unknown.", french: "L’envoi a expiré. Vérifiez l’historique d’import du site avant de réessayer ; on ne sait pas s’il a été reçu.")

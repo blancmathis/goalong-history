@@ -280,13 +280,16 @@ import LocalHistoryCore
             _ = try await Task.detached {
                 try GoalongGlobalPause.revalidate(pause.revision, in: root)
                 _ = try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: snapshot.privacyRevision)
+                // Local checks of the send (token file, account, exclusions) fail before any request: nothing left.
+                var dispatched = sender != nil
                 do {
                     if let sender { return try sender(payload, snapshot.origin, URL(fileURLWithPath: snapshot.tokenPath), snapshot.credentialFingerprint) }
                     return try GoalongSiteSubmission.send(payload: payload, origin: snapshot.origin,
                         tokenFile: URL(fileURLWithPath: snapshot.tokenPath), expectedTokenFingerprint: snapshot.credentialFingerprint,
-                        privacyRoot: root, expectedPrivacyRevision: snapshot.privacyRevision)
+                        privacyRoot: root, expectedPrivacyRevision: snapshot.privacyRevision, willSend: { dispatched = true })
                 } catch let error as GoalongSiteSubmissionError { throw error }
                 catch let error as GoalongGlobalPause.PauseError { throw error }
+                catch where !dispatched { throw error }
                 catch { throw ReceiptUncertain(underlying: error) }
             }.value
             guard enabled, configuration()?.identifier == snapshot.identifier else { return }
