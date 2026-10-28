@@ -65,6 +65,8 @@ import LocalHistoryQueryCLI
     /// Last end written to `guard-until` (spec K); a deleted file is rewritten while a severe block runs.
     private var guardMarker: Date?? = .none
     private let guardClient: GoalongGuardClienting?
+    /// The launch-at-login notice last shown in `error`: cleared there once the component is fine again.
+    private var protectionNotice: String?
     private var lastGood: BlockingDocument?
     private var lastObservation: BlockingObservation?
     private var unreadableSince: [Int32: Date] = [:]
@@ -958,6 +960,9 @@ import LocalHistoryQueryCLI
                 default: message = nil
                 }
                 if let message, error != message { error = message }
+                // The notice goes with its cause; any other message stays.
+                if message == nil, let shown = protectionNotice, error == shown { error = nil }
+                protectionNotice = message
             }
             backend.updateFreeze(freeze.map { var value = $0; value.start = wallFrame(value.start); value.end = wallFrame(value.end); return value })
         }
@@ -1485,7 +1490,7 @@ import LocalHistoryQueryCLI
         if enabled, controller == nil {
             let guardClient = GoalongGuardClient.standard()
             let value = BlockingController(store: .standard, backend: StandardBlockingBackend(), runsTimers: true,
-                                           guardClient: guardClient)
+                                           guardClient: guardClient ?? GoalongGuardMissing.make())
             // From now on this process may lower or remove `guard-until` (an installed copy only).
             if guardClient != nil { GoalongGuardFiles.reportHealth() }
             controller = value

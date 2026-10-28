@@ -235,12 +235,20 @@ import XCTest
         private let lock = NSLock()
         private var reads = 0, registers = 0, unregisters = 0
         var current: SMAppService.Status = .requiresApproval
+        /// unregister() throws and leaves the status; otherwise `removes` makes it `.notRegistered`.
+        var unregisterFails = false, removes = false
         var statusReads: Int { lock.withLock { reads } }
         var registerCalls: Int { lock.withLock { registers } }
         var unregisterCalls: Int { lock.withLock { unregisters } }
         var status: SMAppService.Status { lock.withLock { reads += 1; return current } }
         func register() throws { lock.withLock { registers += 1 } }
-        func unregister() throws { lock.withLock { unregisters += 1 } }
+        func unregister() throws {
+            try lock.withLock {
+                unregisters += 1
+                if unregisterFails { throw CocoaError(.featureUnsupported) }
+                if removes { current = .notRegistered }
+            }
+        }
     }
 
     private final class Flag: @unchecked Sendable {
@@ -511,6 +519,126 @@ import XCTest
         XCTAssertFalse(allowed("/Applications/Goalong Dev.app", ["CFBundleIdentifier": "ai.goalong.localhistory.dev"]),
                        "the dev id without its channel would use the release data folder")
         XCTAssertFalse(allowed("/Applications/xctest", release))
+        XCTAssertFalse(allowed("/Volumes/Goalong/Goalong History.app", release), "a disk image or an external volume")
+        XCTAssertFalse(allowed("/Users/someone/Downloads/Goalong History.app", release))
+    }
+
+    /// H34-G2: a member's copy outside Applications has no guard. A severe block still starts; « Niveau »
+    /// says why it would not survive a forced quit, never the banner.
+    func testACopyOutsideApplicationsWarnsButStillLocks() throws {
+        XCTAssertNil(GoalongGuardMissing.make(identity: nil), "a test runner or a foreign bundle: no guard at all")
+        let identity = GuardIdentity(bundleIdentifier: "ai.goalong.localhistory", channel: nil)!
+        let missing = try XCTUnwrap(GoalongGuardMissing.make(identity: identity))
+        XCTAssertFalse(missing.needsConsent)
+        XCTAssertFalse(missing.canRemove)
+        let store = try store()
+        try store.save(BlockingDocument(lists: [list], sessions: [session(.locked)]))
+        let c = BlockingController(clock: { [now] in now }, store: store, continuous: { [now] in now.timeIntervalSince1970 },
+                                   guardClient: missing)
+        c.refresh()
+        XCTAssertNotNil(c.severeUntil, "the lock is not refused")
+        XCTAssertEqual(c.protection.guardian, .failed(GoalongGuardMissing.reason))
+        XCTAssertEqual(c.protection.level, .standard)
+        XCTAssertEqual(BlockingProtectionDetails.levelHelp(c.protection), GoalongGuardMissing.reason)
+        XCTAssertNil(c.error)
+        XCTAssertEqual(missing.update(severeUntil: nil), .notInstalled, "nothing to say without a severe block")
+    }
+
+    /// H34-G1: the guard's own words stay under « Niveau » and go when it answers again.
+    func testAGuardFailureNeverReachesTheBanner() throws {
+        let (c, client, _) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked)])) { [now] in now }
+        client.answer = .failed(GuardEscalation.unreachable)
+        c.refresh()
+        XCTAssertEqual(BlockingProtectionDetails.levelHelp(c.protection), GuardEscalation.unreachable)
+        XCTAssertNil(c.error)
+        client.answer = .running
+        c.refresh()
+        XCTAssertNil(BlockingProtectionDetails.levelHelp(c.protection))
+        XCTAssertNil(c.error)
+    }
+
+    /// H34-G3: a removal that leaves the service registered says so, under « Niveau »; a later success clears it.
+    func testAFailedRemovalIsShownAndKeepsTheService() {
+        let service = FakeService(); service.current = .enabled; service.unregisterFails = true
+        let client = client(service)
+        settle { client.canRemove }
+        client.removeService()
+        settle { !client.isWorking }
+        XCTAssertEqual(service.unregisterCalls, 1)
+        XCTAssertTrue(client.canRemove, "still registered")
+        XCTAssertEqual(client.update(severeUntil: nil), .failed(GoalongGuardClient.removalFailed))
+        service.unregisterFails = false; service.removes = true
+        client.removeService()
+        settle { !client.isWorking }
+        XCTAssertFalse(client.canRemove)
+        XCTAssertEqual(client.update(severeUntil: nil), .notInstalled)
+    }
+
+    /// H34-G3: a removal while a BTM call is in flight is ignored, never raced with it.
+    func testARemovalDuringWorkIsIgnored() {
+        let service = FakeService(); service.current = .enabled
+        let client = client(service)
+        XCTAssertTrue(client.isWorking, "the status read at launch")
+        client.removeService()
+        settle { client.canRemove }
+        settle { false }
+        XCTAssertEqual(service.unregisterCalls, 0)
+    }
+
+    /// H34-G3: the block ends before a queued registration runs: nothing is registered.
+    func testADisarmBeforeRegistrationRegistersNothing() {
+        let service = FakeService(); service.current = .notRegistered
+        let client = client(service)
+        settle { !client.isWorking }
+        _ = client.update(severeUntil: Date().addingTimeInterval(600))
+        XCTAssertTrue(client.isWorking)
+        _ = client.update(severeUntil: nil)  // the queue waits for the main thread: still before register()
+        settle { !client.isWorking }
+        settle { false }
+        XCTAssertEqual(service.registerCalls, 0)
+    }
+
+    /// H34-G3: the block ends during the kickstart: the round never re-registers.
+    func testADisarmDuringARoundNeverReregisters() {
+        final class Holder: @unchecked Sendable { weak var client: GoalongGuardClient? }
+        let service = FakeService(); service.current = .enabled
+        let holder = Holder()
+        let probes = GuardLaunchProbes(ping: { .unreachable }, resumeStoppedGuards: { false }, kickstart: {
+            DispatchQueue.main.sync { MainActor.assumeIsolated { _ = holder.client?.update(severeUntil: nil) } }
+            return 0
+        })
+        let identity = GuardIdentity(bundleIdentifier: "ai.goalong.localhistory.dev", channel: "dev")!
+        let defaults = UserDefaults(suiteName: "goalong-guard-client-tests-" + UUID().uuidString)!
+        let client = GoalongGuardClient(identity: identity, defaults: defaults, overrideActive: { false },
+                                        service: service, probes: probes, pingInterval: 0)
+        holder.client = client
+        settle { client.canRemove }
+        _ = client.update(severeUntil: Date().addingTimeInterval(600))
+        settle { !client.isWorking }
+        XCTAssertEqual(service.unregisterCalls, 0)
+        XCTAssertEqual(service.registerCalls, 0)
+    }
+
+    /// H34-L2: `--unregister-guard` exits 0 only when the service is gone.
+    func testUnregisterCommandReportsAServiceThatStays() {
+        let stays = FakeService(); stays.current = .enabled; stays.unregisterFails = true
+        XCTAssertEqual(GuardUnregisterCommand.unregister(stays), GuardUnregisterCommand.failedExitCode)
+        let silent = FakeService(); silent.current = .enabled
+        XCTAssertEqual(GuardUnregisterCommand.unregister(silent), GuardUnregisterCommand.failedExitCode, "no throw, still enabled")
+        let gone = FakeService(); gone.current = .enabled; gone.removes = true
+        XCTAssertEqual(GuardUnregisterCommand.unregister(gone), 0)
+        let never = FakeService(); never.current = .notRegistered
+        XCTAssertEqual(GuardUnregisterCommand.unregister(never), 0)
+        XCTAssertEqual(never.unregisterCalls, 0)
+        XCTAssertNotEqual(GuardUnregisterCommand.failedExitCode, 0)
+        XCTAssertNotEqual(GuardUnregisterCommand.failedExitCode, GuardUnregisterCommand.refusedExitCode)
+    }
+
+    /// H34-L1 / L3: the consent does not promise a single notice; an unreachable guard says what to do.
+    func testGuardCopyIsHonestAndActionable() {
+        XCTAssertFalse(GuardConsent.text.contains("une fois"))
+        XCTAssertTrue(GuardConsent.text.contains("peut l’annoncer de nouveau après une mise à jour"))
+        XCTAssertTrue(GuardEscalation.unreachable.contains("Réglages Système › Général › Ouverture"))
     }
 
     func testUnregisterIsRefusedDuringASevereBlockUnlessOverridden() {
