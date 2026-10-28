@@ -2,6 +2,7 @@
     import AgentActivity
     import Combine
     import Foundation
+    import LocalHistoryCore
     import XCTest
     @testable import LocalHistoryApp
 
@@ -635,6 +636,59 @@
             runtime.detectCommonSources()
             runtime.stop()
             XCTAssertEqual(runtime.alert?.message, "Aucune nouvelle source locale n’a été trouvée.")
+        }
+
+        func testDetectWhileNotStartedExplainsWhyAndAddsNothing() throws {
+            let fixture = try makeFixture("detect-not-started")
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let root = fixture.container.appendingPathComponent("Home/.codex", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let discovered = defaultFolder(path: root, provider: .codex)
+            let runtime = try AgentActivityRuntime(
+                rootDirectory: fixture.metadata,
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                sourceDiscovery: { [discovered] in [discovered] },
+                pauseRoot: fixture.container.appendingPathComponent("pause", isDirectory: true),
+                onCaptured: { _ in }
+            )
+            let before = runtime.configuration
+            // Never started: same state as global pause or unreadable configuration (fail-closed).
+            runtime.detectCommonSources()
+            XCTAssertEqual(runtime.alert?.title, "Détection indisponible")
+            XCTAssertEqual(
+                runtime.alert?.message,
+                "Le suivi des agents n’est pas actif — activez la lecture des conversations locales pour détecter des sources."
+            )
+            XCTAssertEqual(runtime.configuration, before)
+        }
+
+        func testDetectWhilePausedSaysPausedAndAddsNothing() throws {
+            let fixture = try makeFixture("detect-paused")
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let root = fixture.container.appendingPathComponent("Home/.codex", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            // Temporary pause folder: the user's real global-pause.json is never read or written.
+            let pauseRoot = fixture.container.appendingPathComponent("pause", isDirectory: true)
+            try FileManager.default.createDirectory(at: pauseRoot, withIntermediateDirectories: true)
+            var paused = GoalongGlobalPause()
+            paused.paused = true
+            try JSONEncoder().encode(paused).write(to: GoalongGlobalPause.file(in: pauseRoot))
+            let discovered = defaultFolder(path: root, provider: .codex)
+            let runtime = try AgentActivityRuntime(
+                rootDirectory: fixture.metadata,
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                performInitialDiscovery: false,
+                sourceDiscovery: { [discovered] in [discovered] },
+                pauseRoot: pauseRoot,
+                onCaptured: { _ in }
+            )
+            runtime.start()
+            let before = runtime.configuration
+            runtime.detectCommonSources()
+            XCTAssertEqual(runtime.alert?.title, "Détection indisponible")
+            XCTAssertEqual(runtime.alert?.message, "Suivi en pause — reprenez le suivi pour détecter des sources.")
+            XCTAssertEqual(runtime.configuration, before)
+            XCTAssertFalse(runtime.configuration.watchedFolders.contains(where: { $0.id == discovered.id }))
         }
 
         func testDetectWithANewSourceStillReportsAddition() throws {
