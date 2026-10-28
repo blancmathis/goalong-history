@@ -770,6 +770,7 @@ extension ConcentrationController {
     private func saveCommitmentValues(_ values: [FocusCommitment]) throws {
         var retained = values
         try saving { retained = try store.saveCommitments(values) }; commitments = retained
+        NotificationCenter.default.post(name: .goalongFocusCommitmentsDidChange, object: self)
     }
     /// In the wall frame of this controller: Blocking keeps its ends in its trusted frame.
     private func stakeBlockEnd(_ value: FocusCommitment) -> Date? {
