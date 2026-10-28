@@ -67,6 +67,12 @@ struct FocusPanel: Equatable {
     /// boot still cannot open a period already over (T-044 C3, #109). Stored, so a relaunch in the same
     /// boot keeps the proof of an earlier launch (C4-03).
     private var launchClock: BlockingClockState
+    /// Latest wall clock set back within `bootCorrectionWindow` of boot (T-044 C5-05). Proof recorded
+    /// before it no longer counts: it came from a clock that was ahead.
+    private var clockCorrection: BlockingClockState?
+    /// A clock ahead at boot is set right by the network within minutes. In this window a set-back opens
+    /// nothing a reboot would not (L-05), so it is believed. Later, a set-back stays caught (#109, #119).
+    static let bootCorrectionWindow: Double = 600
     private let calendar: Calendar
     private let blocking: () -> BlockingController?
     private let audio: FocusSessionAudio
@@ -123,6 +129,7 @@ struct FocusPanel: Equatable {
         let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day
         status = FocusStatus(since: clock()); plan = FocusPlan(day: day); promptState = FocusPromptState(day: day)
         try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
+        clockCorrection = (try? store.clockCorrection()).flatMap { $0.boot == launchClock.boot ? $0 : nil }
         if let proven = FocusCommitRule.anchoredNow(try? store.clockAnchor(), clock: launchClock), proven > launchClock.wall {
             launchClock.wall = proven
         }
@@ -531,6 +538,7 @@ struct FocusPanel: Equatable {
         showPanel(.init(kind: .limit, text: mark.kind == "endOfDay" ? "Fin de journée — votre limite." : "\(mark.kind == "weekly" ? settings.limits.weeklyHours ?? 0 : settings.limits.dailyHours ?? 0) h \(mark.usesActiveTime ? "d’activité (sans définition du travail)" : "de travail") — votre limite."))
     }
     func refresh() {
+        acceptBootClockCorrection()
         if storageFailed, clock().throttleElapsed(since: lastStorageRetry) >= 60 { retryStorage() }
         if phaseBlockID != nil || commitments.contains(where: { $0.result?.stake.state == .applied }) { blocking()?.refresh(enforceLast: false) }
         let now = clock(), day = FocusCalendar.dayKey(now, calendar: calendar)
@@ -781,7 +789,20 @@ extension ConcentrationController {
     /// Latest moment proven by continuous time since a stored anchor or the launch of this boot (T-044 C2-02).
     private func realNow() -> Date? {
         let state = clockState()
-        return (commitments.flatMap { [$0.createdClock, $0.result?.settledClock] } + [launchClock]).compactMap { FocusCommitRule.anchoredNow($0, clock: state) }.max()
+        return (commitments.flatMap { [$0.createdClock, $0.result?.settledClock] } + [launchClock])
+            .compactMap { $0 }.filter { a in clockCorrection.map { a.boot != $0.boot || a.continuous >= $0.continuous } ?? true }
+            .compactMap { FocusCommitRule.anchoredNow($0, clock: state) }.max()
+    }
+    /// C5-05: a wall clock found behind the proven time within `bootCorrectionWindow` of boot is a clock
+    /// that was ahead and is now right. What was already decided stays latched (edit window, exits,
+    /// results, and Blocking's own trusted clock); only what comes next reads the corrected time.
+    private func acceptBootClockCorrection() {
+        let state = clockState()
+        guard state.continuous <= Self.bootCorrectionWindow, let proven = realNow(), state.wall < proven.addingTimeInterval(-60) else { return }
+        try? latchCommitmentLocks()
+        clockCorrection = state; launchClock = state
+        try? store.saveClockCorrection(state); try? store.saveClockAnchor(state)
+        lastCommitmentCardRefresh = .distantPast
     }
     func commitmentProgress(_ value: FocusCommitment) throws -> FocusCommitmentProgress {
         if let result = value.result {
