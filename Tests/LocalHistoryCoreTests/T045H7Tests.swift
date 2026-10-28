@@ -26,4 +26,41 @@ final class T045H7Tests: XCTestCase {
         XCTAssertEqual(names, ["2026-10-28.jsonl"])
         XCTAssertEqual(store.read(day: noon, calendar: calendar(.buddhist)).fileChanges, 3)
     }
+
+    /// A write cut short (disk full, crash) leaves a torn last line. The other calls of the day stay readable,
+    /// and the next call starts on its own line instead of being glued to the fragment.
+    func testTornCallLineKeepsTheDayReadableAndTheNextCallIsKept() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("t045h7-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let first = GoalongCallInterval(start: noon, end: noon.addingTimeInterval(600), bundleIdentifier: "us.zoom.xos",
+                                        application: "Zoom", microphone: true, camera: true)
+        try GoalongCallStore.save(first, root: root)
+        let file = root.appendingPathComponent("calls/" + GoalongSystemSourceFiles.dayKey(noon) + ".jsonl")
+        let handle = try FileHandle(forWritingTo: file); try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"start":"2026-10-28T11:2"#.utf8)); try handle.close()
+
+        let second = GoalongCallInterval(start: noon.addingTimeInterval(3600), end: noon.addingTimeInterval(4200), bundleIdentifier: "com.apple.FaceTime",
+                                         application: "FaceTime", microphone: true, camera: false)
+        try GoalongCallStore.save(second, root: root)
+
+        let lane = GoalongCallStore.load(root: root, day: noon, enabled: true)
+        XCTAssertEqual(lane.status, .partial)
+        XCTAssertEqual(lane.intervals.map(\.application), ["Zoom", "FaceTime"])
+    }
+
+    func testTornDeveloperLineDoesNotSwallowTheNextBucket() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("t045h7-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = GoalongDeveloperStore(root: root)
+        func bucket(_ files: Int) -> GoalongFileModificationBucket {
+            GoalongFileModificationBucket(projectID: String(repeating: "b", count: 64), start: noon, modifiedFiles: files, estimated: false, lastEventID: 1)
+        }
+        try store.append([bucket(2)], day: noon)
+        let file = root.appendingPathComponent("developer/" + GoalongSystemSourceFiles.dayKey(noon) + ".jsonl")
+        let handle = try FileHandle(forWritingTo: file); try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"projectID":"bb"#.utf8)); try handle.close()
+        try store.append([bucket(5)], day: noon)
+        XCTAssertEqual(store.read(day: noon).fileChanges, 5)
+    }
 }
