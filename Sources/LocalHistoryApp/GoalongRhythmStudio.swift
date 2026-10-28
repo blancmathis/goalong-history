@@ -89,6 +89,7 @@ import SwiftUI
         do {
             let data = try GoalongSiteAnalysisRequest.readSelectedBytes(url)
             result = try GoalongContextualRhythm.apply(GoalongContextualRhythm.parseAnnotation(data), to: selected)
+            error = nil
             interpretation = result?.interpretation ?? ""; status = "Réponse de votre agent importée. Relisez-la avant l’envoi."
         } catch { self.error = GoalongUserFacingError.message(error) }
     }

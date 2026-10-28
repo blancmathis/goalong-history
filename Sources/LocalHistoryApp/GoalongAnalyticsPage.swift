@@ -345,13 +345,13 @@ struct GoalongAnalyticsPage: View {
         rows += systemRows(settings: settings)
         if !ai {
             rows.append(.init(id: "agents", title: "Conversations d’agents", state: .off,
-                              detail: "Codex, Claude Code et T3 Code : nombre de conversations et de demandes par projet, sans lire les messages.",
+                              detail: GoalongAgentSourceCopy.off,
                               actionTitle: "Activer…", action: settings))
         } else {
             let conversations = value.map { $0.agents.projects.reduce(0) { $0 + $1.sessions } + $0.agents.unassignedSessions }
             rows.append(.init(id: "agents", title: "Conversations d’agents", state: .ready,
                               detail: conversations.map { GoalongCodeDay.count($0, "conversation", "conversations") + " ce jour-là." }
-                                  ?? "Codex et Claude Code : nombre de conversations par projet, sans lire les messages."))
+                                  ?? GoalongAgentSourceCopy.on))
             if !developer.t3Discovered {
                 rows.append(.init(id: "t3", title: "T3 Code", state: .unavailable, detail: "T3 Code n’est pas installé sur ce Mac."))
             } else if let t3 = value?.t3 {
@@ -554,4 +554,10 @@ private struct CapsuleRing: Shape {
         path.addPath(Capsule().path(in: rect.insetBy(dx: width, dy: width)))
         return path
     }
+}
+
+/// Codex and Claude Code transcripts are read on this Mac (text of visible messages); T3 Code is read as metadata only.
+enum GoalongAgentSourceCopy {
+    static let off = "Codex, Claude Code et T3 Code : nombre de conversations et de demandes par projet. Les messages sont lus sur ce Mac et restent dans leurs fichiers."
+    static let on = "Codex et Claude Code : nombre de conversations par projet. Les messages sont lus sur ce Mac et restent dans leurs fichiers."
 }

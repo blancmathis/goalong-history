@@ -255,6 +255,15 @@ actor GoalongAnalyticsReader {
         GoalongActivityDayReader.sourceRevision(root: root, day: day, calendar: calendar)
     }
 
+    static func savedAnalysesNotice(truncated: Bool, rejected: Int) -> String? {
+        var parts: [String] = []
+        if truncated { parts.append("Seules les 64 analyses enregistrées les plus récentes sont lues.") }
+        if rejected > 0 {
+            parts.append("\(FrenchCount.count(rejected, "analyse enregistrée", "analyses enregistrées")) \(FrenchCount.word(rejected, "illisible n’est", "illisibles ne sont")) pas \(FrenchCount.word(rejected, "affichée", "affichées")).")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
     private func readCards(start: Date, end: Date) throws -> ([GoalongAnalyticsCard], String?) {
         let folder = root.appendingPathComponent("chatgpt/profile-analyses", isDirectory: true)
         guard FileManager.default.fileExists(atPath: folder.path) else { return ([], nil) }
@@ -296,8 +305,7 @@ actor GoalongAnalyticsReader {
                 for module in modules { seen.insert(context.date + "|" + module) }
             } catch { rejected += 1 }
         }
-        let notice = (visited > 512 || files.count > 64 || rejected > 0)
-            ? "Seuls les 64 jours les plus récents sont lus. Les jours plus anciens ou illisibles ne sont pas affichés." : nil
+        let notice = Self.savedAnalysesNotice(truncated: visited > 512 || files.count > 64, rejected: rejected)
         return (cards, notice)
     }
 }

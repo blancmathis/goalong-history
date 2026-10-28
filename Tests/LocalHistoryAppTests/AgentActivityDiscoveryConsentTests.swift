@@ -691,7 +691,7 @@
             XCTAssertFalse(runtime.configuration.watchedFolders.contains(where: { $0.id == discovered.id }))
         }
 
-        func testDetectWithANewSourceStillReportsAddition() throws {
+        func testDetectThatOnlyReenablesAStoppedSourceSaysReactivated() throws {
             let fixture = try makeFixture("detect-found")
             defer { try? FileManager.default.removeItem(at: fixture.container) }
             let root = fixture.container.appendingPathComponent("Home/.codex", isDirectory: true)
@@ -705,6 +705,28 @@
             )
             runtime.start()
             runtime.setFolderEnabled(false, id: discovered.id)
+            runtime.detectCommonSources()
+            runtime.stop()
+            XCTAssertEqual(runtime.alert?.message, "Les sources locales disponibles ont été réactivées.")
+        }
+
+        func testDetectWithANewSourceStillReportsAddition() throws {
+            let fixture = try makeFixture("detect-new")
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let root = fixture.container.appendingPathComponent("Home/.codex", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let discovered = defaultFolder(path: root, provider: .codex)
+            final class Box: @unchecked Sendable { var folders: [AgentWatchedFolder] = [] }
+            let box = Box()
+            let runtime = try AgentActivityRuntime(
+                rootDirectory: fixture.metadata,
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                performInitialDiscovery: false,
+                sourceDiscovery: { box.folders },
+                onCaptured: { _ in }
+            )
+            runtime.start()
+            box.folders = [discovered]
             runtime.detectCommonSources()
             runtime.stop()
             XCTAssertEqual(runtime.alert?.message, "Les sources locales disponibles ont été ajoutées.")
