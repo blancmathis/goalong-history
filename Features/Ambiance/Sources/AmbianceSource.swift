@@ -49,7 +49,10 @@ public enum AmbianceError: Error, LocalizedError {
     case diskFull(needed: Int64?)
     public var errorDescription: String? {
         switch self {
-        case .invalidPack(let detail): return "Pack invalide : \(detail)"
+        case .invalidPack(let detail):
+            // Size or SHA-256 mismatch: the file is damaged; a fresh copy usually fixes it.
+            guard ["SHA-256 incorrect", "taille incorrecte"].contains(detail) else { return "Pack invalide : \(detail)" }
+            return "Pack invalide : \(detail). Le fichier est peut-être abîmé. Téléchargez le pack à nouveau."
         case .cancelled: return "Téléchargement annulé."
         case .network: return "Connexion impossible. Vérifiez Internet puis réessayez."
         case .diskFull(let needed):
