@@ -212,6 +212,12 @@
             )
         }
 
+        /// The page's date picker writes the dashboard day and the Bilan day together.
+        @MainActor static func chooseDay(_ day: Date, model: DashboardViewModel, runtime: ChatGPTRecapRuntime) {
+            model.selectDay(day)
+            runtime.selectDay(day)
+        }
+
         private var header: some View {
             PageHeader(
                 title: "Bilan quotidien",
@@ -221,8 +227,7 @@
                 HStack(spacing: 10) {
                     // The dashboard day is the page's day (T-045 H1-01): Historique and a return here keep the choice.
                     DateSelectionControl(date: recapRuntime.selectedDay, onChange: { day in
-                        model.selectDay(day)
-                        recapRuntime.selectDay(day)
+                        Self.chooseDay(day, model: model, runtime: recapRuntime)
                     })
                     Button {
                         recapRuntime.revealRecapFiles()
