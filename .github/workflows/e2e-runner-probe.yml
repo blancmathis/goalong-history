@@ -1,7 +1,8 @@
 name: E2E runner probe (T-045)
 
 # Real end-to-end probe on a free GitHub-hosted macOS runner: build an ad-hoc signed Goalong Dev,
-# launch it on synthetic data, click three paths, and upload screenshots. Publishes nothing.
+# launch it on synthetic data, click the onboarding and one step per T-045 matrix row (lot 1),
+# and upload screenshots named by row id. Publishes nothing.
 on:
   push:
     branches: ['e2e/**']
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   probe:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -46,8 +47,8 @@ jobs:
           ls "$RUNNER_TEMP/app"
           codesign -dv "$RUNNER_TEMP/app/Goalong Dev.app" 2>&1 | head -5
 
-      - name: Drive the app (three paths, TCC probe, screenshots)
-        timeout-minutes: 15
+      - name: Drive the app (onboarding, TCC grant, lot 1 matrix rows, screenshots)
+        timeout-minutes: 45
         run: qa/e2e/runner_probe.sh "$RUNNER_TEMP/app/Goalong Dev.app" "$RUNNER_TEMP/e2e"
 
       - name: Summary

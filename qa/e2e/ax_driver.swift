@@ -1,6 +1,7 @@
 // E2E driver for GitHub-hosted macOS runners only (T-045). Never run it on a personal Mac:
 // it presses real controls in the target app.
-// Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT | status-item BUNDLE | windows BUNDLE
+// Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT [ROLE] | menu BUNDLE TOP [ITEM]
+//        | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE
 import AppKit
 import ApplicationServices
 
@@ -59,14 +60,16 @@ case "dump":
     print("dumped \(out.split(separator: "\n").count) nodes to \(args[3])")
 case "press":
     // Exact AXIdentifier first, then a title/description containing the text.
+    // An optional ROLE (e.g. AXButton) keeps a label from matching a menu item of the same name.
     let needle = args[3]
+    let role = args.count > 4 ? args[4] : ""
     for exact in [true, false] {
         for root in roots(args[2]) {
             var budget = 6000
             var hit: AXUIElement?
             _ = walk(root, budget: &budget) { e, _ in
-                let match = exact ? text(e, "AXIdentifier") == needle
-                    : [kAXTitleAttribute, kAXDescriptionAttribute].contains { text(e, $0).contains(needle) }
+                let match = (role.isEmpty || text(e, kAXRoleAttribute) == role) && (exact ? text(e, "AXIdentifier") == needle
+                    : [kAXTitleAttribute, kAXDescriptionAttribute].contains { text(e, $0).contains(needle) })
                 if match { hit = e }
                 return match
             }
@@ -78,6 +81,33 @@ case "press":
         }
     }
     print("press '\(needle)': not found"); exit(5)
+case "menu":
+    // Application menu: TOP is the menu-bar title, ITEM a prefix of the item title (submenus searched too).
+    guard let bar = attr(app(args[2]), kAXMenuBarAttribute) else { print("no menu bar"); exit(6) }
+    guard let top = children(bar as! AXUIElement).first(where: { text($0, kAXTitleAttribute) == args[3] }) else {
+        print("menu '\(args[3])' not found"); exit(5)
+    }
+    if args.count < 5 {  // No ITEM: open the menu itself.
+        let status = AXUIElementPerformAction(top, kAXPressAction as CFString)
+        print("menu '\(args[3])' opened : \(status.rawValue)"); exit(status == .success ? 0 : 4)
+    }
+    var budget = 2000
+    var hit: AXUIElement?
+    _ = walk(top, budget: &budget) { e, _ in
+        let ok = text(e, kAXRoleAttribute) == "AXMenuItem" && text(e, kAXTitleAttribute).hasPrefix(args[4])
+        if ok { hit = e }
+        return ok
+    }
+    guard let hit else { print("menu item '\(args[4])' not found"); exit(5) }
+    let status = AXUIElementPerformAction(hit, kAXPressAction as CFString)
+    print("menu '\(args[3])' > \(describe(hit)) : \(status.rawValue)")
+    exit(status == .success ? 0 : 4)
+case "status-menu":
+    guard let extras = attr(app(args[2]), "AXExtrasMenuBar") else { print("no AXExtrasMenuBar"); exit(6) }
+    guard let item = children(extras as! AXUIElement).first else { print("no status item"); exit(6) }
+    let status = AXUIElementPerformAction(item, kAXShowMenuAction as CFString)
+    print("status-menu -> \(describe(item)) : \(status.rawValue)")
+    exit(status == .success ? 0 : 4)
 case "status-item":
     guard let extras = attr(app(args[2]), "AXExtrasMenuBar") else { print("no AXExtrasMenuBar"); exit(6) }
     guard let item = children(extras as! AXUIElement).first else { print("no status item"); exit(6) }
@@ -91,5 +121,5 @@ case "windows":
         print("id=\(w[kCGWindowNumber as String] ?? "") layer=\(w[kCGWindowLayer as String] ?? "") onscreen=\(w[kCGWindowIsOnscreen as String] ?? 0) name=\(w[kCGWindowName as String] ?? "-") bounds=\(w[kCGWindowBounds as String] ?? "")")
     }
 default:
-    print("usage: ax_driver trusted | dump B F | press B TEXT | status-item B | windows B"); exit(2)
+    print("usage: ax_driver trusted | dump B F | press B TEXT [ROLE] | menu B TOP ITEM | status-item B | status-menu B | windows B"); exit(2)
 }
