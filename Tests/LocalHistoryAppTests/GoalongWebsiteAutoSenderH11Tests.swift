@@ -133,5 +133,35 @@ final class GoalongWebsiteAutoSenderH11Tests: XCTestCase {
         XCTAssertTrue(reason.contains("Rien n’a été envoyé"), reason)
         XCTAssertEqual(scheduler.savedConfiguration?.lastAttempt, "2026-09-11", "Nothing left this Mac: the day is not marked as tried")
     }
+    /// H12-02: a weekend without the Mac skips two days. Both stay named, not only the last one,
+    /// so the user never believes the first one reached the site.
+    @MainActor func testEverySkippedDayStaysNamed() async throws {
+        let root = hermeticDataRoot()
+        XCTAssertTrue(GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("capability-consent.json")).set(.appleScreenTime, enabled: true, surface: .settings))
+        let (defaults, suite) = try scheduled("weekend", root: root) { $0.lastAttempt = "2026-09-10"; $0.lastSuccess = "2026-09-10" }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var sentDays: [String] = []
+        func make() -> GoalongWebsiteAutoSender {
+            GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { root, day, options in
+                if day < "2026-09-13" { return try GoalongQueryCLI.siteExportPayload(rootDirectory: root, day: day, options: options) }
+                return Data(day.utf8)
+            }, sender: { payload, _, _, _ in sentDays.append(String(decoding: payload, as: UTF8.self)); return Data() },
+               sourceConsent: { _ in true }, sharingRulesReadable: { true })
+        }
+        let now = ISO8601DateFormatter().date(from: "2026-09-13T15:00:00Z")!
+        let scheduler = make()
+        await scheduler.tick(now: now)
+        await scheduler.tick(now: now.addingTimeInterval(60))
+        XCTAssertTrue(sentDays.isEmpty)
+        for day in ["2026-09-11", "2026-09-12"] {
+            XCTAssertTrue(scheduler.status.contains(GoalongUIFormat.day(key: day)), "\(day): \(scheduler.status)")
+            XCTAssertTrue(make().status.contains(GoalongUIFormat.day(key: day)), "\(day) after a restart")
+        }
+        await scheduler.tick(now: now.addingTimeInterval(86_400))
+        XCTAssertEqual(sentDays, ["2026-09-13"])
+        for day in ["2026-09-11", "2026-09-12"] {
+            XCTAssertTrue(scheduler.status.contains(GoalongUIFormat.day(key: day)), "\(day) with the next received day: \(scheduler.status)")
+        }
+    }
 }
 #endif
