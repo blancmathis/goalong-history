@@ -169,7 +169,7 @@ final class GoalongActivityInsightsTests: XCTestCase {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: file) }
         var definition = GoalongWorkDefinition(goals: "Goalong")
-        let store = GoalongWorkStore(fileURL: file, definition: { definition })
+        let store = GoalongWorkStore(fileURL: file, definition: { definition }, committedTasks: { [] })
         let docs = GoalongWorkContext.Label(application: "Browser", bundleIdentifier: "fixture.Browser",
                                             host: "docs.example.org", title: "Swift concurrency")
         let video = GoalongWorkContext.Label(application: "Browser", bundleIdentifier: "fixture.Browser",
@@ -192,7 +192,7 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertEqual(lstat(file.path, &status), 0); XCTAssertEqual(status.st_mode & 0o777, 0o600)
 
         definition = GoalongWorkDefinition(goals: "Goalong et Atlas")
-        let reloaded = GoalongWorkStore(fileURL: file, definition: { definition })
+        let reloaded = GoalongWorkStore(fileURL: file, definition: { definition }, committedTasks: { [] })
         XCTAssertNil(reloaded.verdicts.assignment(for: docs.key), "A new definition drops the agent's verdicts")
         XCTAssertEqual(reloaded.verdicts.assignment(for: video.key)?.byOwner, true)
         reloaded.renameTask("Veille", to: "Goalong")

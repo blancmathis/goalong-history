@@ -192,6 +192,45 @@
             XCTAssertEqual(GoalongWorkStore.openTaskNames(controller: nil, store: focus), ["Goalong"])
         }
 
+        /// D-154d review: an unreadable Concentration file read as no commitment, so the kept verdicts went
+        /// and the commitment, once readable again, measured too little. « Tout reclasser » kept its verdicts for good.
+        @MainActor func testKeptVerdictsStayWhileCommitmentsAreUnreadable() throws {
+            let root = URL(fileURLWithPath: "/private/tmp/t045-d154d-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try Data("{tronqué".utf8).write(to: root.appendingPathComponent("commitments.json"))
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: root.appendingPathComponent("commitments.json").path)
+            XCTAssertNil(GoalongWorkStore.openTaskNames(controller: nil, store: FocusStore(directory: root)))
+
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("work-\(UUID().uuidString).json")
+            defer { try? FileManager.default.removeItem(at: file) }
+            var open: [String]? = nil
+            var goals = "Goalong"
+            let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: goals) }, committedTasks: { open })
+            let xcode = GoalongWorkContext.Label(application: "Xcode", bundleIdentifier: "fixture.Xcode", host: nil, title: "Goalong")
+            let mail = GoalongWorkContext.Label(application: "Mail", bundleIdentifier: "fixture.Mail", host: nil, title: "Boîte")
+            store.merge([xcode.key: GoalongWorkAssignment(verdict: .work, task: "goalong", byOwner: false),
+                         mail.key: GoalongWorkAssignment(verdict: .work, task: "Courriels", byOwner: false)],
+                        revision: store.revision, day: "2026-10-28")
+            goals = "Atlas"
+            store.reconcileDefinition()
+            store.releaseSettledVerdicts()
+            XCTAssertEqual(store.verdicts.assignment(for: xcode.key)?.task, "goalong", "Unknown commitments keep every verdict")
+            XCTAssertEqual(store.verdicts.assignment(for: mail.key)?.task, "Courriels")
+
+            open = ["Goalong"]
+            store.releaseSettledVerdicts()
+            XCTAssertEqual(store.verdicts.assignment(for: xcode.key)?.task, "goalong", "Kept while the commitment is open")
+            XCTAssertNil(store.verdicts.assignment(for: mail.key), "Readable again: the other context is classified again")
+
+            store.merge([mail.key: GoalongWorkAssignment(verdict: .work, task: "Courriels", byOwner: false)],
+                        revision: store.revision, day: "2026-10-28")
+            store.forgetAgentVerdicts()
+            open = []
+            store.releaseSettledVerdicts()
+            XCTAssertNil(store.verdicts.assignment(for: xcode.key), "Kept by « Tout reclasser », it goes once settled")
+        }
+
         /// D-154c: clearing history during an open « travail » or « tâche » commitment erases what it measures,
         /// so it could be missed and its stake applied without a word in the confirmation.
         func testHistoryClearWarnsAboutAnOpenCommitment() throws {

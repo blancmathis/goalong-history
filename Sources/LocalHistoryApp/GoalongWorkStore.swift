@@ -27,7 +27,7 @@ extension Notification.Name {
         var seen: String
         var attempts: Int = 1
         var lastAskedDay: String? = nil
-        /// Revision of an older definition, for an agent verdict kept only for an open « tâche »
+        /// Revision under which an agent verdict was kept, past a reclassification, only for an open « tâche »
         /// commitment: it goes once that commitment settles (T-045 D-154d).
         var keptFrom: String? = nil
 
@@ -78,7 +78,8 @@ extension Notification.Name {
     private let fileURL: URL
     private let definitionSource: @MainActor () -> GoalongWorkDefinition
     /// Task names measured by an unsettled « tâche » commitment of Concentration (T-045 H3-02).
-    private let committedTasks: @MainActor () -> [String]
+    /// Nil: its file is unreadable, so any agent verdict may still be measured.
+    private let committedTasks: @MainActor () -> [String]?
     private var observer: NSObjectProtocol?
     private var commitmentObserver: NSObjectProtocol?
     /// True when an unreadable file could not be moved aside: writing would destroy it.
@@ -88,7 +89,7 @@ extension Notification.Name {
 
     init(fileURL: URL = AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongWorkStore.fileName),
          definition: @escaping @MainActor () -> GoalongWorkDefinition = { GoalongWorkDefinition(JevWorkContextStore.shared.context) },
-         committedTasks: @escaping @MainActor () -> [String] = {
+         committedTasks: @escaping @MainActor () -> [String]? = {
              GoalongWorkStore.openTaskNames(controller: ConcentrationRuntime.shared.controller, store: .standard)
          }) {
         self.fileURL = fileURL
@@ -120,8 +121,10 @@ extension Notification.Name {
 
     /// Task names of the open « tâche » commitments. With Concentration off (no controller) they are read
     /// from its saved file: they still settle, from this history, once it is on again (T-045 D-154d).
-    static func openTaskNames(controller: ConcentrationController?, store: @autoclosure () -> FocusStore) -> [String] {
-        FocusCommitmentRules.openTaskNames(controller?.commitments ?? (try? store().commitments()) ?? [])
+    /// Nil when that file cannot be read.
+    static func openTaskNames(controller: ConcentrationController?, store: @autoclosure () -> FocusStore) -> [String]? {
+        if let controller { return FocusCommitmentRules.openTaskNames(controller.commitments) }
+        return (try? store().commitments()).map(FocusCommitmentRules.openTaskNames)
     }
 
     var definition: GoalongWorkDefinition { definitionSource() }
@@ -202,7 +205,7 @@ extension Notification.Name {
     @discardableResult func renameTask(_ old: String, to new: String) -> String? {
         guard let name = GoalongWorkClassification.cleanTask(new), name != old else { return nil }
         if name.localizedCaseInsensitiveCompare(old) != .orderedSame,
-           committedTasks().contains(where: { $0.localizedCaseInsensitiveCompare(old) == .orderedSame }) {
+           committedTasks()?.contains(where: { $0.localizedCaseInsensitiveCompare(old) == .orderedSame }) == true {
             return "« \(old) » a un engagement Concentration en cours, qui suit la tâche par son nom. Renommez-la une fois l’engagement réglé."
         }
         for (key, entry) in document.entries where entry.task == old { document.entries[key]?.task = name }
@@ -216,15 +219,17 @@ extension Notification.Name {
     /// Forgets the agent's verdicts (corrections stay) so every context is classified again.
     /// Contexts filed under the task of an open « tâche » commitment stay: the agent could file them
     /// under another name, and the commitment, which finds its task by name, would measure 0.
+    /// Those kept are marked, so they are classified again once the commitment settles.
     func forgetAgentVerdicts() {
-        document.entries = keptAcrossReclassification(document.entries)
+        document.entries = Self.marked(keptAcrossReclassification(document.entries, committed: committedTasks()), keptFrom: document.revision)
         publish(); persist()
     }
 
     /// Owner corrections, plus the agent verdicts filed under the task of an open « tâche » commitment:
     /// that commitment finds its task by name and would measure 0 if they were classified again.
-    private func keptAcrossReclassification(_ entries: [String: Entry]) -> [String: Entry] {
-        let committed = committedTasks()
+    /// With unknown commitments (nil), every verdict stays.
+    private func keptAcrossReclassification(_ entries: [String: Entry], committed: [String]?) -> [String: Entry] {
+        guard let committed else { return entries }
         return entries.filter { _, entry in
             entry.byOwner || entry.task.map { task in
                 committed.contains { $0.localizedCaseInsensitiveCompare(task) == .orderedSame }
@@ -260,7 +265,8 @@ extension Notification.Name {
         let revision = definition.revision
         if revision != document.revision {
             let hadAgentVerdicts = document.entries.values.contains { !$0.byOwner }
-            document.entries = Self.marked(keptAcrossReclassification(document.entries), keptFrom: document.revision)
+            document.entries = Self.marked(keptAcrossReclassification(document.entries, committed: committedTasks()),
+                                           keptFrom: document.revision)
             document.revision = revision
             if hadAgentVerdicts || !FileManager.default.fileExists(atPath: fileURL.path) { persist() }
         }
@@ -271,8 +277,8 @@ extension Notification.Name {
     /// nothing asks the agent again about a context that already has a verdict.
     func releaseSettledVerdicts() {
         let stale = document.entries.filter { !$0.value.byOwner && $0.value.keptFrom != nil }
-        if !stale.isEmpty {
-            let kept = keptAcrossReclassification(stale)
+        if !stale.isEmpty, let committed = committedTasks() {
+            let kept = keptAcrossReclassification(stale, committed: committed)
             let released = stale.keys.filter { kept[$0] == nil }
             if !released.isEmpty {
                 for key in released { document.entries.removeValue(forKey: key) }
@@ -304,7 +310,7 @@ extension Notification.Name {
     /// Drops the oldest agent verdicts past the limit; those an open « tâche » commitment measures stay.
     private func prune() {
         guard document.entries.count > Self.maximumEntries else { return }
-        let kept = keptAcrossReclassification(document.entries)
+        let kept = keptAcrossReclassification(document.entries, committed: committedTasks() ?? [])
         let removable = document.entries.filter { kept[$0.key] == nil }
             .sorted { $0.value.seen == $1.value.seen ? $0.key < $1.key : $0.value.seen < $1.value.seen }
         for (key, _) in removable.prefix(document.entries.count - Self.maximumEntries) {
@@ -335,7 +341,7 @@ extension Notification.Name {
     /// always wins over an agent verdict, as in `merge`: the agent saw an empty file meanwhile.
     private func adopt(_ saved: Document) {
         var entries = saved.revision == document.revision ? saved.entries
-            : Self.marked(keptAcrossReclassification(saved.entries), keptFrom: saved.revision)
+            : Self.marked(keptAcrossReclassification(saved.entries, committed: committedTasks()), keptFrom: saved.revision)
         entries.merge(document.entries) { kept, current in current.byOwner || !kept.byOwner ? current : kept }
         let changed = Set(document.entries.filter { $0.value.byOwner }.keys)
         var corrections = saved.corrections.filter { !changed.contains($0.key) }
