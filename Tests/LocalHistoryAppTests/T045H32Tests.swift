@@ -39,6 +39,19 @@ import XCTest
         XCTAssertTrue(editor.contains("TextField(\"Nom de la liste\", text: $nameDraft)"))
     }
 
+    // D1: a trimmed name stays in the field; the stale snapshot must not undo it at the next close.
+    func testTrimmedNameIsNotUndoneByTheStaleSnapshot() {
+        let list = BlockList(name: "Vidéo")
+        let c = controller([list])
+        let first = BlockListEditor.commitName("Jeu ", of: list, controller: c)
+        XCTAssertEqual(first, .init(text: "Jeu"))
+        // The sheet closes before the view gets the new list: the second commit sees the old snapshot.
+        XCTAssertEqual(BlockListEditor.commitName(first.text, of: list, controller: c), .init(text: "Jeu"))
+        XCTAssertEqual(c.list(list.id)?.name, "Jeu")
+        XCTAssertEqual(BlockListEditor.commitName("  ", of: c.list(list.id)!, controller: c),
+                       .init(text: "Jeu", error: "Le nom ne peut pas être vide."))
+    }
+
     // D2: ask the app to quit; if it stays open (a save dialog), hide it. Never force-quit.
     func testBlockedAppThatStaysOpenIsHiddenNeverKilled() throws {
         let app = H32App()
