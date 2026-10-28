@@ -4,8 +4,8 @@ import Combine
 import LocalHistoryQueryCLI
 import LocalHistoryCore
 
-/// A local, explicitly enabled schedule. No daemon, collection, audience change or
-/// backfill is performed. Future text is never authorized by a past paragraph index.
+/// A local, explicitly enabled schedule. No daemon, collection or audience change. Missed days
+/// are caught up at most 3 days back. Future text is never authorized by a past paragraph index.
 @MainActor final class GoalongWebsiteAutoSender: ObservableObject {
     static let shared = GoalongWebsiteAutoSender()
     @Published private(set) var enabled = false
@@ -51,6 +51,10 @@ import LocalHistoryCore
     /// Network failures for one day. In memory only: a restart allows a fresh try.
     private var networkRetry: (day: String, failures: Int, notBefore: Date)?
     private let sharingRulesReadable: () -> Bool
+    /// A day skipped because no record was saved. Shown until the next received day names it too.
+    private var missingDayNotice: String?
+    /// The send started: the site may have received the day. Other errors are local, nothing left this Mac.
+    private struct ReceiptUncertain: Error { let underlying: Error }
 
     static func sourcesAllowed(_ options: GoalongSiteExportOptions) -> Bool {
         GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)
@@ -261,8 +265,12 @@ import LocalHistoryCore
             let root = root, exporter = exporter, sender = sender, snapshot = current
             let payload = try await Task.detached { try exporter(root, day, snapshot.options) }.value
             guard enabled, configuration()?.identifier == snapshot.identifier,
-                  configuration()?.origin == snapshot.origin, configuration()?.tokenPath == snapshot.tokenPath else { return }
+                  configuration()?.origin == snapshot.origin, configuration()?.tokenPath == snapshot.tokenPath else {
+                // Paused or changed during the preparation: nothing was sent, so the day stays to send.
+                restoreAttempt(previousAttempt, of: current); return
+            }
             guard sourceConsent(snapshot.options) else {
+                restoreAttempt(previousAttempt, of: current)
                 stopAutomatically("Synchronisation arrêtée : une source est désactivée."); return
             }
             try GoalongGlobalPause.revalidate(pause.revision, in: root)
@@ -271,10 +279,14 @@ import LocalHistoryCore
             _ = try await Task.detached {
                 try GoalongGlobalPause.revalidate(pause.revision, in: root)
                 _ = try GoalongOutgoingPrivacy.validate(payload, root: root, expectedRevision: snapshot.privacyRevision)
-                if let sender { return try sender(payload, snapshot.origin, URL(fileURLWithPath: snapshot.tokenPath), snapshot.credentialFingerprint) }
-                return try GoalongSiteSubmission.send(payload: payload, origin: snapshot.origin,
-                    tokenFile: URL(fileURLWithPath: snapshot.tokenPath), expectedTokenFingerprint: snapshot.credentialFingerprint,
-                    privacyRoot: root, expectedPrivacyRevision: snapshot.privacyRevision)
+                do {
+                    if let sender { return try sender(payload, snapshot.origin, URL(fileURLWithPath: snapshot.tokenPath), snapshot.credentialFingerprint) }
+                    return try GoalongSiteSubmission.send(payload: payload, origin: snapshot.origin,
+                        tokenFile: URL(fileURLWithPath: snapshot.tokenPath), expectedTokenFingerprint: snapshot.credentialFingerprint,
+                        privacyRoot: root, expectedPrivacyRevision: snapshot.privacyRevision)
+                } catch let error as GoalongSiteSubmissionError { throw error }
+                catch let error as GoalongGlobalPause.PauseError { throw error }
+                catch { throw ReceiptUncertain(underlying: error) }
             }.value
             guard enabled, configuration()?.identifier == snapshot.identifier else { return }
             current.lastSuccess = day
@@ -282,6 +294,15 @@ import LocalHistoryCore
             lastSuccess = day
             networkRetry = nil
             status = "Journée du \(GoalongUIFormat.day(key: day)) reçue · prochain envoi après \(Self.timeLabel(current))."
+                + (missingDayNotice.map { " " + $0 } ?? "")
+            missingDayNotice = nil
+        } catch where GoalongQueryCLI.isMissingSavedDay(error) {
+            // Mac off or Goalong closed that day: no record, and none will come later. Send nothing
+            // (never an invented zero), keep the day marked as tried, and keep the plan running.
+            networkRetry = nil
+            let notice = "Aucun relevé enregistré pour le \(GoalongUIFormat.day(key: day)) (Mac éteint ou Goalong fermé) : rien n’a été envoyé pour ce jour."
+            missingDayNotice = notice
+            status = notice + " L’envoi quotidien continue."
         } catch GoalongSiteSubmissionError.unreachable {
             // Nothing reached the site: try the same day again later, a few times.
             restoreAttempt(previousAttempt, of: current)
@@ -299,10 +320,19 @@ import LocalHistoryCore
             markAccessRefused(fingerprint: current.credentialFingerprint)
             stopAutomatically(Self.accessRefusedReason)
             NotificationCenter.default.post(name: .goalongWebsiteAccessRefused, object: nil)
+        } catch let failure as ReceiptUncertain {
+            // The request may have reached the site: never resend by itself.
+            SupportDiagnostics.shared.failure(failure.underlying, component: .sharing)
+            stopAutomatically("Synchronisation en pause : \(Self.sentence(failure.underlying)). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre.")
         } catch {
+            // A local step failed before the send: nothing left this Mac, the day stays to send.
             SupportDiagnostics.shared.failure(error, component: .sharing)
-            stopAutomatically("Synchronisation en pause : \(goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre.")
+            restoreAttempt(previousAttempt, of: current)
+            stopAutomatically("Synchronisation en pause : \(Self.sentence(error)). Rien n’a été envoyé. Corrigez ce point, puis relisez l’aperçu pour reprendre.")
         }
+    }
+    private static func sentence(_ error: Error) -> String {
+        goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))
     }
     /// Puts back the last attempt saved before the send, so the same day is tried again.
     private func restoreAttempt(_ previous: String?, of attempt: Configuration) {
