@@ -36,7 +36,7 @@ import LocalHistoryCore
         var paused: Bool? = false
         var credentialFingerprint: String?
         var pauseReason: String?
-        /// A day skipped because no record was saved. Shown until the next received day names it too.
+        /// Days skipped because no record was saved, comma-separated. Shown until the next received day names them too.
         var missingDay: String?
     }
     var savedConfiguration: Configuration? { configuration() }
@@ -305,8 +305,11 @@ import LocalHistoryCore
             // Mac off or Goalong closed that day: no record, and none will come later. Send nothing
             // (never an invented zero), keep the day marked as tried, and keep the plan running.
             networkRetry = nil
-            if var saved = configuration(), saved.identifier == current.identifier { saved.missingDay = day; try? store(saved) }
-            status = Self.missingDayNotice(day) + " L’envoi quotidien continue."
+            // A weekend skips two days: keep naming each one, not only the last.
+            if var saved = configuration(), saved.identifier == current.identifier {
+                saved.missingDay = (saved.missingDay.map { $0 + "," } ?? "") + day; try? store(saved)
+            }
+            status = Self.missingDayNotice(configuration()?.missingDay ?? day) + " L’envoi quotidien continue."
         } catch GoalongSiteSubmissionError.unreachable {
             // Nothing reached the site: try the same day again later, a few times.
             restoreAttempt(previousAttempt, of: current)
@@ -335,8 +338,11 @@ import LocalHistoryCore
             stopAutomatically("Synchronisation en pause : \(Self.sentence(error)). Rien n’a été envoyé. Corrigez ce point, puis relisez l’aperçu pour reprendre.")
         }
     }
-    private static func missingDayNotice(_ day: String) -> String {
-        "Aucun relevé enregistré pour le \(GoalongUIFormat.day(key: day)) (Mac éteint ou Goalong fermé) : rien n’a été envoyé pour ce jour."
+    private static func missingDayNotice(_ days: String) -> String {
+        let names = days.split(separator: ",").map { "le " + GoalongUIFormat.day(key: String($0)) }
+        let list = names.count > 1 ? names.dropLast().joined(separator: ", ") + " et " + names.last! : names.joined()
+        return "Aucun relevé enregistré pour \(list) (Mac éteint ou Goalong fermé) : rien n’a été envoyé pour "
+            + (names.count > 1 ? "ces jours." : "ce jour.")
     }
     private static func sentence(_ error: Error) -> String {
         goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))
