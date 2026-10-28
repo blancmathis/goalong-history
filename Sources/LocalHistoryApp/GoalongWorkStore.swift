@@ -248,8 +248,8 @@ extension Notification.Name {
         }
         let list = names.joined(separator: ", ")
         return days.count == 1
-            ? "La tâche est renommée, mais le Plan du jour du \(list) est illisible : il garde l’ancien nom. Réparez ou supprimez ce jour dans Concentration, puis renommez-y la tâche à la main."
-            : "La tâche est renommée, mais les Plans du jour suivants sont illisibles : \(list). Ils gardent l’ancien nom. Réparez ou supprimez ces jours dans Concentration, puis renommez-y la tâche à la main."
+            ? "La tâche est renommée. Le Plan du jour du \(list) est illisible : il garde l’ancien nom. Son fichier n’est pas modifié."
+            : "La tâche est renommée. Ces Plans du jour sont illisibles : \(list). Ils gardent l’ancien nom. Leurs fichiers ne sont pas modifiés."
     }
 
     /// Forgets the agent's verdicts (corrections stay) so every context is classified again.

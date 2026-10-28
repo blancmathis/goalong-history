@@ -158,6 +158,16 @@
             XCTAssertTrue(notice.contains("27/10/2026") || notice.contains("2026-10-27"), notice)
         }
 
+        /// Review of #166: Concentration has no way to repair, delete or edit an unreadable day, so the notice
+        /// states what happened and promises nothing the app cannot do.
+        @MainActor func testTheSkippedDaysNoticeOnlyStatesFacts() {
+            XCTAssertNil(GoalongWorkStore.skippedDaysNotice([]))
+            XCTAssertEqual(GoalongWorkStore.skippedDaysNotice(["2026-10-27"]),
+                           "La tâche est renommée. Le Plan du jour du 27/10/2026 est illisible : il garde l’ancien nom. Son fichier n’est pas modifié.")
+            XCTAssertEqual(GoalongWorkStore.skippedDaysNotice(["2026-10-27", "2026-10-25"]),
+                           "La tâche est renommée. Ces Plans du jour sont illisibles : 25/10/2026, 27/10/2026. Ils gardent l’ancien nom. Leurs fichiers ne sont pas modifiés.")
+        }
+
         /// Review 20628b87: without Concentration running, the rename saved its plans over a pending.json left by
         /// an interrupted change, and the days that change still held were lost. The pending change is replayed first.
         @MainActor func testRenameReplaysAnInterruptedPlanChangeFirst() throws {
