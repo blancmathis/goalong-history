@@ -99,6 +99,33 @@ final class BlockingFrictionTests: XCTestCase {
         XCTAssertFalse(c.offersExtraBreak(listID: list.id), "a hard lock wins over the password")
     }
 
+    /// Review #184: the right password still gives no extra break under a hard lock, a freeze or the attempt wait.
+    @MainActor func testExtraBreakPasswordCannotPassHardLockFreezeOrWait() throws {
+        var now = Date()
+        let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org")], breaks: .init(count: 1, minutes: 1))
+        func used() throws -> BlockingController {
+            let credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+            let c = BlockingController(document: .init(lists: [list], passwordLock: credential), clock: { now }, backend: FrictionBackend(), continuous: { now.timeIntervalSince1970 })
+            c.start(listIDs: [list.id], until: now.addingTimeInterval(3_600), lock: .password)
+            c.takeBreak(listID: list.id); now = now.addingTimeInterval(61); c.refresh()
+            XCTAssertTrue(c.offersExtraBreak(listID: list.id))
+            return c
+        }
+        let locked = try used()
+        locked.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .locked)
+        guard case .refused = locked.takeBreak(listID: list.id, password: "fixture") else { return XCTFail("hard lock") }
+        XCTAssertEqual(locked.snapshot.usage?.breaksTaken[list.id], 1)
+        let frozen = try used()
+        frozen.startFreeze(until: now.addingTimeInterval(600), mode: .shield, allowedApps: [])
+        XCTAssertFalse(frozen.offersExtraBreak(listID: list.id))
+        guard case .refused = frozen.takeBreak(listID: list.id, password: "fixture") else { return XCTFail("freeze") }
+        XCTAssertEqual(frozen.snapshot.usage?.breaksTaken[list.id], 1)
+        let waiting = try used()
+        for _ in 0..<5 { waiting.takeBreak(listID: list.id, password: "wrong") }
+        guard case .wait = waiting.takeBreak(listID: list.id, password: "fixture") else { return XCTFail("attempt wait") }
+        XCTAssertEqual(waiting.snapshot.usage?.breaksTaken[list.id], 1)
+    }
+
     @MainActor func testExtraBreakSheetSaysWhyAWrongPasswordFailed() {
         let purpose = BlockingPasswordSheet.Purpose.extraBreak(UUID(), what: "")
         XCTAssertEqual(BlockingPasswordSheet.wrongMessage(remaining: 4, purpose: purpose),
