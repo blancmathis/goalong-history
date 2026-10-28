@@ -55,7 +55,7 @@ import LocalHistoryCore
                 Text("Ma définition du travail").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
                 Text(store.context.isEmpty || editing
                      ? "Avec vos mots. Chaque rubrique est facultative : une phrase précise suffit pour commencer."
-                     : "Appliquée à Activité et à la surveillance temps réel.")
+                     : "Appliquée à Activité et à Jev.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)

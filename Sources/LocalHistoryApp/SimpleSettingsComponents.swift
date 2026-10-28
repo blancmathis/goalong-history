@@ -95,7 +95,7 @@ enum GoalongHomeRows {
     static let recordingSymbol = SettingsPane.recording.symbol
     static let sendSymbol = "arrow.up.circle"
     static let chatGPTSymbol = "sparkles"
-    static func jevSummary(enabled: Bool) -> String { enabled ? "Activé" : "Surveillance en direct" }
+    static func jevSummary(enabled: Bool) -> String { enabled ? "Activé" : "Surveillance de vos séances" }
     /// One glyph per permission row, shared with the activation sheet.
     static func permissionSymbol(_ capability: GoalongCapability) -> String {
         PermissionSetupCopy(capability: capability, status: .ready).symbol

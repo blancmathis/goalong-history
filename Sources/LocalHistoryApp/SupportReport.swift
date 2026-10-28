@@ -246,14 +246,14 @@ enum SupportFindings {
             .compactMap { count($0.values, .httpStatus) }
         if statuses.contains(402) {
             findings.append(SupportFinding(severity: .warning, code: .monitoringPaymentRequired,
-                title: "Surveillance temps réel : crédit épuisé",
+                title: "Jev : crédit épuisé",
                 detail: "Le service d’analyse a répondu 402 (paiement requis) : la surveillance s’est mise en pause. Rechargez le compte TypeSafe puis cliquez sur Réessayer."))
         } else if statuses.contains(where: { $0 == 401 || $0 == 403 }) {
             findings.append(SupportFinding(severity: .warning, code: .monitoringAuthentication,
-                title: "Surveillance temps réel : clé refusée", detail: "Le service d’analyse refuse la clé configurée."))
+                title: "Jev : clé refusée", detail: "Le service d’analyse refuse la clé configurée."))
         } else if statuses.contains(where: { $0 >= 500 }) {
             findings.append(SupportFinding(severity: .info, code: .monitoringUnavailable,
-                title: "Surveillance temps réel : service indisponible",
+                title: "Jev : service indisponible",
                 detail: { let n = statuses.filter { $0 >= 500 }.count; return n > 1 ? "\(n) réponses du serveur en erreur." : "\(n) réponse du serveur en erreur." }()))
         }
         var repeated: [String: Int] = [:]

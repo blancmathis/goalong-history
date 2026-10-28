@@ -112,7 +112,7 @@ import LocalHistoryCore
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Surveillance du travail").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            Text("Jev").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
             Menu {
                 if monitor.timedBreak != nil {
                     Button("Reprendre la surveillance") { monitor.endBreak() }

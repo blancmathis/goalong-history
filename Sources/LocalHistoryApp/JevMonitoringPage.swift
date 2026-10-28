@@ -44,7 +44,7 @@ struct JevActivationAvailability: Equatable {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jev-monitoring-page")
         .sheet(isPresented: $showingConnection) { JevConnectionSheet().goalongControls() }
-        .alert("Activer la surveillance du travail ?", isPresented: $confirming) {
+        .alert("Activer Jev ?", isPresented: $confirming) {
             Button("Annuler", role: .cancel) {}
             Button("Autoriser les envois à Jev") { monitor.setEnabled(true) }
         } message: {
@@ -82,8 +82,8 @@ struct JevActivationAvailability: Equatable {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Surveillance du travail").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
-                        Text("Facultative. Jev est le service d’analyse partenaire de Goalong. Toutes les 15 secondes, Goalong vérifie que vous restez sur vos projets et affiche un rappel dès qu’une distraction est détectée de façon fiable.")
+                        Text("Jev").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
+                        Text("Facultatif. Jev est le service d’analyse partenaire de Goalong. Toutes les 15 secondes, Goalong vérifie que vous restez sur vos projets et affiche un rappel dès qu’une distraction est détectée de façon fiable.")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }

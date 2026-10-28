@@ -155,7 +155,7 @@ actually included.
 
 ## Optional real-time Jev monitoring
 
-**Surveillance temps réel**, found in **Réglages → Jev**, provides a
+**Jev** (Réglages → Jev), the partner analysis service, provides a
 separate, off-by-default TypeSafe consent. **Connecter l’API** (or **Gérer la connexion** once a key exists) opens the protected
 API-key sheet; connection management and detailed privacy controls stay out of
 the general settings. During observable activity, Jev classifies one

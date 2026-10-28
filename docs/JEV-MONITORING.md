@@ -11,7 +11,7 @@ explicite de l’envoi à TypeSafe. L’utilisateur fournit sa propre clé API d
 champ protégé de **Connecter l’API** (ou **Gérer la connexion** quand une clé existe) ; aucun secret n’est inclus dans le code ou envoyé au site Goalong.
 L’API TypeSafe peut être facturée selon son offre. Aucun appel n’est fait sans clé.
 
-Le menu **Surveillance temps réel** permet une pause de 5, 10, 15 ou 30 minutes,
+Le menu **Jev** permet une pause de 5, 10, 15 ou 30 minutes,
 sa fin anticipée, la désactivation de Jev et l’ouverture de Réglages › Jev.
 **Autre durée** permet une pause de 1 à 120 minutes. Le décompte persiste au redémarrage et à la veille.
 Une pause de travail suspend Jev seulement : elle ne change aucun autre

@@ -483,7 +483,7 @@ struct GoalongWorkReviewRequest: Identifiable {
                                 .foregroundStyle(.secondary).lineLimit(2)
                         }
                     }
-                    Text("La même définition sert à Activité et à la surveillance temps réel.")
+                    Text("La même définition sert à Activité et à Jev.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
