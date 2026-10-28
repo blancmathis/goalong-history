@@ -466,9 +466,16 @@ import SwiftUI
     static func breakMinutesRange(current: Int, stricterOnly: Bool) -> ClosedRange<Int> { 1...(stricterOnly ? max(1, current) : 30) }
 
     private func saveName() {
-        guard nameDraft != list.name else { return }
-        nameError = controller.rename(list.id, to: nameDraft)
-        if nameError != nil || nameDraft.trimmingCharacters(in: .whitespacesAndNewlines) != nameDraft { nameDraft = list.name }
+        let entry = Self.commitName(nameDraft, of: list, controller: controller)
+        nameDraft = entry.text; nameError = entry.error
+    }
+
+    /// The field then shows the stored name: `list` is the snapshot from before the save,
+    /// so writing it back would undo a trimmed name at the next return or close.
+    static func commitName(_ draft: String, of list: BlockList, controller: BlockingController) -> SiteEntry {
+        guard draft != list.name else { return SiteEntry(text: draft) }
+        let error = controller.rename(list.id, to: draft)
+        return SiteEntry(text: controller.list(list.id)?.name ?? list.name, error: error)
     }
 
     /// A folded row: a quiet button while empty, then chips and a field.
