@@ -15,7 +15,7 @@ struct BraiseStore {
     /// an unreadable legacy file is left untouched and simply not imported. Only a folder
     /// that cannot be used still fails. `notice` tells the user what was reset.
     func loadRecovering() throws -> (preferences: Preferences, notice: String?) {
-        guard directory.standardizedFileURL == directory.resolvingSymlinksInPath().standardizedFileURL else { throw CocoaError(.fileReadNoPermission) }
+        guard Self.isFreeOfSymlinks(directory) else { throw CocoaError(.fileReadNoPermission) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         var value: Preferences
@@ -41,6 +41,12 @@ struct BraiseStore {
         var ids = Set<UUID>()
         value.rules = value.rules.filter { ids.insert($0.id).inserted }
         return (value, notice)
+    }
+
+    /// Compares paths, not URLs: macOS 15 resolves an absent folder without its trailing slash, so URL
+    /// equality refused the first enable (T-045 BRS-01).
+    static func isFreeOfSymlinks(_ url: URL, resolvedBy resolve: (URL) -> URL = { $0.resolvingSymlinksInPath() }) -> Bool {
+        url.standardizedFileURL.path == resolve(url).standardizedFileURL.path
     }
 
     /// True for any directory entry, including a dangling or foreign symlink.
@@ -69,7 +75,7 @@ struct BraiseStore {
     }
 
     static func read(_ url: URL, maximumBytes: Int) throws -> Data {
-        guard url.standardizedFileURL == url.resolvingSymlinksInPath().standardizedFileURL else { throw CocoaError(.fileReadNoPermission) }
+        guard isFreeOfSymlinks(url) else { throw CocoaError(.fileReadNoPermission) }
         let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
         guard fd >= 0 else { throw CocoaError(.fileReadNoPermission) }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
@@ -83,7 +89,7 @@ struct BraiseStore {
     }
 
     static func write(_ data: Data, to url: URL) throws {
-        guard url.standardizedFileURL == url.resolvingSymlinksInPath().standardizedFileURL else { throw CocoaError(.fileWriteNoPermission) }
+        guard isFreeOfSymlinks(url) else { throw CocoaError(.fileWriteNoPermission) }
         try data.write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }

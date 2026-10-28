@@ -145,6 +145,45 @@ final class BraiseModuleTests: XCTestCase {
         XCTAssertEqual(try store.load().mode, .off)
         XCTAssertThrowsError(try controller.persistCommand())
     }
+    /// T-045 BRS-01: on the macOS 15 runner « Braise n’a pas pu démarrer » on first enable and the folder was
+    /// never created. The production folder URL ends with a slash; macOS 15 answers an absent folder without it.
+    func testSymlinkGuardComparesPathsNotTrailingSlashes() throws {
+        let wanted = URL(fileURLWithPath: "/private/tmp/goalong-braise-absent/Braise", isDirectory: true)
+        XCTAssertTrue(BraiseStore.isFreeOfSymlinks(wanted, resolvedBy: { URL(fileURLWithPath: $0.path, isDirectory: false) }))
+        XCTAssertFalse(BraiseStore.isFreeOfSymlinks(wanted, resolvedBy: { _ in URL(fileURLWithPath: "/private/tmp/elsewhere", isDirectory: true) }))
+        let root = try root(), real = root.appendingPathComponent("real", isDirectory: true)
+        let store = BraiseStore(directory: root.appendingPathComponent("Braise", isDirectory: true), legacySettings: root.appendingPathComponent("missing"))
+        XCTAssertEqual(try store.load().mode, .off)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.settingsURL.path))
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("Linked", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        XCTAssertThrowsError(try BraiseStore(directory: link, legacySettings: root.appendingPathComponent("missing")).load())
+    }
+    @MainActor func testStartFailureIsJournaledWithoutTextAndRetryRecovers() throws {
+        let root = try root(), name = "braise-diagnostics-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        let journal = SupportDiagnostics(root: root.appendingPathComponent("journal"), defaults: defaults)
+        journal.start(); defer { journal.stop() }
+        let store = BraiseStore(directory: root.appendingPathComponent("Braise", isDirectory: true), legacySettings: root.appendingPathComponent("missing"))
+        var fails = true, attempts = 0
+        let runtime = BraiseRuntime(presentsMenu: false, diagnostics: journal, factory: {
+            attempts += 1
+            if fails { throw CocoaError(.fileWriteNoPermission, userInfo: [NSFilePathErrorKey: store.directory.path]) }
+            return try BraiseController(store: store, gamma: BraiseTestGamma(), runsTimers: false)
+        })
+        let modules = try modules(); modules.setEnabled(.braise, true)
+        runtime.start(modules: modules); defer { runtime.shutdown() }
+        XCTAssertNil(runtime.controller); XCTAssertNotNil(runtime.error)
+        let failure = try XCTUnwrap(journal.snapshot().records.first { $0.event == .operationFailed })
+        XCTAssertEqual(failure.values["errorCode"], .count(CocoaError.fileWriteNoPermission.rawValue))
+        let line = String(decoding: try JSONEncoder().encode(failure), as: UTF8.self)
+        XCTAssertFalse(line.contains(root.lastPathComponent)); XCTAssertFalse(line.contains("Braise n"))
+        fails = false; runtime.retry()
+        XCTAssertNotNil(runtime.controller); XCTAssertNil(runtime.error); XCTAssertEqual(attempts, 2)
+        modules.setEnabled(.braise, false); runtime.retry(); XCTAssertEqual(attempts, 2)
+    }
     func testUntrustedRecoveryTablesCannotBeWritten() {
         XCTAssertFalse(GammaTable(displayID: 0, red: [.nan, 1], green: [0, 1], blue: [0, 1]).isValid)
         XCTAssertFalse(GammaTable(displayID: 0, red: [0, 1], green: [0], blue: [0, 1]).isValid)

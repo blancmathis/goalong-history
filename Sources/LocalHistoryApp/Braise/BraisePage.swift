@@ -7,17 +7,33 @@ import SwiftUI
 
 @MainActor struct BraisePage: View {
     @ObservedObject private var runtime = BraiseRuntime.shared
+    var onOpenModules: () -> Void = {}
     var body: some View {
         if let controller = runtime.controller { BraisePageContent(controller: controller) }
-        else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Braise").goalongPageTitle()
-                Text(runtime.error ?? "Le module est désactivé. Activez-le dans Réglages › Modules.")
-                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+        else { BraiseUnavailableView(error: runtime.error, onRetry: { runtime.retry() }, onOpenModules: onOpenModules) }
+    }
+}
+
+/// Module off, or a start that failed: the failure always offers a new attempt and the way to Modules.
+@MainActor struct BraiseUnavailableView: View {
+    let error: String?
+    let onRetry: () -> Void
+    let onOpenModules: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Braise").goalongPageTitle()
+            Text(error ?? "Le module est désactivé. Activez-le dans Réglages › Modules.")
+                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+            if error != nil {
+                HStack(spacing: 8) {
+                    Button("Réessayer", action: onRetry).buttonStyle(LHPrimaryButtonStyle())
+                    Button("Ouvrir Réglages › Modules", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
+                }
+                .padding(.top, 4)
             }
-            .padding(LHTheme.pageInset).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(LHTheme.pageBackground)
         }
+        .padding(LHTheme.pageInset).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(LHTheme.pageBackground)
     }
 }
 
