@@ -954,6 +954,26 @@ final class BlockingEngineTests: XCTestCase {
         }
     }
 
+    /// T-045 revue #191: a refresh keeps a refusal shown over an unchanged notice; a new notice or a cleared banner shows it again.
+    @MainActor func testRefreshDoesNotReplaceARefusalWithTheSameNotice() throws {
+        let now = date()
+        var list = BlockList(name: "Programme", sites: [.init(pattern: "youtube.com")])
+        list.program.ranges = [.init(weekdays: [2], startMinute: 600, endMinute: 900)]
+        let backend = FakeBlockingBackend(); backend.protectionComponent = .awaitingApproval
+        let c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar)
+        let notice = try XCTUnwrap(c.error)
+        c.error = "Une liste verrouillée ne peut pas être supprimée."
+        c.refresh(enforceLast: false)
+        XCTAssertEqual(c.error, "Une liste verrouillée ne peut pas être supprimée.", "the same notice does not hide the refusal")
+        c.error = nil
+        c.refresh(enforceLast: false)
+        XCTAssertEqual(c.error, notice, "a cleared banner shows the notice again")
+        c.error = "Une liste verrouillée ne peut pas être supprimée."
+        backend.protectionComponent = .failed("Démarrage à la connexion indisponible.")
+        c.refresh(enforceLast: false)
+        XCTAssertEqual(c.error, "Démarrage à la connexion indisponible.", "a new notice is shown")
+    }
+
     @MainActor func testLockedListStillRefusesLooserEditsWithLoginItemNotice() throws {
         let now = date(); var list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")]); list.keywords = ["match"]
         let backend = FakeBlockingBackend(); backend.protectionComponent = .awaitingApproval
