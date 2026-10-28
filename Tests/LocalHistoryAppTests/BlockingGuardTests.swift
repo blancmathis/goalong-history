@@ -4,6 +4,7 @@ import GoalongGuardCore
 import LocalHistoryCore
 import ServiceManagement
 import XCTest
+@preconcurrency import XPC
 @testable import LocalHistoryApp
 
 /// Spec K, app side: which blocks arm the guard, the `guard-until` marker, the injected client, the gate,
@@ -195,6 +196,13 @@ import XCTest
         XCTAssertTrue(GoalongGuardFiles.overrideActive(files, now: now.addingTimeInterval(60)))
         XCTAssertFalse(GoalongGuardFiles.overrideActive(files, now: now.addingTimeInterval(GuardOverride.lifetime + 1)))
         XCTAssertFalse(GoalongGuardFiles.overrideActive(files, now: now.addingTimeInterval(-60)), "a token from the future is ignored")
+    }
+
+    /// L4: a guard that dies interrupts the connection, which stays alive with its handler: it is cancelled.
+    func testOnlyAnInterruptedConnectionIsCancelledWhenDropped() {
+        XCTAssertTrue(GoalongGuardClient.cancelsDroppedConnection(after: XPC_ERROR_CONNECTION_INTERRUPTED))
+        XCTAssertFalse(GoalongGuardClient.cancelsDroppedConnection(after: XPC_ERROR_CONNECTION_INVALID))
+        XCTAssertFalse(GoalongGuardClient.cancelsDroppedConnection(after: XPC_ERROR_TERMINATION_IMMINENT))
     }
 
     /// K1-kill-01: a stopped guard is resumed, but a reused pid that runs something else is never signalled.
