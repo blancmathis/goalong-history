@@ -932,6 +932,28 @@ final class BlockingEngineTests: XCTestCase {
         }
     }
 
+    /// H34-G1: a protection notice leaves the banner once its component is back; a refusal stays.
+    @MainActor func testProtectionNoticeClearsWhenTheComponentRecovers() throws {
+        let now = date()
+        var list = BlockList(name: "Programme", sites: [.init(pattern: "youtube.com")])
+        list.program.ranges = [.init(weekdays: [2], startMinute: 600, endMinute: 900)]
+        for component in [BlockingProtectionState.Component.awaitingApproval, .failed("Démarrage à la connexion indisponible.")] {
+            let backend = FakeBlockingBackend(); backend.protectionComponent = component
+            let c = BlockingController(document: .init(lists: [list]), clock: { now }, backend: backend, calendar: calendar)
+            XCTAssertNotNil(c.error)
+            backend.protectionComponent = .running
+            c.refresh(enforceLast: false)
+            XCTAssertNil(c.error, "the notice goes with its cause")
+            backend.protectionComponent = component
+            c.refresh(enforceLast: false)
+            XCTAssertNotNil(c.error)
+            c.error = "Une liste verrouillée ne peut pas être supprimée."
+            backend.protectionComponent = .running
+            c.refresh(enforceLast: false)
+            XCTAssertEqual(c.error, "Une liste verrouillée ne peut pas être supprimée.", "another message is not the notice")
+        }
+    }
+
     @MainActor func testLockedListStillRefusesLooserEditsWithLoginItemNotice() throws {
         let now = date(); var list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")]); list.keywords = ["match"]
         let backend = FakeBlockingBackend(); backend.protectionComponent = .awaitingApproval

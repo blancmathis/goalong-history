@@ -77,7 +77,7 @@ import SwiftUI
         let parts = [sites > 0 ? (sites == 1 ? "1 site" : "\(sites) sites") : nil,
                      apps > 0 ? (apps == 1 ? "1 app" : "\(apps) apps") : nil,
                      words > 0 ? (words == 1 ? "1 mot-clé" : "\(words) mots-clés") : nil].compactMap { $0 }
-        if list.mode == .allowOnly { return parts.isEmpty ? "Tout" : "Tout sauf " + parts.joined(separator: " et ") }
+        if list.mode == .allowOnly { return parts.isEmpty ? "Tout bloqué" : "Tout sauf " + parts.joined(separator: " et ") }
         return parts.isEmpty ? "Vide" : parts.joined(separator: ", ")
     }
 
@@ -104,6 +104,8 @@ import SwiftUI
     @State private var addingKeyword = false
     @State private var ruleError: String?
     @State private var reasonDraft: String
+    @State private var nameDraft: String
+    @State private var nameError: String?
     @State private var pickingTrigger = false
     @State private var pickingApp = false
     @State private var confirmingDelete = false
@@ -117,6 +119,7 @@ import SwiftUI
         self.onDone = onDone
         _moreOpen = State(initialValue: list.mode == .allowOnly || list.quotaMinutesPerDay != nil || list.breaks != nil)
         _reasonDraft = State(initialValue: list.reason ?? "")
+        _nameDraft = State(initialValue: list.name)
     }
 
     private var stricterOnly: Bool { controller.isStricterOnly(list.id) }
@@ -125,12 +128,21 @@ import SwiftUI
         VStack(alignment: .leading, spacing: 22) {
             HStack(spacing: 12) {
                 BlockingIconCluster(lists: [list], size: 22, limit: 4)
-                TextField("Nom de la liste", text: Binding(get: { list.name }, set: { name in
-                    var next = list; next.name = String(name.prefix(40)); controller.save(next)
-                }))
+                // A draft: erasing the name to retype it saves nothing until return or close.
+                TextField("Nom de la liste", text: $nameDraft)
                 // 14 pt semibold text is 17 pt high: 8 + 17 + 9 fills the 34 pt field.
                 .textFieldStyle(GoalongFieldStyle(textFont: .semibold14))
+                .onSubmit(saveName)
+                .onDisappear(perform: saveName)
+                .onChange(of: nameDraft) { value in
+                    if value.count > 40 { nameDraft = String(value.prefix(40)) }
+                    nameError = nil
+                }
                 .accessibilityIdentifier("blocking-list-name")
+            }
+            if let nameError {
+                Text(nameError).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                    .accessibilityIdentifier("blocking-list-name-error")
             }
             TextField("Pourquoi ? ex. Finir le mémoire avant vendredi", text: $reasonDraft)
                 .textFieldStyle(GoalongFieldStyle())
@@ -158,6 +170,7 @@ import SwiftUI
                         TextField("Ajouter un site, ex. youtube.com", text: $newSite)
                             .textFieldStyle(GoalongFieldStyle()).controlSize(.small).frame(width: 220)
                             .onSubmit(addSite)
+                            .onChange(of: newSite) { _ in siteError = nil }
                             .disabled(!canAdd)
                             .accessibilityIdentifier("blocking-add-site")
                     }
@@ -244,7 +257,7 @@ import SwiftUI
                         if let quota = list.quotaMinutesPerDay {
                             Stepper(value: Binding(get: { quota }, set: { value in
                                 var next = list; next.quotaMinutesPerDay = value; controller.save(next)
-                            }), in: 5...720, step: 5) {
+                            }), in: Self.quotaRange(current: quota, stricterOnly: stricterOnly), step: 5) {
                                 Text("\(BlockingFormat.duration(minutes: quota)) par jour").monospacedDigit()
                             }.fixedSize()
                         }
@@ -265,10 +278,10 @@ import SwiftUI
                             HStack(spacing: 6) {
                                 Stepper(value: Binding(get: { breaks.count }, set: { value in
                                     var next = list; next.breaks?.count = value; controller.save(next)
-                                }), in: 1...12) { Text("\(breaks.count) ×").monospacedDigit() }.fixedSize()
+                                }), in: Self.breakCountRange(current: breaks.count, stricterOnly: stricterOnly)) { Text("\(breaks.count) ×").monospacedDigit() }.fixedSize()
                                 Stepper(value: Binding(get: { breaks.minutes }, set: { value in
                                     var next = list; next.breaks?.minutes = value; controller.save(next)
-                                }), in: 1...30) { Text("\(breaks.minutes) min").monospacedDigit() }.fixedSize()
+                                }), in: Self.breakMinutesRange(current: breaks.minutes, stricterOnly: stricterOnly)) { Text("\(breaks.minutes) min").monospacedDigit() }.fixedSize()
                             }
                         }
                     }
@@ -436,9 +449,33 @@ import SwiftUI
     }
 
     private func message(_ check: BlockingEditCheck, input: String? = nil, kind: String = "") -> String? {
+        Self.refusalMessage(check, input: input, kind: kind)
+    }
+
+    /// Only a malformed entry is rewritten with the typed text; a lock or file refusal keeps its own reason.
+    static func refusalMessage(_ check: BlockingEditCheck, input: String? = nil, kind: String = "") -> String? {
         guard case .refused(let reason) = check else { return nil }
-        if let input, controller.error != reason, !reason.hasPrefix("Liste") { return "« \(input) » n’est pas \(kind)." }
+        let malformed = ["Chaque mot-clé doit contenir de 2 à 40 caractères.", "Adresse d’exception invalide."]
+        if let input, malformed.contains(reason) { return "« \(input) » n’est pas \(kind)." }
         return reason
+    }
+
+    /// Under a lock a stepper stops at the current value: the controller would refuse any rise.
+    static func quotaRange(current: Int, stricterOnly: Bool) -> ClosedRange<Int> { 5...(stricterOnly ? max(5, current) : 720) }
+    static func breakCountRange(current: Int, stricterOnly: Bool) -> ClosedRange<Int> { 1...(stricterOnly ? max(1, current) : 12) }
+    static func breakMinutesRange(current: Int, stricterOnly: Bool) -> ClosedRange<Int> { 1...(stricterOnly ? max(1, current) : 30) }
+
+    private func saveName() {
+        let entry = Self.commitName(nameDraft, of: list, controller: controller)
+        nameDraft = entry.text; nameError = entry.error
+    }
+
+    /// The field then shows the stored name: `list` is the snapshot from before the save,
+    /// so writing it back would undo a trimmed name at the next return or close.
+    static func commitName(_ draft: String, of list: BlockList, controller: BlockingController) -> SiteEntry {
+        guard draft != list.name else { return SiteEntry(text: draft) }
+        let error = controller.rename(list.id, to: draft)
+        return SiteEntry(text: controller.list(list.id)?.name ?? list.name, error: error)
     }
 
     /// A folded row: a quiet button while empty, then chips and a field.
@@ -480,14 +517,21 @@ import SwiftUI
     }
 
     private func addSite() {
-        guard let pattern = BlockingRules.normalizeSite(newSite) else {
-            siteError = newSite.isEmpty ? nil : "« \(newSite) » n’est pas une adresse de site."
-            return
+        let entry = Self.addSite(newSite, to: list, controller: controller)
+        newSite = entry.text; siteError = entry.error
+    }
+
+    struct SiteEntry: Equatable { var text: String; var error: String? }
+
+    /// The typed text stays in the field when the site is refused, with the reason next to it.
+    static func addSite(_ input: String, to list: BlockList, controller: BlockingController) -> SiteEntry {
+        guard let pattern = BlockingRules.normalizeSite(input) else {
+            return SiteEntry(text: input, error: input.isEmpty ? nil : "« \(input) » n’est pas une adresse de site.")
         }
-        siteError = nil
-        newSite = ""
-        guard !list.sites.contains(where: { $0.pattern == pattern }) else { return }
-        var next = list; next.sites.append(BlockSiteRule(pattern: pattern)); controller.save(next)
+        guard !list.sites.contains(where: { $0.pattern == pattern }) else { return SiteEntry(text: "") }
+        var next = list; next.sites.append(BlockSiteRule(pattern: pattern))
+        if let refusal = controller.save(next) { return SiteEntry(text: input, error: refusal) }
+        return SiteEntry(text: "")
     }
 
     private func part<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -588,6 +632,8 @@ struct BlockingModePicture: View {
 /// What happens when something on the list opens, drawn: struck at once, or a wait then a choice.
 struct BlockingActionPicture: View {
     let list: BlockList
+    /// An app is asked to quit, never force-quit: one that asks to save is hidden instead.
+    static let blockText = "Bloqué tout de suite : le site est couvert, l’app est priée de quitter. Si elle demande d’enregistrer, elle est masquée, jamais forcée : rien n’est perdu."
     var body: some View {
         HStack(spacing: 10) {
             ZStack(alignment: .leading) {
@@ -608,7 +654,7 @@ struct BlockingActionPicture: View {
             }
             .frame(width: list.effectiveAction == .block ? 18 : 66, alignment: .leading)
             Text(list.effectiveAction == .block
-                 ? "Bloqué tout de suite : le site est couvert, l’app est fermée."
+                 ? Self.blockText
                  : "Attendre \(list.delaySeconds) s, puis renoncer ou continuer \(list.allowanceMinutes) min. Une app est masquée, jamais fermée.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -640,6 +686,11 @@ struct BlockingProgramLock: View {
         _until = State(initialValue: Self.initialUntil(current: current, now: now))
     }
 
+    /// The button only acts when it moves the end of the lock later.
+    static func extends(until: Date, current: Date?) -> Bool {
+        BlockingWallClock.endOfDay(until) > (current ?? .distantPast)
+    }
+
     /// Two weeks from now, never before the lock in place: the button must name the real end.
     static func initialUntil(current: Date?, now: Date, calendar: Calendar = .current) -> Date {
         max(current ?? now, calendar.date(byAdding: .day, value: 14, to: now) ?? now)
@@ -659,6 +710,7 @@ struct BlockingProgramLock: View {
             HStack {
                 Spacer()
                 Button("Verrouiller jusqu’au \(BlockingFormat.day(until))") { onLock(BlockingWallClock.endOfDay(until)) }
+                    .disabled(!Self.extends(until: until, current: current))
             }
         }
         .padding(18).frame(width: 340)

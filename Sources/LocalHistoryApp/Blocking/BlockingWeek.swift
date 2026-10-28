@@ -425,10 +425,15 @@ struct BlockingRangeDraft: Identifiable {
     }
 
     private func remove() {
-        guard let existing = draft.existing, var next = list else { return }
-        next.program.ranges.removeAll { $0.id == existing }
-        controller.save(next)
-        onClose()
+        guard let existing = draft.existing, let list else { return }
+        if Self.removeRange(existing, from: list, controller: controller) { onClose() }
+    }
+
+    /// True when the range is gone; a refusal keeps the popover open on its message.
+    static func removeRange(_ id: UUID, from list: BlockList, controller: BlockingController) -> Bool {
+        var next = list
+        next.program.ranges.removeAll { $0.id == id }
+        return controller.save(next) == nil
     }
 }
 #endif
