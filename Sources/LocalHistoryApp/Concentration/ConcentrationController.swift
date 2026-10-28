@@ -802,10 +802,11 @@ extension ConcentrationController {
     /// C5-05: a wall clock found behind the proven time within `bootCorrectionWindow` of boot is a clock
     /// that was ahead and is now right. What was already decided stays latched (edit window, exits,
     /// results, and Blocking's own trusted clock); only what comes next reads the corrected time.
+    /// Locks that cannot be saved refuse the correction: the next refresh in the window tries again.
     private func acceptBootClockCorrection() {
         let state = clockState()
         guard state.continuous <= Self.bootCorrectionWindow, let proven = realNow(), state.wall < proven.addingTimeInterval(-60) else { return }
-        try? latchCommitmentLocks()
+        guard (try? latchCommitmentLocks()) != nil else { return }
         clockCorrection = state; launchClock = state
         try? store.saveClockCorrection(state); try? store.saveClockAnchor(state)
         lastCommitmentCardRefresh = .distantPast

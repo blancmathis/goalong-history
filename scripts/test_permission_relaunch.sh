@@ -39,6 +39,12 @@ enum GoalongGuardFiles {
 enum ProductIdentity { static let bundleIdentifier = "ai.goalong.localhistory" }
 enum DashboardSection { case settings }
 enum SettingsPane { case recording }
+// Support diagnostics write to the real support log; the fixture only needs the call to compile.
+enum SupportComponent { case permissions }
+final class SupportDiagnostics {
+    static let shared = SupportDiagnostics()
+    func failure(_ error: Error, component: SupportComponent) {}
+}
 
 let base = Bundle.main.bundleURL.deletingLastPathComponent()
 let events = base.appendingPathComponent("events.jsonl")

@@ -299,8 +299,12 @@ enum FocusCommitmentRules {
     }
     /// Warning for a history clear from `cutoff` (nil: all of it): an unsettled « travail » or « tâche »
     /// commitment measures its period from this history, so the erased time no longer counts (T-045 D-154c).
-    static func historyClearWarning(_ commitments: [FocusCommitment], since cutoff: Date?, at now: Date,
+    /// Nil: the commitments cannot be read, so the clear warns anyway (T-045 D-FR1).
+    static func historyClearWarning(_ commitments: [FocusCommitment]?, since cutoff: Date?, at now: Date,
                                     calendar: Calendar = .current) -> String? {
+        guard let commitments else {
+            return "Attention : les engagements Concentration n’ont pas pu être lus. Si l’un d’eux mesure votre travail, le temps effacé ne comptera plus et son enjeu pourra s’appliquer."
+        }
         let hit = commitments.filter { c in
             guard c.result == nil, c.kind == .work || c.kind == .task, let period = c.period.interval(calendar: calendar) else { return false }
             return period.start < now && period.end > (cutoff ?? .distantPast)

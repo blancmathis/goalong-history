@@ -269,7 +269,7 @@ struct GoalongHealthImportSheet: View {
         do { _ = try GoalongHealthArchive.read(day: date, root: AppPaths.applicationSupportDirectory) }
         catch { self.error = goalongUserMessage(error); return }
         let confirmation = NSAlert()
-        confirmation.messageText = "Retirer les données Santé du \(date) de ce Mac ?"
+        confirmation.messageText = Self.trashTitle(day: date)
         confirmation.informativeText = "Le fichier compact de cette journée sera déplacé dans la corbeille. L’export Apple original, le temps d’écran et les données déjà envoyées au site seront conservés. Vous gérez les données du site séparément dans votre compte."
         confirmation.addButton(withTitle: "Mettre à la corbeille"); confirmation.addButton(withTitle: "Annuler")
         confirmation.beginSheetModal(for: window) { choice in
@@ -340,6 +340,10 @@ struct GoalongHealthImportSheet: View {
             } catch { self.error = goalongUserMessage(error) }
         }
     }
+    /// Confirmation title for removing one stored Santé day.
+    static func trashTitle(day key: String) -> String {
+        "Retirer les données Santé du \(GoalongUIFormat.day(key: key)) de ce Mac ?"
+    }
     static let metricNames = ["steps": "Pas", "walkingRunningMeters": "Distance à pied / course", "cyclingMeters": "Distance à vélo",
         "activeEnergyKcal": "Énergie active", "exerciseSeconds": "Exercice", "standSeconds": "Temps debout", "flights": "Étages montés",
         "sleepSeconds": "Sommeil", "inBedSeconds": "Au lit", "awakeSeconds": "Éveillé", "sleepUnspecifiedSeconds": "Sommeil sans phase",
@@ -358,7 +362,9 @@ struct GoalongHealthImportSheet: View {
         if unit == "s" { return duration(value) }
         if unit == "m" { return kilometres(value) }
         let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "fr_FR"); formatter.maximumFractionDigits = 1
-        return (formatter.string(from: NSNumber(value: value)) ?? "—") + (unit == "count" ? "" : " \(unit)")
+        // French units, bound to the number by a no-break space: « 16 resp./min », « 97 % ».
+        let shown = unit == "count/min" ? "resp./min" : unit
+        return (formatter.string(from: NSNumber(value: value)) ?? "—") + (unit == "count" ? "" : "\u{00A0}\(shown)")
     }
     static func duration(_ seconds: Double) -> String {
         DashboardFormatters.duration(seconds: seconds)
