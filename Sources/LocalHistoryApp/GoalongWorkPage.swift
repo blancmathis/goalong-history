@@ -343,7 +343,7 @@ import SwiftUI
                 if let old = renaming { renameRefusal = work.renameTask(old, to: name) }
                 renaming = nil
             }
-        } message: { Text("Donnez le nom d’une tâche existante pour fusionner les deux.") }
+        } message: { Text("Les mêmes noms écrits avec d’autres majuscules (« Goalong », « goalong ») sont renommés aussi. Donnez le nom d’une tâche existante pour fusionner les deux.") }
         .alert("Renommage impossible", isPresented: Binding(get: { renameRefusal != nil }, set: { if !$0 { renameRefusal = nil } })) {
             Button("OK", role: .cancel) { renameRefusal = nil }
         } message: { Text(renameRefusal ?? "") }
