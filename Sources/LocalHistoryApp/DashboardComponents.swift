@@ -372,10 +372,18 @@
             .goalongControlSurface()
         }
 
+        /// The day one step away, or nil when it would be in the future. Compares the day's start:
+        /// `date` may carry a later hour than now (a page opened yesterday evening, viewed after midnight).
+        static func steppedDay(from date: Date, by direction: Int, now: Date, calendar: Calendar = .current) -> Date? {
+            guard let day = calendar.date(byAdding: .day, value: direction, to: date),
+                  calendar.startOfDay(for: day) <= now else { return nil }
+            return day
+        }
+
         private func stepButton(_ direction: Int, symbol: String, label: String, identifier: String) -> some View {
             Button {
                 if let onStep { onStep(direction) }
-                else if let day = Calendar.current.date(byAdding: .day, value: direction, to: date), day <= GoalongToday.now { onChange(day) }
+                else if let day = Self.steppedDay(from: date, by: direction, now: GoalongToday.now) { onChange(day) }
             } label: {
                 Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 24)
                     .contentShape(Rectangle())
