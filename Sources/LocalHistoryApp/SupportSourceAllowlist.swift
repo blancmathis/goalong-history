@@ -149,6 +149,7 @@ enum SupportSourceAllowlist {
         "GoalongGranularContext.swift",
         "GoalongGuardClient.swift",
         "GoalongHealthImportSheet.swift",
+        "GoalongLegacyDayFiles.swift",
         "GoalongModules.swift",
         "GoalongModulesSettings.swift",
         "GoalongMotionModel.swift",
