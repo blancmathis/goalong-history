@@ -168,7 +168,7 @@
             // The system's reason is English (« Permission denied »): it goes to the support log, not to the message (T-045 H2).
             func fail(_ message: String, cause: Error? = nil) -> GoalongCLIInstallOutcome {
                 if let cause { SupportDiagnostics.shared.failure(cause, component: .app) }
-                return GoalongCLIInstallOutcome(succeeded: false, message: message + (cause == nil ? "" : " Vérifiez les droits de ce dossier.")
+                return GoalongCLIInstallOutcome(succeeded: false, message: message + (cause == nil ? "" : " Vérifiez que vous pouvez écrire à cet emplacement.")
                     + " La commande n’a pas été installée.")
             }
             // Goalong Dev never points the real command at itself (see `inspect`), even if called directly.

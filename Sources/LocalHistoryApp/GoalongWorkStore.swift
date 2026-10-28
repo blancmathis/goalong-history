@@ -212,7 +212,7 @@ extension Notification.Name {
         guard let name = GoalongWorkClassification.cleanTask(new), name != old else { return nil }
         if name.localizedCaseInsensitiveCompare(old) != .orderedSame {
             guard let committed = committedTasks() else {
-                return "Les engagements Concentration n’ont pas pu être lus : l’un d’eux suit peut-être « \(old) » par son nom. Renommez-la une fois Concentration de nouveau lisible."
+                return "Les engagements Concentration n’ont pas pu être lus : l’un d’eux suit peut-être « \(old) » par son nom. Réessayez plus tard ; si le message revient, supprimez les données Concentration (Réglages › Modules), puis renommez la tâche."
             }
             if committed.contains(where: { $0.localizedCaseInsensitiveCompare(old) == .orderedSame }) {
                 return "« \(old) » a un engagement Concentration en cours, qui suit la tâche par son nom. Renommez-la une fois l’engagement réglé."
