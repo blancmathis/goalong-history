@@ -8,11 +8,11 @@
 step MNB-01 si
 step MNB-02 si w:2 s:panel o:"Activer dans Réglages" w:2 pc
 step MNB-03 si o:"Voir la journée" w:2 pc
-step MNB-04 si p:"Plus d’options" w:1 s:menu o:"Confidentialité · tout suspendre" w:2 s:sheet o:Annuler esc
-step MNB-05 si p:"Plus d’options" w:1 o:"Effacer l’historique détaillé" w:1 s:menu esc
-step MNB-06 si p:"Plus d’options" w:1 o:Autorisations w:2 pc
-step MNB-07 si p:"Plus d’options" w:1 o:Avancé w:1 s:menu esc
-step MNB-08 si p:"Plus d’options" w:1 o:Jev w:1 s:menu esc
+step MNB-04 si p:"Plus d’options" w:1 s:menu mi:toggleGlobalPause w:2 s:sheet o:Annuler esc
+step MNB-05 si p:"Plus d’options" w:1 mi:clearLastTenMinutes w:2 s:alert o:Annuler esc
+step MNB-06 si p:"Plus d’options" w:1 mi:requestPermissions w:2 s:perm esc pc
+step MNB-07 si p:"Plus d’options" w:1 mi:reloadConfiguration w:2 s:reload esc
+step MNB-08 si p:"Plus d’options" w:1 mi:openMonitoring w:2 pc
 step MNB-09 si p:"Réglages" w:2 pc
 
 # --- Main window, sidebar, banner, day picker
@@ -32,18 +32,18 @@ step ACT-06 nav:overview p:"Comment lire ces chiffres" w:1
 # --- Mon travail
 step WRK-01 nav:work o:work-allow w:2 s:allow esc
 step WRK-02 nav:work o:work-classify-today o:work-automatic w:2
-step WRK-03 nav:work o:"Nouvelle tâche…" w:1 s:sheet esc
+step WRK-03 nav:work o:"Nouvelle tâche…" w:1 s:sheet esc o:monitoring-save-goals w:1
 step WRK-04 nav:work o:"Filtre" w:1
 
 # --- Historique (Ce Mac, Temps d'écran Apple, Conversations locales)
-step HIS-01 nav:history p:"Ce Mac" o:"Rechercher" w:1 o:"Effacer la recherche"
-step HIS-02 nav:history p:"Ce Mac" o:Ouvrir w:1 esc
+step HIS-01 nav:history p:"Ce Mac" o:"Rechercher dans la chronologie" o:"Ordre de la chronologie" w:1 s:ordre esc o:"Effacer la recherche"
+step HIS-02 nav:history p:"Ce Mac" o:"Afficher les détails de" w:1 s:detail o:"Voir le fichier brut" w:2 esc
 step HIS-03 nav:history p:"Ce Mac" o:"Filtrer le contexte" w:1
 step HIS-04 nav:history p:"Ce Mac" o:Supprimer w:1 s:alert esc
-step STE-01 nav:history p:"Temps d’écran Apple" w:2 o:screen-time-open-settings w:1 esc
+step STE-01 nav:history p:"Temps d’écran Apple" w:2 o:source-appleScreenTime w:1 s:toggle o:screen-time-open-settings w:1 esc
 step STE-02 nav:history p:"Temps d’écran Apple" o:"Voir mon activité Goalong" w:2
 step AGT-01 nav:history p:"Conversations locales" w:2 o:"Vérifier les sources" w:1 s:sources esc
-step AGT-03 nav:history p:"Conversations locales" o:Détecter w:2 esc
+step AGT-03 nav:history p:"Conversations locales" o:source-aiConversations w:2 esc
 
 # --- Enregistrement / Confidentialité (activation with synthetic data on the runner)
 step CNF-03 pane:recording w:2 o:"Modifier l’enregistrement" w:1 s:edit esc
@@ -58,7 +58,7 @@ step SET-01 pane:home o:"Rechercher un réglage" w:1
 step SET-02 pane:recording o:"Fenêtres privées" w:1 s:alert o:Annuler esc
 step SET-03 pane:recording o:settings-foreground-idle-limit w:1 esc
 step SET-04 pane:recording p:"Choisir les dossiers de conversations…" w:1 esc
-step SET-05 pane:home p:settings-update-status w:2 o:Rechercher w:1 esc
+step SET-05 pane:home p:settings-update-status w:2 s:popover esc
 step SET-06 pane:advanced o:Recharger w:1
 step SET-07 pane:advanced o:"Réinitialiser les réglages…" w:1 s:alert o:Annuler esc
 step SET-08 pane:home b:"Garder Goalong actif en arrière-plan" w:1 b:"Garder Goalong actif en arrière-plan" o:"Ouvrir les éléments d’ouverture…" w:2 esc
@@ -85,15 +85,15 @@ step SUP-03 pane:advanced o:"Conserver les journaux" w:1
 # --- Modules: turn each on (runner only), then open its page
 step CON-07 pane:modules o:settings-module-concentration o:settings-module-blocking o:settings-module-braise o:settings-module-ambiance w:2
 step CON-04 nav:concentration o:"Faire le bilan" w:2 s:panel o:Fermer esc
-step CON-01 nav:concentration w:2 o:"Ajouter une intention" w:1 s:sheet esc
-step CON-02 nav:concentration o:Verrouiller w:1
+step CON-01 nav:concentration w:2 o:Ajouter w:1 s:sheet esc
+step CON-02 nav:concentration o:concentration-start w:2 s:seance o:Arrêter w:1
 step CON-03 pane:modules o:settings-module-open-concentration w:2
-step CON-05 nav:concentration o:"Prendre un engagement" w:1 s:sheet esc
-step CON-06 nav:concentration o:"Nouvelle liste…" w:1 s:sheet esc
+step CON-05 nav:concentration o:concentration-commitment-create w:1 s:sheet esc
+step CON-06 nav:concentration o:blocking-new-list-inline w:1 s:sheet esc
 step BLK-01 pane:modules o:settings-module-open-blocking w:2 o:blocking-page
 step BLK-02 pane:modules o:settings-module-open-blocking w:1 o:blocking-week w:1
-step BLK-03 pane:modules o:settings-module-open-blocking o:blocking-new-list w:1 s:sheet o:blocking-list-close esc
-step BLK-04 pane:modules o:settings-module-open-blocking o:blocking-password-row w:1 s:sheet esc
+step BLK-03 pane:modules o:settings-module-open-blocking w:1 o:blocking-empty-new-list w:1 s:sheet esc
+step BLK-04 pane:modules o:settings-module-open-blocking w:1 o:"Mot de passe" w:1 s:sheet esc
 step BLK-05 pane:modules o:settings-module-open-blocking o:blocking-protection w:1 esc
 step BRS-01 pane:modules p:settings-module-open-braise w:4 o:"Pause 15 min" w:1 o:Reprendre
 step BRS-02 pane:modules o:settings-module-open-braise o:"Ajouter un horaire" w:1

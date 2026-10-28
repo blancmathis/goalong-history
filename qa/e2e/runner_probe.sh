@@ -137,6 +137,7 @@ step() {
       p:*) o="$("$DRIVER" press "$BUNDLE" "${c#p:}" 2>&1)" || req+="${c#p:};"; sleep 1 ;;
       b:*) o="$("$DRIVER" press "$BUNDLE" "${c#b:}" AXCheckBox 2>&1)" || o="$("$DRIVER" press "$BUNDLE" "${c#b:}" AXButton 2>&1)" || req+="${c#b:};"; sleep 1 ;;
       o:*) o="$("$DRIVER" press "$BUNDLE" "${c#o:}" 2>&1)" || opt+="${c#o:};"; sleep 1 ;;
+      mi:*) o="$("$DRIVER" press "$BUNDLE" "${c#mi:}" AXMenuItem 2>&1)" || req+="${c#mi:};"; sleep 1 ;;
       m:*) s="${c#m:}"; if [[ "$s" == *">"* ]]; then o="$("$DRIVER" menu "$BUNDLE" "${s%%>*}" "${s#*>}" 2>&1)"; else o="$("$DRIVER" menu "$BUNDLE" "$s" 2>&1)"; fi || req+="$c;"; sleep 1 ;;
       si) o="$("$DRIVER" status-item "$BUNDLE" 2>&1)" && panel=$((1 - panel)) || req+="status-item;"; sleep 2 ;;
       sm) o="$("$DRIVER" status-menu "$BUNDLE" 2>&1)" || req+="status-menu;"; sleep 1 ;;
