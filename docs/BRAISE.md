@@ -58,7 +58,8 @@ Goalong conserve les réglages dans
 `~/Library/Application Support/LocalHistory/Braise/settings.json` (dossier 0700,
 fichier 0600, remplacement atomique). Au **premier allumage uniquement**, si ce fichier
 n’existe pas, il importe `~/Library/Application Support/Braise/settings.json` : mode,
-intensité, luminosité, horaires, identifiants et pause. L’original reste intact.
+intensité, luminosité, horaires, identifiants et pause. L’original reste intact ;
+`./uninstall.sh --purge-data` le supprime avec le reste des données.
 Sans réglages d’origine, le filtre démarre Désactivé et une plage quotidienne 22:00–08:00
 est proposée. Un fichier illisible ou invalide empêche le démarrage, sans l’écraser.
 
