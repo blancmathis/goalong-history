@@ -46,9 +46,9 @@ analysis and health flows remain available separately.
 Upload tokens retain the existing private-file storage checks (regular file,
 current owner, restrictive permissions, no symlink). Normal HTTPS validation,
 ephemeral URLSession and redirect rejection remain intact. Tokens never appear in
-navigation URLs. The submission idempotency key is derived from exact payload
-bytes; identical-byte retries reuse the server receipt rather than replaying the
-operation. Neither client nor server claims independent verification of these data.
+navigation URLs. Each submission has a fresh idempotency key bound to its exact
+payload bytes (a new UUID plus the payload hash); the site imports per day and
+counts an unchanged day as skipped, so sending a day again never duplicates it. Neither client nor server claims independent verification of these data.
 
 ## Scheduling, recovery and audience
 
@@ -56,7 +56,10 @@ The scheduler is a timer in the running app, **not** a new privileged daemon.
 It does not wake a sleeping/offline Mac, does not promise wall-clock execution and
 does not backfill older missed days. On the next eligible check it considers only
 the previous calendar day. `lastAttempt` is persisted before networking. An error
-or uncertain receipt pauses the plan instead of silently retrying. The user checks
+or uncertain receipt pauses the plan instead of silently retrying. If Goalong quits
+or crashes while it prepares or sends a day, the next launch tries that day again,
+only inside the catch-up window and after the usual consent, exclusion and
+selection checks; the site keeps one copy of the day. The user checks
 the website history, reviews a fresh preview and explicitly resumes.
 
 A source revocation, changed settings or successful re-pairing pauses/removes the
