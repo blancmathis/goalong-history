@@ -320,7 +320,7 @@ struct BlockingStopRequest: Identifiable {
                 Image(systemName: "hourglass").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
                 Text((left > 0 ? "\(list.name) : encore \(BlockingFormat.remaining(left)) aujourd’hui"
                                : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota + earned)) du jour sont passées")
-                     + (earned > 0 ? " · +\(earned) min de pause gagnées en concentration" : ""))
+                     + (earned > 0 ? " · \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
                 Spacer(minLength: 8)
                 BlockingMeter(fraction: 1 - left / Double(max(1, (quota + earned) * 60))).frame(width: 120)
             }

@@ -262,11 +262,17 @@
             var segmentsByWindow: [Date: [Segment]] = [:]
             for session in sessions {
                 let clippedStart = max(session.start, dayStart)
+                // The 30 s tolerance counts toward active time, but never opens a slot
+                // nor moves a shown end past what was recorded.
                 let clippedEnd = min(session.end.addingTimeInterval(30), dayEnd, max(now, session.end))
+                let recordedEnd = min(session.end, dayEnd)
                 guard clippedEnd > clippedStart else { continue }
 
-                var windowStart = tenMinuteStart(for: clippedStart, calendar: calendar)
-                while windowStart < clippedEnd {
+                let firstWindowStart = tenMinuteStart(for: clippedStart, calendar: calendar)
+                var windowStart = firstWindowStart
+                while windowStart < clippedEnd,
+                    windowStart == firstWindowStart || windowStart < recordedEnd
+                {
                     guard let windowEnd = calendar.date(
                         byAdding: .minute,
                         value: 10,
@@ -286,7 +292,8 @@
                                 session: session,
                                 appKey: appKey,
                                 start: segmentStart,
-                                end: segmentEnd
+                                end: segmentEnd,
+                                shownEnd: max(segmentStart, min(segmentEnd, recordedEnd))
                             )
                         )
                     }
@@ -332,6 +339,8 @@
                 }
                 var sessionSlices: [SessionSlice] = []
                 var previousAppKey: String?
+                // Merging still allows for the 30 s tolerance hidden from `shownEnd`.
+                var previousToleratedEnd = Date.distantPast
                 for segment in ordered {
                     let suppressed = segment.session.suppressionReason != nil
                     let context = suppressed
@@ -343,12 +352,13 @@
                     if
                         previousAppKey == segment.appKey,
                         let previous = sessionSlices.last,
-                        segment.start <= previous.end.addingTimeInterval(30)
+                        segment.start <= previousToleratedEnd.addingTimeInterval(30)
                     {
+                        previousToleratedEnd = max(previousToleratedEnd, segment.end)
                         sessionSlices[sessionSlices.count - 1] = SessionSlice(
                             id: previous.id,
                             start: previous.start,
-                            end: max(previous.end, segment.end),
+                            end: max(previous.end, segment.shownEnd),
                             appName: previous.appName,
                             bundleIdentifier: previous.bundleIdentifier
                                 ?? segment.session.bundleIdentifier,
@@ -361,11 +371,12 @@
                             sourceSessionCount: previous.sourceSessionCount + 1
                         )
                     } else {
+                        previousToleratedEnd = segment.end
                         sessionSlices.append(
                             SessionSlice(
                                 id: "\(segment.session.id)-\(windowStart.timeIntervalSince1970)",
                                 start: segment.start,
-                                end: segment.end,
+                                end: segment.shownEnd,
                                 appName: segment.session.appName,
                                 bundleIdentifier: segment.session.bundleIdentifier,
                                 contexts: [context],
@@ -423,7 +434,10 @@
             let session: ActivitySession
             let appKey: String
             let start: Date
+            /// Includes the 30 s tolerance; counts toward active time.
             let end: Date
+            /// Never after the recorded end; shown to the user.
+            let shownEnd: Date
         }
 
         private static func tenMinuteStart(for date: Date, calendar: Calendar) -> Date {
