@@ -113,6 +113,16 @@ printf 'row\tresult\tcapture\tmissing_required\tmissing_optional\n' > "$RESULTS"
 front() { osascript -e "tell application id \"$BUNDLE\" to activate" >/dev/null 2>&1; sleep 0.5; }
 esc() { front; osascript -e 'tell application "System Events" to key code 53' >/dev/null 2>&1; sleep 1; }
 rowshot() { screencapture -x "$ROWS/$1.png"; "$DRIVER" dump "$BUNDLE" "$ROWS/ax/$1.txt" >/dev/null 2>&1; }
+# Back to a known state: close sheets, the status panel, extra windows and the evening panel.
+cleanup() {
+  esc
+  [[ $panel == 1 ]] && { "$DRIVER" status-item "$BUNDLE" >/dev/null 2>&1; sleep 1; panel=0; }
+  "$DRIVER" close-extra "$BUNDLE" "Goalong History — Dev" >/dev/null 2>&1
+  "$DRIVER" press "$BUNDLE" "Plus tard" AXButton >/dev/null 2>&1
+  "$DRIVER" press "$BUNDLE" "Revenir à l’activité de la journée" AXButton >/dev/null 2>&1
+  true
+}
+panel=0
 # A step passes when every required control was found and pressed; optional misses are listed.
 step() {
   local row="$1"; shift; local req="" opt="" c o s
@@ -128,20 +138,25 @@ step() {
       b:*) o="$("$DRIVER" press "$BUNDLE" "${c#b:}" AXCheckBox 2>&1)" || o="$("$DRIVER" press "$BUNDLE" "${c#b:}" AXButton 2>&1)" || req+="${c#b:};"; sleep 1 ;;
       o:*) o="$("$DRIVER" press "$BUNDLE" "${c#o:}" 2>&1)" || opt+="${c#o:};"; sleep 1 ;;
       m:*) s="${c#m:}"; if [[ "$s" == *">"* ]]; then o="$("$DRIVER" menu "$BUNDLE" "${s%%>*}" "${s#*>}" 2>&1)"; else o="$("$DRIVER" menu "$BUNDLE" "$s" 2>&1)"; fi || req+="$c;"; sleep 1 ;;
-      si) o="$("$DRIVER" status-item "$BUNDLE" 2>&1)" || req+="status-item;"; sleep 2 ;;
+      si) o="$("$DRIVER" status-item "$BUNDLE" 2>&1)" && panel=$((1 - panel)) || req+="status-item;"; sleep 2 ;;
       sm) o="$("$DRIVER" status-menu "$BUNDLE" 2>&1)" || req+="status-menu;"; sleep 1 ;;
       esc) esc ;;
+      pc) panel=0 ;;
       w:*) sleep "${c#w:}" ;;
       s:*) rowshot "$row-${c#s:}" ;;
     esac
     log "[$row] $c -> ${o:0:200}"; o=""
   done
-  sleep 1; rowshot "$row"; esc
+  sleep 1; rowshot "$row"; cleanup
   printf '%s\t%s\t%s\t%s\t%s\n' "$row" "$([[ -z $req ]] && echo pass || echo fail)" "$row.png" "$req" "$opt" >> "$RESULTS"
 }
 for f in 04-P1-setup-1-donnees 05-P1-setup-2-sources 06-P1-setup-3-pret 07-P1-setup-done; do
   cp "$OUT/shots/$f.png" "$ROWS/ONB-01-${f#*-P1-}.png" 2>/dev/null
 done
+step CNF-REC pane:recording p:source-localComputerHistory w:3 s:sheet o:recording-setup-confirm w:3
+log "== synthetic activity with recording on (runner only)"
+open -a TextEdit "$RUNNER_TEMP/synthetic-note.txt"; sleep 20; open -a Finder; sleep 20; open -a Safari; sleep 20
+front; sleep 5
 source "$(dirname "$0")/lot1_steps.sh"
 log "== lot 1 results"; cat "$RESULTS" | tee -a "$SUMMARY"
 

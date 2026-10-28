@@ -2,18 +2,18 @@
 # named by row id. Sourced by runner_probe.sh (GitHub-hosted runner only, synthetic data only).
 # Commands: nav:SECTION  pane:PANE  p:LABEL (must press)  o:LABEL (optional press)
 #           b:LABEL (must press, buttons only)  m:TOP>ITEM (app menu)  si / sm (status item / its menu)
-#           esc  w:N (sleep)  s:NAME (extra capture ROW-NAME)
+#           esc  pc (the status panel closed itself)  w:N (sleep)  s:NAME (extra capture ROW-NAME)
 
 # --- Menu bar (status item, panel, context menu)
 step MNB-01 si
-step MNB-02 si w:2 s:panel esc
-step MNB-03 si o:"Voir la journée" w:2
-step MNB-04 sm o:"Confidentialité · tout suspendre" w:2 s:sheet o:Annuler esc
-step MNB-05 sm o:"Effacer l’historique détaillé" w:1 s:menu esc
-step MNB-06 sm o:Autorisations w:2 s:after esc
-step MNB-07 sm o:Avancé w:1 esc
-step MNB-08 sm w:1 esc
-step MNB-09 si w:1 esc
+step MNB-02 si w:2 s:panel o:"Activer dans Réglages" w:2 pc
+step MNB-03 si o:"Voir la journée" w:2 pc
+step MNB-04 si p:"Plus d’options" w:1 s:menu o:"Confidentialité · tout suspendre" w:2 s:sheet o:Annuler esc
+step MNB-05 si p:"Plus d’options" w:1 o:"Effacer l’historique détaillé" w:1 s:menu esc
+step MNB-06 si p:"Plus d’options" w:1 o:Autorisations w:2 pc
+step MNB-07 si p:"Plus d’options" w:1 o:Avancé w:1 s:menu esc
+step MNB-08 si p:"Plus d’options" w:1 o:Jev w:1 s:menu esc
+step MNB-09 si p:"Réglages" w:2 pc
 
 # --- Main window, sidebar, banner, day picker
 step WIN-01 nav:overview nav:work nav:history nav:concentration nav:settings nav:overview
@@ -52,13 +52,12 @@ step CNF-05 pane:recording o:recording-visible-text w:1 s:text o:Annuler esc
 step CNF-01 pane:recording o:"Ouvrir le dossier des données" w:2 esc
 step CNF-02 pane:storage o:"Dernière heure" w:1 s:confirm o:Annuler esc
 step CNF-06 pane:applications w:1
-step ACT-REC nav:overview p:activity-recording-action w:2 s:setup o:recording-setup-confirm w:3 esc
 
 # --- Réglages
 step SET-01 pane:home o:"Rechercher un réglage" w:1
 step SET-02 pane:recording o:"Fenêtres privées" w:1 s:alert o:Annuler esc
 step SET-03 pane:recording o:settings-foreground-idle-limit w:1 esc
-step SET-04 pane:tools o:"Choisir les dossiers de conversations…" w:1 esc
+step SET-04 pane:recording p:"Choisir les dossiers de conversations…" w:1 esc
 step SET-05 pane:home p:settings-update-status w:2 o:Rechercher w:1 esc
 step SET-06 pane:advanced o:Recharger w:1
 step SET-07 pane:advanced o:"Réinitialiser les réglages…" w:1 s:alert o:Annuler esc
@@ -85,6 +84,7 @@ step SUP-03 pane:advanced o:"Conserver les journaux" w:1
 
 # --- Modules: turn each on (runner only), then open its page
 step CON-07 pane:modules o:settings-module-concentration o:settings-module-blocking o:settings-module-braise o:settings-module-ambiance w:2
+step CON-04 nav:concentration o:"Faire le bilan" w:2 s:panel o:Fermer esc
 step CON-01 nav:concentration w:2 o:"Ajouter une intention" w:1 s:sheet esc
 step CON-02 nav:concentration o:Verrouiller w:1
 step CON-03 pane:modules o:settings-module-open-concentration w:2
@@ -95,9 +95,10 @@ step BLK-02 pane:modules o:settings-module-open-blocking w:1 o:blocking-week w:1
 step BLK-03 pane:modules o:settings-module-open-blocking o:blocking-new-list w:1 s:sheet o:blocking-list-close esc
 step BLK-04 pane:modules o:settings-module-open-blocking o:blocking-password-row w:1 s:sheet esc
 step BLK-05 pane:modules o:settings-module-open-blocking o:blocking-protection w:1 esc
-step BRS-01 pane:modules o:settings-module-open-braise w:2 o:"Pause 15 min" w:1 o:Reprendre
+step BRS-01 pane:modules p:settings-module-open-braise w:4 o:"Pause 15 min" w:1 o:Reprendre
 step BRS-02 pane:modules o:settings-module-open-braise o:"Ajouter un horaire" w:1
-step AMB-01 pane:modules o:settings-module-open-ambiance w:2 o:Ajouter… w:1 s:sheet esc
+step AMB-01 pane:modules o:settings-module-open-ambiance w:2
+step AMB-02 pane:modules o:settings-module-open-ambiance w:1 o:Ambre w:3 s:play o:Ambre
 
 # --- Application menu (last: APP-05 quits and reopens)
 step APP-01 m:Fichier m:Édition m:Fenêtre esc
