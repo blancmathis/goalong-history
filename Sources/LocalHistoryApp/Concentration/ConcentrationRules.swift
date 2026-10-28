@@ -297,6 +297,18 @@ enum FocusCommitmentRules {
     static func openTaskNames(_ commitments: [FocusCommitment]) -> [String] {
         commitments.compactMap { $0.result == nil && $0.kind == .task ? $0.task : nil }
     }
+    /// Warning for a history clear from `cutoff` (nil: all of it): an unsettled « travail » or « tâche »
+    /// commitment measures its period from this history, so the erased time no longer counts (T-045 D-154c).
+    static func historyClearWarning(_ commitments: [FocusCommitment], since cutoff: Date?, at now: Date,
+                                    calendar: Calendar = .current) -> String? {
+        let hit = commitments.filter { c in
+            guard c.result == nil, c.kind == .work || c.kind == .task, let period = c.period.interval(calendar: calendar) else { return false }
+            return period.start < now && period.end > (cutoff ?? .distantPast)
+        }
+        guard !hit.isEmpty else { return nil }
+        let base = "Attention : un engagement Concentration en cours mesure votre travail à partir de cet historique. Le temps effacé ne comptera plus"
+        return hit.contains { $0.stake != nil } ? base + " : si l’engagement n’est plus tenu, son enjeu s’appliquera." : base + "."
+    }
     /// Time Goalong saw, or saw the Mac was not in use (asleep, locked, before the first or after the last record).
     static func isKnown(_ s: GoalongLocalAnalytics.Segment) -> Bool {
         switch s.kind {

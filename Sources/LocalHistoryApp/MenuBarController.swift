@@ -478,6 +478,7 @@
                     title: "Effacer tout l’historique détaillé ?",
                     message:
                         "Les événements détaillés enregistrés sur ce Mac seront supprimés, ainsi que leurs analyses et mémoires, les appels, l’activité de développement, les notes du jour et les verdicts et corrections de « Mon travail ». Les sceaux cryptographiques sont conservés : les périodes concernées restent visibles, mais ne pourront plus être partagées qu’en mode privé."
+                        + Self.commitmentWarning(since: nil)
                 )
             else { return }
 
@@ -508,6 +509,7 @@
                     title: "Effacer l’historique \(label) ?",
                     message:
                         "Les événements détaillés correspondants seront supprimés de ce Mac, ainsi que leurs analyses et mémoires, et les appels et l’activité de développement des jours concernés (journée entière). Les notes du jour sont conservées. Les sceaux cryptographiques sont conservés ; les périodes effacées apparaîtront comme privées."
+                        + Self.commitmentWarning(since: cutoff)
                 )
             else { return }
 
@@ -521,6 +523,14 @@
                 case .failure(let error):
                     self?.showError(error)
                 }
+            }
+        }
+
+        /// An open Concentration commitment measured from this history: the clear can make it fail.
+        private static func commitmentWarning(since cutoff: Date?) -> String {
+            MainActor.assumeIsolated {
+                FocusCommitmentRules.historyClearWarning(ConcentrationRuntime.shared.controller?.commitments ?? [],
+                                                         since: cutoff, at: Date()).map { "\n\n" + $0 } ?? ""
             }
         }
 

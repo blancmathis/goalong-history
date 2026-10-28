@@ -113,6 +113,68 @@
                            "The open commitment must keep finding its task")
         }
 
+        /// D-154b: a file repaired after it was unreadable, saved under an older definition, kept only the
+        /// owner's corrections: the contexts of an open « tâche » commitment went with the agent verdicts.
+        @MainActor func testAdoptingARepairedFileKeepsTheContextsOfAnOpenCommitment() throws {
+            let fm = FileManager.default
+            let folder = fm.temporaryDirectory.appendingPathComponent("work-adopt-\(UUID().uuidString)", isDirectory: true)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path); try? fm.removeItem(at: folder) }
+            let file = folder.appendingPathComponent("work-classification.json")
+            let period = FocusCommitmentPeriod(kind: .day, key: "2026-10-28")
+            let commitment = FocusCommitment(period: period, kind: .task, target: 60, task: "Goalong",
+                                             createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+            let xcode = GoalongWorkContext.Label(application: "Xcode", bundleIdentifier: "fixture.Xcode", host: nil, title: "Goalong")
+            let mail = GoalongWorkContext.Label(application: "Mail", bundleIdentifier: "fixture.Mail", host: nil, title: "Boîte")
+            let old = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") })
+            old.merge([xcode.key: GoalongWorkAssignment(verdict: .work, task: "goalong", byOwner: false),
+                       mail.key: GoalongWorkAssignment(verdict: .work, task: "Courriels", byOwner: false)],
+                      revision: old.revision, day: "2026-10-28")
+            let saved = try Data(contentsOf: file)
+
+            // Unreadable and left in place (folder read-only), under a newer definition.
+            try Data("{tronqué".utf8).write(to: file)
+            try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+            let blocked = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong et Atlas") },
+                                           committedTasks: { FocusCommitmentRules.openTaskNames([commitment]) })
+            try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+            try saved.write(to: file)
+
+            blocked.merge(["fixture-other": GoalongWorkAssignment(verdict: .other, task: nil, byOwner: false)],
+                          revision: blocked.revision, day: "2026-10-28")
+            XCTAssertNil(blocked.lastError)
+            XCTAssertEqual(blocked.verdicts.assignment(for: xcode.key)?.task, "goalong",
+                           "The open commitment must keep finding its task")
+            XCTAssertNil(blocked.verdicts.assignment(for: mail.key), "Other verdicts of the older definition go")
+        }
+
+        /// D-154c: clearing history during an open « travail » or « tâche » commitment erases what it measures,
+        /// so it could be missed and its stake applied without a word in the confirmation.
+        func testHistoryClearWarnsAboutAnOpenCommitment() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
+            let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 15)))
+            let today = FocusCommitmentPeriod(kind: .day, key: "2026-10-28")
+            var task = FocusCommitment(period: today, kind: .task, target: 60, task: "Goalong", createdAt: now)
+            task.stake = FocusStake(listIds: [UUID()])
+            let warning = try XCTUnwrap(FocusCommitmentRules.historyClearWarning([task], since: nil, at: now, calendar: calendar))
+            XCTAssertTrue(warning.contains("enjeu"), warning)
+            XCTAssertNotNil(FocusCommitmentRules.historyClearWarning([task], since: now.addingTimeInterval(-3600), at: now, calendar: calendar))
+            task.stake = nil
+            XCTAssertFalse(FocusCommitmentRules.historyClearWarning([task], since: nil, at: now, calendar: calendar)?.contains("enjeu") ?? true)
+
+            let sessions = FocusCommitment(period: today, kind: .sessions, target: 2, createdAt: now)
+            let tomorrow = FocusCommitment(period: FocusCommitmentPeriod(kind: .day, key: "2026-10-29"), kind: .work, target: 60, createdAt: now)
+            let yesterday = FocusCommitment(period: FocusCommitmentPeriod(kind: .day, key: "2026-10-27"), kind: .work, target: 60, createdAt: now)
+            XCTAssertNil(FocusCommitmentRules.historyClearWarning([sessions, tomorrow], since: nil, at: now, calendar: calendar),
+                         "Sessions are not measured from history; a future period has nothing to erase")
+            XCTAssertNil(FocusCommitmentRules.historyClearWarning([yesterday], since: now.addingTimeInterval(-600), at: now, calendar: calendar),
+                         "The last 10 minutes do not touch yesterday")
+            XCTAssertNotNil(FocusCommitmentRules.historyClearWarning([yesterday], since: now.addingTimeInterval(-86_400), at: now, calendar: calendar))
+            task.result = FocusCommitmentResult(settledAt: now, measured: 60, unmeasuredMinutes: 0, outcome: .held)
+            XCTAssertNil(FocusCommitmentRules.historyClearWarning([task], since: nil, at: now, calendar: calendar))
+        }
+
         /// H3-01: the work review starts on `GoalongToday.now`, an instant with its time. Past midnight
         /// « Jour suivant » was enabled (the day is no longer today) yet did nothing until that hour.
         func testNextDayStepsToTodayAfterMidnight() throws {
