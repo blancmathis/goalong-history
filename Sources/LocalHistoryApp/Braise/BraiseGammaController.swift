@@ -43,7 +43,7 @@ enum GammaError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupported: return "Cet écran ne permet pas le contrôle couleur. Aucun filtre n’a été appliqué."
-        case .rejected: return "macOS n’a pas conservé le filtre. Les couleurs ont été rétablies. Vérifie les autres apps de couleur ou le mode HDR."
+        case .rejected: return "macOS n’a pas conservé le filtre. Les couleurs ont été rétablies. Vérifiez les autres applications de couleur ou le mode HDR."
         case .watchdog: return "La sécurité de restauration n’a pas pu démarrer. Le filtre reste désactivé."
         }
     }
