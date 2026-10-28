@@ -6,6 +6,11 @@ import LocalHistoryCore
 enum GoalongGlobalPauseText {
     static let resume = "Reprendre tout le suivi"
     static let failureTitle = "Pause non modifiée"
+    static let repair = "Réparer et reprendre"
+    static let repairTitle = "Réparer le réglage de pause ?"
+    static let repairMessage = "Le fichier de pause est abîmé. Goalong le met de côté dans son dossier de données, puis reprend le suivi, les analyses et les envois."
+    static let damagedNotice = "Le réglage de pause est abîmé. Le suivi reste arrêté par sécurité."
+    static let repairFailureTitle = "Réparation impossible"
 }
 
 struct GoalongGlobalPauseControl: View {
@@ -14,17 +19,19 @@ struct GoalongGlobalPauseControl: View {
     @State private var pause = GoalongGlobalPause.load()
     @State private var error: String?
     @State private var confirming = false
+    @State private var confirmingRepair = false
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                if pause.blocksActivity { changePause(false) }
+                if pause.invalid { confirmingRepair = true }
+                else if pause.blocksActivity { changePause(false) }
                 else { confirming = true }
             } label: {
-                Label(pause.blocksActivity ? GoalongGlobalPauseText.resume : "Tout suspendre…",
+                Label(pause.invalid ? GoalongGlobalPauseText.repair + "…" : pause.blocksActivity ? GoalongGlobalPauseText.resume : "Tout suspendre…",
                       systemImage: pause.blocksActivity ? "play.circle" : "pause.circle")
                     .font(.system(size: 12, weight: .medium))
                     .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
-            }.buttonStyle(LHSecondaryButtonStyle()).disabled(pause.invalid)
+            }.buttonStyle(LHSecondaryButtonStyle())
                 .accessibilityIdentifier("goalong-global-pause")
                 .help("Suspendre le suivi, les lectures Apple et IA, les analyses et les envois. Les choix autorisés sont conservés.")
             if !compact {
@@ -40,9 +47,17 @@ struct GoalongGlobalPauseControl: View {
         } message: {
             Text("L’historique, les analyses et les envois seront suspendus jusqu’à votre reprise. Pour une pause détente sans trou dans l’historique, utilisez la pause de surveillance.")
         }
+        .alert(GoalongGlobalPauseText.repairTitle, isPresented: $confirmingRepair) {
+            Button("Annuler", role: .cancel) {}
+            Button(GoalongGlobalPauseText.repair) { repair() }
+        } message: { Text(GoalongGlobalPauseText.repairMessage) }
         .alert(GoalongGlobalPauseText.failureTitle, isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("Fermer", role: .cancel) {}
         } message: { Text(error ?? "") }
+    }
+    private func repair() {
+        do { pause = try GoalongGlobalPause.repairAndResume() }
+        catch { self.error = GoalongUserFacingError.message(error) }
     }
     private func changePause(_ paused: Bool) {
         do { pause = try GoalongGlobalPause.setPaused(paused, recordingWasPaused: model.runtime.state == .paused) }
@@ -60,7 +75,7 @@ struct GoalongGlobalPauseBanner: View {
                     Image(systemName: "pause.circle.fill").foregroundStyle(LHTheme.accent)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Historique suspendu · confidentialité").font(.system(size: 13, weight: .semibold))
-                        Text(pause.invalid ? "Réglage illisible : reprise bloquée par sécurité." : "Tout le suivi est arrêté, pas seulement la surveillance. Reprenez-le pour enregistrer à nouveau.")
+                        Text(pause.invalid ? GoalongGlobalPauseText.damagedNotice : "Tout le suivi est arrêté, pas seulement la surveillance. Reprenez-le pour enregistrer à nouveau.")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }

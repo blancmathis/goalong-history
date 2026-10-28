@@ -627,6 +627,7 @@ public enum GoalongQueryCLI {
             case .active: return "Global pause is active; this command reads nothing until Goalong is resumed."
             case .changed: return "The global pause changed; retry after Goalong is resumed."
             case .unreadable: return "The pause setting is unreadable; Goalong stays paused for safety."
+            case .notDamaged: return "The pause setting is not damaged; nothing to repair."
             case .writeFailed: return "The pause change could not be saved."
             }
         }
