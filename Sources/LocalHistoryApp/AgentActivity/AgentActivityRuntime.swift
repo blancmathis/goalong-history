@@ -254,7 +254,16 @@
         }
 
         func detectCommonSources() {
-            guard started, !GoalongGlobalPause.isPaused() else { return }
+            // Privacy: no detection while tracking is paused or not running. Tell the user why.
+            guard started, !GoalongGlobalPause.isPaused() else {
+                alert = AgentActivityAlert(
+                    title: "Détection indisponible",
+                    message: GoalongGlobalPause.isPaused()
+                        ? "Suivi en pause — reprenez le suivi pour détecter des sources."
+                        : "Le suivi des agents n’est pas démarré — reprenez le suivi pour détecter des sources."
+                )
+                return
+            }
             let discovered = sourceDiscovery()
             let merged = AgentDefaultSourceDiscovery.merging(
                 configuration: configuration,

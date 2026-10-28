@@ -637,6 +637,25 @@
             XCTAssertEqual(runtime.alert?.message, "Aucune nouvelle source locale n’a été trouvée.")
         }
 
+        func testDetectWhileNotStartedExplainsWhyAndAddsNothing() throws {
+            let fixture = try makeFixture("detect-not-started")
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            let root = fixture.container.appendingPathComponent("Home/.codex", isDirectory: true)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let discovered = defaultFolder(path: root, provider: .codex)
+            let runtime = try AgentActivityRuntime(
+                rootDirectory: fixture.metadata,
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                sourceDiscovery: { [discovered] in [discovered] },
+                onCaptured: { _ in }
+            )
+            let before = runtime.configuration
+            // Never started: same state as global pause or unreadable configuration (fail-closed).
+            runtime.detectCommonSources()
+            XCTAssertEqual(runtime.alert?.title, "Détection indisponible")
+            XCTAssertEqual(runtime.configuration, before)
+        }
+
         func testDetectWithANewSourceStillReportsAddition() throws {
             let fixture = try makeFixture("detect-found")
             defer { try? FileManager.default.removeItem(at: fixture.container) }
