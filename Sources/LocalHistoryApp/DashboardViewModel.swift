@@ -97,6 +97,16 @@
         }
     }
 
+    /// One signed-file export: the day, the sharing rules read when it started, and the chosen file.
+    struct ShareExportJob {
+        let day: Date
+        let sharingRules: [String: SharingVisibility]
+        let defaultVisibility: SharingVisibility
+        let destination: URL
+    }
+
+    typealias ShareExportWriter = (_ job: ShareExportJob, _ cancellation: @escaping () -> Bool) throws -> Void
+
     final class DashboardViewModel: ObservableObject {
         typealias SaveConfiguration = (RecorderConfig) throws -> RecorderConfig
         typealias DeleteDetails = (Date?, @escaping (Result<Int, Error>) -> Void) -> Void
@@ -182,6 +192,9 @@
         private let refreshScheduler: DashboardRefreshScheduler
         private let dataReader: DashboardDataReader
         private let shareBuilder = SharePackageBuilder()
+        /// Builds, verifies and writes the signed file; tests inject a slow or failing writer.
+        private let shareExportWriter: ShareExportWriter?
+        private let revealExportedFile: (URL) -> Void
         /// Clock, preferences and free-space reader: real ones in the app, fixed ones in tests and the gallery.
         let now: () -> Date
         private let defaults: UserDefaults
@@ -231,8 +244,12 @@
             now: @escaping () -> Date = Date.init,
             defaults: UserDefaults = .standard,
             availableBytes: @escaping () -> Int64? = { StorageHealth.availableBytes() },
-            analyticsReader: GoalongAnalyticsReader = .shared
+            analyticsReader: GoalongAnalyticsReader = .shared,
+            shareExportWriter: ShareExportWriter? = nil,
+            revealExportedFile: @escaping (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) }
         ) {
+            self.shareExportWriter = shareExportWriter
+            self.revealExportedFile = revealExportedFile
             self.state = state
             self.permissions = permissions
             self.configManager = configManager
@@ -574,7 +591,8 @@
             metadataRequestSequence &+= 1
             cancelDataRequest()
             cancelMetadataRequest()
-            cancelShareExport()
+            // A signed export keeps running: the user chose the file, and losing the keyboard
+            // or hiding the window is not a reason to drop it. Only a real close stops it.
             discardShareCache()
             dataRefreshPending = false
             isRefreshing = false
@@ -584,6 +602,19 @@
             dataQueue.async {
                 reader.discardTransientCaches()
             }
+        }
+
+        /// The window is closing for real, not merely losing the keyboard or hiding.
+        func dashboardWillClose() {
+            if activeShareExportToken != nil {
+                cancelShareExport()
+                alert = DashboardAlert(
+                    kind: .error,
+                    title: "Export interrompu",
+                    message: "La fenêtre a été fermée avant la fin de l’export. Relancez-le."
+                )
+            }
+            dashboardDidBecomeHidden()
         }
 
         private func discardVisibleSnapshot() {
@@ -673,7 +704,11 @@
             panel.allowedContentTypes = [.json]
             panel.nameFieldStringValue = "\(AppPaths.localDayString(for: selectedDay)).signed-share.json"
             guard panel.runModal() == .OK, let destination = panel.url else { return }
+            startShareExport(to: destination)
+        }
 
+        /// Exports the selected day to a chosen destination. Tests call it without a save panel.
+        func startShareExport(to destination: URL) {
             let day = selectedDay
             let rules = sharingRules
             let defaultVisibility = defaultSharingVisibility
@@ -682,30 +717,20 @@
             activeShareExportToken = token
             isExportingShare = true
 
+            let job = ShareExportJob(
+                day: day,
+                sharingRules: rules,
+                defaultVisibility: defaultVisibility,
+                destination: destination
+            )
             shareQueue.async { [weak self] in
                 guard let self else { return }
                 do {
-                    let privacyRoot = AppPaths.applicationSupportDirectory
-                    let privacy = GoalongPrivacyPolicy.load(in: privacyRoot)
-                    let package = try self.shareBuilder.build(
-                        for: day,
-                        sharingRules: rules,
-                        defaultVisibility: defaultVisibility,
-                        privacy: privacy,
-                        cancellation: { token.isCancelled }
-                    )
-                    guard !token.isCancelled else { throw ShareBuildError.cancelled }
-                    guard GoalongPrivacyPolicy.load(in: privacyRoot).revision == privacy.revision else {
-                        throw ShareBuildError.exclusionsChanged
+                    if let writer = self.shareExportWriter {
+                        try writer(job, { token.isCancelled })
+                    } else {
+                        try self.writeSharePackage(job, cancellation: { token.isCancelled })
                     }
-                    guard package.verificationReport().isLocallyValid else {
-                        throw ShareBuildError.brokenSeal(package.minutes.first?.anchorSequence ?? 0)
-                    }
-                    try self.shareBuilder.write(
-                        package,
-                        to: destination,
-                        cancellation: { token.isCancelled }
-                    )
                     DispatchQueue.main.async {
                         guard self.activeShareExportToken === token else { return }
                         self.activeShareExportToken = nil
@@ -716,7 +741,7 @@
                             message:
                                 "Goalong a vérifié chaque signature de l’appareil et la chaîne d’intégrité avant l’export. Le fichier suit vos règles d’apps et de sites ; les champs masqués restent sur ce Mac."
                         )
-                        NSWorkspace.shared.activateFileViewerSelecting([destination])
+                        self.revealExportedFile(destination)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -736,6 +761,26 @@
                     }
                 }
             }
+        }
+
+        private func writeSharePackage(_ job: ShareExportJob, cancellation: @escaping () -> Bool) throws {
+            let privacyRoot = AppPaths.applicationSupportDirectory
+            let privacy = GoalongPrivacyPolicy.load(in: privacyRoot)
+            let package = try shareBuilder.build(
+                for: job.day,
+                sharingRules: job.sharingRules,
+                defaultVisibility: job.defaultVisibility,
+                privacy: privacy,
+                cancellation: cancellation
+            )
+            guard !cancellation() else { throw ShareBuildError.cancelled }
+            guard GoalongPrivacyPolicy.load(in: privacyRoot).revision == privacy.revision else {
+                throw ShareBuildError.exclusionsChanged
+            }
+            guard package.verificationReport().isLocallyValid else {
+                throw ShareBuildError.brokenSeal(package.minutes.first?.anchorSequence ?? 0)
+            }
+            try shareBuilder.write(package, to: job.destination, cancellation: cancellation)
         }
 
         func saveSettings(showConfirmation: Bool = true) {

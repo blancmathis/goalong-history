@@ -46,7 +46,7 @@ struct BlockingListFeedback: Equatable, Hashable {
     var earnedMinutesToday: Double
     var reasonLine: String? { reason.map { "« \($0) »" } }
     var attemptLine: String? { attemptsToday >= 2 ? "\(FocusUIFormat.ordinal(attemptsToday)) tentative aujourd’hui" : nil }
-    var earnedLine: String? { earnedMinutesToday > 0 ? "+\(Int(earnedMinutesToday)) min de pause gagnées en concentration" : nil }
+    var earnedLine: String? { earnedMinutesToday > 0 ? BlockingFormat.earnedBreak(minutes: Int(earnedMinutesToday)) : nil }
 }
 
 /// Presentation model kept outside SwiftUI so the engine/UI handoff remains independent.

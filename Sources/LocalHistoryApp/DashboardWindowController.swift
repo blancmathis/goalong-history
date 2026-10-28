@@ -233,7 +233,7 @@
 
         func windowWillClose(_ notification: Notification) {
             visibilityCoordinator.update(.hidden)
-            viewModel.dashboardDidBecomeHidden()
+            viewModel.dashboardWillClose()
             let closingWindow = notification.object as? NSWindow
             closingWindow?.contentViewController = nil
             DispatchQueue.main.async { [weak self, weak closingWindow] in
