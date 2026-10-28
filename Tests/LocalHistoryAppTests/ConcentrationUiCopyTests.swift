@@ -28,5 +28,30 @@ final class ConcentrationUiCopyTests: XCTestCase {
         // A saved review can be edited down to nothing.
         XCTAssertTrue(Sheet.hasAnswer(choices: [id: .unset], tomorrowFirst: "", note: "", commit: false, existing: true))
     }
+
+    /// H31 L4: « Sans fin » cannot lock, so the start button shows no padlock.
+    func testOpenSessionDraftShowsNoPadlock() {
+        var draft = FocusComposerDraft(); draft.lock = true
+        XCTAssertTrue(draft.locks(hasLists: true))
+        draft.kind = .free; draft.free = .open
+        XCTAssertFalse(draft.locks(hasLists: true))
+        XCTAssertFalse(FocusComposerDraft().locks(hasLists: true))
+    }
+
+    /// H31 L6: the last end-of-day weekday stays on and says why.
+    func testLastEndOfDayWeekdayStaysAndExplains() {
+        var settings = FocusSettings(); settings.limits.endMinute = 18 * 60; settings.limits.weekdays = [2]
+        let refused = FocusLimitsEditing.toggled(settings, day: 2)
+        XCTAssertEqual(refused.settings, settings); XCTAssertEqual(refused.error, "Gardez au moins un jour.")
+        let added = FocusLimitsEditing.toggled(settings, day: 3)
+        XCTAssertEqual(added.settings.limits.weekdays, [2, 3]); XCTAssertNil(added.error)
+        XCTAssertEqual(FocusLimitsEditing.toggled(added.settings, day: 2).settings.limits.weekdays, [3])
+    }
+
+    /// H31 L7: the end of the day is a word, not 23:59.
+    func testDeadlineSpeaksTheEndOfTheDay() {
+        XCTAssertEqual(FocusCommitmentFormat.deadline("23:59"), "la fin de la journée")
+        XCTAssertEqual(FocusCommitmentFormat.deadline("12:00"), "12:00")
+    }
 }
 #endif

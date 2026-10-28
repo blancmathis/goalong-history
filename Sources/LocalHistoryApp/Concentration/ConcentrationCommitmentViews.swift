@@ -85,6 +85,9 @@ enum FocusCommitmentFormat {
     /// A stored « 09:30 » shown as is: the two-digit clock of every other time in the app (T-044 B3-01, C4-04).
     static func clock(_ value: String) -> String { value }
 
+    /// « la fin de la journée » for 23:59, else the stored clock.
+    static func deadline(_ value: String) -> String { value == "23:59" ? "la fin de la journée" : clock(value) }
+
     /// « jusqu’à 12:00 », « toute la journée ».
     static func until(_ value: String) -> String { value == "23:59" ? "toute la journée" : "jusqu’à \(clock(value))" }
 
@@ -119,7 +122,7 @@ enum FocusCommitmentFormat {
         case .cancelled: parts.append("Blocage levé.")
         case .skipped:
             switch result.stake.reason {
-            case .late?: parts.append("Enjeu non appliqué : Goalong n’était pas ouvert avant \(until).")
+            case .late?: parts.append("Enjeu non appliqué : Goalong n’était pas ouvert avant \(deadline(until)).")
             case .noList?: parts.append("Enjeu non appliqué : ses listes n’existent plus.")
             case .blockingOff?: parts.append("Enjeu non appliqué : Blocage est désactivé.")
             case nil: break

@@ -202,6 +202,8 @@ struct FocusComposerDraft: Equatable {
 
     /// A free session without an end cannot be locked (Blocking needs an end).
     var canLock: Bool { !(kind == .free && free == .open) }
+    /// Whether Commencer locks: the box is ticked, allowed for this rhythm, and lists are chosen.
+    func locks(hasLists: Bool) -> Bool { lock && canLock && hasLists }
 
     private static let key = "goalong.concentration.composer.v1"
 
@@ -303,9 +305,9 @@ struct FocusComposerDraft: Equatable {
                     }
                     Spacer()
                     Button {
-                        if draft.lock && draft.canLock && !chosenLists.isEmpty { confirmingLock = true } else { begin() }
+                        if draft.locks(hasLists: !chosenLists.isEmpty) { confirmingLock = true } else { begin() }
                     } label: {
-                        Label(startTitle, systemImage: draft.lock && !chosenLists.isEmpty ? "lock.fill" : "play.fill")
+                        Label(startTitle, systemImage: draft.locks(hasLists: !chosenLists.isEmpty) ? "lock.fill" : "play.fill")
                     }
                     .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(intent.isEmpty)
@@ -858,6 +860,7 @@ struct FocusThreadModel: Equatable {
                     .goalongPlaceholder(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", isEmpty: newTitle.isEmpty)
                     .focused(addFocused)
                     .onSubmit(add)
+                    .onChange(of: newTitle) { _ in addError = nil }
                     .accessibilityLabel(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche")
                     .accessibilityIdentifier("concentration-add-item")
                 TextField("", text: $newProject)
@@ -1174,10 +1177,9 @@ struct FocusThreadModel: Equatable {
                     let on = weekdays.contains(day)
                     Button {
                         guard controller.settings.limits.endMinute != nil else { return }
-                        var next = controller.settings
-                        if on { next.limits.weekdays.remove(day) } else { next.limits.weekdays.insert(day) }
-                        if next.limits.endMinute != nil, next.limits.weekdays.isEmpty { return }
-                        save(next)
+                        let change = FocusLimitsEditing.toggled(controller.settings, day: day)
+                        if let message = change.error { limitError = message; return }
+                        save(change.settings)
                     } label: {
                         Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 11, weight: .semibold))
                             .frame(width: 22, height: 22)
@@ -1247,6 +1249,15 @@ struct FocusThreadModel: Equatable {
 
 // MARK: - Words
 
+enum FocusLimitsEditing {
+    /// One weekday of « Fin de journée » switched; the last one cannot be switched off.
+    static func toggled(_ settings: FocusSettings, day: Int) -> (settings: FocusSettings, error: String?) {
+        var next = settings
+        if next.limits.weekdays.contains(day) { next.limits.weekdays.remove(day) } else { next.limits.weekdays.insert(day) }
+        if next.limits.endMinute != nil, next.limits.weekdays.isEmpty { return (settings, "Gardez au moins un jour.") }
+        return (next, nil)
+    }
+}
 enum FocusUIFormat {
     /// « 18:42 », « 1:05:00 ».
     static func clock(_ seconds: TimeInterval) -> String {
