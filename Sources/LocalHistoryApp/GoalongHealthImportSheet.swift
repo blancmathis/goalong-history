@@ -376,7 +376,10 @@ struct GoalongHealthImportSheet: View {
         "Basketball": "Basket", "Pilates": "Pilates", "StairClimbing": "Escaliers", "Stairs": "Escaliers", "Golf": "Golf", "Boxing": "Boxe",
         "Climbing": "Escalade", "Skiing": "Ski", "DownhillSkiing": "Ski alpin", "CrossCountrySkiing": "Ski de fond", "Surfing": "Surf",
         "Badminton": "Badminton", "TableTennis": "Tennis de table", "Volleyball": "Volley-ball", "Cooldown": "Retour au calme",
-        "MindAndBody": "Corps et esprit", "Flexibility": "Souplesse", "JumpRope": "Corde à sauter", "Rugby": "Rugby", "Handball": "Handball"]
+        "MindAndBody": "Corps et esprit", "Flexibility": "Souplesse", "JumpRope": "Corde à sauter", "Rugby": "Rugby", "Handball": "Handball",
+        "MixedCardio": "Cardio mixte", "CardioDance": "Danse cardio", "Barre": "Barre au sol", "Kickboxing": "Kick-boxing",
+        "MartialArts": "Arts martiaux", "Snowboarding": "Snowboard", "PaddleSports": "Sports de pagaie", "WaterFitness": "Aquagym",
+        "Squash": "Squash", "Gymnastics": "Gymnastique", "SkatingSports": "Patinage", "Hockey": "Hockey"]
     /// A sport the table does not know is named « Entraînement »: the English Apple identifier is never shown.
     static func sport(_ raw: String) -> String {
         sportNames[raw.replacingOccurrences(of: "HKWorkoutActivityType", with: "")] ?? "Entraînement"
