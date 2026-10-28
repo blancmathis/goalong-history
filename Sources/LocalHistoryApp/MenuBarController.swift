@@ -540,7 +540,8 @@
             alert.alertStyle = .warning
             alert.messageText = title
             alert.informativeText = message
-            // « Annuler » comes first: it answers Return. Escape also cancels.
+            // « Annuler » comes first so Return can never erase. In the French app AppKit gives it Escape;
+            // no button answers Return.
             alert.addButton(withTitle: "Annuler")
             alert.addButton(withTitle: "Effacer").hasDestructiveAction = true
             return alert
