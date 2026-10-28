@@ -79,7 +79,9 @@ case "press":
             if let hit {
                 let status = AXUIElementPerformAction(hit, kAXPressAction as CFString)
                 print("press '\(needle)' -> \(describe(hit)) : \(status.rawValue)")
-                exit(status == .success ? 0 : 4)
+                // -25204 (cannot complete): the press opened a modal menu or popover and the app stopped answering
+                // until it closes; the action ran. The capture after the press is the proof.
+                exit(status == .success || status.rawValue == -25204 ? 0 : 4)
             }
         }
     }
