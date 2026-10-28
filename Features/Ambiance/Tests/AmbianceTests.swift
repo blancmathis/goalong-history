@@ -159,6 +159,15 @@ final class AmbianceTests: XCTestCase {
         XCTAssertTrue(AmbianceError.network.localizedDescription.contains("Connexion"))
         XCTAssertTrue(AmbianceError.invalidPack("taille incorrecte").localizedDescription.contains("taille incorrecte"))
     }
+    /// A corrupted pack says what to do next, and keeps the exact check that failed.
+    func testCorruptedPackSaysToDownloadAgain() {
+        for detail in ["SHA-256 incorrect", "taille incorrecte"] {
+            let text = AmbianceError.invalidPack(detail).localizedDescription
+            XCTAssertTrue(text.contains(detail), text)
+            XCTAssertTrue(text.contains("Téléchargez le pack à nouveau"), text)
+        }
+        XCTAssertFalse(AmbianceError.invalidPack("répertoire non sûr").localizedDescription.contains("Téléchargez"))
+    }
     func testErrorBodyOf404IsServerUnavailableNotWrongSize() {
         let notFound = AmbiancePackDownloader.progressFailure(status: 404, written: 9, expected: 9, packBytes: 5000)
         XCTAssertEqual(notFound?.localizedDescription, AmbianceError.serverUnavailable.localizedDescription)
