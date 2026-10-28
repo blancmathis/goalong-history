@@ -199,10 +199,11 @@ struct FocusStore {
         try apply(transaction)
     }
     /// Renames the project of every linked plan item (case-insensitive, like the measure). Returns the plans changed.
+    /// An unreadable day is left as it is: it must not keep every other day on the old name.
     @discardableResult func renamePlanProject(from old: String, to new: String) throws -> [FocusPlan] {
         var changed: [FocusPlan] = []
         for day in try planDays() {
-            guard var value = try plan(day) else { continue }
+            guard var value = (try? plan(day)) ?? nil else { continue }
             var touched = false
             for i in value.items.indices where value.items[i].project?.localizedCaseInsensitiveCompare(old) == .orderedSame && value.items[i].project != new {
                 value.items[i].project = new; touched = true

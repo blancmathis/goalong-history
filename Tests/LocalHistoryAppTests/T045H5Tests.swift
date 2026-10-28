@@ -100,5 +100,22 @@
             XCTAssertNil(store.renameTask("Atlas", to: "Goalong – app macOS"), "Merge into an existing name")
             XCTAssertEqual(try XCTUnwrap(focus.plan("2026-10-28")).items.map(\.project), ["Goalong – app macOS", "Goalong – app macOS", nil])
         }
+
+        /// Review #164: one unreadable plan day made the whole plan rename fail, so every other day kept the old
+        /// project name and read 0 minutes. The readable days are renamed; the damaged one is left as it is.
+        @MainActor func testAnUnreadablePlanDayDoesNotStopTheRename() throws {
+            let root = URL(fileURLWithPath: "/private/tmp/t045h5-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let focus = FocusStore(directory: root.appendingPathComponent("focus"))
+            var plan = FocusPlan(day: "2026-10-28")
+            plan.items = [FocusPlanItem(title: "A", project: "Goalong")]
+            try focus.savePlans([plan])
+            let damaged = root.appendingPathComponent("focus/plans/2026-10-27.json")
+            try Data("{ pas du JSON".utf8).write(to: damaged)
+            XCTAssertEqual(try focus.planDays().sorted(), ["2026-10-27", "2026-10-28"], "The damaged day is listed")
+            XCTAssertEqual(try focus.renamePlanProject(from: "Goalong", to: "Atlas").map(\.day), ["2026-10-28"])
+            XCTAssertEqual(try XCTUnwrap(focus.plan("2026-10-28")).items.map(\.project), ["Atlas"])
+            XCTAssertEqual(try String(contentsOf: damaged, encoding: .utf8), "{ pas du JSON")
+        }
     }
 #endif
