@@ -1041,14 +1041,12 @@
                 renderAgentActivity(overview)
             }
 
-            static func renderComputerHistoryForTesting(
-                _ memory: ComputerHistoryDayMemory?,
-                tokenBudget: Int = ComputerHistoryAgentContextRenderer.defaultTokenBudget
-            ) throws -> String {
-                try renderComputerHistory(
-                    memory,
-                    tokenBudget: tokenBudget
-                )
+            static func scopedExportForTesting(
+                _ stored: AppleScreenTimeStoredExport,
+                scope: AppleScreenTimeScope,
+                currentMacID: String
+            ) -> AppleScreenTimeStoredExport? {
+                scopedExport(stored, scope: scope, currentMacID: currentMacID)
             }
 
             static func renderDataForTesting(

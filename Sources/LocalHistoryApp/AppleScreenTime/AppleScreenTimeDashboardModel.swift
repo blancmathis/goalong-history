@@ -437,6 +437,23 @@
 
         var hasActiveRefreshTimerForTesting: Bool { refreshTimer != nil }
 
+        #if DEBUG
+            static func systemSharePayloadForTesting(
+                from summary: AppleScreenTimeDaySummary,
+                disclosureLevel: AppleScreenTimeShareLevel
+            ) -> AppleScreenTimeSharePayload {
+                systemSharePayload(from: summary, disclosureLevel: disclosureLevel)
+            }
+
+            static func dayStringForTesting(_ date: Date) -> String { dayString(date) }
+
+            static func storageUnavailableCollectionForTesting(
+                message: String
+            ) -> AppleSystemScreenTimeCollection {
+                storageUnavailableCollection(message: message)
+            }
+        #endif
+
         private func saveConfigurationAndRefresh(refreshSummary: Bool = true) {
             guard let store else {
                 if refreshSummary {
