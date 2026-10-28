@@ -255,6 +255,7 @@ import SwiftUI
     private let loadsOnAppear: Bool
     @State private var naming: GoalongWorkReviewModel.Row?
     @State private var renaming: String?
+    @State private var renameRefusal: String?
     @State private var name = ""
 
     private struct ReviewGroup: Identifiable {
@@ -337,10 +338,13 @@ import SwiftUI
             TextField("Nom de la tâche", text: $name)
             Button("Annuler", role: .cancel) { renaming = nil }
             Button("Renommer") {
-                if let old = renaming { work.renameTask(old, to: name) }
+                if let old = renaming { renameRefusal = work.renameTask(old, to: name) }
                 renaming = nil
             }
         } message: { Text("Donnez le nom d’une tâche existante pour fusionner les deux.") }
+        .alert("Renommage impossible", isPresented: Binding(get: { renameRefusal != nil }, set: { if !$0 { renameRefusal = nil } })) {
+            Button("OK", role: .cancel) { renameRefusal = nil }
+        } message: { Text(renameRefusal ?? "") }
     }
 
     private func groupView(_ group: ReviewGroup) -> some View {

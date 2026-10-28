@@ -71,6 +71,8 @@ extension Notification.Name {
     private var document: Document
     private let fileURL: URL
     private let definitionSource: @MainActor () -> GoalongWorkDefinition
+    /// Task names measured by an unsettled « tâche » commitment of Concentration (T-045 H3-02).
+    private let committedTasks: @MainActor () -> [String]
     private var observer: NSObjectProtocol?
     /// True when an unreadable file could not be moved aside: writing would destroy it.
     private var writesBlocked = false
@@ -78,9 +80,13 @@ extension Notification.Name {
     private var automaticChangedWhileBlocked = false
 
     init(fileURL: URL = AppPaths.applicationSupportDirectory.appendingPathComponent(GoalongWorkStore.fileName),
-         definition: @escaping @MainActor () -> GoalongWorkDefinition = { GoalongWorkDefinition(JevWorkContextStore.shared.context) }) {
+         definition: @escaping @MainActor () -> GoalongWorkDefinition = { GoalongWorkDefinition(JevWorkContextStore.shared.context) },
+         committedTasks: @escaping @MainActor () -> [String] = {
+             ConcentrationRuntime.shared.controller.map { FocusCommitmentRules.openTaskNames($0.commitments) } ?? []
+         }) {
         self.fileURL = fileURL
         self.definitionSource = definition
+        self.committedTasks = committedTasks
         let loaded: Document
         switch Self.load(from: fileURL) {
         case .missing: loaded = Document()
@@ -175,14 +181,20 @@ extension Notification.Name {
         publish(); persist()
     }
 
-    /// Renames (or merges into an existing name) one task everywhere.
-    func renameTask(_ old: String, to new: String) {
-        guard let name = GoalongWorkClassification.cleanTask(new), name != old else { return }
+    /// Renames (or merges into an existing name) one task everywhere. Returns why it refused, if it did:
+    /// an open « tâche » commitment finds its task by name and would measure 0 after the rename.
+    @discardableResult func renameTask(_ old: String, to new: String) -> String? {
+        guard let name = GoalongWorkClassification.cleanTask(new), name != old else { return nil }
+        if name.localizedCaseInsensitiveCompare(old) != .orderedSame,
+           committedTasks().contains(where: { $0.localizedCaseInsensitiveCompare(old) == .orderedSame }) {
+            return "« \(old) » a un engagement Concentration en cours, qui suit la tâche par son nom. Renommez-la une fois l’engagement réglé."
+        }
         for (key, entry) in document.entries where entry.task == old { document.entries[key]?.task = name }
         for index in document.corrections.indices where document.corrections[index].task == old {
             document.corrections[index].task = name
         }
         publish(); persist()
+        return nil
     }
 
     /// Forgets the agent's verdicts (corrections stay) so every context is classified again.

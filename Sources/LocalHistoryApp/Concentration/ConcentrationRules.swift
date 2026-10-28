@@ -293,6 +293,10 @@ enum FocusCommitmentRules {
         }
         return result
     }
+    /// Task names an unsettled « tâche » commitment measures: `progress` matches the task by its name.
+    static func openTaskNames(_ commitments: [FocusCommitment]) -> [String] {
+        commitments.compactMap { $0.result == nil && $0.kind == .task ? $0.task : nil }
+    }
     /// Time Goalong saw, or saw the Mac was not in use (asleep, locked, before the first or after the last record).
     static func isKnown(_ s: GoalongLocalAnalytics.Segment) -> Bool {
         switch s.kind {
