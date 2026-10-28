@@ -165,7 +165,12 @@
             directoryOnPath: (URL) -> Bool = directoryIsOnShellPath,
             isDevelopment: Bool = GoalongBuildChannel.current.isDevelopment
         ) -> GoalongCLIInstallOutcome {
-            let fail = { GoalongCLIInstallOutcome(succeeded: false, message: $0 + " La commande n’a pas été installée.") }
+            // The system's reason is English (« Permission denied »): it goes to the support log, not to the message (T-045 H2).
+            func fail(_ message: String, cause: Error? = nil) -> GoalongCLIInstallOutcome {
+                if let cause { SupportDiagnostics.shared.failure(cause, component: .app) }
+                return GoalongCLIInstallOutcome(succeeded: false, message: message + (cause == nil ? "" : " Vérifiez les droits de ce dossier.")
+                    + " La commande n’a pas été installée.")
+            }
             // Goalong Dev never points the real command at itself (see `inspect`), even if called directly.
             guard !isDevelopment else { return fail("Goalong Dev ne réinstalle pas la commande de Goalong installé.") }
             let link = linkURL.standardizedFileURL, directory = link.deletingLastPathComponent()
@@ -182,7 +187,7 @@
             } else {
                 do {
                     try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
-                } catch { return fail("Impossible de créer \(shownDirectory) : \(error.localizedDescription).") }
+                } catch { return fail("Impossible de créer \(shownDirectory).", cause: error) }
             }
 
             var repaired = false
@@ -199,17 +204,17 @@
                 // Atomic replacement of the old Goalong link: a temporary link renamed over it.
                 let temporary = directory.appendingPathComponent(".goalong.\(UUID().uuidString).tmp", isDirectory: false)
                 do { try fileManager.createSymbolicLink(atPath: temporary.path, withDestinationPath: executable.path) } catch {
-                    return fail("Impossible d’écrire dans \(shownDirectory) : \(error.localizedDescription).")
+                    return fail("Impossible d’écrire dans \(shownDirectory).", cause: error)
                 }
                 guard rename(temporary.path, link.path) == 0 else {
-                    let reason = String(cString: strerror(errno)); try? fileManager.removeItem(at: temporary)
-                    return fail("Impossible de remplacer l’ancien lien \(shown) : \(reason).")
+                    let reason = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO); try? fileManager.removeItem(at: temporary)
+                    return fail("Impossible de remplacer l’ancien lien \(shown).", cause: reason)
                 }
                 repaired = true
             } else {
                 // `symlink` fails if an item appeared meanwhile: nothing is ever overwritten.
                 do { try fileManager.createSymbolicLink(atPath: link.path, withDestinationPath: executable.path) } catch {
-                    return fail("Impossible de créer \(shown) : \(error.localizedDescription).")
+                    return fail("Impossible de créer \(shown).", cause: error)
                 }
             }
             return finish(repaired
