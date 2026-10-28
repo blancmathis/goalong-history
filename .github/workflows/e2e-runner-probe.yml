@@ -1,0 +1,65 @@
+name: E2E runner probe (T-045)
+
+# Real end-to-end probe on a free GitHub-hosted macOS runner: build an ad-hoc signed Goalong Dev,
+# launch it on synthetic data, click three paths, and upload screenshots. Publishes nothing.
+on:
+  push:
+    branches: ['e2e/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build Goalong Dev (debug, ad-hoc signed, updates and server off)
+        env:
+          LOCALHISTORY_CODESIGN_IDENTITY: '-'
+          LOCALHISTORY_APP_NAME: Goalong Dev
+          LOCALHISTORY_EXECUTABLE_NAME: Goalong History Dev
+          LOCALHISTORY_DISPLAY_NAME: Goalong Dev
+          LOCALHISTORY_BUNDLE_NAME: Goalong Dev
+          LOCALHISTORY_BUNDLE_ID: ai.goalong.localhistory.dev
+          LOCALHISTORY_DEV_DATA_MODE: fresh
+          LOCALHISTORY_DEV_SERVER: 'off'
+          LOCALHISTORY_DEV_SOURCE_BRANCH: ${{ github.ref_name }}
+          LOCALHISTORY_BUILD_CONFIGURATION: debug
+          LOCALHISTORY_DEVELOPMENT_BUILD: '1'
+          LOCALHISTORY_DISABLE_UPDATES: '1'
+          LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED: '0'
+          LOCALHISTORY_RUN_TESTS: '0'
+          LOCALHISTORY_PARALLEL_ARCHS: '0'
+          LOCALHISTORY_BUILD_JOBS: '4'
+        run: |
+          export LOCALHISTORY_DEV_SOURCE_COMMIT="$(git rev-parse --short HEAD)"
+          export LOCALHISTORY_ARCHS="$(uname -m)" LOCALHISTORY_OUTPUT_DIR="$RUNNER_TEMP/app"
+          ./scripts/build_app.sh > "$RUNNER_TEMP/build.log" 2>&1 || { tail -n 80 "$RUNNER_TEMP/build.log"; exit 1; }
+          ls "$RUNNER_TEMP/app"
+          codesign -dv "$RUNNER_TEMP/app/Goalong Dev.app" 2>&1 | head -5
+
+      - name: Drive the app (three paths, TCC probe, screenshots)
+        timeout-minutes: 15
+        run: qa/e2e/runner_probe.sh "$RUNNER_TEMP/app/Goalong Dev.app" "$RUNNER_TEMP/e2e"
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo '```'; cat "$RUNNER_TEMP/e2e/summary.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cp "$RUNNER_TEMP/build.log" "$RUNNER_TEMP/e2e/" 2>/dev/null || true
+
+      - name: Upload screenshots and probe logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-probe-${{ github.run_number }}
+          path: ${{ runner.temp }}/e2e
+          retention-days: 14
