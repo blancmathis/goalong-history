@@ -115,6 +115,7 @@ esc() { front; osascript -e 'tell application "System Events" to key code 53' >/
 rowshot() { screencapture -x "$ROWS/$1.png"; "$DRIVER" dump "$BUNDLE" "$ROWS/ax/$1.txt" >/dev/null 2>&1; }
 # Back to a known state: close sheets, the status panel, extra windows and the evening panel.
 cleanup() {
+  "$DRIVER" dismiss-alerts "$BUNDLE" | grep -v '^dismissed 0' >> "$SUMMARY"
   esc
   [[ $panel == 1 ]] && { "$DRIVER" status-item "$BUNDLE" >/dev/null 2>&1; sleep 1; panel=0; }
   "$DRIVER" close-extra "$BUNDLE" "Goalong History — Dev" >/dev/null 2>&1
@@ -143,8 +144,11 @@ step() {
       sm) o="$("$DRIVER" status-menu "$BUNDLE" 2>&1)" || req+="status-menu;"; sleep 1 ;;
       esc) esc ;;
       pc) panel=0 ;;
-      has:*) "$DRIVER" dump "$BUNDLE" "$RUNNER_TEMP/has.txt" >/dev/null 2>&1
-             o="$(grep -Em1 -- "${c#has:}" "$RUNNER_TEMP/has.txt")" || req+="has(${c#has:});" ;;
+      has:*) for _ in 1 2 3 4 5 6; do  # The page may still be computing: retry for about 18 s.
+               "$DRIVER" dump "$BUNDLE" "$RUNNER_TEMP/has.txt" >/dev/null 2>&1
+               o="$(grep -Em1 -- "${c#has:}" "$RUNNER_TEMP/has.txt")" && break; sleep 3
+             done
+             [[ -n $o ]] || req+="has(${c#has:});" ;;
       w:*) sleep "${c#w:}" ;;
       s:*) rowshot "$row-${c#s:}" ;;
     esac
