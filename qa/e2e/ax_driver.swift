@@ -2,6 +2,7 @@
 // it presses real controls in the target app.
 // Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT [ROLE] | menu BUNDLE TOP [ITEM]
 //        | close-extra BUNDLE MAIN_TITLE | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE | input SECONDS
+//        | dismiss-alerts BUNDLE
 import AppKit
 import ApplicationServices
 
@@ -133,6 +134,16 @@ case "windows":
     for w in list where (w[kCGWindowOwnerPID as String] as? Int32) == pid {
         print("id=\(w[kCGWindowNumber as String] ?? "") layer=\(w[kCGWindowLayer as String] ?? "") onscreen=\(w[kCGWindowIsOnscreen as String] ?? 0) name=\(w[kCGWindowName as String] ?? "-") bounds=\(w[kCGWindowBounds as String] ?? "")")
     }
+case "dismiss-alerts":
+    // Close leftover alerts (e.g. « Configuration rechargée » after MNB-07): an app-modal alert blocks every later step.
+    var closed = 0
+    for w in (attr(app(args[2]), kAXWindowsAttribute) as? [AXUIElement]) ?? []
+    where ["AXDialog", "AXSystemDialog"].contains(text(w, kAXSubroleAttribute)) || text(w, kAXDescriptionAttribute) == "alerte" {
+        if let b = attr(w, kAXCancelButtonAttribute) ?? attr(w, kAXDefaultButtonAttribute) {
+            AXUIElementPerformAction(b as! AXUIElement, kAXPressAction as CFString); closed += 1
+        }
+    }
+    print("dismissed \(closed) alert(s)")
 case "input":
     // Synthetic HID input into the frontmost app (runner only): mouse moves and letter keys, so the
     // app's listen-only event tap counts active time. Typed text goes into the runner's synthetic note.
