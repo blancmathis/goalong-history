@@ -42,10 +42,15 @@ extension Notification.Name {
             verdict = try c.decode(GoalongWorkVerdict.self, forKey: .verdict)
             task = try c.decodeIfPresent(String.self, forKey: .task)
             byOwner = try c.decode(Bool.self, forKey: .byOwner)
-            seen = try c.decode(String.self, forKey: .seen)
+            seen = Self.gregorianDay(try c.decode(String.self, forKey: .seen))
             attempts = min(3, max(0, try c.decodeIfPresent(Int.self, forKey: .attempts) ?? (byOwner ? 0 : 1)))
-            lastAskedDay = try c.decodeIfPresent(String.self, forKey: .lastAskedDay) ?? (byOwner ? nil : seen)
+            lastAskedDay = try c.decodeIfPresent(String.self, forKey: .lastAskedDay).map(Self.gregorianDay) ?? (byOwner ? nil : seen)
             keptFrom = try c.decodeIfPresent(String.self, forKey: .keptFrom)
+        }
+        /// Values written under a Buddhist system calendar (« 2569-10-27 ») read back as Gregorian (T-045 H7-04).
+        private static func gregorianDay(_ value: String) -> String {
+            guard value.count == 10, let year = Int(value.prefix(4)), year >= 2400 else { return value }
+            return String(format: "%04d", year - 543) + value.dropFirst(4)
         }
     }
     struct Correction: Codable, Equatable {
