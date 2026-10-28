@@ -112,7 +112,7 @@
             let file = root.appendingPathComponent("work.json")
             let store = GoalongWorkStore(fileURL: file, definition: { GoalongWorkDefinition(goals: "Goalong") },
                                          committedTasks: { [] },
-                                         renamedTask: { old, new in _ = try? focus.renamePlanProject(from: old, to: new) })
+                                         renamedTask: { old, new in _ = try? focus.renamePlanProject(from: old, to: new); return [] })
             XCTAssertNil(store.renameTask("Goalong", to: "Goalong – app macOS"))
             let saved = try XCTUnwrap(focus.plan("2026-10-28"))
             XCTAssertEqual(saved.items.map(\.project), ["Goalong – app macOS", "Atlas", nil])
@@ -136,6 +136,36 @@
             XCTAssertEqual(try focus.renamePlanProject(from: "Goalong", to: "Atlas").map(\.day), ["2026-10-28"])
             XCTAssertEqual(try XCTUnwrap(focus.plan("2026-10-28")).items.map(\.project), ["Atlas"])
             XCTAssertEqual(try String(contentsOf: damaged, encoding: .utf8), "{ pas du JSON")
+        }
+
+        /// L3-3: the skipped day keeps the old name; the owner is told which one, instead of a silent miss.
+        @MainActor func testAnUnreadablePlanDayIsReportedToTheOwner() throws {
+            let root = URL(fileURLWithPath: "/private/tmp/t045h5-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let focus = FocusStore(directory: root.appendingPathComponent("focus"))
+            var plan = FocusPlan(day: "2026-10-28")
+            plan.items = [FocusPlanItem(title: "A", project: "Goalong")]
+            try focus.savePlans([plan])
+            let damaged = root.appendingPathComponent("focus/plans/2026-10-27.json")
+            try Data("{ pas du JSON".utf8).write(to: damaged)
+            XCTAssertEqual(chmod(damaged.path, 0o600), 0)
+            XCTAssertEqual(try focus.renamePlanProjectReporting(from: "Goalong", to: "Atlas").skipped, ["2026-10-27"])
+            let store = GoalongWorkStore(fileURL: root.appendingPathComponent("work.json"), definition: { GoalongWorkDefinition(goals: "Goalong") },
+                                         committedTasks: { [] },
+                                         renamedTask: { old, new in (try? focus.renamePlanProjectReporting(from: old, to: new).skipped) ?? [] })
+            XCTAssertNil(store.renameTask("Atlas", to: "Nova"), "The rename itself is not refused")
+            let notice = try XCTUnwrap(store.renameNotice, "The skipped day is announced")
+            XCTAssertTrue(notice.contains("27/10/2026") || notice.contains("2026-10-27"), notice)
+        }
+
+        /// Review of #166: Concentration has no way to repair, delete or edit an unreadable day, so the notice
+        /// states what happened and promises nothing the app cannot do.
+        @MainActor func testTheSkippedDaysNoticeOnlyStatesFacts() {
+            XCTAssertNil(GoalongWorkStore.skippedDaysNotice([]))
+            XCTAssertEqual(GoalongWorkStore.skippedDaysNotice(["2026-10-27"]),
+                           "La tâche est renommée. Le Plan du jour du 27/10/2026 est illisible : il garde l’ancien nom. Son fichier n’est pas modifié.")
+            XCTAssertEqual(GoalongWorkStore.skippedDaysNotice(["2026-10-27", "2026-10-25"]),
+                           "La tâche est renommée. Ces Plans du jour sont illisibles : 25/10/2026, 27/10/2026. Ils gardent l’ancien nom. Leurs fichiers ne sont pas modifiés.")
         }
 
         /// Review 20628b87: without Concentration running, the rename saved its plans over a pending.json left by

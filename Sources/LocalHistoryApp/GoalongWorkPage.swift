@@ -347,6 +347,9 @@ import SwiftUI
         .alert("Renommage impossible", isPresented: Binding(get: { renameRefusal != nil }, set: { if !$0 { renameRefusal = nil } })) {
             Button("OK", role: .cancel) { renameRefusal = nil }
         } message: { Text(renameRefusal ?? "") }
+        .alert("Tâche renommée, avec une réserve", isPresented: Binding(get: { work.renameNotice != nil }, set: { if !$0 { work.renameNotice = nil } })) {
+            Button("OK", role: .cancel) { work.renameNotice = nil }
+        } message: { Text(work.renameNotice ?? "") }
     }
 
     private func groupView(_ group: ReviewGroup) -> some View {

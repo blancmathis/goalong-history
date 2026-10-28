@@ -202,10 +202,15 @@ struct FocusStore {
     /// An unreadable day is left as it is: it must not keep every other day on the old name.
     /// An interrupted change is replayed first: saving over its pending.json would lose the days it holds.
     @discardableResult func renamePlanProject(from old: String, to new: String) throws -> [FocusPlan] {
+        try renamePlanProjectReporting(from: old, to: new).changed
+    }
+    /// Same rename, and the unreadable days it left on the old name (T-045 L3-3): the caller can tell the owner.
+    func renamePlanProjectReporting(from old: String, to new: String) throws -> (changed: [FocusPlan], skipped: [String]) {
         try recover()
         var changed: [FocusPlan] = []
+        var skipped: [String] = []
         for day in try planDays() {
-            guard var value = (try? plan(day)) ?? nil else { continue }
+            guard var value = (try? plan(day)) ?? nil else { skipped.append(day); continue }
             var touched = false
             for i in value.items.indices where value.items[i].project?.localizedCaseInsensitiveCompare(old) == .orderedSame && value.items[i].project != new {
                 value.items[i].project = new; touched = true
@@ -213,7 +218,7 @@ struct FocusStore {
             if touched { changed.append(value) }
         }
         if !changed.isEmpty { try savePlans(changed) }
-        return changed
+        return (changed, skipped)
     }
     func recover() throws {
         if let value = try load(Transaction.self, area: nil, name: "pending.json") { try apply(value) }
