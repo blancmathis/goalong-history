@@ -98,11 +98,15 @@
         }
 
         /// The data root is fixed per process (`AppPaths`), so a test cannot point it elsewhere. The test process moves it
-        /// to a throwaway HOME (the run script, or the headless support under a bare `swift test`). A test that reads the
-        /// data root fails here, before any read, if that did not happen: it never touches the real folder.
+        /// to a throwaway HOME (the run script, the CI job, or the headless support under a bare `swift test`). A test that
+        /// reads the data root fails here, before any read, if it still sits in the account's real Library: the account
+        /// home comes from the password database, not from `$HOME`, so a moved HOME cannot hide it.
         static func requireThrowawayDataRoot() throws {
             let path = AppPaths.applicationSupportDirectory.standardizedFileURL.resolvingSymlinksInPath().path
-            guard path.hasPrefix("/tmp/goalong-") || path.hasPrefix("/private/tmp/goalong-") else {
+            let account = getpwuid(getuid()).flatMap { String(validatingCString: $0.pointee.pw_dir) } ?? "/"
+            let realLibrary = URL(fileURLWithPath: account, isDirectory: true).appendingPathComponent("Library", isDirectory: true)
+                .standardizedFileURL.resolvingSymlinksInPath().path + "/"
+            guard account != "/", !path.hasPrefix(realLibrary) else {
                 struct NotThrowaway: Error, CustomStringConvertible {
                     let description: String
                 }
