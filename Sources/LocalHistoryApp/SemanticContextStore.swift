@@ -532,7 +532,7 @@
         }
     }
 
-    enum SemanticContextStoreError: LocalizedError {
+    enum SemanticContextStoreError: LocalizedError, GoalongFrenchDescribable {
         case suppressedOrEmpty
         case unsafeDirectory(URL)
         case unsafeFile(URL)
@@ -560,6 +560,17 @@
             case .targetedDeletionExceedsLimit(let actual, let maximum):
                 return
                     "Refusing to retain \(actual) targeted semantic identifiers; the bounded maximum is \(maximum)."
+            }
+        }
+
+        var frenchDescription: String {
+            switch self {
+            case .suppressedOrEmpty: return "Le contexte observé était vide ou masqué ; rien n’a été enregistré."
+            case .unsafeDirectory, .unsafeFile: return GoalongUserFacingError.unsafeHistoryPathMessage
+            case .couldNotCreateTemporary: return GoalongUserFacingError.historyIOMessage
+            case .unclassifiableTargetedDeletionRow: return GoalongUserFacingError.inexactDeletionMessage
+            case .sourceChanged: return GoalongUserFacingError.historyChangedMessage
+            case .targetedDeletionExceedsLimit: return GoalongUserFacingError.tooManySelectedMessage
             }
         }
     }

@@ -12,6 +12,28 @@ enum GoalongUserFacingError {
 
     static let unreadableFileMessage = "Un fichier de Goalong est illisible. Réessayez ; si cela continue, ouvrez l’aide."
 
+    /// History storage errors (events, semantic context, derived files): no English, no private path (T-045 H2-01).
+    static let unsafeHistoryPathMessage =
+        "Goalong a refusé de modifier un dossier ou un fichier de l’historique qui n’est pas sûr (lien ou élément remplacé). Si cela continue, ouvrez l’aide."
+    static let historyChangedMessage = "L’historique a changé pendant l’opération. Réessayez."
+    static let historyIOMessage = "Goalong n’a pas pu lire ou écrire son historique. Vérifiez l’espace disque, puis réessayez."
+    static let historyDiskFullMessage = "Le disque est plein : Goalong n’a pas pu modifier son historique. Libérez de l’espace, puis réessayez."
+    static let historyAccessDeniedMessage =
+        "macOS a refusé l’accès à un fichier de l’historique de Goalong. Réessayez ; si cela continue, ouvrez l’aide."
+    static let invalidPeriodMessage = "La période choisie est invalide."
+    static let tooManySelectedMessage = "Trop d’éléments choisis en une fois. Choisissez une période plus courte."
+    static let inexactDeletionMessage =
+        "Une ligne illisible empêche une suppression exacte. Aucune suppression n’a été faite pour cette sélection."
+
+    /// Keeps what the old English `strerror` text told the user: a full disk or a refused access.
+    static func historyIOMessage(code: Int32) -> String {
+        switch code {
+        case ENOSPC, EDQUOT: return historyDiskFullMessage
+        case EACCES, EPERM, EROFS: return historyAccessDeniedMessage
+        default: return historyIOMessage
+        }
+    }
+
     static func message(_ error: Error) -> String {
         if let french = (error as? GoalongFrenchDescribable)?.frenchDescription { return french }
         if let text = (error as? LocalizedError)?.errorDescription, !text.isEmpty {
