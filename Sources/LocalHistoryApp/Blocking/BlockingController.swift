@@ -959,7 +959,8 @@ import LocalHistoryQueryCLI
                 case .failed(let reason): message = reason
                 default: message = nil
                 }
-                if let message, error != message { error = message }
+                // A new notice replaces the banner; the same notice does not hide a later refusal.
+                if let message, error != message, message != protectionNotice || error == nil { error = message }
                 // The notice goes with its cause; any other message stays.
                 if message == nil, let shown = protectionNotice, error == shown { error = nil }
                 protectionNotice = message
