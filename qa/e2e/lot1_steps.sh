@@ -38,7 +38,7 @@ step WRK-04 nav:work o:"Filtre" w:1
 
 # --- Historique (Ce Mac, Temps d'écran Apple, Conversations locales)
 step HIS-01 nav:history p:"Ce Mac" has:"TextEdit, [0-9]+ min" has:"Safari, [0-9]+ min" o:"Rechercher dans la chronologie" o:"Ordre de la chronologie" w:1 s:ordre esc o:"Effacer la recherche"
-step HIS-02 nav:history p:"Ce Mac" has:"[0-9]+ min d’activité" o:"Afficher les détails de" w:1 s:detail o:"Voir le fichier brut" w:2 esc
+step HIS-02 nav:history p:"Ce Mac" has:"([3-9]|[1-9][0-9]+) min d’activité" o:"Afficher les détails de" w:1 s:detail o:"Voir le fichier brut" w:2 esc
 step HIS-03 nav:history p:"Ce Mac" o:"Filtrer le contexte" w:1
 step HIS-04 nav:history p:"Ce Mac" o:Supprimer w:1 s:alert esc
 step STE-01 nav:history p:"Temps d’écran Apple" w:2 o:source-appleScreenTime w:1 s:toggle o:screen-time-open-settings w:1 esc

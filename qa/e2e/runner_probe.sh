@@ -123,6 +123,9 @@ cleanup() {
   "$DRIVER" press "$BUNDLE" "Revenir à l’activité de la journée" AXButton >/dev/null 2>&1
   true
 }
+# Data check on the window content: menus left out (« TextEdit » is also a recent-items menu entry),
+# no-break spaces (« 5 min ») read as spaces.
+hasgrep() { grep -v 'role=AXMenu' "$2" | sed $'s/\xc2\xa0/ /g; s/\xe2\x80\xaf/ /g' | grep -Em1 -- "$1"; }
 panel=0
 # A step passes when every required control was found and pressed; optional misses are listed.
 step() {
@@ -146,7 +149,7 @@ step() {
       pc) panel=0 ;;
       has:*) for _ in 1 2 3 4 5 6; do  # The page may still be computing: retry for about 18 s.
                "$DRIVER" dump "$BUNDLE" "$RUNNER_TEMP/has.txt" >/dev/null 2>&1
-               o="$(grep -Em1 -- "${c#has:}" "$RUNNER_TEMP/has.txt")" && break; sleep 3
+               o="$(hasgrep "${c#has:}" "$RUNNER_TEMP/has.txt")" && break; sleep 3
              done
              [[ -n $o ]] || req+="has(${c#has:});" ;;
       w:*) sleep "${c#w:}" ;;
