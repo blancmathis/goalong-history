@@ -67,9 +67,15 @@ public enum GoalongHealthImport {
         return try parse(stream: InputStream(data: data), options: options, after: {})
     }
 
+    /// Tests only: the same read with a small element bound.
+    static func read(data: Data, options: GoalongHealthImportOptions, elementLimit: Int) throws -> GoalongHealthImportResult {
+        try parse(stream: InputStream(data: data), options: options, elementLimit: elementLimit, after: {})
+    }
+
     private static func parse(stream: InputStream, options: GoalongHealthImportOptions,
+                              elementLimit: Int = HealthXMLReader.elementLimit,
                               after: () throws -> Void) throws -> GoalongHealthImportResult {
-        let reader = try HealthXMLReader(options)
+        let reader = try HealthXMLReader(options, elementLimit: elementLimit)
         let parser = XMLParser(stream: stream)
         parser.delegate = reader
         parser.shouldResolveExternalEntities = false
@@ -174,6 +180,9 @@ private final class HealthXMLReader: NSObject, XMLParserDelegate {
     var warnings = Set<String>()
     var seen = Set<String>()
     var elementCount = 0
+    /// Every element of the file counts, in or out of the chosen period: the bound caps the read time.
+    static let elementLimit = 12_000_000
+    let elementLimit: Int
     var depth = 0
 
     static let definitions: [String: HealthDefinition] = [
@@ -193,8 +202,9 @@ private final class HealthXMLReader: NSObject, XMLParserDelegate {
         "VO2Max": .init(key: "vo2Max", unit: "mL/kg/min", group: .heart, mode: "mean", maximum: 150),
     ]
 
-    init(_ options: GoalongHealthImportOptions) throws {
+    init(_ options: GoalongHealthImportOptions, elementLimit: Int = HealthXMLReader.elementLimit) throws {
         self.options = options
+        self.elementLimit = elementLimit
         var cal = Calendar(identifier: .gregorian); cal.timeZone = options.timezone
         calendar = cal; start = cal.startOfDay(for: options.from)
         guard let finish = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: options.through)),
@@ -221,9 +231,16 @@ private final class HealthXMLReader: NSObject, XMLParserDelegate {
                 qualifiedName qName: String?, attributes a: [String: String]) {
         depth += 1; elementCount += 1
         if Task<Never, Never>.isCancelled { fail(parser, "Lecture annulée. Aucune donnée n’a été envoyée."); return }
-        guard depth <= 32, elementCount <= 12_000_000, samples.count + workouts.count < 500_000,
-              a.values.allSatisfy({ $0.utf8.count <= 16_384 }) else {
-            fail(parser, "Cet export dépasse les limites de lecture. Réduisez la période sélectionnée."); return
+        // Each bound has its own text (T-045 H1-02): the element bound counts the whole file, so a shorter
+        // period cannot help there.
+        guard elementCount <= elementLimit else {
+            fail(parser, "Cet export Santé a plus de 12 millions d’éléments. Goalong ne lit pas un export de cette taille, quelle que soit la période choisie."); return
+        }
+        guard depth <= 32, a.values.allSatisfy({ $0.utf8.count <= 16_384 }) else {
+            fail(parser, "Ce fichier n’a pas la forme d’un export Apple Santé. Choisissez export.xml issu de Santé."); return
+        }
+        guard samples.count + workouts.count < 500_000 else {
+            fail(parser, "Cette période a plus de 500 000 mesures Santé. Réduisez la période sélectionnée."); return
         }
         if depth == 1 { isHealthExport = element == "HealthData"; if !isHealthExport { fail(parser, "Ce fichier n’est pas un export Apple Santé.") }; return }
         if depth == 2, element == "ExportDate" { exportDate = a["value"].flatMap(dateParser.date(from:)); return }

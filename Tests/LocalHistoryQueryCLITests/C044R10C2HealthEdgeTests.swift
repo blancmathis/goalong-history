@@ -38,7 +38,7 @@ final class C044R10C2HealthEdgeTests: XCTestCase {
         let ok = message { try readFile(build(extra: 0), o) }
         XCTAssertTrue(ok.contains("Aucune donnée"), "12 000 000 elements must pass the limit: \(ok)")
         let over = message { try readFile(build(extra: 1), o) }
-        XCTAssertTrue(over.contains("limites"), "12 000 001 elements must hit the limit: \(over)")
+        XCTAssertTrue(over.contains("12 millions"), "12 000 001 elements must hit the limit: \(over)")
     }
     func testFallBackSleepDayIs25Hours() throws {
         let o = opts("2026-10-24T22:00:00Z", "2026-10-25T21:59:59Z", [.sleep])

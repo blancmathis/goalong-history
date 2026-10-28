@@ -93,6 +93,8 @@ enum FocusCommitmentFormat {
         guard let end = value.interval(calendar: calendar)?.end else { return "le lendemain" }
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: end)).day ?? 0
         if days == 1 { return "demain" }
+        // A past period not yet settled (Goalong was closed at midnight) settles at the next check: today.
+        if days <= 0 { return "aujourd’hui" }
         return format(end, days < 7 ? "EEEE" : "EEEE d MMMM")
     }
 
