@@ -45,6 +45,10 @@ final class GoalongWebsitePairingCoordinator {
             ? " Avec le même compte, l’envoi quotidien reste programmé, en pause jusqu’à votre relecture. Avec un autre compte, il sera supprimé."
             : " L’envoi quotidien programmé sera supprimé."
     }
+    /// Body of the « Relier ce Mac » confirmation.
+    nonisolated static func confirmationText(origin: String, notice: String) -> String {
+        "Site : \(origin)\n\nL’accès sera enregistré automatiquement sur ce Mac. Il permet uniquement l’envoi des journées que vous choisirez. Cette connexion ne transmet aucune activité et ne change pas vos permissions.\n\nSi un compte est déjà configuré, cette connexion le remplacera dans l’app." + notice
+    }
     private var pendingPrompt: (alert: NSAlert, parent: NSWindow)?
 
     func cancelPendingPrompt() {
@@ -94,7 +98,7 @@ final class GoalongWebsitePairingCoordinator {
                 savedOrigin: UserDefaults.standard.string(forKey: "goalong.website.origin") ?? "",
                 savedAccountID: UserDefaults.standard.string(forKey: "goalong.website.accountID") ?? "",
                 newOrigin: pairing.origin)
-            confirmation.informativeText = "Site : \(pairing.origin)\n\nL’accès sera enregistré automatiquement sur ce Mac. Il permet uniquement l’envoi des journées que vous choisirez. Cette liaison ne transmet aucune activité et ne change pas vos permissions.\n\nSi un compte est déjà configuré, cette liaison le remplacera dans l’app." + notice
+            confirmation.informativeText = Self.confirmationText(origin: pairing.origin, notice: notice)
             confirmation.addButton(withTitle: "Relier mon Mac")
             confirmation.addButton(withTitle: "Annuler")
             guard await present(confirmation, on: window) == .alertFirstButtonReturn else { return false }
