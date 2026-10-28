@@ -76,17 +76,25 @@ import SwiftUI
         panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = true
         panel.prompt = "Suivre"; panel.message = "Choisissez le dossier d’un dépôt Git."
         guard panel.runModal() == .OK else { return }
-        for url in panel.urls { attempt { try developer.addProject(url) } }
+        let developer = developer
+        problem = Self.outcome(panel.urls.map { url in { try developer.addProject(url) } }); revision += 1
     }
 
     private func add(_ project: GoalongDeveloperProject) { attempt { try developer.addProject(project) } }
     private func remove(_ project: GoalongDeveloperProject) { attempt { try developer.removeProject(id: project.id) } }
 
-    private func attempt(_ change: () throws -> Void) {
-        do { try change(); problem = nil; revision += 1 }
-        catch GoalongDeveloperFileIO.Failure.tooLarge { problem = "Limite atteinte : 64 projets au plus." }
-        catch GoalongDeveloperFileIO.Failure.invalid { problem = "Ce dossier n’est pas un dépôt Git." }
-        catch { problem = "Ce choix n’a pas pu être enregistré." }
+    private func attempt(_ change: @escaping () throws -> Void) { problem = Self.outcome([change]); revision += 1 }
+
+    /// Runs every change. The first failure stays shown, even when a later folder of the same choice is added.
+    static func outcome(_ changes: [() throws -> Void]) -> String? {
+        var problem: String?
+        for change in changes {
+            do { try change() }
+            catch GoalongDeveloperFileIO.Failure.tooLarge { problem = problem ?? "Limite atteinte : 64 projets au plus." }
+            catch GoalongDeveloperFileIO.Failure.invalid { problem = problem ?? "Ce dossier n’est pas un dépôt Git." }
+            catch { problem = problem ?? "Ce choix n’a pas pu être enregistré." }
+        }
+        return problem
     }
 }
 #endif
