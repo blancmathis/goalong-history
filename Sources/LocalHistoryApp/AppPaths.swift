@@ -1987,8 +1987,9 @@
             } catch {
                 config = .default
                 // A present but unreadable file holds the user's exclusions: never record
-                // with defaults in its place, and never overwrite it silently.
-                isFailClosed = fileExisted
+                // with defaults in its place, and never overwrite it silently. Storage that could not
+                // be prepared counts too: the file was not read, so it is checked here (H9).
+                isFailClosed = fileExisted || FileManager.default.fileExists(atPath: fileURL.path)
                 Diagnostics.write("Failed to load config; using defaults: \(error)")
             }
         }

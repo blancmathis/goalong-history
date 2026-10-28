@@ -114,9 +114,7 @@ public final class GoalongDeveloperStore {
         if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
     }
     private func dayName(_ date: Date, calendar: Calendar) -> String {
-        let formatter = DateFormatter(); formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        GoalongSystemSourceFiles.dayKey(date, calendar: calendar)
     }
 }
 public extension Notification.Name {

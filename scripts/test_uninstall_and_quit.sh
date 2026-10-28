@@ -179,4 +179,21 @@ grep -qx '  goalong_dev_purge_summary' "$SCRIPT_DIR/../uninstall.sh" || fail "A 
 purge_line="$(grep -n '^  purge_goalong_dev$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
 data_line="$(grep -n '^  rm -rf "$DATA_DIR"$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
 [[ -n "$purge_line" && -n "$data_line" ]] && (( purge_line < data_line )) || fail "--purge-data must handle Goalong Dev first."
+# 5. --purge-data also removes the standalone Braise folder (~/Library/Application Support/Braise), whose
+# settings Goalong imports once. A symlink there is removed, never followed.
+(
+  P="$WORK/legacy-braise"; LEGACY_BRAISE_DIR="$P/Braise"
+  mkdir -p "$LEGACY_BRAISE_DIR" "$P/elsewhere"
+  echo '{}' > "$LEGACY_BRAISE_DIR/settings.json"; echo keep > "$P/elsewhere/keep"
+  remove_legacy_braise_data
+  [[ ! -e "$LEGACY_BRAISE_DIR" ]] || fail "--purge-data left the old Braise folder."
+  ln -s "$P/elsewhere" "$LEGACY_BRAISE_DIR"
+  remove_legacy_braise_data
+  [[ ! -e "$LEGACY_BRAISE_DIR" && ! -L "$LEGACY_BRAISE_DIR" && -f "$P/elsewhere/keep" ]] || fail "The old Braise link was followed or kept."
+  remove_legacy_braise_data || fail "A missing old Braise folder must not fail the purge."
+) || exit 1
+[[ "$LEGACY_BRAISE_DIR" == "$HOME/Library/Application Support/Braise" ]] || fail "Wrong old Braise folder: $LEGACY_BRAISE_DIR"
+braise_line="$(grep -n '^  remove_legacy_braise_data$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
+purge_if_line="$(grep -n '^if \[\[ "$PURGE_DATA" == true \]\]; then$' "$SCRIPT_DIR/../uninstall.sh" | cut -d: -f1)"
+[[ -n "$braise_line" && -n "$purge_if_line" ]] && (( braise_line > purge_if_line && braise_line > data_line )) || fail "Only --purge-data may remove the old Braise folder."
 echo "Uninstall and quit tests passed."

@@ -61,12 +61,22 @@ public enum GoalongDeveloperFileIO {
             guard info.st_mode & S_IFMT == S_IFREG else { throw Failure.invalid }
         } else if errno != ENOENT { throw Failure.inaccessible }
         let target = append ? name : ".developer-\(UUID().uuidString)"
-        let fd = openat(dir, target, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC | (append ? O_APPEND : O_EXCL), 0o600)
+        let fd = openat(dir, target, O_CREAT | O_NOFOLLOW | O_CLOEXEC | (append ? O_RDWR | O_APPEND : O_WRONLY | O_EXCL), 0o600)
         guard fd >= 0 else { throw Failure.inaccessible }
         defer { close(fd); if !append { unlinkat(dir, target, 0) } }
         guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
               !append || info.st_size + Int64(data.count) <= maximumBytes else { throw Failure.tooLarge }
         guard fchmod(fd, 0o600) == 0 else { throw Failure.inaccessible }
+        var data = data
+        if append, info.st_size > 0 {
+            // A write cut short (disk full, crash) left a torn last line: start the new one on its own line.
+            var last: UInt8 = 0
+            guard pread(fd, &last, 1, info.st_size - 1) == 1 else { throw Failure.inaccessible }
+            if last != 10 {
+                guard info.st_size + Int64(data.count) + 1 <= maximumBytes else { throw Failure.tooLarge }
+                data.insert(10, at: 0)
+            }
+        }
         try data.withUnsafeBytes { bytes in
             var written = 0
             while written < bytes.count {

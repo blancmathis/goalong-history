@@ -215,6 +215,7 @@
 
             do {
                 try AppPaths.prepare()
+                GoalongLegacyDayFiles.migrate(root: AppPaths.applicationSupportDirectory)
                 GoalongActivitySummaryBackfill.shared.start()
                 let retentionDirectories = ComputerHistoryStore.retentionDirectories(
                     rootDirectory: AppPaths.applicationSupportDirectory

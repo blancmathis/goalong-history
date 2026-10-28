@@ -535,15 +535,21 @@
             }
         }
 
-        private func confirmDestructiveAction(title: String, message: String) -> Bool {
-            NSApplication.shared.activate(ignoringOtherApps: true)
+        static func destructiveConfirmationAlert(title: String, message: String) -> NSAlert {
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = title
             alert.informativeText = message
-            alert.addButton(withTitle: "Effacer")
+            // « Annuler » comes first so Return can never erase. In the French app AppKit gives it Escape;
+            // no button answers Return.
             alert.addButton(withTitle: "Annuler")
-            return alert.runModal() == .alertFirstButtonReturn
+            alert.addButton(withTitle: "Effacer").hasDestructiveAction = true
+            return alert
+        }
+
+        private func confirmDestructiveAction(title: String, message: String) -> Bool {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            return Self.destructiveConfirmationAlert(title: title, message: message).runModal() == .alertSecondButtonReturn
         }
 
         private func showInformation(title: String, message: String) {
