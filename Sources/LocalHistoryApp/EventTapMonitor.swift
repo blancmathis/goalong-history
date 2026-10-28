@@ -654,7 +654,7 @@
             var lastY: Double
             var eventCount: Int
             var origin: InputOriginSnapshot
-            /// Farthest the pointer got from the press point, so a wobble that returns is still a click.
+            /// Farthest the pointer got from the press point, so a drag that comes back to its start is still a drag.
             var maxDistance: Double = 0
         }
         /// A press that moves less than this (in points) is a click, not a drag: trackpad clicks jitter by 1-3 px.
