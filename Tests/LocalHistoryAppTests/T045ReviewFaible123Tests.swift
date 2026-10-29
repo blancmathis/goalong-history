@@ -34,6 +34,7 @@ final class T045ReviewFaible123Tests: XCTestCase {
         XCTAssertEqual(sends, 1)
         XCTAssertFalse(scheduler.status.contains("Rien n’a été envoyé"), scheduler.status)
         XCTAssertTrue(scheduler.status.contains("reçue par le site"), scheduler.status)
+        XCTAssertTrue(scheduler.status.contains("tant que Goalong reste ouvert"), scheduler.status)
         await scheduler.tick(now: now.addingTimeInterval(60))
         XCTAssertEqual(sends, 1, "No resend by itself")
     }
@@ -46,7 +47,7 @@ final class T045ReviewFaible123Tests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: { _ in true }, sharingRulesReadable: { true })
         XCTAssertLessThan(scheduler.status.count, 400, scheduler.status)
-        XCTAssertTrue(scheduler.status.contains("…"), scheduler.status)
+        XCTAssertTrue(scheduler.status.contains("\(GoalongUIFormat.day(key: "2026-08-12")) et 13 autres jours"), scheduler.status)
         XCTAssertTrue(scheduler.status.contains(GoalongUIFormat.day(key: "2026-08-12")), scheduler.status)
         XCTAssertFalse(scheduler.status.contains(GoalongUIFormat.day(key: "2026-08-13")), scheduler.status)
     }

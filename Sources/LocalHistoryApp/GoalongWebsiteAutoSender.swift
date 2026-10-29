@@ -322,7 +322,7 @@ import LocalHistoryCore
                 // The site has the day: only the local record failed. Not "nothing was sent", and no resend by itself
                 // (the attempt saved before sending already marks the day as tried).
                 SupportDiagnostics.shared.failure(error, component: .sharing)
-                status = "Journée du \(GoalongUIFormat.day(key: day)) reçue par le site, mais Goalong n’a pas pu l’enregistrer sur ce Mac. Elle ne sera pas renvoyée seule."
+                status = "Journée du \(GoalongUIFormat.day(key: day)) reçue par le site, mais Goalong n’a pas pu l’enregistrer sur ce Mac. Elle ne sera pas renvoyée tant que Goalong reste ouvert."
             }
         } catch where GoalongQueryCLI.isMissingSavedDay(error) {
             // Mac off or Goalong closed that day: no record, and none will come later. Send nothing
@@ -376,9 +376,11 @@ import LocalHistoryCore
     static func missingDayNotice(_ days: String) -> String {
         let all = days.split(separator: ",")
         let names = all.prefix(missingDayShown).map { "le " + GoalongUIFormat.day(key: String($0)) }
-        // Long absences stay short: the first days, then « … ».
-        var list = names.count > 1 ? names.dropLast().joined(separator: ", ") + " et " + names.last! : names.joined()
-        if all.count > missingDayShown { list += " …" }
+        // Long absences stay short: the first days, then how many more (only the last 30 are kept).
+        let more = all.count - names.count
+        let list = more > 0
+            ? names.joined(separator: ", ") + " et " + (all.count >= missingDayLimit ? "au moins " : "") + "\(more) autre\(more > 1 ? "s" : "") jour\(more > 1 ? "s" : "")"
+            : names.count > 1 ? names.dropLast().joined(separator: ", ") + " et " + names.last! : names.joined()
         return "Aucun relevé enregistré pour \(list) (Mac éteint ou Goalong fermé) : rien n’a été envoyé pour "
             + (all.count > 1 ? "ces jours." : "ce jour.")
     }
