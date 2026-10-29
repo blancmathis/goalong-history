@@ -7,6 +7,7 @@ Standard library only. Subcommands:
   accept  [--run R] [--only P] [--force]
   index   [--run R]                                   rebuild index.html of a run
   clean                                               remove this checkout's runs
+  compare [--base REV] [--only P] [--shards N]        render the merge-base of REV and this checkout, diff them
 
 Paths:
   runs      <checkout>/qa/gallery/runs/<YYYYMMDD-HHMMSS>-<commit>/   (GALLERY_ROOT replaces <checkout>/qa/gallery)
@@ -607,6 +608,158 @@ def command_diff(args: argparse.Namespace) -> int:
     return 1 if report.get("noBase") or differences(report) else 0
 
 
+# ---------------------------------------------------------------- compare (base revision vs head, same machine)
+
+# Intended pixel changes of a branch: one key prefix per line (`agenda/detail-  # texte « exclusion globale »`).
+# Only the lines this branch adds count (diff from the merge-base), so old lines never hide a later change and the
+# file may be emptied at any time. A tracked file, not a PR label: the declaration sits in the reviewed diff next to
+# the code that changes the pixels, keeps its reason in Git, and `make gallery-compare` reads it the same way locally.
+EXPECTED_FILE = "qa/gallery-expected.txt"
+KEEP_COMPARES = 3
+KINDS = (("changed", "changé"), ("resized", "taille changée"), ("new", "nouveau"), ("missing", "disparu"),
+         ("notOk", "non ok"))
+
+
+def added_expectations(checkout: Path, base: str) -> list[str]:
+    """Key prefixes added to EXPECTED_FILE since `base` (working tree included)."""
+    patch = output(["git", "-C", str(checkout), "diff", "--no-color", "--unified=0", base, "--", EXPECTED_FILE])
+    prefixes = []
+    for line in patch.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            prefix = line[1:].split("#", 1)[0].strip()
+            if prefix:
+                prefixes.append(prefix)
+    return prefixes
+
+
+def compare_verdict(report: dict, prefixes: list[str]) -> dict:
+    """Splits a diff report into expected and unexpected differences. A render that is not ok is never expected."""
+    items, used = [], set()
+    for kind, label in KINDS:
+        for item in report.get(kind, []):
+            match = next((prefix for prefix in prefixes if item["key"].startswith(prefix)), None)
+            expected = match is not None and kind != "notOk"
+            if expected:
+                used.add(match)
+            items.append({**item, "kind": kind, "label": label, "expected": expected})
+    return {"items": items, "unexpected": sum(not item["expected"] for item in items),
+            "expected": sum(item["expected"] for item in items),
+            "unused": [prefix for prefix in prefixes if prefix not in used]}
+
+
+def render_side(checkout: Path, root: Path, baseline: Path, args: argparse.Namespace) -> tuple[int, Path | None, float]:
+    """`gallery.py run` of one checkout into `root`, diffed against `baseline` (a run folder or nothing)."""
+    environment = {**os.environ, "GALLERY_ROOT": str(root), "GALLERY_BASELINE": str(baseline)}
+    environment.pop("GALLERY_ENVKEY", None)
+    command = [sys.executable, str(checkout / "scripts" / "gallery.py"), "run", "--shards", str(args.shards),
+               "--only", args.only or ""]
+    started = time.time()
+    code = subprocess.run(command, cwd=checkout, env=environment, check=False).returncode
+    latest = root / "latest"
+    return code, (latest.resolve() if latest.exists() else None), round(time.time() - started, 1)
+
+
+def compare_summary(state: dict) -> str:
+    verdict = state.get("verdict") or {"items": [], "unexpected": 0, "expected": 0, "unused": []}
+    lines = [f"## Galerie : base {state['base'][:7]} contre tête {state['head'][:7]}", "",
+             f"**{state['result']}** — {state['message']}", "",
+             f"- Base : `{state['base']}` (merge-base de `{state['baseRef']}`), rendu {state['baseSeconds']} s, "
+             f"code {state['baseCode']}",
+             f"- Tête : `{state['head']}`{'' if state['headClean'] else ' (arbre modifié)'}, rendu "
+             f"{state['headSeconds']} s, code {state['headCode']}",
+             f"- Durée totale : {state['seconds']} s ; clé env {state.get('envKey') or '?'} ; "
+             f"{state.get('same', 0)} image(s) identique(s)",
+             f"- Écarts déclarés ({EXPECTED_FILE}, lignes ajoutées) : "
+             + (", ".join(f"`{prefix}`" for prefix in state["prefixes"]) or "aucun")]
+    for problem in state.get("problems", []):
+        lines.append(f"- Problème : {problem}")
+    if verdict["unused"]:
+        lines.append("- Déclarés sans écart : " + ", ".join(f"`{prefix}`" for prefix in verdict["unused"]))
+    if verdict["items"]:
+        lines += ["", "| Image | Écart | Détail | Déclaré |", "|---|---|---|---|"]
+        for item in verdict["items"]:
+            if item["kind"] == "changed":
+                box = item.get("bbox")
+                detail = (item.get("error") or f"{item['percent']} %"
+                          + (f", boîte {box[0]},{box[1]} {box[2]}×{box[3]} px" if box else ""))
+            elif item["kind"] == "resized":
+                detail = (f"{item['baseSize'][0]}×{item['baseSize'][1]} → "
+                          f"{item['currentSize'][0]}×{item['currentSize'][1]} px")
+            elif item["kind"] == "notOk":
+                detail = f"{item['status']} {item.get('detail', '')}".strip()
+            else:
+                detail = ""
+            lines.append(f"| `{item['key']}` | {item['label']} | {detail.replace('|', '/')} | "
+                         f"{'oui' if item['expected'] else '**non**'} |")
+    return "\n".join(lines) + "\n"
+
+
+def command_compare(args: argparse.Namespace) -> int:
+    """Renders the merge-base of --base and HEAD in a throwaway worktree, then this checkout, and diffs them.
+    No shared base is read or written: both renders come from this machine, in this run."""
+    base = git("merge-base", args.base, "HEAD")
+    if not base:
+        fail(f"merge-base introuvable entre {args.base} et HEAD (en CI : actions/checkout avec fetch-depth: 0)")
+    info = git_info()
+    compares = gallery_root() / "compare"
+    compares.mkdir(parents=True, exist_ok=True)
+    root = Path(tempfile.mkdtemp(prefix=f"{dt.datetime.now():%Y%m%d-%H%M%S}-{base[:7]}-{info['commit']}-",
+                                 dir=compares))
+    tree = root / "base-tree"
+    state: dict = {"base": base, "baseRef": args.base, "head": info["commitFull"], "headClean": info["clean"],
+                   "prefixes": added_expectations(CHECKOUT, base), "problems": [], "baseCode": None,
+                   "headCode": None, "baseSeconds": 0, "headSeconds": 0}
+    started = time.time()
+    log(f"gallery: compare {base[:7]} (base) → {info['commit']} (tête) dans {root}")
+    added = subprocess.run(["git", "-C", str(CHECKOUT), "worktree", "add", "--detach", "--quiet", str(tree), base],
+                           check=False)
+    if added.returncode != 0:
+        fail(f"git worktree add {base[:7]} impossible")
+    try:
+        state["baseCode"], base_run, state["baseSeconds"] = render_side(tree, root / "base", root / "no-base", args)
+    finally:
+        subprocess.run(["git", "-C", str(CHECKOUT), "worktree", "remove", "--force", str(tree)], check=False)
+        subprocess.run(["git", "-C", str(CHECKOUT), "worktree", "prune"], check=False)
+    if base_run is None or not (base_run / "manifest.json").exists():
+        state["problems"].append("rendu de la base sans manifest")
+    else:
+        if state["baseCode"] != 0:
+            state["problems"].append("rendu de la base en échec (images non ok ou problème, voir base/latest)")
+        state["headCode"], head_run, state["headSeconds"] = render_side(CHECKOUT, root / "head", base_run, args)
+        if head_run is None or not (head_run / "diff.json").exists():
+            state["problems"].append("rendu de la tête sans diff.json")
+        else:
+            report = read_json(head_run / "diff.json")
+            manifest = read_json(head_run / "manifest.json")
+            state.update(envKey=manifest.get("envKey"), same=report.get("same", 0), headRun=str(head_run))
+            state["problems"] += [f"tête : {problem}" for problem in manifest.get("problems", [])]
+            if report.get("noBase"):
+                state["problems"].append(f"diff de la tête : {report.get('message', '')}")
+            state["verdict"] = compare_verdict(report, state["prefixes"])
+    state["seconds"] = round(time.time() - started, 1)
+    verdict = state.get("verdict")
+    if state["problems"] or verdict is None:
+        state["result"], state["message"] = "ÉCHEC", "rendu incomplet, comparaison non fiable"
+    elif verdict["unexpected"]:
+        state["result"] = "ÉCHEC"
+        state["message"] = (f"{verdict['unexpected']} écart(s) non déclaré(s) ; si voulus, ajouter leur préfixe "
+                            f"dans {EXPECTED_FILE}")
+    else:
+        state["result"] = "OK"
+        state["message"] = f"0 écart non déclaré ({verdict['expected']} déclaré(s))"
+    summary = compare_summary(state)
+    (root / "summary.md").write_text(summary, encoding="utf-8")
+    write_json(root / "compare.json", state)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+            handle.write(summary)
+    for old in sorted(path for path in compares.iterdir() if path.is_dir())[:-KEEP_COMPARES]:
+        shutil.rmtree(old, ignore_errors=True)
+    print(summary, end="")
+    log(f"gallery: compare : {root}")
+    return 0 if state["result"] == "OK" else 1
+
+
 # ---------------------------------------------------------------- accept
 
 class BaseLocked(Exception):
@@ -940,11 +1093,15 @@ def main(argv: list[str]) -> int:
     index = sub.add_parser("index")
     index.add_argument("--run", default="latest")
     sub.add_parser("clean")
+    compare_parser = sub.add_parser("compare")
+    compare_parser.add_argument("--base", default="origin/main")
+    compare_parser.add_argument("--only", default=os.environ.get("ONLY", ""))
+    compare_parser.add_argument("--shards", type=int, default=4)
     args = parser.parse_args(argv)
-    if args.command == "run" and not 1 <= args.shards <= 16:
+    if args.command in ("run", "compare") and not 1 <= args.shards <= 16:
         fail("SHARDS doit être entre 1 et 16")
     handlers = {"run": command_run, "diff": command_diff, "accept": command_accept, "index": command_index,
-                "clean": command_clean}
+                "clean": command_clean, "compare": command_compare}
     return handlers[args.command](args)
 
 

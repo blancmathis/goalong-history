@@ -245,4 +245,62 @@ gallery.write_index(run)
 assert "diff non fait" in (run / "index.html").read_text(encoding="utf-8")
 PY2
 kill $holder; wait $holder 2>/dev/null || true
+# Compare (base revision vs head): declared prefixes are the lines the branch adds; a declared change passes, an
+# undeclared one fails; a throwaway worktree of the merge-base exists during the base render and is gone after.
+K4=25F71-17E202-arm64-1x
+make_run cb $K4 1 1 "a/x--light:same" "a/x--dark:same" "b/y--light:same"
+make_run ch $K4 1 1 "a/x--light:dot" "a/x--dark:same" "b/y--light:same"
+make_run cs $K4 1 1 "a/x--light:same" "a/x--dark:same" "b/y--light:same"
+repo="$dir/repo"; mkdir -p "$repo/qa"
+git -C "$repo" init -q && git -C "$repo" config user.email t@t && git -C "$repo" config user.name t
+printf '# header\nold/  # older line\n' > "$repo/qa/gallery-expected.txt"
+git -C "$repo" add -A && git -C "$repo" commit -qm base
+printf '# header\nold/  # older line\na/x--  # wanted\n' > "$repo/qa/gallery-expected.txt"
+git -C "$repo" commit -qam head
+python3 - "$ROOT/scripts" "$repo" "$GALLERY_ROOT/runs" "$dir/summary.md" <<'PY2' || fail "compare"
+import argparse, json, os, shutil, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import gallery
+repo, runs, summary = Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4])
+assert gallery.added_expectations(repo, "HEAD~1") == ["a/x--"], gallery.added_expectations(repo, "HEAD~1")
+assert gallery.added_expectations(repo, "HEAD") == []
+tool = gallery.diff_tool()
+gallery.diff_tool = lambda: tool
+gallery.CHECKOUT = repo
+os.environ["GITHUB_STEP_SUMMARY"] = str(summary)
+head_source = {"name": "ch"}
+seen = {}
+
+def fake_render(checkout, root, baseline, args):
+    source = runs / ("cb" if root.name == "base" else head_source["name"])
+    run = root / "runs" / source.name
+    shutil.copytree(source, run)
+    (root / "latest").symlink_to(run)
+    if root.name == "base":
+        seen["tree"] = (checkout / ".git").exists() and checkout != repo
+        return 0, run, 1.0
+    os.environ["GALLERY_BASELINE"] = str(baseline)
+    try:
+        gallery.compare(run, json.load(open(run / "manifest.json")), None, 0, 0)
+    finally:
+        del os.environ["GALLERY_BASELINE"]
+    return 0, run, 2.0
+
+gallery.render_side = fake_render
+args = argparse.Namespace(base="HEAD~1", only="", shards=1)
+assert gallery.command_compare(args) == 0, summary.read_text()
+assert seen["tree"] and not list((gallery.gallery_root() / "compare").glob("*/base-tree")), "worktree not removed"
+text = summary.read_text()
+assert "**OK**" in text and "| `a/x--light.png` | changé |" in text and "| oui |" in text, text
+args.base = "HEAD"
+assert gallery.command_compare(args) == 1, "undeclared change passed"
+assert "**ÉCHEC**" in summary.read_text().split("## Galerie")[-1] and "**non**" in summary.read_text()
+head_source["name"] = "cs"
+args.base = "HEAD~1"
+assert gallery.command_compare(args) == 0
+last = summary.read_text().split("## Galerie")[-1]
+assert "0 écart non déclaré" in last and "Déclarés sans écart : `a/x--`" in last, last
+assert len(list((gallery.gallery_root() / "compare").iterdir())) == gallery.KEEP_COMPARES
+PY2
 echo "test_gallery_script: ok"
