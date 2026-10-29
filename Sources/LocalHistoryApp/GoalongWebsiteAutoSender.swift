@@ -323,6 +323,7 @@ import LocalHistoryCore
                 // (the attempt saved before sending already marks the day as tried).
                 SupportDiagnostics.shared.failure(error, component: .sharing)
                 status = "Journée du \(GoalongUIFormat.day(key: day)) reçue par le site, mais Goalong n’a pas pu l’enregistrer sur ce Mac. Elle ne sera pas renvoyée tant que Goalong reste ouvert."
+                    + (skipped.map { " " + Self.missingDayNotice($0) } ?? "")
             }
         } catch where GoalongQueryCLI.isMissingSavedDay(error) {
             // Mac off or Goalong closed that day: no record, and none will come later. Send nothing
@@ -330,7 +331,7 @@ import LocalHistoryCore
             networkRetry = nil
             // A weekend skips two days: keep naming each one, not only the last.
             guard var saved = configuration(), saved.identifier == current.identifier else { return }
-            saved.missingDay = ((saved.missingDay.map { $0.split(separator: ",").suffix(Self.missingDayLimit - 1).joined(separator: ",") + "," } ?? "") + day); try? store(saved)
+            saved.missingDay = Self.appendingMissingDay(day, to: saved.missingDay); try? store(saved)
             // Paused while the day was read: the pause text stays, the day is named on resume or restart.
             guard enabled else { return }
             status = Self.missingDayNotice(saved.missingDay ?? day) + " L’envoi quotidien continue."
@@ -373,10 +374,16 @@ import LocalHistoryCore
     private static let missingDayShown = 3
     /// What is kept in the saved setting, so it does not grow until the next success.
     private static let missingDayLimit = 30
+    /// At the limit, the first days stay (they are the ones named) and the oldest of the others go.
+    private static func appendingMissingDay(_ day: String, to saved: String?) -> String {
+        let kept = saved?.split(separator: ",").map(String.init) ?? []
+        guard kept.count >= missingDayLimit else { return (kept + [day]).joined(separator: ",") }
+        return (kept.prefix(missingDayShown) + kept.suffix(missingDayLimit - missingDayShown - 1) + [day]).joined(separator: ",")
+    }
     static func missingDayNotice(_ days: String) -> String {
         let all = days.split(separator: ",")
         let names = all.prefix(missingDayShown).map { "le " + GoalongUIFormat.day(key: String($0)) }
-        // Long absences stay short: the first days, then how many more (only the last 30 are kept).
+        // Long absences stay short: the first days, then how many more (the first 3 and the last 27 are kept).
         let more = all.count - names.count
         let list = more > 0
             ? names.joined(separator: ", ") + " et " + (all.count >= missingDayLimit ? "au moins " : "") + "\(more) autre\(more > 1 ? "s" : "") jour\(more > 1 ? "s" : "")"

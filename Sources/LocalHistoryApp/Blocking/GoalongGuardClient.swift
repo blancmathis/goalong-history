@@ -99,7 +99,7 @@ enum GuardUnregisterCommand {
     static let argument = "--unregister-guard"
     static let refusedExitCode: Int32 = 3
     static let overrides = ["GOALONG_UNINSTALL_DURING_LOCK", "GOALONG_INSTALL_DURING_LOCK"]
-    /// The service is still registered afterwards (or this bundle has no guard identity).
+    /// Removal not confirmed: the service may still be registered, or this bundle has no guard identity.
     static let failedExitCode: Int32 = 4
 
     /// 0 only when the service is gone afterwards: an installer must not believe a guard left in place is gone.

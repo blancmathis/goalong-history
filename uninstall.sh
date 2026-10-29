@@ -89,7 +89,10 @@ release_blocking_guard() { # APP_PATH...
     # The replacement or removal goes on (stopping here would leave a
     # half-done install or a bundle that cannot be removed), but the person is told.
     if [[ "$guard_status" -eq 4 ]]; then
-      echo "  ! Goalong could not confirm that the blocking guard of $app was removed. If Goalong reopens by itself, remove it in System Settings > General > Login Items." >&2
+      echo "  ! Goalong n’a pas pu confirmer que le service de protection de $app est supprimé. Si Goalong se rouvre seul, retirez-le dans Réglages Système › Général › Ouverture." >&2
+    elif [[ "$guard_status" -ne 0 ]]; then
+      # 3 = refused by a severe block, anything else = crash or unknown: same follow-through, but say it.
+      echo "  ! Le service de protection de $app n’a pas été retiré (code $guard_status). Si Goalong se rouvre seul, retirez-le dans Réglages Système › Général › Ouverture." >&2
     fi
   done
   /bin/launchctl bootout "gui/$UID/$BUNDLE_ID.blocking-guard" >/dev/null 2>&1 || true
@@ -135,10 +138,10 @@ DEV_REMOVED=false
 goalong_dev_purge_summary() {
   local app
   if [[ "$DEV_REMOVED" == true ]]; then
-    echo "Goalong Dev ($DEV_APP_PATH), its data, preferences, permissions and evidence key were removed too."
+    echo "Goalong Dev ($DEV_APP_PATH), ses données, ses préférences, ses autorisations et sa clé de preuve ont aussi été supprimés."
   fi
   if (( ${#DEV_KEPT_APPS[@]} > 0 )); then
-    echo "Goalong Dev installed elsewhere was kept (quit, guard removed, data erased). Delete it by hand if needed:"
+    echo "Goalong Dev installé ailleurs a été conservé (quitté, service de protection retiré, données effacées). Supprimez-le à la main si besoin :"
     for app in "${DEV_KEPT_APPS[@]}"; do echo "  $app"; done
   fi
 }
@@ -169,11 +172,11 @@ case "${1:-}" in
   "") ;;
   --purge-data) PURGE_DATA=true ;;
   -h|--help)
-    echo "Usage: ./uninstall.sh [--purge-data]"
+    echo "Usage : ./uninstall.sh [--purge-data]"
     exit 0
     ;;
   *)
-    echo "Unknown option: ${1:-}" >&2
+    echo "Option inconnue : ${1:-}" >&2
     exit 2
     ;;
 esac
@@ -182,12 +185,12 @@ esac
 if [[ "${GOALONG_UNINSTALL_DURING_LOCK:-}" != 1 ]]; then
   locked_until="$(uninstall_locked_until "$PURGE_DATA")"
   if (( locked_until > 0 )); then
-    echo "A locked block is active until $(date -r "$locked_until" '+%Y-%m-%d %H:%M')." >&2
-    echo "Goalong History was not removed. Run this again after that time." >&2
+    echo "Un blocage verrouillé est actif jusqu’au $(date -r "$locked_until" '+%Y-%m-%d %H:%M')." >&2
+    echo "Goalong History n’a pas été supprimé. Relancez ce script après cette heure." >&2
     if [[ "$PURGE_DATA" == true ]] && (( $(goalong_severe_block_until "$DATA_DIR/Blocking") == 0 )); then
-      echo "The lock belongs to Goalong Dev (--purge-data also removes it). Without --purge-data, Goalong Dev is kept." >&2
+      echo "Le verrou appartient à Goalong Dev (--purge-data le supprime aussi). Sans --purge-data, Goalong Dev est conservé." >&2
     fi
-    echo "To remove it anyway: GOALONG_UNINSTALL_DURING_LOCK=1 ./uninstall.sh" >&2
+    echo "Pour le supprimer quand même : GOALONG_UNINSTALL_DURING_LOCK=1 ./uninstall.sh" >&2
     exit 3
   fi
 fi
@@ -221,7 +224,7 @@ for app in \
 done
 
 if [[ "$AGENT_HOOKS_NOTE" == true ]]; then
-  echo "An older Goalong build could not remove its agent hooks. If they remain, delete the Goalong entries in:" >&2
+  echo "Une ancienne version de Goalong n’a pas pu retirer ses crochets d’agents. S’ils restent, supprimez les entrées Goalong dans :" >&2
   echo "  ~/.claude/settings.json, ~/.codex/hooks.json, ~/.cursor/hooks.json, ~/.config/opencode/plugins/goalong-history.js" >&2
 fi
 
@@ -247,11 +250,11 @@ if [[ "$PURGE_DATA" == true ]]; then
   rm -rf "$HOME/Library/Caches/$BUNDLE_ID"
   defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
   while security delete-generic-password -s "goalong.evidence.v1" >/dev/null 2>&1; do :; done
-  echo "Goalong History, its permissions, its recorded history, logs, preferences, caches and the old Braise settings were removed."
+  echo "Goalong History, ses autorisations, son historique enregistré, ses journaux, ses préférences, ses caches et les anciens réglages Braise ont été supprimés."
   goalong_dev_purge_summary
-  echo "The device identity key in the Keychain is not removed by this script."
+  echo "La clé d’identité de l’appareil dans le Trousseau n’est pas supprimée par ce script."
 else
-  echo "Goalong History and its permissions were removed."
-  echo "Your recorded history was kept at:"
+  echo "Goalong History et ses autorisations ont été supprimés."
+  echo "Votre historique enregistré a été conservé ici :"
   echo "  $DATA_DIR"
 fi

@@ -75,8 +75,8 @@ final class T045ReviewFaible123Tests: XCTestCase {
             let message = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             XCTAssertEqual(process.terminationStatus, 0, "\(name): the script goes on")
             // Exit 4 also comes from a copy with no known guard: say what is known, not "still registered".
-            XCTAssertTrue(message.contains("could not confirm that the blocking guard"), "\(name): \(message)")
-            XCTAssertFalse(message.contains("is still registered"), "\(name): \(message)")
+            XCTAssertTrue(message.contains("n’a pas pu confirmer que le service de protection"), "\(name): \(message)")
+            XCTAssertFalse(message.contains("est toujours enregistré"), "\(name): \(message)")
         }
     }
 }
