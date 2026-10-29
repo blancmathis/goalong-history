@@ -355,7 +355,8 @@ release_blocking_guard() { # APP_PATH...
     /usr/bin/grep -qaF -- '--unregister-guard' "$executable" 2>/dev/null || continue
     guard_status=0
     "$executable" --unregister-guard >/dev/null 2>&1 || guard_status=$?
-    # Exit 4: the guard may still be registered (or this copy has no known guard). The replacement or removal goes on (stopping here would leave a
+    # Exit 4: the guard may still be registered, or this copy has no known guard.
+    # The replacement or removal goes on (stopping here would leave a
     # half-done install or a bundle that cannot be removed), but the person is told.
     if [[ "$guard_status" -eq 4 ]]; then
       echo "  ! Goalong could not confirm that the blocking guard of $app was removed. If Goalong reopens by itself, remove it in System Settings > General > Login Items." >&2

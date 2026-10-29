@@ -53,7 +53,7 @@ final class T045ReviewFaible123Tests: XCTestCase {
     }
 
     /// F3: exit 4 of --unregister-guard is told by each script, and the script goes on.
-    func testScriptsWarnWhenTheGuardIsStillRegistered() throws {
+    func testScriptsWarnWhenTheGuardRemovalIsUnconfirmed() throws {
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         for name in ["install.sh", "uninstall.sh", "scripts/install_from_source.sh"] {
             let text = try String(contentsOf: repo.appendingPathComponent(name), encoding: .utf8)
