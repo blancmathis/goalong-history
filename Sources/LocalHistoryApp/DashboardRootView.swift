@@ -114,7 +114,7 @@
                     model.returnFromSecondaryPage()
                 }
             case .braise:
-                BraisePage()
+                BraisePage(onOpenModules: { model.openSettingsPane(.modules) })
             case .ambiance:
                 AmbiancePage(model: model)
             case .settings, .monitoring:

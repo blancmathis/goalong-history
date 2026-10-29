@@ -16,13 +16,14 @@ import SwiftUI
     private var modules: GoalongModuleStore?
     private let factory: @MainActor () throws -> BraiseController
     private let presentsMenu: Bool
+    private let diagnostics: SupportDiagnostics
     private var menuBar: BraiseMenuBar?
-    init(presentsMenu: Bool = true, factory: @escaping @MainActor () throws -> BraiseController = {
+    init(presentsMenu: Bool = true, diagnostics: SupportDiagnostics = .shared, factory: @escaping @MainActor () throws -> BraiseController = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let store = BraiseStore(directory: AppPaths.applicationSupportDirectory.appendingPathComponent("Braise", isDirectory: true),
                                legacySettings: support.appendingPathComponent("Braise/settings.json"))
         return try BraiseController(store: store, gamma: GammaController(directory: store.directory))
-    }) { self.factory = factory; self.presentsMenu = presentsMenu }
+    }) { self.factory = factory; self.presentsMenu = presentsMenu; self.diagnostics = diagnostics }
     func start(modules: GoalongModuleStore = .shared) {
         self.modules = modules
         modules.onBraiseEnabledChange = { [weak self] in self?.apply(enabled: $0) }
@@ -37,12 +38,17 @@ import SwiftUI
                                             onDisable: { [weak self] in self?.modules?.setEnabled(.braise, false) })
                     menuBar = menu; value.stateChanged = { [weak menu] in menu?.refresh() }
                 }
-            } catch { self.error = "Braise n’a pas pu démarrer. Vérifiez ses réglages locaux ; aucun filtre n’a été appliqué." }
+            } catch {
+                diagnostics.failure(error, component: .storage)
+                self.error = "Braise n’a pas pu démarrer. Aucun filtre n’a été appliqué."
+            }
         } else if !enabled {
             menuBar?.shutdown(); menuBar = nil
             controller?.shutdown(); controller = nil; error = nil
         }
     }
+    /// The failure page's « Réessayer »: a new attempt without turning the module off and on.
+    func retry() { if modules?.isEnabled(.braise) == true { apply(enabled: true) } }
     func shutdown() { apply(enabled: false) }
     func handle(_ input: GoalongFocusRequest) throws -> Data {
         let request = try GoalongBraiseCLI.validated(input)
