@@ -3,6 +3,7 @@
 // Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT [ROLE] | menu BUNDLE TOP [ITEM]
 //        | close-extra BUNDLE MAIN_TITLE | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE | input SECONDS
 //        | dismiss-alerts BUNDLE | scroll BUNDLE | set BUNDLE ID 0|1
+//        | act BUNDLE ACTION MODE ROLE NEEDLE SCROLLS (T-046, one matrix row) | textshot IN.txt OUT.png
 import AppKit
 import ApplicationServices
 
@@ -16,7 +17,9 @@ func children(_ e: AXUIElement) -> [AXUIElement] { (attr(e, kAXChildrenAttribute
 func app(_ bundle: String) -> AXUIElement {
     for _ in 0..<40 {
         if let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first {
-            return AXUIElementCreateApplication(running.processIdentifier)
+            let e = AXUIElementCreateApplication(running.processIdentifier)
+            AXUIElementSetMessagingTimeout(e, 4)  // A modal can make the app stop answering: fail fast.
+            return e
         }
         usleep(250_000)
     }
@@ -205,6 +208,165 @@ case "input":
         usleep(200_000)
     }
     print("input: \(posted) synthetic events in \(Int(seconds)) s")
+case "act":
+    // T-046: one matrix row. MODE id | idprefix | label | dialog | menuitem | role; ROLE may be empty.
+    // ACTION click | toggle | type | observe | menu | shortcut. Not found: scroll and retry SCROLLS times.
+    // Prints key=value lines; exit 0 = found and the action's check held, 1 = found but the check failed, 5 = not found.
+    let (bundle, action, mode, role, needle) = (args[2], args[3], args[4], args[5], args[6])
+    let scrolls = Int(args.count > 7 ? args[7] : "3") ?? 3
+    let a = app(bundle)
+    func norm(_ s: String) -> String {
+        s.replacingOccurrences(of: "\u{a0}", with: " ").replacingOccurrences(of: "\u{202f}", with: " ")
+            .replacingOccurrences(of: "'", with: "’")
+    }
+    let n = norm(needle)
+    func texts(_ e: AXUIElement) -> [String] {
+        var t = [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute].map { norm(text(e, $0)) }
+        if let v = attr(e, kAXValueAttribute) as? String { t.append(norm(v)) }
+        return t
+    }
+    func isDialog(_ e: AXUIElement) -> Bool {
+        ["AXDialog", "AXSystemDialog"].contains(text(e, kAXSubroleAttribute)) || text(e, kAXRoleAttribute) == "AXSheet"
+            || text(e, kAXDescriptionAttribute) == "alerte"
+    }
+    func subtreeHas(_ e: AXUIElement, _ s: String) -> Bool {
+        var budget = 800
+        return walk(e, budget: &budget) { x, _ in texts(x).contains { $0.contains(s) } }
+    }
+    func searchRoots() -> [AXUIElement] {
+        var r = (attr(a, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+        r.append(a)
+        if let x = attr(a, "AXExtrasMenuBar") { r.append(x as! AXUIElement) }
+        if mode == "menuitem" || role == "AXMenuItem", let b = attr(a, kAXMenuBarAttribute) { r.append(b as! AXUIElement) }
+        return r
+    }
+    func find(roleStrict: Bool) -> AXUIElement? {
+        var hit: AXUIElement?
+        for root in searchRoots() {
+            var budget = 8000
+            _ = walk(root, budget: &budget) { e, _ in
+                let r = text(e, kAXRoleAttribute)
+                let roleOK = role.isEmpty || !roleStrict ? (mode == "menuitem" || role == "AXMenuItem" || !["AXMenuItem", "AXMenuBarItem"].contains(r)) : r == role
+                guard roleOK else { return false }
+                let ok: Bool
+                switch mode {
+                case "id": ok = text(e, "AXIdentifier") == needle
+                case "idprefix": ok = text(e, "AXIdentifier").hasPrefix(needle)
+                case "dialog": ok = isDialog(e) && (n.isEmpty || subtreeHas(e, n))
+                case "role": ok = r == role
+                default: ok = texts(e).contains { $0.contains(n) }
+                }
+                if ok { hit = e }
+                return ok
+            }
+            if hit != nil { return hit }
+        }
+        return nil
+    }
+    func signature() -> Int {
+        var h = Hasher(), budget = 3000
+        for w in (attr(a, kAXWindowsAttribute) as? [AXUIElement]) ?? [] {
+            _ = walk(w, budget: &budget) { e, _ in h.combine(describe(e)); return false }
+        }
+        return h.finalize()
+    }
+    func scrollOnce() {
+        var budget = 6000
+        _ = walk(a, budget: &budget) { e, _ in
+            if text(e, kAXRoleAttribute) == "AXScrollArea", let bar = attr(e, "AXVerticalScrollBar"),
+               let v = attr(bar as! AXUIElement, kAXValueAttribute) as? Double {
+                AXUIElementSetAttributeValue(bar as! AXUIElement, kAXValueAttribute as CFString, min(1.0, v + 0.3) as CFNumber)
+            }
+            return false
+        }
+        usleep(700_000)
+    }
+    var el: AXUIElement?
+    for attempt in 0...scrolls {
+        el = find(roleStrict: true) ?? find(roleStrict: false)
+        if el != nil || mode == "dialog" { break }
+        if attempt < scrolls { scrollOnce() }
+    }
+    guard let e = el else { print("found=0"); exit(5) }
+    print("found=1"); print("element=\(describe(e))")
+    let r = text(e, kAXRoleAttribute)
+    func value() -> String { attr(e, kAXValueAttribute).map { "\($0)" } ?? "nil" }
+    func press() -> Int32 { AXUIElementPerformAction(e, kAXPressAction as CFString).rawValue }
+    func okStatus(_ s: Int32) -> Bool { s == 0 || s == -25204 }
+    var pass = true
+    switch action {
+    case "click":
+        let before = signature(); let s = press(); usleep(1_200_000)
+        print("press=\(s)"); print("changed=\(before != signature() ? 1 : 0)")
+        pass = okStatus(s)
+    case "toggle":
+        let v0 = value(); let s = press(); usleep(700_000); let v1 = value()
+        print("press=\(s)"); print("value=\(v0)->\(v1)")
+        if v1 != v0 { _ = press(); usleep(500_000); print("restored=\(value())") }
+        pass = v1 != v0
+    case "type":
+        let v0 = value()
+        AXUIElementSetAttributeValue(e, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        if ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(r) || text(e, kAXSubroleAttribute) == "AXSearchField" {
+            let probe = "T046 synthétique"
+            let s = AXUIElementSetAttributeValue(e, kAXValueAttribute as CFString, probe as CFString).rawValue
+            usleep(500_000); let v1 = value()
+            print("set=\(s)"); print("value=\(v0.prefix(60))->\(v1.prefix(60))")
+            AXUIElementSetAttributeValue(e, kAXValueAttribute as CFString, (v0 == "nil" ? "" : v0) as CFString)
+            pass = v1.contains(probe)
+        } else {
+            // Date/time pickers: the value is read and written back as is (accepted or refused, status kept).
+            let cur = attr(e, kAXValueAttribute)
+            let s = cur.map { AXUIElementSetAttributeValue(e, kAXValueAttribute as CFString, $0).rawValue } ?? -1
+            print("value=\(v0)"); print("set=\(s)")
+            pass = cur != nil
+        }
+    case "menu":
+        if r == "AXMenuItem" {
+            let enabled = (attr(e, kAXEnabledAttribute) as? Bool) ?? false
+            let s = press(); usleep(800_000)
+            print("enabled=\(enabled)"); print("press=\(s)"); pass = enabled && okStatus(s)
+        } else {
+            var s = AXUIElementPerformAction(e, kAXShowMenuAction as CFString).rawValue
+            if !okStatus(s) { s = press() }
+            usleep(800_000)
+            var items = 0, budget = 4000
+            _ = walk(a, budget: &budget) { x, _ in if text(x, kAXRoleAttribute) == "AXMenuItem" && text(x, kAXTitleAttribute) != "" { items += 1 }; return false }
+            print("press=\(s)"); print("menu_items_visible=\(items)")
+            pass = okStatus(s)
+        }
+    case "shortcut":
+        // Menu item: its key equivalent; anything else: Return (default action) to the app.
+        let before = signature()
+        let pid = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first!.processIdentifier
+        NSRunningApplication(processIdentifier: pid)?.activate()
+        AXUIElementSetAttributeValue(e, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        usleep(300_000)
+        let src = CGEventSource(stateID: .hidSystemState)
+        for down in [true, false] { CGEvent(keyboardEventSource: src, virtualKey: 0x24, keyDown: down)?.post(tap: .cghidEventTap) }
+        usleep(1_200_000)
+        let changed = before != signature()
+        print("key=Return"); print("changed=\(changed ? 1 : 0)"); pass = changed
+    default:  // observe
+        print("role=\(r)"); print("enabled=\((attr(e, kAXEnabledAttribute) as? Bool).map { "\($0)" } ?? "-")")
+    }
+    exit(pass ? 0 : 1)
+case "textshot":
+    // A transcript as a PNG, drawn off screen (no window).
+    let body = (try? String(contentsOfFile: args[2], encoding: .utf8)) ?? "(unreadable)"
+    let lines = body.split(separator: "\n", omittingEmptySubsequences: false).prefix(120).map { String($0.prefix(160)) }
+    let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    let size = NSSize(width: 1100, height: max(80, 16 * lines.count + 24))
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height), bitsPerSample: 8,
+                               samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    NSColor.white.setFill(); NSRect(origin: .zero, size: size).fill()
+    for (i, l) in lines.enumerated() {
+        (l as NSString).draw(at: NSPoint(x: 12, y: size.height - 20 - CGFloat(16 * i)), withAttributes: [.font: font, .foregroundColor: NSColor.black])
+    }
+    NSGraphicsContext.restoreGraphicsState()
+    try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: args[3]))
 default:
     print("usage: ax_driver trusted | dump B F | press B TEXT [ROLE] | menu B TOP ITEM | status-item B | status-menu B | windows B | input S"); exit(2)
 }
