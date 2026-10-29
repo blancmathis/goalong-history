@@ -127,6 +127,8 @@ cleanup() {
 # no-break spaces (« 5 min ») read as spaces.
 hasgrep() { grep -v 'role=AXMenu' "$2" | sed $'s/\xc2\xa0/ /g; s/\xe2\x80\xaf/ /g' | grep -Em1 -- "$1"; }
 panel=0
+# Navigation press with 3 tries 1 s apart: a single AX press can miss on the runner (BLK-01, run 10).
+press3() { local i; for i in 1 2 3; do "$DRIVER" press "$BUNDLE" "$@" 2>&1 && return 0; sleep 1; done; return 1; }
 # A step passes when every required control was found and pressed; optional misses are listed.
 step() {
   local row="$1"; shift; local req="" opt="" c o s
@@ -134,10 +136,10 @@ step() {
   front
   for c in "$@"; do
     case "$c" in
-      nav:*) o="$("$DRIVER" press "$BUNDLE" "sidebar-${c#nav:}" 2>&1)" || req+="$c;"; sleep 2 ;;
-      pane:*) "$DRIVER" press "$BUNDLE" sidebar-settings >/dev/null 2>&1 || req+="sidebar-settings;"; sleep 1
+      nav:*) o="$(press3 "sidebar-${c#nav:}")" || req+="$c;"; sleep 2 ;;
+      pane:*) press3 sidebar-settings >/dev/null || req+="sidebar-settings;"; sleep 1
               "$DRIVER" press "$BUNDLE" settings-back >/dev/null 2>&1 && sleep 1
-              if [[ "${c#pane:}" != home ]]; then "$DRIVER" press "$BUNDLE" "settings-${c#pane:}" >/dev/null 2>&1 || req+="$c;"; sleep 2; fi ;;
+              if [[ "${c#pane:}" != home ]]; then press3 "settings-${c#pane:}" >/dev/null || req+="$c;"; sleep 2; fi ;;
       p:*) o="$("$DRIVER" press "$BUNDLE" "${c#p:}" 2>&1)" || req+="${c#p:};"; sleep 1 ;;
       b:*) o="$("$DRIVER" press "$BUNDLE" "${c#b:}" AXCheckBox 2>&1)" || o="$("$DRIVER" press "$BUNDLE" "${c#b:}" AXButton 2>&1)" || req+="${c#b:};"; sleep 1 ;;
       o:*) o="$("$DRIVER" press "$BUNDLE" "${c#o:}" 2>&1)" || opt+="${c#o:};"; sleep 1 ;;
