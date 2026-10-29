@@ -171,6 +171,35 @@ case "scroll":
         }
     }
     print("scrolled")
+case "click":
+    // Real left click at the centre of the element (by AXIdentifier, then label), for SwiftUI controls
+    // whose AX press does not reach the action (custom switch). Runner only: the cursor moves there.
+    var hit: AXUIElement?
+    for exact in [true, false] where hit == nil {
+        for root in roots(args[2]) where hit == nil {
+            var budget = 6000
+            _ = walk(root, budget: &budget) { e, _ in
+                let ok = exact ? text(e, "AXIdentifier") == args[3]
+                    : [kAXTitleAttribute, kAXDescriptionAttribute].contains { text(e, $0).contains(args[3]) }
+                if ok { hit = e }
+                return ok
+            }
+        }
+    }
+    guard let hit, let pos = attr(hit, kAXPositionAttribute), let size = attr(hit, kAXSizeAttribute) else {
+        print("click '\(args[3])': not found"); exit(5)
+    }
+    var p = CGPoint.zero, sz = CGSize.zero
+    AXValueGetValue(pos as! AXValue, .cgPoint, &p); AXValueGetValue(size as! AXValue, .cgSize, &sz)
+    // A switch row: the knob sits at the right end; a plain control: its centre.
+    let x = args.count > 4 && args[4] == "right" ? p.x + sz.width - 12 : p.x + sz.width / 2
+    let at = CGPoint(x: x, y: p.y + sz.height / 2)
+    CGWarpMouseCursorPosition(at); usleep(200_000)
+    for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+        CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: at, mouseButton: .left)?.post(tap: .cghidEventTap)
+        usleep(120_000)
+    }
+    print("click '\(args[3])' at \(Int(at.x)),\(Int(at.y)) -> \(describe(hit))")
 case "set":
     // Put a checkbox/switch (by AXIdentifier) in the wanted state: press only when its AXValue differs.
     var budget = 6000

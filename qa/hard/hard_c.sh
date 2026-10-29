@@ -36,7 +36,9 @@ for f in tronque vide binaire hexa; do
   (( s >= 1 && s < 128 )) && obs "CLI $f.xml refusé (code $s)" || fail "CLI $f.xml : code $s"
 done
 for f in tronque vide binaire hexa; do
-  pane advanced || fail "Réglages › Avancé inaccessible"  # GoalongAdvancedTools holds « Importer Apple Santé… ».
+  # « Importer Apple Santé… » sits in Réglages › Avancé › Outils de partage et analyses (pane .tools).
+  pane advanced || fail "Réglages › Avancé inaccessible"
+  try "Outils de partage" press3 "Outils de partage et analyses"; sleep 3
   try "Importer Apple Santé" press3 "Importer Apple Santé" AXButton || { fail "bouton Importer Apple Santé absent"; continue; }
   sleep 3
   try "Choisir export.xml" press3 "Choisir export.xml" AXButton; sleep 3

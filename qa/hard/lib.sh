@@ -151,12 +151,20 @@ pane() {
 record_on() {
   dashboard
   pane recording
-  try "recording source" press3 source-localComputerHistory; sleep 5
-  shot "recording-sheet"; dump "recording-sheet"
+  # AX press on the custom switch leaves it off (run 40960962788): real click on the switch at the row's right end.
+  front
+  try "recording source" "$DRIVER" set "$BUNDLE" source-localComputerHistory 1 || try "recording source (click)" "$DRIVER" click "$BUNDLE" source-localComputerHistory right
+  sleep 5; shot "recording-sheet"; dump "recording-sheet"
   # The first activation opens the recording review sheet; its button reads « Valider et activer ».
-  try "recording confirm" press3 recording-setup-confirm || try "recording confirm (label)" press3 "Valider et activer" AXButton
-  sleep 5; shot "recording-after"; dump "recording-after"
-  log "[consent] $(tr -d '\n ' < "$DATA/capability-consent.json" 2>/dev/null | head -c 300)"
+  if axhas 'id=recording-setup-confirm|Valider et activer' >/dev/null; then
+    try "recording confirm" press3 recording-setup-confirm || try "recording confirm (click)" "$DRIVER" click "$BUNDLE" recording-setup-confirm
+    sleep 5
+  fi
+  shot "recording-after"; dump "recording-after"
+  local c; c="$(tr -d '\n ' < "$DATA/capability-consent.json" 2>/dev/null)"
+  log "[consent] ${c:0:300}"
+  if [[ $c =~ \"localComputerHistory\":\{[^}]*\"enabled\":true ]]; then REC_ON=1; obs "enregistrement activé"
+  else REC_ON=0; fail "HARNAIS : enregistrement non activé, cas non concluant"; fi
   esc
 }
 note_file() { printf 'Note de test synthétique T-046.\nAucune donnée réelle.\n' > "$RUNNER_TEMP/synthetic-note.txt"; echo "$RUNNER_TEMP/synthetic-note.txt"; }
