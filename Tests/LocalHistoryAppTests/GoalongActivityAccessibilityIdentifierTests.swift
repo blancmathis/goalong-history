@@ -26,8 +26,10 @@ final class GoalongActivityAccessibilityIdentifierTests: XCTestCase {
             pending.append(contentsOf: read(object, "accessibilityChildren") as? [Any] ?? [])
             if let child = object as? NSView { pending.append(contentsOf: child.subviews) }
         }
-        XCTAssertTrue(identifiers.contains("activity-explore-usage"),
-                      "Child identifiers are overridden by the page identifier; saw \(identifiers.sorted())")
+        // One id per container: a page child (page .contain) and a control inside the Explorer section (section .contain).
+        for id in ["activity-primary-metrics", "activity-explore-usage"] {
+            XCTAssertTrue(identifiers.contains(id), "\(id) is overridden by a container identifier; saw \(identifiers.sorted())")
+        }
     }
 
     private func read(_ object: NSObject, _ name: String) -> AnyObject? {
