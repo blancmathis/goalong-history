@@ -146,6 +146,19 @@ final class MenuBarPanelModelTests: XCTestCase {
         guard case .paused = model.tracking else { return XCTFail("Manual pause shows once consent is back") }
     }
 
+    @MainActor func testOpenAppButtonOpensTheOverviewAndNothingElse() {
+        let f = fixture(), model = f.model()
+        model.openApp()
+        XCTAssertEqual(f.opened, [.overview]); XCTAssertTrue(f.openedPanes.isEmpty)
+    }
+    @MainActor func testAmbianceSourceAndPlayButtonsDoNothingWhileTheModuleIsOffAndSendTheMemberToModules() {
+        let f = fixture(), model = f.model()
+        model.togglePlay()
+        model.play(AmbianceSource(id: "rain", title: "Pluie douce", kind: .texture, isAvailable: true))
+        XCTAssertTrue(f.played.isEmpty, "Module off: no sound starts")
+        XCTAssertEqual(f.openedPanes, [.modules, .modules])
+    }
+
     @MainActor func testInactiveModuleCallsToActionOpenTheModulesPane() {
         let f = fixture(), model = f.model()
         model.enableAmbiance(); model.openModulesSettings()
