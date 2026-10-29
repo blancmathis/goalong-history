@@ -1,0 +1,5 @@
+# Intended gallery changes of a branch, checked by `make gallery-compare` and the « Gallery compare » CI job.
+# One image key prefix per line, then `#` and the reason, e.g.:
+#   agenda/detail-   # texte « exclusion » → « exclusion globale »
+# Only the lines a branch adds (diff from its merge-base) count: older lines never hide a later change.
+# Anyone may empty this file at any time.

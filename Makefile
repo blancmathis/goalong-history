@@ -1,5 +1,5 @@
 .PHONY: check test test-ui build app dmg audit install install-source uninstall clean dev dev-stop dev-status \
-	gallery gallery-diff gallery-accept gallery-index gallery-clean
+	gallery gallery-diff gallery-accept gallery-index gallery-clean gallery-compare
 
 VERSION ?= 0.6.0
 ARCHS ?= $(shell uname -m)
@@ -44,6 +44,11 @@ gallery-accept:
 # make gallery-index [RUN=latest]: rewrites a run's index.html (after an accept made from another checkout).
 gallery-index:
 	python3 scripts/gallery.py index --run "$(or $(RUN),latest)"
+
+# make gallery-compare [BASE=origin/main] [ONLY=prefixes] [SHARDS=4]: renders the merge-base of BASE (throwaway
+# worktree) and this checkout on this machine, diffs them; exit 1 on a difference not declared in qa/gallery-expected.txt.
+gallery-compare:
+	python3 scripts/gallery.py compare --base "$(or $(BASE),origin/main)" --shards "$(SHARDS)" --only "$(ONLY)"
 
 # make gallery-clean: this checkout's runs only; the shared base stays.
 gallery-clean:

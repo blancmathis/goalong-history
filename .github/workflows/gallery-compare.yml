@@ -1,0 +1,38 @@
+name: Gallery compare
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Revision whose merge-base with HEAD is the base render (HEAD = determinism check)
+        type: string
+        default: origin/main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gallery-compare-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Renders the gallery of the merge-base and of this checkout on the same runner and diffs them: no stored base,
+# no artifact (the result is the job summary). An intended change is declared in qa/gallery-expected.txt.
+jobs:
+  compare:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Environment
+        run: |
+          sw_vers
+          xcrun swift --version
+      - name: Gallery script self test
+        run: bash scripts/test_gallery_script.sh
+      - name: Render base and head, diff them
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || inputs.base }}
+        run: python3 scripts/gallery.py compare --base "$BASE" --shards 3
