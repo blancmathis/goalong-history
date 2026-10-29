@@ -34,6 +34,5 @@ jobs:
         run: bash scripts/test_gallery_script.sh
       - name: Render base and head, diff them
         env:
-          # TEMPORARY determinism check: renders HEAD twice.
-          BASE: HEAD
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || inputs.base }}
         run: python3 scripts/gallery.py compare --base "$BASE" --shards 3
