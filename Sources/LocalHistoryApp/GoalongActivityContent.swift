@@ -124,6 +124,8 @@ struct GoalongAnalyticsContent: View {
                 })
                 .goalongControls()
         }
+        // Without a container, the identifier below replaces the ids of every control inside the page.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activity-content")
     }
 
@@ -527,6 +529,7 @@ struct GoalongAnalyticsContent: View {
             }
         }
         .id("activity-explore")
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activity-explore")
     }
 
