@@ -80,6 +80,8 @@ launch || fail "l’app ne démarre pas sans permission"
 onboarding || fail "assistant absent"
 dashboard || fail "tableau de bord inaccessible"
 shot dashboard; dump dashboard
+# Permissions are asked only for enabled features: turn recording on, then read what the app says.
+record_on
 pane permissions || fail "Réglages › Permissions inaccessible"
 shot permissions; dump permissions
 if axhas 'id=permission-(primary-action|open-settings|targeted-repair)' >/dev/null; then obs "action de réparation proposée"; else fail "aucune action de permission proposée"; fi

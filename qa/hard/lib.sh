@@ -151,8 +151,12 @@ pane() {
 record_on() {
   dashboard
   pane recording
-  try "recording source" press3 source-localComputerHistory; sleep 3
-  try "recording confirm" press recording-setup-confirm; sleep 3
+  try "recording source" press3 source-localComputerHistory; sleep 5
+  shot "recording-sheet"; dump "recording-sheet"
+  # The first activation opens the recording review sheet; its button reads « Valider et activer ».
+  try "recording confirm" press3 recording-setup-confirm || try "recording confirm (label)" press3 "Valider et activer" AXButton
+  sleep 5; shot "recording-after"; dump "recording-after"
+  log "[consent] $(tr -d '\n ' < "$DATA/capability-consent.json" 2>/dev/null | head -c 300)"
   esc
 }
 note_file() { printf 'Note de test synthétique T-046.\nAucune donnée réelle.\n' > "$RUNNER_TEMP/synthetic-note.txt"; echo "$RUNNER_TEMP/synthetic-note.txt"; }
