@@ -49,13 +49,14 @@ jobs:
 
       - name: Drive the app (onboarding, TCC grant, lot 1 matrix rows, screenshots)
         timeout-minutes: 45
-        run: qa/e2e/runner_probe.sh "$RUNNER_TEMP/app/Goalong Dev.app" "$RUNNER_TEMP/e2e"
+        run: qa/e2e/runner_probe.sh "$RUNNER_TEMP/app/Goalong Dev.app" "$RUNNER_TEMP/e2e" 2>&1 | tee "$RUNNER_TEMP/probe-raw.log"  # pipefail is the default shell; raw log kept
 
       - name: Summary
         if: always()
         run: |
           { echo '```'; cat "$RUNNER_TEMP/e2e/summary.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           cp "$RUNNER_TEMP/build.log" "$RUNNER_TEMP/e2e/" 2>/dev/null || true
+          cp "$RUNNER_TEMP/probe-raw.log" "$RUNNER_TEMP/e2e/" 2>/dev/null || true
 
       - name: Upload screenshots and probe logs
         if: always()
