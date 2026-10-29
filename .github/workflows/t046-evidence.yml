@@ -71,7 +71,7 @@ jobs:
           echo "full suite exit ${PIPESTATUS[0]}" >> "$RUNNER_TEMP/cov/exit-codes.txt"
           prof full
           run_group() { # name home-prefix classes
-            local g="$RUNNER_TEMP/$2-home"; mkdir -p "$g"
+            local g; g="$(mktemp -d "/tmp/$2-XXXXXX")"
             (
               export GOALONG_TEST_HOME="$g" CFFIXED_USER_HOME="$g"
               export GOALONG_BRAND_TEST_HOME="$g" GOALONG_SHARING_TEST_HOME="$g"
