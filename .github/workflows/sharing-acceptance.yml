@@ -60,4 +60,4 @@ jobs:
           name: Goalong-Gate-${{ github.job }}-${{ github.run_attempt }}
           path: gate-receipt.json
           if-no-files-found: error
-          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
+          retention-days: 7  # promotion reads PR gate receipts at the main push
