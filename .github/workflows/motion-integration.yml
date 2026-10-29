@@ -55,7 +55,7 @@ jobs:
           name: goalong-native-motion-evidence
           path: qa/brand-motion/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
       # The full `swift test` runs once per push in macos.yml (build-test-package, which also runs on
       # this branch); this job only
       # owns the motion checks above, so the suite no longer runs twice.
@@ -67,4 +67,4 @@ jobs:
           name: Goalong-Gate-${{ github.job }}-${{ github.run_attempt }}
           path: gate-receipt.json
           if-no-files-found: error
-          retention-days: 7
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}

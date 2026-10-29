@@ -50,7 +50,7 @@ jobs:
           name: history-sharing-acceptance-${{ github.sha }}
           path: qa/sharing-acceptance/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
 
       - name: Record successful exact-checkout gate
         run: python3 scripts/write_gate_receipt.py
@@ -60,4 +60,4 @@ jobs:
           name: Goalong-Gate-${{ github.job }}-${{ github.run_attempt }}
           path: gate-receipt.json
           if-no-files-found: error
-          retention-days: 7
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
