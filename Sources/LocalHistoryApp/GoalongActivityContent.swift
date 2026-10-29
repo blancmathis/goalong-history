@@ -372,7 +372,7 @@ struct GoalongAnalyticsContent: View {
                         .accessibilityIdentifier("activity-classify-now")
                 }
             }
-        }.accessibilityIdentifier("activity-classification")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("activity-classification")
     }
 
     private func tasksSection(_ tasks: [GoalongWorkTask]) -> some View {
@@ -410,7 +410,7 @@ struct GoalongAnalyticsContent: View {
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                 }
             }
-        }.accessibilityIdentifier("activity-tasks")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("activity-tasks")
     }
 
     private func taskRow(_ task: GoalongWorkTask, total: Double) -> some View {
@@ -447,7 +447,7 @@ struct GoalongAnalyticsContent: View {
             } content: {
                 Text(.init(card.summary)).font(.system(size: 13)).lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            }.accessibilityIdentifier("activity-recap")
+            }.accessibilityElement(children: .contain).accessibilityIdentifier("activity-recap")
         }
     }
 
@@ -642,7 +642,7 @@ struct GoalongAnalyticsContent: View {
                     }.font(.system(size: 13))
                 }
             }
-        }.accessibilityIdentifier("activity-primary-chart")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("activity-primary-chart")
     }
 
     private func usageCard(_ items: [GoalongActivityUsageItem]) -> some View {
@@ -708,7 +708,7 @@ struct GoalongAnalyticsContent: View {
                     GoalongNote(notice, tone: .warning)
                 }
             }
-        }.accessibilityIdentifier("activity-reports")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("activity-reports")
     }
 
     private func sessionsSection(_ summary: GoalongActivitySummary) -> some View {
@@ -753,7 +753,7 @@ struct GoalongAnalyticsContent: View {
                 }
                 comparisonDetails
             }.font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-        }.accessibilityIdentifier("activity-sessions")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("activity-sessions")
     }
 
     private var comparisonDetails: some View {

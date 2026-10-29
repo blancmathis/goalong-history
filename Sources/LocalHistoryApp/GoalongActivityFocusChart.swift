@@ -92,6 +92,7 @@ struct GoalongFocusExplanation: View {
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("activity-focus-definition")
     }
 }
