@@ -1,0 +1,84 @@
+name: T-046 cas durs
+
+# The 9 hard cases of the T-046 matrix on throwaway GitHub-hosted macOS VMs, against the app built
+# from this checkout (release identity, ad-hoc signed). Synthetic data only; publishes nothing.
+# Draft PR t046/hard only: never merged (a push to main publishes a pre-release).
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t046-hard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hard:
+    if: github.event_name != 'pull_request' || github.head_ref == 't046/hard'
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [a, b, c]
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build app and .dmg
+        run: qa/hard/build.sh "$RUNNER_TEMP/dist"
+
+      - name: Run hard-${{ matrix.part }} cases
+        timeout-minutes: 50
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: qa/hard/hard_${{ matrix.part }}.sh "$RUNNER_TEMP/dist" "$RUNNER_TEMP/hard" 2>&1 | tee "$RUNNER_TEMP/raw.log"
+
+      - name: Collect
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/hard"
+          cp "$RUNNER_TEMP/raw.log" "$RUNNER_TEMP/dist/build.log" "$RUNNER_TEMP/hard/" 2>/dev/null || true
+          { echo '```'; cat "$RUNNER_TEMP/hard/hard-results.tsv" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          du -sh "$RUNNER_TEMP/hard"
+
+      - name: Upload proofs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: t046-hard-${{ matrix.part }}
+          path: ${{ runner.temp }}/hard
+          retention-days: 1
+
+  results:
+    if: always() && (github.event_name != 'pull_request' || github.head_ref == 't046/hard')
+    needs: hard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: t046-hard-*
+          path: parts
+
+      - name: Merge verdicts (9 required)
+        run: |
+          mkdir -p out
+          printf 'case\tverdict\texpected\tobserved\tproof\n' > out/hard-results.tsv
+          for p in a b c; do
+            tail -n +2 "parts/t046-hard-$p/hard-results.tsv" 2>/dev/null | awk -F'\t' -v OFS='\t' -v p="$p" '{ $5 = "t046-hard-" p "/" $5; print }' >> out/hard-results.tsv
+          done
+          { echo '```'; cut -f1,2,4 out/hard-results.tsv; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          du -sh parts/* | tee out/sizes.txt
+          rows=$(tail -n +2 out/hard-results.tsv | awk -F'\t' '$2 == "pass" || $2 == "fail"' | wc -l)
+          echo "verdicts: $rows / 9"
+          test "$rows" -eq 9
+
+      - name: Upload verdicts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: t046-hard-results
+          path: out
+          retention-days: 1
