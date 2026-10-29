@@ -28,7 +28,7 @@ step WIN-04 nav:overview p:"Jour précédent" w:1 p:Aujourd’hui p:"Choisir un 
 step ACT-01 nav:overview has:"sur [0-9]+ min actives" p:"7 jours" w:1 s:7j p:"28 jours" w:1 s:28j p:Jour
 step ACT-02 nav:overview p:"Bilans et projets" w:2 s:bilans o:activity-detail-back o:Retour
 step ACT-03 nav:overview p:"Couverture et sources" w:2 s:couverture o:activity-detail-back o:Retour
-step ACT-04 nav:overview hs:"TextEdit" o:activity-usage-sort o:activity-usage-show-all w:1
+step ACT-04 nav:overview p:activity-explore-usage hs:"TextEdit" o:activity-usage-sort o:activity-usage-show-all w:1
 step ACT-05 nav:overview p:"Ajouter une note sur cette journée" w:1 s:note esc
 step ACT-06 nav:overview p:"Comment lire ces chiffres" w:1
 

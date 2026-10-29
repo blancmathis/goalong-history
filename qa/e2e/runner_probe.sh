@@ -152,8 +152,8 @@ step() {
                o="$(hasgrep "${c#has:}" "$RUNNER_TEMP/has.txt")" && break; sleep 3
              done
              [[ -n $o ]] || req+="has(${c#has:});" ;;
-      hs:*) for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do  # Like has:, scrolling down between tries (lazy usage card).
-               "$DRIVER" dump "$BUNDLE" "$RUNNER_TEMP/has.txt" >/dev/null 2>&1
+      hs:*) for i in 1 2 3 4 5 6 7 8 9 10 11 12; do  # Like has:, scrolling down between tries; every step's AX tree is kept.
+               "$DRIVER" dump "$BUNDLE" "$RUNNER_TEMP/has.txt" >/dev/null 2>&1; cp "$RUNNER_TEMP/has.txt" "$ROWS/ax/$row-hs$i.txt"
                o="$(hasgrep "${c#hs:}" "$RUNNER_TEMP/has.txt")" && break; "$DRIVER" scroll "$BUNDLE" >/dev/null 2>&1; sleep 1.5
              done
              [[ -n $o ]] || req+="has(${c#hs:});" ;;

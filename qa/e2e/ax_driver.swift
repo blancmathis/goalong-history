@@ -145,7 +145,7 @@ case "dismiss-alerts":
     }
     print("dismissed \(closed) alert(s)")
 case "scroll":
-    // One scroll step down in the main window: the usage card is lazy and absent from the AX tree until scrolled into view.
+    // One scroll step down in the main window, for content below the fold (lazy stacks only expose realized rows).
     // Scroll bars first (AX), then synthetic wheel events over the window (runner only: the cursor is moved there).
     let a = app(args[2])
     var budget = 6000
