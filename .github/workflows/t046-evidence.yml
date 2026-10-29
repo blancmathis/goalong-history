@@ -7,6 +7,11 @@ name: T-046 evidence
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      e2e:
+        description: Run the e2e placeholder (L3)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -110,7 +115,7 @@ jobs:
 
   e2e:
     # Placeholder: the S1-S4 fragments come in lot L3 (driver files: qa/e2e/*, from e59a5f1).
-    if: false
+    if: github.event_name == 'workflow_dispatch' && inputs.e2e
     runs-on: macos-15
     timeout-minutes: 70
     steps:
