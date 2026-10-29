@@ -73,21 +73,30 @@ running || fail "l’app s’est arrêtée"
 quit_app
 finish
 
-begin permissions-denied "Toutes les permissions refusées (Accessibilité, Surveillance de l’entrée, Enregistrement de l’écran, envoi d’événements : auth_value=0 dans TCC). L’app démarre, l’assistant passe en refusant la feuille Accessibilité, Réglages › Permissions dit ce qui manque et propose une action ; pas de plantage."
+begin permissions-denied "Toutes les permissions refusées (Accessibilité, Surveillance de l’entrée, Enregistrement de l’écran, envoi d’événements : auth_value=0 dans TCC). L’app démarre, l’assistant passe ; activer l’enregistrement ouvre « Autoriser l’historique de ce Mac » qui dit ce qui manque (Accessibilité à autoriser) et propose « Ouvrir Réglages Système » ; l’enregistrement reste éteint tant que l’accès manque ; pas de plantage."
 reset_app_state; install_new; no_sparkle
 tcc_set 0
 launch || fail "l’app ne démarre pas sans permission"
 onboarding || fail "assistant absent"
 dashboard || fail "tableau de bord inaccessible"
 shot dashboard; dump dashboard
-# Permissions are asked only for enabled features: turn recording on, then read what the app says.
-record_on
-pane permissions || fail "Réglages › Permissions inaccessible"
-shot permissions; dump permissions
+# Permissions are asked only for enabled features: try to turn recording on, then read what the app says.
+pane recording || fail "Réglages › Enregistrement inaccessible"
+front
+try "recording source" "$DRIVER" set "$BUNDLE" source-localComputerHistory 1 || try "recording source (click)" "$DRIVER" click "$BUNDLE" source-localComputerHistory right
+sleep 5; shot activation; dump activation
+if axhas 'id=recording-setup-confirm' >/dev/null; then
+  try "recording confirm" press3 recording-setup-confirm; sleep 5; shot activation-2; dump activation-2
+fi
+axhas 'À autoriser' >/dev/null && obs "accès manquant nommé (Accessibilité : À autoriser)" || fail "l’accès manquant n’est pas nommé"
 if axhas 'id=permission-(primary-action|open-settings|targeted-repair)' >/dev/null; then obs "action de réparation proposée"; else fail "aucune action de permission proposée"; fi
-try "permission-primary-action" press permission-primary-action; sleep 4
+c="$(tr -d '\n ' < "$DATA/capability-consent.json" 2>/dev/null)"; log "[consent] ${c:0:300}"
+if [[ $c =~ \"localComputerHistory\":\{[^}]*\"enabled\":true ]]; then fail "enregistrement activé sans accès"; else obs "enregistrement resté éteint sans accès"; fi
+try "permission-primary-action" press permission-primary-action; sleep 6
+pgrep -x "System Settings" >/dev/null && obs "Réglages Système ouverts" || obs "Réglages Système non détectés (voir capture)"
 shot after-action; dump after-action
 osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1
+esc; pane permissions; shot permissions; dump permissions
 running || fail "l’app s’est arrêtée"
 cli status status || obs "CLI status code non nul"
 quit_app
