@@ -507,7 +507,7 @@ release_blocking_guard() { # APP_PATH...
     # The replacement or removal goes on (stopping here would leave a
     # half-done install or a bundle that cannot be removed), but the person is told.
     if [[ "$guard_status" -eq 4 ]]; then
-      echo "  ! Goalong could not confirm that the blocking guard of $app was removed. If Goalong reopens by itself, remove it in System Settings > General > Login Items." >&2
+      echo "  ! Goalong n’a pas pu confirmer que le service de protection de $app est supprimé. Si Goalong se rouvre seul, retirez-le dans Réglages Système > Général > Ouverture > Éléments de connexion." >&2
     fi
   done
   /bin/launchctl bootout "gui/$UID/$BUNDLE_ID.blocking-guard" >/dev/null 2>&1 || true
