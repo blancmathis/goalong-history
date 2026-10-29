@@ -73,7 +73,9 @@ import LocalHistoryCore
          sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) },
          hiddenWebsites: @escaping () -> (String) -> Bool = { SharingRulesStore().hiddenWebsiteFilter() },
          hiddenApplications: @escaping () -> (String?, String) -> Bool = { SharingRulesStore().hiddenApplicationFilter() },
-         sharingRulesReadable: @escaping () -> Bool = { !SharingRulesStore().isDamaged }) {
+         sharingRulesReadable: @escaping () -> Bool = { !SharingRulesStore().isDamaged },
+         beforeStore: @escaping (Configuration) throws -> Void = { _ in }) {
+        self.beforeStore = beforeStore
         self.sharingRulesReadable = sharingRulesReadable
         self.hiddenWebsites = hiddenWebsites
         self.hiddenApplications = hiddenApplications
@@ -109,7 +111,8 @@ import LocalHistoryCore
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(Configuration.self, from: data)
     }
-    private func store(_ value: Configuration) throws { defaults.set(try JSONEncoder().encode(value), forKey: key) }
+    private let beforeStore: (Configuration) throws -> Void
+    private func store(_ value: Configuration) throws { try beforeStore(value); defaults.set(try JSONEncoder().encode(value), forKey: key) }
     static func timeLabel(_ value: Configuration) -> String {
         String(format: "%02d:%02d", value.hour ?? 9, value.minute ?? 0) + " · " + (value.timeZoneIdentifier ?? TimeZone.current.identifier)
     }
@@ -309,18 +312,25 @@ import LocalHistoryCore
             let skipped = configuration()?.missingDay
             current.lastSuccess = day
             current.missingDay = nil
-            try store(current)
             lastSuccess = day
             networkRetry = nil
-            status = "Journée du \(GoalongUIFormat.day(key: day)) reçue · prochain envoi après \(Self.timeLabel(current))."
-                + (skipped.map { " " + Self.missingDayNotice($0) } ?? "")
+            do {
+                try store(current)
+                status = "Journée du \(GoalongUIFormat.day(key: day)) reçue · prochain envoi après \(Self.timeLabel(current))."
+                    + (skipped.map { " " + Self.missingDayNotice($0) } ?? "")
+            } catch {
+                // The site has the day: only the local record failed. Not "nothing was sent", and no resend by itself
+                // (the attempt saved before sending already marks the day as tried).
+                SupportDiagnostics.shared.failure(error, component: .sharing)
+                status = "Journée du \(GoalongUIFormat.day(key: day)) reçue par le site, mais Goalong n’a pas pu l’enregistrer sur ce Mac. Elle ne sera pas renvoyée tant que Goalong reste ouvert."
+            }
         } catch where GoalongQueryCLI.isMissingSavedDay(error) {
             // Mac off or Goalong closed that day: no record, and none will come later. Send nothing
             // (never an invented zero), keep the day marked as tried, and keep the plan running.
             networkRetry = nil
             // A weekend skips two days: keep naming each one, not only the last.
             guard var saved = configuration(), saved.identifier == current.identifier else { return }
-            saved.missingDay = (saved.missingDay.map { $0 + "," } ?? "") + day; try? store(saved)
+            saved.missingDay = ((saved.missingDay.map { $0.split(separator: ",").suffix(Self.missingDayLimit - 1).joined(separator: ",") + "," } ?? "") + day); try? store(saved)
             // Paused while the day was read: the pause text stays, the day is named on resume or restart.
             guard enabled else { return }
             status = Self.missingDayNotice(saved.missingDay ?? day) + " L’envoi quotidien continue."
@@ -360,11 +370,19 @@ import LocalHistoryCore
         "Activée · la veille à partir de \(timeLabel(saved)), lorsque Goalong est ouvert."
             + (saved.missingDay.map { " " + missingDayNotice($0) } ?? "")
     }
-    private static func missingDayNotice(_ days: String) -> String {
-        let names = days.split(separator: ",").map { "le " + GoalongUIFormat.day(key: String($0)) }
-        let list = names.count > 1 ? names.dropLast().joined(separator: ", ") + " et " + names.last! : names.joined()
+    private static let missingDayShown = 3
+    /// What is kept in the saved setting, so it does not grow until the next success.
+    private static let missingDayLimit = 30
+    static func missingDayNotice(_ days: String) -> String {
+        let all = days.split(separator: ",")
+        let names = all.prefix(missingDayShown).map { "le " + GoalongUIFormat.day(key: String($0)) }
+        // Long absences stay short: the first days, then how many more (only the last 30 are kept).
+        let more = all.count - names.count
+        let list = more > 0
+            ? names.joined(separator: ", ") + " et " + (all.count >= missingDayLimit ? "au moins " : "") + "\(more) autre\(more > 1 ? "s" : "") jour\(more > 1 ? "s" : "")"
+            : names.count > 1 ? names.dropLast().joined(separator: ", ") + " et " + names.last! : names.joined()
         return "Aucun relevé enregistré pour \(list) (Mac éteint ou Goalong fermé) : rien n’a été envoyé pour "
-            + (names.count > 1 ? "ces jours." : "ce jour.")
+            + (all.count > 1 ? "ces jours." : "ce jour.")
     }
     private static func sentence(_ error: Error) -> String {
         goalongUserMessage(error).trimmingCharacters(in: CharacterSet(charactersIn: ".…"))

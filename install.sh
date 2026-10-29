@@ -348,12 +348,18 @@ goalong_severe_block_until() { # BLOCKING_DIR
 # --unregister-guard runs first: with the override it leaves guard-override, so the running app neither
 # registers the guard again when its connection drops nor ignores the SIGTERM that follows.
 release_blocking_guard() { # APP_PATH...
-  local app executable
+  local app executable guard_status
   for app in "$@"; do
     executable="$app/Contents/MacOS/$EXECUTABLE_NAME"
     [[ -x "$executable" ]] || continue
     /usr/bin/grep -qaF -- '--unregister-guard' "$executable" 2>/dev/null || continue
-    "$executable" --unregister-guard >/dev/null 2>&1 || true
+    guard_status=0
+    "$executable" --unregister-guard >/dev/null 2>&1 || guard_status=$?
+    # Exit 4: the guard is still registered. The replacement or removal goes on (stopping here would leave a
+    # half-done install or a bundle that cannot be removed), but the person is told.
+    if [[ "$guard_status" -eq 4 ]]; then
+      echo "  ! The blocking guard of $app is still registered. If Goalong reopens by itself, remove it in System Settings > General > Login Items." >&2
+    fi
   done
   /bin/launchctl bootout "gui/$UID/$BUNDLE_ID.blocking-guard" >/dev/null 2>&1 || true
 }
