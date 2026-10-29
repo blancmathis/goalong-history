@@ -143,7 +143,7 @@ jobs:
           name: Goalong-Analytics-UI-${{ github.sha }}
           path: qa/local-analytics/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
 
       - name: Exercise real permission relaunches
         run: bash scripts/test_permission_relaunch.sh
@@ -161,7 +161,7 @@ jobs:
             qa/journey-ci/runtime-results.txt
             qa/journey-ci/native-render.log
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
 
       - name: Timezone regression checks
         run: |
@@ -209,7 +209,7 @@ jobs:
             dist/security-capabilities.json
             dist/sbom.spdx.json
             dist/release-manifest.json
-          retention-days: 7
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
 
       - name: Record successful exact-checkout gate
         run: python3 scripts/write_gate_receipt.py
@@ -219,4 +219,4 @@ jobs:
           name: Goalong-Gate-${{ github.job }}-${{ github.run_attempt }}
           path: gate-receipt.json
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 7  # promotion reads PR gate receipts at the main push
