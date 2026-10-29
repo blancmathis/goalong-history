@@ -53,7 +53,7 @@ final class T045ReviewFaible123Tests: XCTestCase {
     }
 
     /// F3: exit 4 of --unregister-guard is told by each script, and the script goes on.
-    func testScriptsWarnWhenTheGuardIsStillRegistered() throws {
+    func testScriptsWarnWhenTheGuardRemovalIsUnconfirmed() throws {
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         for name in ["install.sh", "uninstall.sh", "scripts/install_from_source.sh"] {
             let text = try String(contentsOf: repo.appendingPathComponent(name), encoding: .utf8)
@@ -74,7 +74,9 @@ final class T045ReviewFaible123Tests: XCTestCase {
             try process.run(); process.waitUntilExit()
             let message = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             XCTAssertEqual(process.terminationStatus, 0, "\(name): the script goes on")
-            XCTAssertTrue(message.contains("still registered"), "\(name): \(message)")
+            // Exit 4 also comes from a copy with no known guard: say what is known, not "still registered".
+            XCTAssertTrue(message.contains("could not confirm that the blocking guard"), "\(name): \(message)")
+            XCTAssertFalse(message.contains("is still registered"), "\(name): \(message)")
         }
     }
 }
