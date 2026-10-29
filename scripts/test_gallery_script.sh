@@ -251,6 +251,7 @@ K4=25F71-17E202-arm64-1x
 make_run cb $K4 1 1 "a/x--light:same" "a/x--dark:same" "b/y--light:same"
 make_run ch $K4 1 1 "a/x--light:dot" "a/x--dark:same" "b/y--light:same"
 make_run cs $K4 1 1 "a/x--light:same" "a/x--dark:same" "b/y--light:same"
+make_run cn $K4 1 1 "a/x--light:same:failed" "a/x--dark:same" "b/y--light:same"
 repo="$dir/repo"; mkdir -p "$repo/qa"
 git -C "$repo" init -q && git -C "$repo" config user.email t@t && git -C "$repo" config user.name t
 printf '# header\nold/  # older line\n' > "$repo/qa/gallery-expected.txt"
@@ -301,6 +302,10 @@ args.base = "HEAD~1"
 assert gallery.command_compare(args) == 0
 last = summary.read_text().split("## Galerie")[-1]
 assert "0 écart non déclaré" in last and "Déclarés sans écart : `a/x--`" in last, last
+# A declared prefix never excuses an image that did not render (kind notOk).
+head_source["name"] = "cn"
+assert gallery.command_compare(args) == 1, "declared notOk image passed"
+assert "**ÉCHEC**" in summary.read_text().split("## Galerie")[-1]
 assert len(list((gallery.gallery_root() / "compare").iterdir())) == gallery.KEEP_COMPARES
 PY2
 echo "test_gallery_script: ok"
