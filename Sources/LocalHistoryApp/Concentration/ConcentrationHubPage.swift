@@ -362,11 +362,14 @@ extension EnvironmentValues {
         if !consents.isEnabled(.jevMonitoring) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "eye.circle").foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
-                Text(text).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Configurer Jev", action: open)
-                    .buttonStyle(LHQuietButtonStyle())
-                    .accessibilityIdentifier("jev-open-settings")
+                // The sentence and its link share one column: the text never wraps under the icon.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(text).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Configurer Jev", action: open)
+                        .buttonStyle(LHQuietButtonStyle())
+                        .accessibilityIdentifier("jev-open-settings")
+                }
                 Spacer(minLength: 0)
             }
         }

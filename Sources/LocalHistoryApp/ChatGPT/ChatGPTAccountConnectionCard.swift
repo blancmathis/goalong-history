@@ -3,6 +3,8 @@ import SwiftUI
 
 struct ChatGPTAccountConnectionCard: View {
     @ObservedObject var runtime: ChatGPTRecapRuntime
+    /// True where the update is the only way forward on the screen (Réglages, Bilan); callers keep their own action secondary meanwhile (UI-49, UI-68).
+    var updateIsPrimary = false
     var body: some View {
         LHCard {
             VStack(alignment: .leading, spacing: 14) {
@@ -24,6 +26,9 @@ struct ChatGPTAccountConnectionCard: View {
             }
         }
         .onAppear { runtime.refreshAccount(userInitiated: true) }
+    }
+    private var updateButton: some View {
+        Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }
     }
     private var status: String {
         switch runtime.connectionState {
@@ -47,7 +52,11 @@ struct ChatGPTAccountConnectionCard: View {
                 }
             }
         case .codexUnavailable:
-            Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHSecondaryButtonStyle())
+            if updateIsPrimary {
+                updateButton.buttonStyle(LHPrimaryButtonStyle())
+            } else {
+                updateButton.buttonStyle(LHSecondaryButtonStyle())
+            }
         default:
             HStack(spacing: 10) {
                 if runtime.isConnecting {

@@ -198,9 +198,16 @@ struct GoalongRecordingStateNotice: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 12)
-                        Button(actionTitle(kind)) { perform(kind) }
-                            .buttonStyle(LHPrimaryButtonStyle())
-                            .accessibilityIdentifier("activity-recording-action")
+                        // One lime per screen: pending changes own the primary action (UI-42).
+                        if model.settingsHaveChanges {
+                            Button(actionTitle(kind)) { perform(kind) }
+                                .buttonStyle(LHSecondaryButtonStyle())
+                                .accessibilityIdentifier("activity-recording-action")
+                        } else {
+                            Button(actionTitle(kind)) { perform(kind) }
+                                .buttonStyle(LHPrimaryButtonStyle())
+                                .accessibilityIdentifier("activity-recording-action")
+                        }
                     }
                 }
                 .accessibilityElement(children: .contain)

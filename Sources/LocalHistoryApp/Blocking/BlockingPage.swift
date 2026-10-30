@@ -136,7 +136,7 @@ import LocalHistoryCore
 
     private func unlockText(_ origin: BlockSession.Origin, end: Date) -> String {
         if case .program = origin { return "Cette plage du programme s’arrête pour aujourd’hui. Elle revient la prochaine fois." }
-        return "Le blocage s’arrête maintenant, avant \(BlockingFormat.endTime(end))."
+        return "Débloquer arrête ce blocage prévu jusqu’à \(BlockingFormat.endTime(end))."
     }
 }
 
@@ -409,7 +409,7 @@ struct BlockingSessionThread: View {
                 if locked { Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold)) }
                 Text(BlockingFormat.endTime(end))
             }
-            .font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
+            .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("De \(BlockingFormat.time(start)) à \(BlockingFormat.endTime(end)), \(GoalongUIFormat.percent(progress * 100)) écoulés")
@@ -1010,20 +1010,21 @@ struct BlockingLockExplainer: View {
     }
 
     private func statusRow(symbol: String, title: String, ok: Bool, value: String, action: AnyView? = nil) -> some View {
-        HStack(spacing: 12) {
+        // The action sits under its row, on the text's left edge: the title keeps one line.
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 Image(systemName: symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 20).accessibilityHidden(true)
-                Text(title).font(.system(size: 13, weight: .medium))
+                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 12)
                 Image(systemName: ok ? "checkmark.circle.fill" : "circle.dashed")
                     .foregroundStyle(ok ? LHTheme.success : LHTheme.tertiaryText).accessibilityHidden(true)
                 Text(value).foregroundStyle(LHTheme.secondaryText)
             }
+            .frame(minHeight: 38)
             .accessibilityElement(children: .combine)
-            if let action { action }
+            if let action { action.padding(.leading, 32).padding(.bottom, 8) }
         }
-        .frame(minHeight: 38)
     }
 
     private var browsersRow: some View {

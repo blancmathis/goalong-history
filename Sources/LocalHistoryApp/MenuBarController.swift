@@ -185,7 +185,7 @@
             } else if !localEnabled {
                 display = ("Suivi en pause", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
             } else if health == .storageUnavailable {
-                display = ("Enregistrement interrompu", "externaldrive.badge.exclamationmark",
+                display = ("Enregistrement interrompu", "internaldrive",
                            "L’historique ne peut pas être écrit (disque plein ?). Libérez de l’espace sur le Mac : la reprise est automatique.")
             } else if health == .permissionRequired
                 || health == .permissionAppearsEnabledButStaleForBuild

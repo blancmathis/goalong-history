@@ -63,6 +63,17 @@
             }
         }
 
+        /// The value a switch may show. An unread state is unknown, never drawn as "off" (UI-43).
+        var switchValue: Bool? { Self.switchValue(for: state) }
+
+        nonisolated static func switchValue(for state: State) -> Bool? {
+            switch state {
+            case .enabled, .requiresApproval: return true
+            case .disabled: return false
+            case .unavailable: return nil
+            }
+        }
+
         nonisolated static func state(for status: SMAppService.Status) -> State {
             switch status {
             case .enabled: return .enabled

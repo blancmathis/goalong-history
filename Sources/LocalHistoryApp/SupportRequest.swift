@@ -282,7 +282,7 @@ struct SupportRequestView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     contentLine("checkmark.circle.fill", LHTheme.success,
                                 "Version de Goalong et de macOS, états des sources et des autorisations, erreurs et leurs codes, mises à jour, espace disque, indices de plantage — sur les 7 derniers jours.")
-                    contentLine("xmark.circle.fill", LHTheme.danger,
+                    contentLine("minus.circle", LHTheme.secondaryText,
                                 "Jamais : votre historique, les apps ou sites visités, titres, textes, conversations, captures d’écran, e-mails, mots de passe ou clés.")
                     if case .ready(_, _, let bytes, let events) = controller.phase {
                         HStack(spacing: 12) {
@@ -336,7 +336,7 @@ struct SupportRequestView: View {
             }
             if ready == nil {
                 Text(emailHint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.trailing)
+                    .lineLimit(1).fixedSize()
                     .accessibilityIdentifier("support-email-hint")
             }
             Button {

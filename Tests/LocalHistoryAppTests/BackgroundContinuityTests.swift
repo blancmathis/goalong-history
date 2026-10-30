@@ -60,6 +60,13 @@
             XCTAssertEqual(LaunchAtLoginManager.state(for: .notFound), .unavailable)
         }
 
+        func testUnreadLoginStateIsNeverDrawnAsOff() {
+            XCTAssertNil(LaunchAtLoginManager.switchValue(for: .unavailable))
+            XCTAssertEqual(LaunchAtLoginManager.switchValue(for: .disabled), false)
+            XCTAssertEqual(LaunchAtLoginManager.switchValue(for: .enabled), true)
+            XCTAssertEqual(LaunchAtLoginManager.switchValue(for: .requiresApproval), true)
+        }
+
         func testBackgroundOptOutSurvivesRecreation() {
             let defaults = isolatedDefaults()
             BackgroundContinuityPreferences(defaults: defaults).keepRunning = false

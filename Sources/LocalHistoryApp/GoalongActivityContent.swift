@@ -48,6 +48,8 @@ struct GoalongAnalyticsContent: View {
     var workStatus = GoalongWorkStatus.preview
     /// Why nothing new is recorded right now, as the banner above the page says; nil when recording runs.
     var recording: GoalongRecordingStateNotice.Kind? = nil
+    /// Writes refused (disk full or folder refused) and since when; the banner above holds the action.
+    var storageStop: GoalongActivityEmptyCopy.StorageStop? = nil
     var onDay: (Date) -> Void = { _ in }
     var onWork: () -> Void = {}
     /// Opens the correction of the day on screen; the task is the one clicked, if any.
@@ -545,6 +547,9 @@ struct GoalongAnalyticsContent: View {
         } else {
             switch shown {
             case .rhythm:
+                // The named view says where it is, right under the way back.
+                Text("Rythme").font(LHTheme.sectionTitleFont).tracking(-0.2)
+                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("activity-rhythm-title")
                 insightsSection(summary, items: usageItems, showsClassification: showsWorkCard(summary))
                 rhythmSection
             case .usage:
@@ -780,7 +785,8 @@ struct GoalongAnalyticsContent: View {
     @ViewBuilder private var emptyState: some View {
         let copy = GoalongActivityEmptyCopy.copy(isDay: isDay, isToday: isEmptyTodayCandidate,
             eventCount: current.eventCount, incompleteDays: current.incompleteDays,
-            purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording)
+            purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording,
+            storage: storageStop)
         VStack(alignment: .leading, spacing: 12) {
             GoalongEmptyState(title: copy.title, message: copy.message) {
                 if copy.offersHistory {
@@ -862,11 +868,24 @@ enum GoalongActivityEmptyCopy {
         var showsObservationCount = false
     }
 
+    struct StorageStop: Equatable {
+        let kind: CaptureStorageFailureKind
+        let since: Date?
+    }
+
     static func copy(isDay: Bool, isToday: Bool, eventCount: Int, incompleteDays: Int, purged: Bool,
-                     recording: GoalongRecordingStateNotice.Kind?) -> Copy {
+                     recording: GoalongRecordingStateNotice.Kind?, storage: StorageStop? = nil) -> Copy {
         if purged {
             return Copy(title: "Détail effacé",
                 message: "Ce jour a été effacé après la durée de conservation, avant que Goalong garde un résumé de chaque journée. Une absence de données n’est pas une journée à zéro.",
+                offersHistory: false)
+        }
+        // Writes refused today: one empty state names the cause and its time, never a promise of minutes to come.
+        if isDay && isToday, let storage {
+            let title = storage.since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
+            let cause = storage.kind == .diskFull ? "le disque est plein" : "le dossier de l’historique refuse l’écriture"
+            return Copy(title: title,
+                message: "Rien n’est enregistré tant que \(cause). La reprise est automatique et la coupure restera indiquée dans votre historique.",
                 offersHistory: false)
         }
         // Today, a stopped recording is the known cause, never a promise of minutes to come; a real read error still shows.

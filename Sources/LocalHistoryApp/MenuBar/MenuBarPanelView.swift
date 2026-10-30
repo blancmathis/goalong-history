@@ -158,7 +158,7 @@
                             .accessibilityElement(children: .combine)
                             if let fix = model.attentionFix {
                                 Button(fix.label) { model.perform(fix) }
-                                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                                    .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                                     .accessibilityIdentifier("menubar-attention-fix")
                             }
                         }
@@ -419,7 +419,7 @@
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                            .strokeBorder(selected ? LHTheme.accent : LHTheme.separator, lineWidth: selected ? 2 : 1)
+                            .strokeBorder(selected ? LHTheme.text : LHTheme.separator, lineWidth: selected ? 2 : 1)
                     )
                     .contentShape(Rectangle())
             }
@@ -606,7 +606,7 @@
                 .background(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
                     .fill(hovered ? LHTheme.hoverBackground : LHTheme.elevatedBackground))
                 .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                    .strokeBorder(selected ? LHTheme.accent : LHTheme.separator, lineWidth: selected ? 2 : 1))
+                    .strokeBorder(selected ? LHTheme.text : LHTheme.separator, lineWidth: selected ? 2 : 1))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

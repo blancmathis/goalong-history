@@ -10,6 +10,8 @@
         var websiteSummaries: [ActivitySiteSummary] = []
         var richContextEnabled = false
         var onEnableRichContext: (() -> Void)?
+        /// When recording is off, an empty list says so instead of « laissez Goalong actif ».
+        var recordingEnabled = true
 
         @State private var expandedWebsiteIDs = Set<String>()
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -62,7 +64,9 @@
                             symbol: "app.dashed",
                             title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
                             message: model.snapshot.trackedUsage.isEmpty
-                                ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
+                                ? (recordingEnabled
+                                    ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
+                                    : "L’enregistrement est désactivé : aucune app ni aucun site n’est observé.")
                                 : "Essayez une autre app, un autre site ou une autre catégorie."
                         )
                         .frame(minHeight: 320)
@@ -128,10 +132,9 @@
                                 .frame(width: 82, alignment: .trailing)
                             Text("Toujours lors du partage")
                                 .frame(width: UsageRulesList.ruleColumnWidth, alignment: .trailing)
-                            if title == "Sites web" {
-                                Text(websiteSummaries.isEmpty ? "" : "Détails")
-                                    .frame(width: 46, alignment: .trailing)
-                            }
+                            // Same trailing column in both sections so the rule pickers line up.
+                            Text(title == "Sites web" && !websiteSummaries.isEmpty ? "Détails" : "")
+                                .frame(width: 46, alignment: .trailing)
                         }
                         .font(.system(size: 12, weight: .semibold))
                         .tracking(0.35)
@@ -262,6 +265,8 @@
                         }
                     }
                     .frame(width: 46, alignment: .trailing)
+                } else {
+                    Color.clear.frame(width: 46, height: 1)
                 }
             }
             .padding(.horizontal, 14)

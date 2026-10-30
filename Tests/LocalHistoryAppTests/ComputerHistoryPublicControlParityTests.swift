@@ -72,7 +72,7 @@
             XCTAssertTrue(computerHistory.contains("Enregistré sur ce Mac"))
             XCTAssertTrue(computerHistory.contains("Historique local conservé"))
             XCTAssertTrue(computerHistory.contains("Détails de la journée indisponibles"))
-            XCTAssertTrue(computerHistory.contains("Les autres jours sont inchangés"))
+            XCTAssertTrue(computerHistory.contains("ou ce jour a été effacé"))
             XCTAssertTrue(computerHistory.contains(".disabled(!canRevealSourceData)"))
             XCTAssertTrue(computerHistory.contains("@StateObject private var timelineModel"))
             XCTAssertTrue(privacy.contains("Dernière session d’application"))

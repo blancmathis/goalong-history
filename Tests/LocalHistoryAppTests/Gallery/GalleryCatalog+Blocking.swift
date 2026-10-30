@@ -64,7 +64,7 @@ extension GalleryCatalog {
             },
             panel("programme/mot-de-passe-a-saisir", width: 480, clock: .injected) { _ in
                 AnyView(BlockingPasswordSheet(controller: F.blockingGuarded(),
-                    purpose: .unlock(F.socialID, what: "Le blocage s’arrête maintenant, avant 16:34."), onClose: {}))
+                    purpose: .unlock(F.socialID, what: "Débloquer arrête ce blocage prévu jusqu’à 16:34."), onClose: {}))
             },
             panel("programme/saisie-de-texte", width: 560) { _ in
                 AnyView(BlockingTypingChallengeSheet(text: String(repeating: "aB3kZ", count: 24), onSubmit: { _ in }, onCancel: {}))

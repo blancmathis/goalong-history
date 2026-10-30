@@ -83,6 +83,7 @@ struct GoalongLaneMatrix: View {
         var faint: [DateInterval] = []
         var outlined: [DateInterval] = []
         var ticks: [Date] = []
+        var isEmpty: Bool { segments.isEmpty && solid.isEmpty && faint.isEmpty && outlined.isEmpty && ticks.isEmpty }
     }
 
     static let solidColor = LHTheme.text.opacity(0.55)
@@ -109,6 +110,12 @@ struct GoalongLaneMatrix: View {
                                               upper: range.upperBound, thickness: 10)
                         }
                         Canvas { context, size in draw(row, in: context, size: size) }
+                        if row.isEmpty {
+                            // An empty lane is a reading (nothing that day), not a missing source.
+                            Text("aucun").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                                .padding(.horizontal, 6).background(LHTheme.pageBackground)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     .frame(height: 20)
                 }
@@ -129,7 +136,10 @@ struct GoalongLaneMatrix: View {
         func rect(_ interval: DateInterval, height: CGFloat) -> CGRect? {
             let x0 = x(interval.start), x1 = x(interval.end)
             guard interval.end > lower, interval.start < range.upperBound else { return nil }
-            return CGRect(x: x0, y: (size.height - height) / 2, width: max(1.5, x1 - x0), height: height)
+            // A mark as wide as the lane is thick: one or two points would read as a rendering artefact.
+            let width = max(height, x1 - x0)
+            let left = min(max(0, (x0 + x1 - width) / 2), max(0, size.width - width))
+            return CGRect(x: left, y: (size.height - height) / 2, width: width, height: height)
         }
         for interval in GoalongIntervals.merged(row.faint) {
             if let r = rect(interval, height: 10) {

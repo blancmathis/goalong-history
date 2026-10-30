@@ -42,7 +42,10 @@ struct PermissionSetupCopy {
     }
     var privacy: String {
         switch capability {
-        case .appleScreenTime: return "L’accès complet au disque est large. Goalong l’utilise ici pour lire le temps d’écran Apple. Aucun envoi n’est autorisé."
+        // The broad-access warning belongs where that access is asked for, not once it is granted (UI-60).
+        case .appleScreenTime where status == .fullDiskAccess:
+            return "L’accès complet au disque est large. Goalong l’utilise ici pour lire le temps d’écran Apple. Aucun envoi n’est autorisé."
+        case .appleScreenTime: return "Goalong lit le temps d’écran Apple sur ce Mac. Aucun envoi n’est autorisé."
         case .aiConversations: return "Les conversations restent dans leurs fichiers d’origine. Analyser et envoyer sont des choix séparés."
         default: return "Pas de captures d’écran ni de caractères tapés. Cet accès n’autorise aucun envoi."
         }
@@ -106,11 +109,12 @@ struct PermissionSetupStatusCard: View {
             Spacer(minLength: 8)
             HStack(spacing: 5) {
                 if checking { ProgressView().controlSize(.mini) }
-                else { Image(systemName: ready ? "checkmark.circle.fill" : unavailable ? "exclamationmark.circle" : "circle.dashed").font(.system(size: 11)) }
+                // The glyph carries the color; the word stays in ink (UI-61).
+                else { Image(systemName: ready ? "checkmark.circle.fill" : unavailable ? "exclamationmark.circle" : "circle.dashed").font(.system(size: 11))
+                    .foregroundStyle(ready ? LHTheme.success : unavailable ? LHTheme.warning : LHTheme.secondaryText) }
                 Text(Self.badge(checking: checking, ready: ready, unavailable: unavailable))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(LHTheme.text)
             }
-            .foregroundStyle(ready ? LHTheme.success : unavailable && !checking ? LHTheme.warning : LHTheme.secondaryText)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .accessibilityElement(children: .combine)
@@ -162,7 +166,7 @@ struct PermissionPrivacyNote: View {
     let text: String
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
-            Image(systemName: "lock.shield").font(.system(size: 13)).foregroundStyle(LHTheme.accent).accessibilityHidden(true)
+            Image(systemName: "lock.shield").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
             Text(text).font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -200,7 +204,7 @@ extension Notification.Name {
                 // Deliberately visible here, not hidden in an already-collapsed disclosure.
                 PermissionRepairControl(status: status, capability: capability)
             case .grant:
-                Button("Ouvrir les réglages") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Ouvrir Réglages Système…") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
                 Button("J’ai déjà activé cet accès dans macOS") {
                     // This is a report from the user, not an OS permission result.
                     PermissionRecoveryLedger.record(.settingsOpened, for: status)
@@ -209,11 +213,11 @@ extension Notification.Name {
             case .relaunch:
                 restartButton("Relancer et vérifier")
             case .reauthorize:
-                Button("Ouvrir les réglages pour réautoriser") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Ouvrir Réglages Système…") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
                 restartButton("Relancer après autorisation")
             case .manualRepair:
                 Button("Afficher la copie exacte à ajouter") { reveal() }.buttonStyle(LHSecondaryButtonStyle())
-                Button("Ouvrir les réglages") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Ouvrir Réglages Système…") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
                 restartButton("Relancer après remplacement de l’entrée")
             case .installStableCopy, .replaceInvalidBuild, .closeOtherCopy:
                 Button("Afficher cette copie dans le Finder") { reveal() }.buttonStyle(LHSecondaryButtonStyle())

@@ -126,7 +126,7 @@ struct GoalongAgendaSection: View {
     private var legend: [(mark: GoalongLaneMark, title: String)] {
         var items: [(mark: GoalongLaneMark, title: String)] = []
         if !agenda.events.isEmpty { items.append((.outlined, "Événement prévu")) }
-        if !agenda.calls.isEmpty { items.append((.solid, "Appel : micro ou caméra en cours")) }
+        if !agenda.calls.isEmpty { items.append((.solid, "Appel (micro ou caméra)")) }
         return items
     }
 
@@ -158,10 +158,10 @@ struct GoalongAgendaSection: View {
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                         }
                         Spacer(minLength: 8)
-                        if agenda.callsOn {
-                            Text(event.callSeconds >= 60 ? "appel \(GoalongAnalyticsFormatting.duration(event.callSeconds))" : "aucun appel")
+                        // Only a real call is written: the caption above already says when there was none.
+                        if agenda.callsOn && event.callSeconds >= 60 {
+                            Text("appel \(GoalongAnalyticsFormatting.duration(event.callSeconds))")
                                 .font(.system(size: 12)).monospacedDigit()
-                                .foregroundStyle(event.callSeconds >= 60 ? LHTheme.text : LHTheme.tertiaryText)
                         }
                     }
                     .padding(.vertical, 7).padding(.horizontal, 6)
@@ -192,18 +192,27 @@ struct GoalongAgendaSection: View {
     private var reminderList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Rappels").font(.system(size: 13, weight: .semibold))
-            ForEach(agenda.reminders) { reminder in
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(GoalongSummaryFormat.time(reminder.completedAt)).font(.system(size: 12)).monospacedDigit()
-                        .foregroundStyle(LHTheme.secondaryText).frame(width: 96, alignment: .leading)
-                    Text(reminder.title.isEmpty ? "Sans titre" : reminder.title).font(.system(size: 13)).lineLimit(1)
-                    Spacer(minLength: 0)
+            // Same rows and rules as « Prévu »; each line says whether the reminder is done.
+            VStack(spacing: 0) {
+                ForEach(Array(agenda.reminders.enumerated()), id: \.element.id) { index, reminder in
+                    if index > 0 { Divider().padding(.leading, 6) }
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text("fait à \(GoalongSummaryFormat.time(reminder.completedAt))").font(.system(size: 12)).monospacedDigit()
+                            .foregroundStyle(LHTheme.secondaryText).frame(width: 96, alignment: .leading)
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
+                        Text(reminder.title.isEmpty ? "Sans titre" : reminder.title).font(.system(size: 13)).lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 7).padding(.horizontal, 6)
+                    .accessibilityElement(children: .combine)
                 }
-                .padding(.horizontal, 6)
-                .accessibilityElement(children: .combine)
             }
             if agenda.openDueReminders > 0 {
-                Text(GoalongCodeDay.count(agenda.openDueReminders, "rappel prévu ce jour-là reste ouvert.", "rappels prévus ce jour-là restent ouverts."))
+                // Their titles are not read: the count says they are not among the lines above.
+                Text(GoalongCodeDay.count(agenda.openDueReminders,
+                        "autre rappel prévu ce jour-là reste ouvert, sans être listé ici.",
+                        "autres rappels prévus ce jour-là restent ouverts, sans être listés ici."))
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.horizontal, 6)
             }
         }
