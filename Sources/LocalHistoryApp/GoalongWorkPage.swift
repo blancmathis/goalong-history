@@ -96,8 +96,10 @@ import SwiftUI
                 Spacer(minLength: 8)
                 statusAction
             }
-            Toggle("Classer automatiquement les nouveaux contextes", isOn: $work.automatic)
-                .toggleStyle(.goalongSwitch).disabled(agent.readiness == .noConsent)
+            Toggle("Classer automatiquement les nouveaux contextes", isOn: Binding(
+                get: { Self.automaticSwitchShowsOn(automatic: work.automatic, consented: consents.isEnabled(.chatGPTAnalysis)) },
+                set: { work.automatic = $0 }))
+                .toggleStyle(.goalongSwitch).disabled(!consents.isEnabled(.chatGPTAnalysis))
                 .accessibilityIdentifier("work-automatic")
             Text("Quand vous ouvrez Activité : la journée affichée, au plus toutes les 15 minutes pour aujourd’hui. Aucune minuterie en arrière-plan ; un contexte déjà classé n’est jamais renvoyé.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -111,6 +113,12 @@ import SwiftUI
                     .font(.system(size: 12)).disabled(agent.isRunning)
             }
         }
+    }
+
+    /// Without consent nothing is classified: the switch reads off, whatever choice it will restore.
+    /// Consent is read directly: `readiness` reports an empty definition or history off first.
+    nonisolated static func automaticSwitchShowsOn(automatic: Bool, consented: Bool) -> Bool {
+        automatic && consented
     }
 
     private var statusSymbol: String {

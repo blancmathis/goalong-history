@@ -3,3 +3,7 @@
 #   agenda/detail-   # texte « exclusion » → « exclusion globale »
 # Only the lines a branch adds (diff from its merge-base) count: older lines never hide a later change.
 # Anyone may empty this file at any time.
+fenetre/stockage-plein-   # DEF-03 : jour vide + disque plein nomme l'arrêt au lieu de promettre des minutes
+mon-travail/classement-avec-donnees-   # DEF-02 : interrupteur « Classer automatiquement » éteint tant que le classement n'est pas autorisé
+mon-travail/definition-et-donnees-   # DEF-02 : idem
+mon-travail/definition-enregistree-   # DEF-05 (revue PR #205) : sans consentement ChatGPT, interrupteur éteint et grisé même historique coupé
