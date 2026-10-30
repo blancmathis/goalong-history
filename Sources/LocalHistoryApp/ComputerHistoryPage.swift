@@ -677,6 +677,7 @@
         @State private var timelineSearch = ""
         @State private var newestFirst = true
         @State private var hasRetried = false
+        @Environment(\.goalongRecordingModel) private var recordingModel
 
         private let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
@@ -685,7 +686,7 @@
         var body: some View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
-                    recordingStateCard
+                    if !timelineAloneExplainsDay { recordingStateCard }
                     historySection
                 }
                 .padding(.bottom, 8)
@@ -1008,7 +1009,7 @@
                     } else if tenMinuteGroups.isEmpty {
                         GoalongEmptyState(
                             title: emptyTimelineTitle,
-                            message: ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
+                            message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
                                 ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
                         .frame(minHeight: 240)
                         .padding(24)
@@ -1051,7 +1052,21 @@
                 : "Le journal original de cette journée est indisponible"
         }
 
+        /// A day without any journal is one fact: the timeline's empty state says it, the card above does not repeat it.
+        private var timelineAloneExplainsDay: Bool {
+            guard case .absent = model.sourceStatus, model.memory == nil else { return false }
+            return !isPreparingTimeline && tenMinuteGroups.isEmpty
+        }
+
+        /// Writes refused today: the empty day has a known cause and a start time.
+        private var storageStopTitle: String? {
+            guard GoalongToday.isToday(day), let runtime = recordingModel?.runtime, runtime.storageFailure != nil else { return nil }
+            return runtime.storageInterruptedSince.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" }
+                ?? "Enregistrement interrompu"
+        }
+
         private var emptyTimelineTitle: String {
+            if let storageStopTitle, tenMinuteGroups.isEmpty { return storageStopTitle }
             switch model.sourceStatus {
             case .inaccessible:
                 return "Chargement impossible"
@@ -1071,6 +1086,11 @@
         }
 
         private var emptyTimelineMessage: String {
+            if storageStopTitle != nil, let kind = recordingModel?.runtime.storageFailure {
+                return kind == .diskFull
+                    ? "Rien n’est enregistré tant que le disque est plein. La reprise est automatique et la coupure restera indiquée ici."
+                    : "Rien n’est enregistré tant que le dossier de l’historique refuse l’écriture. La reprise est automatique et la coupure restera indiquée ici."
+            }
             switch model.sourceStatus {
             case .inaccessible:
                 return model.memory == nil
@@ -1078,7 +1098,7 @@
                     : "Le dernier historique valide a été conservé. Le journal d’origine n’a pas pu être lu en toute sécurité."
             case .absent:
                 return model.memory == nil
-                    ? "Aucun historique conservé pour ce jour. Les autres jours sont inchangés."
+                    ? "Goalong n’a rien enregistré sur ce Mac ce jour-là, ou ce jour a été effacé."
                     : "Le journal d’origine est absent, mais l’historique conservé n’a pas été supprimé."
             case .available where GoalongToday.isToday(day):
                 return "L’activité apparaît ici lorsque Goalong enregistre une application autorisée."
@@ -1762,7 +1782,7 @@
 
         private var windowTimeLabel: String {
             GoalongUIFormat.time(group.start)
-                + "\n–"
+                + "\n–\u{00A0}"
                 + GoalongUIFormat.time(group.end)
         }
 
