@@ -242,6 +242,28 @@ else
     ui_row "$id" "$kind" "$navs" "$mode" "$role" "$needle" "$action"
     log "[$id] $(tail -n 1 "$RESULTS" | cut -f3,6)"
   done 3< <(tr "\t" "\037" < "$OUT/plan.tsv")
+  if [[ $SHARD == S1 ]]; then
+    # Screens without a gallery capture: PNG + AX dump per screen, then one PNG per scroll step (full height).
+    log "== extra screens (qa/e2e/t046-screens.tsv)"
+    mkdir -p "$OUT/screens/ax"
+    while IFS=$'\t' read -r -u 3 name navs scrolls; do
+      [[ -z $name || $name == \#* ]] && continue
+      pgrep -x "$EXE" >/dev/null || { launch; open_dashboard; }
+      front; eval "set -- $navs"; miss="$(navigate "$@")"; sleep 1
+      screencapture -x "$OUT/screens/$name.png"; drv dump "$BUNDLE" "$OUT/screens/ax/$name.txt" >/dev/null 2>&1
+      for ((k = 1; k <= scrolls; k++)); do drv scroll "$BUNDLE" >/dev/null 2>&1; sleep 1; screencapture -x "$OUT/screens/$name-$k.png"; done
+      log "[screen $name] miss=${miss:-none} scrolls=$scrolls"
+      cleanup
+    done 3< "$HERE/t046-screens.tsv"
+    # 39 Menu de l'app: each menu-bar menu of Goalong Dev, opened then closed.
+    front
+    for top in "Goalong Dev" "Goalong History Dev" "Fichier" "Édition" "Présentation" "Fenêtre" "Aide"; do
+      drv menu "$BUNDLE" "$top" >/dev/null 2>&1 && { sleep 1; screencapture -x "$OUT/screens/39-menu-$top.png"; } || log "[screen 39-menu-$top] not found"
+      esc
+    done
+    log "[screen 37-installation] no UI: the S4 transcripts of install.sh / Install.command are the proof"
+    for f in "$OUT"/screens/*.png; do sips -Z 1280 "$f" >/dev/null 2>&1; done
+  fi
   quit_app
 fi
 log "== results: $(tail -n +2 "$RESULTS" | cut -f3 | sort | uniq -c | tr '\n' ' ')"

@@ -51,7 +51,7 @@ NAV = {
     "Concentration": "nav:concentration",
     "Confidentialité et sécurité": "pane:home o:\"Diagnostic et preuves\" w:2",
     "Jev (surveillance)": "pane:jev",
-    "Partager": "pane:storage t:\"Fichiers locaux|Exporter un fichier signé…\" w:2",
+    "Partager": "pane:advanced p:\"Outils de partage et analyses\" w:2 o:\"Exporter un fichier signé…\" w:2",
     "Réglages": "pane:home",
     "Réglages › Applications": "pane:applications",
     "Réglages › Règles d’usage": "pane:applications",
@@ -67,14 +67,15 @@ NAV = {
 }
 
 # Source file of the target (fileline, or the only file holding the literal) -> navigation, after run 1's dumps.
+# The share tools (GoalongAdvancedTools) are the pane Avancé > « Outils de partage et analyses », not Stockage.
 # It wins over NAV: the screen names of the matrix do not always match the tab or the opener.
 FILE_NAV = {
     "BlockingPageLists.swift": "nav:concentration p:\"Distractions\" w:2",
     "BlockingPage.swift": "nav:concentration p:\"Programme\" w:2",
     "BlockingWeek.swift": "nav:concentration p:\"Programme\" w:2",
     "ConcentrationCommitmentViews.swift": "nav:concentration o:concentration-commitment-create w:2",
-    "GoalongProfileStudio.swift": "pane:storage t:\"Fichiers locaux|Comprendre mon travail\" w:2",
-    "GoalongSiteAnalysisSheet.swift": "pane:storage t:\"Fichiers locaux|Analyser une demande du site…\" w:2",
+    "GoalongProfileStudio.swift": "pane:advanced p:\"Outils de partage et analyses\" w:2 p:\"Comprendre mon travail\" w:3",
+    "GoalongSiteAnalysisSheet.swift": "pane:advanced p:\"Outils de partage et analyses\" w:2 p:\"Analyser une demande du site…\" w:2",
     "GoalongAnalyticsPage.swift": "nav:overview p:activity-explore-usage w:2",
     "GoalongActivityUsageList.swift": "nav:overview p:activity-explore-usage w:2",
     "GoalongHealthImportSheet.swift": "nav:overview p:activity-explore-coverage w:2 p:\"Importer…\" w:2",
