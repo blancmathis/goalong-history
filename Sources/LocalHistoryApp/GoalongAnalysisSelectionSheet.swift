@@ -60,11 +60,7 @@ import AgentActivity
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     content
-                    // Still reading is a state, not a fault: neutral, not amber (UI-68).
-                    if let error {
-                        Label(error, systemImage: error == Self.stillReading ? "clock" : "exclamationmark.circle").font(.system(size: 13))
-                            .foregroundStyle(error == Self.stillReading ? LHTheme.secondaryText : LHTheme.warning)
-                    }
+                    if let error { Label(error, systemImage: "exclamationmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.warning) }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }
             // Cancel first, the one primary action last; a disabled action says why (UI-62).
@@ -98,7 +94,6 @@ import AgentActivity
         }
         .onDisappear { previewTask?.cancel(); previewGeneration = UUID() }
     }
-    nonisolated static let stillReading = "La liste des applications et appareils est encore en cours de lecture."
     private var footerNote: String {
         if catalogLoading || installedApps.loading { return "Lecture des applications et des appareils…" }
         if !selection.hasSources { return "Activez au moins une source pour enregistrer." }
@@ -372,7 +367,7 @@ import AgentActivity
         scope.wrappedValue = value
     }
     private func finalized() throws -> GoalongAnalysisSelection {
-        guard !catalogLoading, !installedApps.loading else { throw PrivacyScopeInput.invalid(Self.stillReading) }
+        guard !catalogLoading, !installedApps.loading else { throw PrivacyScopeInput.invalid("La liste des applications et appareils est encore en cours de lecture.") }
         var next = selection, value = scope.wrappedValue
         next.computer = next.computer && consents.isEnabled(.localComputerHistory)
         next.screenTime = next.screenTime && consents.isEnabled(.appleScreenTime)
