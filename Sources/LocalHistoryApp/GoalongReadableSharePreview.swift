@@ -66,14 +66,14 @@ struct GoalongReadableShareData: Equatable {
                   let apps = device["apps"] as? [[String: Any]], apps.count <= 200 else { throw invalid() }
             metadata.append(("Identifiant de \(name)", id))
             for field in ["kind", "source", "provenance", "coverage", "appsCoverage"] {
-                if let value = device[field] as? String { metadata.append(("\(name) · \(field)", value)) }
+                if let value = device[field] as? String { metadata.append(("\(name), \(field)", value)) }
             }
             let rows: [Row] = try apps.enumerated().map { index, app in
                 try keys(app, ["id", "name", "seconds", "category"])
                 guard let appID = app["id"] as? String, let name = app["name"] as? String,
                       let seconds = try integer(app["seconds"]) else { throw invalid() }
                 metadata.append(("Identifiant de \(name)", appID))
-                if let category = app["category"] as? String { metadata.append(("\(name) · catégorie", category)) }
+                if let category = app["category"] as? String { metadata.append(("\(name), catégorie", category)) }
                 return Row(id: "\(id)-\(index)", label: name, seconds: seconds)
             }
             var hours: [Int?]?
@@ -91,10 +91,10 @@ struct GoalongReadableShareData: Equatable {
                 try keys(row, ["domain", "browser", "seconds"])
                 guard let name = row["domain"] as? String, let seconds = try integer(row["seconds"]) else { throw invalid() }
                 websites.append(Row(id: "web-\(index)", label: name, seconds: seconds))
-                if let browser = row["browser"] as? String { metadata.append(("\(name) · navigateur", browser)) }
+                if let browser = row["browser"] as? String { metadata.append(("\(name), navigateur", browser)) }
             }
             for field in ["source", "coverage", "includedInApplicationTotals"] {
-                if let value = web[field] { metadata.append(("Sites · \(field)", String(describing: value))) }
+                if let value = web[field] { metadata.append(("Sites, \(field)", String(describing: value))) }
             }
         } else if telemetry["websites"] != nil && !(telemetry["websites"] is NSNull) { throw invalid() }
         self.websites = websites

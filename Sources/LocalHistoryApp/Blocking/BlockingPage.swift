@@ -1003,7 +1003,7 @@ struct BlockingLockExplainer: View {
 
     /// Réglages Système › Général › Ouverture, where macOS lets Goalong start and run in the background.
     private var loginItemsButton: AnyView {
-        AnyView(Button("Ouvrir Réglages…") { SMAppService.openSystemSettingsLoginItems() }
+        AnyView(Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
             .help("Autorisez Goalong dans Réglages Système › Général › Ouverture.")
             .accessibilityIdentifier("blocking-open-login-items"))

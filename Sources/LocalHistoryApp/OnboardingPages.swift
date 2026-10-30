@@ -188,7 +188,7 @@
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 if let note { GoalongNote(note, tone: .warning) }
                 if launchAtLoginPreference && launchAtLogin.requiresApproval {
-                    Button("Ouvrir les éléments d’ouverture") { launchAtLogin.openLoginItemsSettings() }
+                    Button("Ouvrir Réglages Système") { launchAtLogin.openLoginItemsSettings() }
                 }
             }
         }

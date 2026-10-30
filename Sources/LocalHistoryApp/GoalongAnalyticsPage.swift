@@ -417,7 +417,7 @@ struct GoalongAnalyticsPage: View {
         } else if permissions.contains(where: { $0 != .ready }) {
             rows.append(.init(id: "calendar", title: "Agenda et rappels", state: .needsPermission,
                               detail: "macOS n’a pas donné l’accès à l’agenda ou aux rappels.",
-                              actionTitle: permissions.contains(.permissionDenied) ? "Ouvrir…" : "Autoriser…", action: allowCalendar))
+                              actionTitle: permissions.contains(.permissionDenied) ? "Ouvrir Réglages Système…" : "Autoriser…", action: allowCalendar))
         } else if let calendar = value?.calendar {
             var detail = GoalongCodeDay.count(calendar.events.filter(\.isPlannedBusy).count, "événement prévu", "événements prévus")
                 + " et " + GoalongCodeDay.count(calendar.completedReminders.count, "rappel terminé", "rappels terminés") + " ce jour-là."

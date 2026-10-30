@@ -219,7 +219,7 @@ struct GoalongAgendaSection: View {
         } else if agenda.calendarAccess == .notAsked {
             notes.append(("macOS n’a pas encore donné l’accès à l’agenda et aux rappels.", "Autoriser…", onAllowCalendar))
         } else if agenda.calendarAccess == .denied {
-            notes.append(("macOS refuse l’accès à l’agenda ou aux rappels. Vous pouvez le donner dans Réglages Système.", "Ouvrir…", onAllowCalendar))
+            notes.append(("macOS refuse l’accès à l’agenda ou aux rappels. Vous pouvez le donner dans Réglages Système.", "Ouvrir Réglages Système…", onAllowCalendar))
         }
         return notes
     }
