@@ -46,7 +46,7 @@ for back in range(args.days, -1 if args.today else 0, -1):
                 "timestamp": stamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "kind": "applicationActivated" if i % 7 == 0 else "windowChanged",
                 "app": {"name": name, "bundleIdentifier": bundle, "processIdentifier": 400 + (i // 7) % len(APPS)},
-                "window": {"title": f"Document synthétique T-046 {i % 50}", "role": "AXWindow", "subrole": "AXStandardWindow"},
+                "window": {"title": f"Document synthétique T-046 {(i // 7) % 50}", "role": "AXWindow", "subrole": "AXStandardWindow"},
             }
             out.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
     os.chmod(path, 0o600)
