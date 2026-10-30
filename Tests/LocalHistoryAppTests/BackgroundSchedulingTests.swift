@@ -576,6 +576,85 @@
             XCTAssertEqual(changes, [true, false])
         }
 
+        /// DEF-04: a window shown beside another app must not keep saying « Enregistrement actif »
+        /// while the disk is full, nor « disque plein » after recovery. Only the cheap status is read.
+        func testVisibleNonKeyDashboardRefreshesOnlyTheStatus() {
+            var changes: [Bool] = []
+            var statusChanges: [Bool] = []
+            let coordinator = DashboardVisibilityCoordinator(
+                visibilityDidChange: { changes.append($0) },
+                statusVisibilityDidChange: { statusChanges.append($0) }
+            )
+            var state = DashboardVisibilityState(
+                windowIsVisible: true,
+                windowIsMiniaturized: false,
+                applicationIsHidden: false,
+                windowIsOccluded: false,
+                windowIsKey: false
+            )
+
+            coordinator.update(state)
+            XCTAssertFalse(coordinator.permitsRefresh)
+            XCTAssertTrue(coordinator.permitsStatusRefresh)
+            state.windowIsKey = true
+            coordinator.update(state)
+            state.windowIsKey = false
+            coordinator.update(state)
+            state.windowIsOccluded = true
+            coordinator.update(state)
+            state.windowIsOccluded = false
+            state.sessionIsAvailable = false
+            coordinator.update(state)
+
+            XCTAssertEqual(changes, [true, false])
+            XCTAssertEqual(statusChanges, [true, false])
+        }
+
+        @MainActor func testNonKeyDashboardStatusFollowsStorageWithoutDataWakeups() throws {
+            guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
+                throw XCTSkip("Dashboard tests require an isolated test HOME")
+            }
+            let virtual = VirtualDashboardTimerScheduler()
+            let config = ConfigManager(), permissions = PermissionManager()
+            let health = CaptureHealthStore(permissions: PermissionManager())
+            let agents = try AgentActivityRuntime(
+                rootDirectory: AppPaths.agentActivityDirectory,
+                executableURL: URL(fileURLWithPath: "/nonexistent/def04-test"), performInitialDiscovery: false,
+                sourceDiscovery: { [] }, onCaptured: { _ in })
+            let model = DashboardViewModel(
+                state: CaptureState(), permissions: permissions, configManager: config,
+                sharingRulesStore: SharingRulesStore(), agentActivityRuntime: agents,
+                deviceInfo: DeviceIdentityInfo(
+                    deviceID: "def04-fixture", publicKeyBase64: "", trustTier: "test", algorithm: "test"),
+                eventTapStatus: { false }, currentSuppression: { nil }, captureHealthSnapshot: { health.snapshot },
+                onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
+                onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
+                onDeleteTargetedDetails: { _, done in done(.success(0)) },
+                refreshScheduler: DashboardRefreshScheduler(schedule: virtual.schedule))
+
+            health.markStorageInterrupted(.diskFull)
+            model.dashboardStatusDidBecomeVisible()
+            XCTAssertFalse(model.dashboardIsVisible)
+            XCTAssertEqual(model.runtime.storageFailure, .diskFull)
+            XCTAssertEqual(virtual.activeIntervals, [DashboardRefreshScheduler.runtimeInterval])
+
+            health.markStorageRestored()
+            virtual.advance(by: DashboardRefreshScheduler.runtimeInterval)
+            XCTAssertNil(model.runtime.storageFailure)
+
+            // Key, then key lost while still visible: the status timer stays, the data timer stops.
+            model.dashboardDidBecomeVisible()
+            model.dashboardDidBecomeHidden(discardContents: false)
+            XCTAssertEqual(virtual.activeIntervals, [DashboardRefreshScheduler.runtimeInterval])
+            health.markStorageInterrupted(.diskFull)
+            virtual.advance(by: DashboardRefreshScheduler.runtimeInterval)
+            XCTAssertEqual(model.runtime.storageFailure, .diskFull)
+
+            model.dashboardStatusDidBecomeHidden()
+            XCTAssertTrue(virtual.activeIntervals.isEmpty)
+            model.waitForPendingWorkForTesting()
+        }
+
         func testDashboardWindowLifecycleOwnsRefreshScheduler() throws {
             let repositoryRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()

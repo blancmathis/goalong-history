@@ -76,6 +76,12 @@
             }
         }
 
+        /// Status only: no data wakeup while the window lacks the keyboard.
+        func activateRuntimeOnly(refreshRuntime: @escaping () -> Void) {
+            deactivate()
+            runtimeTask = schedule(Self.runtimeInterval, refreshRuntime)
+        }
+
         func deactivate() {
             runtimeTask?.cancel()
             dataTask?.cancel()
@@ -208,6 +214,8 @@
         )
         private let shareQueue = DispatchQueue(label: "ai.goalong.localhistory.dashboard-share", qos: .userInitiated)
         @Published private(set) var dashboardIsVisible = false
+        /// The window can be seen, with or without the keyboard: only the cheap status is kept live.
+        @Published private(set) var dashboardStatusIsVisible = false
         private var dataRequestSequence: UInt64 = 0
         private var metadataRequestSequence: UInt64 = 0
         private var activeDataRequest:
@@ -573,6 +581,21 @@
             updateRefreshSchedule()
         }
 
+        /// A visible window beside another app keeps its recording and storage status current,
+        /// without the data and metadata readers that `dashboardDidBecomeVisible` starts.
+        func dashboardStatusDidBecomeVisible() {
+            guard !dashboardStatusIsVisible else { return }
+            dashboardStatusIsVisible = true
+            refreshRuntime()
+            updateRefreshSchedule()
+        }
+
+        func dashboardStatusDidBecomeHidden() {
+            guard dashboardStatusIsVisible else { return }
+            dashboardStatusIsVisible = false
+            updateRefreshSchedule()
+        }
+
         /// Tests: waits until the data and metadata queues are idle, then lets queued main-thread work run.
         func waitForPendingWorkForTesting() {
             dataQueue.sync {}
@@ -587,6 +610,7 @@
             }
             dashboardIsVisible = false
             refreshScheduler.deactivate()
+            updateRefreshSchedule()
             dataRequestSequence &+= 1
             metadataRequestSequence &+= 1
             cancelDataRequest()
@@ -1001,7 +1025,11 @@
 
         private func updateRefreshSchedule() {
             guard dashboardIsVisible else {
-                refreshScheduler.deactivate()
+                if dashboardStatusIsVisible {
+                    refreshScheduler.activateRuntimeOnly { [weak self] in self?.refreshRuntime() }
+                } else {
+                    refreshScheduler.deactivate()
+                }
                 return
             }
             refreshScheduler.activate(
@@ -1020,7 +1048,7 @@
         func liveCaptureHealthSnapshot() -> CaptureHealthSnapshot { captureHealthSnapshot() }
 
         private func refreshRuntime() {
-            guard dashboardIsVisible else { return }
+            guard dashboardIsVisible || dashboardStatusIsVisible else { return }
             let status = permissions.snapshot
             let tap = eventTapStatus()
             let healthSnapshot = captureHealthSnapshot()
