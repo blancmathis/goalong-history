@@ -1,168 +1,133 @@
-# id	nav — (b) rows of L3b-tri.tsv: the target was seen in the AX dump of another row; its navigation is reused.
-J-0017	nav:concentration p:"Programme" w:2
-J-0020	pane:website
-J-0021	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0023	pane:website
-J-0024	pane:modules
-J-0029	nav:overview
-J-0035	pane:modules
-J-0036	nav:concentration p:"Distractions" w:2
-J-0040	nav:concentration p:"Programme" w:2
-J-0041	nav:concentration p:"Programme" w:2
-J-0042	nav:concentration p:"Programme" w:2
-J-0043	nav:concentration p:"Programme" w:2
-J-0048	nav:concentration p:"Programme" w:2
-J-0050	pane:website
-J-0051	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
-J-0054	pane:website
-J-0055	pane:website
-J-0057	nav:concentration p:"Programme" w:2
-J-0059	nav:concentration p:"Programme" w:2
-J-0060	nav:concentration p:"Programme" w:2
-J-0072	nav:braise
-J-0078	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
-J-0086	nav:concentration o:concentration-commitment-create w:2
-J-0094	nav:concentration p:"Distractions" w:2
-J-0109	pane:website
-J-0110	pane:modules
-J-0113	pane:modules
-J-0120	pane:home p:settings-report-problem w:3
-J-0126	pane:website
-J-0141	nav:overview
-J-0142	si
-J-0145	si
-J-0146	si
-J-0224	pane:website
-J-0227	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0228	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
-J-0235	pane:website
-J-0269	nav:overview
-J-0273	nav:overview
-J-0282	nav:overview
-J-0293	pane:website
-J-0297	pane:website
-J-0302	pane:modules
-J-0303	pane:applications
-J-0309	si
-J-0322	pane:website
-J-0330	pane:website
-J-0331	pane:home p:settings-report-problem w:3
-J-0334	nav:overview
-J-0342	pane:home p:settings-report-problem w:3
-J-0354	pane:website
-J-0362	pane:home p:settings-report-problem w:3
-J-0367	pane:home p:settings-report-problem w:3
-J-0371	pane:website
-J-0372	pane:home p:settings-report-problem w:3
-J-0373	pane:home p:settings-report-problem w:3
-J-0385	pane:website
-J-0391	pane:modules
-J-0392	pane:website
-J-0394	si
-J-0414	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
-J-0422	pane:chatGPT
-J-0436	pane:chatGPT
-J-0437	pane:chatGPT
-J-0447	pane:website
-J-0455	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
-J-0456	nav:overview
-J-0458	nav:overview
-J-0460	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0471	pane:website
-J-0473	pane:website
-J-0480	pane:website
-J-0481	pane:applications
-J-0489	pane:website
-J-0490	pane:applications
-J-0493	pane:website
-J-0496	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0498	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0499	pane:website
-J-0506	nav:concentration
-J-0509	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0517	pane:website
-J-0526	pane:home p:settings-report-problem w:3
-J-0531	pane:website
-J-0588	pane:website
-J-0594	pane:website
-J-0596	pane:home p:settings-report-problem w:3
-J-0597	pane:home p:settings-report-problem w:3
-J-0599	pane:website
-J-0606	pane:website
-J-0633	pane:home p:settings-report-problem w:3
-J-0641	si
-J-0649	pane:storage
-J-0650	si
-J-0651	pane:home p:settings-report-problem w:3
-J-0652	nav:overview
-J-0653	pane:modules
-J-0655	si
-J-0656	si
-J-0660	pane:website
-J-0661	pane:website
-J-0667	nav:history p:"Ce Mac" w:2
-J-0711	pane:home p:settings-report-problem w:3
-J-0713	pane:website
-J-0716	pane:recording
-J-0719	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0724	pane:website
-J-0725	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0727	pane:website
-J-0730	pane:recording
-J-0733	pane:advanced
-J-0738	pane:applications
-J-0751	nav:concentration o:concentration-commitment-create w:2
-J-0752	nav:braise
-J-0753	pane:website
-J-0754	pane:home p:settings-report-problem w:3
-J-0756	nav:overview
-J-0770	si
-J-0780	nav:braise
-J-0781	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
-J-0793	pane:website
-J-0798	nav:history p:"Conversations locales" w:2
-J-0799	nav:history p:"Conversations locales" w:2
-J-0803	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0805	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0830	pane:advanced
-J-0831	pane:advanced
-J-0832	pane:home p:settings-report-problem w:3
-J-0833	pane:advanced
-J-0835	pane:advanced
-J-0841	pane:home p:settings-report-problem w:3
-J-0842	pane:home p:settings-report-problem w:3
-J-0848	pane:applications
-J-0852	pane:website
-J-0855	pane:website
-J-0857	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-0859	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
-J-0860	pane:website
-J-0862	pane:website
-J-0864	pane:website
-J-0870	pane:website
-J-0872	pane:website
-J-0880	pane:home p:settings-report-problem w:3
-J-0881	pane:advanced p:"Outils de partage et analyses" w:2 p:"Analyser une demande du site…" w:2
-J-0886	nav:ambiance
-J-0887	nav:ambiance
-J-0888	nav:ambiance
-J-0902	pane:website
-J-0905	pane:advanced p:"Outils de partage et analyses" w:2 o:"Exporter un fichier signé…" w:2
-J-0906	pane:advanced p:"Outils de partage et analyses" w:2 o:"Exporter un fichier signé…" w:2
-J-0928	pane:website
-J-0937	pane:website
-J-0938	pane:home p:settings-report-problem w:3
-J-0940	pane:website
-J-0943	pane:website
-J-0964	pane:website
-J-0972	pane:storage
-J-0984	pane:website
-J-0991	pane:website
-J-0994	pane:website
-J-0995	pane:recording
-J-0997	pane:website
-J-1007	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
-J-1009	pane:website
+# id	nav — L3b: navigation of a row whose AX dump (run 4 or run 1) held the target; when that row acted, its press is replayed.
+J-0017	nav:concentration p:"Programme" w:2 p:"Tout le Mac" w:2
+J-0020	si
+J-0023	si
+J-0024	nav:concentration p:"Programme" w:2 p:"Tout le Mac" w:2
+J-0035	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0036	nav:concentration o:"Blocage" w:2
+J-0038	nav:concentration p:"Distractions" w:2 p:"blocking-new-list" w:2
+J-0040	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0041	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0042	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0043	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0048	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0050	si
+J-0051	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0054	si
+J-0055	si
+J-0057	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0059	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0060	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0065	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0072	nav:braise p:"Tous les jours" w:2
+J-0078	nav:concentration o:"Blocage" w:2
+J-0087	nav:concentration p:"concentration-open-review" w:2
+J-0092	nav:concentration p:"Distractions" w:2 p:"distractions-words-edit" w:2
+J-0093	nav:concentration p:"Distractions" w:2 p:"distractions-words-edit" w:2
+J-0109	si
+J-0119	nav:concentration p:"Ajouter une intention du jour" w:2
+J-0120	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0149	nav:concentration p:"concentration-open-review" w:2
+J-0150	nav:concentration p:"concentration-open-review" w:2
+J-0224	si
+J-0228	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0235	si
+J-0269	nav:overview p:"Partager cette journée…" w:2
+J-0273	nav:overview p:"Partager cette journée…" w:2
+J-0282	nav:overview p:"Partager cette journée…" w:2
+J-0293	si
+J-0297	si
+J-0302	nav:concentration o:"Blocage" w:2
+J-0303	si
+J-0322	si
+J-0330	si
+J-0331	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0334	nav:work p:"work-review-sheet" w:2
+J-0341	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0349	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0350	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0351	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0352	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0354	si
+J-0355	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0356	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0357	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0358	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0365	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0369	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0371	si
+J-0372	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0373	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0385	si
+J-0392	si
+J-0410	si p:"Plus d’options" pc w:1 p:"Confidentialité · tout suspendre…" w:2
+J-0422	pane:chatGPT p:"Autoriser les analyses" w:2
+J-0436	pane:chatGPT p:"Autoriser les analyses" w:2
+J-0437	pane:chatGPT p:"Autoriser les analyses" w:2
+J-0447	si
+J-0456	nav:overview p:"activity-explore-" w:2
+J-0471	si
+J-0473	si
+J-0480	si
+J-0489	si
+J-0493	si
+J-0499	si
+J-0506	pane:jev p:jev-open-connection w:2 p:"jev-connection-close" w:2
+J-0517	si
+J-0526	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0531	si
+J-0588	si
+J-0596	nav:overview
+J-0597	nav:overview
+J-0599	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"OK" w:2
+J-0606	si
+J-0633	nav:concentration o:"Blocage" w:2
+J-0649	si
+J-0651	si
+J-0652	nav:overview p:"Partager cette journée…" w:2
+J-0711	pane:website p:"settings-back" w:2
+J-0713	si
+J-0724	si
+J-0727	si
+J-0751	nav:concentration p:"Programme" w:2 p:"blocking-range-save" w:2
+J-0752	nav:braise p:"Tous les jours" w:2
+J-0753	si
+J-0754	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0793	si
+J-0798	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0799	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0810	p:"recording-" w:2
+J-0811	p:"recording-" w:2
+J-0832	pane:home p:settings-report-problem w:3 p:"Outil" w:2
+J-0834	pane:advanced p:"Effacer les journaux" w:2
+J-0841	pane:home p:settings-report-problem w:3 p:"Outil" w:2
+J-0842	pane:home p:settings-report-problem w:3 p:"support-more" w:2
+J-0848	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"OK" w:2
+J-0852	si
+J-0855	si
+J-0858	nav:concentration p:"Distractions" w:2 p:"blocking-suggestion-" w:2
+J-0860	si
+J-0862	si
+J-0864	si
+J-0870	si
+J-0872	si
+J-0880	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0886	nav:ambiance p:"ambiance-download-" w:2
+J-0887	nav:ambiance p:"ambiance-download-" w:2
+J-0888	nav:ambiance p:"ambiance-download-" w:2
+J-0902	si
+J-0937	si
+J-0940	si
+J-0943	si
+J-0964	si
+J-0972	si
+J-0983	pane:modules p:"Supprimer" w:2
+J-0984	si
+J-0991	si
+J-0993	pane:recording p:"recording-visible-text" w:2
+J-0994	si
+J-0995	pane:recording p:"recording-visible-text" w:2
+J-0997	si
+J-1009	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-1020	si p:"Plus d’options" pc w:1 p:"Rechercher les mises à jour…" w:2
 J-0807	@onboarding
-J-0810	@onboarding
-J-0811	@onboarding

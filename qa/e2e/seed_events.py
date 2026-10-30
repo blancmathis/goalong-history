@@ -20,6 +20,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("root")
 parser.add_argument("--days", type=int, required=True)
 parser.add_argument("--per-day", type=int, required=True)
+parser.add_argument("--today", action="store_true", help="also seed today, 08:00 to now (L3b: Activité shows today)")
 args = parser.parse_args()
 
 events = pathlib.Path(args.root, "events")
@@ -30,7 +31,7 @@ session = str(uuid.uuid4()).upper()
 today = dt.date.today()
 step = 12 * 3600 / args.per_day
 total = 0
-for back in range(args.days, 0, -1):
+for back in range(args.days, -1 if args.today else 0, -1):
     day = today - dt.timedelta(days=back)
     start = dt.datetime.combine(day, dt.time(8)).astimezone()  # Local 08:00, written in UTC.
     path = events / f"{day.isoformat()}.jsonl"
@@ -38,6 +39,8 @@ for back in range(args.days, 0, -1):
         for i in range(args.per_day):
             name, bundle = APPS[(i // 7) % len(APPS)]
             stamp = (start + dt.timedelta(seconds=int(i * step))).astimezone(dt.timezone.utc)
+            if stamp > dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5):
+                break  # Today: nothing in the future.
             event = {
                 "schemaVersion": 2, "id": str(uuid.uuid4()).upper(), "sessionID": session,
                 "timestamp": stamp.strftime("%Y-%m-%dT%H:%M:%SZ"),

@@ -126,7 +126,7 @@ echo "Synthetic E2E data dir, GitHub runner $(date -u +%FT%TZ)" > "$DATA/SYNTHET
 printf 'Note de test synthétique T-046.\nAucune donnée réelle.\n' > "$RUNNER_TEMP/synthetic-note.txt"
 # L3b prepared state: 14 days of activity (same seed as L4), and one local Claude Code conversation in the
 # runner's own HOME (disposable VM) for the Conversations IA source.
-python3 -I "$HERE/seed_events.py" "$DATA" --days 14 --per-day 300 | tee -a "$SUMMARY"
+python3 -I "$HERE/seed_events.py" "$DATA" --days 14 --per-day 300 --today | tee -a "$SUMMARY"
 conv="$HOME/.claude/projects/-tmp-t046"; mkdir -p "$conv"
 ts="$(date -u -v-2H +%FT%TZ)"; sid="7e046000-0000-4000-8000-000000000046"
 printf '%s\n' \
