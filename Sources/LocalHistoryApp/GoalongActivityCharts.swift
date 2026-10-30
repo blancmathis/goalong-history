@@ -67,7 +67,8 @@ enum GoalongStackedBars {
     static func pieces(_ values: [(GoalongLocalAnalytics.Kind, Double)], unit: Double, gap: Double, id: String) -> [Piece] {
         var result: [Piece] = [], cursor = 0.0
         for (kind, seconds) in values where seconds > 0 {
-            let height = seconds / unit
+            // At least a few points tall: a 1 pt sliver (« Hors travail ») reads as a rule, not a value.
+            let height = max(seconds / unit, gap * 3)
             let lower = cursor + (result.isEmpty ? 0 : min(gap, height / 2))
             result.append(Piece(id: id + kind.rawValue, kind: kind, lower: lower, upper: cursor + height, seconds: seconds))
             cursor += height

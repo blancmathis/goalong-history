@@ -1058,7 +1058,8 @@
                 verificationServer: GoalongBuildCapabilities.permitsRemoteVerification
                     ? configManager.config.verificationServerURL
                     : nil,
-                captureHealth: health
+                captureHealth: health,
+                storageInterruptedSince: health.state == .storageUnavailable ? healthSnapshot.storageInterruptedSince : nil
             )
             if next != runtime { runtime = next }
         }

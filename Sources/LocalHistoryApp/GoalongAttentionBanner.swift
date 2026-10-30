@@ -10,6 +10,8 @@ struct GoalongAttentionBanner: View {
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var updates = SoftwareUpdateManager.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    /// The global pause banner already says nothing is recorded: storage alerts wait for the resume.
+    @State private var globalPause = GoalongGlobalPause.load()
 
     private enum Notice: Equatable {
         case storage(CaptureStorageFailureKind)
@@ -18,13 +20,19 @@ struct GoalongAttentionBanner: View {
     }
 
     private var notice: Notice? {
-        if consents.isEnabled(.localComputerHistory), let kind = model.runtime.storageFailure { return .storage(kind) }
-        if consents.isEnabled(.localComputerHistory), let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
+        let recordingExpected = consents.isEnabled(.localComputerHistory) && !globalPause.blocksActivity
+        if recordingExpected, let kind = model.runtime.storageFailure { return .storage(kind) }
+        if recordingExpected, let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
         if let previous = updates.updatedFromVersion { return .updated(from: previous, to: updates.currentVersion) }
         return nil
     }
 
     var body: some View {
+        Group { content }
+            .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in globalPause = .load() }
+    }
+
+    @ViewBuilder private var content: some View {
         if let notice {
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 14) {
@@ -49,8 +57,8 @@ struct GoalongAttentionBanner: View {
 
     private func symbol(_ notice: Notice) -> String {
         switch notice {
-        case .storage: return "externaldrive.badge.exclamationmark"
-        case .lowSpace: return "externaldrive.badge.minus"
+        // The internal disk, not an external drive (read as a car at 16 pt).
+        case .storage, .lowSpace: return "internaldrive"
         case .updated: return "checkmark.seal.fill"
         }
     }

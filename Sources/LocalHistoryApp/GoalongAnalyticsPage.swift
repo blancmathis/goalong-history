@@ -65,7 +65,7 @@ struct GoalongAnalyticsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
-                shareBlockedReason: shareBlockedReason, hidesShare: recordingInterrupted,
+                shareBlockedReason: shareBlockedReason,
                 onDay: { day in updateSelection { $0.selectDay(day) } },
                 onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
                 onStep: { direction in updateSelection { $0.step(direction) } },
@@ -84,9 +84,6 @@ struct GoalongAnalyticsPage: View {
                         Color.clear.frame(height: 0).id("activity-top")
                         if !previewActive {
                             GoalongRecordingStateNotice(model: model)
-                            GoalongRecordingCoverageNotice(model: model, dismissible: true,
-                                hidden: recordingInterrupted
-                                    || !GoalongRecordingCoverageNotice.showsOnActivity(recording: recordingKind, globallyPaused: analytics.paused))
                             ConcentrationActivityMarks(day: selection.day)
                         }
                         if developerMode { previewControl }
@@ -118,6 +115,9 @@ struct GoalongAnalyticsPage: View {
                                 lanes: lanes,
                                 workStatus: previewActive ? .preview : workStatus,
                                 recording: previewActive ? nil : recordingKind,
+                                storageStop: previewActive ? nil : model.runtime.storageFailure.map {
+                                    GoalongActivityEmptyCopy.StorageStop(kind: $0, since: model.runtime.storageInterruptedSince)
+                                },
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { model.selectSection(.work) },
                                 onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
@@ -138,6 +138,12 @@ struct GoalongAnalyticsPage: View {
                             GoalongPageLoadingView(title: "Lecture des observations locales…",
                                 message: "Les durées sont calculées sur ce Mac, sans envoyer votre historique.")
                                 .accessibilityIdentifier("analytics-primary-loading-motion")
+                        }
+                        if !previewActive {
+                            // A choice of details, not an alert: after the hero, never in a named view (back link first).
+                            GoalongRecordingCoverageNotice(model: model, dismissible: true,
+                                hidden: recordingInterrupted || detail != nil
+                                    || !GoalongRecordingCoverageNotice.showsOnActivity(recording: recordingKind, globallyPaused: analytics.paused))
                         }
                         if !previewActive && detail == .screenTime {
                             if selection.period == 1 {
