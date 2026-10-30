@@ -20,7 +20,7 @@
             alert.alertStyle = .informational
             alert.messageText = "Terminer l’installation de Goalong History"
             alert.informativeText =
-                "Goalong History doit se trouver dans Applications pour que les autorisations, l’ouverture à la connexion et les mises à jour fonctionnent de façon fiable. Le déplacer maintenant ?"
+                "Goalong History doit se trouver dans Applications pour que les autorisations, l’ouverture de session et les mises à jour fonctionnent de façon fiable. Le déplacer maintenant ?"
             alert.addButton(withTitle: "Déplacer et continuer")
             alert.addButton(withTitle: "Quitter")
 

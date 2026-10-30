@@ -104,7 +104,7 @@ import SwiftUI
                         Text("Retour aux couleurs naturelles : ⌃ ⌥ ⌘ R")
                         Text(controller.shortcutAvailable ? "Raccourci de secours global. Échap ferme le panneau sans changer le filtre." : "Raccourci indisponible ou déjà utilisé. Utilisez Rétablir les couleurs, ou le clic droit sur l’icône Braise.")
                             .foregroundStyle(LHTheme.secondaryText)
-                        Toggle("Ouvrir Goalong à la connexion", isOn: Binding(get: { controller.loginEnabled || controller.loginApprovalRequired }, set: { try? controller.setLogin($0) }))
+                        Toggle("Lancer Goalong à l’ouverture de session", isOn: Binding(get: { controller.loginEnabled || controller.loginApprovalRequired }, set: { try? controller.setLogin($0) }))
                             .toggleStyle(.goalongSwitchInline)
                         Text("Ce réglage concerne toute l’app Goalong. Braise suit ses horaires tant que Goalong est ouverte.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)

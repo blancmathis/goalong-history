@@ -297,6 +297,7 @@ support/rapport-pret--   # UI-11 (« techniques, 12 Ko », SupportRequest.swift:
 support/retour-journal-desactive--   # UI-11 (« techniques, 12 Ko », SupportRequest.swift:289)
 support/retour-messagerie-absente--   # UI-11 (« techniques, 12 Ko », SupportRequest.swift:289)
 support/retour-repere--   # UI-11 (« techniques, 12 Ko », SupportRequest.swift:289)
+onboarding/etape-2--   # UI-13 (« Lancer Goalong à l’ouverture de session », OnboardingPages.swift:178 ; boîte 257,281 247×14)
 activite/28-jours--   # UI-25 + UI-23 + UI-26 + UI-22 (L-UI-3 : plage dans le sélecteur, « Aujourd’hui » grisé, « Partager cette période… » grisé, segment minimal, bandeau de couverture sous le contenu ; boîte 241,35)
 activite/7-jours--   # UI-25 + UI-23 + UI-26 + UI-22 (L-UI-3 : plage dans le sélecteur, « Aujourd’hui » grisé, « Partager cette période… » grisé, segment minimal, bandeau de couverture sous le contenu ; boîte 241,35)
 activite/detail-code--   # UI-22 + UI-28 (L-UI-3 : plus de bandeau de couverture avant le lien retour, hauteur −88 px ; pistes vides « aucun »)

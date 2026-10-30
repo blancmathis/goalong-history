@@ -175,7 +175,7 @@
                 LHCard {
                     Toggle(isOn: $launchAtLoginPreference) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Ouvrir Goalong à la connexion").font(.system(size: 13, weight: .medium))
+                            Text("Lancer Goalong à l’ouverture de session").font(.system(size: 13, weight: .medium))
                             Text(launchAtLogin.heldByBlocking
                                  ? LaunchAtLoginManager.heldMessage
                                  : "Conseillé et sélectionné par défaut. Seules les sources que vous avez activées démarrent.")
