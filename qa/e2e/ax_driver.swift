@@ -283,7 +283,8 @@ case "act":
     }
     var el: AXUIElement?
     for attempt in 0...scrolls {
-        el = find(roleStrict: true) ?? find(roleStrict: false)
+        // A sheet, dialog, window or popover row needs that container: no fallback to its opener's label.
+        el = find(roleStrict: true) ?? (["AXSheet", "AXDialog", "AXWindow", "AXPopover"].contains(role) ? nil : find(roleStrict: false))
         if el != nil || mode == "dialog" { break }
         if attempt < scrolls { scrollOnce() }
     }
@@ -295,15 +296,22 @@ case "act":
     func okStatus(_ s: Int32) -> Bool { s == 0 || s == -25204 }
     var pass = true
     switch action {
+    case "click" where r == "AXSlider":
+        let s = AXUIElementPerformAction(e, kAXIncrementAction as CFString).rawValue; usleep(400_000)
+        _ = AXUIElementPerformAction(e, kAXDecrementAction as CFString)
+        print("increment=\(s)")
+        pass = okStatus(s)
     case "click":
         let before = signature(); let s = press(); usleep(1_200_000)
         print("press=\(s)"); print("changed=\(before != signature() ? 1 : 0)")
         pass = okStatus(s)
     case "toggle":
-        let v0 = value(); let s = press(); usleep(700_000); let v1 = value()
-        print("press=\(s)"); print("value=\(v0)->\(v1)")
+        let before = signature(); let v0 = value(); let s = press(); usleep(900_000); let v1 = value()
+        let opened = before != signature()
+        print("press=\(s)"); print("value=\(v0)->\(v1)"); print("changed=\(opened ? 1 : 0)")
         if v1 != v0 { _ = press(); usleep(500_000); print("restored=\(value())") }
-        pass = v1 != v0
+        // A gated switch answers with a sheet or a message instead of flipping: that answer counts.
+        pass = v1 != v0 || (okStatus(s) && opened)
     case "type":
         let v0 = value()
         AXUIElementSetAttributeValue(e, kAXFocusedAttribute as CFString, kCFBooleanTrue)

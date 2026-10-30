@@ -66,8 +66,31 @@ NAV = {
     "Support / diagnostic": "pane:home p:settings-report-problem w:3",
 }
 
+# Source file of the target (fileline, or the only file holding the literal) -> navigation, after run 1's dumps.
+# It wins over NAV: the screen names of the matrix do not always match the tab or the opener.
+FILE_NAV = {
+    "BlockingPageLists.swift": "nav:concentration p:\"Distractions\" w:2",
+    "BlockingPage.swift": "nav:concentration p:\"Programme\" w:2",
+    "BlockingWeek.swift": "nav:concentration p:\"Programme\" w:2",
+    "ConcentrationCommitmentViews.swift": "nav:concentration o:concentration-commitment-create w:2",
+    "GoalongProfileStudio.swift": "pane:storage p:\"Comprendre mon travail\" w:3",
+    "GoalongSiteAnalysisSheet.swift": "pane:storage p:\"Analyser une demande du site…\" w:2",
+    "GoalongAnalyticsPage.swift": "nav:overview p:activity-explore-usage w:2",
+    "GoalongActivityUsageList.swift": "nav:overview p:activity-explore-usage w:2",
+    "GoalongHealthImportSheet.swift": "nav:overview p:activity-explore-coverage w:2 p:\"Importer…\" w:2",
+    "AgentActivityPage.swift": "nav:history p:\"Conversations locales\" w:1 set:source-aiConversations\\ 1 w:3",
+    "JevConnectionSheet.swift": "pane:jev p:jev-open-connection w:2",
+    "JevInterventionControls.swift": "pane:jev o:jev-intervention-settings w:1",
+    "JevMonitoringPage.swift": "pane:jev",
+    "JevControls.swift": "pane:jev",
+    "JevWorkContextControls.swift": "pane:jev",
+}
+
 # Per-row overrides after reading the AX dumps: id -> (extra nav appended, mode, role, needle) (None keeps the field).
-RECIPES = {}
+RECIPES = {
+    # Computed id: the morning panel is open on the runner (evening one after 18:00 local).
+    "J-0147": ("", "id", "AXButton", "concentration-morning-panel"),
+}
 
 LITERAL_CALL = re.compile(r'(?:(?:Button|Toggle|DatePicker|Stepper|Picker|Label|TextField|SecureField|Menu|Link|Text|'
                           r'help|accessibilityLabel)\(|NSMenuItem\(title:|NSButton\(title:)\s*"((?:[^"\\]|\\.)*)"')
@@ -91,6 +114,24 @@ def resolve(src, path, line):
     except OSError:
         return ""
     return literal("\n".join(lines[line - 1:line + 5]))
+
+
+_FILES = {}
+
+
+def source_file(src, target, needle):
+    """Basename of the file behind the target: the fileline, else the only app file holding the literal."""
+    m = re.search(r"@(Sources/\S+?\.swift)", target)
+    if m:
+        return m.group(1).rsplit("/", 1)[-1]
+    if not needle or len(needle) < 4:
+        return ""
+    if not _FILES:
+        import glob
+        for f in glob.glob(f"{src}/Sources/LocalHistoryApp/**/*.swift", recursive=True):
+            _FILES[f.rsplit("/", 1)[-1]] = open(f, encoding="utf-8").read()
+    hits = [n for n, t in _FILES.items() if '"' + needle in t]
+    return hits[0] if len(hits) == 1 else ""
 
 
 def main():
@@ -138,6 +179,12 @@ def main():
                 kind, na = "na", f"non adressable : ni identifiant ni libellé littéral ({target.split('@', 1)[1]})"
         else:
             kind, na = "na", f"cible non reconnue par le pilote : {target}"
+        if kind == "ui" and mode == "label" and role in ("AXSheet", "AXDialog", "AXWindow", "AXPopover"):
+            kind = "trigger"  # The container is opened by another control; found only if navigation opened it.
+        if kind == "trigger" and not needle:
+            kind, na = "na", "dialogue ouvert par une action hôte non scriptée (" + target.split("(")[-1].rstrip(")") + ")"
+        if kind in ("ui", "trigger"):
+            nav = FILE_NAV.get(source_file(src, target, needle), nav)
         if kind in ("ui", "trigger") and role == "AXMenuItem" and screen in ("Barre des menus (panneau)", "Pause globale"):
             nav = "si p:\"Plus d’options\" pc w:1"
         if rid in RECIPES:
