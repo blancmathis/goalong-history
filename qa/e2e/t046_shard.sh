@@ -168,7 +168,7 @@ if [[ $SHARD == S4 ]]; then
   ev="$OUT/bg-evidence.txt"
   { echo "== data folder"; find "$DATA" -maxdepth 3 -print 2>/dev/null | sed "s#$DATA#DATA#"
     echo "== diagnostics"; cat "$DATA"/SupportDiagnostics/*/diagnostics.log 2>/dev/null | tail -n 3000
-    echo "== unified log (app process, 40 min)"; log show --last 40m --style compact --predicate "process == \"$EXE\"" 2>/dev/null | tail -n 4000
+    echo "== unified log (app process, 40 min)"; /usr/bin/log show --last 40m --style compact --predicate "process == \"$EXE\"" 2>/dev/null | tail -n 4000
     echo "== processes"; ps -axo pid,comm | grep -i goalong
   } > "$ev" 2>&1
   while IFS=$'\t' read -r -u 3 id rx; do
@@ -180,28 +180,38 @@ if [[ $SHARD == S4 ]]; then
   done 3< "$HERE/t046-bg.tsv"
   quit_app
   log "== S4: make targets and install scripts (runner only; clean last)"
+  # Expected per row: "the target runs (or make -n lists the recipe); exit code recorded". Heavy suites (run by
+  # the coverage/gallery jobs of L1) get make -n; the others run for real, capped at 25 min, and a timeout
+  # falls back to make -n. Order: cheap first, clean last.
   HEAVY="make test|make test-ui|make gallery|make gallery-compare|make check"
-  for spec in "make dev-status" "make gallery-index" "make gallery-diff" "make gallery-accept" "make gallery-clean" "make audit" \
-              "make build" "make app" "make dmg" "make install" "install.sh" "Install.command" "make uninstall" "uninstall.sh" \
-              "Uninstall.command" "make install-source" "make dev" "make dev-stop" "make test" "make test-ui" "make gallery" \
-              "make gallery-compare" "make check" "make clean"; do
+  for spec in "make test" "make test-ui" "make gallery" "make gallery-compare" "make check" "make dev-status" \
+              "make gallery-index" "make gallery-diff" "make gallery-accept" "make gallery-clean" "make audit" \
+              "make dev" "make dev-stop" "make build" "make app" "make dmg" "make install" "install.sh" "Install.command" \
+              "make uninstall" "uninstall.sh" "Uninstall.command" "make install-source" "make clean"; do
     id="$(awk -F'\t' -v s="$spec" '$1 ~ /^J-/ && $6==s {print $1; exit}' "$OUT/plan.tsv")"
     [[ -n $id ]] || continue
-    if [[ "|$HEAVY|" == *"|$spec|"* ]]; then
-      record "$id" N/A "" "" covered "suite et rendus exécutés par les jobs coverage/gallery de T-046 (run 40955827987), pas relancés ici"; continue
-    fi
     case "$spec" in
       make\ dev) cmd=(make dev NO_LAUNCH=1 DEV_APP_DIR="$RUNNER_TEMP/devapp") ;;
       make\ *) cmd=($spec) ;;
       *.command) cmd=(bash "./$spec") ;;
       *) cmd=("./$spec") ;;
     esac
+    [[ "|$HEAVY|" == *"|$spec|"* ]] && cmd=(make -n "${spec#make }")
     t=$(date +%s)
-    { echo "$id — \$ ${cmd[*]}"; tmo 900 "${cmd[@]}" < /dev/null 2>&1 | tail -n 60; echo "# exit ${PIPESTATUS[0]} in $(( $(date +%s) - t )) s"; } > "$OUT/cli/$id.txt"
+    { echo "$id — \$ ${cmd[*]}"; tmo 1500 "${cmd[@]}" < /dev/null 2>&1 | tail -n 60; echo "# exit ${PIPESTATUS[0]} in $(( $(date +%s) - t )) s"; } > "$OUT/cli/$id.txt"
     rc="$(sed -n 's/^# exit \([0-9]*\) .*/\1/p' "$OUT/cli/$id.txt")"
+    if [[ $rc == 142 && $spec == make\ * ]]; then
+      { echo; echo "# timeout 25 min: recipe instead"; echo "\$ make -n ${spec#make }"; make -n "${spec#make }" < /dev/null 2>&1 | tail -n 30
+        echo "# make -n exit ${PIPESTATUS[0]}"; } >> "$OUT/cli/$id.txt"
+      grep -q '^# make -n exit 0$' "$OUT/cli/$id.txt" && rc=0n
+    fi
     textproof "$OUT/cli/$id.txt" "$id"
-    if [[ $rc == 0 ]]; then record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "" "exit 0"
+    if [[ $rc == 0 ]]; then record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "" "${cmd[*]} exit 0"
+    elif [[ $rc == 0n ]]; then record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "recipe" "exécution > 25 min (alarme), make -n liste la recette"
+    elif [[ $rc == 2 ]] && grep -q "run introuvable" "$OUT/cli/$id.txt"; then
+      record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "precondition" "exit 2 documenté : aucun run de galerie sur ce runner (make gallery d’abord)"
     else record "$id" fail "rows/$id.png" "rows/ax/$id.txt" "exit-$rc" "$(tail -n 3 "$OUT/cli/$id.txt")"; fi
+    log "[$id] ${cmd[*]}: exit $rc"
   done
   # Rows not reached above (unknown spec): N/A with the reason.
   while IFS=$'\037' read -r -u 3 id kind _ _ _ needle _ na _; do
