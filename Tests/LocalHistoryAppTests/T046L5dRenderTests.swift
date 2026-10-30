@@ -1,5 +1,7 @@
 #if os(macOS)
 import AppKit
+import LocalHistoryCore
+import LocalHistoryQueryCLI
 import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
