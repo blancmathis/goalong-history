@@ -53,10 +53,11 @@ grep -i -E 'health|sante|santé' "$CDIR/data-files-after.txt" | grep -vxF -f "$C
 running || fail "l’app s’est arrêtée"
 finish
 
-begin ambiance-broken "Module Ambiance activé, puis « Ma musique › Ajouter… » : un .m4a vide, un .mp3 binaire et un .mp3 supprimé après ajout. Lire chaque fichier cassé affiche « Lecture impossible… » ; le fichier supprimé montre « Fichier introuvable » ; pas de plantage."
+begin ambiance-broken "Module Ambiance activé, puis « Ma musique › Ajouter… » : un .m4a vide, un .mp3 qui contient du texte et un .mp3 supprimé après ajout. Lire chaque fichier cassé affiche « Lecture impossible… » ; le fichier supprimé montre « Fichier introuvable » ; pas de plantage."
 quit_app; reset_app_state; install_new; no_sparkle
 AMB="$RUNNER_TEMP/ambiance"; rm -rf "$AMB"; mkdir -p "$AMB"
-: > "$AMB/vide.m4a"; head -c 65536 /dev/urandom > "$AMB/binaire.mp3"; head -c 65536 /dev/urandom > "$AMB/absent.mp3"
+: > "$AMB/vide.m4a"; # Random bytes hold MPEG sync words: run 40981080335 played them as noise. Plain text has no 0xFF byte.
+for _ in $(seq 1 2000); do echo "ceci n’est pas un fichier audio"; done | LC_ALL=C tr -d '\377' > "$AMB/binaire.mp3"; head -c 65536 /dev/urandom > "$AMB/absent.mp3"
 launch || fail "l’app ne démarre pas"
 onboarding; dashboard
 pane modules || fail "Réglages › Modules inaccessible"

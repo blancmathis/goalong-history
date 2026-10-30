@@ -75,8 +75,15 @@ log "[volume full] $(df -k "$DATA" | tail -1)"
 if printf 'x' >> "$DATA/.t046-fill/probe" 2>/dev/null; then fail "HARNAIS : le volume accepte encore un octet"; else obs "ENOSPC vérifié (un octet refusé)"; fi
 activity 60; sleep 10
 full=$(events_lines); log "[events while full] $(events_stat)"
+# Run 40981080335: a Finder window covered the app, the window showed « Enregistrement actif » + « presque plein »
+# while the status item already said « disque plein ? ». First record the inactive window as is, then make it key.
+dump full-inactive; shot full-inactive
+log "[inactive] $(axhas 'disque est plein|presque plein' | head -c 120) | $(axhas 'Enregistrement actif|Enregistrement interrompu' | head -c 80)"
+osascript -e 'tell application "Finder" to close every window' >/dev/null 2>&1
 dashboard; nav overview; sleep 2
-banner=""; for _ in 1 2 3 4 5 6; do dump full; banner="$(axhas 'disque est plein')" && break; activity 10; sleep 10; done
+banner=""; for _ in 1 2 3 4 5 6; do front; nav history; nav overview; sleep 3; dump full; banner="$(axhas 'disque est plein')" && break; activity 10; sleep 10; done
+log "[status item] $(grep -m1 'AXMenuBarItem | desc=Goalong' "$RUNNER_TEMP/has.txt" | head -c 200)"
+log "[sidebar] $(axhas 'Enregistrement actif|Enregistrement interrompu' | head -c 80)"
 shot full
 [[ -n $banner ]] && obs "bandeau : ${banner:0:120}" || fail "pas de bandeau « le disque est plein » dans l’arbre AX ($(axhas 'presque plein' >/dev/null && echo 'seulement « presque plein »' || echo 'aucun bandeau disque'))"
 running || fail "l’app s’est arrêtée disque plein"
