@@ -314,7 +314,7 @@ struct GoalongProfileStudio: View {
                             HStack { Button("Charger les sources choisies") { model.load(start: start, end: end, rich: rich, computer: computer, conversations: conversations, conversationsFrom: conversationsFrom) }; Button("Ajouter des preuves (mesures, IA, historique)…") { importEvidence() } }.disabled(model.busy)
                             if !model.evidence.isEmpty { GoalongDisclosureGroup("Choisir les événements (\(model.selectedEvidence.count)/\(model.evidence.count))") {
                                 HStack { Button("Tout sélectionner") { model.selectedEvidence = Set(model.evidence.map(\.id)); model.invalidate() }; Button("Tout décocher") { model.selectedEvidence = []; model.invalidate() } }
-                                LazyVStack(alignment: .leading) { ForEach(model.evidence, id: \.id) { e in Toggle(isOn: Binding(get: { model.selectedEvidence.contains(e.id) }, set: { yes in if yes { model.selectedEvidence.insert(e.id) } else { model.selectedEvidence.remove(e.id) }; model.invalidate() })) { Text("\(e.start) · \(e.application) · \(e.text)").font(.caption).lineLimit(3) } } }
+                                LazyVStack(alignment: .leading) { ForEach(model.evidence, id: \.id) { e in Toggle(isOn: Binding(get: { model.selectedEvidence.contains(e.id) }, set: { yes in if yes { model.selectedEvidence.insert(e.id) } else { model.selectedEvidence.remove(e.id) }; model.invalidate() })) { Text("\(e.start), \(e.application), \(e.text)").font(.caption).lineLimit(3) } } }
                             } }
                         }.padding(8)
                     }
@@ -359,8 +359,8 @@ struct GoalongProfileStudio: View {
                                         TextField("Titre", text: Binding(get: { item.title }, set: { model.correct(item.id, field: "title", text: $0) })).textFieldStyle(GoalongFieldStyle())
                                         GoalongTextArea(text: Binding(get: { item.summary }, set: { model.correct(item.id, field: "summary", text: $0) }), minHeight: 70).accessibilityLabel("Synthèse \(item.title)")
                                         TextField("Limites", text: Binding(get: { item.caveat }, set: { model.correct(item.id, field: "caveat", text: $0) })).textFieldStyle(GoalongFieldStyle())
-                                        Text("\(item.status) · \(item.evidence_refs.count) éléments de preuve locaux").font(.caption).foregroundStyle(LHTheme.secondaryText)
-                                        GoalongDisclosureGroup("Examiner les preuves") { ForEach((try? model.request?.context().evidence.filter { item.evidence_refs.contains($0.id) }) ?? [], id: \.id) { e in Text("\(e.start) · \(e.application)\n\(e.text)").font(.caption).textSelection(.enabled) } }
+                                        Text("\(item.status), \(item.evidence_refs.count) éléments de preuve locaux").font(.caption).foregroundStyle(LHTheme.secondaryText)
+                                        GoalongDisclosureGroup("Examiner les preuves") { ForEach((try? model.request?.context().evidence.filter { item.evidence_refs.contains($0.id) }) ?? [], id: \.id) { e in Text("\(e.start), \(e.application)\n\(e.text)").font(.caption).textSelection(.enabled) } }
                                         Divider()
                                     }
                                 }

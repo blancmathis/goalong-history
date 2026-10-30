@@ -57,7 +57,7 @@ struct GoalongHealthImportSheet: View {
                 Image(systemName: "heart.text.clipboard").font(.title).foregroundStyle(LHTheme.secondaryText)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Apple Santé").font(.title2.weight(.semibold))
-                    Text("Sommeil, récupération et activité. Vous choisissez ce qui reste sur ce Mac et ce qui part sur Goalong.")
+                    Text("Sommeil, récupération et activité. Rien n’est envoyé sans votre accord.")
                         .font(.subheadline).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -94,7 +94,7 @@ struct GoalongHealthImportSheet: View {
                 } else if let message {
                     Label(message, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                } else { Text("Données déclaratives · aucun score de productivité calculé").font(.caption).foregroundStyle(LHTheme.secondaryText) }
+                } else { Text("Données déclaratives, aucun score de productivité calculé").font(.caption).foregroundStyle(LHTheme.secondaryText) }
                 Spacer()
             }.padding(16)
         }

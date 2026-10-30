@@ -260,7 +260,7 @@ import LocalHistoryQueryCLI
     private var footer: some View {
         HStack {
             if model.busy { ProgressView().controlSize(.small) }
-            Text(model.preview == nil ? (model.selectionHint ?? "Aperçu local · rien n’est envoyé.") : "La confirmation autorise l’envoi.")
+            Text(model.preview == nil ? (model.selectionHint ?? "Aperçu local, rien n’est envoyé.") : "La confirmation autorise l’envoi.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             Spacer()
             if model.preview == nil {

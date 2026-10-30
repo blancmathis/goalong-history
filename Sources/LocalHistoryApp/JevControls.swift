@@ -23,10 +23,10 @@ import LocalHistoryCore
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             Text("Le service ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. La lecture au premier plan reste suivie pendant le délai d’inactivité choisi. Une lecture vidéo explicitement détectée peut continuer sans clavier ; un onglet d’arrière-plan ne suffit pas.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
-            Text("Budget borné : requête JSON complète ≤ 1 600 octets UTF-8. Le compteur TypeSafe est aussi contrôlé : toute réponse annonçant 1 000 tokens ou plus suspend la surveillance. Le tokenizer et son surcoût interne ne sont pas publiés.")
+            Text("Chaque envoi est limité à 1 600 octets. La surveillance se met en pause si le service signale un usage trop élevé.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             if let tokens = monitor.lastInputTokens {
-                Text("Dernier appel : \(tokens) tokens d’entrée · \(monitor.lastRequestBytes) octets envoyés")
+                Text("Dernier appel : \(monitor.lastRequestBytes) octets envoyés.")
                     .font(.caption.monospacedDigit())
             }
             GoalongDisclosureGroup("Voir le dernier contenu envoyé (sans la clé)") {
@@ -75,7 +75,7 @@ struct JevRecentChecksView: View {
                 Button("Réinitialiser la pause") { monitor.endBreak() }
             } else if monitor.timedBreak != nil {
                 HStack {
-                    Label(String(format: "Surveillance en pause · %02d:%02d restantes", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60), systemImage: "pause.circle.fill")
+                    Label(String(format: "Surveillance en pause, %02d:%02d restantes", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60), systemImage: "pause.circle.fill")
                         .monospacedDigit().accessibilityIdentifier("jev-break-countdown")
                     Spacer()
                     Button("Reprendre la surveillance") { monitor.endBreak() }

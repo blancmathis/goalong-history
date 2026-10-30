@@ -13,7 +13,7 @@ import SwiftUI
         VStack(alignment: .leading, spacing: 18) {
             Text("Connexion à Jev").font(LHTheme.sheetTitleFont)
                 .accessibilityAddTraits(.isHeader)
-            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé API pour utiliser Jev.")
+            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé d’accès pour utiliser Jev.")
                 .font(.callout).foregroundStyle(LHTheme.secondaryText)
             Text("Clé API").font(.callout.weight(.medium))
             SecureField("", text: $key)
@@ -22,7 +22,7 @@ import SwiftUI
                 .goalongPlaceholder("Collez votre clé", isEmpty: key.isEmpty)
                 .accessibilityLabel("Clé API Jev")
                 .accessibilityIdentifier("jev-api-key")
-            Text("L’usage de l’API est facturé par TypeSafe, le fournisseur de Jev. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. La surveillance reste soumise à votre choix d’activation sur sa page.")
+            Text("L’usage du service est facturé par TypeSafe, le fournisseur de Jev. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. La surveillance reste soumise à votre choix d’activation sur sa page.")
                 .font(.callout).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             Label("Clé conservée dans un fichier privé (0600), jamais dans l’historique ni les journaux de diagnostic.", systemImage: "lock")

@@ -60,7 +60,7 @@ import LocalHistoryQueryCLI
             : options.selectedApplicationIDs.map { count($0.count, "application", "applications") } ?? "toutes les applications"
         let sites = !options.includeWebsites ? "sans sites"
             : options.selectedWebsiteDomains.map { count($0.count, "site", "sites") } ?? "tous les sites"
-        return [devices, apps, sites].joined(separator: " · ")
+        return [devices, apps, sites].joined(separator: ", ")
     }
 }
 #endif

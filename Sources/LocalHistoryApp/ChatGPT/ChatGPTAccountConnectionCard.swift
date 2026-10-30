@@ -32,7 +32,7 @@ struct ChatGPTAccountConnectionCard: View {
         case .codexUnavailable: return "Composant de connexion indisponible"
         case .signedOut: return "Non connecté"
         case .unsupportedCredentialMode: return "Utilisez une connexion ChatGPT, pas une clé API"
-        case .failed: return "Connexion non vérifiée · réessayez"
+        case .failed: return "Connexion non vérifiée, réessayez"
         }
     }
     @ViewBuilder private var actions: some View {

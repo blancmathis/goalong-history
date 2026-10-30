@@ -76,7 +76,7 @@ struct GoalongFocusExplanation: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                Text("Focus · séquence minimale").font(.system(size: 12, weight: .medium))
+                Text("Focus, séquence minimale").font(.system(size: 12, weight: .medium))
                 GoalongSegmentedControl("Séquence minimale de focus", selection: $minimumMinutes,
                                         options: [10, 25, 50]) { "\($0) min" }
                 .controlSize(.small)

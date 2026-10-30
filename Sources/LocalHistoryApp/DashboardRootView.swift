@@ -266,7 +266,7 @@
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : LHTheme.tertiaryText)
                         .frame(width: 7, height: 7)
-                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Enregistrement désactivé")
+                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Suivi en pause")
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)

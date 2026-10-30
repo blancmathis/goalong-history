@@ -68,7 +68,7 @@ struct GoalongAttentionBanner: View {
         case .storage(.diskFull): return "Enregistrement interrompu : le disque est plein"
         case .storage: return "Enregistrement interrompu"
         case .lowSpace: return "Espace disque presque plein"
-        case .updated(_, let version): return "Goalong est à jour · version \(version)"
+        case .updated(_, let version): return "Goalong est à jour, version \(version)"
         }
     }
 

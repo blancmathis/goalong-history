@@ -75,7 +75,7 @@
                     pointer.map { "Clic \(button($0.button)) ×\($0.clickCount)" },
                     target.map { "cible : \($0)" },
                     position,
-                ].compactMap { $0 }.joined(separator: " · ")
+                ].compactMap { $0 }.joined(separator: ", ")
             case .typingBurst:
                 let count = event.metadata?["keystroke_count"].flatMap { Int($0) }
                 let duration = event.metadata?["duration_ms"].flatMap { Int($0) }
@@ -92,7 +92,7 @@
                 return "\(keyboardCategory(keyboard.category)) : \(keys.isEmpty ? "touche sans nom" : keys)"
             case .focusChanged:
                 return [event.element?.role, event.element?.label ?? event.element?.title]
-                    .compactMap { $0 }.joined(separator: " · ")
+                    .compactMap { $0 }.joined(separator: ", ")
             case .recorderHealth:
                 return event.metadata?["observation_gap"] == "true"
                     ? "Lacune d’observation : des actions ont pu ne pas être enregistrées."

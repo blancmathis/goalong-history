@@ -159,7 +159,7 @@ struct SlowDownVeil: View {
             HStack(spacing: 8) {
                 GoalongMark().stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .frame(width: 20, height: 14)
-                Text("Goalong · Ralentir").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.tertiaryText)
+                Text("Ralentir avec Goalong").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.tertiaryText)
             }
             .padding(.bottom, 22)
         }
@@ -186,7 +186,7 @@ struct SlowDownAppCard: View {
                 BlockingIconStack(items: [item], size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(presentation.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                    Text("Ralenti · \(FocusUIFormat.ordinal(presentation.occurrence)) fois aujourd’hui")
+                    Text("Ralenti pour la \(FocusUIFormat.ordinal(presentation.occurrence)) fois aujourd’hui")
                         .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer(minLength: 0)

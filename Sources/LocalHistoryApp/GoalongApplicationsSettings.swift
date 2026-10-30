@@ -179,7 +179,7 @@ enum GoalongKnownApplications {
             }
             if sites {
                 HStack {
-                    TextField("Ajouter un site · exemple.fr", text: $newDomain).textFieldStyle(GoalongFieldStyle()).onSubmit(addDomain)
+                    TextField("Ajouter un site, exemple.fr", text: $newDomain).textFieldStyle(GoalongFieldStyle()).onSubmit(addDomain)
                     Button("Exclure", action: addDomain).disabled(newDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 if let domainError { Text(domainError).font(.system(size: 12)).foregroundStyle(LHTheme.warning) }
@@ -213,7 +213,7 @@ enum GoalongKnownApplications {
                                     Text(app.name).font(.system(size: 13, weight: .medium))
                                     if !app.installed {
                                         Text(GoalongKnownApplications.isDefaultExclusion(app.id)
-                                             ? "Non installée · protégée par défaut" : "Non installée sur ce Mac")
+                                             ? "Non installée, protégée par défaut" : "Non installée sur ce Mac")
                                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     } else if model.isApplicationExcludedFromCapture(app.id) && !exclusions.policy.excludes(appID: app.id) {
                                         Text("Exclue de l’enregistrement").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -354,7 +354,7 @@ enum GoalongOnboardingExclusionEdit {
                     announce("Application ajoutée à la liste d’exclusion.")
                 }
             HStack {
-                TextField("Site à exclure · exemple.fr", text: $website).textFieldStyle(GoalongFieldStyle())
+                TextField("Site à exclure, exemple.fr", text: $website).textFieldStyle(GoalongFieldStyle())
                     .onSubmit { add() }
                 Button("Ajouter") { add() }.disabled(website.trimmingCharacters(in: .whitespaces).isEmpty)
             }

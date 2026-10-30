@@ -59,7 +59,7 @@ struct BlockedSiteVeil: View {
             HStack(spacing: 8) {
                 GoalongMark().stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .frame(width: 20, height: 14)
-                Text("Goalong · Blocage").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.tertiaryText)
+                Text("Blocage Goalong").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.tertiaryText)
             }
             .padding(.bottom, 22)
         }
@@ -91,7 +91,7 @@ struct BlockedSiteVeil: View {
 
     private var countsLine: String? {
         let parts = [presentation.feedback?.attemptLine, presentation.feedback?.earnedLine].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: ". ") + "."
     }
 
     var detail: String {
@@ -123,7 +123,7 @@ struct BlockedAppNotice: View {
     }
 
     private func detail(_ parts: [String?]) -> some View {
-        Text(parts.compactMap { $0 }.joined(separator: " · "))
+        Text(parts.compactMap { $0 }.joined(separator: ". ") + ".")
             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
     }
 
@@ -131,7 +131,7 @@ struct BlockedAppNotice: View {
         HStack(spacing: 14) {
             BlockingStruckIcon(item: .app(app), size: 36)
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(app.name) est bloqué").font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                Text("Accès bloqué à \(app.name)").font(.system(size: 14, weight: .semibold)).lineLimit(1)
                 if let reason = feedback?.reasonLine {
                     Text(reason).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 }

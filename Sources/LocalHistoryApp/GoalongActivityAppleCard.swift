@@ -58,10 +58,10 @@ struct GoalongActivityAppleCard: View {
                     Text("Source facultative désactivée. Les observations Goalong restent disponibles indépendamment.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 } else if !screenTime.isBusy, let value = summary {
-                    Text("Source Apple · \(FrenchCount.count(value.deviceSummaries.count, "appareil", "appareils"))")
+                    Text("Source Apple, \(FrenchCount.count(value.deviceSummaries.count, "appareil", "appareils"))")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     if GoalongScreenTimeSourcePresentation(provenance: value.provenance).isPartial {
-                        Label("Données partielles · ce n’est pas le total officiel des Réglages Apple.", systemImage: "info.circle")
+                        Label("Données partielles, ce n’est pas le total officiel des Réglages Apple.", systemImage: "info.circle")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                     }
                     Text("Source indépendante, jamais additionnée au temps actif Goalong. Consultez le détail pour vérifier le périmètre et les limites.")

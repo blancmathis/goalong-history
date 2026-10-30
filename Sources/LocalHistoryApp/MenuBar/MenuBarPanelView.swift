@@ -475,8 +475,11 @@
                         player
                         volume
                         if let error = model.ambianceError {
-                            Text(error).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
+                            Text(error.replacingOccurrences(of: " Réessayez.", with: "")).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if let current = model.ambianceCurrent {
+                                Button("Réessayer") { model.play(current) }.buttonStyle(LHSecondaryButtonStyle())
+                            }
                         }
                         if showsGrid { grid.transition(.opacity) }
                     }

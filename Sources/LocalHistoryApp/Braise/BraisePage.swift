@@ -84,7 +84,7 @@ import SwiftUI
                             HStack(spacing: 12) {
                                 Button { editingRule = rule } label: {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(rule.hours + (rule.crossesMidnight ? " · le lendemain" : "")).monospacedDigit()
+                                        Text(rule.hours + (rule.crossesMidnight ? ", le lendemain" : "")).monospacedDigit()
                                         Text(rule.dayLabel).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                 }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Modifier l’horaire \(rule.hours), \(rule.dayLabel)")
@@ -104,12 +104,12 @@ import SwiftUI
                         Text("Retour aux couleurs naturelles : ⌃ ⌥ ⌘ R")
                         Text(controller.shortcutAvailable ? "Raccourci de secours global. Échap ferme le panneau sans changer le filtre." : "Raccourci indisponible ou déjà utilisé. Utilisez Rétablir les couleurs, ou le clic droit sur l’icône Braise.")
                             .foregroundStyle(LHTheme.secondaryText)
-                        Toggle("Ouvrir Goalong à la connexion", isOn: Binding(get: { controller.loginEnabled || controller.loginApprovalRequired }, set: { try? controller.setLogin($0) }))
+                        Toggle("Lancer Goalong à l’ouverture de session", isOn: Binding(get: { controller.loginEnabled || controller.loginApprovalRequired }, set: { try? controller.setLogin($0) }))
                             .toggleStyle(.goalongSwitchInline)
                         Text("Ce réglage concerne toute l’app Goalong. Braise suit ses horaires tant que Goalong est ouverte.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         if controller.loginApprovalRequired {
-                            Button("Ouvrir les éléments de connexion…") { SMAppService.openSystemSettingsLoginItems() }.buttonStyle(LHQuietButtonStyle())
+                            Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }.buttonStyle(LHQuietButtonStyle())
                         }
                         Text("\(FrenchCount.count(controller.displayCount, "écran", "écrans")). Le filtre est recalculé au réveil. Il ne réveille pas le Mac.").foregroundStyle(LHTheme.secondaryText)
                         Text("Aucun réseau ni nouvel accès. Les couleurs sont restaurées à l’arrêt du module, à la fermeture de Goalong ou par un gardien après un crash. Le HDR et les autres filtres peuvent modifier le résultat ; zéro lumière bleue physiquement émise n’est pas garanti.")

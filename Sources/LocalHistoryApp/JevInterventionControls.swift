@@ -8,7 +8,7 @@ import LocalHistoryCore
     var body: some View {
         GoalongSettingsGroup(title: "Rappels et paliers") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Dès la première détection fiable · premier rappel").font(.system(size: 14, weight: .semibold))
+                Text("Dès la première détection fiable, premier rappel").font(.system(size: 14, weight: .semibold))
                 Text("« Arrête de procrastiner. »")
                     .font(.callout).foregroundStyle(LHTheme.secondaryText)
                 Text("La durée ne s’affiche qu’à partir de 10 minutes. Fermer masque seulement le pop-up jusqu’à la prochaine détection ; le suivi interne et les effets continuent.")
@@ -78,7 +78,7 @@ import LocalHistoryCore
             }
             HStack(spacing: 16) {
                 if index == stages.count - 1 {
-                    Text("Assombrir + rouge · puis maintien")
+                    Text("Assombrir + rouge, puis maintien")
                         .accessibilityIdentifier("jev-stage-\(index)-effect")
                 } else {
                     Picker("Effet", selection: stageBinding(index, \.effect)) {
@@ -126,7 +126,7 @@ import LocalHistoryCore
                     Button("Pause de \(minutes) min") { monitor.startBreak(minutes: minutes) }
                 }
             } label: {
-                Label(monitor.timedBreak == nil ? "Faire une pause" : String(format: "Pause · %02d:%02d", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60),
+                Label(monitor.timedBreak == nil ? "Faire une pause" : String(format: "Pause, %02d:%02d", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60),
                       systemImage: "cup.and.saucer")
                     .font(.system(size: 12, weight: .medium))
             }.menuStyle(.borderlessButton)

@@ -95,7 +95,7 @@ struct GoalongAnalyticsPage: View {
                             // The pause banner at the top of the window names the pause and resumes it;
                             // here only what it means for this page, without repeating it.
                             if analytics.payload == nil {
-                                GoalongEmptyState(title: "Activité en pause",
+                                GoalongEmptyState(title: "Suivi en pause",
                                     message: "Vos observations ne sont pas lues pendant la pause. Vos durées reviennent ici dès que le suivi reprend.")
                                     .accessibilityIdentifier("activity-read-paused")
                             } else {
@@ -417,7 +417,7 @@ struct GoalongAnalyticsPage: View {
         } else if permissions.contains(where: { $0 != .ready }) {
             rows.append(.init(id: "calendar", title: "Agenda et rappels", state: .needsPermission,
                               detail: "macOS n’a pas donné l’accès à l’agenda ou aux rappels.",
-                              actionTitle: permissions.contains(.permissionDenied) ? "Ouvrir…" : "Autoriser…", action: allowCalendar))
+                              actionTitle: permissions.contains(.permissionDenied) ? "Ouvrir Réglages Système…" : "Autoriser…", action: allowCalendar))
         } else if let calendar = value?.calendar {
             var detail = GoalongCodeDay.count(calendar.events.filter(\.isPlannedBusy).count, "événement prévu", "événements prévus")
                 + " et " + GoalongCodeDay.count(calendar.completedReminders.count, "rappel terminé", "rappels terminés") + " ce jour-là."

@@ -14,9 +14,9 @@ extension HistoryDataClass {
         case .semanticSnapshots: return "Texte affiché"
         case .memories: return "Historique et résumés locaux"
         case .analysisCaches: return "Fichiers temporaires d’analyse"
-        case .minuteSeals: return "Sceaux d’intégrité"
+        case .minuteSeals: return "Contrôles d’intégrité"
         case .activitySummaries: return "Résumés de journée"
-        case .anchorReceipts: return "Reçus de vérification"
+        case .anchorReceipts: return "Confirmations de vérification"
         }
     }
 }

@@ -184,7 +184,7 @@
                         Image(systemName: "lock.doc")
                             .foregroundStyle(LHTheme.success)
                         Text(
-                            "Consigne : empreinte uniquement · conversations : stockage d’origine uniquement · bilan en cinq lignes : gardé sur ce Mac sans chiffrement, effacé avec l’historique détaillé du jour · réponse complète : copie chiffrée gardée 30 jours"
+                            "Consigne : empreinte uniquement, conversations : stockage d’origine uniquement, bilan en cinq lignes : gardé sur ce Mac sans chiffrement, effacé avec l’historique détaillé du jour, réponse complète : copie chiffrée gardée 30 jours"
                         )
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(LHTheme.secondaryText)
@@ -273,7 +273,7 @@
                             Text("GPT-5.6 Luna analyse cette journée")
                                 .font(.system(size: 14, weight: .semibold))
                             Text(
-                                "Raisonnement élevé · fil Codex temporaire et isolé · aucune copie des conversations"
+                                "Raisonnement élevé, fil Codex temporaire et isolé, aucune copie des conversations"
                             )
                             .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
@@ -294,7 +294,7 @@
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
                                 Text("\(score)")
                                     .font(.system(size: 46, weight: .bold))
-                                    .foregroundStyle(scoreTint(score))
+                                    .foregroundStyle(LHTheme.text)
                                 Text("/ 100")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(LHTheme.secondaryText)
@@ -538,7 +538,7 @@
                         Text("Couverture des preuves")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "\(GoalongUIFormat.count(overview.sourceEventCount, "événement")) · \(overview.privateMinutes) min privées ou masquées · \(overview.analyzedAgentSessions)/\(overview.agentSessions) session\(overview.agentSessions > 1 ? "s" : "") IA analysée\(overview.analyzedAgentSessions > 1 ? "s" : "")"
+                            "\(GoalongUIFormat.count(overview.sourceEventCount, "événement")), \(overview.privateMinutes) min privées ou masquées, \(overview.analyzedAgentSessions)/\(overview.agentSessions) session\(overview.agentSessions > 1 ? "s" : "") IA analysée\(overview.analyzedAgentSessions > 1 ? "s" : "")"
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
@@ -629,12 +629,6 @@
 
         private var isToday: Bool {
             GoalongToday.isToday(recapRuntime.selectedDay)
-        }
-
-        private func scoreTint(_ score: Int) -> Color {
-            if score >= 75 { return LHTheme.success }
-            if score >= 50 { return LHTheme.accent }
-            return LHTheme.warning
         }
 
         private func duration(_ seconds: Int) -> String {

@@ -92,7 +92,7 @@ final class GoalongSiteAnalysisModel: ObservableObject {
                     guard self.operationID == id else { return }
                     self.busy = false
                     self.connected = true
-                    self.accountLabel = "ChatGPT connecté" + (account.displayPlan.map { " · \($0)" } ?? "")
+                    self.accountLabel = "ChatGPT connecté" + (account.displayPlan.map { ", \($0)" } ?? "")
                 }
             } catch { self.fail(id, "La connexion ChatGPT n’a pas abouti. Vérifiez que Codex est installé et à jour, puis réessayez.") }
         }
@@ -279,7 +279,7 @@ struct GoalongSiteAnalysisSheet: View {
                     Text("1. Ouvrez le fichier téléchargé sur le site").font(.headline)
                     Button("Choisir la demande…", action: chooseRequest).disabled(model.busy)
                     if let selected = model.request {
-                        Text("\(selected.date) · \(selected.timezone)").font(.subheadline.weight(.medium))
+                        Text("\(selected.date), \(selected.timezone)").font(.subheadline.weight(.medium))
                         Text("2. Vérifiez les données qui seront envoyées").font(.headline)
                         Text("Ce fichier est la seule source de cette analyse. Les archives locales, conversations, notes et données Strava ne sont pas ajoutées.")
                             .font(.caption).foregroundStyle(LHTheme.secondaryText)
@@ -291,7 +291,7 @@ struct GoalongSiteAnalysisSheet: View {
                         .background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
                         Toggle("J’autorise l’envoi des seules données affichées à ChatGPT pour cette analyse", isOn: $model.reviewed)
                             .disabled(model.busy)
-                        Text("GPT-5.6 Luna · High · utilisation décomptée selon votre compte ChatGPT. La disponibilité et les limites dépendent de votre abonnement.")
+                        Text("GPT-5.6 Luna, High, utilisation décomptée selon votre compte ChatGPT. La disponibilité et les limites dépendent de votre abonnement.")
                             .font(.caption).foregroundStyle(LHTheme.secondaryText)
                         HStack {
                             Button("Analyser avec ChatGPT", action: model.analyze)

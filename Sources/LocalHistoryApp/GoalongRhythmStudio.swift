@@ -147,7 +147,7 @@ struct GoalongRhythmStudio: View {
                         Text("Contexte à analyser").font(.headline)
                         Text("Décochez les éléments privés. Les épisodes sans contexte restent à préciser.").font(.caption)
                         ForEach(selected.rhythm.episodes ?? [], id: \.id) { row in
-                            GoalongDisclosureGroup("\(row.application ?? "Non observé") · +\(duration(row.offset_ms)) · \(duration(row.duration_ms))") {
+                            GoalongDisclosureGroup("\(row.application ?? "Non observé"), +\(duration(row.offset_ms)), \(duration(row.duration_ms))") {
                                 ForEach(model.request?.rhythm.episodes?.first(where: {$0.id == row.id})?.evidence ?? [], id: \.id) { item in
                                     Toggle(isOn: Binding(get: { model.selectedEvidence.contains(item.id) }, set: { include in
                                         if include { model.selectedEvidence.insert(item.id) } else { model.selectedEvidence.remove(item.id) }; model.selectionChanged()
@@ -172,11 +172,11 @@ struct GoalongRhythmStudio: View {
                     }
                     if let value = model.result {
                         Divider(); Text("Relire et corriger").font(.headline)
-                        HStack { metric("Lié au projet", value.project_ms); metric("Plus longue séquence", value.longest_project_ms); VStack { Text("Consultations brèves").font(.caption); Text("\(value.brief_consultations) · \(duration(value.brief_consultation_ms))").font(.headline) } }
+                        HStack { metric("Lié au projet", value.project_ms); metric("Plus longue séquence", value.longest_project_ms); VStack { Text("Consultations brèves").font(.caption); Text("\(value.brief_consultations), \(duration(value.brief_consultation_ms))").font(.headline) } }
                         ForEach(value.episodes ?? [], id: \.id) { row in
                             VStack(alignment: .leading) {
                                 HStack {
-                                    Text("\(row.application ?? "Non observé") · \(duration(row.duration_ms))").font(.subheadline)
+                                    Text("\(row.application ?? "Non observé"), \(duration(row.duration_ms))").font(.subheadline)
                                     Spacer()
                                     if row.relation != "unknown" { Picker("Association", selection: Binding(get: { row.relation }, set: { model.correct(id: row.id, relation: $0) })) {
                                         Text("Projet").tag("project"); Text("Autre sujet").tag("other"); Text("À préciser").tag("unclassified")

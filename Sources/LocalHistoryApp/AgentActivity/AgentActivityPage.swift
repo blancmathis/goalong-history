@@ -391,7 +391,7 @@
 
                 Menu {
                     Button("Afficher la source d’origine") { agents.openOriginal(record) }
-                    Button("Vérifier l’empreinte SHA-256") { agents.verify(record) }
+                    Button("Vérifier que la source est intacte") { agents.verify(record) }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 24, height: 24)
@@ -416,7 +416,7 @@
                 "\(replies) réponse\(replies > 1 ? "s" : "") finale\(replies > 1 ? "s" : "")",
             ]
             parts.append(contentsOf: availableProviders.map(\.frenchName))
-            return parts.joined(separator: " · ")
+            return parts.joined(separator: ", ")
         }
 
         private func conversationTitle(_ record: AgentCaptureRecord) -> String {
@@ -433,7 +433,7 @@
                 return record.provider.frenchName
             }
             return
-                "\(record.provider.frenchName) · \(counts.prompts) demande\(counts.prompts > 1 ? "s" : "") · \(counts.replies) réponse\(counts.replies > 1 ? "s" : "")"
+                "\(record.provider.frenchName), \(counts.prompts) demande\(counts.prompts > 1 ? "s" : ""), \(counts.replies) réponse\(counts.replies > 1 ? "s" : "")"
         }
 
         private var localStatusBanner: some View {
@@ -457,7 +457,7 @@
                     .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     Text(
-                        "Goalong ne conserve aucune copie, aucun instantané ni contenu transmis par les hooks."
+                        "Goalong ne conserve aucune copie, aucun instantané ni contenu transmis par les relais d’agents."
                     )
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(LHTheme.privateTint)
@@ -534,7 +534,7 @@
                             tint: LHTheme.accent,
                             title: "Signaux de relance des agents",
                             subtitle:
-                                "Les hooks facultatifs ne font que relancer la détection. Leur contenu est ignoré et jamais ajouté à l’index."
+                                "Les relais d’agents facultatifs ne font que relancer la détection. Leur contenu est ignoré et jamais ajouté à l’index."
                         )
                         Spacer()
                         Button("Ouvrir les signaux de relance") {
@@ -817,7 +817,7 @@
                     Text(record.summary.title ?? URL(fileURLWithPath: record.relativePath).lastPathComponent)
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
-                    Text("\(record.provider.frenchName) · \(record.watchedFolderName) · \(record.relativePath)")
+                    Text("\(record.provider.frenchName), \(record.watchedFolderName), \(record.relativePath)")
                         .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
@@ -844,7 +844,7 @@
                 Menu {
                     Button("Afficher la source d’origine") { agents.openOriginal(record) }
                     Divider()
-                    Button("Vérifier l’empreinte SHA-256") { agents.verify(record) }
+                    Button("Vérifier que la source est intacte") { agents.verify(record) }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -891,7 +891,7 @@
                         privacyBullet("Le contenu des conversations reste uniquement dans le stockage d’origine de chaque outil.")
                         privacyBullet("Une source modifiée remplace son empreinte précédente au lieu de créer une version.")
                         privacyBullet("Les originaux absents ou illisibles restent signalés comme tels dans l’index.")
-                        privacyBullet("Les hooks réécrivent un petit signal par outil et ignorent leur contenu.")
+                        privacyBullet("Les relais d’agents réécrivent un petit signal par outil et ignorent leur contenu.")
                         privacyBullet(
                             "La recherche complète des sources est périodique ; les vérifications courantes utilisent l’index connu."
                         )

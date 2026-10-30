@@ -55,9 +55,9 @@ enum GoalongRecordingSetup {
     }
     static func profile(_ settings: DashboardSettingsDraft, visibleText: Bool) -> String {
         let count = enabledCount(settings, visibleText: visibleText)
-        if count == 8 { return "Complet · 8/8" }
+        if count == 8 { return "Complet, 8/8" }
         if count == 0 { return "Applications seules" }
-        return "Personnalisé · \(count)/8"
+        return "Personnalisé, \(count)/8"
     }
 }
 
@@ -231,7 +231,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "Activez-le pour voir ici votre temps actif, vos blocs de travail et vos apps et sites. Tout reste sur ce Mac."
         case .paused: return "Aucune nouvelle activité n’est enregistrée. L’historique existant reste consultable."
         case .permissions: return "Rien n’est enregistré tant que l’accès n’est pas rétabli. Goalong vous guide pas à pas."
-        case .input: return "Le clavier et la souris ne parviennent pas à Goalong : une partie de votre activité peut manquer. Vérifiez la Surveillance de l’entrée."
+        case .input: return "Le clavier et la souris ne parviennent pas à Goalong : une partie de votre activité peut manquer. Vérifiez la surveillance de l’entrée."
         }
     }
     private func actionTitle(_ kind: Kind) -> String {
@@ -273,7 +273,7 @@ struct GoalongRecordingCoverageNotice: View {
             HStack(spacing: 16) {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(count == 0 ? "Seules les applications sont enregistrées" : "Suivi personnalisé · \(count)/8 types de détails")
+                        Text(count == 0 ? "Seules les applications sont enregistrées" : "Suivi personnalisé, \(count)/8 types de détails")
                             .font(.system(size: 13, weight: .semibold))
                         Text("Certains clics, interactions ou textes ne sont pas enregistrés selon vos choix. Vos durées et vos apps restent mesurées.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)

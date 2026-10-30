@@ -125,7 +125,7 @@ import SwiftUI
     private var statusTitle: String {
         if agent.isRunning { return "Classement en cours" }
         switch agent.readiness {
-        case .ready: return "Prêt · votre compte ChatGPT"
+        case .ready: return "Prêt, votre compte ChatGPT"
         case .noConsent: return "Classement non autorisé"
         case .notConnected:
             if case .checking = runtime.connectionState { return "Vérification de ChatGPT…" }
@@ -390,8 +390,8 @@ import SwiftUI
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.label.title ?? row.label.application).font(.system(size: 12, weight: .medium)).lineLimit(1)
                     .help(row.label.title ?? row.label.application)
-                Text(([row.label.application, row.label.host].compactMap { $0 }).joined(separator: " · ")
-                     + (assignment?.byOwner == true ? " · corrigé par vous" : assignment?.verdict == .unclear ? " · indéterminé" : ""))
+                Text(([row.label.application, row.label.host].compactMap { $0 }).joined(separator: ", ")
+                     + (assignment?.byOwner == true ? ", corrigé par vous" : assignment?.verdict == .unclear ? ", indéterminé" : ""))
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
             }
             Spacer(minLength: 8)

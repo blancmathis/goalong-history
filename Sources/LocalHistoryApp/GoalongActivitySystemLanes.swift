@@ -52,7 +52,7 @@ struct GoalongAgendaDay: Equatable {
         if plannedSeconds >= 60 { parts.append("\(GoalongAnalyticsFormatting.duration(plannedSeconds)) prévues") }
         if !reminders.isEmpty { parts.append(GoalongCodeDay.count(reminders.count, "rappel terminé", "rappels terminés")) }
         if parts.isEmpty { return calendarOn && calendarAccess != .granted ? "Accès à l’agenda à autoriser" : nothingRead }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 
     /// The first line of « Appels et agenda ». The notes under the section say which source is off or not allowed.
@@ -219,7 +219,7 @@ struct GoalongAgendaSection: View {
         } else if agenda.calendarAccess == .notAsked {
             notes.append(("macOS n’a pas encore donné l’accès à l’agenda et aux rappels.", "Autoriser…", onAllowCalendar))
         } else if agenda.calendarAccess == .denied {
-            notes.append(("macOS refuse l’accès à l’agenda ou aux rappels. Vous pouvez le donner dans Réglages Système.", "Ouvrir…", onAllowCalendar))
+            notes.append(("macOS refuse l’accès à l’agenda ou aux rappels. Vous pouvez le donner dans Réglages Système.", "Ouvrir Réglages Système…", onAllowCalendar))
         }
         return notes
     }
@@ -242,7 +242,7 @@ struct GoalongSleepDay: Equatable {
         if let sleepSeconds, sleepSeconds >= 60 { parts.append("\(GoalongAnalyticsFormatting.duration(sleepSeconds)) de sommeil") }
         if let steps, steps > 0 { parts.append(GoalongCodeDay.count(steps, "pas", "pas")) }
         if workouts > 0 { parts.append(GoalongCodeDay.count(workouts, "séance", "séances")) }
-        return parts.isEmpty ? "Import Santé sans mesure pour cette date" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "Import Santé sans mesure pour cette date" : parts.joined(separator: ", ")
     }
 }
 

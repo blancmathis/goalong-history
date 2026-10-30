@@ -85,7 +85,7 @@ import SwiftUI
         var parts = [list.effectiveAction == .slowDown ? "Ralentit \(list.delaySeconds) s" : "Bloque"]
         if let quota = list.quotaMinutesPerDay { parts.append("\(BlockingFormat.duration(minutes: quota)) libres/jour") }
         if let breaks = list.breaks { parts.append("\(breaks.count) pause\(breaks.count > 1 ? "s" : "")") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 }
 

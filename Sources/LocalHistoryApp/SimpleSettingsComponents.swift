@@ -194,7 +194,7 @@ enum GoalongHomeRows {
         }
     }
     private var status: String {
-        guard consents.isEnabled(capability) else { return "Fonction désactivée · aucun accès demandé" }
+        guard consents.isEnabled(capability) else { return "Fonction désactivée, aucun accès demandé" }
         guard let result = validation.result else { return "Vérification…" }
         switch result {
         case .ready: return "L’accès nécessaire est disponible"

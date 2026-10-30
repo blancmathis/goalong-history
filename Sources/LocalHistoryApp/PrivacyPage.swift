@@ -87,7 +87,7 @@
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                             )
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Goalong History · une seule app publique")
+                            Text("Goalong History, une seule app publique")
                                 .font(.system(size: 13, weight: .semibold))
                             Text(capabilities.summary)
                                 .font(.system(size: 12))
@@ -327,25 +327,25 @@
                 }
                 if let snapshot {
                     Text(
-                        "Dernière saisie : \(snapshot.lastInputEventAt.map { GoalongUIFormat.time($0) } ?? "jamais") · clic : \(snapshot.lastClickAt.map { GoalongUIFormat.time($0) } ?? "jamais") · frappe : \(snapshot.lastTypingBurstAt.map { GoalongUIFormat.time($0) } ?? "jamais") · défilement : \(snapshot.lastScrollAt.map { GoalongUIFormat.time($0) } ?? "jamais") · raccourci : \(snapshot.lastShortcutAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
+                        "Dernière saisie : \(snapshot.lastInputEventAt.map { GoalongUIFormat.time($0) } ?? "jamais"), clic : \(snapshot.lastClickAt.map { GoalongUIFormat.time($0) } ?? "jamais"), frappe : \(snapshot.lastTypingBurstAt.map { GoalongUIFormat.time($0) } ?? "jamais"), défilement : \(snapshot.lastScrollAt.map { GoalongUIFormat.time($0) } ?? "jamais"), raccourci : \(snapshot.lastShortcutAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
                     )
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     Text(
-                        "Accessibilité : \(snapshot.lastAXContextSuccessAt.map { GoalongUIFormat.time($0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { GoalongUIFormat.time($0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.frenchLabel ?? "aucun") à \(snapshot.lastSuppressionAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
+                        "Accessibilité : \(snapshot.lastAXContextSuccessAt.map { GoalongUIFormat.time($0) } ?? "jamais"), URL : \(snapshot.lastURLDetectedAt.map { GoalongUIFormat.time($0) } ?? "jamais"), masquage : \(snapshot.lastSuppressionReason?.frenchLabel ?? "aucun") à \(snapshot.lastSuppressionAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
                     )
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     Text(
-                        "Autorisations : interrupteur Accessibilité \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé") · test Accessibilité \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué") · Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée") · capture \(snapshot.eventTapLifecycle.frenchLabel)"
+                        "Autorisations : interrupteur Accessibilité \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé"), test Accessibilité \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué"), Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée"), capture \(snapshot.eventTapLifecycle.frenchLabel)"
                     )
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     Text(
-                        "Version : \(snapshot.build.signatureKind.frenchLabel) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans empreinte de code") · saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
+                        "Version : \(snapshot.build.signatureKind.frenchLabel), \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans empreinte de code"), saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
                     )
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(LHTheme.secondaryText)

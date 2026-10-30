@@ -62,7 +62,7 @@
                         }
                         Divider()
                         HStack {
-                            Text("Détails enregistrés · tous proposés, modifiables à tout moment")
+                            Text("Détails enregistrés, tous proposés, modifiables à tout moment")
                                 .font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
                         }
@@ -175,7 +175,7 @@
                 LHCard {
                     Toggle(isOn: $launchAtLoginPreference) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Ouvrir Goalong à la connexion").font(.system(size: 13, weight: .medium))
+                            Text("Lancer Goalong à l’ouverture de session").font(.system(size: 13, weight: .medium))
                             Text(launchAtLogin.heldByBlocking
                                  ? LaunchAtLoginManager.heldMessage
                                  : "Conseillé et sélectionné par défaut. Seules les sources que vous avez activées démarrent.")
@@ -188,7 +188,7 @@
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 if let note { GoalongNote(note, tone: .warning) }
                 if launchAtLoginPreference && launchAtLogin.requiresApproval {
-                    Button("Ouvrir les éléments d’ouverture") { launchAtLogin.openLoginItemsSettings() }
+                    Button("Ouvrir Réglages Système") { launchAtLogin.openLoginItemsSettings() }
                 }
             }
         }

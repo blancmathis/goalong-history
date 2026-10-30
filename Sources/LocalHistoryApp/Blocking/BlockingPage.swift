@@ -272,8 +272,8 @@ struct BlockingStopRequest: Identifiable {
         var words: String
         switch block.lock {
         case .locked: words = "Verrouillé jusqu’à \(BlockingFormat.endTime(block.end))"
-        case .password: words = "Protégé par mot de passe · jusqu’à \(BlockingFormat.endTime(block.end))"
-        case .typing: words = "Difficile à arrêter · jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .password: words = "Protégé par mot de passe jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .typing: words = "Difficile à arrêter jusqu’à \(BlockingFormat.endTime(block.end))"
         case .free: words = "Bloqué jusqu’à \(BlockingFormat.endTime(block.end))"
         }
         let lists = block.listIDs.compactMap(controller.list)
@@ -281,7 +281,7 @@ struct BlockingStopRequest: Identifiable {
             words = words.replacingOccurrences(of: "Bloqué jusqu", with: "Ralenti jusqu")
         }
         let origin: String
-        if case .program = block.origin { origin = " · programme" } else { origin = "" }
+        if case .program = block.origin { origin = ", selon le programme" } else { origin = "" }
         if triggerApps(block) != nil {
             words = lists.allSatisfy({ $0.effectiveAction == .slowDown }) ? "Ralenti tant que l’app est ouverte" : "Bloqué tant que l’app est ouverte"
             symbol = "app.badge"
@@ -337,7 +337,7 @@ struct BlockingStopRequest: Identifiable {
                 Image(systemName: "hourglass").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
                 Text((left > 0 ? "\(list.name) : encore \(BlockingFormat.remaining(left)) aujourd’hui"
                                : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota + earned)) du jour sont passées")
-                     + (earned > 0 ? " · \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
+                     + (earned > 0 ? ". \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
                 Spacer(minLength: 8)
                 BlockingMeter(fraction: 1 - left / Double(max(1, (quota + earned) * 60))).frame(width: 120)
             }
@@ -993,7 +993,7 @@ struct BlockingLockExplainer: View {
     /// What the Standard level cannot stop. Kept in step with docs/BLOCKING.md.
     static let limits = [
         "Forcer Goalong à quitter arrête le blocage jusqu’à la prochaine ouverture de session, même avec un mot de passe.",
-        "Retirer Goalong des éléments d’ouverture, ou supprimer l’app à la main, met fin au blocage.",
+        "Retirer Goalong de l’ouverture de session, ou supprimer l’app à la main, met fin au blocage.",
         "Supprimer le dossier de blocage puis relancer Goalong efface les verrous.",
         "Changer l’heure du Mac puis redémarrer peut raccourcir un verrou.",
         "Un navigateur que Goalong ne connaît pas, et dont il ne lit pas l’adresse, n’est pas couvert.",
@@ -1003,7 +1003,7 @@ struct BlockingLockExplainer: View {
 
     /// Réglages Système › Général › Ouverture, where macOS lets Goalong start and run in the background.
     private var loginItemsButton: AnyView {
-        AnyView(Button("Ouvrir Réglages…") { SMAppService.openSystemSettingsLoginItems() }
+        AnyView(Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
             .help("Autorisez Goalong dans Réglages Système › Général › Ouverture.")
             .accessibilityIdentifier("blocking-open-login-items"))
