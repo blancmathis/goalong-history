@@ -274,11 +274,11 @@ final class GoalongUXOptimizationTests: XCTestCase {
 
     @MainActor func testWebsitePlanSummaryNeverShowsAnUnfilteredSelectionAsZero() {
         var options = GoalongSiteExportOptions(deviceIDs: ["mac"], includeApplications: true, includeWebsites: true)
-        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil · toutes les applications · tous les sites")
+        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil, toutes les applications, tous les sites")
         options.selectedApplicationIDs = ["a", "b"]; options.selectedWebsiteDomains = []
-        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil · 2 applications · 0 site")
+        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil, 2 applications, 0 site")
         options.includeWebsites = false; options.deviceIDs = []
-        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "tous les appareils · 2 applications · sans sites")
+        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "tous les appareils, 2 applications, sans sites")
     }
 
     private func isolatedModel(
