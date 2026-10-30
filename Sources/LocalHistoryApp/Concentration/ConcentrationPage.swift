@@ -498,7 +498,7 @@ struct FocusPlanChip: View {
             FocusSessionThread(model: FocusThreadModel.make(session, now: now), now: now, locked: locked)
             HStack(alignment: .center, spacing: 12) {
                 if !lists.isEmpty {
-                    BlockingIconCluster(lists: lists, size: 20, limit: 6)
+                    BlockingIconCluster(lists: lists, size: 20, limit: 6, overflowFont: 12)
                     Text(blockingWords).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                 }
                 Spacer(minLength: 12)
