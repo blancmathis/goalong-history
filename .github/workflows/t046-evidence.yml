@@ -45,7 +45,7 @@ jobs:
 
   coverage:
     # L1 done (run 40955827987); L3 pushes run only the e2e shards. A dispatch (file on main) reruns these two.
-    if: github.event_name == 'workflow_dispatch'
+    if: true
     runs-on: macos-15
     timeout-minutes: 120
     steps:
