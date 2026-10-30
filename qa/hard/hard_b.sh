@@ -91,8 +91,15 @@ rm -rf "$DATA/.t046-fill"; log "[volume freed] $(df -k "$DATA" | tail -1)"
 activity 60; sleep 30
 after=$(events_lines); log "[events after free] $(events_stat)"
 (( after > full )) && obs "reprise : $full → $after lignes" || fail "pas de reprise après libération ($full → $after lignes)"
+# Run 40987361212: the window, not key, still said « Disque plein » while the status item had recovered.
+dump recovered-inactive; shot recovered-inactive
+log "[recovered inactive] $(axhas 'disque est plein|Disque plein|Enregistrement actif' | head -c 120) | $(grep -m1 'AXMenuBarItem | desc=Goalong' "$RUNNER_TEMP/has.txt" | head -c 160)"
+axhas 'disque est plein' >/dev/null && obs "fenêtre non active : bandeau « disque plein » encore affiché après libération (état figé)"
+osascript -e 'tell application "Finder" to close every window' >/dev/null 2>&1
+front; nav history; nav overview; sleep 3
 dump recovered; shot recovered
-axhas 'disque est plein' >/dev/null && fail "bandeau « disque plein » encore là après libération" || obs "bandeau disparu après libération"
+log "[recovered key] $(axhas 'disque est plein|Disque plein|Enregistrement actif' | head -c 120)"
+axhas 'disque est plein' >/dev/null && fail "bandeau « disque plein » encore là après libération, fenêtre active" || obs "bandeau disparu après libération (fenêtre active)"
 running || fail "l’app s’est arrêtée après libération"
 log "[counts] avant=$before plein=$full après=$after"
 quit_app
