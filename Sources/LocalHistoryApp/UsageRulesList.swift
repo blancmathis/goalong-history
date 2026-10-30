@@ -87,19 +87,15 @@
                     Text("Par défaut")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(LHTheme.secondaryText)
-                    Picker(
+                    GoalongMenuPicker(
                         "Règle de partage par défaut",
                         selection: Binding(
                             get: { model.defaultSharingVisibility },
                             set: model.setDefaultSharingVisibility
-                        )
-                    ) {
-                        ForEach(SharingVisibility.allCases) { visibility in
-                            Text(visibility.title).tag(visibility)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: UsageRulesList.ruleColumnWidth)
+                        ),
+                        options: SharingVisibility.allCases.map { ($0, $0.title) }
+                    )
+                    .frame(width: UsageRulesList.ruleColumnWidth, alignment: .leading)
                 }
 
                 Text(FrenchCount.count(filteredItems.count, "élément", "éléments"))

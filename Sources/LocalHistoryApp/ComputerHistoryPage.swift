@@ -963,12 +963,8 @@
 
                 HStack(spacing: 12) {
                     GoalongSearchField("Rechercher une application ou un contexte", text: $timelineSearch, accessibilityLabel: "Rechercher dans la chronologie")
-                    Picker("Ordre de la chronologie", selection: $newestFirst) {
-                        Text("Plus récent d’abord").tag(true)
-                        Text("Plus ancien d’abord").tag(false)
-                    }
-                    .labelsHidden()
-                    .frame(width: 190)
+                    GoalongMenuPicker("Ordre de la chronologie", selection: $newestFirst,
+                                      options: [(true, "Plus récent d’abord"), (false, "Plus ancien d’abord")])
                 }
                 .font(.system(size: 12))
 
