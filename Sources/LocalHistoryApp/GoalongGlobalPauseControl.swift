@@ -31,7 +31,7 @@ struct GoalongGlobalPauseControl: View {
                       systemImage: pause.blocksActivity ? "play.circle" : "pause.circle")
                     .font(.system(size: 12, weight: .medium))
                     .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
-            }.buttonStyle(LHSecondaryButtonStyle())
+            }.goalongPauseButtonStyle(primary: pause.blocksActivity)
                 .accessibilityIdentifier("goalong-global-pause")
                 .help("Suspendre le suivi, les lectures Apple et IA, les analyses et les envois. Les choix autorisés sont conservés.")
             if !compact {
@@ -65,6 +65,13 @@ struct GoalongGlobalPauseControl: View {
     }
 }
 
+private extension View {
+    /// While everything is paused, resuming is the one main action of the window (DESIGN §9).
+    @ViewBuilder func goalongPauseButtonStyle(primary: Bool) -> some View {
+        if primary { buttonStyle(LHPrimaryButtonStyle()) } else { buttonStyle(LHSecondaryButtonStyle()) }
+    }
+}
+
 struct GoalongGlobalPauseBanner: View {
     @ObservedObject var model: DashboardViewModel
     @State private var pause = GoalongGlobalPause.load()
@@ -82,7 +89,9 @@ struct GoalongGlobalPauseBanner: View {
                     Spacer()
                     // The action keeps its whole name: the text beside it wraps instead.
                     GoalongGlobalPauseControl(model: model, compact: true).fixedSize()
-                }.padding(14).background(LHTheme.cardBackground)
+                }
+                // Same inset as the other top banners: the action stays inside the page edge.
+                .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12).background(LHTheme.cardBackground)
                 Divider()
             }
         }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }

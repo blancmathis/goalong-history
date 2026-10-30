@@ -269,7 +269,6 @@
                     Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Suivi en pause")
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.85)
                     Spacer()
                     if model.runtime.needsAttention {
                         Image(systemName: "chevron.right")

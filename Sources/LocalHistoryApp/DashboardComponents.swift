@@ -355,6 +355,8 @@
         var nextLabel = "Jour suivant"
         var identifierPrefix: String?
         var showsToday = true
+        /// Shown instead of the day when the control steps a whole period (« 23 oct. – 29 oct. »).
+        var dateLabel: String? = nil
 
         var body: some View {
             HStack(spacing: 8) {
@@ -372,7 +374,7 @@
         private var stepper: some View {
             HStack(spacing: 2) {
                 stepButton(-1, symbol: "chevron.left", label: previousLabel, identifier: "previous-period")
-                GoalongCalendarButton(date: date, onChange: onChange)
+                GoalongCalendarButton(date: date, onChange: onChange, label: dateLabel)
                     .accessibilityIdentifier(identifierPrefix.map { "\($0)-date-picker" } ?? "")
                 stepButton(1, symbol: "chevron.right", label: nextLabel, identifier: "next-period")
                     .disabled(GoalongToday.isToday(date))
@@ -409,6 +411,7 @@
     struct GoalongCalendarButton: View {
         let date: Date
         let onChange: (Date) -> Void
+        var label: String? = nil
         @State private var showsCalendar = false
         @State private var calendarDate = GoalongToday.now
 
@@ -417,7 +420,7 @@
                 calendarDate = date
                 showsCalendar.toggle()
             } label: {
-                Text(date.formatted(.dateTime.day().month(.abbreviated).year().locale(GoalongUIFormat.locale)))
+                Text(label ?? date.formatted(.dateTime.day().month(.abbreviated).year().locale(GoalongUIFormat.locale)))
                     .font(.system(size: 13, weight: .medium)).monospacedDigit()
                     .fixedSize()
                     .padding(.horizontal, 8).frame(height: 24)
@@ -603,7 +606,7 @@
             case .paused: return "pause.circle.fill"
             case .permissionsMissing: return "exclamationmark.triangle.fill"
             case .inputTapUnavailable: return "keyboard.badge.ellipsis"
-            case .storageUnavailable: return "externaldrive.badge.exclamationmark"
+            case .storageUnavailable: return "internaldrive"
             case .suppressed: return "eye.slash.fill"
             }
         }
