@@ -769,7 +769,7 @@ struct GoalongAnalyticsContent: View {
                 Text("Référence : " + (first.id == last.id ? shortDate(first.date) : "\(shortDate(first.date)) – \(shortDate(last.date))"))
             }
             Text("Les comparaisons utilisent la moyenne des jours observés (ou la veille à la même heure pour aujourd’hui). Un écart de temps ne mesure pas l’efficacité.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(LHTheme.secondaryText)
         }.font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
     }
 

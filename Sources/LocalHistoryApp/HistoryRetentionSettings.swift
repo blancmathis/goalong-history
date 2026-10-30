@@ -98,7 +98,7 @@ extension HistoryRetentionPolicy {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Durée de conservation locale").font(LHTheme.sheetTitleFont)
-                    Text("Règles distinctes pour les détails, souvenirs et preuves.").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text("Règles distinctes pour les détails, souvenirs et preuves.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
@@ -112,7 +112,7 @@ extension HistoryRetentionPolicy {
                     Text(model.automaticCleanup
                          ? "Après confirmation, les données expirées peuvent être supprimées tout de suite puis lors du nettoyage quotidien. Réduire une durée s’applique aussi aux données existantes."
                          : "Le nettoyage automatique est désactivé : les données restent jusqu’à ce que vous les supprimiez. Choisir une durée ci-dessous n’active pas la suppression.")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     LHCard(padding: 0) {
                         VStack(spacing: 0) {
                             ForEach(HistoryDataClass.allCases, id: \.self) { kind in
@@ -136,7 +136,7 @@ extension HistoryRetentionPolicy {
                             .accessibilityIdentifier("retention-confirm-proofs")
                     }
                     Text("Ces règles couvrent les données ci-dessus. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni les exports, sauvegardes ou données déjà envoyées. Les bilans ChatGPT ne sont pas concernés : effacez-les avec « Effacer l’historique détaillé » pour les jours voulus.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     if let error = model.error {
                         Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                     }
@@ -149,7 +149,7 @@ extension HistoryRetentionPolicy {
             }
             Divider()
             HStack {
-                Text("Rien n’est appliqué avant votre confirmation.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Rien n’est appliqué avant votre confirmation.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 Spacer()
                 Button(model.automaticCleanup ? "Vérifier et appliquer…" : "Enregistrer sans suppression automatique") {
                     if model.automaticCleanup { showingConfirmation = true }

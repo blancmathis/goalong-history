@@ -449,7 +449,7 @@
                     if let subtitle {
                         Text(subtitle)
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                 }
                 Spacer()

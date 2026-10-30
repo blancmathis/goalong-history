@@ -36,7 +36,7 @@ struct GoalongGlobalPauseControl: View {
                 .help("Suspendre le suivi, les lectures Apple et IA, les analyses et les envois. Les choix autorisés sont conservés.")
             if !compact {
                 Text("Apple et les autres apps continuent leur propre historique, qui peut être relu après reprise. Un envoi déjà commencé peut aboutir.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -76,7 +76,7 @@ struct GoalongGlobalPauseBanner: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Historique suspendu · confidentialité").font(.system(size: 13, weight: .semibold))
                         Text(pause.invalid ? GoalongGlobalPauseText.damagedNotice : "Tout le suivi est arrêté, pas seulement la surveillance. Reprenez-le pour enregistrer à nouveau.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()

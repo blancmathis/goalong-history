@@ -85,7 +85,8 @@
         }
     }
 
-    /// Third-rank actions ("Corriger", "Voir les 12 usages"): accent text, no chrome at rest.
+    /// Third-rank actions ("Corriger", "Voir les 12 usages"): ink text, no chrome at rest, so lime stays
+    /// the one action color of a screen.
     /// The hover fill bleeds outside the layout bounds so the label stays on the text column.
     struct LHQuietButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var isEnabled
@@ -98,7 +99,7 @@
             configuration.label
                 .fontWeight(.medium)
                 .foregroundStyle(!isEnabled ? LHTheme.secondaryText
-                                 : configuration.role == .destructive ? LHTheme.danger : LHTheme.accent)
+                                 : configuration.role == .destructive ? LHTheme.danger : LHTheme.text)
                 .padding(.horizontal, 7).padding(.vertical, 4)
                 .background(configuration.isPressed && isEnabled ? LHTheme.pressedBackground
                             : isHovered && isEnabled ? LHTheme.hoverBackground : .clear, in: shape)
@@ -343,13 +344,22 @@
                            : (hovered && isEnabled ? LHTheme.switchTrackHover : LHTheme.switchTrack))
                     .opacity(isEnabled ? 1 : 0.6)
                 if !isOn || contrast == .increased {
-                    track.strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.controlBorder)
+                    // The off track keeps a 3:1 edge (WCAG 1.4.11); a disabled switch is dashed and locked.
+                    track.strokeBorder(LHTheme.strongSeparator,
+                                       style: StrokeStyle(lineWidth: 1, dash: isEnabled ? [] : [3, 2]))
                 }
                 RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
                     .fill(isOn ? LHTheme.onAccent : LHTheme.switchKnob)
                     .frame(width: knob + stretch, height: knob)
                     .padding(.horizontal, 3)
                     .opacity(isEnabled ? 1 : 0.6)
+                    .overlay {
+                        if !isEnabled {
+                            Image(systemName: "lock.fill").font(.system(size: small ? 7 : 8, weight: .bold))
+                                .foregroundStyle(isOn ? LHTheme.actionBackground : LHTheme.secondaryText)
+                                .accessibilityHidden(true)
+                        }
+                    }
             }
             .frame(width: width, height: height)
             .overlay { RoundedRectangle(cornerRadius: radius + 3, style: .continuous)
@@ -686,6 +696,7 @@
         /// Goalong control chrome for a window, sheet or panel root. Explicit styles still win.
         func goalongControls() -> some View {
             buttonStyle(LHSecondaryButtonStyle())
+                .toggleStyle(.goalongCheckbox)
                 .textFieldStyle(GoalongFieldStyle())
                 .environment(\.locale, GoalongUIFormat.locale)
         }

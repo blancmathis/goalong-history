@@ -47,10 +47,10 @@ import LocalHistoryCore
                     // The hint names the action the card above really offers.
                     Text(runtime.connectionState == .codexUnavailable
                          ? "Mettez Goalong à jour (carte ChatGPT ci-dessus) pour analyser une journée."
-                         : "Connectez ChatGPT (carte ci-dessus) pour analyser une journée.").font(.system(size: 12)).foregroundStyle(.secondary)
+                         : "Connectez ChatGPT (carte ci-dessus) pour analyser une journée.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Text("ChatGPT reçoit uniquement votre sélection. Le bilan n’est pas envoyé au site automatiquement.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
         .onAppear { selection = .load(); runtime.configure(deviceID: model.knownDeviceID ?? "") }

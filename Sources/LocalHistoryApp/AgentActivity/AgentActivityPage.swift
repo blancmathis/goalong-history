@@ -223,7 +223,7 @@
                                 "Goalong lit seulement les sources que vous autorisez, à leur emplacement d’origine. Il garde un index léger de métadonnées et ne copie jamais le contenu des conversations."
                             )
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -240,7 +240,7 @@
                         "Les événements et preuves existants restent disponibles. Activez cette source seulement si vous voulez que Goalong lise Codex, Claude, OpenCode ou un dossier que vous ajoutez."
                     )
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -273,7 +273,7 @@
                             }
                         }
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer()
                     if availableProviders.count > 1 {
@@ -296,7 +296,7 @@
                         VStack(alignment: .leading, spacing: 4) {
                             Text(sourceHealth.title).font(.system(size: 13, weight: .semibold))
                             Text(sourceHealth.message)
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
@@ -345,7 +345,7 @@
                             if captures.count > 120 {
                                 Text("Affichage des 120 conversations les plus récentes")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
                             }
@@ -372,7 +372,7 @@
                         Text(conversationDetail(record))
                     }
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .lineLimit(1)
                 }
 
@@ -454,7 +454,7 @@
                         "Le contenu des conversations est lu sur place dans Codex, Claude Code, OpenCode et les dossiers configurés. L’index local ne contient que l’outil, l’identifiant, la référence de la source, les horodatages, la taille, les positions et l’empreinte SHA-256."
                     )
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     Text(
                         "Goalong ne conserve aucune copie, aucun instantané ni contenu transmis par les hooks."
@@ -562,7 +562,7 @@
                         "Goalong suit les sessions, l’historique et les journaux de Codex dans `~/.codex` lorsque ce dossier existe."
                     )
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 StatusPill(
@@ -602,7 +602,7 @@
                         .font(.system(size: 11, weight: .semibold))
                     Text(configurationPathLabel(status.configurationPath))
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let otherPath = status.otherExecutablePath {
@@ -716,7 +716,7 @@
                     }
                     Text(folder.path)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -801,7 +801,7 @@
                         if filteredCaptures.count > 120 {
                             Text("Affichage des 120 références les plus récentes.")
                                 .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.top, 5)
                         }
@@ -819,13 +819,13 @@
                         .lineLimit(1)
                     Text("\(record.provider.frenchName) · \(record.watchedFolderName) · \(record.relativePath)")
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let excerpt = record.summary.excerpt, !excerpt.isEmpty {
                         Text(excerpt)
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .lineLimit(2)
                     }
                 }
@@ -833,7 +833,7 @@
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(DashboardFormatters.fullTimestamp.string(from: record.sourceModifiedAt ?? record.capturedAt))
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 5) {
                         compactPill("\(record.summary.messageCount) msg", symbol: "bubble.left")
                         compactPill(GoalongUIFormat.count(record.summary.toolCallCount, "outil"), symbol: "wrench")
@@ -928,14 +928,12 @@
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(providerTint(provider))
                 .frame(width: 34, height: 34)
-                .background(
-                    providerTint(provider).opacity(0.11), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
 
         private func compactPill(_ title: String, symbol: String) -> some View {
             Label(title, systemImage: symbol)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(LHTheme.secondaryText)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(Color.primary.opacity(0.045), in: Capsule())
@@ -945,7 +943,7 @@
             HStack {
                 Text(title)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 Spacer()
                 Text(value)
                     .font(.system(size: 11, weight: .semibold))
@@ -960,7 +958,7 @@
                     .padding(.top, 1)
                 Text(text)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -971,13 +969,12 @@
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(tint)
                     .frame(width: 30, height: 30)
-                    .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
                     Text(subtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1042,7 +1039,7 @@
                         .font(.system(size: 20, weight: .bold))
                     Text(draft.path)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(2)
                         .truncationMode(.middle)
                 }
@@ -1070,7 +1067,7 @@
                         : "Goalong lit directement les formats courants de conversations, journaux et traces, sans les copier."
                 )
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
                 HStack {

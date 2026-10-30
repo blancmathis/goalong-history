@@ -86,10 +86,10 @@ struct GoalongFocusExplanation: View {
             Text(hasFocus
                 ? "Le focus correspond aux séquences continues dans une même application et sur un même site. Ce temps est inclus dans le temps actif, pas ajouté."
                 : "Aucune séquence continue d’au moins \(minimumMinutes) minutes dans une même application et sur un même site n’a été détectée. Cela ne signifie pas que vous n’avez pas travaillé ou été concentré.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Changer d’outil peut interrompre cette mesure, même pour le même projet. Elle ne mesure pas votre attention mentale.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .contain)

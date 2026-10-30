@@ -214,13 +214,13 @@ enum GoalongKnownApplications {
                                     if !app.installed {
                                         Text(GoalongKnownApplications.isDefaultExclusion(app.id)
                                              ? "Non installée · protégée par défaut" : "Non installée sur ce Mac")
-                                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     } else if model.isApplicationExcludedFromCapture(app.id) && !exclusions.policy.excludes(appID: app.id) {
-                                        Text("Exclue de l’enregistrement").font(.system(size: 12)).foregroundStyle(.secondary)
+                                        Text("Exclue de l’enregistrement").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     }
                                 }
                                 Spacer()
-                                if exclusions.policy.excludes(appID: app.id) { Text("Exclue").font(.system(size: 12)).foregroundStyle(.secondary) }
+                                if exclusions.policy.excludes(appID: app.id) { Text("Exclue").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
                                 Toggle("Autoriser \(app.name)", isOn: Binding(get: { !isExcluded(app) }, set: { setApp(app, enabled: $0) }))
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly).controlSize(.small)
                                     .disabled(ProductIdentity.isGoalong(app.id))
@@ -230,10 +230,10 @@ enum GoalongKnownApplications {
                     }
                 }
             }
-            if let notice { Text(notice).font(.system(size: 12)).foregroundStyle(.secondary) }
+            if let notice { Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
             GoalongDisclosureGroup("Règles avancées d’enregistrement") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Les anciennes listes « autoriser uniquement » restent conservées.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("Les anciennes listes « autoriser uniquement » restent conservées.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     Button("Ouvrir la configuration") { model.openConfiguration() }.buttonStyle(LHSecondaryButtonStyle())
                 }.padding(.top, 10)
             }.font(.system(size: 13))
@@ -252,7 +252,7 @@ enum GoalongKnownApplications {
             Button("Fermer", role: .cancel) {}
         } message: { Text(exclusions.error ?? "") }
     }
-    private var empty: some View { Text("Aucun résultat").font(.system(size: 13)).foregroundStyle(.secondary).padding(24) }
+    private var empty: some View { GoalongEmptyState(title: "Aucun résultat", message: "Essayez un autre nom d’application.").padding(24) }
     private func isExcluded(_ app: GoalongApplicationChoice) -> Bool { exclusions.policy.excludes(appID: app.id) || model.isApplicationExcludedFromCapture(app.id) }
     /// The rule, other than the host itself, that excludes this host (« example.fr » for docs.example.fr).
     /// Same matching as `URLRedactor.domain`: lowercase, surrounding dots and spaces trimmed, suffix after a dot.
@@ -366,7 +366,7 @@ enum GoalongOnboardingExclusionEdit {
                         .accessibilityLabel("Retirer \(item) des exclusions")
                 }
             }
-            if let message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
+            if let message { Text(message).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
         }
     }
     private func announce(_ text: String) {

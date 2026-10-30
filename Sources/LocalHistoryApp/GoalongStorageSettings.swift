@@ -36,7 +36,7 @@ import Foundation
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Conservation")
-                        Text(retentionSummary).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text(retentionSummary).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer()
                     Button("Choisir…") { retention = true }.buttonStyle(LHSecondaryButtonStyle())
@@ -45,7 +45,7 @@ import Foundation
             GoalongSettingsGroup(title: "Gestion des données") {
                 Button("Effacer de l’historique…") { deletion = true }.buttonStyle(LHSecondaryButtonStyle())
                 Text("Les originaux Apple, les conversations et les données déjà envoyées restent conservés.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             GoalongDisclosureGroup("Fichiers locaux") {
                 HStack {

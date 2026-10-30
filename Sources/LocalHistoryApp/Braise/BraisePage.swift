@@ -20,16 +20,18 @@ import SwiftUI
     let onRetry: () -> Void
     let onOpenModules: () -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 24) {
             Text("Braise").goalongPageTitle()
-            Text(error ?? "Le module est désactivé. Activez-le dans Réglages › Modules.")
-                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-            if error != nil {
-                HStack(spacing: 8) {
+            if let error {
+                GoalongEmptyState(title: "Braise ne répond pas", message: error) {
                     Button("Réessayer", action: onRetry).buttonStyle(LHPrimaryButtonStyle())
                     Button("Ouvrir Réglages › Modules", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
                 }
-                .padding(.top, 4)
+            } else {
+                GoalongEmptyState(title: "Braise est désactivée",
+                                  message: "Le filtre rouge du soir s’active dans Réglages › Modules.") {
+                    Button("Activer Braise", action: onOpenModules).buttonStyle(LHPrimaryButtonStyle())
+                }
             }
         }
         .padding(LHTheme.pageInset).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -77,7 +79,7 @@ import SwiftUI
                 }
                 GoalongSection(title: "Horaires", subtitle: "Les jours choisis sont ceux du début de la plage.") {
                     VStack(alignment: .leading, spacing: 12) {
-                        if controller.preferences.rules.isEmpty { Text("Aucun horaire. Ajoutez une plage pour le mode Auto.").foregroundStyle(LHTheme.secondaryText) }
+                        if controller.preferences.rules.isEmpty { GoalongEmptyState(title: "Aucun horaire", message: "Ajoutez une plage pour le mode Auto.") }
                         ForEach(controller.preferences.rules) { rule in
                             HStack(spacing: 12) {
                                 Button { editingRule = rule } label: {
@@ -127,7 +129,7 @@ import SwiftUI
     private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack { Text(title); Spacer(); Text(GoalongUIFormat.percent(value.wrappedValue * 100)).monospacedDigit().foregroundStyle(LHTheme.secondaryText) }
-            Slider(value: value, in: range, step: 0.01).accessibilityLabel(title).accessibilityValue("\(Int(value.wrappedValue * 100)) pour cent")
+            Slider(value: value, in: range).accessibilityLabel(title).accessibilityValue("\(Int(value.wrappedValue * 100)) pour cent")
         }
     }
 }

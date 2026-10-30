@@ -91,7 +91,7 @@
                                 .font(.system(size: 13, weight: .semibold))
                             Text(capabilities.summary)
                                 .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
@@ -129,7 +129,7 @@
                             "L’accès complet au disque reste une autorisation macOS large. Les lecteurs sont en lecture seule et audités, mais s’exécutent dans l’app principale ; un service de lecture isolé n’est pas encore livré."
                         )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(11)
@@ -147,7 +147,7 @@
                     .foregroundStyle(present ? LHTheme.accent : LHTheme.success)
                 Text("\(title) : \(present ? "présent" : "absent")")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
             }
         }
 
@@ -200,7 +200,7 @@
                                 : "Les preuves locales vérifient l’intégrité sans exposer l’enregistrement détaillé ni contacter de serveur. Cette version ne transmet aucune preuve."
                         )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(11)
@@ -242,7 +242,7 @@
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Accès complet au disque").font(.system(size: 13, weight: .semibold))
                         Text("Le Temps d’écran est lu directement dans les fichiers d’Apple. L’accès complet au disque est une autorisation large, pas limitée à un dossier ; vous pouvez laisser cette source désactivée. Si Goalong manque dans la liste, ajoutez Goalong History depuis Applications avec +, puis revenez vérifier l’accès.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Button("Ouvrir les réglages d’accès complet au disque") {
                             SourceAccessService.openAccess(.fullDiskAccess)
@@ -292,7 +292,7 @@
                                 .foregroundStyle(LHTheme.success)
                             Text("Un vrai événement de saisie et le contexte d’accessibilité ont été observés.")
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
                 }
@@ -317,7 +317,7 @@
                             .font(.system(size: 12, weight: .semibold))
                         Text(assessment?.state.frenchDetail ?? "Aucun indicateur d’état d’enregistrement n’est encore disponible.")
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -330,25 +330,25 @@
                         "Dernière saisie : \(snapshot.lastInputEventAt.map { GoalongUIFormat.time($0) } ?? "jamais") · clic : \(snapshot.lastClickAt.map { GoalongUIFormat.time($0) } ?? "jamais") · frappe : \(snapshot.lastTypingBurstAt.map { GoalongUIFormat.time($0) } ?? "jamais") · défilement : \(snapshot.lastScrollAt.map { GoalongUIFormat.time($0) } ?? "jamais") · raccourci : \(snapshot.lastShortcutAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
                     )
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     Text(
                         "Accessibilité : \(snapshot.lastAXContextSuccessAt.map { GoalongUIFormat.time($0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { GoalongUIFormat.time($0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.frenchLabel ?? "aucun") à \(snapshot.lastSuppressionAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
                     )
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     Text(
                         "Autorisations : interrupteur Accessibilité \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé") · test Accessibilité \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué") · Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée") · capture \(snapshot.eventTapLifecycle.frenchLabel)"
                     )
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     Text(
                         "Version : \(snapshot.build.signatureKind.frenchLabel) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans empreinte de code") · saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
                     )
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     if snapshot.build.signatureKind == .adHoc {
                         Text("Une mise à jour non signée par Apple peut changer l’identité reconnue par macOS et redemander une autorisation. L’historique existant reste lisible.")
@@ -453,15 +453,12 @@
                             .font(.system(size: 23, weight: .semibold))
                             .foregroundStyle(tint)
                             .frame(width: 48, height: 48)
-                            .background(
-                                tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            )
                         VStack(alignment: .leading, spacing: 4) {
                             Text(model.deviceProtectionTitle)
                                 .font(.system(size: 13, weight: .semibold))
                             Text(model.deviceAlgorithm)
                                 .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
 
@@ -485,7 +482,7 @@
                             {
                                 Text(feedback)
                                     .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                             }
                         }
                     }
@@ -493,10 +490,10 @@
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Identifiant de l’appareil")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                         Text(model.knownDeviceID ?? "Indisponible (Trousseau inaccessible)")
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .lineLimit(2)
                             .textSelection(.enabled)
                     }
@@ -526,7 +523,7 @@
                             "Supprimer l’activité retire aussi son contexte, ses analyses et ses vues dérivées, ainsi que les appels et l’activité de développement des jours concernés (journée entière). La note du jour n’est effacée qu’avec toute l’activité. L’index des conversations IA, le Temps d’écran, les engagements et les reçus sont conservés."
                         )
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 20)
@@ -577,7 +574,7 @@
                     .font(.system(size: 11, weight: .semibold))
                 Text(message)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(13)
@@ -608,7 +605,7 @@
                         .font(.system(size: 12, weight: .semibold))
                     Text(message)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -634,13 +631,12 @@
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(tint)
                         .frame(width: 34, height: 34)
-                        .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title)
                             .font(.system(size: 11, weight: .semibold))
                         Text(message)
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -655,7 +651,7 @@
                     .frame(width: 22)
                 Text(title)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 Spacer()
                 Text(value)
                     .font(.system(size: 12, weight: .semibold))

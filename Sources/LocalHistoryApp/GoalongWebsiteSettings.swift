@@ -23,10 +23,10 @@ import LocalHistoryQueryCLI
                 if let plan = sender.savedConfiguration {
                     Divider()
                     Text(Self.planSummary(plan.options))
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     if let hour = plan.hour {
                         Text(GoalongWebsiteSettings.scheduleLabel(hour: hour, minute: plan.minute ?? 0, zone: plan.timeZoneIdentifier))
-                            .font(.system(size: 13)).foregroundStyle(.secondary)
+                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     }
                 }
             }
@@ -36,7 +36,7 @@ import LocalHistoryQueryCLI
                     Spacer()
                     Button("Choisir et voir l’aperçu") { presentation = .init(day: model.selectedDay) }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.large).accessibilityIdentifier("website-open-selected-day")
                 }
-                Text("Tout est préparé localement. Seul le bouton d’envoi transmet les données.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Tout est préparé localement. Seul le bouton d’envoi transmet les données.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
         .sheet(item: $presentation) { request in GoalongWebsiteSharingSheet(initialDay: request.day).id(request.id).goalongControls() }

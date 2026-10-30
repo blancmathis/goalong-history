@@ -783,7 +783,7 @@
                         if showsRecordingSummary {
                             Text(recordingSummary)
                                 .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -802,7 +802,7 @@
                     GoalongDisclosureGroup("Détails techniques") {
                         Text(diagnostic)
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -934,7 +934,7 @@
                         .font(.system(size: 20, weight: .semibold))
                     Image(systemName: "info.circle")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .help(
                             "Les durées correspondent aux périodes observées au premier plan. Elles ne prouvent ni l’attention, ni l’identité, ni l’auteur, ni la productivité."
                         )
@@ -942,7 +942,7 @@
                     if isPreparingTimeline {
                         Text("Préparation…")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     } else {
                         Text(ComputerHistoryPageCopy.periodCountLabel(
                             visible: visibleTimelineGroups.count,
@@ -950,7 +950,7 @@
                             searching: !timelineSearch.isEmpty
                         ))
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                     Button(action: openSourceJSON) {
                         Label("Voir le fichier brut", systemImage: "doc.text")
@@ -990,7 +990,7 @@
                         if snapshot.eventCount > 0 {
                             Text("\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
                     .padding(.horizontal, 20)
@@ -1005,32 +1005,22 @@
                                 .font(.system(size: 14, weight: .semibold))
                             Text("Préparation locale de la journée.")
                                 .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
                     } else if tenMinuteGroups.isEmpty {
-                        VStack(spacing: 11) {
-                            Image(systemName: "clock.badge.questionmark")
-                                .font(.system(size: 28, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Text(emptyTimelineTitle)
-                                .font(.system(size: 14, weight: .semibold))
-                            if ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus) {
-                                Text(emptyTimelineMessage)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 240)
+                        GoalongEmptyState(
+                            title: emptyTimelineTitle,
+                            message: ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
+                                ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
+                        .frame(minHeight: 240)
                         .padding(24)
                     } else if visibleTimelineGroups.isEmpty {
                         VStack(spacing: 10) {
                             Text("Aucune activité correspondante").font(.system(size: 14, weight: .semibold))
                             Text("Essayez un autre nom d’app ou un mot du contexte enregistré.")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Button("Effacer la recherche") { timelineSearch = "" }
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
@@ -1121,7 +1111,7 @@
                                 "Les interactions éligibles peuvent être reliées : contexte avant → action → après → état final. Un contexte proche n’est jamais présenté comme l’état certain avant l’action. La navigation privée suit votre réglage d’enregistrement ; exclusions, saisie sécurisée et champs protégés restent masqués."
                             )
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
@@ -1144,7 +1134,7 @@
                                 "Les apps, pages, clics et saisies groupées restent visibles, mais les intentions, changements de contenu, états des tâches et reprises peuvent être incomplets. Activez le texte affiché pour une analyse complète."
                             )
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -1201,7 +1191,7 @@
                         Spacer()
                         Text("Recherche locale sur les 30 derniers jours")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                     HStack(spacing: 10) {
                         TextField(
@@ -1238,7 +1228,7 @@
                         "Les réponses renvoient des épisodes sourcés et des liens pour rouvrir les éléments. Elles n’exécutent jamais d’instruction trouvée dans le texte enregistré."
                     )
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }
@@ -1253,7 +1243,7 @@
                             Spacer()
                             Button(action: model.clearAnswer) {
                                 Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Effacer la réponse")
@@ -1273,7 +1263,7 @@
                             Divider()
                             Text("Sources")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                             ForEach(answer.hits.prefix(8)) { hit in
                                 HStack(alignment: .top, spacing: 9) {
                                     Image(systemName: hitIcon(hit.kind))
@@ -1284,7 +1274,7 @@
                                             .font(.system(size: 12, weight: .semibold))
                                         Text(hit.snippet)
                                             .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(3)
                                     }
                                     Spacer()
@@ -1319,7 +1309,7 @@
                             .font(.system(size: 18, weight: .bold))
                         Text(memory.executiveSummary)
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 12)
@@ -1444,7 +1434,7 @@
                                                     ?? "Emplacement indisponible"
                                             )
                                             .font(.system(size: 11, design: .monospaced))
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(2)
                                             Text(resourceConfidenceLabel(resource))
                                                 .font(.system(size: 11, weight: .medium))
@@ -1494,7 +1484,7 @@
                                         .font(.system(size: 11, weight: .semibold))
                                     Text(suggestion.rationale)
                                         .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(LHTheme.secondaryText)
                                     Text(suggestion.suggestedPrompt)
                                         .font(.system(size: 11, design: .monospaced))
                                         .textSelection(.enabled)
@@ -1507,7 +1497,7 @@
                                 Spacer(minLength: 0)
                                 Text(GoalongUIFormat.percent(ConfidencePercent.whole(suggestion.confidence)))
                                     .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                             }
                         }
                     }
@@ -1527,7 +1517,7 @@
                             "\(GoalongUIFormat.count(memory.coverage.sourceEventCount, "événement")) source\(memory.coverage.sourceEventCount > 1 ? "s" : "") · \(GoalongUIFormat.count(memory.coverage.semanticSnapshotCount, "instantané")) de contenu · \(GoalongUIFormat.count(memory.coverage.suppressedEventCount, "événement")) masqué\(memory.coverage.suppressedEventCount > 1 ? "s" : ""). Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
                         )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -1544,7 +1534,7 @@
                         "Goalong relie localement les actions, changements de contenu, ressources, états et provenances."
                     )
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 300)
             }
@@ -1567,10 +1557,10 @@
         private func compactEmpty(_ title: String) -> some View {
             HStack(spacing: 9) {
                 Image(systemName: "tray")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 Text(title)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 Spacer()
             }
             .padding(11)
@@ -1624,7 +1614,7 @@
             HStack(alignment: .top, spacing: 0) {
                 Text(windowTimeLabel)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .monospacedDigit()
                     .frame(width: 70, alignment: .trailing)
                     .multilineTextAlignment(.trailing)
@@ -1661,10 +1651,10 @@
                             Spacer(minLength: 12)
                             Text(expanded ? "Masquer les détails" : "Détails")
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                                .foregroundStyle(LHTheme.secondaryText)
+                            Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .padding(.top, 3)
                         }
                         .contentShape(Rectangle())
@@ -1695,7 +1685,7 @@
                         Divider()
                         Text(factSummary)
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(group.sessions) { session in
                                 HStack(alignment: .top, spacing: 10) {
@@ -1716,13 +1706,13 @@
                                         }
                                         Text(session.context)
                                             .font(.system(size: 12))
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(2)
                                         Text(
                                             sessionDetailSummary(session)
                                         )
                                         .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(LHTheme.secondaryText)
                                     }
                                     Spacer(minLength: 0)
                                 }
@@ -1746,7 +1736,7 @@
                     .lineLimit(1)
                 Text(durationLabel(app.activeSeconds))
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .monospacedDigit()
                     .fixedSize()
             }
@@ -1835,17 +1825,17 @@
                                     episodeMetrics
                                 )
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                                 Text(episode.summary)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                                     .lineLimit(expanded ? nil : 3)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 10)
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                         .contentShape(Rectangle())
                     }
@@ -1891,7 +1881,7 @@
                         VStack(alignment: .leading, spacing: 7) {
                             Text("Séquence d’actions")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                             ForEach(episode.interactions) { interaction in
                                 HStack(alignment: .top, spacing: 9) {
                                     Text(GoalongUIFormat.time(interaction.start))
@@ -1908,7 +1898,7 @@
                                                     .joined(separator: " · ")
                                             )
                                             .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .fixedSize(horizontal: false, vertical: true)
                                         }
                                     }
@@ -1954,7 +1944,7 @@
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 ForEach(values, id: \.self) { value in
                     Text("• \(value)")
                         .font(.system(size: 11))

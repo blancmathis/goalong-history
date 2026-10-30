@@ -58,7 +58,7 @@ struct RecordingChoicesView: View {
             signalGroup("Titres et adresses", choices: choices([.windowTitles, .interfaceLabels, .browserURLs]))
             if (!draft.excludedDomainsText.isEmpty || !draft.includedDomainsText.isEmpty) && !draft.captureURLs {
                 Label("Les filtres web peuvent bloquer le navigateur. Vérifiez Apps et sites.", systemImage: "info.circle")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
     }

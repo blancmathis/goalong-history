@@ -46,7 +46,7 @@ struct GoalongScreenTimeSourceNotice: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(presentation.isPartial ? LHTheme.warning : LHTheme.secondaryText)
             Text(presentation.detail)
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

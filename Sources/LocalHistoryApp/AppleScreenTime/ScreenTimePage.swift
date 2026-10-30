@@ -83,7 +83,7 @@
                         .font(.system(size: 12, weight: .semibold))
                     Text(screenTime.status.message)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     if screenTime.status.kind == .ready || screenTime.status.kind == .localOnly {
                         Text("La fraîcheur dépend de la synchronisation locale/iCloud d’Apple, pas d’un serveur Goalong.")
@@ -157,7 +157,7 @@
                             .foregroundStyle(scopeStatusTint)
                         Text(scopeStatusMessage)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                         Spacer()
                     }
                     .padding(11)
@@ -171,7 +171,7 @@
                         if screenTime.availableDevices.isEmpty {
                             Text("Aucun appareil Apple détecté pour l’instant.")
                                 .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                         } else {
                             LazyVGrid(
                                 columns: [GridItem(.adaptive(minimum: 215), spacing: 9)],
@@ -231,7 +231,7 @@
                     if summary.deviceSummaries.isEmpty {
                         Text("Aucune utilisation Apple pour cette sélection et ce jour.")
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     } else {
                         ForEach(summary.deviceSummaries) { item in
                             HStack(spacing: 10) {
@@ -244,7 +244,7 @@
                                         .lineLimit(1)
                                     Text(screenTime.sourceLabel(for: item.device))
                                         .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(LHTheme.secondaryText)
                                         .lineLimit(1)
                                 }
                                 Spacer()
@@ -282,13 +282,13 @@
                     if summary.topApplications.isEmpty {
                         Text("Aucune activité d’application attribuable pour cette sélection et ce jour.")
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     } else {
                         ForEach(Array(summary.topApplications.prefix(12).enumerated()), id: \.element.id) { index, app in
                             HStack(spacing: 10) {
                                 Text(String(index + 1))
                                     .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                                     .frame(width: 18)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(app.resolvedName)
@@ -327,7 +327,7 @@
                             "L’export indique les appareils inclus, la provenance exacte, la règle de cumul et si le détail des applications est inclus. Les formats privés d’Apple ne sont pas présentés comme identiques certifiés aux Réglages."
                         )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 20)
@@ -395,7 +395,7 @@
                             "Cette page lit d’abord sur place les agrégats privés d’Apple (ScreenTimeAgent). Si ce stockage est indisponible, les flux ScreenTime.AppUsage, knowledgeC `/app/usage` et Biome `App.InFocus` servent à une reconstitution limitée."
                         )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         Text(
                             "Les événements de Goalong ne les remplacent jamais. Ces formats privés ne sont pas une API publique d’Apple et ne sont pas certifiés identiques aux Réglages."
@@ -411,7 +411,7 @@
                         Text("\(screenTime.biomeIntervalCount) Biome intervals")
                     }
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }
@@ -428,7 +428,7 @@
                             "Les bases et flux d’Apple sont ouverts en lecture seule. Goalong ne conserve que votre choix d’appareils et les fichiers que vous exportez vous-même."
                         )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -557,7 +557,7 @@
                         .font(.system(size: 14, weight: .semibold))
                     Text(subtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -569,7 +569,6 @@
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 38, height: 38)
-                .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
 
         private func metric(title: String, value: String, note: String, symbol: String) -> some View {
@@ -577,14 +576,14 @@
                 VStack(alignment: .leading, spacing: 8) {
                     Label(title, systemImage: symbol)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                     Text(value)
                         .font(.system(size: 20, weight: .bold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                     Text(note)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

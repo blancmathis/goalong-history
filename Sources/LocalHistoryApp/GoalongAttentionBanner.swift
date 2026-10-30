@@ -32,7 +32,7 @@ struct GoalongAttentionBanner: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title(notice)).font(.system(size: 13, weight: .semibold))
-                        Text(detail(notice)).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text(detail(notice)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 12)
@@ -99,7 +99,7 @@ struct GoalongAttentionBanner: View {
             HStack(spacing: 8) {
                 Button("Nouveautés") { updates.openRollingReleasePage() }.buttonStyle(LHSecondaryButtonStyle())
                 Button { updates.acknowledgeUpdateConfirmation() } label: {
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                 }
                 .buttonStyle(LHQuietButtonStyle())
                 .accessibilityLabel("Masquer")

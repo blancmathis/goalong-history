@@ -189,7 +189,7 @@ struct GoalongLaneLegend: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if showsThreadClasses { GoalongActivityClassLegend(size: 11) }
+            if showsThreadClasses { GoalongActivityClassLegend(size: 12) }
             HStack(spacing: 16) {
                 ForEach(items.indices, id: \.self) { index in
                     HStack(spacing: 6) {
@@ -198,7 +198,7 @@ struct GoalongLaneLegend: View {
                     }
                 }
             }
-            .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             .accessibilityHidden(true)
         }
     }

@@ -73,7 +73,7 @@
                         .font(.system(size: 11, weight: .semibold))
                     Text("Les règles s’appliquent événement par événement")
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }
@@ -86,7 +86,7 @@
                     .font(.system(size: 11, weight: .medium))
                 Text("\(count)")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
             }
             .padding(.horizontal, 11)
             .frame(height: 32)
@@ -108,7 +108,7 @@
                         "Les vérifications se font sur ce Mac, sans connexion. Rien n’est envoyé."
                     )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button {

@@ -49,17 +49,17 @@ struct AgentTokenUsageCard: View {
                 Text(summary.headline)
                     .font(LHTheme.figureFont(26))
                 if let detail = summary.detail {
-                    Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Text("Journaux locaux · \(Self.zoneName()). Les tokens ne correspondent ni à un quota d’abonnement ni à une facture.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 if let analyzedAt {
                     Text("Analysé à \(analyzedAt.formatted(.dateTime.hour().minute().locale(Self.locale))) · actualisez la journée pour mettre à jour")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 if summary.showsPartialCoverage {
                     Text("Couverture partielle : les compteurs manquants et sources indisponibles restent inconnus. Les copies de conversations rejouées peuvent être exclues.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 ForEach(Array(Set(rows.map(\.provider))).sorted { $0.frenchName.localizedStandardCompare($1.frenchName) == .orderedAscending }) { provider in
                     let totals = rows.filter { $0.provider == provider }.flatMap(\.events).compactMap(\.total)
@@ -75,11 +75,11 @@ struct AgentTokenUsageCard: View {
                                 Text(row.session).lineLimit(1)
                                 Text("Entrée \(number(row.sum(\.input))) · Sortie \(number(row.sum(\.output))) · Total \(number(row.sum(\.total)))")
                                 Text("Cache lu \(number(row.sum(\.cacheRead))) · Cache écrit \(number(row.sum(\.cacheWrite))) · Raisonnement \(number(row.sum(\.reasoning)))")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                             }
                         }
                         Text("L’entrée inclut les tokens de cache identifiés. Le raisonnement de Codex est inclus dans la sortie ; aucun des deux n’est ajouté une seconde fois au total. Les totaux OpenCode ne sont affichés que lorsqu’ils sont enregistrés explicitement. « Inconnu » signifie que le journal ne permet pas d’établir la valeur. Ces totaux du jour ne dépendent pas des filtres de recherche.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     }.font(.system(size: 12)).padding(.top, 8)
                 }.font(.system(size: 12))
                 }

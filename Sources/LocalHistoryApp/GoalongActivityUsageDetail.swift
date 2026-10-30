@@ -29,7 +29,7 @@ struct GoalongActivityUsageDetail: View {
                     Text(item.displayName).font(.system(size: 20, weight: .semibold)).textSelection(.enabled)
                         .lineLimit(2).help(item.displayName)
                     Text((item.isWebsite ? "Site web" : "Application") + (isPreview ? " · exemple fictif" : ""))
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -43,7 +43,7 @@ struct GoalongActivityUsageDetail: View {
                 }.font(.system(size: 13))
             }.frame(maxHeight: 300)
             Text("Observations sur ce Mac uniquement. Un site n’est jamais ajouté une seconde fois au temps de son navigateur.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
         .padding(24).frame(width: 600).frame(maxHeight: 760)
         .tint(LHTheme.accent)
@@ -57,7 +57,7 @@ struct GoalongActivityUsageDetail: View {
                 HStack {
                     Text(task.name).lineLimit(1)
                     Spacer()
-                    Text(duration(task.seconds)).monospacedDigit().foregroundStyle(.secondary)
+                    Text(duration(task.seconds)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
                 }.font(.system(size: 12)).accessibilityElement(children: .combine)
             }
         }.accessibilityIdentifier("activity-usage-detail-tasks")
@@ -124,9 +124,9 @@ struct GoalongActivityUsageDetail: View {
 
     private func stat(_ title: String, _ value: String, _ caption: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(title).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             Text(value).font(.system(size: 16, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
-            if !caption.isEmpty { Text(caption).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2) }
+            if !caption.isEmpty { Text(caption).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(2) }
         }.accessibilityElement(children: .combine)
     }
 
@@ -153,10 +153,10 @@ struct GoalongActivityUsageDetail: View {
                     Text("\(GoalongActivitySummary.time(session.start))–\(GoalongActivitySummary.time(session.end))")
                     Spacer()
                     Text(duration(session.seconds))
-                }.foregroundStyle(.secondary).accessibilityElement(children: .combine)
+                }.foregroundStyle(LHTheme.secondaryText).accessibilityElement(children: .combine)
             }
             if daySessions.count > 50 {
-                Text("50 séances affichées. L’historique contient le détail complet.").foregroundStyle(.secondary)
+                Text("50 séances affichées. L’historique contient le détail complet.").foregroundStyle(LHTheme.secondaryText)
             }
         }
     }

@@ -106,7 +106,7 @@ struct GoalongRecordingSetupSheet: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Votre enregistrement local").font(LHTheme.sheetTitleFont)
                 Text("Tout est proposé. Décochez ce que vous ne souhaitez pas conserver.")
-                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
             Divider()
             ScrollView {
@@ -119,7 +119,7 @@ struct GoalongRecordingSetupSheet: View {
                         }
                     }
                     Text("Sur ce Mac uniquement. Les exclusions et la navigation privée gardent vos réglages. Aucun envoi n’est autorisé ici.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     if let error { Label(error, systemImage: "exclamationmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.warning) }
                 }.padding(24)
             }
@@ -269,7 +269,8 @@ struct GoalongRecordingCoverageNotice: View {
     private var profile: String { GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText) }
     var body: some View {
         if !hidden && consents.isEnabled(.localComputerHistory) && count < 8 && !(dismissible && dismissedProfile == profile) {
-            LHCard {
+            // A note is a tinted block without a border (DESIGN §8).
+            HStack(spacing: 16) {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(count == 0 ? "Seules les applications sont enregistrées" : "Suivi personnalisé · \(count)/8 types de détails")
@@ -282,7 +283,7 @@ struct GoalongRecordingCoverageNotice: View {
                     GoalongCompleteRecordingButton(model: model)
                     if dismissible {
                         Button { dismissedProfile = profile } label: {
-                            Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                            Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                         }
                         .buttonStyle(LHQuietButtonStyle())
                         .help("Garder mes choix et masquer ce message")
@@ -290,7 +291,10 @@ struct GoalongRecordingCoverageNotice: View {
                         .accessibilityIdentifier("recording-incomplete-dismiss")
                     }
                 }
-            }.accessibilityIdentifier("recording-incomplete-notice")
+            }
+            .padding(14)
+            .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+            .accessibilityIdentifier("recording-incomplete-notice")
         }
     }
 }

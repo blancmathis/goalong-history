@@ -675,11 +675,11 @@ import LocalHistoryCore
                     LHCard {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Accès pour \(capability.title)").font(.system(size: 15, weight: .semibold))
-                            Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(.secondary)
+                            Text(capability.accessExplanation).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             Text(status.message).font(.system(size: 13))
                             if status.isMacPermission { PermissionRecoveryView(status: status, capability: capability) }
                             Text("Votre choix de source est inchangé. Un accès manquant ne signifie pas une absence d’activité.")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             HStack(spacing: 12) {
                                 if status.hasSettingsAction {
                                     Button(status.actionTitle) { PermissionRecovery.rememberSetup(capability); SourceAccessService.openAccess(status) }

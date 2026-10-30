@@ -71,9 +71,8 @@
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "hand.raised.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(LHTheme.teal)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .frame(width: 40, height: 40)
-                        .background(LHTheme.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Choisir ce que Goalong suit")
                             .font(.system(size: 13, weight: .semibold))
@@ -81,7 +80,7 @@
                             "Désactiver le suivi ne concerne que les détails futurs. L’historique existant n’est pas modifié, Goalong reste toujours exclu et les règles de partage sont distinctes."
                         )
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -103,7 +102,7 @@
 
                 Text("\(filteredItems.count) source\(filteredItems.count == 1 ? "" : "s")")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(minWidth: 74, alignment: .trailing)
             }
         }
@@ -118,7 +117,7 @@
                                 .font(.system(size: 14, weight: .semibold))
                             Text("\(items.count)")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())
@@ -130,7 +129,7 @@
                         }
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(0.35)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .padding(.horizontal, 16)
                         .frame(height: 42)
 
@@ -170,7 +169,7 @@
                     }
                     Text(secondaryLabel(for: item))
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

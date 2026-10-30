@@ -230,7 +230,7 @@
 
                     HStack(spacing: 7) {
                         Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                         TextField("Filtrer le contexte des événements", text: $search)
                             .textFieldStyle(.plain)
                     }
@@ -244,7 +244,7 @@
                     Spacer(minLength: 8)
                     Text("\(filteredEvents.count)")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
 
                 if inspector.isLoading {
@@ -266,7 +266,7 @@
                             .foregroundStyle(LHTheme.warning)
                         Text(ActivityEventLabels.loadIssueWarning(count: inspector.loadIssues.count))
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                 }
             }
@@ -277,10 +277,10 @@
         private var compactEmpty: some View {
             HStack(spacing: 9) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 Text("Aucun événement ne correspond à ce filtre.")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 Spacer()
             }
             .padding(12)
@@ -303,7 +303,7 @@
                         .frame(width: 22)
                     Text(GoalongUIFormat.time(event.timestamp))
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                     Text(ActivityEventLabels.kind(event.kind))
                         .font(.system(size: 11, weight: .semibold))
                     if let reason = event.suppressionReason {
@@ -330,7 +330,7 @@
                     if !context.isEmpty {
                         Text(context.joined(separator: " › "))
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .textSelection(.enabled)
                     }
                     if let detail = eventDetail(event), !detail.isEmpty {
@@ -345,7 +345,7 @@
                                 .foregroundStyle(LHTheme.warning)
                             Text(String(semantic.prefix(1_500)))
                                 .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -360,7 +360,7 @@
                         "\(ActivityEventLabels.reason($0)) : le contexte détaillé n’a volontairement pas été enregistré."
                     } ?? "Le contexte détaillé n’a volontairement pas été enregistré.")
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
 
                 if let hash = event.integrity?.eventHash {
