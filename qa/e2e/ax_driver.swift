@@ -3,6 +3,7 @@
 // Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT [ROLE] | menu BUNDLE TOP [ITEM]
 //        | close-extra BUNDLE MAIN_TITLE | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE | input SECONDS
 //        | dismiss-alerts BUNDLE | scroll BUNDLE | set BUNDLE ID 0|1 | settext BUNDLE ID|LABEL TEXT
+//        | pressexact BUNDLE TEXT [ROLE] | popup BUNDLE OPENER [ITEM] [DUMP] | typekeys BUNDLE ID|LABEL TEXT (L3e)
 //        | act BUNDLE ACTION MODE ROLE NEEDLE SCROLLS (T-046, one matrix row) | textshot IN.txt OUT.png
 import AppKit
 import ApplicationServices
@@ -50,18 +51,47 @@ func describe(_ e: AXUIElement) -> String {
     return parts.joined(separator: " | ")
 }
 
+func dumpTree(_ bundle: String, to path: String) -> Int {
+    var out = ""
+    for root in roots(bundle) {
+        var budget = 4000
+        _ = walk(root, budget: &budget) { e, d in out += String(repeating: "  ", count: d) + describe(e) + "\n"; return false }
+    }
+    try? out.write(toFile: path, atomically: true, encoding: .utf8)
+    return out.split(separator: "\n").count
+}
+func normText(_ s: String) -> String {
+    s.replacingOccurrences(of: "\u{a0}", with: " ").replacingOccurrences(of: "\u{202f}", with: " ")
+        .replacingOccurrences(of: "'", with: "’")
+}
+let textRoles = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+/// L3e: a text field by exact AXIdentifier, then a title/description/placeholder equal to NEEDLE, then containing it.
+func findField(_ bundle: String, _ needle: String) -> AXUIElement? {
+    let n = normText(needle)
+    let labels = [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute, kAXPlaceholderValueAttribute]
+    for pass in 0..<3 {
+        for root in roots(bundle) {
+            var budget = 6000
+            var hit: AXUIElement?
+            _ = walk(root, budget: &budget) { e, _ in
+                guard textRoles.contains(text(e, kAXRoleAttribute)) else { return false }
+                let ok = pass == 0 ? text(e, "AXIdentifier") == needle
+                    : labels.contains { pass == 1 ? normText(text(e, $0)) == n : normText(text(e, $0)).contains(n) }
+                if ok { hit = e }
+                return ok
+            }
+            if let hit { return hit }
+        }
+    }
+    return nil
+}
+
 let args = CommandLine.arguments
 switch args.count > 1 ? args[1] : "" {
 case "trusted":
     print("AXIsProcessTrusted=\(AXIsProcessTrusted())")
 case "dump":
-    var out = ""
-    for root in roots(args[2]) {
-        var budget = 4000
-        _ = walk(root, budget: &budget) { e, d in out += String(repeating: "  ", count: d) + describe(e) + "\n"; return false }
-    }
-    try! out.write(toFile: args[3], atomically: true, encoding: .utf8)
-    print("dumped \(out.split(separator: "\n").count) nodes to \(args[3])")
+    print("dumped \(dumpTree(args[2], to: args[3])) nodes to \(args[3])")
 case "press":
     // Exact AXIdentifier first, then a title/description containing the text.
     // An optional ROLE (e.g. AXButton) keeps a label from matching a menu item of the same name.
@@ -108,6 +138,103 @@ case "pressprefix":
         }
     }
     print("pressprefix '\(prefix)': not found"); exit(5)
+case "pressexact":
+    // L3e: title or description equal to TEXT (a tab « Données » next to a button « Données pour ChatGPT… »).
+    let n = normText(args[3]), role = args.count > 4 ? args[4] : ""
+    for root in roots(args[2]) {
+        var budget = 6000
+        var hit: AXUIElement?
+        _ = walk(root, budget: &budget) { e, _ in
+            let r = text(e, kAXRoleAttribute)
+            let roleOK = role.isEmpty ? !["AXMenuItem", "AXMenuBarItem", "AXStaticText"].contains(r) : r == role
+            let ok = roleOK && [kAXTitleAttribute, kAXDescriptionAttribute].contains { normText(text(e, $0)) == n }
+            if ok { hit = e }
+            return ok
+        }
+        if let hit {
+            let status = AXUIElementPerformAction(hit, kAXPressAction as CFString)
+            print("pressexact '\(args[3])' -> \(describe(hit)) : \(status.rawValue)")
+            exit(status == .success || status.rawValue == -25204 ? 0 : 4)
+        }
+    }
+    print("pressexact '\(args[3])': not found"); exit(5)
+case "popup":
+    // L3e: open a menu (SwiftUI Menu, pop-up button, the status item's « Plus d’options ») and pick ITEM in the same
+    // process. The opener's press can block while the menu tracks: short timeout, then the items are read at once.
+    // No ITEM: open only, the row's act picks the item. DUMP: the AX tree right after the opener press (proof).
+    let bundle = args[2], opener = normText(args[3])
+    let item = normText(args.count > 4 ? args[4] : ""), dumpPath = args.count > 5 ? args[5] : ""
+    var target: AXUIElement?
+    for exact in [true, false] where target == nil {
+        for root in roots(bundle) where target == nil {
+            var budget = 6000
+            _ = walk(root, budget: &budget) { e, _ in
+                guard !["AXMenuItem", "AXMenuBarItem", "AXStaticText"].contains(text(e, kAXRoleAttribute)) else { return false }
+                let ok = exact ? text(e, "AXIdentifier") == args[3]
+                    : [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute].contains { normText(text(e, $0)).contains(opener) }
+                if ok { target = e }
+                return ok
+            }
+        }
+    }
+    guard let target else { print("popup '\(args[3])': opener not found"); exit(5) }
+    AXUIElementSetMessagingTimeout(target, 1.5)
+    var s = AXUIElementPerformAction(target, kAXPressAction as CFString).rawValue
+    if s != 0 && s != -25204 { s = AXUIElementPerformAction(target, kAXShowMenuAction as CFString).rawValue }
+    print("popup opener -> \(describe(target)) : \(s)")
+    usleep(700_000)
+    if !dumpPath.isEmpty { print("dumped \(dumpTree(bundle, to: dumpPath)) nodes to \(dumpPath)") }
+    if item.isEmpty { exit(s == 0 || s == -25204 ? 0 : 4) }
+    var hit: AXUIElement?
+    for _ in 0..<6 where hit == nil {
+        for root in [target] + roots(bundle) where hit == nil {
+            var budget = 8000
+            _ = walk(root, budget: &budget) { e, _ in
+                let ok = text(e, kAXRoleAttribute) == "AXMenuItem" && normText(text(e, kAXTitleAttribute)).contains(item)
+                if ok { hit = e }
+                return ok
+            }
+        }
+        if hit == nil { usleep(500_000) }
+    }
+    guard let hit else {
+        // Close the menu left open: an open menu blocks the next rows.
+        let src = CGEventSource(stateID: .hidSystemState)
+        for down in [true, false] { CGEvent(keyboardEventSource: src, virtualKey: 0x35, keyDown: down)?.post(tap: .cghidEventTap) }
+        print("popup item '\(args[4])': not found"); exit(5)
+    }
+    AXUIElementSetMessagingTimeout(hit, 1.5)
+    let ps = AXUIElementPerformAction(hit, kAXPressAction as CFString).rawValue
+    print("popup item -> \(describe(hit)) : \(ps)")
+    exit(ps == 0 || ps == -25204 ? 0 : 4)
+case "typekeys":
+    // L3e: settext does not reach a SwiftUI binding (L3d). Focus the field, click it, then type TEXT as key events.
+    guard let hit = findField(args[2], args[3]) else { print("typekeys '\(args[3])': not found"); exit(5) }
+    if let running = NSRunningApplication.runningApplications(withBundleIdentifier: args[2]).first { running.activate() }
+    AXUIElementSetAttributeValue(hit, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+    if let pos = attr(hit, kAXPositionAttribute), let size = attr(hit, kAXSizeAttribute) {
+        var p = CGPoint.zero, sz = CGSize.zero
+        AXValueGetValue(pos as! AXValue, .cgPoint, &p); AXValueGetValue(size as! AXValue, .cgSize, &sz)
+        let c = CGPoint(x: p.x + min(sz.width / 2, 40), y: p.y + sz.height / 2)
+        for t in [CGEventType.leftMouseDown, .leftMouseUp] {
+            CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
+        }
+    }
+    usleep(400_000)
+    let src = CGEventSource(stateID: .hidSystemState)
+    for ch in args[4].utf16 {
+        var u = ch
+        for down in [true, false] {
+            let ev = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: down)
+            ev?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &u)
+            ev?.post(tap: .cghidEventTap)
+        }
+        usleep(25_000)
+    }
+    usleep(500_000)
+    let now = (attr(hit, kAXValueAttribute) as? String) ?? ""
+    print("typekeys '\(args[3])' -> \(describe(hit)) value=\(now.prefix(80))")
+    exit(now.isEmpty || now.contains(args[4]) ? 0 : 4)  // A custom text area may expose no value: typed is enough.
 case "menu":
     // Application menu: TOP is the menu-bar title, ITEM a prefix of the item title (submenus searched too).
     guard let bar = attr(app(args[2]), kAXMenuBarAttribute) else { print("no menu bar"); exit(6) }
@@ -128,7 +255,7 @@ case "menu":
     guard let hit else { print("menu item '\(args[4])' not found"); exit(5) }
     let status = AXUIElementPerformAction(hit, kAXPressAction as CFString)
     print("menu '\(args[3])' > \(describe(hit)) : \(status.rawValue)")
-    exit(status == .success ? 0 : 4)
+    exit(status == .success || status.rawValue == -25204 ? 0 : 4)  // L3e: an alert opened by the item blocks the reply.
 case "close-extra":
     // Close every window of the app except the main one (support report, about, update windows).
     let main = args[3]
@@ -265,6 +392,8 @@ case "act":
     func texts(_ e: AXUIElement) -> [String] {
         var t = [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute].map { norm(text(e, $0)) }
         if let v = attr(e, kAXValueAttribute) as? String { t.append(norm(v)) }
+        // L3e: an unlabeled field is known by its placeholder (« Ajouter un site · exemple.fr », J-0847).
+        if textRoles.contains(text(e, kAXRoleAttribute)) { t.append(norm(text(e, kAXPlaceholderValueAttribute))) }
         return t
     }
     func isDialog(_ e: AXUIElement) -> Bool {

@@ -51,6 +51,11 @@ for back in range(args.days, -1 if args.today else 0, -1):
                 "app": {"name": name, "bundleIdentifier": bundle, "processIdentifier": 400 + (i // 7) % len(APPS)},
                 "window": {"title": f"Document synthétique T-046 {(i // 7) % 50}", "role": "AXWindow", "subrole": "AXStandardWindow"},
             }
+            if bundle == "com.apple.Safari":
+                # L3e: a website, so the export sheet lists a site row with its menu « Règles du site » (J-0908..0915).
+                # Not exemple-t046.fr: the rows that type a site into a list use that one.
+                event["url"] = {"value": f"https://docs.t046-synthetique.fr/page-{(i // 7) % 5}",
+                                "host": "docs.t046-synthetique.fr", "redactionApplied": False}
             out.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
     os.chmod(path, 0o600)
     total += args.per_day

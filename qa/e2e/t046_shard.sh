@@ -34,6 +34,8 @@ total=$(wc -l < "$OUT/plan-all.tsv"); part=${SLICE%/*}; parts=${SLICE#*/}
 from=$(( (part - 1) * total / parts + 1 )); to=$(( part * total / parts ))
 sed -n "${from},${to}p" "$OUT/plan-all.tsv" > "$OUT/plan.tsv"
 log "rows $from-$to of $total"
+# L3e: an empty slice (S4 with a t046-only.txt list of UI rows) stops here, before the app session.
+if [[ ! -s "$OUT/plan.tsv" ]]; then log "empty plan: nothing to run"; : > "$RESULTS"; exit 0; fi
 
 # ---------- app session (same setup as qa/e2e/runner_probe.sh)
 launch() { open "$APP"; sleep 8; pgrep -x "$EXE" >/dev/null; }
@@ -59,6 +61,9 @@ cleanup() {
 # L3d: pp:A|B tries each prefix in turn (blocking suggestions are gone once a list exists); ty:NEEDLE=TEXT types into
 # a field; pb:LABEL / pm:LABEL press an AXButton / AXMenuItem only; mi:TOP1,TOP2|ITEM picks an app-menu item;
 # pu:PRESS|NEEDLE presses PRESS until NEEDLE shows (onboarding steps).
+# L3e: px:TEXT presses the control whose title/description equals TEXT; pk:OPENER|ITEM opens a menu and picks ITEM in
+# one driver process (empty ITEM: the menu stays open for the row's act; the tree after the press goes to
+# rows/ax/<row>-menu.txt); tk:FIELD=TEXT types TEXT as key events into a field; dump:NAME saves rows/ax/<row>-NAME.txt.
 navigate() {
   local miss="" c
   for c in "$@"; do
@@ -91,6 +96,11 @@ navigate() {
       pc) panel=0 ;;
       set:*) drv set "$BUNDLE" ${c#set:} >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
       w:*) sleep "${c#w:}" ;;
+      px:*) drv pressexact "$BUNDLE" "${c#px:}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      pk:*) local k="${c#pk:}"
+        drv popup "$BUNDLE" "${k%%|*}" "${k#*|}" "$ROWS/ax/${CUR:-setup}-menu.txt" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      tk:*) local f="${c#tk:}"; drv typekeys "$BUNDLE" "${f%%=*}" "${f#*=}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      dump:*) drv dump "$BUNDLE" "$ROWS/ax/${CUR:-setup}-${c#dump:}.txt" >/dev/null 2>&1 ;;
     esac
   done
   printf '%s' "$miss"
@@ -103,7 +113,7 @@ record() { # id verdict png ax cause detail
 ui_row() { # id kind nav mode role needle action
   local id="$1" kind="$2" navs="$3" mode="$4" role="$5" needle="$6" action="$7" miss out st verdict cause
   pgrep -x "$EXE" >/dev/null || { launch; open_dashboard; }
-  front
+  front; CUR="$id"
   eval "set -- $navs"
   miss="$(navigate "$@")"
   out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" "$([[ $kind == trigger ]] && echo 0 || echo 3)" 2>&1)"; st=$?
@@ -114,7 +124,7 @@ ui_row() { # id kind nav mode role needle action
     5) if [[ $kind == trigger ]]; then verdict=N/A; cause="trigger-not-scripted"; else verdict=fail; cause="not-found"; fi ;;
     *) verdict=fail; cause="driver-exit-$st" ;;
   esac
-  [[ -n $miss && $verdict == fail ]] && cause="nav($miss)$cause"
+  [[ -n $miss && $verdict != pass ]] && cause="nav($miss)$cause"  # L3e: N/A rows show their nav miss too.
   record "$id" "$verdict" "rows/$id.png" "rows/ax/$id.txt" "$cause" "$out"
   cleanup
 }
@@ -143,6 +153,13 @@ printf 'Note de test synthétique T-046.\nAucune donnée réelle.\n' > "$RUNNER_
 # L3b prepared state: 14 days of activity (same seed as L4), and one local Claude Code conversation in the
 # runner's own HOME (disposable VM) for the Conversations IA source.
 python3 -I "$HERE/seed_events.py" "$DATA" --days 14 --per-day 720 --today | tee -a "$SUMMARY"
+# L3e: the work definition and a synthetic Jev key as files the app reads at launch (settext and typed UI fields do
+# not reach the SwiftUI bindings, L3d). JevWorkContextStore: jev/work-context.json schema 3, <= 800 bytes;
+# JevMonitor: jev/api-key, 8-1024 printable ASCII. JevLocalFiles: dir 0700, files 0600.
+mkdir -p "$DATA/jev"; chmod 700 "$DATA/jev"
+printf '%s' '{"schemaVersion":3,"summary":"Rédiger le rapport T-046 et préparer la démo","applications":"TextEdit, Terminal, Xcode","content":"rapport, démo, tests","procrastination":"vidéos, réseaux sociaux"}' > "$DATA/jev/work-context.json"
+printf '%s' 't046-synthetic-key-not-a-real-secret' > "$DATA/jev/api-key"
+chmod 600 "$DATA/jev/work-context.json" "$DATA/jev/api-key"
 conv="$HOME/.claude/projects/-tmp-t046"; mkdir -p "$conv"
 ts="$(date -u -v-2H +%FT%TZ)"; sid="7e046000-0000-4000-8000-000000000046"
 printf '%s\n' \
@@ -193,10 +210,7 @@ for t in "Rédiger la note T-046" "Relire le rapport synthétique" "Préparer la
   tmo 60 "$GOALONG" --root "$DATA" plan add "$t" --estimate 45 >> "$SUMMARY" 2>&1 || log "plan add failed: $t"
 done
 tmo 60 "$GOALONG" --root "$DATA" commitment set --day today --kind work --target 2h >> "$SUMMARY" 2>&1 || log "commitment set failed"
-# L3d: a saved work definition (Mon travail rows: Corriger, Autoriser…, the studio prompt) typed through the UI.
-log "nav miss: $(navigate nav:work o:monitoring-edit-goals "ty:monitoring-work-goals=Rédiger le rapport T-046 et préparer la démo" \
-  "ty:monitoring-work-apps=TextEdit, Terminal, Xcode" "ty:monitoring-work-content=rapport, démo, tests" \
-  "ty:monitoring-procrastination=vidéos, réseaux sociaux" p:monitoring-save-goals w:2)"; cleanup
+# L3e: the work definition is seeded in jev/work-context.json before launch (the UI typing of L3d saved nothing).
 log "nav miss: $(navigate nav:history p:"Conversations locales" w:2 o:source-aiConversations w:3 o:"Détecter les dossiers courants" w:3)"; cleanup
 open -a TextEdit "$RUNNER_TEMP/synthetic-note.txt"; sleep 3; drv input 60 >> "$SUMMARY"
 open -a Safari; sleep 3; drv input 30 >> "$SUMMARY"

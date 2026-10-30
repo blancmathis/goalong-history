@@ -98,6 +98,13 @@ RECIPES = {
     "J-0467": ("", "label", "AXButton", "Actualiser"),
     "J-0475": ("", "label", "AXPopUpButton", "Trier les usages"),
     "J-0477": ("", "label", "AXButton", "Exporter les durées"),
+    # L3e: the permission row's button carries a fixed id; several « activity-usage » buttons share one id (J-0476);
+    # the confirmation dialog's buttons are action-button-N: match « Annuler » (J-0444).
+    "J-0807": ("", "id", "AXButton", "permission-primary-action"),
+    "J-0476": ("", "label", "AXButton", "Voir les "),
+    "J-0444": ("", "label", "AXButton", "Annuler"),
+    # L3e: « Actions groupées » items, in the menu the nav leaves open (pk:Actions groupées|).
+    **{f"J-{n:04d}": ("", "menuitem", "AXMenuItem", None) for n in (427, 428, 429)},
     # The site rules are the items of the row menu « Règles du site » (opened by the nav).
     **{f"J-{n:04d}": ("", "menuitem", "AXMenuItem", None) for n in range(908, 916)},
 }
