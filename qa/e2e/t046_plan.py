@@ -93,6 +93,13 @@ FILE_NAV = {
 RECIPES = {
     # Computed id: the morning panel is open on the runner (evening one after 18:00 local).
     "J-0147": ("", "id", "AXButton", "concentration-morning-panel"),
+    # L3d: a container id (activity-header, activity-usage) hides the child id: match the child's label.
+    "J-0466": ("", "label", "AXButton", "Aujourd’hui"),
+    "J-0467": ("", "label", "AXButton", "Actualiser"),
+    "J-0475": ("", "label", "AXPopUpButton", "Trier les usages"),
+    "J-0477": ("", "label", "AXButton", "Exporter les durées"),
+    # The site rules are the items of the row menu « Règles du site » (opened by the nav).
+    **{f"J-{n:04d}": ("", "menuitem", "AXMenuItem", None) for n in range(908, 916)},
 }
 
 LITERAL_CALL = re.compile(r'(?:(?:Button|Toggle|DatePicker|Stepper|Picker|Label|TextField|SecureField|Menu|Link|Text|'
@@ -116,7 +123,28 @@ def resolve(src, path, line):
         lines = open(f"{src}/{path}", encoding="utf-8").read().split("\n")
     except OSError:
         return ""
-    return literal("\n".join(lines[line - 1:line + 5]))
+    # L3d: a fileline on a modifier (.keyboardShortcut) below its Button: the nearest literal above.
+    return literal("\n".join(lines[line - 1:line + 5])) or next(
+        (lit for k in range(line - 2, max(line - 10, 0) - 1, -1) if (lit := literal(lines[k]))), "")
+
+
+def cancel_shortcut(src, target):
+    """The fileline's button is the .cancelAction one: its shortcut is Escape, not Return."""
+    m = re.search(r"@(Sources/\S+?\.swift):(\d+)", target)
+    if not m:
+        return False
+    try:
+        lines = open(f"{src}/{m.group(1)}", encoding="utf-8").read().split("\n")
+    except OSError:
+        return False
+    here = lines[int(m.group(2)) - 1] if int(m.group(2)) <= len(lines) else ""
+    # The fileline is the button or its .keyboardShortcut line: decide on that line, else on the next one.
+    for text in (here, lines[int(m.group(2))] if int(m.group(2)) < len(lines) else ""):
+        if ".defaultAction" in text:
+            return False
+        if ".cancelAction" in text:
+            return True
+    return False
 
 
 _FILES = {}
@@ -196,6 +224,10 @@ def main():
             kind, na = "na", f"cible non reconnue par le pilote : {target}"
         if kind == "ui" and mode == "label" and role in ("AXSheet", "AXDialog", "AXWindow", "AXPopover"):
             kind = "trigger"  # The container is opened by another control; found only if navigation opened it.
+            if role == "AXSheet":
+                mode = "dialog"  # L3d: the title is a child of the sheet, not an attribute (J-0722).
+        if action == "shortcut" and cancel_shortcut(src, target):
+            action = "escape"
         if kind == "trigger" and not needle:
             kind, na = "na", "dialogue ouvert par une action hôte non scriptée (" + target.split("(")[-1].rstrip(")") + ")"
         if kind in ("ui", "trigger"):
@@ -204,8 +236,8 @@ def main():
             nav = "si p:\"Plus d’options\" pc w:1"
         if kind in ("ui", "trigger") and rid in nav_of:
             nav = nav_of[rid]
-            if nav == "@onboarding":  # Seen only on the fresh app: run with the onboarding rows.
-                nav, screen = "", "Onboarding"
+            if nav.startswith("@onboarding"):  # Seen only on the fresh app: run with the onboarding rows.
+                nav, screen = nav[len("@onboarding"):].strip(), "Onboarding"
         if rid in RECIPES:
             extra, m2, r2, n2 = RECIPES[rid]
             nav = (nav + " " + extra).strip()

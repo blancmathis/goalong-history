@@ -56,6 +56,9 @@ cleanup() {
 }
 # Navigation vocabulary (as qa/e2e/lot1_steps.sh): nav:SECTION pane:PANE p:LABEL (required) pp:ID-PREFIX (required, first id starting with it) o:LABEL (optional)
 # si (status item) pc (panel closed itself) w:N set:ID\ 0|1 t:DISCLOSURE|TARGET. Prints the failed required steps.
+# L3d: pp:A|B tries each prefix in turn (blocking suggestions are gone once a list exists); ty:NEEDLE=TEXT types into
+# a field; pb:LABEL / pm:LABEL press an AXButton / AXMenuItem only; mi:TOP1,TOP2|ITEM picks an app-menu item;
+# pu:PRESS|NEEDLE presses PRESS until NEEDLE shows (onboarding steps).
 navigate() {
   local miss="" c
   for c in "$@"; do
@@ -70,7 +73,19 @@ navigate() {
               drv press "$BUNDLE" settings-back >/dev/null 2>&1 && sleep 1
               if [[ "${c#pane:}" != home ]]; then press3 "settings-${c#pane:}" || miss+="$c;"; sleep 1.5; fi ;;
       p:*) drv press "$BUNDLE" "${c#p:}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
-      pp:*) drv pressprefix "$BUNDLE" "${c#pp:}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      pp:*) local ok=0 a; IFS='|' read -ra alts <<< "${c#pp:}"
+            for a in "${alts[@]}"; do drv pressprefix "$BUNDLE" "$a" >/dev/null 2>&1 && { ok=1; break; }; done
+            ((ok)) || miss+="$c;"; sleep 1 ;;
+      pu:*) local u="${c#pu:}" k  # pu:PRESS|NEEDLE: press PRESS (onboarding-continue) until NEEDLE is in the AX tree.
+            for k in 1 2 3 4; do drv dump "$BUNDLE" "$RUNNER_TEMP/pu.txt" >/dev/null 2>&1
+              grep -qF -- "${u#*|}" "$RUNNER_TEMP/pu.txt" && break
+              drv press "$BUNDLE" "${u%%|*}" >/dev/null 2>&1 || { miss+="$c;"; break; }; sleep 3; done ;;
+      ty:*) local f="${c#ty:}"; drv settext "$BUNDLE" "${f%%=*}" "${f#*=}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      pb:*) drv press "$BUNDLE" "${c#pb:}" AXButton >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      pm:*) drv press "$BUNDLE" "${c#pm:}" AXMenuItem >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      mi:*) local m="${c#mi:}" ok=0 top; IFS=',' read -ra tops <<< "${m%%|*}"
+            for top in "${tops[@]}"; do drv menu "$BUNDLE" "$top" "${m#*|}" >/dev/null 2>&1 && { ok=1; break; }; done
+            ((ok)) || miss+="$c;"; sleep 1.5 ;;
       o:*) drv press "$BUNDLE" "${c#o:}" >/dev/null 2>&1; sleep 1 ;;
       si) drv status-item "$BUNDLE" >/dev/null 2>&1 && panel=$((1 - panel)) || miss+="si;"; sleep 2 ;;
       pc) panel=0 ;;
@@ -144,6 +159,8 @@ while IFS=$'\037' read -r -u 3 id kind navs mode role needle action na screen; d
   [[ $screen == Onboarding ]] || continue
   echo "$id" >> "$OUT/done.ids"
   if [[ $kind == na ]]; then record "$id" N/A "" "" na "$na"; continue; fi
+  # L3d: an onboarding row may need its step first (navs = onboarding-continue presses, from t046-nav.tsv @onboarding).
+  if [[ -n $navs ]]; then eval "set -- $navs"; navigate "$@" >/dev/null; fi
   out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" 0 2>&1)"; st=$?
   rowshot "$id"; drv dismiss-alerts "$BUNDLE" >/dev/null 2>&1
   read -r v c <<< "$(row_verdict "$kind" "$st")"
@@ -176,6 +193,10 @@ for t in "Rédiger la note T-046" "Relire le rapport synthétique" "Préparer la
   tmo 60 "$GOALONG" --root "$DATA" plan add "$t" --estimate 45 >> "$SUMMARY" 2>&1 || log "plan add failed: $t"
 done
 tmo 60 "$GOALONG" --root "$DATA" commitment set --day today --kind work --target 2h >> "$SUMMARY" 2>&1 || log "commitment set failed"
+# L3d: a saved work definition (Mon travail rows: Corriger, Autoriser…, the studio prompt) typed through the UI.
+log "nav miss: $(navigate nav:work o:monitoring-edit-goals "ty:monitoring-work-goals=Rédiger le rapport T-046 et préparer la démo" \
+  "ty:monitoring-work-apps=TextEdit, Terminal, Xcode" "ty:monitoring-work-content=rapport, démo, tests" \
+  "ty:monitoring-procrastination=vidéos, réseaux sociaux" p:monitoring-save-goals w:2)"; cleanup
 log "nav miss: $(navigate nav:history p:"Conversations locales" w:2 o:source-aiConversations w:3 o:"Détecter les dossiers courants" w:3)"; cleanup
 open -a TextEdit "$RUNNER_TEMP/synthetic-note.txt"; sleep 3; drv input 60 >> "$SUMMARY"
 open -a Safari; sleep 3; drv input 30 >> "$SUMMARY"

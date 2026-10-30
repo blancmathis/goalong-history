@@ -14,7 +14,10 @@ import pathlib
 import uuid
 
 APPS = [("TextEdit", "com.apple.TextEdit"), ("Safari", "com.apple.Safari"), ("Finder", "com.apple.finder"),
-        ("Terminal", "com.apple.Terminal"), ("Xcode", "com.apple.dt.Xcode"), ("Notes", "com.apple.Notes")]
+        ("Terminal", "com.apple.Terminal"), ("Xcode", "com.apple.dt.Xcode"), ("Notes", "com.apple.Notes"),
+        # L3d: more than 8 usages, so Activité shows « Voir les N usages » (J-0476, GoalongActivityUsageList:55).
+        ("Mail", "com.apple.mail"), ("Calendrier", "com.apple.iCal"), ("Aperçu", "com.apple.Preview"),
+        ("Musique", "com.apple.Music"), ("Pages", "com.apple.iWork.Pages"), ("Rappels", "com.apple.reminders")]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("root")

@@ -2,7 +2,7 @@
 // it presses real controls in the target app.
 // Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT [ROLE] | menu BUNDLE TOP [ITEM]
 //        | close-extra BUNDLE MAIN_TITLE | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE | input SECONDS
-//        | dismiss-alerts BUNDLE | scroll BUNDLE | set BUNDLE ID 0|1
+//        | dismiss-alerts BUNDLE | scroll BUNDLE | set BUNDLE ID 0|1 | settext BUNDLE ID|LABEL TEXT
 //        | act BUNDLE ACTION MODE ROLE NEEDLE SCROLLS (T-046, one matrix row) | textshot IN.txt OUT.png
 import AppKit
 import ApplicationServices
@@ -206,6 +206,30 @@ case "set":
     let after = (attr(hit, kAXValueAttribute) as? NSNumber)?.intValue ?? -1
     print("set '\(args[3])' \(now) -> \(after) (wanted \(args[4])) : \(status.rawValue)")
     exit(after == Int(args[4]) ? 0 : 4)
+case "settext":
+    // Type TEXT into a text field found by exact AXIdentifier, else by a title/description/placeholder containing ID|LABEL.
+    // L3d: a search with no result, a domain to exclude, the saved work definition (state seeded through the UI).
+    var hit: AXUIElement?
+    for exact in [true, false] where hit == nil {
+        for root in roots(args[2]) where hit == nil {
+            var budget = 6000
+            _ = walk(root, budget: &budget) { e, _ in
+                let r = text(e, kAXRoleAttribute)
+                guard ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(r) else { return false }
+                let ok = exact ? text(e, "AXIdentifier") == args[3]
+                    : [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute, kAXPlaceholderValueAttribute].contains { text(e, $0).contains(args[3]) }
+                if ok { hit = e }
+                return ok
+            }
+        }
+    }
+    guard let hit else { print("settext '\(args[3])': not found"); exit(5) }
+    AXUIElementSetAttributeValue(hit, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+    let s = AXUIElementSetAttributeValue(hit, kAXValueAttribute as CFString, args[4] as CFString)
+    usleep(500_000)
+    let now = (attr(hit, kAXValueAttribute) as? String) ?? ""
+    print("settext '\(args[3])' -> \(describe(hit)) : \(s.rawValue)")
+    exit(now == args[4] ? 0 : 4)
 case "input":
     // Synthetic HID input into the frontmost app (runner only): mouse moves and letter keys, so the
     // app's listen-only event tap counts active time. Typed text goes into the runner's synthetic note.
@@ -264,7 +288,9 @@ case "act":
             var budget = 8000
             _ = walk(root, budget: &budget) { e, _ in
                 let r = text(e, kAXRoleAttribute)
-                let roleOK = role.isEmpty || !roleStrict ? (mode == "menuitem" || role == "AXMenuItem" || !["AXMenuItem", "AXMenuBarItem"].contains(r)) : r == role
+                // Dialog mode: isDialog decides (an alert shows as AXSheet desc=alerte, not only AXDialog; L3c).
+                let roleOK = mode == "dialog" ? true
+                    : role.isEmpty || !roleStrict ? (mode == "menuitem" || role == "AXMenuItem" || !["AXMenuItem", "AXMenuBarItem"].contains(r)) : r == role
                 guard roleOK else { return false }
                 let ok: Bool
                 switch mode {
@@ -361,18 +387,19 @@ case "act":
             print("press=\(s)"); print("menu_items_visible=\(items)")
             pass = okStatus(s)
         }
-    case "shortcut":
-        // Menu item: its key equivalent; anything else: Return (default action) to the app.
+    case "shortcut", "escape":
+        // .defaultAction button: Return; .cancelAction button (action escape): Escape. Sent to the app.
         let before = signature()
         let pid = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first!.processIdentifier
         NSRunningApplication(processIdentifier: pid)?.activate()
         AXUIElementSetAttributeValue(e, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         usleep(300_000)
         let src = CGEventSource(stateID: .hidSystemState)
-        for down in [true, false] { CGEvent(keyboardEventSource: src, virtualKey: 0x24, keyDown: down)?.post(tap: .cghidEventTap) }
+        let key: CGKeyCode = action == "escape" ? 0x35 : 0x24
+        for down in [true, false] { CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: down)?.post(tap: .cghidEventTap) }
         usleep(1_200_000)
         let changed = before != signature()
-        print("key=Return"); print("changed=\(changed ? 1 : 0)"); pass = changed
+        print("key=\(action == "escape" ? "Escape" : "Return")"); print("changed=\(changed ? 1 : 0)"); pass = changed
     default:  // observe
         print("role=\(r)"); print("enabled=\((attr(e, kAXEnabledAttribute) as? Bool).map { "\($0)" } ?? "-")")
     }
