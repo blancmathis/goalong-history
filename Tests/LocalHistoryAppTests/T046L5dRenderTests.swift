@@ -65,6 +65,25 @@ final class T046L5dRenderTests: XCTestCase {
                        "An earlier end does not extend the lock")
     }
 
+    @MainActor func testJevMenuShowsTheStatusAndOpensTheMonitoringPage() {
+        var opened = 0
+        let parent = NSMenu()
+        JevMenuController.shared.install(in: parent, onOpenMonitoring: { opened += 1 })
+        let menu = try! XCTUnwrap(parent.items.first?.submenu)
+        JevMenuController.shared.menuNeedsUpdate(menu)
+        let titles = menu.items.map(\.title)
+        XCTAssertEqual(titles.first, JevMonitor.shared.status, "The first line states the monitoring status")
+        XCTAssertFalse(menu.items[0].isEnabled, "The status line is not clickable")
+        XCTAssertTrue(titles.contains("Ouvrir la surveillance…"), "saw \(titles)")
+        let open = try! XCTUnwrap(menu.items.first { $0.title == "Ouvrir la surveillance…" })
+        _ = open.target?.perform(open.action)
+        XCTAssertEqual(opened, 1, "The item opens the monitoring page")
+        if !JevMonitor.shared.enabled {
+            XCTAssertFalse(titles.contains("Désactiver la surveillance"), "Nothing to disable while monitoring is off")
+            XCTAssertFalse(titles.contains { $0.hasPrefix("Pause de ") }, "No break is offered while monitoring is off")
+        }
+    }
+
     // MARK: Rendu
 
     /// Renders off screen and returns every identifier, label, title and string value of the AX tree.
