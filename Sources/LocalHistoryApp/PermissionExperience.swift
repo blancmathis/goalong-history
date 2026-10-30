@@ -204,7 +204,7 @@ extension Notification.Name {
                 // Deliberately visible here, not hidden in an already-collapsed disclosure.
                 PermissionRepairControl(status: status, capability: capability)
             case .grant:
-                Button("Ouvrir Réglages Système") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Ouvrir Réglages Système…") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
                 Button("J’ai déjà activé cet accès dans macOS") {
                     // This is a report from the user, not an OS permission result.
                     PermissionRecoveryLedger.record(.settingsOpened, for: status)
@@ -213,11 +213,11 @@ extension Notification.Name {
             case .relaunch:
                 restartButton("Relancer et vérifier")
             case .reauthorize:
-                Button("Ouvrir les réglages pour réautoriser") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Ouvrir Réglages Système…") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
                 restartButton("Relancer après autorisation")
             case .manualRepair:
                 Button("Afficher la copie exacte à ajouter") { reveal() }.buttonStyle(LHSecondaryButtonStyle())
-                Button("Ouvrir Réglages Système") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Ouvrir Réglages Système…") { openSettings() }.buttonStyle(LHSecondaryButtonStyle())
                 restartButton("Relancer après remplacement de l’entrée")
             case .installStableCopy, .replaceInvalidBuild, .closeOtherCopy:
                 Button("Afficher cette copie dans le Finder") { reveal() }.buttonStyle(LHSecondaryButtonStyle())

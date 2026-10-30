@@ -29,7 +29,7 @@ import LocalHistoryCore
             switch self {
             case .accessibility: return "Autoriser l’accessibilité"
             case .inputMonitoring: return "Autoriser la surveillance de l’entrée"
-            case .fullDiskAccess: return "Ouvrir Réglages Système"
+            case .fullDiskAccess: return "Ouvrir Réglages Système…"
             case .screenTimeSetup: return "Ouvrir Temps d’écran"
             case .ready, .unavailable: return "Réessayer"
             }
@@ -459,7 +459,7 @@ import LocalHistoryCore
             if flow.checking { return "Vérification de l’accès…" }
             if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Terminé" : copy.activateTitle }
             if needsRestart { return "Quitter et rouvrir" }
-            if !openedSettings && access.hasSettingsAction { return "Ouvrir Réglages Système" }
+            if !openedSettings && access.hasSettingsAction { return "Ouvrir Réglages Système…" }
             return "Vérifier l’accès"
         }
 
@@ -519,14 +519,14 @@ import LocalHistoryCore
                     Spacer(minLength: 8)
                     // Step 1 says « Ouvrir les réglages macOS »: give it a button even when the source is unavailable.
                     if isUnavailable && !ready && !openedSettings {
-                        Button("Ouvrir Réglages Système") {
+                        Button("Ouvrir Réglages Système…") {
                             if copy.permission == "Accès complet au disque" { PermissionManager.shared.openFullDiskAccessSettings() }
                             else { PermissionManager.shared.openPrivacySettings() }
                         }.buttonStyle(LHSecondaryButtonStyle()).disabled(flow.checking || restarting)
                         .accessibilityIdentifier("permission-open-settings")
                     }
                     if openedSettings && !ready {
-                        Button(needsRestart ? "Vérifier à nouveau" : "Ouvrir Réglages Système") {
+                        Button(needsRestart ? "Vérifier à nouveau" : "Ouvrir Réglages Système…") {
                             if needsRestart { manualChecks += 1; check() } else { openSettings() }
                         }.buttonStyle(LHSecondaryButtonStyle()).disabled(flow.checking || restarting)
                     }
