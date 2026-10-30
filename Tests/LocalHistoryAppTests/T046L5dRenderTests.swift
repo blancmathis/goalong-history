@@ -135,6 +135,12 @@ final class T046L5dRenderTests: XCTestCase {
         }
         XCTAssertEqual(isEnabled("Envoyer les données relues", in: rendered), false, "Nothing is sent without consent, address and access file")
         XCTAssertEqual(isEnabled("Conserver sur ce Mac", in: rendered), true)
+        XCTAssertTrue(seen.contains { $0.contains("Journée") }, "The day picker of the preview (line 158); saw \(seen.sorted())")
+        XCTAssertFalse(seen.contains("Oublier"), "No access file is chosen, so there is nothing to forget (line 203)")
+        XCTAssertTrue(press("J’autorise l’envoi de ces données Santé au site indiqué.", in: rendered))
+        settle()
+        XCTAssertEqual(isEnabled("Envoyer les données relues", in: rendered), false, "Consent alone is not enough: the address field (line 200) and the access file are empty")
+        assertNoVisibleWindow()
     }
 
     /// Click without a window: the accessibility action of the off-screen view, nothing is shown.
@@ -145,6 +151,75 @@ final class T046L5dRenderTests: XCTestCase {
         XCTAssertTrue(press(label, in: rendered), "The switch answers to the accessibility press; saw \(strings(of: rendered).sorted())")
         settle()
         XCTAssertTrue(strings(of: rendered).contains("Conversations actives depuis"), "Switching on shows the start date; saw \(strings(of: rendered).sorted())")
+        assertNoVisibleWindow()
+    }
+
+    /// Click without a window: choosing nothing disables the preview (GoalongHealthImportSheet.swift:146).
+    @MainActor func testHealthImportWithEveryGroupSwitchedOffCannotPrepareThePreview() {
+        let rendered = host(GoalongHealthImportSheet(gallery: .failed("Ce fichier n’a pas pu être lu.")))
+        for group in GoalongHealthGroup.allCases { XCTAssertTrue(press(group.title, in: rendered), "The switch for \(group.title) answers to the press") }
+        settle()
+        XCTAssertEqual(isEnabled("Préparer l’aperçu local", in: rendered), false, "Nothing is chosen, so nothing can be prepared; saw \(strings(of: rendered).sorted())")
+        XCTAssertTrue(press(GoalongHealthGroup.allCases[0].title, in: rendered))
+        settle()
+        XCTAssertEqual(isEnabled("Préparer l’aperçu local", in: rendered), true, "One group is enough")
+        assertNoVisibleWindow()
+    }
+
+    @MainActor func testWebsiteConnectionSheetWithoutAccessAsksToPairFromTheSite() {
+        let rendered = host(GoalongWebsiteConnectionSheet())
+        let seen = strings(of: rendered)
+        for label in ["Relier votre compte Goalong", "1. Votre compte Goalong", "Relier depuis le site", "Connexion manuelle et options avancées",
+                      "2. Choisir vos données", "3. Vérifier avant l’envoi", "Terminé", "Noms des applications et durées",
+                      "Répartition par heure, si elle est enregistrée", "Sites observés sur ce Mac", "Résumé d’analyse enregistré",
+                      "Rapport structuré de productivité", "Calculer le rythme à partir de l’historique de ce Mac", "Partage ponctuel avancé"] {
+            XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
+        }
+        XCTAssertFalse(seen.contains("Accès enregistré sur ce Mac"), "No access file is chosen")
+        XCTAssertEqual(isEnabled("Envoyer les données vérifiées", in: rendered), false, "Nothing is sent without a preview, an address and an access file")
+        XCTAssertEqual(isEnabled("Préparer l’aperçu hors ligne", in: rendered), true)
+        XCTAssertEqual(isEnabled("Terminé", in: rendered), true, "Nothing is running, so the sheet can be closed")
+    }
+
+    @MainActor func testWebsiteConnectionSheetAdvancedOptionsOfferTheAccessFileAndThePastedPath() {
+        let rendered = host(GoalongWebsiteConnectionSheet())
+        XCTAssertTrue(press("Connexion manuelle et options avancées", in: rendered), "saw \(strings(of: rendered).sorted())")
+        settle()
+        var seen = strings(of: rendered)
+        for label in ["Adresse et accès enregistrés", "Choisir le fichier d’accès…", "Autre méthode : coller le chemin du fichier", "Ouvrir « Sources » sur le site"] {
+            XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
+        }
+        XCTAssertFalse(seen.contains("Oublier le fichier"), "Nothing to forget without an access file")
+        XCTAssertTrue(press("Autre méthode : coller le chemin du fichier", in: rendered), "saw \(seen.sorted())")
+        settle()
+        seen = strings(of: rendered)
+        XCTAssertTrue(seen.contains("Valider ce fichier"), "saw \(seen.sorted())")
+        XCTAssertEqual(isEnabled("Valider ce fichier", in: rendered), false, "An empty path cannot be validated")
+        assertNoVisibleWindow()
+    }
+
+    @MainActor func testWebsiteConnectionSheetSwitchesRevealTheirChoices() {
+        let rendered = host(GoalongWebsiteConnectionSheet())
+        XCTAssertFalse(strings(of: rendered).contains("Charger le récap de cette journée"), "The recap choices wait for the switch")
+        XCTAssertTrue(press("Résumé d’analyse enregistré", in: rendered), "saw \(strings(of: rendered).sorted())")
+        settle()
+        var seen = strings(of: rendered)
+        XCTAssertTrue(seen.contains("Charger le récap de cette journée"), "saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Produire ou actualiser avec mon agent"), "saw \(seen.sorted())")
+        XCTAssertFalse(seen.contains { $0.hasPrefix("Les mêmes durées deviennent un rapport modifiable") })
+        XCTAssertTrue(press("Rapport structuré de productivité", in: rendered))
+        settle()
+        XCTAssertTrue(strings(of: rendered).contains { $0.hasPrefix("Les mêmes durées deviennent un rapport modifiable") }, "The note appears with the switch")
+        XCTAssertFalse(seen.contains("Inclure l’heure de début précise"), "The rhythm choices wait for the switch")
+        XCTAssertTrue(press("Calculer le rythme à partir de l’historique de ce Mac", in: rendered))
+        settle()
+        seen = strings(of: rendered)
+        for label in ["Analyser le contexte d’une session…", "Inclure les épisodes simplifiés", "Inclure l’heure de début précise",
+                      "Association simple par application, sans analyse du contexte"] {
+            XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
+        }
+        XCTAssertFalse(seen.contains("Inclure les sujets, explications et éléments de contexte relus"), "Context needs a reviewed session")
+        assertNoVisibleWindow()
     }
 
     // MARK: Rendu
@@ -158,6 +233,10 @@ final class T046L5dRenderTests: XCTestCase {
         view.layoutSubtreeIfNeeded()
         settle()
         return view
+    }
+
+    @MainActor private func assertNoVisibleWindow(file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(NSApplication.shared.windows.filter(\.isVisible).isEmpty, "A press must not show a window", file: file, line: line)
     }
 
     @MainActor private func settle() { RunLoop.current.run(until: Date().addingTimeInterval(0.35)) }
@@ -189,9 +268,10 @@ final class T046L5dRenderTests: XCTestCase {
 
     /// Presses the first element with this label that answers to the accessibility press.
     @MainActor private func press(_ label: String, in view: NSView) -> Bool {
-        for node in nodes(of: view) where node.texts.contains(label) && node.enabled {
-            if flag(node.object, "accessibilityPerformPress") == true { return true }
-        }
+        let all = nodes(of: view).filter { $0.enabled }
+        // A button built from several texts (a disclosure) carries a composed label: fall back to a label that contains this one.
+        for node in all where node.texts.contains(label) { if flag(node.object, "accessibilityPerformPress") == true { return true } }
+        for node in all where node.texts.contains(where: { $0.contains(label) }) { if flag(node.object, "accessibilityPerformPress") == true { return true } }
         return false
     }
 
