@@ -118,10 +118,18 @@
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer()
-                    Button("Choisir les données") { model.selectSection(.settings); model.settingsPane = .chatGPT }
-                        .buttonStyle(LHSecondaryButtonStyle())
+                    // Analyses off: this is what unblocks « Analyser », so it carries the page's one primary (UI-68).
+                    if consents.isEnabled(.chatGPTAnalysis) {
+                        chooseDataButton.buttonStyle(LHSecondaryButtonStyle())
+                    } else {
+                        chooseDataButton.buttonStyle(LHPrimaryButtonStyle())
+                    }
                 }
             }
+        }
+
+        private var chooseDataButton: some View {
+            Button("Choisir les données") { model.selectSection(.settings); model.settingsPane = .chatGPT }
         }
 
         private func proofCard(
@@ -251,7 +259,9 @@
                             ? "Partagez le fichier JSON pour conserver sa signature. Le destinataire peut le vérifier hors ligne avec : goalong verify-recap CHEMIN"
                             : "Ouvrir les fichiers de rapport. Les anciens rapports n’ont pas de signature locale."
                     )
-                    // Lime only when it can run: a blocked « Analyser » leaves the primary to the unblocking action (UI-68).
+                    // Lime only when it can run. Blocked, the primary moves to what unblocks it: « Choisir les données »
+                    // when analyses are off, « Connecter ChatGPT » or « Mettre Goalong à jour » in the connection card.
+                    // A day without activity has nothing to unblock, so it has no primary (UI-68).
                     Group {
                         if canGenerate {
                             generateButton.buttonStyle(LHPrimaryButtonStyle())

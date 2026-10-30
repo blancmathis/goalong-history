@@ -47,7 +47,8 @@ struct ChatGPTAccountConnectionCard: View {
                 }
             }
         case .codexUnavailable:
-            Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHSecondaryButtonStyle())
+            // Like « Connecter ChatGPT », the update is what unblocks « Analyser », so it is the card's primary (UI-68).
+            Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHPrimaryButtonStyle())
         default:
             HStack(spacing: 10) {
                 if runtime.isConnecting {
