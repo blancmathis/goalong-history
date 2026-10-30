@@ -202,7 +202,7 @@
                         } label: {
                             Label("Ajouter un dossier", systemImage: "folder.badge.plus")
                         }
-                        .buttonStyle(LHPrimaryButtonStyle())
+                        .buttonStyle(LHSecondaryButtonStyle())
                     }
                 }
             }
@@ -437,55 +437,47 @@
         }
 
         private var localStatusBanner: some View {
-            HStack(alignment: .top, spacing: 13) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(LHTheme.success.opacity(0.12))
-                    Image(systemName: "internaldrive.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(LHTheme.success)
-                }
-                .frame(width: 38, height: 38)
+            GoalongPlainBlock {
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: "internaldrive")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText)
+                        .frame(width: 22).accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Lecture directe des sources")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "Le contenu des conversations est lu sur place dans Codex, Claude Code, OpenCode et les dossiers configurés. L’index local ne contient que l’outil, l’identifiant, la référence de la source, les horodatages, la taille, les positions et l’empreinte SHA-256."
-                    )
-                    .font(.system(size: 12))
-                    .foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    Text(
-                        "Goalong ne conserve aucune copie, aucun instantané ni contenu transmis par les relais d’agents."
-                    )
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(LHTheme.privateTint)
-                    if agents.lastScanResult.capacityLimitedFolderCount > 0 {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Lecture directe des sources")
+                            .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "Une source dépasse la taille maximale de l’index léger : Goalong garde ses métadonnées les plus récentes, sans relancer de lecture en boucle."
+                            "Le contenu des conversations est lu sur place dans Codex, Claude Code, OpenCode et les dossiers configurés. L’index local ne contient que l’outil, l’identifiant, la référence de la source, les horodatages, la taille, les positions et l’empreinte SHA-256."
+                        )
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Goalong ne conserve aucune copie, aucun instantané ni contenu transmis par les relais d’agents."
                         )
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(LHTheme.warning)
+                        .foregroundStyle(LHTheme.secondaryText)
+                        if agents.lastScanResult.capacityLimitedFolderCount > 0 {
+                            Text(
+                                "Une source dépasse la taille maximale de l’index léger : Goalong garde ses métadonnées les plus récentes, sans relancer de lecture en boucle."
+                            )
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LHTheme.warning)
+                        }
                     }
+                    Spacer(minLength: 18)
+                    if agents.isScanning {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    StatusPill(
+                        title: agents.indexIsValid ? "Index léger valide" : "Index à vérifier",
+                        symbol: agents.indexIsValid ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
+                        tint: agents.indexIsValid ? LHTheme.success : LHTheme.danger
+                    )
                 }
-                Spacer(minLength: 18)
-                if agents.isScanning {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                StatusPill(
-                    title: agents.indexIsValid ? "Index léger valide" : "Index à vérifier",
-                    symbol: agents.indexIsValid ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
-                    tint: agents.indexIsValid ? LHTheme.success : LHTheme.danger
-                )
             }
-            .padding(14)
-            .background(LHTheme.success.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(LHTheme.success.opacity(0.14), lineWidth: 1)
-            )
         }
 
         private var metrics: some View {
@@ -495,14 +487,14 @@
                     value: String(agents.overview.sessionCount),
                     detail: DashboardFormatters.dayTitle.string(from: agents.selectedDay),
                     symbol: "cpu",
-                    tint: LHTheme.accent
+                    tint: LHTheme.secondaryText
                 )
                 MetricCard(
                     title: "Messages",
                     value: String(agents.overview.messageCount),
                     detail: "Messages utilisateur, assistant et système",
                     symbol: "bubble.left.and.bubble.right.fill",
-                    tint: LHTheme.teal
+                    tint: LHTheme.secondaryText
                 )
                 MetricCard(
                     title: "Appels d’outils",
@@ -511,14 +503,14 @@
                         ? "Aucun message d’erreur observé"
                         : "\(agents.overview.errorCount) message\(agents.overview.errorCount > 1 ? "s" : "") d’erreur observé\(agents.overview.errorCount > 1 ? "s" : "")",
                     symbol: "wrench.and.screwdriver.fill",
-                    tint: agents.overview.errorCount == 0 ? LHTheme.success : LHTheme.warning
+                    tint: agents.overview.errorCount == 0 ? LHTheme.secondaryText : LHTheme.warning
                 )
                 MetricCard(
                     title: "Sources indexées",
                     value: String(agents.overview.captures.count),
                     detail: "Index : " + formatBytes(agents.overview.indexBytes),
                     symbol: "list.bullet.rectangle.fill",
-                    tint: LHTheme.privateTint
+                    tint: LHTheme.secondaryText
                 )
             }
             // Equal card heights: the row takes its tallest card's height.
@@ -640,12 +632,12 @@
                     Button("Réinstaller pour cette copie") {
                         agents.installIntegration(kind)
                     }
-                    .buttonStyle(LHPrimaryButtonStyle())
+                    .buttonStyle(LHSecondaryButtonStyle())
                 } else {
                     Button("Installer") {
                         agents.installIntegration(kind)
                     }
-                    .buttonStyle(LHPrimaryButtonStyle())
+                    .buttonStyle(LHSecondaryButtonStyle())
                 }
             }
             // Goalong Dev: the hooks are shared with the installed Goalong (read-only here).
@@ -685,8 +677,9 @@
                             title: "Aucun dossier suivi pour l’instant",
                             message:
                                 "Choisissez un dossier contenant des conversations locales. La lecture ne commence qu’une fois la source activée.",
-                            buttonTitle: "Choisir un dossier",
-                            action: agents.chooseFolder
+                            // Source off: no lime action that cannot read anything yet.
+                            buttonTitle: consents.isEnabled(.aiConversations) ? "Choisir un dossier" : nil,
+                            action: consents.isEnabled(.aiConversations) ? agents.chooseFolder : nil
                         )
                         .frame(minHeight: 190)
                     } else {
@@ -709,10 +702,10 @@
                             .lineLimit(1)
                         Text(folder.captureMode.frenchName)
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(providerTint(folder.provider))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(providerTint(folder.provider).opacity(0.10), in: Capsule())
+                            .background(Color.primary.opacity(0.045), in: Capsule())
                     }
                     Text(folder.path)
                         .font(.system(size: 12, design: .monospaced))
@@ -926,7 +919,7 @@
         private func providerIcon(_ provider: AgentProvider) -> some View {
             Image(systemName: providerSymbol(provider))
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(providerTint(provider))
+                .foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 34, height: 34)
         }
 
@@ -967,7 +960,7 @@
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 30, height: 30)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -997,18 +990,6 @@
             case .available: return "checkmark.circle"
             case .missing: return "questionmark.folder"
             case .inaccessible: return "lock.slash"
-            }
-        }
-
-        private func providerTint(_ provider: AgentProvider) -> Color {
-            switch provider {
-            case .codex: return LHTheme.success
-            case .claudeCode: return LHTheme.warning
-            case .cursor: return LHTheme.accent
-            case .openCode: return LHTheme.teal
-            case .gemini: return LHTheme.warning
-            case .copilot: return LHTheme.success
-            case .custom: return LHTheme.privateTint
             }
         }
 

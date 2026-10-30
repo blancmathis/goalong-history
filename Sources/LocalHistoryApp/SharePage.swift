@@ -1,13 +1,21 @@
 #if os(macOS)
+    import LocalHistoryCore
     import SwiftUI
 
     struct SharePage: View {
         @ObservedObject var model: DashboardViewModel
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+
+        private var proof: ShareProofStatus {
+            ShareProofStatus.make(observedMinutes: model.snapshot.activeMinutes,
+                                  sealedMinutes: model.snapshot.sealedMinutes,
+                                  recordingEnabled: consents.isEnabled(.localComputerHistory))
+        }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(
-                    title: "Exporter un fichier signé",
+                    title: "Partager",
                     subtitle:
                         "Choisissez ce que le fichier montre de chaque app et site. Goalong vérifie les signatures de l’historique avant de créer le fichier."
                 ) {
@@ -29,7 +37,8 @@
                 disclosureBanner
                 ruleSummary
 
-                UsageRulesList(model: model, showsDefaultRule: true)
+                UsageRulesList(model: model, showsDefaultRule: true,
+                               recordingEnabled: consents.isEnabled(.localComputerHistory))
                     .frame(maxHeight: .infinity)
 
                 exportBar
@@ -69,7 +78,8 @@
                 )
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(model.snapshot.sealedMinutes) minute\(model.snapshot.sealedMinutes > 1 ? "s" : "") avec preuve")
+                    Text(ShareProofStatus.proofSummary(observedMinutes: model.snapshot.activeMinutes,
+                                                       sealedMinutes: model.snapshot.sealedMinutes))
                         .font(.system(size: 12, weight: .semibold))
                     Text("Les règles s’appliquent événement par événement")
                         .font(.system(size: 12))
@@ -78,39 +88,43 @@
             }
         }
 
+        /// A count, not a filter: plain text with a neutral glyph, no capsule.
         private func summaryItem(title: String, count: Int, symbol: String, tint: Color) -> some View {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: symbol)
-                    .foregroundStyle(tint)
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                Text("\(count)")
-                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(LHTheme.secondaryText)
+                Text("\(title) : \(count)")
+                    .font(.system(size: 12, weight: .medium))
+                    .monospacedDigit()
             }
-            .padding(.horizontal, 11)
             .frame(height: 32)
-            .background(tint.opacity(0.08), in: Capsule())
+            .accessibilityElement(children: .combine)
         }
 
         private var exportBar: some View {
             HStack(spacing: 12) {
                 Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(model.snapshot.sealedMinutes > 0 ? LHTheme.success : Color.secondary)
+                    .foregroundStyle(proof.canExport ? LHTheme.success : Color.secondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(
-                        model.snapshot.sealedMinutes > 0
-                            ? "Prêt à créer un fichier selon vos règles"
-                            : "Aucune donnée avec preuve pour ce jour"
-                    )
-                    .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "Les vérifications se font sur ce Mac, sans connexion. Rien n’est envoyé."
-                    )
+                    Text(proof.title)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(proof.detail)
                         .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .accessibilityIdentifier("share-proof-status")
                 Spacer()
+                switch proof.action {
+                case .openRecordingSettings?:
+                    Button("Ouvrir les réglages") { model.openRecordingSettings() }
+                        .buttonStyle(LHSecondaryButtonStyle())
+                case .reportProblem?:
+                    Button("Signaler le problème…") { model.openDiagnostics() }
+                        .buttonStyle(LHSecondaryButtonStyle())
+                case nil:
+                    EmptyView()
+                }
                 Button {
                     model.exportSharePackage()
                 } label: {
@@ -118,10 +132,11 @@
                         .frame(minWidth: 176)
                 }
                 .buttonStyle(LHPrimaryButtonStyle())
-                .disabled(model.snapshot.sealedMinutes == 0 || model.isExportingShare)
+                .disabled(!proof.canExport || model.isExportingShare)
             }
             .padding(.horizontal, 14)
-            .frame(height: 56)
+            .padding(.vertical, 10)
+            .frame(minHeight: 56)
             .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -133,6 +148,55 @@
             model.snapshot.trackedUsage.filter {
                 model.sharingVisibility(for: $0.id) == visibility
             }.count
+        }
+    }
+
+    /// What the export bar says about the selected day. Only minutes signed on this Mac while recording
+    /// go into the file, so « no proof » always says why and, when the user can change it, what to do.
+    struct ShareProofStatus: Equatable {
+        enum Action: Equatable {
+            case openRecordingSettings
+            case reportProblem
+        }
+
+        let title: String
+        let detail: String
+        let action: Action?
+        let canExport: Bool
+
+        static func make(observedMinutes: Int, sealedMinutes: Int, recordingEnabled: Bool) -> ShareProofStatus {
+            if sealedMinutes > 0 {
+                return ShareProofStatus(
+                    title: "Prêt à créer un fichier selon vos règles",
+                    detail: "Les vérifications se font sur ce Mac, sans connexion. Rien n’est envoyé.",
+                    action: nil, canExport: true)
+            }
+            if observedMinutes == 0 {
+                return recordingEnabled
+                    ? ShareProofStatus(
+                        title: "Aucune donnée avec preuve pour ce jour",
+                        detail: "Aucune activité observée ce jour-là. Choisissez un autre jour.",
+                        action: nil, canExport: false)
+                    : ShareProofStatus(
+                        title: "Aucune donnée avec preuve pour ce jour",
+                        detail: "L’enregistrement est désactivé : Goalong n’observe ni ne signe aucune minute.",
+                        action: .openRecordingSettings, canExport: false)
+            }
+            let observed = FrenchCount.count(observedMinutes, "minute observée", "minutes observées")
+            return ShareProofStatus(
+                title: "\(observed), aucune avec preuve",
+                detail: recordingEnabled
+                    ? "Seules les minutes signées par ce Mac pendant l’enregistrement entrent dans le fichier. Celles-ci n’ont pas de signature."
+                    : "Seules les minutes signées par ce Mac pendant l’enregistrement entrent dans le fichier. L’enregistrement est désactivé.",
+                action: recordingEnabled ? .reportProblem : .openRecordingSettings,
+                canExport: false)
+        }
+
+        /// « 0 minute avec preuve sur 16 observées »: the proof count next to what the list shows.
+        static func proofSummary(observedMinutes: Int, sealedMinutes: Int) -> String {
+            let sealed = FrenchCount.count(sealedMinutes, "minute", "minutes") + " avec preuve"
+            guard observedMinutes > 0 else { return sealed }
+            return sealed + " sur \(observedMinutes) " + FrenchCount.word(observedMinutes, "observée", "observées")
         }
     }
 #endif

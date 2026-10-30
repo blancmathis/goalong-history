@@ -3,6 +3,8 @@ import SwiftUI
 
 struct ChatGPTAccountConnectionCard: View {
     @ObservedObject var runtime: ChatGPTRecapRuntime
+    /// True only where nothing else on the screen is primary (the Bilan); Réglages already has « Analyser cette journée ».
+    var updateIsPrimary = false
     var body: some View {
         LHCard {
             VStack(alignment: .leading, spacing: 14) {
@@ -24,6 +26,9 @@ struct ChatGPTAccountConnectionCard: View {
             }
         }
         .onAppear { runtime.refreshAccount(userInitiated: true) }
+    }
+    private var updateButton: some View {
+        Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }
     }
     private var status: String {
         switch runtime.connectionState {
@@ -47,7 +52,12 @@ struct ChatGPTAccountConnectionCard: View {
                 }
             }
         case .codexUnavailable:
-            Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHSecondaryButtonStyle())
+            // In the Bilan the update is what unblocks « Analyser », so it takes the page's one primary (UI-68).
+            if updateIsPrimary {
+                updateButton.buttonStyle(LHPrimaryButtonStyle())
+            } else {
+                updateButton.buttonStyle(LHSecondaryButtonStyle())
+            }
         default:
             HStack(spacing: 10) {
                 if runtime.isConnecting {
