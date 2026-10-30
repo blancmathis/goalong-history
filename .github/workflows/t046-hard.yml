@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [a, b, c, d]
+        part: [a, b, c, d, e]
     runs-on: macos-15
     timeout-minutes: 75
     steps:
@@ -96,14 +96,14 @@ jobs:
         run: |
           mkdir -p out
           printf 'case\tverdict\texpected\tobserved\tproof\n' > out/hard-results.tsv
-          for p in a b c d; do
+          for p in a b c d e; do
             tail -n +2 "parts/t046-hard-$p/hard-results.tsv" 2>/dev/null | awk -F'\t' -v OFS='\t' -v p="$p" '{ $5 = "t046-hard-" p "/" $5; print }' >> out/hard-results.tsv
           done
           { echo '```'; cut -f1,2,4 out/hard-results.tsv; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           du -sh parts/* | tee out/sizes.txt
           rows=$(tail -n +2 out/hard-results.tsv | awk -F'\t' '$2 == "pass" || $2 == "fail"' | wc -l)
-          echo "verdicts: $rows / 14"
-          test "$rows" -eq 14
+          echo "verdicts: $rows / 16"
+          test "$rows" -eq 16
 
       - name: Upload verdicts
         if: always()
