@@ -33,7 +33,7 @@
                     ScrollView {
                         page
                             .frame(maxWidth: 680, alignment: .leading)
-                            .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 32)
+                            .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 72)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                     .overlay(alignment: .bottom) {

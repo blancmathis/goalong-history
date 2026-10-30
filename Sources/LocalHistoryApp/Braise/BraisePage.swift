@@ -19,6 +19,8 @@ import SwiftUI
     let error: String?
     let onRetry: () -> Void
     let onOpenModules: () -> Void
+    /// Turns the module on right here; the module switch in Réglages › Modules does the same.
+    var onEnable: () -> Void = { GoalongModuleStore.shared.setEnabled(.braise, true) }
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text("Braise").goalongPageTitle()
@@ -30,7 +32,9 @@ import SwiftUI
             } else {
                 GoalongEmptyState(title: "Braise est désactivée",
                                   message: "Le filtre rouge du soir s’active dans Réglages › Modules.") {
-                    Button("Ouvrir Réglages › Modules", action: onOpenModules).buttonStyle(LHPrimaryButtonStyle())
+                    Button("Activer Braise", action: onEnable).buttonStyle(LHPrimaryButtonStyle())
+                        .accessibilityIdentifier("braise-enable")
+                    Button("Ouvrir Réglages › Modules", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
                 }
             }
         }
@@ -148,7 +152,7 @@ import SwiftUI
     private let days = [(2, "Lun"), (3, "Mar"), (4, "Mer"), (5, "Jeu"), (6, "Ven"), (7, "Sam"), (1, "Dim")]
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text(existed ? "Modifier l’horaire" : "Ajouter un horaire").font(.system(size: 22, weight: .semibold))
+            Text(existed ? "Modifier l’horaire" : "Ajouter un horaire").font(LHTheme.sheetTitleFont).tracking(-0.4)
             Text("Jours de début de la plage").foregroundStyle(LHTheme.secondaryText)
             HStack(spacing: 10) {
                 ForEach(days, id: \.0) { day in

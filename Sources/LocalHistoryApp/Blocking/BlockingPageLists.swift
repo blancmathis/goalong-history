@@ -732,6 +732,8 @@ struct BlockingIconCluster: View {
     let lists: [BlockList]
     var size: CGFloat = 22
     var limit = 5
+    /// Size of the « +N » count; nil keeps half the icon size, 10 pt at least.
+    var overflowFont: CGFloat?
 
     /// Each app or host once, in list order: several rules can share a host and lists can share an app.
     static func items(for lists: [BlockList]) -> [BlockingItem] {
@@ -748,7 +750,7 @@ struct BlockingIconCluster: View {
                 .frame(width: size, height: size)
                 .accessibilityHidden(true)
         } else {
-            BlockingIconStack(items: Array(items.prefix(limit)), size: size, overflow: max(0, items.count - limit))
+            BlockingIconStack(items: Array(items.prefix(limit)), size: size, overflow: max(0, items.count - limit), overflowFont: overflowFont)
         }
     }
 }
@@ -757,12 +759,13 @@ struct BlockingIconStack: View {
     let items: [BlockingItem]
     var size: CGFloat = 22
     var overflow = 0
+    var overflowFont: CGFloat?
 
     var body: some View {
         HStack(spacing: max(2, size * 0.14)) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in icon(item) }
             if overflow > 0 {
-                Text("+\(overflow)").font(.system(size: max(10, size * 0.5), weight: .medium).monospacedDigit())
+                Text("+\(overflow)").font(.system(size: overflowFont ?? max(10, size * 0.5), weight: .medium).monospacedDigit())
                     .foregroundStyle(LHTheme.secondaryText).fixedSize().padding(.leading, 2)
             }
         }

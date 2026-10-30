@@ -49,8 +49,8 @@ import LocalHistoryCore
     func close() { panel?.orderOut(nil); panel?.close(); panel = nil; key = nil }
 }
 
-/// The wait drawn as the app's thread: it fills in ink from left to right, the lime point at its
-/// head, and is full when « Continuer » becomes possible.
+/// The wait drawn as a bar: it fills in ink from left to right, without a handle (it is not a slider),
+/// with the seconds left written under it, and is full when « Continuer » becomes possible.
 struct SlowDownCountdown: View {
     let presentation: BlockingFrictionPresentation
     /// Fixed for renders; live views follow the clock.
@@ -60,16 +60,26 @@ struct SlowDownCountdown: View {
 
     var body: some View {
         if let now {
-            thread(at: now)
+            labelled(at: now)
         } else {
             TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 20, paused: ready)) { context in
-                thread(at: GoalongToday.timeline(context.date))
+                labelled(at: GoalongToday.timeline(context.date))
             }
             .task {
                 let wait = presentation.readyAt.timeIntervalSinceNow // wall: display wait; the controller sends readyAt in the wall frame and decides with its own clock
                 if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
                 ready = true
             }
+        }
+    }
+
+    /// The bar and its legend: the wait in seconds, readable (the disabled « Continuer » is not).
+    private func labelled(at date: Date) -> some View {
+        let left = seconds(at: date)
+        return VStack(alignment: .leading, spacing: 6) {
+            thread(at: date)
+            Text(left == 0 ? "Vous pouvez continuer." : "Attente : encore \(FrenchCount.count(left, "seconde", "secondes")).")
+                .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
         }
     }
 
@@ -81,14 +91,10 @@ struct SlowDownCountdown: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(LHTheme.text.opacity(0.16)).frame(height: 8)
                 Capsule().fill(LHTheme.text).frame(width: max(8, x), height: 8)
-                Circle().fill(LHTheme.accent)
-                    .overlay(Circle().strokeBorder(LHTheme.pageBackground, lineWidth: 3))
-                    .frame(width: 18, height: 18)
-                    .offset(x: min(max(0, x - 9), width - 18))
             }
-            .frame(height: 18)
+            .frame(height: 8)
         }
-        .frame(height: 18)
+        .frame(height: 8)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(progress >= 1 ? "Attente terminée" : "Attente : encore \(FrenchCount.count(seconds(at: date), "seconde", "secondes"))")
     }
@@ -122,9 +128,8 @@ private struct SlowDownActions: View {
     private func continueButton(at date: Date) -> some View {
         let left = max(0, Int(ceil(presentation.readyAt.timeIntervalSince(date))))
         let open = ready || left == 0
-        return Button(open ? "Continuer" : "Continuer dans \(left) s", action: onContinue)
+        return Button("Continuer", action: onContinue)
             .disabled(!open)
-            .monospacedDigit()
             .accessibilityIdentifier("slowdown-continue")
     }
 }
@@ -151,15 +156,16 @@ struct SlowDownVeil: View {
                 }
                 SlowDownCountdown(presentation: presentation, now: now, ready: $ready).frame(width: 320)
                 SlowDownActions(presentation: presentation, now: now, ready: ready, onRenounce: onRenounce, onContinue: onContinue)
-                Text("\(FocusUIFormat.ordinal(presentation.occurrence)) fois aujourd’hui")
-                    .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
+                Text("Ce site est ralenti : attendez la fin de la barre, ou renoncez. \(FocusUIFormat.ordinal(presentation.occurrence)) fois aujourd’hui.")
+                    .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                    .multilineTextAlignment(.center).frame(maxWidth: 420).fixedSize(horizontal: false, vertical: true)
             }
             .padding(32)
             Spacer(minLength: 24)
             HStack(spacing: 8) {
                 GoalongMark().stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .frame(width: 20, height: 14)
-                Text("Goalong · Ralentir").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.tertiaryText)
+                Text("Goalong · Ralentir").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
             }
             .padding(.bottom, 22)
         }

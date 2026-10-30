@@ -86,7 +86,7 @@ final class BlockingPageRenderingTests: XCTestCase {
                        BlockingPasswordSheet(controller: editing, purpose: .create, onClose: {}))
             try render("password-unlock-\(suffix)", width: 480,
                        BlockingPasswordSheet(controller: guarded,
-                                             purpose: .unlock(UUID(), what: "Le blocage s’arrête maintenant, avant 16:34."), onClose: {}))
+                                             purpose: .unlock(UUID(), what: "Débloquer arrête ce blocage prévu jusqu’à 16:34."), onClose: {}))
             try render("modules-\(suffix)", width: 760, GoalongModulesSettings(onOpen: { _ in }).padding(32))
             try render("typing-\(suffix)", width: 560,
                        BlockingTypingChallengeSheet(text: String(repeating: "aB3kZ", count: 24), onSubmit: { _ in }, onCancel: {}))
