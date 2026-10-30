@@ -51,12 +51,17 @@ cleanup() {
   true
 }
 # Navigation vocabulary (as qa/e2e/lot1_steps.sh): nav:SECTION pane:PANE p:LABEL (required) o:LABEL (optional)
-# si (status item) pc (panel closed itself) w:N set:ID\ 0|1. Prints the failed required steps.
+# si (status item) pc (panel closed itself) w:N set:ID\ 0|1 t:DISCLOSURE|TARGET. Prints the failed required steps.
 navigate() {
   local miss="" c
   for c in "$@"; do
     case "$c" in
-      nav:*) press3 "sidebar-${c#nav:}" || miss+="$c;"; sleep 1.5 ;;
+      nav:*) press3 "sidebar-${c#nav:}" || miss+="$c;"; sleep 1.5
+             # Activité keeps its detail view (usage, rhythm...) between rows: back to the day first.
+             [[ $c == nav:overview ]] && drv press "$BUNDLE" activity-detail-back >/dev/null 2>&1 && sleep 1 ;;
+      t:*) local d="${c#t:}"; d="${d%%|*}"; local x="${c#*|}"  # t:DISCLOSURE|TARGET: open the disclosure only if needed
+           drv press "$BUNDLE" "$x" >/dev/null 2>&1 || { drv press "$BUNDLE" "$d" >/dev/null 2>&1; sleep 1
+             drv press "$BUNDLE" "$x" >/dev/null 2>&1 || miss+="$c;"; }; sleep 1.5 ;;
       pane:*) press3 sidebar-settings || miss+="sidebar-settings;"; sleep 1
               drv press "$BUNDLE" settings-back >/dev/null 2>&1 && sleep 1
               if [[ "${c#pane:}" != home ]]; then press3 "settings-${c#pane:}" || miss+="$c;"; sleep 1.5; fi ;;
