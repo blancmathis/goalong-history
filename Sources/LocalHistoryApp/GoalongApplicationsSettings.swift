@@ -194,8 +194,12 @@ enum GoalongKnownApplications {
                                 Text(domain).font(.system(size: 13, weight: .medium))
                                 Spacer()
                                 let parent = parentRule(for: domain)
-                                Text(parent.map { "Exclu par \($0)" } ?? (domainExcluded(domain) ? "Exclu" : "Autorisé"))
-                                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                if parent != nil || domainExcluded(domain) {
+                                    Label(parent.map { "Exclu par \($0)" } ?? "Exclu", systemImage: "eye.slash")
+                                        .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
+                                } else {
+                                    Text("Autorisé").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                }
                                 Toggle("Autoriser \(domain)", isOn: Binding(get: { !domainExcluded(domain) }, set: { setDomain(domain, enabled: $0) }))
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly).controlSize(.small)
                                     .disabled(parent != nil)
@@ -220,7 +224,10 @@ enum GoalongKnownApplications {
                                     }
                                 }
                                 Spacer()
-                                if exclusions.policy.excludes(appID: app.id) { Text("Exclue").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
+                                // The exception must stand out among the allowed rows (UI-47): glyph and ink, not grey.
+                                if exclusions.policy.excludes(appID: app.id) {
+                                    Label("Exclue", systemImage: "eye.slash").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
+                                }
                                 Toggle("Autoriser \(app.name)", isOn: Binding(get: { !isExcluded(app) }, set: { setApp(app, enabled: $0) }))
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly).controlSize(.small)
                                     .disabled(ProductIdentity.isGoalong(app.id))
