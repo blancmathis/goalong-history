@@ -20,6 +20,10 @@ printf 'id\tshard\tverdict\tproof_png\tax_dump\tcause\tdetail\n' > "$RESULTS"
 log() { echo "$*" | tee -a "$SUMMARY"; }
 # perl alarm: macOS has no timeout(1). A hung AX call never stalls the shard.
 tmo() { local s="$1"; shift; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; }
+# Like tmo, but the command runs in its own process group and the whole group dies at the alarm (exit 142):
+# a child (an osascript dialog, say) cannot keep the output pipe open after its shell is killed.
+tmog() { perl -e '$s=shift; $p=fork; if(!$p){setpgrp(0,0); exec @ARGV; exit 127}
+  $SIG{ALRM}=sub{kill "KILL",-$p; waitpid($p,0); exit 142}; alarm $s; waitpid($p,0); exit($?>>8)' "$1" "${@:2}"; }
 drv() { tmo 40 "$DRIVER" "$@"; }
 
 log "== shard $SHARD slice $SLICE, $(date -u +%FT%TZ), commit $(git -C "$HERE" rev-parse --short HEAD)"
@@ -188,6 +192,7 @@ if [[ $SHARD == S4 ]]; then
   # Expected per row: "the target runs (or make -n lists the recipe); exit code recorded". Heavy suites (run by
   # the coverage/gallery jobs of L1) get make -n; the others run for real, capped at 25 min, and a timeout
   # falls back to make -n. Order: cheap first, clean last.
+  mkdir -p "$OUT/stub"; printf '#!/bin/sh\ncat >/dev/null\necho "Keep data"\n' > "$OUT/stub/osascript"; chmod +x "$OUT/stub/osascript"
   HEAVY="make test|make test-ui|make gallery|make gallery-compare|make check"
   for spec in "make test" "make test-ui" "make gallery" "make gallery-compare" "make check" "make dev-status" \
               "make gallery-index" "make gallery-diff" "make gallery-accept" "make gallery-clean" "make audit" \
@@ -198,20 +203,27 @@ if [[ $SHARD == S4 ]]; then
     case "$spec" in
       make\ dev) cmd=(make dev NO_LAUNCH=1 DEV_APP_DIR="$RUNNER_TEMP/devapp") ;;
       make\ *) cmd=($spec) ;;
-      *.command) cmd=(bash "./$spec") ;;
+      # The .command files ask with an AppleScript dialog: a PATH stub answers its default ("Keep data", "Install").
+      *.command) cmd=(env PATH="$OUT/stub:$PATH" bash "./$spec") ;;
       *) cmd=("./$spec") ;;
     esac
     [[ "|$HEAVY|" == *"|$spec|"* ]] && cmd=(make -n "${spec#make }")
     t=$(date +%s)
-    { echo "$id — \$ ${cmd[*]}"; tmo 1500 "${cmd[@]}" < /dev/null 2>&1 | tail -n 60; echo "# exit ${PIPESTATUS[0]} in $(( $(date +%s) - t )) s"; } > "$OUT/cli/$id.txt"
+    { echo "$id — \$ ${cmd[*]}"; tmog 1500 "${cmd[@]}" < /dev/null 2>&1 | tail -n 60; echo "# exit ${PIPESTATUS[0]} in $(( $(date +%s) - t )) s"; } > "$OUT/cli/$id.txt"
     rc="$(sed -n 's/^# exit \([0-9]*\) .*/\1/p' "$OUT/cli/$id.txt")"
     if [[ $rc == 142 && $spec == make\ * ]]; then
       { echo; echo "# timeout 25 min: recipe instead"; echo "\$ make -n ${spec#make }"; make -n "${spec#make }" < /dev/null 2>&1 | tail -n 30
         echo "# make -n exit ${PIPESTATUS[0]}"; } >> "$OUT/cli/$id.txt"
       grep -q '^# make -n exit 0$' "$OUT/cli/$id.txt" && rc=0n
     fi
+    if [[ $spec == "make dev" ]] && grep -q 'requires the release Apple Development identity' "$OUT/cli/$id.txt"; then
+      { echo; echo "# runner without the release signing identity (documented refusal): recipe"; echo "\$ make -n dev"
+        make -n dev NO_LAUNCH=1 DEV_APP_DIR="$RUNNER_TEMP/devapp" < /dev/null 2>&1 | tail -n 30; echo "# make -n exit ${PIPESTATUS[0]}"; } >> "$OUT/cli/$id.txt"
+      grep -q '^# make -n exit 0$' "$OUT/cli/$id.txt" && rc=0p
+    fi
     textproof "$OUT/cli/$id.txt" "$id"
-    if [[ $rc == 0 ]]; then record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "" "${cmd[*]} exit 0"
+    if [[ $rc == 0p ]]; then record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "precondition" "refus documenté (identité de signature absente du runner), make -n liste la recette"
+    elif [[ $rc == 0 ]]; then record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "" "${cmd[*]} exit 0"
     elif [[ $rc == 0n ]]; then record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "recipe" "exécution > 25 min (alarme), make -n liste la recette"
     elif [[ $rc == 2 ]] && grep -q "run introuvable" "$OUT/cli/$id.txt"; then
       record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "precondition" "exit 2 documenté : aucun run de galerie sur ce runner (make gallery d’abord)"
