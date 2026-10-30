@@ -57,6 +57,41 @@ quit_app
 try "detach" hdiutil detach "$DATA" -force
 finish
 
+begin disk-enospc "Vrai ENOSPC : dossier de données sur un volume APFS de 64 Mo rempli jusqu’au dernier octet (dd 1 Mo, 64 Ko, 4 Ko, 512 o, puis petits fichiers ; un ajout d’un octet doit échouer) pendant l’enregistrement. Attendu : pas de plantage, bandeau rouge « Enregistrement interrompu : le disque est plein » (il passe avant « presque plein »), puis reprise quand l’espace revient."
+reset_app_state; install_new; no_sparkle
+try "create 64m" hdiutil create -size 64m -fs APFS -volname T046Enospc -ov "$RUNNER_TEMP/enospc.dmg"
+mkdir -p "$DATA"
+try "attach on data dir" sudo hdiutil attach -owners on -nobrowse -mountpoint "$DATA" "$RUNNER_TEMP/enospc.dmg" || fail "montage du volume"
+sudo chown "$(id -u):$(id -g)" "$DATA"; chmod 700 "$DATA"
+tcc_set 2
+launch || fail "l’app ne démarre pas"
+onboarding; record_on
+activity 30; sleep 5
+before=$(events_lines); log "[events before fill] $(events_stat)"
+mkdir -p "$DATA/.t046-fill"
+for bs in 1m 64k 4k 512; do dd if=/dev/zero of="$DATA/.t046-fill/f-$bs" bs=$bs 2>/dev/null; done
+for i in $(seq 1 4000); do printf x > "$DATA/.t046-fill/s$i" 2>/dev/null || break; done
+log "[volume full] $(df -k "$DATA" | tail -1)"
+if printf 'x' >> "$DATA/.t046-fill/probe" 2>/dev/null; then fail "HARNAIS : le volume accepte encore un octet"; else obs "ENOSPC vérifié (un octet refusé)"; fi
+activity 60; sleep 10
+full=$(events_lines); log "[events while full] $(events_stat)"
+dashboard; nav overview; sleep 2
+banner=""; for _ in 1 2 3 4 5 6; do dump full; banner="$(axhas 'disque est plein')" && break; activity 10; sleep 10; done
+shot full
+[[ -n $banner ]] && obs "bandeau : ${banner:0:120}" || fail "pas de bandeau « le disque est plein » dans l’arbre AX ($(axhas 'presque plein' >/dev/null && echo 'seulement « presque plein »' || echo 'aucun bandeau disque'))"
+running || fail "l’app s’est arrêtée disque plein"
+rm -rf "$DATA/.t046-fill"; log "[volume freed] $(df -k "$DATA" | tail -1)"
+activity 60; sleep 30
+after=$(events_lines); log "[events after free] $(events_stat)"
+(( after > full )) && obs "reprise : $full → $after lignes" || fail "pas de reprise après libération ($full → $after lignes)"
+dump recovered; shot recovered
+axhas 'disque est plein' >/dev/null && fail "bandeau « disque plein » encore là après libération" || obs "bandeau disparu après libération"
+running || fail "l’app s’est arrêtée après libération"
+log "[counts] avant=$before plein=$full après=$after"
+quit_app
+finish
+try "detach" hdiutil detach "$DATA" -force
+
 begin offline "Réseau coupé par pf (tout bloqué sauf lo0) : l’app redémarre hors ligne et répond, l’enregistrement local continue, Réglages › Site et « Rechercher les mises à jour » donnent un état ou une erreur lisible, sans plantage ni blocage ; tout revient quand le réseau revient."
 reset_app_state; install_new; no_sparkle; tcc_set 2
 launch || fail "l’app ne démarre pas"

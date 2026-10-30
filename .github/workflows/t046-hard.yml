@@ -73,7 +73,7 @@ jobs:
           du -sh parts/* | tee out/sizes.txt
           rows=$(tail -n +2 out/hard-results.tsv | awk -F'\t' '$2 == "pass" || $2 == "fail"' | wc -l)
           echo "verdicts: $rows / 9"
-          test "$rows" -eq 9
+          test "$rows" -eq 11
 
       - name: Upload verdicts
         if: always()

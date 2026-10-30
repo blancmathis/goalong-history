@@ -18,15 +18,13 @@ panel_pick() {
   sleep 4
 }
 
-begin imports-malformed "Fichiers d’import cassés — export.xml Santé tronqué, vide, binaire, texte hexadécimal ; audio vide et binaire pour Ambiance : chaque fichier est refusé (message lisible dans la feuille, ou erreur CLI propre, code 1-127), rien n’est importé, pas de plantage."
+begin imports-malformed "Fichiers d’import cassés — export.xml Santé tronqué, vide, binaire, texte hexadécimal  : chaque fichier est refusé (message lisible dans la feuille, ou erreur CLI propre, code 1-127), rien n’est importé, pas de plantage."
 reset_app_state; install_new; no_sparkle
 IMP="$RUNNER_TEMP/imports"; rm -rf "$IMP"; mkdir -p "$IMP"
 printf '<?xml version="1.0" encoding="UTF-8"?>\n<HealthData locale="fr_FR">\n <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="T046" startDate="2026-01-0' > "$IMP/tronque.xml"
 : > "$IMP/vide.xml"
 head -c 8192 /dev/urandom > "$IMP/binaire.xml"
 head -c 4096 /dev/urandom | xxd -p > "$IMP/hexa.xml"
-: > "$IMP/vide.m4a"
-head -c 65536 /dev/urandom > "$IMP/binaire.mp3"
 ls -la "$IMP" > "$CDIR/import-files.txt"
 launch || fail "l’app ne démarre pas"
 onboarding; dashboard
@@ -45,23 +43,47 @@ for f in tronque vide binaire hexa; do
   panel_pick "$IMP/$f.xml"
   try "Préparer l’aperçu local" press "Préparer l’aperçu local" AXButton; sleep 5
   shot "sante-$f"; dump "sante-$f"
-  msg="$(axhas 'impossible|Impossible|illisible|invalide|erreur|Erreur|corromp|n’est pas|ne peut|Aucune')" && obs "Santé $f : « ${msg:0:100} »" || obs "Santé $f : pas de message reconnu (voir capture)"
+  msg="$(axhas 'impossible|Impossible|illisible|invalide|erreur|Erreur|corromp|n’est pas|ne peut|Aucune|vide')" && obs "Santé $f : « ${msg:0:100} »" || obs "Santé $f : pas de message reconnu (voir capture)"
   press Fermer AXButton >/dev/null; esc
   running || { fail "l’app s’est arrêtée sur $f.xml"; launch; dashboard; }
-done
-pane modules; try "open Ambiance" press3 settings-module-open-ambiance; sleep 3
-for f in vide.m4a binaire.mp3; do
-  try "ambiance-add-files" press ambiance-add-files; sleep 3
-  panel_pick "$IMP/$f"; sleep 3
-  shot "ambiance-${f%.*}"; dump "ambiance-${f%.*}"
-  msg="$(axhas 'impossible|Impossible|illisible|invalide|erreur|Erreur|lire|pris en charge')" && obs "Ambiance $f : « ${msg:0:100} »" || obs "Ambiance $f : pas de message reconnu (voir capture)"
-  "$DRIVER" dismiss-alerts "$BUNDLE" >/dev/null 2>&1; esc
-  running || { fail "l’app s’est arrêtée sur $f"; launch; dashboard; }
 done
 find "$DATA" -type f | sort > "$CDIR/data-files-after.txt"
 grep -i -E 'health|sante|santé' "$CDIR/data-files-after.txt" | grep -vxF -f "$CDIR/data-files-before.txt" > "$CDIR/health-new-files.txt"
 [[ -s $CDIR/health-new-files.txt ]] && fail "fichiers Santé créés : $(head -3 "$CDIR/health-new-files.txt" | tr '\n' ' ')" || obs "aucun fichier Santé créé"
 running || fail "l’app s’est arrêtée"
+finish
+
+begin ambiance-broken "Module Ambiance activé, puis « Ma musique › Ajouter… » : un .m4a vide, un .mp3 binaire et un .mp3 supprimé après ajout. Lire chaque fichier cassé affiche « Lecture impossible… » ; le fichier supprimé montre « Fichier introuvable » ; pas de plantage."
+quit_app; reset_app_state; install_new; no_sparkle
+AMB="$RUNNER_TEMP/ambiance"; rm -rf "$AMB"; mkdir -p "$AMB"
+: > "$AMB/vide.m4a"; head -c 65536 /dev/urandom > "$AMB/binaire.mp3"; head -c 65536 /dev/urandom > "$AMB/absent.mp3"
+launch || fail "l’app ne démarre pas"
+onboarding; dashboard
+pane modules || fail "Réglages › Modules inaccessible"
+front
+try "module Ambiance on" "$DRIVER" set "$BUNDLE" settings-module-ambiance 1 || try "module Ambiance on (click)" "$DRIVER" click "$BUNDLE" settings-module-ambiance; sleep 3
+shot modules; dump modules
+axhas 'id=settings-module-open-ambiance' >/dev/null && obs "module Ambiance activé" || fail "HARNAIS : module Ambiance non activé, cas non concluant"
+try "open Ambiance" press3 settings-module-open-ambiance; sleep 4
+for f in vide.m4a binaire.mp3 absent.mp3; do
+  try "ambiance-add-files $f" press ambiance-add-files; sleep 3
+  panel_pick "$AMB/$f"; sleep 3
+done
+shot added; dump added
+for f in vide binaire absent; do axhas "AXButton.*desc=$f" >/dev/null && obs "$f ajouté" || fail "$f absent de « Ma musique »"; done
+rm -f "$AMB/absent.mp3"
+for f in vide.m4a binaire.mp3; do
+  try "play $f" press3 "$f" AXButton; sleep 5
+  shot "play-$f"; dump "play-$f"
+  msg="$(axhas 'Lecture impossible')" && obs "$f : « ${msg:0:120} »" || fail "$f : pas de message « Lecture impossible »"
+  running || { fail "l’app s’est arrêtée en lisant $f"; launch; dashboard; }
+done
+# Leave and come back so the page reads the file list again.
+nav overview; sleep 2; pane modules; press3 settings-module-open-ambiance >/dev/null; sleep 4
+shot absent; dump absent
+axhas 'Fichier introuvable|value=Introuvable' >/dev/null && obs "absent.mp3 : « Fichier introuvable »" || fail "absent.mp3 : pas de « Fichier introuvable »"
+running || fail "l’app s’est arrêtée"
+quit_app
 finish
 
 begin clock-timezone "Pendant l’enregistrement : fuseau Europe/Paris → America/Santiago → Europe/Paris, puis horloge mise au 25/10/2026 02:58 CEST pour traverser le passage à l’heure d’hiver. Pas de plantage, l’enregistrement continue, toutes les lignes du journal restent lisibles, la CLI lit les jours, Vue d’ensemble et Historique s’affichent."
