@@ -339,7 +339,7 @@ private struct AmbianceOrchestraSetup: View {
                 AmbianceWave(seed: "ambre", character: .focus, look: look, lineWidth: 2).frame(height: 64)
                 HStack(alignment: .center, spacing: 20) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Téléchargez l’orchestre").font(LHTheme.sheetTitleFont).tracking(-0.4)
+                        Text("Téléchargement de l’orchestre…").font(LHTheme.sheetTitleFont).tracking(-0.4)
                         Group {
                             if case .downloading(let fraction) = pack.status {
                                 Text("\(GoalongUIFormat.percent(fraction * 100)) de \(size)")

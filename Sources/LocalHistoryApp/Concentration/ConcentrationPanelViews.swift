@@ -170,7 +170,7 @@ struct FocusReviewPanelView: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("C’est fait ?").font(LHTheme.cardTitleFont)
-                        Text(seconds >= 60 ? "\(intent) · \(BlockingFormat.duration(minutes: Int((seconds / 60).rounded())))" : intent)
+                        Text(seconds >= 60 ? "\(intent), \(BlockingFormat.duration(minutes: Int((seconds / 60).rounded())))" : intent)
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                     }
                     Spacer(minLength: 8)

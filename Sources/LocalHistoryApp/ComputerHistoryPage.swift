@@ -1742,7 +1742,7 @@
             case 2:
                 return "\(names[0]) et \(names[1])"
             default:
-                return "\(names[0]), \(names[1]) et \(names.count - 2) autres"
+                return "\(names[0]), \(names[1]) et \(names.count - 2) \(names.count - 2 > 1 ? "autres" : "autre")"
             }
         }
 

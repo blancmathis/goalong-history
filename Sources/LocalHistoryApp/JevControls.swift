@@ -26,7 +26,7 @@ import LocalHistoryCore
             Text("Budget borné : requête JSON complète ≤ 1 600 octets UTF-8. Le compteur TypeSafe est aussi contrôlé : toute réponse annonçant 1 000 tokens ou plus suspend la surveillance. Le tokenizer et son surcoût interne ne sont pas publiés.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             if let tokens = monitor.lastInputTokens {
-                Text("Dernier appel : \(tokens) tokens d’entrée · \(monitor.lastRequestBytes) octets envoyés")
+                Text("Dernier appel : \(monitor.lastRequestBytes) octets envoyés.")
                     .font(.caption.monospacedDigit())
             }
             GoalongDisclosureGroup("Voir le dernier contenu envoyé (sans la clé)") {

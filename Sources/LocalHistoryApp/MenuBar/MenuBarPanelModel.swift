@@ -207,7 +207,7 @@ import LocalHistoryCore
             trackingDetail = ConfigManager.failClosedNotice
         } else if !localHistoryEnabled() {
             pausedSince = nil
-            tracking = .attention("Enregistrement désactivé")
+            tracking = .attention("Suivi en pause")
             trackingDetail = "Activez l’enregistrement dans Réglages"
         } else if state.isManuallyPaused {
             if case .paused = tracking {} else { pausedSince = nil }

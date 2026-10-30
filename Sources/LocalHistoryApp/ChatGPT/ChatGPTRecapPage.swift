@@ -294,7 +294,7 @@
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
                                 Text("\(score)")
                                     .font(.system(size: 46, weight: .bold))
-                                    .foregroundStyle(scoreTint(score))
+                                    .foregroundStyle(LHTheme.text)
                                 Text("/ 100")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(LHTheme.secondaryText)
@@ -629,12 +629,6 @@
 
         private var isToday: Bool {
             GoalongToday.isToday(recapRuntime.selectedDay)
-        }
-
-        private func scoreTint(_ score: Int) -> Color {
-            if score >= 75 { return LHTheme.success }
-            if score >= 50 { return LHTheme.accent }
-            return LHTheme.warning
         }
 
         private func duration(_ seconds: Int) -> String {

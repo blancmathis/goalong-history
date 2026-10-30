@@ -326,7 +326,7 @@ struct FocusComposerDraft: Equatable {
 
     private var startTitle: String {
         guard let end = plannedEnd else { return "Commencer" }
-        return "Commencer · jusqu’à \(BlockingFormat.time(end))"
+        return "Commencer, jusqu’à \(BlockingFormat.time(end))"
     }
 
     private var previewDescription: String {
@@ -523,14 +523,14 @@ struct FocusPlanChip: View {
         switch (session.mode.kind, phase.kind) {
         case (.free, _):
             symbol = "scope"
-            words = phase.endsAt.map { "Séance libre · jusqu’à \(BlockingFormat.time($0))" } ?? "Séance libre, sans fin"
+            words = phase.endsAt.map { "Séance libre jusqu’à \(BlockingFormat.time($0))" } ?? "Séance libre, sans fin"
         case (_, .work):
             symbol = "scope"
-            words = "Travail · cycle \(phase.cycle)\(session.mode.cycles.map { " sur \($0)" } ?? "")"
+            words = "Travail, cycle \(phase.cycle)\(session.mode.cycles.map { " sur \($0)" } ?? "")"
         case (_, .longBreak):
-            symbol = "cup.and.saucer"; words = "Pause longue · jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "")"
+            symbol = "cup.and.saucer"; words = "Pause longue jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "")"
         default:
-            symbol = "cup.and.saucer"; words = "Pause · jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "")"
+            symbol = "cup.and.saucer"; words = "Pause jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "")"
         }
         return Label(words, systemImage: locked ? "lock.fill" : symbol)
             .font(.system(size: 13, weight: .medium))
@@ -555,7 +555,7 @@ struct FocusPlanChip: View {
     private var blockingWords: String {
         let names = lists.map(\.name).joined(separator: ", ")
         if !phase.isWork && !session.blockDuringBreaks { return "\(names) : libre pendant la pause" }
-        return lists.allSatisfy { $0.effectiveAction == .slowDown } ? "\(names) : ralenti" : "\(names) : bloqué"
+        return lists.allSatisfy { $0.effectiveAction == .slowDown } ? "\(names) : \(lists.count > 1 ? "ralentis" : "ralenti")" : "\(names) : \(lists.count > 1 ? "bloqués" : "bloqué")"
     }
 
     private func act(_ action: () throws -> Void) {
@@ -987,7 +987,7 @@ struct FocusThreadModel: Equatable {
             total + FocusMeasurement.workIntervals(session, until: now).reduce(0) { $0 + $1.duration }
         }
         let count = finished.count == 1 ? "1 séance" : "\(finished.count) séances"
-        return "\(count) · \(BlockingFormat.duration(minutes: Int((seconds / 60).rounded()))) de phases de travail."
+        return "\(count) : \(BlockingFormat.duration(minutes: Int((seconds / 60).rounded()))) de phases de travail."
     }
 
     private func row(_ session: FocusSession) -> some View {
@@ -1310,8 +1310,8 @@ enum FocusUIFormat {
         }
     }
 
-    /// « 1re », « 2e », « 3e ».
-    static func ordinal(_ value: Int) -> String { value == 1 ? "1re" : "\(value)e" }
+    /// « 1ʳᵉ », « 2ᵉ », « 3ᵉ ».
+    static func ordinal(_ value: Int) -> String { value == 1 ? "1ʳᵉ" : "\(value)ᵉ" }
 }
 
 enum FocusUIError {

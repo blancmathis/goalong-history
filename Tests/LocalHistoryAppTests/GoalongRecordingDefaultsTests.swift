@@ -228,7 +228,7 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         }
         let failed = display(.inputTapUnavailable)
         XCTAssertEqual(failed.title, CaptureHealthState.inputTapUnavailable.frenchTitle)
-        XCTAssertTrue(failed.description.contains("Surveillance de l’entrée"))
+        XCTAssertTrue(failed.description.contains("surveillance de l’entrée"))
         let waiting = display(.awaitingInputEvidence)
         XCTAssertEqual(waiting.title, "Interactions en attente")
         XCTAssertTrue(waiting.description.contains("premier événement"))

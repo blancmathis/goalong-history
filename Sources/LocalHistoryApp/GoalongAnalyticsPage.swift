@@ -95,7 +95,7 @@ struct GoalongAnalyticsPage: View {
                             // The pause banner at the top of the window names the pause and resumes it;
                             // here only what it means for this page, without repeating it.
                             if analytics.payload == nil {
-                                GoalongEmptyState(title: "Activité en pause",
+                                GoalongEmptyState(title: "Suivi en pause",
                                     message: "Vos observations ne sont pas lues pendant la pause. Vos durées reviennent ici dès que le suivi reprend.")
                                     .accessibilityIdentifier("activity-read-paused")
                             } else {

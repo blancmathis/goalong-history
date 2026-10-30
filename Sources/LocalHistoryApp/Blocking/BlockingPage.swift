@@ -272,8 +272,8 @@ struct BlockingStopRequest: Identifiable {
         var words: String
         switch block.lock {
         case .locked: words = "Verrouillé jusqu’à \(BlockingFormat.endTime(block.end))"
-        case .password: words = "Protégé par mot de passe · jusqu’à \(BlockingFormat.endTime(block.end))"
-        case .typing: words = "Difficile à arrêter · jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .password: words = "Protégé par mot de passe jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .typing: words = "Difficile à arrêter jusqu’à \(BlockingFormat.endTime(block.end))"
         case .free: words = "Bloqué jusqu’à \(BlockingFormat.endTime(block.end))"
         }
         let lists = block.listIDs.compactMap(controller.list)
@@ -281,7 +281,7 @@ struct BlockingStopRequest: Identifiable {
             words = words.replacingOccurrences(of: "Bloqué jusqu", with: "Ralenti jusqu")
         }
         let origin: String
-        if case .program = block.origin { origin = " · programme" } else { origin = "" }
+        if case .program = block.origin { origin = ", selon le programme" } else { origin = "" }
         if triggerApps(block) != nil {
             words = lists.allSatisfy({ $0.effectiveAction == .slowDown }) ? "Ralenti tant que l’app est ouverte" : "Bloqué tant que l’app est ouverte"
             symbol = "app.badge"
@@ -337,7 +337,7 @@ struct BlockingStopRequest: Identifiable {
                 Image(systemName: "hourglass").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
                 Text((left > 0 ? "\(list.name) : encore \(BlockingFormat.remaining(left)) aujourd’hui"
                                : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota + earned)) du jour sont passées")
-                     + (earned > 0 ? " · \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
+                     + (earned > 0 ? ". \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
                 Spacer(minLength: 8)
                 BlockingMeter(fraction: 1 - left / Double(max(1, (quota + earned) * 60))).frame(width: 120)
             }

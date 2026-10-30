@@ -122,7 +122,7 @@ import AgentActivity
                 source("Note du jour", capability: nil, value: daySource(\.dayNote))
                 Text(selection.systemSources?.dayNote == true && exclusions.policy.hasExclusions
                      ? "La note est omise tant qu’une exclusion de confidentialité existe : un texte libre ne peut pas être filtré."
-                     : "Cochée, la note sert aussi à l’agent de « Mon travail ». Aucune de ces sources ne s’ajoute au temps actif.")
+                     : "Quand la note est incluse, elle sert aussi à l’agent de « Mon travail ». Aucune de ces sources ne s’ajoute au temps actif.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
             if selection.computer {
