@@ -136,13 +136,12 @@ final class GoalongUXOptimizationTests: XCTestCase {
                        "A past day is not explained by today's storage")
     }
 
-    /// DEF-02 (T-046): « Classement non autorisé » never sits next to a switch shown on.
+    /// DEF-02 (T-046): « Classement non autorisé » never sits next to a switch shown on. Consent is read
+    /// directly: an empty definition or history off must not hide a missing consent (review of PR #205).
     func testAutomaticClassificationSwitchIsOffWhileNotAllowed() {
-        XCTAssertFalse(GoalongWorkPage.automaticSwitchShowsOn(automatic: true, readiness: .noConsent))
-        XCTAssertTrue(GoalongWorkPage.automaticSwitchShowsOn(automatic: true, readiness: .ready))
-        XCTAssertTrue(GoalongWorkPage.automaticSwitchShowsOn(automatic: true, readiness: .notConnected),
-                      "Only the missing consent turns the choice off; a missing connection keeps it")
-        XCTAssertFalse(GoalongWorkPage.automaticSwitchShowsOn(automatic: false, readiness: .ready))
+        XCTAssertFalse(GoalongWorkPage.automaticSwitchShowsOn(automatic: true, consented: false))
+        XCTAssertTrue(GoalongWorkPage.automaticSwitchShowsOn(automatic: true, consented: true))
+        XCTAssertFalse(GoalongWorkPage.automaticSwitchShowsOn(automatic: false, consented: true))
     }
 
     func testUnknownWorkIsSaidInWordsNotAsADash() {
