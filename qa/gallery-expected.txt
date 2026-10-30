@@ -3,3 +3,33 @@
 #   agenda/detail-   # texte « exclusion » → « exclusion globale »
 # Only the lines a branch adds (diff from its merge-base) count: older lines never hide a later change.
 # Anyone may empty this file at any time.
+activite/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+agenda/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+ambiance/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+bilan/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+braise/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+compte/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+concentration/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+concentration-distractions/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+concentration-engagements/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+concentration-maintenant/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+confidentialite/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+conversations-ia/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+distractions/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+enregistrement/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+fenetre/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+historique/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+menubar/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+mises-a-jour/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+modules/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+mon-travail/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+onboarding/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+partage/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+programme/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+sante/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+settings/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+settings-sheets/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+support/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+surveillance/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+temps-ecran/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
+terminal/   # UI-01..UI-10 : jeton texte secondaire, 12 pt, interrupteur éteint au filet fort, lime d'action unique, tuiles retirées, états vides au fil
