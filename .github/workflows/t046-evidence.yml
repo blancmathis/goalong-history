@@ -135,6 +135,8 @@ jobs:
         with:
           fetch-depth: 0
       - name: Build Goalong Dev (debug, ad-hoc signed, updates and server off)
+        # L3b targeted run (qa/e2e/t046-only.txt present): S4 has no row to rerun, so no build and no drive.
+        if: matrix.shard != 'S4' || hashFiles('qa/e2e/t046-only.txt') == ''
         env:
           LOCALHISTORY_CODESIGN_IDENTITY: '-'
           LOCALHISTORY_APP_NAME: Goalong Dev
@@ -158,6 +160,8 @@ jobs:
           ./scripts/build_app.sh > "$RUNNER_TEMP/build.log" 2>&1 || { tail -n 80 "$RUNNER_TEMP/build.log"; exit 1; }
           ls "$RUNNER_TEMP/app"
       - name: Drive the rows of ${{ matrix.shard }} ${{ matrix.slice }}
+        # L3b targeted run (qa/e2e/t046-only.txt present): S4 has no row to rerun, so no build and no drive.
+        if: matrix.shard != 'S4' || hashFiles('qa/e2e/t046-only.txt') == ''
         timeout-minutes: ${{ matrix.shard == 'S4' && 310 || 125 }}
         run: qa/e2e/t046_shard.sh "$RUNNER_TEMP/app/Goalong Dev.app" "$RUNNER_TEMP/e2e" "${{ matrix.shard }}" "${{ matrix.slice }}" 2>&1 | tee "$RUNNER_TEMP/raw.log" | tail -n 80
       - name: Summary

@@ -7,6 +7,7 @@ kind: ui | trigger (dialog or sheet opened by another action) | cli | bg | make 
 nav uses the step vocabulary of qa/e2e/t046_shard.sh (nav:, pane:, p:, o:, si, w:, ...).
 Fileline targets (no id, no literal label in the matrix) are resolved here from the source line.
 """
+import os
 import re
 import sys
 
@@ -136,8 +137,20 @@ def source_file(src, target, needle):
     return hits[0] if len(hits) == 1 else ""
 
 
+def table(name):
+    """Optional side file of qa/e2e: tab-separated lines, # comments skipped."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+    if not os.path.exists(path):
+        return None
+    return [l.rstrip("\n").split("\t") for l in open(path, encoding="utf-8") if l.strip() and not l.startswith("#")]
+
+
 def main():
     rows_path, src, shard, out = sys.argv[1:5]
+    # L3b: the nav of another row whose AX dump held the target (t046-nav.tsv), and a targeted run (t046-only.txt).
+    nav_of = {f[0]: f[1] for f in table("t046-nav.tsv") or [] if len(f) > 1}
+    only = table("t046-only.txt")
+    only = {f[0] for f in only} if only is not None else None
     rows = [l.rstrip("\n").split("\t") for l in open(rows_path, encoding="utf-8")][1:]
     plan = []
     for r in rows:
@@ -189,12 +202,18 @@ def main():
             nav = FILE_NAV.get(source_file(src, target, needle), nav)
         if kind in ("ui", "trigger") and role == "AXMenuItem" and screen in ("Barre des menus (panneau)", "Pause globale"):
             nav = "si p:\"Plus d’options\" pc w:1"
+        if kind in ("ui", "trigger") and rid in nav_of:
+            nav = nav_of[rid]
+            if nav == "@onboarding":  # Seen only on the fresh app: run with the onboarding rows.
+                nav, screen = "", "Onboarding"
         if rid in RECIPES:
             extra, m2, r2, n2 = RECIPES[rid]
             nav = (nav + " " + extra).strip()
             mode, role, needle = m2 or mode, r2 if r2 is not None else role, n2 if n2 is not None else needle
             if kind == "na" and needle:
                 kind, na = "ui", ""
+        if only is not None and rid not in only:
+            continue
         plan.append([rid, kind, nav, mode, role, needle, action or "observe", na, screen])
     # Onboarding needs a fresh app: first. Lifecycle quits the app: last.
     order = {"Onboarding": 0, "App (cycle de vie)": 2}

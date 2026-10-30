@@ -124,6 +124,15 @@ rm -rf "$DATA"; mkdir -p "$DATA"; chmod 700 "$DATA"
 touch "$DATA/.goalong-dev-seed-v3"
 echo "Synthetic E2E data dir, GitHub runner $(date -u +%FT%TZ)" > "$DATA/SYNTHETIC-E2E.txt"
 printf 'Note de test synthétique T-046.\nAucune donnée réelle.\n' > "$RUNNER_TEMP/synthetic-note.txt"
+# L3b prepared state: 14 days of activity (same seed as L4), and one local Claude Code conversation in the
+# runner's own HOME (disposable VM) for the Conversations IA source.
+python3 -I "$HERE/seed_events.py" "$DATA" --days 14 --per-day 300 | tee -a "$SUMMARY"
+conv="$HOME/.claude/projects/-tmp-t046"; mkdir -p "$conv"
+ts="$(date -u -v-2H +%FT%TZ)"; sid="7e046000-0000-4000-8000-000000000046"
+printf '%s\n' \
+  "{\"type\":\"user\",\"sessionId\":\"$sid\",\"cwd\":\"/tmp/t046\",\"timestamp\":\"$ts\",\"uuid\":\"u1\",\"message\":{\"role\":\"user\",\"content\":\"Conversation synthétique T-046\"}}" \
+  "{\"type\":\"assistant\",\"sessionId\":\"$sid\",\"cwd\":\"/tmp/t046\",\"timestamp\":\"$ts\",\"uuid\":\"a1\",\"parentUuid\":\"u1\",\"message\":{\"role\":\"assistant\",\"model\":\"synthetic\",\"content\":[{\"type\":\"text\",\"text\":\"Réponse synthétique.\"}],\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}}" \
+  > "$conv/$sid.jsonl"
 launch || log "app did not start"
 drv status-item "$BUNDLE" >/dev/null 2>&1; sleep 2
 open_dashboard
@@ -157,6 +166,16 @@ log "== recording on, modules on, synthetic activity"
 log "nav miss: $(navigate pane:recording p:source-localComputerHistory w:3 o:recording-setup-confirm w:2)"; cleanup
 log "nav miss: $(navigate pane:modules "set:settings-module-concentration 1" "set:settings-module-blocking 1" \
   "set:settings-module-braise 1" "set:settings-module-ambiance 1" w:2)"; cleanup
+# L3b: planned tasks and today's commitment through the app's own CLI (it talks to the running app), and the
+# conversation source switched on (a button while the source is off, so a press, not set:).
+log "== prepared state: tasks, commitment, conversation source"
+xcrun swift build --product goalong > "$OUT/setup/cli-build.log" 2>&1 || log "goalong CLI build failed"
+GOALONG="$(xcrun swift build --show-bin-path)/goalong"
+for t in "Rédiger la note T-046" "Relire le rapport synthétique" "Préparer la démo"; do
+  tmo 60 "$GOALONG" --root "$DATA" plan add "$t" --estimate 45 >> "$SUMMARY" 2>&1 || log "plan add failed: $t"
+done
+tmo 60 "$GOALONG" --root "$DATA" commitment set --day today --kind work --target 2h >> "$SUMMARY" 2>&1 || log "commitment set failed"
+log "nav miss: $(navigate nav:history p:"Conversations locales" w:2 o:source-aiConversations w:3 o:"Détecter les dossiers courants" w:3)"; cleanup
 open -a TextEdit "$RUNNER_TEMP/synthetic-note.txt"; sleep 3; drv input 60 >> "$SUMMARY"
 open -a Safari; sleep 3; drv input 30 >> "$SUMMARY"
 front; sleep 3
@@ -242,7 +261,7 @@ else
     ui_row "$id" "$kind" "$navs" "$mode" "$role" "$needle" "$action"
     log "[$id] $(tail -n 1 "$RESULTS" | cut -f3,6)"
   done 3< <(tr "\t" "\037" < "$OUT/plan.tsv")
-  if [[ $SHARD == S1 ]]; then
+  if [[ $SHARD == S1 && ! -f $HERE/t046-only.txt ]]; then  # Targeted run (L3b): screens already taken.
     # Screens without a gallery capture: PNG + AX dump per screen, then one PNG per scroll step (full height).
     log "== extra screens (qa/e2e/t046-screens.tsv)"
     mkdir -p "$OUT/screens/ax"

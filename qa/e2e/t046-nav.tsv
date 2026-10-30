@@ -1,0 +1,168 @@
+# id	nav — (b) rows of L3b-tri.tsv: the target was seen in the AX dump of another row; its navigation is reused.
+J-0017	nav:concentration p:"Programme" w:2
+J-0020	pane:website
+J-0021	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0023	pane:website
+J-0024	pane:modules
+J-0029	nav:overview
+J-0035	pane:modules
+J-0036	nav:concentration p:"Distractions" w:2
+J-0040	nav:concentration p:"Programme" w:2
+J-0041	nav:concentration p:"Programme" w:2
+J-0042	nav:concentration p:"Programme" w:2
+J-0043	nav:concentration p:"Programme" w:2
+J-0048	nav:concentration p:"Programme" w:2
+J-0050	pane:website
+J-0051	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
+J-0054	pane:website
+J-0055	pane:website
+J-0057	nav:concentration p:"Programme" w:2
+J-0059	nav:concentration p:"Programme" w:2
+J-0060	nav:concentration p:"Programme" w:2
+J-0072	nav:braise
+J-0078	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
+J-0086	nav:concentration o:concentration-commitment-create w:2
+J-0094	nav:concentration p:"Distractions" w:2
+J-0109	pane:website
+J-0110	pane:modules
+J-0113	pane:modules
+J-0120	pane:home p:settings-report-problem w:3
+J-0126	pane:website
+J-0141	nav:overview
+J-0142	si
+J-0145	si
+J-0146	si
+J-0224	pane:website
+J-0227	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0228	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
+J-0235	pane:website
+J-0269	nav:overview
+J-0273	nav:overview
+J-0282	nav:overview
+J-0293	pane:website
+J-0297	pane:website
+J-0302	pane:modules
+J-0303	pane:applications
+J-0309	si
+J-0322	pane:website
+J-0330	pane:website
+J-0331	pane:home p:settings-report-problem w:3
+J-0334	nav:overview
+J-0342	pane:home p:settings-report-problem w:3
+J-0354	pane:website
+J-0362	pane:home p:settings-report-problem w:3
+J-0367	pane:home p:settings-report-problem w:3
+J-0371	pane:website
+J-0372	pane:home p:settings-report-problem w:3
+J-0373	pane:home p:settings-report-problem w:3
+J-0385	pane:website
+J-0391	pane:modules
+J-0392	pane:website
+J-0394	si
+J-0414	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
+J-0422	pane:chatGPT
+J-0436	pane:chatGPT
+J-0437	pane:chatGPT
+J-0447	pane:website
+J-0455	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
+J-0456	nav:overview
+J-0458	nav:overview
+J-0460	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0471	pane:website
+J-0473	pane:website
+J-0480	pane:website
+J-0481	pane:applications
+J-0489	pane:website
+J-0490	pane:applications
+J-0493	pane:website
+J-0496	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0498	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0499	pane:website
+J-0506	nav:concentration
+J-0509	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0517	pane:website
+J-0526	pane:home p:settings-report-problem w:3
+J-0531	pane:website
+J-0588	pane:website
+J-0594	pane:website
+J-0596	pane:home p:settings-report-problem w:3
+J-0597	pane:home p:settings-report-problem w:3
+J-0599	pane:website
+J-0606	pane:website
+J-0633	pane:home p:settings-report-problem w:3
+J-0641	si
+J-0649	pane:storage
+J-0650	si
+J-0651	pane:home p:settings-report-problem w:3
+J-0652	nav:overview
+J-0653	pane:modules
+J-0655	si
+J-0656	si
+J-0660	pane:website
+J-0661	pane:website
+J-0667	nav:history p:"Ce Mac" w:2
+J-0711	pane:home p:settings-report-problem w:3
+J-0713	pane:website
+J-0716	pane:recording
+J-0719	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0724	pane:website
+J-0725	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0727	pane:website
+J-0730	pane:recording
+J-0733	pane:advanced
+J-0738	pane:applications
+J-0751	nav:concentration o:concentration-commitment-create w:2
+J-0752	nav:braise
+J-0753	pane:website
+J-0754	pane:home p:settings-report-problem w:3
+J-0756	nav:overview
+J-0770	si
+J-0780	nav:braise
+J-0781	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
+J-0793	pane:website
+J-0798	nav:history p:"Conversations locales" w:2
+J-0799	nav:history p:"Conversations locales" w:2
+J-0803	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0805	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0830	pane:advanced
+J-0831	pane:advanced
+J-0832	pane:home p:settings-report-problem w:3
+J-0833	pane:advanced
+J-0835	pane:advanced
+J-0841	pane:home p:settings-report-problem w:3
+J-0842	pane:home p:settings-report-problem w:3
+J-0848	pane:applications
+J-0852	pane:website
+J-0855	pane:website
+J-0857	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0859	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
+J-0860	pane:website
+J-0862	pane:website
+J-0864	pane:website
+J-0870	pane:website
+J-0872	pane:website
+J-0880	pane:home p:settings-report-problem w:3
+J-0881	pane:advanced p:"Outils de partage et analyses" w:2 p:"Analyser une demande du site…" w:2
+J-0886	nav:ambiance
+J-0887	nav:ambiance
+J-0888	nav:ambiance
+J-0902	pane:website
+J-0905	pane:advanced p:"Outils de partage et analyses" w:2 o:"Exporter un fichier signé…" w:2
+J-0906	pane:advanced p:"Outils de partage et analyses" w:2 o:"Exporter un fichier signé…" w:2
+J-0928	pane:website
+J-0937	pane:website
+J-0938	pane:home p:settings-report-problem w:3
+J-0940	pane:website
+J-0943	pane:website
+J-0964	pane:website
+J-0972	pane:storage
+J-0984	pane:website
+J-0991	pane:website
+J-0994	pane:website
+J-0995	pane:recording
+J-0997	pane:website
+J-1007	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-1009	pane:website
+J-0807	@onboarding
+J-0810	@onboarding
+J-0811	@onboarding
