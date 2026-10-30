@@ -539,7 +539,7 @@ struct GoalongAnalyticsPreviewBanner: View {
                         .accessibilityIdentifier("analytics-preview-exit")
                 }
                 Text("Aucune donnée personnelle n’est lue par cet aperçu. Rien n’est ajouté à l’historique ; le partage et l’analyse IA sont désactivés.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
         }.accessibilityIdentifier("analytics-preview-banner")
     }

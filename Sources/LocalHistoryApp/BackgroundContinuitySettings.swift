@@ -20,7 +20,7 @@
                         Toggle("Garder Goalong actif en arrière-plan", isOn: $keepRunning)
                             .toggleStyle(.goalongSwitch)
                         Text("Recommandé : fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation. Aucun service supplémentaire n’est installé ; votre Mac peut toujours se mettre en veille.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         Divider()
                         Toggle("Ouvrir Goalong à l’ouverture de session", isOn: Binding(
                             get: { login.isRegistered },
@@ -29,7 +29,7 @@
                         Text(blockingHoldsLogin
                              ? LaunchAtLoginManager.heldMessage
                              : login.statusDetail)
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         if consents.isEnabled(.launchAtLogin) && !login.isEnabled {
                             Text("Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système.")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
@@ -48,7 +48,7 @@
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
                         Text("Ces options n’activent aucune source et ne reprennent pas une pause.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }.fixedSize(horizontal: false, vertical: true)
                 }
             }

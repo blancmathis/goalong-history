@@ -20,7 +20,7 @@ struct ChatGPTAccountConnectionCard: View {
                     actions
                 }
                 Text("La connexion seule ne lance aucune analyse.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
         .onAppear { runtime.refreshAccount(userInitiated: true) }

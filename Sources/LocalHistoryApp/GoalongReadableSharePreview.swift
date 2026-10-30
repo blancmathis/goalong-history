@@ -111,7 +111,7 @@ struct GoalongReadableSharePreview: View {
                     if let total = device.total { value("Total de l’appareil", seconds: total) }
                     ForEach(device.applications) { row in value(row.label, seconds: row.seconds) }
                     if device.applications.isEmpty && device.total == nil {
-                        Text("Aucune durée de cet appareil n’est transmise.").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Aucune durée de cet appareil n’est transmise.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     if let hours = device.hourly {
                         GoalongDisclosureGroup("Horaires transmis") {
@@ -128,13 +128,13 @@ struct GoalongReadableSharePreview: View {
             HStack {
                 Label("Textes non inclus", systemImage: "text.badge.xmark")
                 if !data.devices.contains(where: { $0.hourly != nil }) { Label("Horaires non inclus", systemImage: "clock") }
-            }.font(.system(size: 12)).foregroundStyle(.secondary)
+            }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             GoalongDisclosureGroup("Informations jointes") {
                 VStack(alignment: .leading, spacing: 9) {
                     ForEach(Array(data.metadata.enumerated()), id: \.offset) { _, item in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.0).font(.system(size: 12, weight: .medium))
-                            Text(item.1).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
+                            Text(item.1).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).textSelection(.enabled)
                         }
                     }
                 }.padding(.top, 10)

@@ -173,7 +173,7 @@ enum GoalongHomeRows {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(capability.title).font(.system(size: 13, weight: .medium))
-                Text(status).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(status).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer()
             if consents.isEnabled(capability) {

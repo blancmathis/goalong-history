@@ -231,7 +231,7 @@ struct SupportRequestView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "stethoscope")
-                .font(.system(size: 22, weight: .medium)).foregroundStyle(LHTheme.accent)
+                .font(.system(size: 22, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 44, height: 44)
                 .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {
@@ -245,7 +245,7 @@ struct SupportRequestView: View {
 
     @ViewBuilder private var detected: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Ce que Goalong a détecté").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
+            Text("Ce que Goalong a détecté").font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
             LHCard(padding: 16) {
                 VStack(alignment: .leading, spacing: 0) {
                 switch controller.phase {
@@ -277,7 +277,7 @@ struct SupportRequestView: View {
 
     private var contents: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Ce que contient le rapport").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
+            Text("Ce que contient le rapport").font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
             LHCard(padding: 16) {
                 VStack(alignment: .leading, spacing: 10) {
                     contentLine("checkmark.circle.fill", LHTheme.success,

@@ -11,31 +11,31 @@ import LocalHistoryCore
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Vidéos et fils sociaux sont considérés comme des distractions, sauf les usages explicitement autorisés. Vos exemples hors travail ajoutent des repères prioritaires, pas une liste exhaustive. Recherches, lecture et création doivent servir les critères de travail indiqués. Le simple fait de taper ou d’ouvrir une application de travail ne suffit pas. Sans indices suffisants, aucune alerte.")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.callout).foregroundStyle(LHTheme.secondaryText)
             Text("Les fenêtres privées, les données supprimées et les apps ou sites exclus ne sont pas envoyés au service.")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.callout).foregroundStyle(LHTheme.secondaryText)
             Text("Vos critères de travail et exemples hors travail enregistrés, plus seulement les 15 dernières secondes : applications/domaines, titres disponibles et indices d’interaction. Les clics et défilements identiques sont regroupés. Aucun historique de journée n’est transmis.")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.callout).foregroundStyle(LHTheme.secondaryText)
             Toggle("Joindre un bref extrait du texte affiché", isOn: Binding(
                 get: { excerpts }, set: { if $0 { confirmingText = true } else { monitor.setIncludeText(false) } }))
                 .toggleStyle(.goalongSwitch).disabled(!richText)
             Text(richText ? "Les extraits visibles sont rafraîchis pendant la surveillance, séparés du titre et filtrés. Les champs de saisie et le texte hors de la zone visible sont exclus." : "Cette option nécessite d’abord le choix local « Texte affiché ». Celui-ci n’est jamais activé par la surveillance.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText)
             Text("Le service ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. La lecture au premier plan reste suivie pendant le délai d’inactivité choisi. Une lecture vidéo explicitement détectée peut continuer sans clavier ; un onglet d’arrière-plan ne suffit pas.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText)
             Text("Budget borné : requête JSON complète ≤ 1 600 octets UTF-8. Le compteur TypeSafe est aussi contrôlé : toute réponse annonçant 1 000 tokens ou plus suspend la surveillance. Le tokenizer et son surcoût interne ne sont pas publiés.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText)
             if let tokens = monitor.lastInputTokens {
                 Text("Dernier appel : \(tokens) tokens d’entrée · \(monitor.lastRequestBytes) octets envoyés")
                     .font(.caption.monospacedDigit())
             }
             GoalongDisclosureGroup("Voir le dernier contenu envoyé (sans la clé)") {
                 Text(monitor.lastPayload.isEmpty ? "Aucun contenu conservé en mémoire." : monitor.lastPayload)
-                    .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                    .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
             }
             Text("Désactiver la surveillance efface les échantillons d’activité et la dernière requête en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et l’arrêt de confidentialité restent prioritaires.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText)
         }
         .alert("Transmettre un extrait du texte affiché ?", isPresented: $confirmingText) {
             Button("Annuler", role: .cancel) {}
@@ -60,7 +60,7 @@ struct JevRecentChecksView: View {
                 }.font(.caption)
             }
             Text("Ces résultats ne réécrivent pas l’historique. Une fenêtre signalée contient une distraction, sans être entièrement hors travail.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText)
         }
     }
 }
@@ -71,7 +71,7 @@ struct JevRecentChecksView: View {
     var body: some View {
         GoalongSettingsGroup(title: "Faire une pause") {
             if monitor.breakStorageInvalid {
-                Text(JevMonitor.unreadableBreakNotice).foregroundStyle(.secondary)
+                Text(JevMonitor.unreadableBreakNotice).foregroundStyle(LHTheme.secondaryText)
                 Button("Réinitialiser la pause") { monitor.endBreak() }
             } else if monitor.timedBreak != nil {
                 HStack {
@@ -100,7 +100,7 @@ struct JevRecentChecksView: View {
                  : monitor.enabled
                  ? "Une pause arrête la surveillance et ses rappels pendant la durée choisie. L’historique continue s’il est activé."
                  : "La surveillance est désactivée : il n’y a aucun rappel à mettre en pause.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
 }

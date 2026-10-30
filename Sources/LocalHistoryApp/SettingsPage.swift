@@ -25,7 +25,7 @@ import AppKit
             let denied = permissions.contains(.permissionDenied)
             VStack(alignment: .leading, spacing: 6) {
                 Text(denied ? "macOS refuse l’accès à l’agenda ou aux rappels." : "macOS doit encore donner l’accès à l’agenda et aux rappels.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 Button(denied ? "Ouvrir Réglages Système…" : "Autoriser l’accès…") {
                     if denied { GoalongCalendarSettings.open() } else { Task { await system.requestCalendarPermissions() } }
                 }
@@ -89,7 +89,7 @@ import AppKit
                 GoalongDisclosureGroup("Confidentialité · tout suspendre") {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Réglages › Jev : l’historique continue.")
-                            .font(.callout).foregroundStyle(.secondary)
+                            .font(.callout).foregroundStyle(LHTheme.secondaryText)
                         GoalongGlobalPauseControl(model: model)
                     }.padding(.top, 12)
                 }.accessibilityIdentifier("settings-privacy-stop")
@@ -107,14 +107,14 @@ import AppKit
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Enregistrer mon activité").font(.system(size: 14, weight: .medium))
                         Text("Reste sur ce Mac : enregistrer n’autorise aucun envoi. Le démarrage à l’ouverture de session se règle sur l’accueil des Réglages.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
             GoalongSettingsGroup(title: "Enregistrement de l’activité") {
                 Text("Lire, réfléchir ou regarder sans cliquer compte aussi. Seule la fenêtre au premier plan est suivie.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.callout).foregroundStyle(LHTheme.secondaryText)
                 Picker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds) {
                     Text("2 minutes").tag(120)
                     Text("5 minutes · recommandé").tag(300)
@@ -128,7 +128,7 @@ import AppKit
                     }
                 }.accessibilityIdentifier("settings-foreground-idle-limit")
                 Text("Le délai repart à chaque interaction ; augmentez-le pour de longues lectures. Appels et vidéos au premier plan continuent au-delà. Verrouillage, veille et arrêt de confidentialité interrompent toujours le suivi.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 if model.appliedSettings.foregroundIdleSeconds == 0 {
                     Label("Ce mode peut compter votre absence si vous laissez une fenêtre visible et le Mac déverrouillé.", systemImage: "exclamationmark.triangle")
@@ -153,7 +153,7 @@ import AppKit
                         }))
                         .toggleStyle(.goalongSwitch)
                     Text("La détection des fenêtres privées dépend du navigateur. Utilisez Pause pour une activité sensible. Pendant un blocage, Goalong lit l’adresse en mémoire pour appliquer vos listes ; il ne l’enregistre jamais.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }.padding(.top, 12)
             }.font(.system(size: 13))
             GoalongSettingsGroup(title: "Autres sources · facultatives") {
@@ -166,7 +166,7 @@ import AppKit
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Activité de développement")
                         Text("Commits et nombre de fichiers modifiés dans les projets choisis. Ni code, ni messages de commit.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -179,7 +179,7 @@ import AppKit
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Agenda et rappels")
                         Text("Événements et rappels terminés de ce Mac, pour comparer le prévu et l’observé. Rien n’est modifié.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -224,7 +224,7 @@ import AppKit
                 GoalongPermissionRow(capability: .aiConversations)
             }
             Text("Les fonctions désactivées ne demandent aucune autorisation.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             GoalongDisclosureGroup("Résoudre un problème") {
                 Button("Ouvrir les diagnostics d’accès") { model.selectSection(.privacy) }.buttonStyle(LHSecondaryButtonStyle()).padding(.top, 10)
             }.font(.system(size: 13))
@@ -250,11 +250,11 @@ import AppKit
                     get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.goalongSwitch)
                     .disabled(!updates.isConfigured)
                 if !updates.isConfigured {
-                    Text(updates.statusMessage).font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(updates.statusMessage).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button("Revoir le démarrage") { model.showWelcome = true }.buttonStyle(LHSecondaryButtonStyle())
@@ -397,7 +397,7 @@ enum SettingsPane: Hashable {
             }
         } else if let backup = model.configBackupName {
             Text("Ancien fichier conservé : \(backup)")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityIdentifier("settings-config-backup")
         }
     }

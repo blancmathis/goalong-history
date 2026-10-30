@@ -110,14 +110,14 @@ struct GoalongHourlyClassChart: View {
             .chartXAxis {
                 AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
                     AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
-                        .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                 }
             }
             .chartYAxis {
                 AxisMarks(position: .leading) { value in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
                     AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
-                        .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                 }
             }
             .frame(height: height)
@@ -165,7 +165,7 @@ struct GoalongUsageTimelineChart: View {
             AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
                 AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
-                    .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
             }
         }
         .chartYAxis {
@@ -261,7 +261,7 @@ struct GoalongDailyClassChart: View {
                         .annotation(position: .top, alignment: .trailing) {
                             // A patch of page behind the label keeps it readable where bars pass the average.
                             Text("Moyenne\(averageExcludesToday ? " (sans aujourd’hui)" : "") \(GoalongAnalyticsFormatting.duration(average))")
-                                .font(.system(size: 11, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                                .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                                 .padding(.horizontal, 5).padding(.vertical, 2)
                                 .background(LHTheme.pageBackground.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
                         }
@@ -273,12 +273,12 @@ struct GoalongDailyClassChart: View {
             .chartLegend(.hidden).chartYScale(domain: 0...scale.upperBound).chartXScale(domain: dateRange)
             .chartXAxis { AxisMarks(values: .stride(by: .day, count: period.days.count > 7 ? 4 : 1)) { _ in
                 AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).weekday(.abbreviated).day())
-                    .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
             } }
             .chartYAxis { AxisMarks(position: .leading) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
                 AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
-                    .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
             } }
             .frame(height: height)
             .chartOverlay { proxy in

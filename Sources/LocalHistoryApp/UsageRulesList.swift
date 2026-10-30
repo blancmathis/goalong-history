@@ -85,26 +85,22 @@
 
                 if showsDefaultRule {
                     Text("Par défaut")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    Picker(
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText)
+                    GoalongMenuPicker(
                         "Règle de partage par défaut",
                         selection: Binding(
                             get: { model.defaultSharingVisibility },
                             set: model.setDefaultSharingVisibility
-                        )
-                    ) {
-                        ForEach(SharingVisibility.allCases) { visibility in
-                            Text(visibility.title).tag(visibility)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: UsageRulesList.ruleColumnWidth)
+                        ),
+                        options: SharingVisibility.allCases.map { ($0, $0.title) }
+                    )
+                    .frame(width: UsageRulesList.ruleColumnWidth, alignment: .leading)
                 }
 
                 Text(FrenchCount.count(filteredItems.count, "élément", "éléments"))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(minWidth: 58, alignment: .trailing)
             }
         }
@@ -118,8 +114,8 @@
                             Label(title, systemImage: symbol)
                                 .font(.system(size: 13, weight: .semibold))
                             Text("\(items.count)")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())
@@ -137,9 +133,9 @@
                                     .frame(width: 46, alignment: .trailing)
                             }
                         }
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.35)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .padding(.horizontal, 14)
                         .frame(height: 40)
 
@@ -201,15 +197,14 @@
                 } else {
                     Image(systemName: "globe")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(LHTheme.teal)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .frame(width: 32, height: 32)
-                        .background(LHTheme.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(item.name)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                         CategoryBadge(category: item.category)
                         if let host = item.host, model.isDomainExcludedFromCapture(host) {
@@ -222,19 +217,19 @@
                         }
                     }
                     Text(secondaryLabel)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(DashboardFormatters.duration(seconds: item.foregroundSeconds))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .frame(width: 96, alignment: .trailing)
 
                 Text(item.activeMinutes == 0 ? "—" : DashboardFormatters.duration(minutes: item.activeMinutes))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 82, alignment: .trailing)
 
                 Picker(
@@ -257,7 +252,7 @@
                         // Without an analysis summary there is nothing to show, so no expand control.
                         if websiteSummary != nil {
                             Button(action: onToggleExpanded) {
-                                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                                Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
                                     .font(.system(size: 10, weight: .semibold))
                                     .frame(width: 22, height: 22)
                             }
@@ -326,10 +321,10 @@
             } else {
                 HStack(spacing: 9) {
                     Image(systemName: "info.circle")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                     Text("Les pages et interactions détaillées proviennent de l’analyse de la journée.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                     Spacer()
                 }
                 .padding(.top, 12)
@@ -348,11 +343,11 @@
                     ) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Mémoriser les détails futurs du site")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                             Text(parent.map { "Exclu par la règle « \($0) » : modifiez-la dans Réglages." }
                                 ?? "Désactivez pour ne garder désormais qu’une période privée pour ce domaine.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
                     .toggleStyle(.goalongSwitch)
@@ -372,7 +367,7 @@
                         "\(detail.semanticSnapshotCount) instantané\(detail.semanticSnapshotCount > 1 ? "s" : "") de texte visible",
                         systemImage: "text.badge.checkmark"
                     )
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(detail.semanticSnapshotCount > 0 ? LHTheme.success : Color.secondary)
                 }
             }
@@ -404,15 +399,15 @@
         private func websiteMetric(_ title: String, value: String, symbol: String) -> some View {
             HStack(spacing: 8) {
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 18, height: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.tertiary)
                     Text(value)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .lineLimit(2)
                 }
             }
@@ -442,12 +437,12 @@
                                     .background(LHTheme.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(page.title)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 12, weight: .semibold))
                                         .fixedSize(horizontal: false, vertical: true)
                                     if let URL = page.URL {
                                         Text(URL)
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundStyle(.secondary)
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(2)
                                             .textSelection(.enabled)
                                     }
@@ -459,7 +454,7 @@
                                             "\(GoalongUIFormat.time(page.firstSeen))–\(GoalongUIFormat.time(page.lastSeen))"
                                         )
                                     }
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(.tertiary)
                                 }
                                 Spacer()
@@ -493,8 +488,8 @@
                             "L’analyse compacte a atteint sa limite ; les événements scellés contiennent les autres clics.",
                             systemImage: "ellipsis.circle"
                         )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                     }
                 }
             }
@@ -536,8 +531,8 @@
                     VStack(spacing: 6) {
                         ForEach(Array(detail.rememberedContext.enumerated()), id: \.offset) { _, text in
                             Text(text)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(9)
@@ -552,8 +547,8 @@
                             "Les événements scellés contiennent plus de contexte que ce résumé.",
                             systemImage: "ellipsis.circle"
                         )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                     }
                 }
             }
@@ -562,10 +557,10 @@
         private func detailHeading(_ title: String, subtitle: String) -> some View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                 Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -575,8 +570,8 @@
                 Image(systemName: "minus.circle")
                     .foregroundStyle(.tertiary)
                 Text(message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LHTheme.secondaryText)
                 Spacer()
             }
             .padding(9)
@@ -647,11 +642,11 @@
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(interaction.label)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .fixedSize(horizontal: false, vertical: true)
                         if interaction.count > 1 {
                             Text("×\(interaction.count)")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(tint)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
@@ -660,8 +655,8 @@
                     }
                     if let pageTitle = interaction.pageTitle {
                         Text(pageTitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .lineLimit(2)
                     }
                     HStack(spacing: 8) {
@@ -672,7 +667,7 @@
                         if let role = interaction.role { Text(role) }
                         if let detail = interaction.detail { Text(detail) }
                     }
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.tertiary)
                 }
                 Spacer()

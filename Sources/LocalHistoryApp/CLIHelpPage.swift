@@ -134,7 +134,7 @@
                                 "Copiez une consigne complète (commandes, traitement sûr des données, pagination, provenance, données manquantes) et collez-la telle quelle dans votre agent."
                             )
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 8)
@@ -166,8 +166,8 @@
                         Text("Commencer dans le Terminal")
                             .font(.system(size: 15, weight: .semibold))
                         Text("Ces quatre commandes suffisent pour découvrir l’outil et poser une première question.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                     .padding(18)
 
@@ -190,7 +190,7 @@
                         .font(.system(size: 12, weight: .semibold))
                     Text(Self.frenchDetail(item))
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer(minLength: 16)
                 Text(item.command)
@@ -246,14 +246,14 @@
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(LHTheme.accent)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 22, height: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     Text(detail)
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

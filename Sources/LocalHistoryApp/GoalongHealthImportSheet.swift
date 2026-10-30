@@ -54,11 +54,11 @@ struct GoalongHealthImportSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
-                Image(systemName: "heart.text.clipboard").font(.title).foregroundStyle(LHTheme.accent)
+                Image(systemName: "heart.text.clipboard").font(.title).foregroundStyle(LHTheme.secondaryText)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Apple Santé").font(.title2.weight(.semibold))
                     Text("Sommeil, récupération et activité. Vous choisissez ce qui reste sur ce Mac et ce qui part sur Goalong.")
-                        .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.subheadline).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction).disabled(busy)
@@ -94,7 +94,7 @@ struct GoalongHealthImportSheet: View {
                 } else if let message {
                     Label(message, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                } else { Text("Données déclaratives · aucun score de productivité calculé").font(.caption).foregroundStyle(.secondary) }
+                } else { Text("Données déclaratives · aucun score de productivité calculé").font(.caption).foregroundStyle(LHTheme.secondaryText) }
                 Spacer()
             }.padding(16)
         }
@@ -113,13 +113,13 @@ struct GoalongHealthImportSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Importer depuis votre iPhone").font(.headline)
             Text("Dans Santé : Résumé → votre profil → Exporter toutes les données de santé. Envoyez le fichier au Mac par AirDrop, décompressez-le puis sélectionnez export.xml.")
-                .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.subheadline).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle())
                 if let file { Text(file.lastPathComponent).font(.caption); Button("Oublier ce fichier") { self.file = nil; sourceChoices = [:]; preferred = [:]; invalidate() } }
             }
             Text("Le fichier complet est lu sur ce Mac. Les dossiers médicaux, médicaments, trajets GPS et autres données non proposées ici sont exclus.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
         }
     }
     private var selectionSection: some View {
@@ -127,8 +127,8 @@ struct GoalongHealthImportSheet: View {
             Divider()
             Text("Choisir les dates et les données").font(.headline)
             HStack {
-                DatePicker("Du", selection: $from, displayedComponents: .date)
-                DatePicker("Au", selection: $through, displayedComponents: .date)
+                DatePicker("Du", selection: $from, displayedComponents: .date).goalongDateField(label: "Du")
+                DatePicker("Au", selection: $through, displayedComponents: .date).goalongDateField(label: "Au")
             }
             ForEach(GoalongHealthGroup.allCases) { group in
                 VStack(alignment: .leading, spacing: 5) {
@@ -142,19 +142,19 @@ struct GoalongHealthImportSheet: View {
                 }
             }
             Text("Les durées de sommeil sont réparties à minuit dans le fuseau \(TimeZone.current.identifier). Une nuit peut donc apparaître sur deux journées. Une valeur absente reste inconnue.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             Button("Préparer l’aperçu local", action: prepare).disabled(selected.isEmpty)
         }
     }
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Divider()
-            HStack { Text("Votre sélection").font(.headline); Spacer(); Text(FrenchCount.count(days.count, "journée", "journées")).font(.subheadline).foregroundStyle(.secondary) }
+            HStack { Text("Votre sélection").font(.headline); Spacer(); Text(FrenchCount.count(days.count, "journée", "journées")).font(.subheadline).foregroundStyle(LHTheme.secondaryText) }
             if let result {
-                ForEach(result.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+                ForEach(result.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(LHTheme.secondaryText) }
             }
             Text("Les moyennes cardiaques décrivent les échantillons disponibles. Les entraînements et l’activité quotidienne peuvent se recouper : leurs durées et calories ne s’additionnent pas.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             Picker("Journée", selection: $previewDate) {
                 ForEach(days.compactMap { $0["date"] as? String }, id: \.self) { Text(GoalongUIFormat.day(key: $0)).tag($0) }
             }
@@ -167,7 +167,7 @@ struct GoalongHealthImportSheet: View {
                         HStack(alignment: .firstTextBaseline) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(Self.metricNames[metric["key"] as? String ?? ""] ?? "Mesure").font(.subheadline)
-                                Text(metric["source"] as? String ?? "").font(.caption2).foregroundStyle(.secondary)
+                                Text(metric["source"] as? String ?? "").font(.caption2).foregroundStyle(LHTheme.secondaryText)
                             }
                             Spacer()
                             Text(Self.formatted(metric)).font(.subheadline.monospacedDigit())
@@ -176,7 +176,7 @@ struct GoalongHealthImportSheet: View {
                     let workouts = health["workouts"] as? [[String: Any]] ?? []
                     ForEach(Array(workouts.enumerated()), id: \.offset) { _, workout in
                         HStack {
-                            Image(systemName: "figure.run").foregroundStyle(LHTheme.accent)
+                            Image(systemName: "figure.run").foregroundStyle(LHTheme.secondaryText)
                             Text(Self.sport(workout["sport"] as? String ?? ""))
                             Spacer()
                             Text(Self.duration(workout["durationSeconds"] as? Double ?? 0))
@@ -194,7 +194,7 @@ struct GoalongHealthImportSheet: View {
                     Button("Exporter pour Goalong…", action: exportFile)
                 }
                 Text("Conserver remplace uniquement les journées Santé de cette sélection. L’historique d’écran reste conservé.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(LHTheme.secondaryText)
                 Divider()
                 Text("Envoyer au site Goalong").font(.headline)
                 TextField("Adresse du site Goalong (https://…)", text: $origin).textFieldStyle(GoalongFieldStyle())
@@ -208,7 +208,7 @@ struct GoalongHealthImportSheet: View {
                         } message: { Text(GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: tokenFilePath)) } }
                 }
                 Text("Créez cet accès depuis Sources et connexions sur le site. Seules les mesures de cet aperçu seront transmises ; vos autorisations Santé explicites sur le site détermineront leur visibilité.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 Toggle("J’autorise l’envoi de ces données Santé au site indiqué.", isOn: $consent)
                 Button("Envoyer les données relues", action: sendReviewedHealth).buttonStyle(LHPrimaryButtonStyle())
                     .disabled(!consent || origin.isEmpty || tokenFilePath.isEmpty)

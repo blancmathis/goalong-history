@@ -16,7 +16,7 @@ import SwiftUI
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Projets suivis").font(LHTheme.sheetTitleFont)
                     Text("Pour chaque projet, Goalong lit l’heure et le type des actions Git, et compte les fichiers modifiés. Le code, les messages de commit et les noms de fichiers ne sont ni lus ni enregistrés.")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 16)
@@ -27,7 +27,7 @@ import SwiftUI
                 VStack(alignment: .leading, spacing: 22) {
                     GoalongSettingsGroup(title: "Suivis") {
                         if developer.selectedProjects.isEmpty {
-                            Text("Aucun projet suivi.").font(.system(size: 13)).foregroundStyle(.secondary)
+                            Text("Aucun projet suivi.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                         }
                         ForEach(Array(developer.selectedProjects.enumerated()), id: \.element.id) { index, project in
                             if index > 0 { Divider() }
@@ -63,7 +63,7 @@ import SwiftUI
             VStack(alignment: .leading, spacing: 2) {
                 Text(project.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 Text((project.rootPath as NSString).abbreviatingWithTildeInPath)
-                    .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 8)
             Button(action, action: perform).buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))

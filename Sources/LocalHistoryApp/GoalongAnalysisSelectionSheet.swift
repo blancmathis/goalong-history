@@ -49,7 +49,7 @@ import AgentActivity
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Votre analyse ChatGPT").font(LHTheme.sheetTitleFont)
-                    Text("Choisissez ce qui sort du Mac, puis la façon de rédiger le bilan.").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text("Choisissez ce qui sort du Mac, puis la façon de rédiger le bilan.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("analysis-cancel")
@@ -66,7 +66,7 @@ import AgentActivity
             }
             Divider()
             HStack(spacing: 16) {
-                Text("Aucun envoi en configurant ces choix.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Aucun envoi en configurant ces choix.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 Spacer()
                 if tab != 3 { Button("Vérifier l’aperçu") { tab = 3; preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(catalogLoading || installedApps.loading || !selection.hasSources) }
                 Button("Enregistrer mes choix") { save() }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.hasSources || previewBusy || catalogLoading || installedApps.loading)
@@ -111,7 +111,7 @@ import AgentActivity
                        value: Binding(get: { selection.developer == true }, set: { selection.developer = $0 }))
                 if selection.developer == true && exclusions.policy.hasExclusions {
                     Text("Omis tant qu’une exclusion de confidentialité existe : ces données n’indiquent ni l’app ni le site d’origine.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
             }
             GoalongSettingsGroup(title: "Sources du jour · chacune à part") {
@@ -123,7 +123,7 @@ import AgentActivity
                 Text(selection.systemSources?.dayNote == true && exclusions.policy.hasExclusions
                      ? "La note est omise tant qu’une exclusion de confidentialité existe : un texte libre ne peut pas être filtré."
                      : "Cochée, la note sert aussi à l’agent de « Mon travail ». Aucune de ces sources ne s’ajoute au temps actif.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
             if selection.computer {
                 GoalongSettingsGroup(title: "Détails possibles · uniquement pour les apps autorisées") {
@@ -139,27 +139,27 @@ import AgentActivity
                             }
                         }
                     }
-                    Text("Une app réglée sur « Durée seulement » ne transmet aucun de ces détails.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("Une app réglée sur « Durée seulement » ne transmet aucun de ces détails.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 GoalongDisclosureGroup("Exclure des sites de l’analyse") {
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("exemple.fr · un domaine par ligne", text: Binding(get: { scope.wrappedValue.excludedDomains.joined(separator: "\n") },
                             set: { var value = scope.wrappedValue; value.excludedDomains = $0.components(separatedBy: .newlines); scope.wrappedValue = value }), axis: .vertical)
                             .textFieldStyle(GoalongFieldStyle()).lineLimit(3...6)
-                        Text("Les durées Apple d’un navigateur peuvent être omises si elles ne permettent pas de retirer ces sites.").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Les durées Apple d’un navigateur peuvent être omises si elles ne permettent pas de retirer ces sites.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }.padding(.top, 10)
                 }.font(.system(size: 13))
             }
             if selection.computer || selection.screenTime { applicationChoices }
             if needsDevices && catalogLoading { ProgressView("Lecture des appareils…").font(.system(size: 13)) }
             if needsDevices, let catalogError {
-                Label(catalogError, systemImage: "info.circle").font(.system(size: 13)).foregroundStyle(.secondary)
+                Label(catalogError, systemImage: "info.circle").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
             }
             if needsDevices, let catalog = localCatalog {
                 GoalongSettingsGroup(title: "Appareils Apple") {
                     if catalog.devices.isEmpty {
                         Text("Aucun appareil Apple pour cette date. Désactivez « Autres appareils Apple » ou « Temps d’écran Apple ».")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     ForEach(catalog.devices) { device in
                         Toggle(device.name, isOn: Binding(get: { scope.wrappedValue.deviceIDs?.contains(device.id) ?? true }, set: { enabled in
@@ -188,7 +188,7 @@ import AgentActivity
             if installedApps.loading { ProgressView("Applications installées…").font(.system(size: 12)) }
             if !installedApps.loading && apps.filter({ appSearch.isEmpty || $0.name.localizedStandardContains(appSearch) }).isEmpty {
                 Text(apps.isEmpty ? "Aucune application disponible." : "Aucun résultat pour cette recherche.")
-                    .font(.system(size: 13)).foregroundStyle(.secondary).padding(.vertical, 14)
+                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).padding(.vertical, 14)
             }
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -199,7 +199,7 @@ import AgentActivity
                 }
             }.frame(height: 275)
             Text("La sélection s’applique aussi aux durées Apple. Les nouvelles apps restent exclues après validation.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
     private var conversationChoices: some View {
@@ -211,7 +211,7 @@ import AgentActivity
                     if enabled { ids.insert(folder.id) } else { ids.remove(folder.id) }; value.conversationFolderIDs = ids.sorted(); scope.wrappedValue = value
                 })).toggleStyle(.goalongCheckbox).font(.system(size: 13))
             }
-            if folders.isEmpty { Text("Aucun dossier activé. Ajoutez une source dans Enregistrement.").font(.system(size: 13)).foregroundStyle(.secondary) }
+            if folders.isEmpty { Text("Aucun dossier activé. Ajoutez une source dans Enregistrement.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText) }
             Divider()
             Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 14) {
                 GridRow {
@@ -224,7 +224,7 @@ import AgentActivity
                 }
             }.font(.system(size: 13))
             if exclusions.policy.hasExclusions {
-                Text("Des exclusions globales sont actives : les conversations dont le texte n’est pas filtrable sont omises.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Des exclusions globales sont actives : les conversations dont le texte n’est pas filtrable sont omises.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
     }
@@ -233,21 +233,21 @@ import AgentActivity
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Remplacer avant l’envoi").font(.system(size: 20, weight: .semibold)).accessibilityIdentifier("analysis-replacements-title")
-                    Text("Appliqué sur le Mac. L’historique original reste inchangé.").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text("Appliqué sur le Mac. L’historique original reste inchangé.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button("Ajouter un remplacement") { selection.replacements = (selection.replacements ?? []) + [GoalongTextReplacement()] }.buttonStyle(LHSecondaryButtonStyle()).disabled(rules.wrappedValue.count >= 100)
             }
             ForEach(rules) { rule in GoalongReplacementRow(rule: rule) { selection.replacements?.removeAll { $0.id == rule.wrappedValue.id } } }
             if rules.wrappedValue.isEmpty {
-                Text("Exemple : Bonjour Charlie → Projet A").font(.system(size: 14)).foregroundStyle(.secondary).padding(.vertical, 16)
+                Text("Exemple : Bonjour Charlie → Projet A").font(.system(size: 14)).foregroundStyle(LHTheme.secondaryText).padding(.vertical, 16)
             }
             GoalongSettingsGroup(title: "Tester vos remplacements") {
                 TextField("Texte d’exemple", text: $sampleText, axis: .vertical).textFieldStyle(GoalongFieldStyle()).lineLimit(2...4)
                 Text(transformedExample).font(.system(size: 14)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
             Text("Les remplacements portent sur le texte transmis et vos consignes, jamais sur les fichiers d’origine. Ils ne garantissent pas une anonymisation complète.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
     private var transformedExample: String {
@@ -266,12 +266,12 @@ import AgentActivity
                             placeholder: "Concentre-toi sur les progrès de mes projets…", minHeight: 190)
                 .accessibilityLabel("Consignes de rédaction pour ChatGPT")
             Text("Exemple : Concentre-toi sur les progrès de mes projets. Ne cite pas les noms de personnes. Évite les détails de mes loisirs.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             HStack {
-                Text("Les consignes influencent le bilan, pas les données envoyées.").font(.system(size: 12)).foregroundStyle(.secondary)
-                Spacer(); Text("\(selection.outputGuidance?.count ?? 0) / 4 000").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Les consignes influencent le bilan, pas les données envoyées.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                Spacer(); Text("\(selection.outputGuidance?.count ?? 0) / 4 000").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
-            Text("Pour retirer une information avant l’envoi, utilisez Données ou Remplacements.").font(.system(size: 12)).foregroundStyle(.secondary)
+            Text("Pour retirer une information avant l’envoi, utilisez Données ou Remplacements.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
     private var preview: some View {
@@ -279,7 +279,7 @@ import AgentActivity
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Ce que ChatGPT recevra").font(.system(size: 21, weight: .semibold))
-                    Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button(previewText == nil ? "Préparer l’aperçu local" : "Actualiser") { preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(previewBusy || catalogLoading || installedApps.loading)
@@ -293,7 +293,7 @@ import AgentActivity
                             .font(.system(size: 13)).textSelection(.enabled)
                     }
                 }
-            } else { Text("Aucun envoi : cet aperçu permet de vérifier les champs et les noms après remplacement.").font(.system(size: 13)).foregroundStyle(.secondary).padding(.vertical, 20) }
+            } else { Text("Aucun envoi : cet aperçu permet de vérifier les champs et les noms après remplacement.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).padding(.vertical, 20) }
         }
     }
     private func daySource(_ keyPath: WritableKeyPath<GoalongSystemRecapSelection, Bool>) -> Binding<Bool> {

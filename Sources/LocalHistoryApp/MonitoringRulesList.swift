@@ -71,17 +71,16 @@
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "hand.raised.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(LHTheme.teal)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .frame(width: 40, height: 40)
-                        .background(LHTheme.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Choisir ce que Goalong suit")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
                             "Désactiver le suivi ne concerne que les détails futurs. L’historique existant n’est pas modifié, Goalong reste toujours exclu et les règles de partage sont distinctes."
                         )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -102,8 +101,8 @@
                                         options: MonitoringSubjectFilter.allCases) { $0.title }
 
                 Text("\(filteredItems.count) source\(filteredItems.count == 1 ? "" : "s")")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(minWidth: 74, alignment: .trailing)
             }
         }
@@ -117,8 +116,8 @@
                             Label(title, systemImage: symbol)
                                 .font(.system(size: 14, weight: .semibold))
                             Text("\(items.count)")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())
@@ -128,9 +127,9 @@
                             Text("Surveiller l’activité future")
                                 .frame(width: 176, alignment: .trailing)
                         }
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.35)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .padding(.horizontal, 16)
                         .frame(height: 42)
 
@@ -159,7 +158,7 @@
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(item.name)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                         StatusPill(
                             title: state.enabled ? "Monitored" : "Excluded",
@@ -169,14 +168,14 @@
                         .scaleEffect(0.82, anchor: .leading)
                     }
                     Text(secondaryLabel(for: item))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(DashboardFormatters.duration(seconds: item.foregroundSeconds))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .monospacedDigit()
                     .frame(width: 92, alignment: .trailing)
 

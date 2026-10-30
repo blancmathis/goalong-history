@@ -10,9 +10,9 @@ import LocalHistoryCore
             VStack(alignment: .leading, spacing: 8) {
                 Text("Dès la première détection fiable · premier rappel").font(.system(size: 14, weight: .semibold))
                 Text("« Arrête de procrastiner. »")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.callout).foregroundStyle(LHTheme.secondaryText)
                 Text("La durée ne s’affiche qu’à partir de 10 minutes. Fermer masque seulement le pop-up jusqu’à la prochaine détection ; le suivi interne et les effets continuent.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(LHTheme.secondaryText)
             }
             Toggle("Changer de position à chaque nouveau rappel", isOn: binding(\.moveAfterSecondAppearance))
                 .toggleStyle(.goalongSwitch).accessibilityIdentifier("jev-move-warning")
@@ -20,16 +20,16 @@ import LocalHistoryCore
             Toggle("Activer les effets progressifs", isOn: binding(\.effectsEnabled))
                 .toggleStyle(.goalongSwitch).accessibilityIdentifier("jev-effects-enabled")
             Text("Optionnel. Par défaut : assombrissement à 2 min, puis assombrissement + rouge dès 5 min. Ensuite, ce dernier effet et les rappels continuent sans nouveau palier. Retour productif, pause ou arrêt de la surveillance dans Goalong : tout disparaît.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText)
             strengthPresets
             ForEach(0..<preferences.settings.stages.count, id: \.self) { index in
                 stageRow(index)
                 if index < preferences.settings.stages.count - 1 { Divider() }
             }
             Text("Assombrissement = voile visuel, pas modification de la luminosité du Mac. Aucun clignotement ni blocage des clics. L’intensité peut aller jusqu’à 85 %, sans noir total. Au-delà de 60 %, la lecture de l’écran devient nettement plus difficile. Les rappels restent au-dessus du voile et les commandes de pause et d’arrêt restent dans Goalong. Si la surveillance ne reçoit plus de résultat, les effets disparaissent sous 30 secondes.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText)
             Text("Le compteur additionne des fenêtres de 15 s contenant une distraction ; il ne prouve pas que chaque seconde était hors travail. Inactivité, contexte privé, erreur ou résultat indéterminé remettent la série à zéro.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText)
             if let error = preferences.error { Text(error).foregroundStyle(LHTheme.warning).font(.caption) }
         }
     }
@@ -53,7 +53,7 @@ import LocalHistoryCore
                 }
             }
             Text("Ces préréglages changent uniquement les intensités. Les délais et vos choix d’activation sont conservés. Vous pouvez les préparer avant d’activer les effets.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(LHTheme.secondaryText)
         }
     }
     private func binding(_ path: WritableKeyPath<JevInterventionSettings, Bool>) -> Binding<Bool> {
@@ -117,7 +117,7 @@ import LocalHistoryCore
     var body: some View {
         let items = Self.menuItems(enabled: consents.isEnabled(.jevMonitoring), breakRunning: monitor.timedBreak != nil)
         VStack(alignment: .leading, spacing: 6) {
-            Text("Jev").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            Text("Jev").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
             Menu {
                 if items.resume {
                     Button("Reprendre la surveillance") { monitor.endBreak() }
@@ -133,7 +133,7 @@ import LocalHistoryCore
                 .accessibilityIdentifier("jev-quick-pause")
                 .disabled(!consents.isEnabled(.jevMonitoring) && monitor.timedBreak == nil)
             Text("Sans arrêter l’historique")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
 }

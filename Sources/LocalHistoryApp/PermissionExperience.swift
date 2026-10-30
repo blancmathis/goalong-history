@@ -205,7 +205,7 @@ extension Notification.Name {
                     // This is a report from the user, not an OS permission result.
                     PermissionRecoveryLedger.record(.settingsOpened, for: status)
                     refreshAdvice()
-                }.buttonStyle(.plain).font(.system(size: 11))
+                }.buttonStyle(.plain).font(.system(size: 12))
             case .relaunch:
                 restartButton("Relancer et vérifier")
             case .reauthorize:
@@ -221,13 +221,13 @@ extension Notification.Name {
             }
             GoalongDisclosureGroup("Détails de cette installation", isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(ProductIdentity.bundleURL.path).font(.system(size: 11, design: .monospaced))
+                    Text(ProductIdentity.bundleURL.path).font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     Text("Une autorisation macOS et votre choix d’enregistrer sont deux contrôles distincts. La réparation ne change ni l’historique, ni les sources, ni les envois.")
-                        .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }.padding(.top, 8)
-            }.font(.system(size: 11, weight: .medium))
+            }.font(.system(size: 12, weight: .medium))
             if advice != .repair { SupportDiagnosticsExportButton() }
             if let restartError {
                 Text(restartError).font(.system(size: 12)).foregroundStyle(LHTheme.danger)

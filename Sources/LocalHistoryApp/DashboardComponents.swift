@@ -24,6 +24,16 @@
         }
     }
 
+    /// Figures and reports set on the page itself: same inset rhythm as `LHCard`, no frame (DESIGN §1, §3.1).
+    /// A frame stays for lists and for groups of controls.
+    struct GoalongPlainBlock<Content: View>: View {
+        private let content: Content
+        init(@ViewBuilder content: () -> Content) { self.content = content() }
+        var body: some View {
+            content.padding(.vertical, 4).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     /// Content that is read, set directly on the page: a title, an optional quiet action,
     /// then the content with no frame around it.
     struct GoalongSection<Trailing: View, Content: View>: View {
@@ -449,7 +459,7 @@
                     if let subtitle {
                         Text(subtitle)
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                 }
                 Spacer()
@@ -464,7 +474,7 @@
         var body: some View {
             let label = category.map(Self.prettyCategory) ?? "Non classé"
             Text(label)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(LHTheme.secondaryText)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)

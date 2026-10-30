@@ -36,7 +36,7 @@
                     {
                         Text("Analyse du \(GoalongUIFormat.day(generatingDay)) en cours")
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
 
                     reportCard
@@ -109,13 +109,13 @@
         }
 
         private var analysisConsentCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 HStack(spacing: 14) {
                     Image(systemName: "sparkles").foregroundStyle(LHTheme.accent)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Analyse avec ChatGPT").font(.system(size: 14, weight: .semibold))
                         Text("Les données autorisées sont envoyées à ChatGPT, pas au site Goalong.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer()
                     Button("Choisir les données") { model.selectSection(.settings); model.settingsPane = .chatGPT }
@@ -128,7 +128,7 @@
             _ proof: AnalysisProofReference,
             report: AnalysisProofVerificationReport?
         ) -> some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Label("Preuve d’analyse", systemImage: "checkmark.shield")
@@ -142,14 +142,14 @@
                         .buttonStyle(LHSecondaryButtonStyle())
                         .controlSize(.small)
                         Text(String(proof.executionID.prefix(8)))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                     Text(
                         "Chaque vérification est indépendante. Une signature locale ne signifie pas que ChatGPT, Apple ou un serveur de vérification ont signé l’analyse."
                     )
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LHTheme.secondaryText)
 
                     HStack(spacing: 8) {
                         proofPill(
@@ -186,8 +186,8 @@
                         Text(
                             "Consigne : empreinte uniquement · conversations : stockage d’origine uniquement · bilan en cinq lignes : gardé sur ce Mac sans chiffrement, effacé avec l’historique détaillé du jour · réponse complète : copie chiffrée gardée 30 jours"
                         )
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText)
                         Spacer()
                     }
                 }
@@ -197,10 +197,10 @@
         private func proofPill(_ title: String, state: String, positive: Bool) -> some View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LHTheme.secondaryText)
                 Text(state.replacingOccurrences(of: "_", with: " "))
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .lineLimit(1)
                     .foregroundStyle(positive ? LHTheme.success : LHTheme.warning)
             }
@@ -255,7 +255,7 @@
                     .overlay(alignment: .bottomLeading) {
                         // The reason sits under the greyed button without moving the header row.
                         if let reason = generationBlockedReason, !recapRuntime.isGenerating {
-                            Text(reason).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize().offset(y: 18).accessibilityHidden(true)
                         }
                     }
@@ -264,7 +264,7 @@
         }
 
         private var reportCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 if recapRuntime.isGeneratingSelectedDay {
                     HStack(spacing: 16) {
                         ProgressView()
@@ -275,8 +275,8 @@
                             Text(
                                 "Raisonnement élevé · fil Codex temporaire et isolé · aucune copie des conversations"
                             )
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 150, alignment: .center)
@@ -289,21 +289,21 @@
                     HStack(alignment: .top, spacing: 28) {
                         VStack(alignment: .leading, spacing: 9) {
                             Text("Productivité")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(LHTheme.secondaryText)
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
                                 Text("\(score)")
                                     .font(.system(size: 46, weight: .bold))
                                     .foregroundStyle(scoreTint(score))
                                 Text("/ 100")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                             }
                             Label("Confiance des preuves : \(GoalongUIFormat.percent(confidence))", systemImage: "checkmark.shield")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
                             Text(isToday ? "La journée est encore en cours" : "Bilan de la journée terminée")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(isToday ? LHTheme.warning : LHTheme.success)
                         }
                         .frame(width: 168, alignment: .leading)
@@ -333,17 +333,17 @@
                                     .help("Ce rapport est antérieur aux analyses signées. Régénérez-le pour détecter toute modification.")
                                 }
                                 Text(recap.generatedAt.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(GoalongUIFormat.locale)))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(LHTheme.secondaryText)
                             }
                             ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                                     Text("\(index + 1)")
-                                        .font(.system(size: 11, weight: .bold))
+                                        .font(.system(size: 12, weight: .bold))
                                         .foregroundStyle(LHTheme.accent)
                                         .frame(width: 16)
                                     Text(line)
-                                        .font(.system(size: 11))
+                                        .font(.system(size: 12))
                                         .lineSpacing(2)
                                         .textSelection(.enabled)
                                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -358,10 +358,10 @@
                         Text(
                             "Ce rapport est antérieur au format en cinq lignes. Régénérez-le pour obtenir un score, un niveau de confiance et un résumé structuré."
                         )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                         Text(.init(recap.markdown))
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .lineSpacing(3)
                             .textSelection(.enabled)
                     }
@@ -373,8 +373,8 @@
                         Text("Aucun rapport pour ce jour")
                             .font(.system(size: 13, weight: .semibold))
                         Text(emptyReportMessage)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                     }
                     .frame(maxWidth: .infinity, minHeight: 170)
                 }
@@ -382,7 +382,7 @@
         }
 
         private func metricsBand(_ overview: ChatGPTRecapDayOverview) -> some View {
-            LHCard {
+            GoalongPlainBlock {
                 HStack(spacing: 0) {
                     metric(
                         title: "Activité de l’ordinateur",
@@ -418,12 +418,12 @@
         private func metric(title: String, value: String, detail: String) -> some View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LHTheme.secondaryText)
                 Text(value)
                     .font(.system(size: 18, weight: .bold))
                 Text(detail)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -437,17 +437,17 @@
             values: [ChatGPTRecapDayOverview.Usage],
             emptyMessage: String
         ) -> some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 14) {
                     Label(title, systemImage: symbol)
                         .font(.system(size: 13, weight: .semibold))
                     Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                     if values.isEmpty {
                         Text(emptyMessage)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .frame(maxWidth: .infinity, minHeight: 138, alignment: .center)
                     } else {
                         let maximum = max(values.map(\.seconds).max() ?? 1, 1)
@@ -466,17 +466,17 @@
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 8) {
                     Text(item.name)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                     if let detail = item.detail, detail != item.name {
                         Text(detail)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(.tertiary)
                     }
                     Spacer()
                     Text(duration(item.seconds))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
@@ -497,7 +497,7 @@
         }
 
         private func agentCollaborationCard(_ overview: ChatGPTRecapDayOverview) -> some View {
-            LHCard {
+            GoalongPlainBlock {
                 HStack(alignment: .top, spacing: 18) {
                     VStack(alignment: .leading, spacing: 5) {
                         Label("Collaboration avec l’IA", systemImage: "bubble.left.and.bubble.right")
@@ -505,8 +505,8 @@
                         Text(
                             "Les conversations sont lues ponctuellement dans Codex, Claude, OpenCode et les sources configurées. Seul le rapport en cinq lignes est conservé."
                         )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 18)
@@ -523,63 +523,63 @@
                 Text("\(value)")
                     .font(.system(size: 16, weight: .bold))
                 Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
             }
             .frame(minWidth: 54)
         }
 
         private func coverageCard(_ overview: ChatGPTRecapDayOverview) -> some View {
-            LHCard {
+            GoalongPlainBlock {
                 HStack(spacing: 12) {
                     Image(systemName: "checkmark.shield.fill")
                         .foregroundStyle(LHTheme.success)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Couverture des preuves")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         Text(
                             "\(GoalongUIFormat.count(overview.sourceEventCount, "événement")) · \(overview.privateMinutes) min privées ou masquées · \(overview.analyzedAgentSessions)/\(overview.agentSessions) session\(overview.agentSessions > 1 ? "s" : "") IA analysée\(overview.analyzedAgentSessions > 1 ? "s" : "")"
                         )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer()
                     Text("Des données manquantes baissent la confiance, pas le score")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }
 
         private var automaticCard: some View {
             HStack {
-                Text("Fréquence et données : Réglages → Analyse ChatGPT").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Fréquence et données : Réglages → Analyse ChatGPT").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 Spacer()
                 Button("Configurer") { model.selectSection(.settings); model.settingsPane = .chatGPT }.buttonStyle(LHQuietButtonStyle())
             }
         }
 
         private var loadingDataCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 HStack(spacing: 12) {
                     ProgressView().controlSize(.small)
                     Text("Lecture de la journée dans les sources locales…")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 100, alignment: .center)
             }
         }
 
         private var emptyDataCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(spacing: 9) {
                     Image(systemName: "clock.badge.questionmark")
                         .font(.system(size: 25))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                     Text(recapRuntime.dayOverviewError ?? "Aucune activité source pour ce jour.")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .multilineTextAlignment(.center)
                     Button("Relire les sources") {
                         recapRuntime.refreshDayOverview()

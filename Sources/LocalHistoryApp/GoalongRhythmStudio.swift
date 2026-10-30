@@ -135,12 +135,12 @@ struct GoalongRhythmStudio: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Choisissez un projet et une plage de la journée. Les durées viennent des observations ; l’agent explique leur contexte.").foregroundStyle(.secondary)
-                    HStack { DatePicker("Début", selection: $start, displayedComponents: .hourAndMinute); DatePicker("Fin", selection: $end, displayedComponents: .hourAndMinute) }
+                    Text("Choisissez un projet et une plage de la journée. Les durées viennent des observations ; l’agent explique leur contexte.").foregroundStyle(LHTheme.secondaryText)
+                    HStack { DatePicker("Début", selection: $start, displayedComponents: .hourAndMinute).goalongDateField(label: "Début"); DatePicker("Fin", selection: $end, displayedComponents: .hourAndMinute).goalongDateField(label: "Fin") }
                     TextField("Projet", text: $project).textFieldStyle(GoalongFieldStyle())
                     TextField("Ce que vous souhaitiez faire pendant cette session", text: $intent).textFieldStyle(GoalongFieldStyle())
                     Toggle("Inclure les extraits de contexte enrichi déjà autorisés", isOn: $rich)
-                    Text("Les titres et domaines disponibles servent de contexte. Le texte enrichi est facultatif et peut contenir des informations personnelles ; relisez les extraits avant analyse.").font(.caption).foregroundStyle(.secondary)
+                    Text("Les titres et domaines disponibles servent de contexte. Le texte enrichi est facultatif et peut contenir des informations personnelles ; relisez les extraits avant analyse.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                     Button("Préparer la sélection locale") { model.load(start: start, end: end, project: project, intent: intent, masks: masks, rich: rich) }.disabled(model.busy || project.isEmpty)
                     if let selected = model.selection {
                         Divider()
@@ -153,7 +153,7 @@ struct GoalongRhythmStudio: View {
                                         if include { model.selectedEvidence.insert(item.id) } else { model.selectedEvidence.remove(item.id) }; model.selectionChanged()
                                     })) { Text(item.text).font(.caption).textSelection(.enabled) }
                                 }
-                                if row.evidence?.isEmpty != false { Text("Contexte non fourni").font(.caption).foregroundStyle(.secondary) }
+                                if row.evidence?.isEmpty != false { Text("Contexte non fourni").font(.caption).foregroundStyle(LHTheme.secondaryText) }
                             }
                         }
                         GoalongDisclosureGroup("Voir la sélection exacte pour l’agent") { Text(String(decoding: (try? selected.encoded()) ?? Data(), as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
@@ -168,7 +168,7 @@ struct GoalongRhythmStudio: View {
                             Button("Préparer pour mon autre agent…") { exportRequest(selected) }.disabled(model.busy)
                             Button("Importer sa réponse…") { importResponse() }.disabled(model.busy)
                         }
-                        Text("L’autre agent reçoit seulement le fichier que vous lui fournissez et suit ses propres conditions. Aucune analyse n’envoie de données au site.").font(.caption).foregroundStyle(.secondary)
+                        Text("L’autre agent reçoit seulement le fichier que vous lui fournissez et suit ses propres conditions. Aucune analyse n’envoie de données au site.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                     }
                     if let value = model.result {
                         Divider(); Text("Relire et corriger").font(.headline)
@@ -182,7 +182,7 @@ struct GoalongRhythmStudio: View {
                                         Text("Projet").tag("project"); Text("Autre sujet").tag("other"); Text("À préciser").tag("unclassified")
                                     }.frame(width: 180) }
                                 }
-                                if let explanation = row.explanation { Text(explanation).font(.caption).foregroundStyle(.secondary) }
+                                if let explanation = row.explanation { Text(explanation).font(.caption).foregroundStyle(LHTheme.secondaryText) }
                                 ForEach(row.evidence ?? [], id: \.id) { Text("Élément choisi : \($0.text)").font(.caption).textSelection(.enabled) }
                             }
                         }

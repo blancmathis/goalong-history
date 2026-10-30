@@ -298,19 +298,19 @@ struct GoalongProfileStudio: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Analysez votre activité pour vous-même. Vous pourrez conserver le résultat ici, puis choisir séparément ce qui part dans votre compte Goalong.").foregroundStyle(.secondary)
+                    Text("Analysez votre activité pour vous-même. Vous pourrez conserver le résultat ici, puis choisir séparément ce qui part dans votre compte Goalong.").foregroundStyle(LHTheme.secondaryText)
                     HStack { Button("Ouvrir une analyse ou une sélection enregistrée…") { openSaved() }; Spacer() }
                     GoalongProfileSection("1. Choisir les données") {
                         VStack(alignment: .leading, spacing: 10) {
-                            DatePicker("Journée analysée — jusqu’à", selection: $end)
+                            DatePicker("Journée analysée — jusqu’à", selection: $end).goalongDateField(label: "Journée analysée — jusqu’à")
                             Toggle("Historique de ce Mac — activité de l’ordinateur", isOn: $computer)
-                            if computer { DatePicker("Activité depuis", selection: $start); Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich) }
+                            if computer { DatePicker("Activité depuis", selection: $start).goalongDateField(label: "Activité depuis"); Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich) }
                             Toggle("Historique des conversations — utiliser les conversations IA comme contexte", isOn: $conversations)
                             if conversations {
-                                DatePicker("Conversations actives depuis", selection: $conversationsFrom, displayedComponents: .date)
-                                Text("Journée analysée et jours précédents, jusqu’à 31 jours. Les échanges peuvent éclairer les projets, décisions et méthodes même si « Usage de l’IA » est décochée. Seules les sources déjà autorisées sont lues. Les dates sélectionnent les conversations ; selon la source, des messages antérieurs peuvent être inclus sans horodatage individuel. Les horodatages fournis par la source sont conservés.").font(.caption).foregroundStyle(.secondary)
+                                DatePicker("Conversations actives depuis", selection: $conversationsFrom, displayedComponents: .date).goalongDateField(label: "Conversations actives depuis")
+                                Text("Journée analysée et jours précédents, jusqu’à 31 jours. Les échanges peuvent éclairer les projets, décisions et méthodes même si « Usage de l’IA » est décochée. Seules les sources déjà autorisées sont lues. Les dates sélectionnent les conversations ; selon la source, des messages antérieurs peuvent être inclus sans horodatage individuel. Les horodatages fournis par la source sont conservés.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                             }
-                            Text("Événements, applications, fenêtres, navigation, interactions et contexte disponibles avec leurs horodatages. Les champs protégés et les événements supprimés sont exclus. Les extraits sont bornés ; les absences restent inconnues.").font(.caption).foregroundStyle(.secondary)
+                            Text("Événements, applications, fenêtres, navigation, interactions et contexte disponibles avec leurs horodatages. Les champs protégés et les événements supprimés sont exclus. Les extraits sont bornés ; les absences restent inconnues.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                             HStack { Button("Charger les sources choisies") { model.load(start: start, end: end, rich: rich, computer: computer, conversations: conversations, conversationsFrom: conversationsFrom) }; Button("Ajouter des preuves (mesures, IA, historique)…") { importEvidence() } }.disabled(model.busy)
                             if !model.evidence.isEmpty { GoalongDisclosureGroup("Choisir les événements (\(model.selectedEvidence.count)/\(model.evidence.count))") {
                                 HStack { Button("Tout sélectionner") { model.selectedEvidence = Set(model.evidence.map(\.id)); model.invalidate() }; Button("Tout décocher") { model.selectedEvidence = []; model.invalidate() } }
@@ -326,13 +326,13 @@ struct GoalongProfileStudio: View {
                             Text("Décochez une rubrique pour que l’agent ne l’analyse pas. La rubrique « Usage de l’IA » est indépendante de la source Conversation History choisie plus haut.").font(.caption)
                             Text("Exclure des applications, projets ou termes — un par ligne").font(.subheadline)
                             GoalongTextArea(text: $exclusions, minHeight: 60).accessibilityLabel("Termes à exclure")
-                            Text("Les événements contenant ces termes sont retirés avant analyse. Toute réapparition littérale dans un résultat est masquée.").font(.caption).foregroundStyle(.secondary)
+                            Text("Les événements contenant ces termes sont retirés avant analyse. Toute réapparition littérale dans un résultat est masquée.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                             Text("Remplacer des noms — une ligne « nom privé => alias »").font(.subheadline)
                             GoalongTextArea(text: $aliases, minHeight: 60).accessibilityLabel("Règles de remplacement")
-                            Text("Exemple : Projet Atlas => Projet secret. Les remplacements s’appliquent avant analyse et avant export.").font(.caption).foregroundStyle(.secondary)
+                            Text("Exemple : Projet Atlas => Projet secret. Les remplacements s’appliquent avant analyse et avant export.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                             Text("Ce que l’agent ne doit pas aborder — complément personnel").font(.subheadline)
                             GoalongTextArea(text: $instructions, minHeight: 80).accessibilityLabel("Consignes personnelles de confidentialité")
-                            Text("Pour masquer un nom précis, ajoutez-le aussi aux règles ci-dessus. Les consignes libres guident l’agent ; elles ne garantissent pas à elles seules qu’un sujet ne sera jamais évoqué. Relisez les résultats.").font(.caption).foregroundStyle(.secondary)
+                            Text("Pour masquer un nom précis, ajoutez-le aussi aux règles ci-dessus. Les consignes libres guident l’agent ; elles ne garantissent pas à elles seules qu’un sujet ne sera jamais évoqué. Relisez les résultats.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                             Button("Préparer le prompt protégé") { prepare() }.disabled(model.busy || model.selectedEvidence.isEmpty || modules.isEmpty)
                         }.padding(8)
                     }
@@ -345,7 +345,7 @@ struct GoalongProfileStudio: View {
                                 Toggle("J’autorise l’envoi de ce contexte à l’agent connecté", isOn: $model.consent)
                                 Button("Lancer l’analyse") { model.analyze() }.disabled(model.busy || !connection.connected || !model.consent)
                                 HStack { Button("Exporter le prompt pour mon agent…") { exportPrompt(request) }; Button("Importer sa réponse…") { importResult() }; Button("Enregistrer ici") { model.save() } }.disabled(model.busy)
-                                Text("L’export du prompt contient seulement le contexte préparé, sans les noms originaux des règles de remplacement. Votre agent suit ses propres conditions. Aucun de ces boutons n’envoie au site.").font(.caption).foregroundStyle(.secondary)
+                                Text("L’export du prompt contient seulement le contexte préparé, sans les noms originaux des règles de remplacement. Votre agent suit ses propres conditions. Aucun de ces boutons n’envoie au site.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                             }.padding(8)
                         }
                     }
@@ -359,7 +359,7 @@ struct GoalongProfileStudio: View {
                                         TextField("Titre", text: Binding(get: { item.title }, set: { model.correct(item.id, field: "title", text: $0) })).textFieldStyle(GoalongFieldStyle())
                                         GoalongTextArea(text: Binding(get: { item.summary }, set: { model.correct(item.id, field: "summary", text: $0) }), minHeight: 70).accessibilityLabel("Synthèse \(item.title)")
                                         TextField("Limites", text: Binding(get: { item.caveat }, set: { model.correct(item.id, field: "caveat", text: $0) })).textFieldStyle(GoalongFieldStyle())
-                                        Text("\(item.status) · \(item.evidence_refs.count) éléments de preuve locaux").font(.caption).foregroundStyle(.secondary)
+                                        Text("\(item.status) · \(item.evidence_refs.count) éléments de preuve locaux").font(.caption).foregroundStyle(LHTheme.secondaryText)
                                         GoalongDisclosureGroup("Examiner les preuves") { ForEach((try? model.request?.context().evidence.filter { item.evidence_refs.contains($0.id) }) ?? [], id: \.id) { e in Text("\(e.start) · \(e.application)\n\(e.text)").font(.caption).textSelection(.enabled) } }
                                         Divider()
                                     }
@@ -371,7 +371,7 @@ struct GoalongProfileStudio: View {
                                     GoalongDisclosureGroup("Voir exactement les cartes sélectionnées") { Text(String(decoding: bytes, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                                 }
                                 HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); closeStudio() } catch { model.error = goalongUserMessage(error) } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
-                                Text("Le partage avec les autres se règle ensuite sur le site, rubrique par rubrique et selon le public choisi.").font(.caption).foregroundStyle(.secondary)
+                                Text("Le partage avec les autres se règle ensuite sur le site, rubrique par rubrique et selon le public choisi.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                                 }
                             }.padding(8)
                         }

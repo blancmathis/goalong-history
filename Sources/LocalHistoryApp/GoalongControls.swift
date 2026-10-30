@@ -85,7 +85,8 @@
         }
     }
 
-    /// Third-rank actions ("Corriger", "Voir les 12 usages"): accent text, no chrome at rest.
+    /// Third-rank actions ("Corriger", "Voir les 12 usages"): ink text, no chrome at rest, so lime stays
+    /// the one action color of a screen.
     /// The hover fill bleeds outside the layout bounds so the label stays on the text column.
     struct LHQuietButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var isEnabled
@@ -98,7 +99,7 @@
             configuration.label
                 .fontWeight(.medium)
                 .foregroundStyle(!isEnabled ? LHTheme.secondaryText
-                                 : configuration.role == .destructive ? LHTheme.danger : LHTheme.accent)
+                                 : configuration.role == .destructive ? LHTheme.danger : LHTheme.text)
                 .padding(.horizontal, 7).padding(.vertical, 4)
                 .background(configuration.isPressed && isEnabled ? LHTheme.pressedBackground
                             : isHovered && isEnabled ? LHTheme.hoverBackground : .clear, in: shape)
@@ -343,13 +344,22 @@
                            : (hovered && isEnabled ? LHTheme.switchTrackHover : LHTheme.switchTrack))
                     .opacity(isEnabled ? 1 : 0.6)
                 if !isOn || contrast == .increased {
-                    track.strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.controlBorder)
+                    // The off track keeps a 3:1 edge (WCAG 1.4.11); a disabled switch is dashed and locked.
+                    track.strokeBorder(LHTheme.strongSeparator,
+                                       style: StrokeStyle(lineWidth: 1, dash: isEnabled ? [] : [3, 2]))
                 }
                 RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
                     .fill(isOn ? LHTheme.onAccent : LHTheme.switchKnob)
                     .frame(width: knob + stretch, height: knob)
                     .padding(.horizontal, 3)
                     .opacity(isEnabled ? 1 : 0.6)
+                    .overlay {
+                        if !isEnabled {
+                            Image(systemName: "lock.fill").font(.system(size: small ? 7 : 8, weight: .bold))
+                                .foregroundStyle(isOn ? LHTheme.actionBackground : LHTheme.secondaryText)
+                                .accessibilityHidden(true)
+                        }
+                    }
             }
             .frame(width: width, height: height)
             .overlay { RoundedRectangle(cornerRadius: radius + 3, style: .continuous)
@@ -646,6 +656,53 @@
         }
     }
 
+    private struct GoalongDateFieldModifier: ViewModifier {
+        let label: String?
+        func body(content: Content) -> some View {
+            HStack(spacing: 8) {
+                if let label { Text(label).font(.system(size: 13)) }
+                content.labelsHidden().datePickerStyle(.field).fixedSize().modifier(GoalongFieldSurface())
+            }
+        }
+    }
+
+    /// Pop-up menu for one choice among several, drawn on the Goalong control surface instead of the AppKit bezel.
+    struct GoalongMenuPicker<Value: Hashable>: View {
+        let title: String
+        @Binding var selection: Value
+        let options: [(Value, String)]
+        @Environment(\.isEnabled) private var isEnabled
+
+        init(_ title: String, selection: Binding<Value>, options: [(Value, String)]) {
+            self.title = title
+            self._selection = selection
+            self.options = options
+        }
+
+        var body: some View {
+            Menu {
+                ForEach(options.indices, id: \.self) { index in
+                    let option = options[index]
+                    Button { selection = option.0 } label: {
+                        if option.0 == selection { Label(option.1, systemImage: "checkmark") } else { Text(option.1) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(options.first { $0.0 == selection }?.1 ?? title).font(.system(size: 13)).lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
+                }
+                .padding(.horizontal, 10).frame(minHeight: 28)
+                .goalongControlSurface()
+                .opacity(isEnabled ? 1 : 0.5)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .accessibilityLabel(title)
+        }
+    }
+
     private struct RowHoveredKey: EnvironmentKey { static let defaultValue = false }
     extension EnvironmentValues {
         /// Set by row buttons so their chevron can lean toward where the row leads.
@@ -683,9 +740,14 @@
         /// Raised surface shared by grouped controls (day stepper, segmented groups).
         func goalongControlSurface() -> some View { modifier(GoalongControlSurface()) }
 
+        /// Date or time field in the Goalong field surface. The label, when given, sits left of the field; without one the
+        /// picker keeps its title for VoiceOver only.
+        func goalongDateField(label: String? = nil) -> some View { modifier(GoalongDateFieldModifier(label: label)) }
+
         /// Goalong control chrome for a window, sheet or panel root. Explicit styles still win.
         func goalongControls() -> some View {
             buttonStyle(LHSecondaryButtonStyle())
+                .toggleStyle(.goalongCheckbox)
                 .textFieldStyle(GoalongFieldStyle())
                 .environment(\.locale, GoalongUIFormat.locale)
         }
