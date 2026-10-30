@@ -56,7 +56,7 @@ struct GoalongHealthImportSheet: View {
             HStack(alignment: .top) {
                 Image(systemName: "heart.text.clipboard").font(.title).foregroundStyle(LHTheme.secondaryText)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Apple Santé").font(.title2.weight(.semibold))
+                    Text("Apple Santé").font(LHTheme.sheetTitleFont).tracking(-0.4)
                     Text("Sommeil, récupération et activité. Rien n’est envoyé sans votre accord.")
                         .font(.subheadline).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
@@ -81,11 +81,12 @@ struct GoalongHealthImportSheet: View {
                     if !days.isEmpty { previewSection }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }.disabled(busy)
-            Divider()
-            HStack {
+            GoalongSheetFooter {
                 if busy {
                     ProgressView().controlSize(.small)
-                    Text(readTask != nil ? "Lecture locale de l’export…" : "Opération en cours…").font(.caption)
+                    // Never truncated: the reading can take minutes, the line must stay whole (UI-59).
+                    Text(readTask != nil ? "Lecture locale de l’export…" : "Opération en cours…").font(.system(size: 12))
+                        .lineLimit(1).fixedSize().layoutPriority(1)
                     if readTask != nil { Button("Annuler la lecture") { readTask?.cancel() } }
                 // The outcome stays in sight in the footer: the buttons that cause it sit far down the scroll.
                 } else if let error {
@@ -95,8 +96,8 @@ struct GoalongHealthImportSheet: View {
                     Label(message, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 } else { Text("Données déclaratives, aucun score de productivité calculé").font(.caption).foregroundStyle(LHTheme.secondaryText) }
-                Spacer()
-            }.padding(16)
+                Spacer(minLength: 0)
+            }
         }
         .frame(minWidth: 690, idealWidth: 800, maxWidth: 950, minHeight: 550, idealHeight: 720)
         .background(GoalongWebsiteWindowReader(host: host))
@@ -115,7 +116,9 @@ struct GoalongHealthImportSheet: View {
             Text("Dans Santé : Résumé → votre profil → Exporter toutes les données de santé. Envoyez le fichier au Mac par AirDrop, décompressez-le puis sélectionnez export.xml.")
                 .font(.subheadline).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle())
+                // Lime marks the current step only: choose, then prepare, then send (UI-59).
+                if file == nil { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
+                else { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHSecondaryButtonStyle()) }
                 if let file { Text(file.lastPathComponent).font(.caption); Button("Oublier ce fichier") { self.file = nil; sourceChoices = [:]; preferred = [:]; invalidate() } }
             }
             Text("Le fichier complet est lu sur ce Mac. Les dossiers médicaux, médicaments, trajets GPS et autres données non proposées ici sont exclus.")
@@ -143,7 +146,8 @@ struct GoalongHealthImportSheet: View {
             }
             Text("Les durées de sommeil sont réparties à minuit dans le fuseau \(TimeZone.current.identifier). Une nuit peut donc apparaître sur deux journées. Une valeur absente reste inconnue.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
-            Button("Préparer l’aperçu local", action: prepare).disabled(selected.isEmpty)
+            if payload == nil { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHPrimaryButtonStyle()).disabled(selected.isEmpty) }
+            else { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHSecondaryButtonStyle()).disabled(selected.isEmpty) }
         }
     }
     private var previewSection: some View {

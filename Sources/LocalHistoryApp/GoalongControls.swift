@@ -752,4 +752,49 @@
                 .environment(\.locale, GoalongUIFormat.locale)
         }
     }
+
+    /// The bar under a sheet's content: full width, flush with the bottom edge, one hairline above.
+    /// Cancel sits first, the one primary action last; a short reason may sit between them (DESIGN §9).
+    struct GoalongSheetFooter<Content: View>: View {
+        var inset: CGFloat = 24
+        private let content: Content
+        init(inset: CGFloat = 24, @ViewBuilder content: () -> Content) {
+            self.inset = inset
+            self.content = content()
+        }
+
+        var body: some View {
+            VStack(spacing: 0) {
+                Rectangle().fill(LHTheme.separator).frame(height: 1)
+                HStack(spacing: 12) { content }
+                    .padding(.horizontal, inset).padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity)
+            .background(LHTheme.cardBackground)
+        }
+    }
+
+    /// The scrolling body of a sheet with a footer. A sheet opens at the content's height, at most `cap`;
+    /// given a taller frame, the body takes it all, so the footer stays at the bottom and nothing is cut early.
+    struct GoalongSheetScroll<Content: View>: View {
+        let cap: CGFloat
+        private let content: Content
+        @State private var contentHeight: CGFloat?
+        init(cap: CGFloat, @ViewBuilder content: () -> Content) {
+            self.cap = cap
+            self.content = content()
+        }
+
+        var body: some View {
+            ScrollView {
+                content.background(GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { contentHeight = proxy.size.height }
+                        .onChange(of: proxy.size.height) { contentHeight = $0 }
+                })
+            }
+            .frame(minHeight: min(cap, 120), idealHeight: min(contentHeight ?? cap, cap), maxHeight: .infinity)
+        }
+    }
 #endif

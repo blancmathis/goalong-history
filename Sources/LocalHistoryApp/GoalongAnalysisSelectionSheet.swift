@@ -52,7 +52,6 @@ import AgentActivity
                     Text("Choisissez ce qui sort du Mac, puis la façon de rédiger le bilan.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
-                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("analysis-cancel")
             }.padding(24)
             GoalongSegmentedControl("Configuration ChatGPT", selection: $tab, options: [0, 1, 2, 3], fills: true) {
                 ["Données", "Remplacements", "Consignes", "Aperçu"][$0]
@@ -61,17 +60,24 @@ import AgentActivity
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     content
-                    if let error { Label(error, systemImage: "exclamationmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.warning) }
+                    // Still reading is a state, not a fault: neutral, not amber (UI-68).
+                    if let error {
+                        Label(error, systemImage: error == Self.stillReading ? "clock" : "exclamationmark.circle").font(.system(size: 13))
+                            .foregroundStyle(error == Self.stillReading ? LHTheme.secondaryText : LHTheme.warning)
+                    }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }
-            Divider()
-            HStack(spacing: 16) {
-                Text("Aucun envoi en configurant ces choix.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                Spacer()
+            // Cancel first, the one primary action last; a disabled action says why (UI-62).
+            GoalongSheetFooter {
+                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).buttonStyle(LHSecondaryButtonStyle())
+                    .accessibilityIdentifier("analysis-cancel")
+                Text(footerNote).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("analysis-footer-note")
+                Spacer(minLength: 8)
                 if tab != 3 { Button("Vérifier l’aperçu") { tab = 3; preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(catalogLoading || installedApps.loading || !selection.hasSources) }
                 Button("Enregistrer mes choix") { save() }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.hasSources || previewBusy || catalogLoading || installedApps.loading)
                     .accessibilityIdentifier("analysis-save-selection")
-            }.padding(20)
+            }
         }
         .frame(minWidth: 740, idealWidth: 940, maxWidth: 1080, minHeight: 580, idealHeight: 760, maxHeight: 980)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
@@ -92,6 +98,18 @@ import AgentActivity
         }
         .onDisappear { previewTask?.cancel(); previewGeneration = UUID() }
     }
+    nonisolated static let stillReading = "La liste des applications et appareils est encore en cours de lecture."
+    private var footerNote: String {
+        if catalogLoading || installedApps.loading { return "Lecture des applications et des appareils…" }
+        if !selection.hasSources { return "Activez au moins une source pour enregistrer." }
+        return "Aucun envoi en configurant ces choix."
+    }
+    /// Sources listed in Données whose capability is off: one note and one link, not a link per row (UI-62).
+    private var unconfiguredSources: Int {
+        let developer: GoalongCapability = consents.isEnabled(.aiConversations) ? .aiConversations : .developerActivity
+        return [GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations, developer,
+                .localComputerHistory, .calendar, .appleScreenTime].filter { !consents.isEnabled($0) }.count
+    }
     @ViewBuilder private var content: some View {
         switch tab {
         case 0: dataChoices
@@ -102,6 +120,15 @@ import AgentActivity
     }
     private var dataChoices: some View {
         VStack(alignment: .leading, spacing: 20) {
+            if unconfiguredSources > 0 {
+                HStack(spacing: 12) {
+                    Label("\(FrenchCount.count(unconfiguredSources, "source", "sources")) à configurer", systemImage: "info.circle")
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    Spacer(minLength: 8)
+                    Button("Configurer les sources") { dismiss(); model.selectSection(.settings); model.settingsPane = .recording }
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12)).accessibilityIdentifier("analysis-configure-sources")
+                }
+            }
             GoalongSettingsGroup(title: "Sources") {
                 source("Activité de ce Mac", capability: .localComputerHistory, value: $selection.computer)
                 source("Temps d’écran Apple", capability: .appleScreenTime, value: $selection.screenTime)
@@ -260,18 +287,21 @@ import AgentActivity
         return result == sample ? "Aucun texte remplacé dans cet exemple." : result
     }
     private var instructions: some View {
-        GoalongSettingsGroup(title: "Comment rédiger le bilan") {
-            Text("Vos consignes").font(.system(size: 19, weight: .semibold)).accessibilityIdentifier("analysis-guidance-title")
-            GoalongTextArea(text: Binding(get: { selection.outputGuidance ?? "" }, set: { selection.outputGuidance = String($0.prefix(4000)) }),
-                            placeholder: "Concentre-toi sur les progrès de mes projets…", minHeight: 190)
-                .accessibilityLabel("Consignes de rédaction pour ChatGPT")
-            Text("Exemple : Concentre-toi sur les progrès de mes projets. Ne cite pas les noms de personnes. Évite les détails de mes loisirs.")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-            HStack {
-                Text("Les consignes influencent le bilan, pas les données envoyées.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                Spacer(); Text("\(selection.outputGuidance?.count ?? 0) / 4 000").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+        // One title, in the same style as the other tabs (UI-62).
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Comment rédiger le bilan").font(.system(size: 20, weight: .semibold)).accessibilityIdentifier("analysis-guidance-title")
+            GoalongSettingsGroup(title: "") {
+                GoalongTextArea(text: Binding(get: { selection.outputGuidance ?? "" }, set: { selection.outputGuidance = String($0.prefix(4000)) }),
+                                placeholder: "Concentre-toi sur les progrès de mes projets…", minHeight: 190)
+                    .accessibilityLabel("Consignes de rédaction pour ChatGPT")
+                Text("Exemple : Concentre-toi sur les progrès de mes projets. Ne cite pas les noms de personnes. Évite les détails de mes loisirs.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                HStack {
+                    Text("Les consignes influencent le bilan, pas les données envoyées.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    Spacer(); Text("\(selection.outputGuidance?.count ?? 0) / 4 000").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                }
+                Text("Pour retirer une information avant l’envoi, utilisez Données ou Remplacements.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
-            Text("Pour retirer une information avant l’envoi, utilisez Données ou Remplacements.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
     private var preview: some View {
@@ -304,13 +334,9 @@ import AgentActivity
     private func source(_ title: String, capability: GoalongCapability?, value: Binding<Bool>) -> some View {
         let available = capability.map { consents.isEnabled($0) } ?? true
         return HStack {
-            Text(title).font(.system(size: 14))
+            Text(title).font(.system(size: 14)).foregroundStyle(available ? LHTheme.text : LHTheme.secondaryText)
             Spacer()
             Toggle(title, isOn: value).labelsHidden().toggleStyle(.goalongSwitchOnly).disabled(!available)
-            if !available {
-                Button("Configurer la source") { dismiss(); model.selectSection(.settings); model.settingsPane = .recording }
-                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
-            }
         }
     }
     private func setAll(details: Bool) {
@@ -346,7 +372,7 @@ import AgentActivity
         scope.wrappedValue = value
     }
     private func finalized() throws -> GoalongAnalysisSelection {
-        guard !catalogLoading, !installedApps.loading else { throw PrivacyScopeInput.invalid("La liste des applications et appareils est encore en cours de lecture.") }
+        guard !catalogLoading, !installedApps.loading else { throw PrivacyScopeInput.invalid(Self.stillReading) }
         var next = selection, value = scope.wrappedValue
         next.computer = next.computer && consents.isEnabled(.localComputerHistory)
         next.screenTime = next.screenTime && consents.isEnabled(.appleScreenTime)
