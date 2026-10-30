@@ -342,9 +342,11 @@ struct BlockingRangeDraft: Identifiable {
                     } label: {
                         Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
                             .frame(width: 32, height: 28)
-                            .foregroundStyle(on ? LHTheme.onAccent : LHTheme.secondaryText)
-                            .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
+                            .foregroundStyle(on ? LHTheme.text : LHTheme.secondaryText)
+                            .background(on ? LHTheme.selectionBackground : LHTheme.insetBackground,
                                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(LHTheme.text, lineWidth: on ? 1 : 0))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(BlockingFormat.weekdayShort[day - 1])
