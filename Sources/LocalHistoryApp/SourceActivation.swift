@@ -29,7 +29,7 @@ import LocalHistoryCore
             switch self {
             case .accessibility: return "Autoriser l’accessibilité"
             case .inputMonitoring: return "Autoriser la surveillance de l’entrée"
-            case .fullDiskAccess: return "Ouvrir Réglages Système"
+            case .fullDiskAccess: return "Ouvrir Réglages Système…"
             case .screenTimeSetup: return "Ouvrir Temps d’écran"
             case .ready, .unavailable: return "Réessayer"
             }
@@ -459,25 +459,24 @@ import LocalHistoryCore
             if flow.checking { return "Vérification de l’accès…" }
             if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Terminé" : copy.activateTitle }
             if needsRestart { return "Quitter et rouvrir" }
-            if !openedSettings && access.hasSettingsAction { return "Ouvrir Réglages Système" }
+            if !openedSettings && access.hasSettingsAction { return "Ouvrir Réglages Système…" }
             return "Vérifier l’accès"
         }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
                 PermissionSetupHeader(copy: copy, ready: ready).padding(28)
-                ScrollView {
+                GoalongSheetScroll(cap: min(ready ? 250 : 465, (NSScreen.main?.visibleFrame.height ?? 900) * 0.53)) {
                     VStack(alignment: .leading, spacing: 22) {
                         PermissionSetupStatusCard(copy: copy, checking: flow.checking, ready: ready, unavailable: isUnavailable)
                         if ready {
-                            VStack(alignment: .leading, spacing: 7) {
-                                Text("Accès confirmé").font(.system(size: 15, weight: .semibold))
-                                Text(GoalongCapabilityConsentStore.shared.isEnabled(capability)
-                                     ? "Votre choix de source est inchangé. Vous pouvez revenir à votre historique."
-                                     : "Activez cette source pour terminer. Vos préférences d’enregistrement, exclusions et choix de partage restent inchangés.")
-                                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            // The header already says « Accès disponible »: one title per sheet (UI-60).
+                            Text(GoalongCapabilityConsentStore.shared.isEnabled(capability)
+                                 ? "Votre choix de source est inchangé. Vous pouvez revenir à votre historique."
+                                 : "Activez cette source pour terminer. Vos préférences d’enregistrement, exclusions et choix de partage restent inchangés.")
+                                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
                             if globalPause.blocksActivity, let recordingModel {
                                 VStack(alignment: .leading, spacing: 8) {
@@ -510,27 +509,24 @@ import LocalHistoryCore
                                     .disabled(flow.checking || restarting)
                             }
                         }
-                        Rectangle().fill(LHTheme.separator).frame(height: 1)
                         PermissionPrivacyNote(text: copy.privacy)
                         if let restartError { Text(restartError).font(.system(size: 12)).foregroundStyle(LHTheme.danger).fixedSize(horizontal: false, vertical: true) }
                     }.padding(.horizontal, 28).padding(.bottom, 24)
                 }
-                .frame(maxHeight: min(ready ? 250 : 465, (NSScreen.main?.visibleFrame.height ?? 900) * 0.53))
-                Rectangle().fill(LHTheme.separator).frame(height: 1)
-                HStack(spacing: 12) {
+                GoalongSheetFooter(inset: 28) {
                     Button("Plus tard", role: .cancel) { PermissionRecovery.clearSetup(); flow.cancel(); dismiss() }
                         .keyboardShortcut(.cancelAction).buttonStyle(LHSecondaryButtonStyle()).disabled(restarting)
                     Spacer(minLength: 8)
                     // Step 1 says « Ouvrir les réglages macOS »: give it a button even when the source is unavailable.
                     if isUnavailable && !ready && !openedSettings {
-                        Button("Ouvrir les Réglages") {
+                        Button("Ouvrir Réglages Système…") {
                             if copy.permission == "Accès complet au disque" { PermissionManager.shared.openFullDiskAccessSettings() }
                             else { PermissionManager.shared.openPrivacySettings() }
                         }.buttonStyle(LHSecondaryButtonStyle()).disabled(flow.checking || restarting)
                         .accessibilityIdentifier("permission-open-settings")
                     }
                     if openedSettings && !ready {
-                        Button(needsRestart ? "Vérifier à nouveau" : "Ouvrir les réglages") {
+                        Button(needsRestart ? "Vérifier à nouveau" : "Ouvrir Réglages Système…") {
                             if needsRestart { manualChecks += 1; check() } else { openSettings() }
                         }.buttonStyle(LHSecondaryButtonStyle()).disabled(flow.checking || restarting)
                     }
@@ -540,10 +536,10 @@ import LocalHistoryCore
                         .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier("permission-primary-action")
                 }
-                .font(.system(size: 12, weight: .medium)).padding(.horizontal, 28).padding(.vertical, 20)
-                .background(LHTheme.cardBackground)
+                .font(.system(size: 12, weight: .medium))
             }
-            .frame(width: 576)
+            // Full width and height of whatever holds the sheet: the footer spans the bottom edge (UI-57).
+            .frame(minWidth: 576, idealWidth: 576, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .foregroundStyle(LHTheme.text).tint(LHTheme.accent)
             .background(LHTheme.pageBackground)
             .background(PermissionSheetWindowBehavior())

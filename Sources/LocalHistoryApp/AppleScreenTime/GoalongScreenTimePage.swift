@@ -28,6 +28,7 @@ struct GoalongScreenTimePage: View {
             knownAccessIssue: accessRevoked ? .fullDiskAccess : nil) { pageBody }
     }
 
+    private var reading: Bool { consents.isEnabled(.appleScreenTime) && !accessRevoked }
     private var rows: [GoalongAppleUsageRow] { GoalongAppleUsageProjection.rows(screenTime.summary) }
 
     private var pageBody: some View {
@@ -36,17 +37,21 @@ struct GoalongScreenTimePage: View {
                 if showsHeader {
                     PageHeader(title: "Temps d’écran Apple",
                         subtitle: "Les données Apple restent séparées des observations Goalong.") {
-                        HStack(spacing: 10) {
-                            DateSelectionControl(date: screenTime.selectedDay, onChange: selectDay)
-                            Button { screenTime.refresh() } label: { Label("Actualiser", systemImage: "arrow.clockwise") }
-                                .disabled(screenTime.isBusy)
+                        // Nothing to date or refresh while the source is off (UI-60).
+                        if reading {
+                            HStack(spacing: 10) {
+                                DateSelectionControl(date: screenTime.selectedDay, onChange: selectDay)
+                                Button { screenTime.refresh() } label: { Label("Actualiser", systemImage: "arrow.clockwise") }
+                                    .disabled(screenTime.isBusy)
+                            }
                         }
                     }
                 }
-                if consents.isEnabled(.appleScreenTime), !accessRevoked {
+                if reading {
+                    // The day's total leads the page; status and scope follow as plain text (UI-60).
+                    if let summary = screenTime.summary { dayOverview(summary) }
                     sourceStatus
                     deviceScopeCard
-                    if let summary = screenTime.summary { dayOverview(summary) }
                     usageCard
                     if (screenTime.summary?.deviceSummaries.count ?? 0) > 1 {
                         deviceUsageCard
@@ -54,7 +59,7 @@ struct GoalongScreenTimePage: View {
                     GoalongDisclosureGroup("Source, confidentialité et export") {
                         sourceDetails.padding(.top, 14)
                     }.font(.system(size: 13))
-                } else { screenTimeConsentCard }
+                } else { emptyState }
             }
             .frame(maxWidth: 1100)
             .padding(.horizontal, LHTheme.pageInset).padding(.top, showsHeader ? 28 : 20)
@@ -179,27 +184,29 @@ struct GoalongScreenTimePage: View {
     private func dayOverview(_ summary: AppleScreenTimeDaySummary) -> some View {
         let presentation = GoalongScreenTimeSourcePresentation(provenance: summary.provenance)
         return GoalongPlainBlock {
-            HStack(alignment: .top, spacing: 24) {
+            // One hero figure; the two others are secondary columns (DESIGN §3.1, UI-60).
+            HStack(alignment: .bottom, spacing: 40) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(presentation.durationTitle).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                    Text(duration(summary.totalScreenOnDuration)).font(.system(size: 34, weight: .semibold))
+                    Text(duration(summary.totalScreenOnDuration)).font(LHTheme.heroFont).tracking(LHTheme.heroTracking)
                         .monospacedDigit().accessibilityIdentifier("screen-time-day-total")
                     Text(presentation.isPartial ? "Valeur partielle, pas le total officiel" : "Périmètre Apple sélectionné")
                         .font(.system(size: 12)).foregroundStyle(presentation.isPartial ? LHTheme.warning : LHTheme.secondaryText)
-                }.frame(maxWidth: .infinity, alignment: .leading)
+                }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Applications").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                    Text("\(rows.filter { !$0.isWebsite }.count)").font(LHTheme.figureFont(28))
+                    Text("\(rows.filter { !$0.isWebsite }.count)").font(LHTheme.figureFont(22))
                         .monospacedDigit().accessibilityIdentifier("screen-time-day-applications")
                     Text("\(FrenchCount.count(summary.deviceSummaries.count, "appareil", "appareils")) avec des données").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                }.frame(maxWidth: .infinity, alignment: .leading)
+                }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Dernière lecture").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     Text(screenTime.lastRefreshAt.map { $0.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) } ?? "—")
-                        .font(LHTheme.figureFont(26)).monospacedDigit().accessibilityIdentifier("screen-time-day-update")
+                        .font(LHTheme.figureFont(22)).monospacedDigit().accessibilityIdentifier("screen-time-day-update")
                     Text(screenTime.selectedDayIsToday ? "Actualisation locale \(AppleScreenTimeDashboardModel.refreshCadenceLabel(screenTime.refreshInterval))" : "Archive locale, Apple non relu")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Spacer(minLength: 0)
             }.fixedSize(horizontal: false, vertical: true)
         }.accessibilityIdentifier("screen-time-day-overview")
     }
@@ -282,6 +289,14 @@ struct GoalongScreenTimePage: View {
                 }
                 Text("Les usages simultanés sur plusieurs appareils peuvent se chevaucher.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
+        }
+    }
+    /// Source off: the empty state itself carries the one action (UI-60).
+    private var emptyState: some View {
+        SourceActivationToggle(capability: .appleScreenTime, activateButtonTitle: "Activer…") {
+            GoalongEmptyState(title: "Temps d’écran Apple désactivé",
+                message: accessRevoked ? "La lecture a été arrêtée car macOS refuse l’accès. Réactivez cette source pour vérifier les autorisations."
+                    : "Source facultative. L’accès est expliqué et vérifié avant toute lecture.")
         }
     }
     private var screenTimeConsentCard: some View {
