@@ -297,3 +297,4 @@ support/rapport-pret--   # UI-11 (« techniques, 12 Ko », SupportRequest.swift:
 support/retour-journal-desactive--   # UI-11 (« techniques, 12 Ko », SupportRequest.swift:289)
 support/retour-messagerie-absente--   # UI-11 (« techniques, 12 Ko », SupportRequest.swift:289)
 support/retour-repere--   # UI-11 (« techniques, 12 Ko », SupportRequest.swift:289)
+onboarding/etape-2--   # UI-13 (« Lancer Goalong à l’ouverture de session », OnboardingPages.swift:178 ; boîte 257,281 247×14)
