@@ -118,7 +118,7 @@ import LocalHistoryQueryCLI
             }.accessibilityIdentifier("sharing-delivery")
             if model.draft.delivery == .daily {
                 HStack {
-                    DatePicker("La veille, après", selection: scheduleTime, displayedComponents: .hourAndMinute).datePickerStyle(.field)
+                    DatePicker("La veille, après", selection: scheduleTime, displayedComponents: .hourAndMinute).goalongDateField(label: "La veille, après")
                     Spacer()
                     GoalongHelpButton(text: "Fuseau : \(model.draft.timezone). L’envoi se fait lorsque Goalong est ouvert et le Mac connecté. Seule la veille est envoyée. Les journées plus anciennes ne sont pas rattrapées. La sélection ne s’élargit jamais automatiquement.")
                 }
@@ -136,7 +136,8 @@ import LocalHistoryQueryCLI
     private var selection: some View {
         VStack(alignment: .leading, spacing: 18) {
             DatePicker(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer", selection: $model.draft.date,
-                       in: ...GoalongToday.now, displayedComponents: .date).datePickerStyle(.field)
+                       in: ...GoalongToday.now, displayedComponents: .date)
+                .goalongDateField(label: model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer")
                 .accessibilityIdentifier("sharing-selected-date")
             if model.loading {
                 ProgressView("Lecture sur ce Mac…").font(.system(size: 13))

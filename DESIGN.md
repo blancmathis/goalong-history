@@ -240,7 +240,7 @@ Dans `GoalongControls.swift`, sauf mention.
   écran ou par feuille.
 - **Bouton secondaire** (`LHSecondaryButtonStyle`) : surface relevée, filet. Rôle destructif en texte danger.
   C'est le style par défaut posé par `.goalongControls()`.
-- **Bouton discret** (`LHQuietButtonStyle`) : texte accent sans fond, pour les actions de troisième rang
+- **Bouton discret** (`LHQuietButtonStyle`) : texte encre sans fond (l’accent reste réservé à l’action principale), pour les actions de troisième rang
   (« Corriger », « Voir les 12 usages »). Le fond de survol déborde du texte pour garder l'alignement.
 
 **Saisie et choix**
@@ -263,7 +263,7 @@ Dans `GoalongControls.swift`, sauf mention.
 - **Groupe** (`LHCard`, `GoalongSettingsGroup`) : la surface de niveau 2, pour ce qui se manipule.
 - **Liste** (`GoalongSettingsList`, `GoalongSettingsLink`, `GoalongRowDivider`, `SimpleSettingsComponents.swift`) :
   lignes pleine largeur dans un groupe, glyphe neutre sans tuile, libellé, valeur, chevron qui avance au survol.
-- **Dépliant** (`GoalongDisclosureGroup`) : ligne pleine largeur, chevron qui pivote.
+- **Dépliant** (`GoalongDisclosureGroup`) : ligne pleine largeur, chevron qui pivote. Le chevron est à gauche. Seule exception : le chevron seul, en fin de ligne, d’un tableau à colonnes fixes (règles d’usage).
 - **Note** (`GoalongNote`) et **bandeau** (`GoalongBanner`) : information secondaire dans un bloc teinté sans
   filet ; ton neutre, confidentialité ou avertissement.
 - **En-tête de page** (`PageHeader`, `.goalongPageTitle()`) : un titre, une phrase. Jamais de sur-titre.

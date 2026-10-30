@@ -30,7 +30,7 @@ import SwiftUI
             } else {
                 GoalongEmptyState(title: "Braise est désactivée",
                                   message: "Le filtre rouge du soir s’active dans Réglages › Modules.") {
-                    Button("Activer Braise", action: onOpenModules).buttonStyle(LHPrimaryButtonStyle())
+                    Button("Ouvrir Réglages › Modules", action: onOpenModules).buttonStyle(LHPrimaryButtonStyle())
                 }
             }
         }

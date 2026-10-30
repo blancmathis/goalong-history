@@ -302,12 +302,12 @@ struct GoalongProfileStudio: View {
                     HStack { Button("Ouvrir une analyse ou une sélection enregistrée…") { openSaved() }; Spacer() }
                     GoalongProfileSection("1. Choisir les données") {
                         VStack(alignment: .leading, spacing: 10) {
-                            DatePicker("Journée analysée — jusqu’à", selection: $end)
+                            DatePicker("Journée analysée — jusqu’à", selection: $end).goalongDateField(label: "Journée analysée — jusqu’à")
                             Toggle("Historique de ce Mac — activité de l’ordinateur", isOn: $computer)
-                            if computer { DatePicker("Activité depuis", selection: $start); Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich) }
+                            if computer { DatePicker("Activité depuis", selection: $start).goalongDateField(label: "Activité depuis"); Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich) }
                             Toggle("Historique des conversations — utiliser les conversations IA comme contexte", isOn: $conversations)
                             if conversations {
-                                DatePicker("Conversations actives depuis", selection: $conversationsFrom, displayedComponents: .date)
+                                DatePicker("Conversations actives depuis", selection: $conversationsFrom, displayedComponents: .date).goalongDateField(label: "Conversations actives depuis")
                                 Text("Journée analysée et jours précédents, jusqu’à 31 jours. Les échanges peuvent éclairer les projets, décisions et méthodes même si « Usage de l’IA » est décochée. Seules les sources déjà autorisées sont lues. Les dates sélectionnent les conversations ; selon la source, des messages antérieurs peuvent être inclus sans horodatage individuel. Les horodatages fournis par la source sont conservés.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                             }
                             Text("Événements, applications, fenêtres, navigation, interactions et contexte disponibles avec leurs horodatages. Les champs protégés et les événements supprimés sont exclus. Les extraits sont bornés ; les absences restent inconnues.").font(.caption).foregroundStyle(LHTheme.secondaryText)

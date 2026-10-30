@@ -520,7 +520,7 @@ struct GoalongAnalyticsContent: View {
                             Text(exploreCaption(item)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
-                            GoalongRowChevron(size: 10)
+                            GoalongRowChevron(size: 12)
                         }.padding(.vertical, 9).padding(.horizontal, 6).contentShape(Rectangle())
                     }
                     .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
@@ -633,7 +633,7 @@ struct GoalongAnalyticsContent: View {
                                             Text("dont \(duration(day.seconds(.work))) de travail").foregroundStyle(LHTheme.secondaryText)
                                         }
                                         Spacer(minLength: 8)
-                                        GoalongRowChevron(size: 10)
+                                        GoalongRowChevron(size: 12)
                                     }.font(.system(size: 12)).padding(.vertical, 8).padding(.horizontal, 6).contentShape(Rectangle())
                                 }.buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
                                     .accessibilityLabel("Explorer le \(shortDate(day.date))")
@@ -670,16 +670,15 @@ struct GoalongAnalyticsContent: View {
         } content: {
             VStack(alignment: .leading, spacing: 8) {
                 if !payload.cards.isEmpty {
-                    Picker("Rubrique", selection: $module) {
-                        Text("Tous les éléments").tag("all")
-                        Text("Bilans quotidiens").tag("dailyRecap")
-                        ForEach(GoalongProfileAnalysis.modules, id: \.self) { key in
-                            Text(GoalongProfileAnalysis.labels[key] ?? key).tag(key)
-                        }
-                    }.pickerStyle(.menu).labelsHidden().frame(maxWidth: 260, alignment: .leading)
+                    GoalongMenuPicker("Rubrique", selection: $module,
+                                      options: [("all", "Tous les éléments"), ("dailyRecap", "Bilans quotidiens")]
+                                        + GoalongProfileAnalysis.modules.map { ($0, GoalongProfileAnalysis.labels[$0] ?? $0) })
+                        .frame(maxWidth: 260, alignment: .leading)
                     if cards.isEmpty {
-                        Text("Aucun élément enregistré dans cette rubrique.")
-                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                        GoalongEmptyState(title: "Rien dans cette rubrique",
+                                          message: "Aucun élément enregistré dans cette rubrique.") {
+                            Button("Voir tous les éléments") { module = "all" }.buttonStyle(LHSecondaryButtonStyle())
+                        }
                     }
                 }
                 ForEach(visible) { card in

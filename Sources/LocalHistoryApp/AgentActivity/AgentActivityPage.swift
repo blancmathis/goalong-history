@@ -209,7 +209,7 @@
         }
 
         private var sourceConsentCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "cpu")
                         .font(.system(size: 14, weight: .medium))
@@ -232,7 +232,7 @@
         }
 
         private var disabledSourceExplanation: some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Aucune source n’est analysée", systemImage: "pause.circle.fill")
                         .font(.system(size: 12, weight: .semibold))
@@ -384,7 +384,7 @@
                         .foregroundStyle(LHTheme.warning)
                 } else if !record.projectionIsComplete {
                     Label("Journée partielle", systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
                         .help("Ce jour dépasse la limite de lecture directe ; les messages les plus anciens peuvent manquer.")
                 }
@@ -459,13 +459,13 @@
                     Text(
                         "Goalong ne conserve aucune copie, aucun instantané ni contenu transmis par les hooks."
                     )
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(LHTheme.privateTint)
                     if agents.lastScanResult.capacityLimitedFolderCount > 0 {
                         Text(
                             "Une source dépasse la taille maximale de l’index léger : Goalong garde ses métadonnées les plus récentes, sans relancer de lecture en boucle."
                         )
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(LHTheme.warning)
                     }
                 }
@@ -526,7 +526,7 @@
         }
 
         private var integrationCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 15) {
                     HStack(alignment: .top) {
                         sectionHeader(
@@ -557,11 +557,11 @@
                 providerIcon(.codex)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Historique local de Codex")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     Text(
                         "Goalong suit les sessions, l’historique et les journaux de Codex dans `~/.codex` lorsque ce dossier existe."
                     )
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
@@ -599,9 +599,9 @@
                 providerIcon(kind.provider)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(kind.frenchName)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     Text(configurationPathLabel(status.configurationPath))
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -611,7 +611,7 @@
                                 ? "Installé pour une autre copie : \(otherPath)"
                                 : "Cassé : copie introuvable (\(otherPath))"
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(status.otherExecutableExists ? Color.secondary : Color.orange)
                         .lineLimit(2)
                         .truncationMode(.middle)
@@ -653,7 +653,7 @@
         }
 
         private var watchedFoldersCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 15) {
                     HStack(alignment: .top) {
                         sectionHeader(
@@ -705,17 +705,17 @@
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(folder.displayName)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                         Text(folder.captureMode.frenchName)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(providerTint(folder.provider))
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
                             .background(providerTint(folder.provider).opacity(0.10), in: Capsule())
                     }
                     Text(folder.path)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -760,7 +760,7 @@
         }
 
         private var captureHistoryCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 12) {
                         sectionHeader(
@@ -800,7 +800,7 @@
                         }
                         if filteredCaptures.count > 120 {
                             Text("Affichage des 120 références les plus récentes.")
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.top, 5)
@@ -815,16 +815,16 @@
                 providerIcon(record.provider)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(record.summary.title ?? URL(fileURLWithPath: record.relativePath).lastPathComponent)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
                     Text("\(record.provider.frenchName) · \(record.watchedFolderName) · \(record.relativePath)")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let excerpt = record.summary.excerpt, !excerpt.isEmpty {
                         Text(excerpt)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
                             .lineLimit(2)
                     }
@@ -832,7 +832,7 @@
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(DashboardFormatters.fullTimestamp.string(from: record.sourceModifiedAt ?? record.capturedAt))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 5) {
                         compactPill("\(record.summary.messageCount) msg", symbol: "bubble.left")
@@ -858,7 +858,7 @@
 
         private var storageAndPrivacyCard: some View {
             HStack(alignment: .top, spacing: 14) {
-                LHCard {
+                GoalongPlainBlock {
                     VStack(alignment: .leading, spacing: 12) {
                         sectionHeader(
                             symbol: "lock.square.stack.fill",
@@ -879,7 +879,7 @@
                 }
                 .frame(maxWidth: .infinity)
 
-                LHCard {
+                GoalongPlainBlock {
                     VStack(alignment: .leading, spacing: 12) {
                         sectionHeader(
                             symbol: "checkmark.shield.fill",
@@ -932,7 +932,7 @@
 
         private func compactPill(_ title: String, symbol: String) -> some View {
             Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(LHTheme.secondaryText)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -942,11 +942,11 @@
         private func detailLine(_ title: String, value: String) -> some View {
             HStack {
                 Text(title)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(LHTheme.secondaryText)
                 Spacer()
                 Text(value)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
             }
         }
 
@@ -957,7 +957,7 @@
                     .foregroundStyle(LHTheme.success)
                     .padding(.top, 1)
                 Text(text)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -973,7 +973,7 @@
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1038,7 +1038,7 @@
                     Text("Modifier le dossier suivi")
                         .font(.system(size: 20, weight: .bold))
                     Text(draft.path)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(2)
                         .truncationMode(.middle)
@@ -1066,7 +1066,7 @@
                         ? "Chaque fichier pris en charge est indexé sur place, sauf les coffres d’identifiants, cookies, clés privées et caches."
                         : "Goalong lit directement les formats courants de conversations, journaux et traces, sans les copier."
                 )
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 

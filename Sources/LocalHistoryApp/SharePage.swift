@@ -70,9 +70,9 @@
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(model.snapshot.sealedMinutes) minute\(model.snapshot.sealedMinutes > 1 ? "s" : "") avec preuve")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     Text("Les règles s’appliquent événement par événement")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                 }
             }
@@ -85,7 +85,7 @@
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
                 Text("\(count)")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(LHTheme.secondaryText)
             }
             .padding(.horizontal, 11)
@@ -103,11 +103,11 @@
                             ? "Prêt à créer un fichier selon vos règles"
                             : "Aucune donnée avec preuve pour ce jour"
                     )
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     Text(
                         "Les vérifications se font sur ce Mac, sans connexion. Rien n’est envoyé."
                     )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()

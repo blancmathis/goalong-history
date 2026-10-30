@@ -89,7 +89,7 @@ struct GoalongFocusExplanation: View {
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Changer d’outil peut interrompre cette mesure, même pour le même projet. Elle ne mesure pas votre attention mentale.")
-                .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .contain)

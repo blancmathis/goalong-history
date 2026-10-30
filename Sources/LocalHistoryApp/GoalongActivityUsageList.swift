@@ -31,9 +31,9 @@ struct GoalongActivityUsageList: View {
                 HStack(spacing: 12) {
                     GoalongSearchField("Rechercher une application ou un site", text: $search, identifier: "activity-usage-search",
                                        trailing: search.isEmpty ? nil : "\(matching.count) résultat\(matching.count > 1 ? "s" : "")")
-                    Picker("Trier les usages", selection: $sort) {
-                        ForEach(GoalongActivityUsageSort.allCases) { Text($0.title).tag($0) }
-                    }.labelsHidden().pickerStyle(.menu).fixedSize().accessibilityIdentifier("activity-usage-sort")
+                    GoalongMenuPicker("Trier les usages", selection: $sort,
+                                      options: GoalongActivityUsageSort.allCases.map { ($0, $0.title) })
+                        .accessibilityIdentifier("activity-usage-sort")
                 }
                 LHCard(padding: 0) {
                     if visible.isEmpty {
@@ -114,7 +114,7 @@ struct GoalongActivityUsageRow: View {
                     }
                     GoalongShareBar(share: share, color: barColor)
                 }
-                GoalongRowChevron(size: 10)
+                GoalongRowChevron(size: 12)
             }
             .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 11)
             .contentShape(Rectangle())

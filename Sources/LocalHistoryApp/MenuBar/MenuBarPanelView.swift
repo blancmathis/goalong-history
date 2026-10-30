@@ -265,7 +265,7 @@
                         if label != "24 h" { Spacer(minLength: 0) }
                     }
                 }
-                .font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityHidden(true)
             }
             .onAppear {
@@ -699,7 +699,7 @@
                 Button(action: model.openApp) {
                     HStack(spacing: 6) {
                         Text("Ouvrir \(ProductIdentity.displayName)").font(.system(size: 13, weight: .medium))
-                        Text("⌘O").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                        Text("⌘O").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8).frame(height: 28)

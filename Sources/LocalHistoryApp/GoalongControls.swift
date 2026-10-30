@@ -656,6 +656,53 @@
         }
     }
 
+    private struct GoalongDateFieldModifier: ViewModifier {
+        let label: String?
+        func body(content: Content) -> some View {
+            HStack(spacing: 8) {
+                if let label { Text(label).font(.system(size: 13)) }
+                content.labelsHidden().datePickerStyle(.field).fixedSize().modifier(GoalongFieldSurface())
+            }
+        }
+    }
+
+    /// Pop-up menu for one choice among several, drawn on the Goalong control surface instead of the AppKit bezel.
+    struct GoalongMenuPicker<Value: Hashable>: View {
+        let title: String
+        @Binding var selection: Value
+        let options: [(Value, String)]
+        @Environment(\.isEnabled) private var isEnabled
+
+        init(_ title: String, selection: Binding<Value>, options: [(Value, String)]) {
+            self.title = title
+            self._selection = selection
+            self.options = options
+        }
+
+        var body: some View {
+            Menu {
+                ForEach(options.indices, id: \.self) { index in
+                    let option = options[index]
+                    Button { selection = option.0 } label: {
+                        if option.0 == selection { Label(option.1, systemImage: "checkmark") } else { Text(option.1) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(options.first { $0.0 == selection }?.1 ?? title).font(.system(size: 13)).lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
+                }
+                .padding(.horizontal, 10).frame(minHeight: 28)
+                .goalongControlSurface()
+                .opacity(isEnabled ? 1 : 0.5)
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .accessibilityLabel(title)
+        }
+    }
+
     private struct RowHoveredKey: EnvironmentKey { static let defaultValue = false }
     extension EnvironmentValues {
         /// Set by row buttons so their chevron can lean toward where the row leads.
@@ -692,6 +739,10 @@
 
         /// Raised surface shared by grouped controls (day stepper, segmented groups).
         func goalongControlSurface() -> some View { modifier(GoalongControlSurface()) }
+
+        /// Date or time field in the Goalong field surface. The label, when given, sits left of the field; without one the
+        /// picker keeps its title for VoiceOver only.
+        func goalongDateField(label: String? = nil) -> some View { modifier(GoalongDateFieldModifier(label: label)) }
 
         /// Goalong control chrome for a window, sheet or panel root. Explicit styles still win.
         func goalongControls() -> some View {

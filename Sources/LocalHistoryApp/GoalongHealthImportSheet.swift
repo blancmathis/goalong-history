@@ -54,7 +54,7 @@ struct GoalongHealthImportSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
-                Image(systemName: "heart.text.clipboard").font(.title).foregroundStyle(LHTheme.accent)
+                Image(systemName: "heart.text.clipboard").font(.title).foregroundStyle(LHTheme.secondaryText)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Apple Santé").font(.title2.weight(.semibold))
                     Text("Sommeil, récupération et activité. Vous choisissez ce qui reste sur ce Mac et ce qui part sur Goalong.")
@@ -127,8 +127,8 @@ struct GoalongHealthImportSheet: View {
             Divider()
             Text("Choisir les dates et les données").font(.headline)
             HStack {
-                DatePicker("Du", selection: $from, displayedComponents: .date)
-                DatePicker("Au", selection: $through, displayedComponents: .date)
+                DatePicker("Du", selection: $from, displayedComponents: .date).goalongDateField(label: "Du")
+                DatePicker("Au", selection: $through, displayedComponents: .date).goalongDateField(label: "Au")
             }
             ForEach(GoalongHealthGroup.allCases) { group in
                 VStack(alignment: .leading, spacing: 5) {
@@ -176,7 +176,7 @@ struct GoalongHealthImportSheet: View {
                     let workouts = health["workouts"] as? [[String: Any]] ?? []
                     ForEach(Array(workouts.enumerated()), id: \.offset) { _, workout in
                         HStack {
-                            Image(systemName: "figure.run").foregroundStyle(LHTheme.accent)
+                            Image(systemName: "figure.run").foregroundStyle(LHTheme.secondaryText)
                             Text(Self.sport(workout["sport"] as? String ?? ""))
                             Spacer()
                             Text(Self.duration(workout["durationSeconds"] as? Double ?? 0))

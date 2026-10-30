@@ -85,7 +85,7 @@ struct GoalongScreenTimePage: View {
     }
 
     private var sourceStatus: some View {
-        LHCard(padding: 16) {
+        GoalongPlainBlock {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 14) {
                     if let summary = screenTime.summary {
@@ -117,14 +117,14 @@ struct GoalongScreenTimePage: View {
                 HStack(spacing: 16) {
                     Button("Voir dans les Réglages Apple") { screenTime.openScreenTimeSettings() }
                         .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).accessibilityIdentifier("screen-time-open-settings")
-                    Text("Aucune modification de vos réglages Apple.").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                    Text("Aucune modification de vos réglages Apple.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
             }.fixedSize(horizontal: false, vertical: true)
         }.accessibilityIdentifier("screen-time-status")
     }
 
     private var deviceScopeCard: some View {
-        LHCard(padding: 16) {
+        GoalongPlainBlock {
             VStack(alignment: .leading, spacing: 14) {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 20) { scopeTitle; Spacer(minLength: 12); scopePicker }
@@ -171,7 +171,7 @@ struct GoalongScreenTimePage: View {
 
     private func dayOverview(_ summary: AppleScreenTimeDaySummary) -> some View {
         let presentation = GoalongScreenTimeSourcePresentation(provenance: summary.provenance)
-        return LHCard {
+        return GoalongPlainBlock {
             HStack(alignment: .top, spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(presentation.durationTitle).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
@@ -239,7 +239,7 @@ struct GoalongScreenTimePage: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(row.name).font(.system(size: 13, weight: .medium)).lineLimit(1).help(row.name)
                                     Text(row.isWebsite ? "Site fourni par Apple" : "Application · source Apple")
-                                        .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 }
                                 Spacer(minLength: 10)
                                 Text(duration(row.seconds)).font(.system(size: 14, weight: .semibold)).monospacedDigit()
@@ -262,7 +262,7 @@ struct GoalongScreenTimePage: View {
     }
 
     private var deviceUsageCard: some View {
-        LHCard {
+        GoalongPlainBlock {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Répartition par appareil").font(.system(size: 15, weight: .semibold))
                 ForEach(screenTime.summary?.deviceSummaries ?? []) { item in

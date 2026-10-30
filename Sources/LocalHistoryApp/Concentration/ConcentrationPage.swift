@@ -1142,7 +1142,7 @@ struct FocusThreadModel: Equatable {
             Spacer(minLength: 12)
             DatePicker(title, selection: Binding(get: { Self.date(minute.wrappedValue) }, set: { minute.wrappedValue = Self.minute($0) }),
                        displayedComponents: .hourAndMinute)
-                .labelsHidden().fixedSize().disabled(!isOn.wrappedValue)
+                .goalongDateField().disabled(!isOn.wrappedValue)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
             Toggle(title, isOn: isOn).toggleStyle(.goalongSwitchOnly).fixedSize()
         }
@@ -1181,7 +1181,7 @@ struct FocusThreadModel: Equatable {
                         if let message = change.error { limitError = message; return }
                         save(change.settings)
                     } label: {
-                        Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 11, weight: .semibold))
+                        Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
                             .frame(width: 22, height: 22)
                             .foregroundStyle(on ? LHTheme.onAccent : LHTheme.secondaryText)
                             .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,

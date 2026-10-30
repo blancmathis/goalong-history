@@ -231,7 +231,7 @@ struct SupportRequestView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "stethoscope")
-                .font(.system(size: 22, weight: .medium)).foregroundStyle(LHTheme.accent)
+                .font(.system(size: 22, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 44, height: 44)
                 .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {

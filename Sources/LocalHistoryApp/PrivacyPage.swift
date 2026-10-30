@@ -90,7 +90,7 @@
                             Text("Goalong History · une seule app publique")
                                 .font(.system(size: 13, weight: .semibold))
                             Text(capabilities.summary)
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -128,7 +128,7 @@
                         Text(
                             "L’accès complet au disque reste une autorisation macOS large. Les lecteurs sont en lecture seule et audités, mais s’exécutent dans l’app principale ; un service de lecture isolé n’est pas encore livré."
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -199,7 +199,7 @@
                                 ? "Une preuve signée ne contient ni l’application, ni l’adresse, ni le titre de fenêtre, ni les clics, ni la catégorie. Lorsque l’envoi des preuves est activé, votre serveur voit nécessairement des métadonnées de connexion comme l’heure d’arrivée et l’adresse IP."
                                 : "Les preuves locales vérifient l’intégrité sans exposer l’enregistrement détaillé ni contacter de serveur. Cette version ne transmet aucune preuve."
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -316,7 +316,7 @@
                         Text(assessment?.state.frenchTitle ?? "État de l’enregistrement indisponible")
                             .font(.system(size: 12, weight: .semibold))
                         Text(assessment?.state.frenchDetail ?? "Aucun indicateur d’état d’enregistrement n’est encore disponible.")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -329,30 +329,30 @@
                     Text(
                         "Dernière saisie : \(snapshot.lastInputEventAt.map { GoalongUIFormat.time($0) } ?? "jamais") · clic : \(snapshot.lastClickAt.map { GoalongUIFormat.time($0) } ?? "jamais") · frappe : \(snapshot.lastTypingBurstAt.map { GoalongUIFormat.time($0) } ?? "jamais") · défilement : \(snapshot.lastScrollAt.map { GoalongUIFormat.time($0) } ?? "jamais") · raccourci : \(snapshot.lastShortcutAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
                     )
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     Text(
                         "Accessibilité : \(snapshot.lastAXContextSuccessAt.map { GoalongUIFormat.time($0) } ?? "jamais") · URL : \(snapshot.lastURLDetectedAt.map { GoalongUIFormat.time($0) } ?? "jamais") · masquage : \(snapshot.lastSuppressionReason?.frenchLabel ?? "aucun") à \(snapshot.lastSuppressionAt.map { GoalongUIFormat.time($0) } ?? "jamais")"
                     )
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     Text(
                         "Autorisations : interrupteur Accessibilité \(snapshot.permissions.accessibilityPreflight ? "activé" : "désactivé") · test Accessibilité \(snapshot.permissions.accessibilityFunctionalProbe ? "réussi" : "échoué") · Surveillance de l’entrée \(snapshot.permissions.inputMonitoringPreflight ? "activée" : "désactivée") · capture \(snapshot.eventTapLifecycle.frenchLabel)"
                     )
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     Text(
                         "Version : \(snapshot.build.signatureKind.frenchLabel) · \(snapshot.build.codeDirectoryHash.map { String($0.prefix(14)) } ?? "sans empreinte de code") · saisies sur 5 min : \(snapshot.recentCounters.inputEventCount)"
                     )
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(LHTheme.secondaryText)
                     .textSelection(.enabled)
                     if snapshot.build.signatureKind == .adHoc {
                         Text("Une mise à jour non signée par Apple peut changer l’identité reconnue par macOS et redemander une autorisation. L’historique existant reste lisible.")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(LHTheme.warning)
                     }
                 }
@@ -457,7 +457,7 @@
                             Text(model.deviceProtectionTitle)
                                 .font(.system(size: 13, weight: .semibold))
                             Text(model.deviceAlgorithm)
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
@@ -481,7 +481,7 @@
                                 let feedback = DeviceTrustState.shared.retryFeedback
                             {
                                 Text(feedback)
-                                    .font(.system(size: 11))
+                                    .font(.system(size: 12))
                                     .foregroundStyle(LHTheme.secondaryText)
                             }
                         }
@@ -489,10 +489,10 @@
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Identifiant de l’appareil")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(LHTheme.secondaryText)
                         Text(model.knownDeviceID ?? "Indisponible (Trousseau inaccessible)")
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(LHTheme.secondaryText)
                             .lineLimit(2)
                             .textSelection(.enabled)
@@ -571,9 +571,9 @@
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(LHTheme.accent)
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                 Text(message)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -604,14 +604,14 @@
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
                     Text(message)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 if granted {
                     Text(grantedLabel)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LHTheme.success)
                 } else {
                     Button(buttonTitle, action: action)
@@ -633,9 +633,9 @@
                         .frame(width: 34, height: 34)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         Text(message)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }

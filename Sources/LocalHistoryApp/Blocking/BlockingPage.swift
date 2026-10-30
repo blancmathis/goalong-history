@@ -564,7 +564,7 @@ struct BlockingMeter: View {
                                 }
                                 if later {
                                     DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
-                                        .labelsHidden().fixedSize()
+                                        .goalongDateField()
                                         .environment(\.locale, Locale(identifier: "fr_FR"))
                                         .accessibilityIdentifier("blocking-start-at")
                                 }
@@ -582,7 +582,7 @@ struct BlockingMeter: View {
                             }
                             if span == .until {
                                 DatePicker("Heure de fin", selection: $until, displayedComponents: .hourAndMinute)
-                                    .labelsHidden().fixedSize()
+                                    .goalongDateField()
                                     .environment(\.locale, Locale(identifier: "fr_FR"))
                             }
                         }

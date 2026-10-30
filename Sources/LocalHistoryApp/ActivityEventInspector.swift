@@ -243,7 +243,7 @@
 
                     Spacer(minLength: 8)
                     Text("\(filteredEvents.count)")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LHTheme.secondaryText)
                 }
 
@@ -302,10 +302,10 @@
                         .foregroundStyle(tint(for: event))
                         .frame(width: 22)
                     Text(GoalongUIFormat.time(event.timestamp))
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(LHTheme.secondaryText)
                     Text(ActivityEventLabels.kind(event.kind))
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     if let reason = event.suppressionReason {
                         StatusPill(
                             title: ActivityEventLabels.reason(reason),
@@ -316,7 +316,7 @@
                     Spacer()
                     if let sequence = event.integrity?.sequence {
                         Text("n° \(sequence)")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -329,22 +329,22 @@
                     ].compactMap { $0 }
                     if !context.isEmpty {
                         Text(context.joined(separator: " › "))
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
                             .textSelection(.enabled)
                     }
                     if let detail = eventDetail(event), !detail.isEmpty {
                         Text(detail)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .textSelection(.enabled)
                     }
                     if let semantic {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Texte d’accessibilité, donnée non fiable")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(LHTheme.warning)
                             Text(String(semantic.prefix(1_500)))
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -359,7 +359,7 @@
                     Text(event.suppressionReason.map {
                         "\(ActivityEventLabels.reason($0)) : le contexte détaillé n’a volontairement pas été enregistré."
                     } ?? "Le contexte détaillé n’a volontairement pas été enregistré.")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                 }
 

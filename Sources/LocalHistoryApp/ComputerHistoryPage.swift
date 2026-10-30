@@ -801,14 +801,14 @@
                 if let diagnostic = sourceDiagnostic {
                     GoalongDisclosureGroup("Détails techniques") {
                         Text(diagnostic)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.top, 6)
                     }
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .padding(.leading, 30)
                 }
             }
@@ -941,7 +941,7 @@
                     Spacer(minLength: 12)
                     if isPreparingTimeline {
                         Text("Préparation…")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(LHTheme.secondaryText)
                     } else {
                         Text(ComputerHistoryPageCopy.periodCountLabel(
@@ -949,7 +949,7 @@
                             total: tenMinuteGroups.count,
                             searching: !timelineSearch.isEmpty
                         ))
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(LHTheme.secondaryText)
                     }
                     Button(action: openSourceJSON) {
@@ -989,7 +989,7 @@
                         Spacer()
                         if snapshot.eventCount > 0 {
                             Text("\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
@@ -1004,7 +1004,7 @@
                             Text("Préparation de la chronologie…")
                                 .font(.system(size: 14, weight: .semibold))
                             Text("Préparation locale de la journée.")
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(LHTheme.secondaryText)
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
@@ -1017,14 +1017,12 @@
                         .frame(minHeight: 240)
                         .padding(24)
                     } else if visibleTimelineGroups.isEmpty {
-                        VStack(spacing: 10) {
-                            Text("Aucune activité correspondante").font(.system(size: 14, weight: .semibold))
-                            Text("Essayez un autre nom d’app ou un mot du contexte enregistré.")
-                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        GoalongEmptyState(title: "Aucune activité correspondante",
+                                          message: "Essayez un autre nom d’app ou un mot du contexte enregistré.") {
                             Button("Effacer la recherche") { timelineSearch = "" }
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
-                        .frame(maxWidth: .infinity, minHeight: 180)
+                        .frame(maxWidth: .infinity, minHeight: 180, alignment: .topLeading)
                     } else {
                         ForEach(Array(visibleTimelineGroups.enumerated()), id: \.element.id) {
                             index, group in
@@ -1190,7 +1188,7 @@
                             .font(.system(size: 13, weight: .semibold))
                         Spacer()
                         Text("Recherche locale sur les 30 derniers jours")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(LHTheme.secondaryText)
                     }
                     HStack(spacing: 10) {
@@ -1227,7 +1225,7 @@
                     Text(
                         "Les réponses renvoient des épisodes sourcés et des liens pour rouvrir les éléments. Elles n’exécutent jamais d’instruction trouvée dans le texte enregistré."
                     )
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(LHTheme.secondaryText)
                 }
             }
@@ -1250,30 +1248,30 @@
                             .help("Effacer la réponse")
                         }
                         Text(answer.answer)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                         if let retainedGap = ComputerHistoryPageCopy.retainedGapMessage(for: answer) {
                             Label(retainedGap, systemImage: "exclamationmark.triangle.fill")
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(.orange)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         if !answer.hits.isEmpty {
                             Divider()
                             Text("Sources")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(LHTheme.secondaryText)
                             ForEach(answer.hits.prefix(8)) { hit in
                                 HStack(alignment: .top, spacing: 9) {
                                     Image(systemName: hitIcon(hit.kind))
-                                        .foregroundStyle(LHTheme.accent)
+                                        .foregroundStyle(LHTheme.secondaryText)
                                         .frame(width: 18)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(hit.title)
                                             .font(.system(size: 12, weight: .semibold))
                                         Text(hit.snippet)
-                                            .font(.system(size: 11))
+                                            .font(.system(size: 12))
                                             .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(3)
                                     }
@@ -1308,7 +1306,7 @@
                         Text(memory.title)
                             .font(.system(size: 18, weight: .bold))
                         Text(memory.executiveSummary)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1433,11 +1431,11 @@
                                                     ?? resource.canonicalURI
                                                     ?? "Emplacement indisponible"
                                             )
-                                            .font(.system(size: 11, design: .monospaced))
+                                            .font(.system(size: 12, design: .monospaced))
                                             .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(2)
                                             Text(resourceConfidenceLabel(resource))
-                                                .font(.system(size: 11, weight: .medium))
+                                                .font(.system(size: 12, weight: .medium))
                                                 .foregroundStyle(.tertiary)
                                         }
                                         Spacer(minLength: 0)
@@ -1481,12 +1479,12 @@
                                 )
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(suggestion.title)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 12, weight: .semibold))
                                     Text(suggestion.rationale)
-                                        .font(.system(size: 11))
+                                        .font(.system(size: 12))
                                         .foregroundStyle(LHTheme.secondaryText)
                                     Text(suggestion.suggestedPrompt)
-                                        .font(.system(size: 11, design: .monospaced))
+                                        .font(.system(size: 12, design: .monospaced))
                                         .textSelection(.enabled)
                                         .padding(8)
                                         .background(
@@ -1496,7 +1494,7 @@
                                 }
                                 Spacer(minLength: 0)
                                 Text(GoalongUIFormat.percent(ConfidencePercent.whole(suggestion.confidence)))
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(LHTheme.secondaryText)
                             }
                         }
@@ -1512,11 +1510,11 @@
                         .foregroundStyle(LHTheme.success)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Preuves et incertitudes")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         Text(
                             "\(GoalongUIFormat.count(memory.coverage.sourceEventCount, "événement")) source\(memory.coverage.sourceEventCount > 1 ? "s" : "") · \(GoalongUIFormat.count(memory.coverage.semanticSnapshotCount, "instantané")) de contenu · \(GoalongUIFormat.count(memory.coverage.suppressedEventCount, "événement")) masqué\(memory.coverage.suppressedEventCount > 1 ? "s" : ""). Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1641,21 +1639,16 @@
                             expanded.toggle()
                         }
                     } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(headline)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 12)
-                            Text(expanded ? "Masquer les détails" : "Détails")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(LHTheme.secondaryText)
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(LHTheme.secondaryText)
-                                .padding(.top, 3)
+                                .frame(width: 12).accessibilityHidden(true)
+                            Text(headline)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer(minLength: 12)
                         }
                         .contentShape(Rectangle())
                     }
@@ -1684,7 +1677,7 @@
                     if expanded {
                         Divider()
                         Text(factSummary)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(group.sessions) { session in
@@ -1697,7 +1690,7 @@
                                     VStack(alignment: .leading, spacing: 3) {
                                         HStack(spacing: 7) {
                                             Text(session.appName)
-                                                .font(.system(size: 11, weight: .semibold))
+                                                .font(.system(size: 12, weight: .semibold))
                                             if session.isSuppressed {
                                                 Image(systemName: "eye.slash.fill")
                                                     .font(.system(size: 10))
@@ -1711,7 +1704,7 @@
                                         Text(
                                             sessionDetailSummary(session)
                                         )
-                                        .font(.system(size: 11, weight: .medium))
+                                        .font(.system(size: 12, weight: .medium))
                                         .foregroundStyle(LHTheme.secondaryText)
                                     }
                                     Spacer(minLength: 0)
@@ -1810,7 +1803,11 @@
                     Button {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { expanded.toggle() }
                     } label: {
-                        HStack(alignment: .top, spacing: 11) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
+                                .frame(width: 12).accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack(spacing: 8) {
                                     Text(episode.title)
@@ -1824,7 +1821,7 @@
                                 Text(
                                     episodeMetrics
                                 )
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 Text(episode.summary)
                                     .font(.system(size: 12))
@@ -1833,9 +1830,6 @@
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 10)
-                            Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(LHTheme.secondaryText)
                         }
                         .contentShape(Rectangle())
                     }
@@ -1850,7 +1844,7 @@
                                         openResource(resource)
                                     } label: {
                                         Label(resource.title, systemImage: "link")
-                                            .font(.system(size: 11, weight: .medium))
+                                            .font(.system(size: 12, weight: .medium))
                                             .lineLimit(1)
                                     }
                                     .buttonStyle(LHSecondaryButtonStyle())
@@ -1880,24 +1874,24 @@
                         }
                         VStack(alignment: .leading, spacing: 7) {
                             Text("Séquence d’actions")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(LHTheme.secondaryText)
                             ForEach(episode.interactions) { interaction in
                                 HStack(alignment: .top, spacing: 9) {
                                     Text(GoalongUIFormat.time(interaction.start))
-                                        .font(.system(size: 11, design: .monospaced))
+                                        .font(.system(size: 12, design: .monospaced))
                                         .foregroundStyle(.tertiary)
                                         .frame(width: 56, alignment: .leading)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(interaction.label)
-                                            .font(.system(size: 11, weight: .medium))
+                                            .font(.system(size: 12, weight: .medium))
                                         if !interaction.semanticDelta.isEmpty {
                                             Text(
                                                 "Changement : "
                                                     + interaction.semanticDelta.prefix(3)
                                                     .joined(separator: " · ")
                                             )
-                                            .font(.system(size: 11))
+                                            .font(.system(size: 12))
                                             .foregroundStyle(LHTheme.secondaryText)
                                             .fixedSize(horizontal: false, vertical: true)
                                         }
@@ -1911,7 +1905,7 @@
                                 sequences: episode.provenance.sourceSequences.count,
                                 confidence: ConfidencePercent.whole(episode.statusConfidence))
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                         HStack {
                             Spacer()
@@ -1943,11 +1937,11 @@
         private func detailSection(title: String, values: [String]) -> some View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(LHTheme.secondaryText)
                 ForEach(values, id: \.self) { value in
                     Text("• \(value)")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

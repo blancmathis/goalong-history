@@ -136,7 +136,7 @@ struct GoalongRhythmStudio: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Choisissez un projet et une plage de la journée. Les durées viennent des observations ; l’agent explique leur contexte.").foregroundStyle(LHTheme.secondaryText)
-                    HStack { DatePicker("Début", selection: $start, displayedComponents: .hourAndMinute); DatePicker("Fin", selection: $end, displayedComponents: .hourAndMinute) }
+                    HStack { DatePicker("Début", selection: $start, displayedComponents: .hourAndMinute).goalongDateField(label: "Début"); DatePicker("Fin", selection: $end, displayedComponents: .hourAndMinute).goalongDateField(label: "Fin") }
                     TextField("Projet", text: $project).textFieldStyle(GoalongFieldStyle())
                     TextField("Ce que vous souhaitiez faire pendant cette session", text: $intent).textFieldStyle(GoalongFieldStyle())
                     Toggle("Inclure les extraits de contexte enrichi déjà autorisés", isOn: $rich)

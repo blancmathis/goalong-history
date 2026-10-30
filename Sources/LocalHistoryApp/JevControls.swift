@@ -31,7 +31,7 @@ import LocalHistoryCore
             }
             GoalongDisclosureGroup("Voir le dernier contenu envoyé (sans la clé)") {
                 Text(monitor.lastPayload.isEmpty ? "Aucun contenu conservé en mémoire." : monitor.lastPayload)
-                    .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                    .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
             }
             Text("Désactiver la surveillance efface les échantillons d’activité et la dernière requête en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et l’arrêt de confidentialité restent prioritaires.")

@@ -82,12 +82,12 @@
                     Text(screenTime.status.title)
                         .font(.system(size: 12, weight: .semibold))
                     Text(screenTime.status.message)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     if screenTime.status.kind == .ready || screenTime.status.kind == .localOnly {
                         Text("La fraîcheur dépend de la synchronisation locale/iCloud d’Apple, pas d’un serveur Goalong.")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -170,7 +170,7 @@
                         Divider()
                         if screenTime.availableDevices.isEmpty {
                             Text("Aucun appareil Apple détecté pour l’instant.")
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(LHTheme.secondaryText)
                         } else {
                             LazyVGrid(
@@ -230,7 +230,7 @@
 
                     if summary.deviceSummaries.isEmpty {
                         Text("Aucune utilisation Apple pour cette sélection et ce jour.")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
                     } else {
                         ForEach(summary.deviceSummaries) { item in
@@ -240,10 +240,10 @@
                                     .frame(width: 20)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.device.displayName)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 12, weight: .semibold))
                                         .lineLimit(1)
                                     Text(screenTime.sourceLabel(for: item.device))
-                                        .font(.system(size: 11))
+                                        .font(.system(size: 12))
                                         .foregroundStyle(LHTheme.secondaryText)
                                         .lineLimit(1)
                                 }
@@ -256,7 +256,7 @@
                                     )
                                 }
                                 Text(duration(item.screenOnDuration))
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.system(size: 12, weight: .bold))
                                     .monospacedDigit()
                             }
                             .padding(.vertical, 3)
@@ -281,31 +281,31 @@
 
                     if summary.topApplications.isEmpty {
                         Text("Aucune activité d’application attribuable pour cette sélection et ce jour.")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
                     } else {
                         ForEach(Array(summary.topApplications.prefix(12).enumerated()), id: \.element.id) { index, app in
                             HStack(spacing: 10) {
                                 Text(String(index + 1))
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.system(size: 12, weight: .bold))
                                     .foregroundStyle(LHTheme.secondaryText)
                                     .frame(width: 18)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(app.resolvedName)
-                                        .font(.system(size: 11, weight: .medium))
+                                        .font(.system(size: 12, weight: .medium))
                                         .lineLimit(1)
                                     if let bundle = app.bundleIdentifier,
                                        app.displayName != nil
                                     {
                                         Text(bundle)
-                                            .font(.system(size: 11, design: .monospaced))
+                                            .font(.system(size: 12, design: .monospaced))
                                             .foregroundStyle(.tertiary)
                                             .lineLimit(1)
                                     }
                                 }
                                 Spacer()
                                 Text(duration(app.duration))
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .monospacedDigit()
                             }
                             .padding(.vertical, 3)
@@ -326,7 +326,7 @@
                         Text(
                             "L’export indique les appareils inclus, la provenance exacte, la règle de cumul et si le détail des applications est inclus. Les formats privés d’Apple ne sont pas présentés comme identiques certifiés aux Réglages."
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -394,13 +394,13 @@
                         Text(
                             "Cette page lit d’abord sur place les agrégats privés d’Apple (ScreenTimeAgent). Si ce stockage est indisponible, les flux ScreenTime.AppUsage, knowledgeC `/app/usage` et Biome `App.InFocus` servent à une reconstitution limitée."
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         Text(
                             "Les événements de Goalong ne les remplacent jamais. Ces formats privés ne sont pas une API publique d’Apple et ne sont pas certifiés identiques aux Réglages."
                         )
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -410,7 +410,7 @@
                         Text("\(screenTime.knowledgeIntervalCount) knowledgeC intervals")
                         Text("\(screenTime.biomeIntervalCount) Biome intervals")
                     }
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(LHTheme.secondaryText)
                 }
             }
@@ -423,11 +423,11 @@
                         .foregroundStyle(LHTheme.teal)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Accès Apple en lecture seule")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         Text(
                             "Les bases et flux d’Apple sont ouverts en lecture seule. Goalong ne conserve que votre choix d’appareils et les fichiers que vous exportez vous-même."
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -451,10 +451,10 @@
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(device.displayName)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                         Text(isCurrentMac ? "Ce Mac" : screenTime.sourceLabel(for: device))
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(isCurrentMac ? LHTheme.success : Color.secondary)
                             .lineLimit(1)
                     }
@@ -556,7 +556,7 @@
                     Text(title)
                         .font(.system(size: 14, weight: .semibold))
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -575,14 +575,14 @@
             LHCard {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(title, systemImage: symbol)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LHTheme.secondaryText)
                     Text(value)
                         .font(.system(size: 20, weight: .bold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                     Text(note)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(2)
                 }

@@ -267,6 +267,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("2. Choisir vos données").font(.headline)
                         DatePicker("Journée enregistrée", selection: $date, in: ...GoalongToday.now, displayedComponents: .date)
+                            .goalongDateField(label: "Journée enregistrée")
                             .environment(\.locale, GoalongUIFormat.locale)
                         Text("Les noms d’appareils et les totaux de temps d’écran sont inclus. Les sources doivent être activées dans Goalong. Rien n’est collecté ni analysé pendant l’export.")
                             .font(.caption).foregroundStyle(LHTheme.secondaryText)

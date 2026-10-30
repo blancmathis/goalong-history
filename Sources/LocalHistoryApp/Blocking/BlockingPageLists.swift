@@ -706,7 +706,7 @@ struct BlockingProgramLock: View {
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
             DatePicker("Jusqu’au", selection: $until, in: max(now, current ?? now)..., displayedComponents: .date)
-                .datePickerStyle(.field)
+                .goalongDateField(label: "Jusqu’au")
             HStack {
                 Spacer()
                 Button("Verrouiller jusqu’au \(BlockingFormat.day(until))") { onLock(BlockingWallClock.endOfDay(until)) }
