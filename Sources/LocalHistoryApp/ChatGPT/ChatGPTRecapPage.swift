@@ -218,6 +218,17 @@
             runtime.selectDay(day)
         }
 
+        private var generateButton: some View {
+            Button {
+                recapRuntime.generateRecap()
+            } label: {
+                Label(
+                    recapRuntime.isGeneratingSelectedDay ? "Analyse en cours…" : generationButtonTitle,
+                    systemImage: "sparkles"
+                )
+            }
+        }
+
         private var header: some View {
             PageHeader(
                 title: "Bilan quotidien",
@@ -240,15 +251,14 @@
                             ? "Partagez le fichier JSON pour conserver sa signature. Le destinataire peut le vérifier hors ligne avec : goalong verify-recap CHEMIN"
                             : "Ouvrir les fichiers de rapport. Les anciens rapports n’ont pas de signature locale."
                     )
-                    Button {
-                        recapRuntime.generateRecap()
-                    } label: {
-                        Label(
-                            recapRuntime.isGeneratingSelectedDay ? "Analyse en cours…" : generationButtonTitle,
-                            systemImage: "sparkles"
-                        )
+                    // Lime only when it can run: a blocked « Analyser » leaves the primary to the unblocking action (UI-68).
+                    Group {
+                        if canGenerate {
+                            generateButton.buttonStyle(LHPrimaryButtonStyle())
+                        } else {
+                            generateButton.buttonStyle(LHSecondaryButtonStyle())
+                        }
                     }
-                    .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(!canGenerate || recapRuntime.isGenerating)
                     .help(generationBlockedReason ?? "")
                     .accessibilityHint(generationBlockedReason ?? "")
@@ -256,7 +266,7 @@
                         // The reason sits under the greyed button without moving the header row.
                         if let reason = generationBlockedReason, !recapRuntime.isGenerating {
                             Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                .fixedSize().offset(y: 18).accessibilityHidden(true)
+                                .fixedSize().offset(y: 24).accessibilityHidden(true)
                         }
                     }
                 }
@@ -304,7 +314,7 @@
                                 .foregroundStyle(LHTheme.secondaryText)
                             Text(isToday ? "La journée est encore en cours" : "Bilan de la journée terminée")
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(isToday ? LHTheme.warning : LHTheme.success)
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                         .frame(width: 168, alignment: .leading)
 
@@ -366,17 +376,7 @@
                             .textSelection(.enabled)
                     }
                 } else {
-                    VStack(spacing: 10) {
-                        Image(systemName: "chart.bar.xaxis")
-                            .font(.system(size: 30, weight: .medium))
-                            .foregroundStyle(LHTheme.accent.opacity(0.78))
-                        Text("Aucun rapport pour ce jour")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(emptyReportMessage)
-                        .font(.system(size: 12))
-                        .foregroundStyle(LHTheme.secondaryText)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 170)
+                    GoalongEmptyState(title: "Aucun rapport pour ce jour", message: emptyReportMessage)
                 }
             }
         }
@@ -482,7 +482,7 @@
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.primary.opacity(0.06))
                         Capsule()
-                            .fill(LHTheme.accent.opacity(0.72))
+                            .fill(LHTheme.unclassifiedData)
                             .frame(
                                 width: max(
                                     3,
@@ -573,20 +573,17 @@
 
         private var emptyDataCard: some View {
             GoalongPlainBlock {
-                VStack(spacing: 9) {
-                    Image(systemName: "clock.badge.questionmark")
-                        .font(.system(size: 25))
-                        .foregroundStyle(LHTheme.secondaryText)
+                // The thread placeholder, not a big icon in a tall box (UI-68).
+                VStack(alignment: .leading, spacing: 9) {
+                    GoalongThreadPlaceholder().padding(.bottom, 2)
                     Text(recapRuntime.dayOverviewError ?? "Aucune activité source pour ce jour.")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(LHTheme.secondaryText)
-                        .multilineTextAlignment(.center)
                     Button("Relire les sources") {
                         recapRuntime.refreshDayOverview()
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
                 }
-                .frame(maxWidth: .infinity, minHeight: 130)
             }
         }
 
