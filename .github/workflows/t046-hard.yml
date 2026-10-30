@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [a, b, c]
+        part: [a, b, c, d]
     runs-on: macos-15
     timeout-minutes: 75
     steps:
@@ -51,6 +51,22 @@ jobs:
           path: ${{ runner.temp }}/hard
           retention-days: 1
 
+  unit:
+    if: github.event_name != 'pull_request' || github.head_ref == 't046/hard'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: T-046 L4c unit tests (throwaway HOME, window guard)
+        run: scripts/run_swift_tests.sh check T046Offline 2>&1 | tee "$RUNNER_TEMP/unit.log"; test "${PIPESTATUS[0]}" -eq 0
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: t046-unit
+          path: ${{ runner.temp }}/unit.log
+          retention-days: 1
+
   results:
     if: always() && (github.event_name != 'pull_request' || github.head_ref == 't046/hard')
     needs: hard
@@ -66,14 +82,14 @@ jobs:
         run: |
           mkdir -p out
           printf 'case\tverdict\texpected\tobserved\tproof\n' > out/hard-results.tsv
-          for p in a b c; do
+          for p in a b c d; do
             tail -n +2 "parts/t046-hard-$p/hard-results.tsv" 2>/dev/null | awk -F'\t' -v OFS='\t' -v p="$p" '{ $5 = "t046-hard-" p "/" $5; print }' >> out/hard-results.tsv
           done
           { echo '```'; cut -f1,2,4 out/hard-results.tsv; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           du -sh parts/* | tee out/sizes.txt
           rows=$(tail -n +2 out/hard-results.tsv | awk -F'\t' '$2 == "pass" || $2 == "fail"' | wc -l)
-          echo "verdicts: $rows / 9"
-          test "$rows" -eq 11
+          echo "verdicts: $rows / 14"
+          test "$rows" -eq 14
 
       - name: Upload verdicts
         if: always()
