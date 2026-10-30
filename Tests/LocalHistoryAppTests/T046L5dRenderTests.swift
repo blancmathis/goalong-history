@@ -65,8 +65,8 @@ final class T046L5dRenderTests: XCTestCase {
         XCTAssertTrue(seen.contains("Comprendre une session"), "saw \(seen.sorted())")
         XCTAssertTrue(seen.contains("Fermer"))
         XCTAssertTrue(seen.contains("Préparer la sélection locale"), "saw \(seen.sorted())")
-        for label in ["Début", "Fin", "Projet", "Ce que vous souhaitiez faire pendant cette session",
-                      "Inclure les extraits de contexte enrichi déjà autorisés", "Vous choisirez ensuite les champs transmis au site."] {
+        // The two text fields are empty, so their placeholders are not in the accessibility tree.
+        for label in ["Début", "Fin", "Inclure les extraits de contexte enrichi déjà autorisés", "Vous choisirez ensuite les champs transmis au site."] {
             XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
         }
         XCTAssertEqual(isEnabled("Préparer la sélection locale", in: rendered), false, "No project is typed yet, so nothing can be prepared")
@@ -130,7 +130,7 @@ final class T046L5dRenderTests: XCTestCase {
         let rendered = host(GoalongHealthImportSheet(gallery: .imported(try GalleryCatalog.galleryHealthImport(), message: nil)))
         let seen = strings(of: rendered)
         for label in ["Conserver sur ce Mac", "Exporter pour Goalong…", "Envoyer au site Goalong", "Choisir mon fichier de connexion…",
-                      "Adresse du site Goalong (https://…)", "J’autorise l’envoi de ces données Santé au site indiqué.", "Envoyer les données relues"] {
+                      "J’autorise l’envoi de ces données Santé au site indiqué.", "Envoyer les données relues"] {
             XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
         }
         XCTAssertEqual(isEnabled("Envoyer les données relues", in: rendered), false, "Nothing is sent without consent, address and access file")
