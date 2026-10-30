@@ -26,7 +26,7 @@
 
                     // One ChatGPT card, one action: the connection card replaces the data card until connected.
                     if consents.isEnabled(.chatGPTAnalysis), !isConnected {
-                        ChatGPTAccountConnectionCard(runtime: recapRuntime)
+                        ChatGPTAccountConnectionCard(runtime: recapRuntime, updateIsPrimary: true)
                     } else {
                         analysisConsentCard
                     }
