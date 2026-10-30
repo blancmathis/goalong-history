@@ -79,10 +79,10 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         var settings = DashboardSettingsDraft(config: .default)
         XCTAssertEqual(GoalongRecordingSetup.profile(settings, visibleText: false), "Applications seules")
         settings.captureClicks = true
-        XCTAssertEqual(GoalongRecordingSetup.profile(settings, visibleText: false), "Personnalisé · 1/8")
+        XCTAssertEqual(GoalongRecordingSetup.profile(settings, visibleText: false), "Personnalisé, 1/8")
         settings = GoalongRecordingSetup.proposed(from: settings)
-        XCTAssertEqual(GoalongRecordingSetup.profile(settings, visibleText: false), "Personnalisé · 7/8")
-        XCTAssertEqual(GoalongRecordingSetup.profile(settings, visibleText: true), "Complet · 8/8")
+        XCTAssertEqual(GoalongRecordingSetup.profile(settings, visibleText: false), "Personnalisé, 7/8")
+        XCTAssertEqual(GoalongRecordingSetup.profile(settings, visibleText: true), "Complet, 8/8")
     }
     private func isolatedModel(save: ((RecorderConfig) throws -> RecorderConfig)? = nil) throws -> (DashboardViewModel, ConfigManager) {
         guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {

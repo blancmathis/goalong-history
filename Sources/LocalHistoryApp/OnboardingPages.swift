@@ -62,7 +62,7 @@
                         }
                         Divider()
                         HStack {
-                            Text("Détails enregistrés · tous proposés, modifiables à tout moment")
+                            Text("Détails enregistrés, tous proposés, modifiables à tout moment")
                                 .font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
                         }

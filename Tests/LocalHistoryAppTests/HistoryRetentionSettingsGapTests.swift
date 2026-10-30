@@ -16,8 +16,8 @@ final class HistoryRetentionSettingsGapTests: XCTestCase {
         let lines = policy(events: 1, seals: 30).retentionDescription.split(separator: "\n").map(String.init)
         XCTAssertEqual(lines.count, HistoryDataClass.allCases.count)
         XCTAssertTrue(lines.contains("Activité détaillée : 1 jour"))
-        XCTAssertTrue(lines.contains("Sceaux d’intégrité : 30 jours"))
-        XCTAssertTrue(lines.contains("Reçus de vérification : jusqu’à ce que je supprime"))
+        XCTAssertTrue(lines.contains("Contrôles d’intégrité : 30 jours"))
+        XCTAssertTrue(lines.contains("Confirmations de vérification : jusqu’à ce que je supprime"))
         for kind in HistoryDataClass.allCases { XCTAssertFalse(kind.retentionTitle.isEmpty) }
     }
 

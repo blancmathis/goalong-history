@@ -21,7 +21,7 @@
 
         var sourceDetail: String {
             if screenTimeSeconds > 0, goalongSeconds > 0 {
-                return "Temps d’écran Apple · Goalong a observé \(DashboardFormatters.duration(seconds: goalongSeconds)) sur ce Mac"
+                return "Temps d’écran Apple : Goalong a observé \(DashboardFormatters.duration(seconds: goalongSeconds)) sur ce Mac"
             }
             if screenTimeSeconds > 0 { return "Apple Screen Time" }
             return "Goalong observed foreground on this Mac"

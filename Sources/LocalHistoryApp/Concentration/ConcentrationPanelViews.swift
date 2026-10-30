@@ -233,7 +233,7 @@ struct FocusFactsView: View {
                     value("Hors travail", facts.otherSeconds, LHTheme.otherData)
                     value("À classer", facts.unclassifiedSeconds, LHTheme.unclassifiedData)
                 }
-                Text("\(facts.appSwitches) changement\(facts.appSwitches > 1 ? "s" : "") d’app · plus longue plage sur une chose : \(BlockingFormat.duration(minutes: max(1, Int((facts.longestStretchSeconds / 60).rounded()))))")
+                Text("\(facts.appSwitches) changement\(facts.appSwitches > 1 ? "s" : "") d’app, plus longue plage sur une chose : \(BlockingFormat.duration(minutes: max(1, Int((facts.longestStretchSeconds / 60).rounded()))))")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
             }
             .accessibilityElement(children: .combine)

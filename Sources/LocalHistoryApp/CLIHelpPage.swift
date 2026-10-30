@@ -33,7 +33,7 @@
                     PageHeader(
                         title: "Commande goalong",
                         subtitle:
-                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre. Données et erreurs en JSON ; aide en texte."
+                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre. Données et erreurs dans un format lisible par les programmes ; aide en texte."
                     ) {
                         StatusPill(
                             title: statusTitle,
@@ -222,8 +222,8 @@
                         .font(.system(size: 15, weight: .semibold))
                     evidenceRow(
                         symbol: "curlybraces",
-                        title: "JSON clair",
-                        detail: "Données et erreurs sont en JSON structuré. L’aide est en texte ; « goalong help --json » décrit le contrat machine."
+                        title: "Format lisible par les programmes",
+                        detail: "Les données et les erreurs sont structurées. L’aide est en texte ; « goalong help --json » décrit le format."
                     )
                     evidenceRow(
                         symbol: "lock.shield",

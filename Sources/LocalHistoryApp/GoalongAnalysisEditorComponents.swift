@@ -73,7 +73,7 @@ struct GoalongReplacementRow: View {
                     Image(systemName: "arrow.right").foregroundStyle(LHTheme.secondaryText)
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Remplacer par").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                        TextField("Projet A · vide pour supprimer", text: $rule.replacement).textFieldStyle(GoalongFieldStyle())
+                        TextField("Projet A, vide pour supprimer", text: $rule.replacement).textFieldStyle(GoalongFieldStyle())
                     }
                     Button(action: remove) { Image(systemName: "trash").frame(width: 30, height: 30) }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Supprimer le remplacement")
                 }

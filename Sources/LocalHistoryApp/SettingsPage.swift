@@ -86,7 +86,7 @@ import AppKit
             }
             if search.isEmpty || SettingsPane.matchesStartup(search) { BackgroundContinuitySettings() }
             if search.isEmpty {
-                GoalongDisclosureGroup("Confidentialité · tout suspendre") {
+                GoalongDisclosureGroup("Confidentialité, tout suspendre") {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Réglages › Jev : l’historique continue.")
                             .font(.callout).foregroundStyle(LHTheme.secondaryText)
@@ -117,13 +117,13 @@ import AppKit
                     .font(.callout).foregroundStyle(LHTheme.secondaryText)
                 Picker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds) {
                     Text("2 minutes").tag(120)
-                    Text("5 minutes · recommandé").tag(300)
+                    Text("5 minutes, recommandé").tag(300)
                     Text("10 minutes").tag(600)
                     Text("15 minutes").tag(900)
                     Text("30 minutes").tag(1_800)
                     Text("Tant que l’écran reste allumé").tag(0)
                     if ![0, 120, 300, 600, 900, 1_800].contains(model.appliedSettings.foregroundIdleSeconds) {
-                        Text("\(model.appliedSettings.foregroundIdleSeconds) secondes · personnalisé")
+                        Text("\(model.appliedSettings.foregroundIdleSeconds) secondes, personnalisé")
                             .tag(model.appliedSettings.foregroundIdleSeconds)
                     }
                 }.accessibilityIdentifier("settings-foreground-idle-limit")
@@ -156,7 +156,7 @@ import AppKit
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }.padding(.top, 12)
             }.font(.system(size: 13))
-            GoalongSettingsGroup(title: "Autres sources · facultatives") {
+            GoalongSettingsGroup(title: "Autres sources, facultatives") {
                 SourceActivationToggle(capability: .appleScreenTime) { Text("Temps d’écran Apple") }
                 Divider()
                 SourceActivationToggle(capability: .aiConversations) { Text("Conversations locales") }
@@ -423,7 +423,7 @@ enum SettingsPane: Hashable {
                     .buttonStyle(LHPrimaryButtonStyle())
             } else {
                 // Always enabled: an unavailable updater explains why and links to the releases.
-                Button("Rechercher") { updates.checkForUpdates() }.buttonStyle(LHSecondaryButtonStyle())
+                Button(updates.lastCheckResult == .failed ? "Réessayer" : "Rechercher") { updates.checkForUpdates() }.buttonStyle(LHSecondaryButtonStyle())
             }
         }
         .accessibilityElement(children: .combine)
@@ -449,10 +449,10 @@ enum SettingsPane: Hashable {
     }
 
     private var detail: String {
-        if updates.requiresSignedBuild { return "Version compilée sans mises à jour intégrées." }
+        if updates.requiresSignedBuild { return "Cette version ne se met pas à jour toute seule." }
         if updates.isChecking { return "Recherche en cours…" }
         if let version = updates.availableVersion { return "La version \(version) est prête à être installée." }
-        let when = updates.lastCheckedAt.map { " · vérifié " + Self.relative($0) } ?? ""
+        let when = updates.lastCheckedAt.map { ", vérifié " + Self.relative($0) } ?? ""
         switch updates.lastCheckResult {
         case .failed: return updates.statusMessage
         case .upToDate: return "À jour" + when

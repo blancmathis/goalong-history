@@ -263,7 +263,7 @@ struct GoalongCodeDay: Equatable {
         if commits > 0 { parts.append(Self.count(commits, "commit", "commits")) }
         else if fileChanges > 0 { parts.append(Self.count(fileChanges, "modification de fichier", "modifications de fichiers")) }
         else if conversations > 0 { parts.append(Self.count(conversations, "conversation", "conversations")) }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 
     /// « 2 projets actifs ce jour-là : … ». A conversation without project is not in any project: the count says so.
@@ -293,7 +293,7 @@ struct GoalongCodeDay: Equatable {
         if project.otherGitActions > 0 { parts.append(count(project.otherGitActions, "autre action Git", "autres actions Git")) }
         if project.fileChanges > 0 { parts.append(count(project.fileChanges, "modification de fichier", "modifications de fichiers")) }
         if project.partial { parts.append("données partielles") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 
     static func count(_ value: Int, _ one: String, _ many: String) -> String {

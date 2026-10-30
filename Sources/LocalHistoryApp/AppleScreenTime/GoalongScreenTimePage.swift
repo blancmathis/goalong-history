@@ -159,7 +159,14 @@ struct GoalongScreenTimePage: View {
     private var scopeTitle: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Appareils inclus").font(.system(size: 14, weight: .semibold))
-            Text("Uniquement les données Apple reçues sur ce Mac.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            Text(scopeSentence).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+        }
+    }
+    private var scopeSentence: String {
+        switch screenTime.configuration.scope.mode {
+        case .macOnly: return "Seulement ce Mac."
+        case .allDevices: return "Tous les appareils Apple reçus sur ce Mac."
+        case .selectedDevices: return "Les appareils choisis, reçus sur ce Mac."
         }
     }
     private var scopePicker: some View {
@@ -177,7 +184,7 @@ struct GoalongScreenTimePage: View {
                     Text(presentation.durationTitle).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                     Text(duration(summary.totalScreenOnDuration)).font(.system(size: 34, weight: .semibold))
                         .monospacedDigit().accessibilityIdentifier("screen-time-day-total")
-                    Text(presentation.isPartial ? "Valeur partielle · pas le total officiel" : "Périmètre Apple sélectionné")
+                    Text(presentation.isPartial ? "Valeur partielle, pas le total officiel" : "Périmètre Apple sélectionné")
                         .font(.system(size: 12)).foregroundStyle(presentation.isPartial ? LHTheme.warning : LHTheme.secondaryText)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 8) {
@@ -190,7 +197,7 @@ struct GoalongScreenTimePage: View {
                     Text("Dernière lecture").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     Text(screenTime.lastRefreshAt.map { $0.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) } ?? "—")
                         .font(LHTheme.figureFont(26)).monospacedDigit().accessibilityIdentifier("screen-time-day-update")
-                    Text(screenTime.selectedDayIsToday ? "Actualisation locale \(AppleScreenTimeDashboardModel.refreshCadenceLabel(screenTime.refreshInterval))" : "Archive locale · Apple non relu")
+                    Text(screenTime.selectedDayIsToday ? "Actualisation locale \(AppleScreenTimeDashboardModel.refreshCadenceLabel(screenTime.refreshInterval))" : "Archive locale, Apple non relu")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.fixedSize(horizontal: false, vertical: true)
@@ -238,7 +245,7 @@ struct GoalongScreenTimePage: View {
                                 else { AppIconView(bundleIdentifier: row.bundleIdentifier, appName: row.name, size: 36).accessibilityHidden(true) }
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(row.name).font(.system(size: 13, weight: .medium)).lineLimit(1).help(row.name)
-                                    Text(row.isWebsite ? "Site fourni par Apple" : "Application · source Apple")
+                                    Text(row.isWebsite ? "Site fourni par Apple" : "Application, source Apple")
                                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 }
                                 Spacer(minLength: 10)
@@ -302,7 +309,7 @@ struct GoalongScreenTimePage: View {
                     Button("Vérifier les autorisations macOS…") { screenTime.openFullDiskAccessSettings() }
                         .buttonStyle(LHQuietButtonStyle())
                         .help("L’accès complet au disque ne garantit pas que l’agrégat privé d’Apple soit disponible.")
-                    Text("AppUsage : \(screenTime.screenTimeAppUsageIntervalCount) intervalles · knowledgeC : \(screenTime.knowledgeIntervalCount) · Biome : \(screenTime.biomeIntervalCount)")
+                    Text("AppUsage : \(screenTime.screenTimeAppUsageIntervalCount) intervalles, knowledgeC : \(screenTime.knowledgeIntervalCount), Biome : \(screenTime.biomeIntervalCount)")
                     if let provenance = screenTime.summary?.provenance { Text(provenance.api) }
                 }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).textSelection(.enabled).padding(.top, 8)
             }

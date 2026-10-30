@@ -830,7 +830,7 @@ struct FocusThreadModel: Equatable {
         case .dropped: parts.append("abandonnée")
         default: break
         }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
     @ViewBuilder private func measure(_ item: FocusPlanItem) -> some View {

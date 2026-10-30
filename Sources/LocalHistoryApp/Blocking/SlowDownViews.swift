@@ -159,7 +159,7 @@ struct SlowDownVeil: View {
             HStack(spacing: 8) {
                 GoalongMark().stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .frame(width: 20, height: 14)
-                Text("Goalong · Ralentir").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.tertiaryText)
+                Text("Ralentir avec Goalong").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.tertiaryText)
             }
             .padding(.bottom, 22)
         }

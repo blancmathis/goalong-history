@@ -260,7 +260,7 @@ import SwiftUI
         .frame(width: width, height: Self.laneHeight - 3)
         .padding(.vertical, 1.5)
         .contentShape(Capsule())
-        .help("\(span.name) · \(BlockingFormat.minuteOfDay(span.start)) → \(BlockingFormat.rangeEnd(span.end))")
+        .help("\(span.name), \(BlockingFormat.minuteOfDay(span.start)) → \(BlockingFormat.rangeEnd(span.end))")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(BlockingFormat.rangeLabel(name: span.name, weekday: day, start: span.start, end: span.end, lock: span.lock))
         .accessibilityAddTraits(.isButton)

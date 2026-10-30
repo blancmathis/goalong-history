@@ -175,7 +175,7 @@
 
             guard Self.hasValidSparkleConfiguration(in: .main) else {
                 requiresSignedBuild = true
-                statusMessage = "Cette version a été compilée sans configuration de mise à jour valide. Installez une fois la version Community ou recompilez avec la clé publique incluse dans le dépôt. Aucun abonnement Apple n’est nécessaire."
+                statusMessage = "Cette version ne peut pas se mettre à jour toute seule. Installez la version Community une fois : les mises à jour suivantes seront automatiques."
                 return
             }
 

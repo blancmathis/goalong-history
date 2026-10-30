@@ -41,7 +41,7 @@ struct AgentTokenUsageCard: View {
         LHCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Label("Usage de l’IA · jour sélectionné", systemImage: "chart.bar")
+                    Label("Usage de l’IA, jour sélectionné", systemImage: "chart.bar")
                         .font(.system(size: 13, weight: .semibold))
                     Spacer()
                     if scanning { ProgressView().controlSize(.small) }
@@ -51,10 +51,10 @@ struct AgentTokenUsageCard: View {
                 if let detail = summary.detail {
                     Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
-                Text("Journaux locaux · \(Self.zoneName()). Les tokens ne correspondent ni à un quota d’abonnement ni à une facture.")
+                Text("Journaux locaux, \(Self.zoneName()). Les tokens ne correspondent ni à un quota d’abonnement ni à une facture.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 if let analyzedAt {
-                    Text("Analysé à \(analyzedAt.formatted(.dateTime.hour().minute().locale(Self.locale))) · actualisez la journée pour mettre à jour")
+                    Text("Analysé à \(analyzedAt.formatted(.dateTime.hour().minute().locale(Self.locale))), actualisez la journée pour mettre à jour")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 if summary.showsPartialCoverage {
@@ -71,10 +71,10 @@ struct AgentTokenUsageCard: View {
                     VStack(alignment: .leading, spacing: 14) {
                         ForEach(rows) { row in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("\(row.provider.frenchName) · \(row.model)").fontWeight(.semibold)
+                                Text("\(row.provider.frenchName), \(row.model)").fontWeight(.semibold)
                                 Text(row.session).lineLimit(1)
-                                Text("Entrée \(number(row.sum(\.input))) · Sortie \(number(row.sum(\.output))) · Total \(number(row.sum(\.total)))")
-                                Text("Cache lu \(number(row.sum(\.cacheRead))) · Cache écrit \(number(row.sum(\.cacheWrite))) · Raisonnement \(number(row.sum(\.reasoning)))")
+                                Text("Entrée \(number(row.sum(\.input))), Sortie \(number(row.sum(\.output))), Total \(number(row.sum(\.total)))")
+                                Text("Cache lu \(number(row.sum(\.cacheRead))), Cache écrit \(number(row.sum(\.cacheWrite))), Raisonnement \(number(row.sum(\.reasoning)))")
                                     .foregroundStyle(LHTheme.secondaryText)
                             }
                         }

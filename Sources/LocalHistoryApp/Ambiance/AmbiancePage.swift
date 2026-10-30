@@ -288,7 +288,7 @@ private struct AmbiancePlayer: View {
                 HStack(alignment: .center, spacing: 20) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(source.title).font(LHTheme.sheetTitleFont).tracking(-0.4).lineLimit(1)
-                        Text(playing ? "En cours · \(AmbiancePageContent.kindLabel(source.kind))"
+                        Text(playing ? "En cours, \(AmbiancePageContent.kindLabel(source.kind))"
                                      : AmbiancePageContent.kindLabel(source.kind))
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }

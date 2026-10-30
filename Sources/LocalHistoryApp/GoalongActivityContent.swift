@@ -191,7 +191,7 @@ struct GoalongAnalyticsContent: View {
         var parts = ["sur \(duration(active)) actives"]
         if value(.other) >= 60 { parts.append("\(duration(value(.other))) hors travail") }
         if value(.unclassified) >= 60 { parts.append("\(duration(value(.unclassified))) à classer") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 
     private func headlineDetails(_ summary: GoalongActivitySummary) -> [String] {
@@ -401,7 +401,7 @@ struct GoalongAnalyticsContent: View {
                     } else {
                         Button { onReview(task.name) } label: { taskRow(task, total: total) }
                             .buttonStyle(.plain)
-                            .help("\(task.name) · cliquer pour corriger son classement")
+                            .help("\(task.name), cliquer pour corriger son classement")
                             .accessibilityHint("Ouvre la correction du classement de cette tâche")
                     }
                 }
@@ -479,7 +479,7 @@ struct GoalongAnalyticsContent: View {
         case .coverage: return coverageCaption
         case .reports:
             let count = payload.cards.count
-            return count == 0 ? "Aucun bilan enregistré · analyse facultative"
+            return count == 0 ? "Aucun bilan enregistré, analyse facultative"
                 : "\(FrenchCount.count(count, "bilan ou projet enregistré", "bilans ou projets enregistrés"))"
         case .screenTime: return "Source Apple distincte, jamais additionnée"
         }
@@ -758,11 +758,11 @@ struct GoalongAnalyticsContent: View {
     private var comparisonDetails: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Comparaison avec la période précédente").font(.system(size: 13, weight: .semibold))
-            Text("Période sélectionnée : \(duration(current.activeSeconds)) · \(current.daysWithObservations)/\(current.days.count) \(FrenchCount.word(current.days.count, "jour", "jours")) avec activité mesurée.")
+            Text("Période sélectionnée : \(duration(current.activeSeconds)), \(current.daysWithObservations)/\(current.days.count) \(FrenchCount.word(current.days.count, "jour", "jours")) avec activité mesurée.")
             if payload.comparisonPending {
                 Text("Période précédente : lecture en cours.")
             } else {
-                Text("Période précédente : \(payload.previous.observedSeconds > 0 ? duration(payload.previous.activeSeconds) : "—") · \(payload.previous.daysWithObservations)/\(payload.previous.days.count) \(FrenchCount.word(payload.previous.days.count, "jour", "jours")) avec activité mesurée.")
+                Text("Période précédente : \(payload.previous.observedSeconds > 0 ? duration(payload.previous.activeSeconds) : "—"), \(payload.previous.daysWithObservations)/\(payload.previous.days.count) \(FrenchCount.word(payload.previous.days.count, "jour", "jours")) avec activité mesurée.")
             }
             if let first = payload.previous.days.first, let last = payload.previous.days.last {
                 Text("Référence : " + (first.id == last.id ? shortDate(first.date) : "\(shortDate(first.date)) – \(shortDate(last.date))"))

@@ -440,7 +440,7 @@
         /// Shown instead of changing the agents' shared hook files from Goalong Dev.
         static let devHookChangeRefused = (
             title: "Hooks gérés par Goalong installé",
-            message: "Goalong Dev ne modifie pas les hooks des agents : ils sont partagés avec Goalong installé. Installez-les ou retirez-les depuis Goalong installé."
+            message: "Goalong Dev ne modifie pas les relais des agents : ils sont partagés avec Goalong installé. Installez-les ou retirez-les depuis Goalong installé."
         )
 
         /// False (and an alert) in Goalong Dev: the hooks belong to the installed Goalong.
@@ -462,8 +462,8 @@
                         self.alert = AgentActivityAlert(
                             title: "\(kind.frenchName) installé",
                             message: kind == .codexHooks
-                                ? "Les hooks n’envoient qu’un signal de relance ; le texte des conversations reste dans Codex. Relancez Codex, puis approuvez le hook Goalong depuis /hooks si Codex le demande."
-                                : "Les hooks n’envoient qu’un signal de relance ; le texte des conversations reste chez l’outil d’origine. Relancez l’agent s’il est déjà ouvert."
+                                ? "Les relais n’envoient qu’un signal de relance ; le texte des conversations reste dans Codex. Relancez Codex, puis approuvez le relais Goalong depuis /hooks si Codex le demande."
+                                : "Les relais n’envoient qu’un signal de relance ; le texte des conversations reste chez l’outil d’origine. Relancez l’agent s’il est déjà ouvert."
                         )
                     }
                 } catch {
@@ -566,7 +566,7 @@
                     self.alert = AgentActivityAlert(
                         title: valid ? "Source d’origine vérifiée" : "Source d’origine modifiée ou indisponible",
                         message: valid
-                            ? "\(verifiedScope) correspond toujours à l’empreinte SHA-256 \(record.sha256)."
+                            ? "\(verifiedScope) n’a pas changé depuis son analyse."
                             : "La source d’origine ne correspond plus à cette entrée ou ne peut pas être lue."
                     )
                 }

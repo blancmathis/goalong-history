@@ -142,7 +142,7 @@
             XCTAssertTrue(settings.contains("title: \"Terminal et agents\""))
             XCTAssertTrue(settings.contains("model.selectSection(.cli)"))
             XCTAssertTrue(settings.contains("return \"Enregistrement\""))
-            XCTAssertTrue(settings.contains("title: \"Autres sources · facultatives\""))
+            XCTAssertTrue(settings.contains("title: \"Autres sources, facultatives\""))
             XCTAssertTrue(settings.contains("model.selectSection(.agentActivity)"))
             XCTAssertTrue(settings.contains("return \"Autorisations macOS\""))
             XCTAssertTrue(settings.contains("return \"Avancé\""))

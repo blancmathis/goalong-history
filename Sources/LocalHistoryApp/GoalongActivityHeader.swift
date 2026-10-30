@@ -21,7 +21,7 @@ struct GoalongActivityHeader: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(isPreview ? "Activité · aperçu" : "Activité").goalongPageTitle()
+                    Text(isPreview ? "Activité, aperçu" : "Activité").goalongPageTitle()
                     Text(rangeLabel).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                         .accessibilityIdentifier("activity-date-range")
                 }
@@ -93,7 +93,7 @@ struct GoalongActivityHeader: View {
     private var rangeLabel: String {
         if selection.period == 1 {
             return GoalongToday.isToday(selection.day)
-                ? "Aujourd’hui, \(GoalongUIFormat.day(selection.day))"
+                ? "Aujourd’hui"
                 : GoalongUIFormat.day(selection.day)
         }
         return "\(shortDate(selection.interval().start)) – \(shortDate(selection.day))"

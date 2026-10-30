@@ -522,7 +522,7 @@
         private var statusPillTitle: String {
             switch screenTime.status.kind {
             case .ready: return "Apple + iCloud"
-            case .localOnly: return "Apple · this Mac"
+            case .localOnly: return "Apple, ce Mac"
             case .fullDiskAccessRequired: return "Permission required"
             case .noAppleData: return "Waiting for Apple data"
             case .partial: return "Partial Apple data"

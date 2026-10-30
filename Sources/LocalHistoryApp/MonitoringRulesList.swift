@@ -254,7 +254,7 @@
 
         private func secondaryLabel(for item: TrackedUsageItem) -> String {
             if item.kind == .website {
-                return [item.host, item.appName].compactMap { $0 }.joined(separator: " · ")
+                return [item.host, item.appName].compactMap { $0 }.joined(separator: ", ")
             }
             return item.bundleIdentifier ?? item.category.map { CategoryBadge.prettyCategory($0) } ?? "Application"
         }

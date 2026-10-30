@@ -28,7 +28,7 @@ struct GoalongActivityUsageDetail: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.displayName).font(.system(size: 20, weight: .semibold)).textSelection(.enabled)
                         .lineLimit(2).help(item.displayName)
-                    Text((item.isWebsite ? "Site web" : "Application") + (isPreview ? " · exemple fictif" : ""))
+                    Text((item.isWebsite ? "Site web" : "Application") + (isPreview ? ", exemple fictif" : ""))
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
@@ -102,7 +102,7 @@ struct GoalongActivityUsageDetail: View {
         let maximum = (hours.max() ?? 0) / Double(days)
         let unit: Double = maximum >= 3600 ? 3600 : 60
         return VStack(alignment: .leading, spacing: 8) {
-            Text(period.days.count > 1 ? "À quelles heures · moyenne par jour d’utilisation" : "À quelles heures")
+            Text(period.days.count > 1 ? "À quelles heures, moyenne par jour d’utilisation" : "À quelles heures")
                 .font(.system(size: 12, weight: .semibold))
             Chart {
                 ForEach(0..<24, id: \.self) { hour in

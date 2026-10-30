@@ -288,7 +288,7 @@ struct GoalongWebsiteConnectionSheet: View {
                         if includeRhythm {
                             Button(contextualRhythm == nil ? "Analyser le contexte d’une session…" : "Choisir une autre session…") { showsRhythmStudio = true }
                             if let rhythm = contextualRhythm {
-                                Text("\(rhythm.project) · \(rhythm.episodes?.count ?? 0) épisodes relus").font(.subheadline)
+                                Text("\(rhythm.project), \(rhythm.episodes?.count ?? 0) épisodes relus").font(.subheadline)
                                 if let interpretation = rhythm.interpretation { Text(interpretation).font(.caption) }
                                 Button("Retirer cette analyse") { contextualRhythm = nil; invalidatePreview() }
                             } else {
@@ -564,7 +564,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     }
                 }
                 let applications = rows.reduce(0) { $0 + (($1["apps"] as? [Any])?.count ?? 0) }
-                previewSummary = "\(GoalongUIFormat.day(date)) · \(FrenchCount.count(rows.count, "appareil", "appareils")) · \(FrenchCount.count(applications, "ligne", "lignes")) d’applications · \(FrenchCount.count(result.count, "octet", "octets")). Vérifiez les champs exacts ci-dessous."
+                previewSummary = "\(GoalongUIFormat.day(date)), \(FrenchCount.count(rows.count, "appareil", "appareils")), \(FrenchCount.count(applications, "ligne", "lignes")) d’applications, \(FrenchCount.count(result.count, "octet", "octets")). Vérifiez les champs exacts ci-dessous."
                 payload = result
                 previewPrivacyRevision = reviewed.privacyRevision
             } catch { self.error = goalongUserMessage(error) }

@@ -324,7 +324,7 @@ struct FocusCommitmentEditRequest: Identifiable {
 
     private var facts: String {
         let jokers = jokersLeft == 0 ? "plus de joker ce mois-ci" : jokersLeft == 1 ? "1 joker ce mois-ci" : "\(jokersLeft) jokers ce mois-ci"
-        return series > 0 ? "Série \(series) · \(jokers)" : jokers.prefix(1).uppercased() + jokers.dropFirst()
+        return series > 0 ? "Série \(series), \(jokers)" : jokers.prefix(1).uppercased() + jokers.dropFirst()
     }
 
     @ViewBuilder private func filled(_ card: FocusCommitmentCard) -> some View {
@@ -357,7 +357,7 @@ struct FocusCommitmentEditRequest: Identifiable {
         }
         HStack(spacing: 8) {
             Text(card.editMode == "free" ? "Modifiable \(FocusCommitmentFormat.editUntil(card.editUntil, now: now))"
-                                         : "\(FocusCommitmentFormat.taken(value.createdAt, now: now)) · seulement plus exigeant")
+                                         : "\(FocusCommitmentFormat.taken(value.createdAt, now: now)), seulement plus exigeant")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText).lineLimit(1)
             Spacer(minLength: 8)
             editButton(card)
@@ -496,7 +496,7 @@ struct FocusCommitmentEditRequest: Identifiable {
         }
         parts.append(card.jokersLeft == 0 ? "plus de joker ce mois-ci" : card.jokersLeft == 1 ? "1 joker ce mois-ci" : "\(card.jokersLeft) jokers ce mois-ci")
         if let end = card.exitUntil { parts.append("possible jusqu’à \(FocusCommitmentFormat.time(end))") }
-        let line = parts.joined(separator: " · ")
+        let line = parts.joined(separator: ", ")
         return compact ? line : line.prefix(1).uppercased() + line.dropFirst()
     }
 }

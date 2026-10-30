@@ -31,7 +31,7 @@
 
         private let statusMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         private let permissionMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        private let globalPauseItem = NSMenuItem(title: "Confidentialité · tout suspendre…", action: #selector(toggleGlobalPause), keyEquivalent: "")
+        private let globalPauseItem = NSMenuItem(title: "Confidentialité, tout suspendre…", action: #selector(toggleGlobalPause), keyEquivalent: "")
         private let pauseMenuItem = NSMenuItem(title: "", action: #selector(togglePause), keyEquivalent: "p")
         private let sealingSuspendedItem = NSMenuItem(title: "", action: #selector(retryKeychain), keyEquivalent: "")
         private let technicalStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -233,9 +233,9 @@
             statusMenuItem.toolTip = display.description
             permissionMenuItem.title = display.description
             technicalStatusItem.title =
-                "Accessibilité : \(permissionStatus.accessibility ? "oui" : "non") · Surveillance de l’entrée : \(permissionStatus.inputMonitoringStatusLabel) · Interactions : \(eventTapStatus() ? "actives" : "inactives") · Preuve : \(health.captureProven ? "oui" : "non")"
+                "Accessibilité : \(permissionStatus.accessibility ? "oui" : "non"), Surveillance de l’entrée : \(permissionStatus.inputMonitoringStatusLabel), Interactions : \(eventTapStatus() ? "actives" : "inactives"), Preuve : \(health.captureProven ? "oui" : "non")"
             if let notice = DeviceTrustState.shared.sealingSuspendedNotice {
-                sealingSuspendedItem.title = "\(notice) · Réessayer…"
+                sealingSuspendedItem.title = "\(notice), Réessayer…"
                 sealingSuspendedItem.toolTip = DeviceTrustState.shared.retryFeedback
                 sealingSuspendedItem.isEnabled = !DeviceTrustState.shared.isRetryInFlight
                 sealingSuspendedItem.isHidden = false
@@ -243,9 +243,9 @@
                 sealingSuspendedItem.isHidden = true
             }
             if let rotation = DeviceIdentityRotation.load() {
-                technicalStatusItem.title += " · Identité changée le \(GoalongUIFormat.dayAbbreviated(rotation.at))"
+                technicalStatusItem.title += ", Identité changée le \(GoalongUIFormat.dayAbbreviated(rotation.at))"
             }
-            globalPauseItem.title = GoalongGlobalPause.load().invalid ? GoalongGlobalPauseText.repair + "…" : GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité · tout suspendre…"
+            globalPauseItem.title = GoalongGlobalPause.load().invalid ? GoalongGlobalPauseText.repair + "…" : GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité, tout suspendre…"
             pauseMenuItem.title = !localEnabled
                 ? "Configurer l’enregistrement…"
                 : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Mettre l’enregistrement en pause…")

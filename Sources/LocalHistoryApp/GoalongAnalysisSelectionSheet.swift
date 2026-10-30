@@ -106,7 +106,7 @@ import AgentActivity
                 source("Activité de ce Mac", capability: .localComputerHistory, value: $selection.computer)
                 source("Temps d’écran Apple", capability: .appleScreenTime, value: $selection.screenTime)
                 source("Conversations locales", capability: .aiConversations, value: $selection.conversations)
-                source("Développement · agents, Git et fichiers",
+                source("Développement, agents, Git et fichiers",
                        capability: consents.isEnabled(.aiConversations) ? .aiConversations : .developerActivity,
                        value: Binding(get: { selection.developer == true }, set: { selection.developer = $0 }))
                 if selection.developer == true && exclusions.policy.hasExclusions {
@@ -114,7 +114,7 @@ import AgentActivity
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            GoalongSettingsGroup(title: "Sources du jour · chacune à part") {
+            GoalongSettingsGroup(title: "Sources du jour, chacune à part") {
                 source("Appels", capability: .localComputerHistory, value: daySource(\.calls))
                 source("Agenda et rappels", capability: .calendar, value: daySource(\.calendar))
                 source("Autres appareils Apple", capability: .appleScreenTime, value: daySource(\.otherDevices))
@@ -126,7 +126,7 @@ import AgentActivity
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
             if selection.computer {
-                GoalongSettingsGroup(title: "Détails possibles · uniquement pour les apps autorisées") {
+                GoalongSettingsGroup(title: "Détails possibles, uniquement pour les apps autorisées") {
                     Grid(horizontalSpacing: 24, verticalSpacing: 14) {
                         ForEach(0..<5, id: \.self) { row in
                             GridRow {
@@ -143,7 +143,7 @@ import AgentActivity
                 }
                 GoalongDisclosureGroup("Exclure des sites de l’analyse") {
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("exemple.fr · un domaine par ligne", text: Binding(get: { scope.wrappedValue.excludedDomains.joined(separator: "\n") },
+                        TextField("exemple.fr, un domaine par ligne", text: Binding(get: { scope.wrappedValue.excludedDomains.joined(separator: "\n") },
                             set: { var value = scope.wrappedValue; value.excludedDomains = $0.components(separatedBy: .newlines); scope.wrappedValue = value }), axis: .vertical)
                             .textFieldStyle(GoalongFieldStyle()).lineLimit(3...6)
                         Text("Les durées Apple d’un navigateur peuvent être omises si elles ne permettent pas de retirer ces sites.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -180,8 +180,8 @@ import AgentActivity
             HStack {
                 GoalongSearchField("Rechercher une application…", text: $appSearch)
                 Menu("Actions groupées") {
-                    Button("Tout autoriser · durées seulement") { setAll(details: false) }
-                    Button("Tout autoriser · détails choisis") { setAll(details: true) }
+                    Button("Tout autoriser, durées seulement") { setAll(details: false) }
+                    Button("Tout autoriser, détails choisis") { setAll(details: true) }
                     Button("Tout exclure") { var value = scope.wrappedValue; value.applicationIDs = []; value.detailApplicationIDs = []; scope.wrappedValue = value }
                 }.fixedSize()
             }
@@ -203,10 +203,10 @@ import AgentActivity
         }
     }
     private var conversationChoices: some View {
-        GoalongSettingsGroup(title: "Conversations · choisir les dossiers et le contenu") {
+        GoalongSettingsGroup(title: "Conversations, choisir les dossiers et le contenu") {
             let folders = model.agentActivityRuntime.configuration.watchedFolders.filter(\.isEnabled)
             ForEach(folders) { folder in
-                Toggle("\(folder.provider.displayName) · \(folder.displayName)", isOn: Binding(get: { scope.wrappedValue.conversationFolderIDs?.contains(folder.id) ?? true }, set: { enabled in
+                Toggle("\(folder.provider.displayName), \(folder.displayName)", isOn: Binding(get: { scope.wrappedValue.conversationFolderIDs?.contains(folder.id) ?? true }, set: { enabled in
                     var value = scope.wrappedValue; var ids = Set(value.conversationFolderIDs ?? folders.map(\.id))
                     if enabled { ids.insert(folder.id) } else { ids.remove(folder.id) }; value.conversationFolderIDs = ids.sorted(); scope.wrappedValue = value
                 })).toggleStyle(.goalongCheckbox).font(.system(size: 13))

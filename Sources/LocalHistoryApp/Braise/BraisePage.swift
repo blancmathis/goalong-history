@@ -84,7 +84,7 @@ import SwiftUI
                             HStack(spacing: 12) {
                                 Button { editingRule = rule } label: {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(rule.hours + (rule.crossesMidnight ? " · le lendemain" : "")).monospacedDigit()
+                                        Text(rule.hours + (rule.crossesMidnight ? ", le lendemain" : "")).monospacedDigit()
                                         Text(rule.dayLabel).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                 }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Modifier l’horaire \(rule.hours), \(rule.dayLabel)")

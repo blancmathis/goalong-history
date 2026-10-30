@@ -598,7 +598,7 @@
                 if !item.identityProofAvailable {
                     parts.append("les entrées plus anciennes ne partagent que la catégorie")
                 }
-                return parts.joined(separator: " · ")
+                return parts.joined(separator: ", ")
             }
             return item.bundleIdentifier ?? "Application observée localement"
         }

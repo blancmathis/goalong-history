@@ -648,8 +648,8 @@
         }
 
         static func provenanceLabel(events: Int, sequences: Int, confidence: Int) -> String {
-            "Preuves : \(GoalongUIFormat.count(events, "identifiant d’événement", plural: "identifiants d’événements")) · "
-                + "\(GoalongUIFormat.count(sequences, "séquence d’intégrité", plural: "séquences d’intégrité")) · "
+            "Preuves : \(GoalongUIFormat.count(events, "identifiant d’événement", plural: "identifiants d’événements")), "
+                + "\(GoalongUIFormat.count(sequences, "séquence d’intégrité", plural: "séquences d’intégrité")), "
                 + "confiance \(GoalongUIFormat.percent(confidence))"
         }
 
@@ -1508,7 +1508,7 @@
                         Text("Preuves et incertitudes")
                             .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "\(GoalongUIFormat.count(memory.coverage.sourceEventCount, "événement")) source\(memory.coverage.sourceEventCount > 1 ? "s" : "") · \(GoalongUIFormat.count(memory.coverage.semanticSnapshotCount, "instantané")) de contenu · \(GoalongUIFormat.count(memory.coverage.suppressedEventCount, "événement")) masqué\(memory.coverage.suppressedEventCount > 1 ? "s" : ""). Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
+                            "\(GoalongUIFormat.count(memory.coverage.sourceEventCount, "événement")) source\(memory.coverage.sourceEventCount > 1 ? "s" : ""), \(GoalongUIFormat.count(memory.coverage.semanticSnapshotCount, "instantané")) de contenu, \(GoalongUIFormat.count(memory.coverage.suppressedEventCount, "événement")) masqué\(memory.coverage.suppressedEventCount > 1 ? "s" : ""). Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
@@ -1594,7 +1594,7 @@
             _ resource: ComputerHistoryResourceReference
         ) -> String {
             let percentage = ConfidencePercent.whole(resource.locatorConfidence)
-            return "\(ComputerHistoryPageCopy.resourceKindLabel(resource.kind)) · confiance \(percentage)\u{00A0}%"
+            return "\(ComputerHistoryPageCopy.resourceKindLabel(resource.kind)), confiance \(percentage)\u{00A0}%"
         }
     }
 
@@ -1757,7 +1757,7 @@
             } else if group.recordedEventCount > 0 {
                 facts.append("\(GoalongUIFormat.number(group.recordedEventCount)) événement\(group.recordedEventCount > 1 ? "s" : "")")
             }
-            return facts.joined(separator: " · ")
+            return facts.joined(separator: ", ")
         }
 
         private var windowTimeLabel: String {
@@ -1781,7 +1781,7 @@
             let details = session.sourceSessionCount == 1
                 ? "1 segment enregistré"
                 : "\(session.sourceSessionCount) segments enregistrés"
-            return "\(interval) · \(durationLabel(session.duration)) · \(details)"
+            return "\(interval), \(durationLabel(session.duration)), \(details)"
         }
     }
 
@@ -1885,7 +1885,7 @@
                                             Text(
                                                 "Changement : "
                                                     + interaction.semanticDelta.prefix(3)
-                                                    .joined(separator: " · ")
+                                                    .joined(separator: ", ")
                                             )
                                             .font(.system(size: 12))
                                             .foregroundStyle(LHTheme.secondaryText)
@@ -1927,7 +1927,7 @@
             } else {
                 interactions = GoalongUIFormat.count(episode.totalInteractionCount, "interaction")
             }
-            return "\(interval) · \(interactions) · \(GoalongUIFormat.count(episode.eventCount, "événement"))"
+            return "\(interval), \(interactions), \(GoalongUIFormat.count(episode.eventCount, "événement"))"
         }
 
         private func detailSection(title: String, values: [String]) -> some View {
