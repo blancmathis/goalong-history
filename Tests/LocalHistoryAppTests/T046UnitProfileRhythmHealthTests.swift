@@ -114,12 +114,18 @@ import LocalHistoryQueryCLI
         model.correct("missing", field: "caveat", text: "x")
         XCTAssertEqual(model.result?.items.count, 1)
     }
-    /// J-0528: with nothing prepared, saving is a no-op. With an analysis, the secure writer refuses the disposable
-    /// test HOME (under /tmp): the user gets a message, no success status, no notification.
-    func testKeepingTheAnalysisRefusedByTheSecureWriterReportsAnErrorAndNeverClaimsASave() throws {
+    /// J-0528: with nothing prepared, saving is a no-op. With an analysis and a regular file where the
+    /// « profile-analyses » folder must be, saving fails on any host: the user gets a message, no success status, no notification.
+    func testKeepingTheAnalysisThatCannotBeWrittenReportsAnErrorAndNeverClaimsASave() throws {
         let idle = GoalongProfileStudioModel(); idle.save()
         XCTAssertNil(idle.error); XCTAssertEqual(idle.status, "")
         let model = try analysedModel()
+        let parent = AppPaths.chatGPTDirectory
+        let blocker = parent.appendingPathComponent("profile-analyses", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: blocker)
+        try Data("not a folder".utf8).write(to: blocker)
+        addTeardownBlock { try? FileManager.default.removeItem(at: blocker) }
         var notified = false
         let token = NotificationCenter.default.addObserver(forName: .goalongProfileAnalysisDidSave, object: nil, queue: nil) { _ in notified = true }
         defer { NotificationCenter.default.removeObserver(token) }
