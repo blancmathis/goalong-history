@@ -13,7 +13,10 @@ import LocalHistoryCore
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            ChatGPTAccountConnectionCard(runtime: runtime)
+            Text("Votre ChatGPT résume une journée à partir des seules données que vous choisissez.")
+                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            ChatGPTAccountConnectionCard(runtime: runtime, updateIsPrimary: true)
             GoalongSettingsList(title: "Votre analyse") {
                 GoalongSettingsLink(title: "Données pour ChatGPT", value: sourceSummary, symbol: "line.3.horizontal.decrease.circle") { open(0) }.accessibilityIdentifier("analysis-open-data")
                 GoalongRowDivider()
@@ -36,18 +39,20 @@ import LocalHistoryCore
                     set: { runtime.automaticRecapsEnabled = $0; if $0 { runtime.start() } }))
                     .toggleStyle(.goalongSwitch).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis))
                 HStack {
-                    Button("Voir les données qui partiront") { open(3) }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.large)
+                    Button("Voir les données qui partiront") { open(3) }.buttonStyle(LHSecondaryButtonStyle())
                     Spacer()
-                    Button("Analyser cette journée") {
-                        runtime.configure(deviceID: model.knownDeviceID ?? ""); runtime.selectDay(model.selectedDay)
-                        runtime.generateRecap(); model.selectSection(.chatGPTRecap)
-                    }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating || model.knownDeviceID == nil)
+                    // Until the account is connected, the account card holds the only lime (UI-49).
+                    if runtime.isAccountConnected {
+                        analyzeButton.buttonStyle(LHPrimaryButtonStyle())
+                    } else {
+                        analyzeButton.buttonStyle(LHSecondaryButtonStyle())
+                    }
                 }
                 if !runtime.isAccountConnected {
-                    // The hint names the action the card above really offers.
+                    // The hint names the action the account card really offers.
                     Text(runtime.connectionState == .codexUnavailable
-                         ? "Mettez Goalong à jour (carte ChatGPT ci-dessus) pour analyser une journée."
-                         : "Connectez ChatGPT (carte ci-dessus) pour analyser une journée.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                         ? "Mettez Goalong à jour pour analyser une journée."
+                         : "Connectez ChatGPT pour analyser une journée.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Text("ChatGPT reçoit uniquement votre sélection. Le bilan n’est pas envoyé au site automatiquement.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -62,6 +67,12 @@ import LocalHistoryCore
             Button("Fermer", role: .cancel) {}
         } message: { Text(error ?? "") }
         .alert(item: $runtime.alert) { item in Alert(title: Text(item.title), message: Text(item.message), dismissButton: .default(Text("Fermer"))) }
+    }
+    private var analyzeButton: some View {
+        Button("Analyser cette journée") {
+            runtime.configure(deviceID: model.knownDeviceID ?? ""); runtime.selectDay(model.selectedDay)
+            runtime.generateRecap(); model.selectSection(.chatGPTRecap)
+        }.disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating || model.knownDeviceID == nil)
     }
     private var sourceSummary: String {
         guard selection.reviewed else { return "Choisir les apps et les types de données" }

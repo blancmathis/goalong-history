@@ -112,31 +112,36 @@ import AppKit
                     }
                 }
             }
-            GoalongSettingsGroup(title: "Enregistrement de l’activité") {
-                Text("Lire, réfléchir ou regarder sans cliquer compte aussi. Seule la fenêtre au premier plan est suivie.")
-                    .font(.callout).foregroundStyle(LHTheme.secondaryText)
-                Picker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds) {
-                    Text("2 minutes").tag(120)
-                    Text("5 minutes, recommandé").tag(300)
-                    Text("10 minutes").tag(600)
-                    Text("15 minutes").tag(900)
-                    Text("30 minutes").tag(1_800)
-                    Text("Tant que l’écran reste allumé").tag(0)
-                    if ![0, 120, 300, 600, 900, 1_800].contains(model.appliedSettings.foregroundIdleSeconds) {
-                        Text("\(model.appliedSettings.foregroundIdleSeconds) secondes, personnalisé")
-                            .tag(model.appliedSettings.foregroundIdleSeconds)
+            // Details stay readable but inert while recording is off (UI-48).
+            Group {
+                GoalongSettingsGroup(title: "Enregistrement de l’activité") {
+                    Text("Lire, réfléchir ou regarder sans cliquer compte aussi. Seule la fenêtre au premier plan est suivie.")
+                        .font(.callout).foregroundStyle(LHTheme.secondaryText)
+                    Picker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds) {
+                        Text("2 minutes").tag(120)
+                        Text("5 minutes, recommandé").tag(300)
+                        Text("10 minutes").tag(600)
+                        Text("15 minutes").tag(900)
+                        Text("30 minutes").tag(1_800)
+                        Text("Tant que l’écran reste allumé").tag(0)
+                        if ![0, 120, 300, 600, 900, 1_800].contains(model.appliedSettings.foregroundIdleSeconds) {
+                            Text("\(model.appliedSettings.foregroundIdleSeconds) secondes, personnalisé")
+                                .tag(model.appliedSettings.foregroundIdleSeconds)
+                        }
+                    }.accessibilityIdentifier("settings-foreground-idle-limit")
+                    Text("Le délai repart à chaque interaction ; augmentez-le pour de longues lectures. Appels et vidéos au premier plan continuent au‑delà. Verrouillage, veille et arrêt de confidentialité interrompent toujours le suivi.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if model.appliedSettings.foregroundIdleSeconds == 0 {
+                        Label("Ce mode peut compter votre absence si vous laissez une fenêtre visible et le Mac déverrouillé.", systemImage: "exclamationmark.triangle")
+                            .font(.callout).foregroundStyle(LHTheme.warning)
                     }
-                }.accessibilityIdentifier("settings-foreground-idle-limit")
-                Text("Le délai repart à chaque interaction ; augmentez-le pour de longues lectures. Appels et vidéos au premier plan continuent au-delà. Verrouillage, veille et arrêt de confidentialité interrompent toujours le suivi.")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                if model.appliedSettings.foregroundIdleSeconds == 0 {
-                    Label("Ce mode peut compter votre absence si vous laissez une fenêtre visible et le Mac déverrouillé.", systemImage: "exclamationmark.triangle")
-                        .font(.callout).foregroundStyle(LHTheme.warning)
                 }
+                GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording, columns: 1) }
+                VisibleContextControl()
             }
-            GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording) }
-            VisibleContextControl()
+            .disabled(!consents.isEnabled(.localComputerHistory))
+            .opacity(consents.isEnabled(.localComputerHistory) ? 1 : 0.55)
             GoalongDisclosureGroup("Confidentialité avancée") {
                 VStack(alignment: .leading, spacing: 14) {
                     Toggle("Inclure les fenêtres privées détectées", isOn: Binding(
@@ -312,7 +317,7 @@ enum SettingsPane: Hashable {
         case .permissions: return "Autorisations macOS"
         case .storage: return "Stockage"
         case .advanced: return "Avancé"
-        case .tools: return "Outils de partage"
+        case .tools: return "Outils de partage et analyses"
         }
     }
     /// Stable accessibility identifier of the pane's entry on the Settings home.
