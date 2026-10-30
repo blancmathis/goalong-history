@@ -136,7 +136,7 @@ struct GoalongActivityUsageRow: View {
     }
 
     private func deltaLabel(_ value: TimeInterval) -> some View {
-        Text((value > 0 ? "+" : "−") + GoalongAnalyticsFormatting.duration(abs(value)) + (value > 0 ? " de plus" : " de moins"))
+        Text((value > 0 ? "+" : "−") + GoalongAnalyticsFormatting.duration(abs(value)))
             .font(.system(size: 12)).monospacedDigit()
             .foregroundStyle(LHTheme.tertiaryText)
             .help("Par rapport à la période précédente de même durée")
