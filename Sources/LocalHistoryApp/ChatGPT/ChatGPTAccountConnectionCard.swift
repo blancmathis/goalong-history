@@ -3,8 +3,7 @@ import SwiftUI
 
 struct ChatGPTAccountConnectionCard: View {
     @ObservedObject var runtime: ChatGPTRecapRuntime
-    /// In Réglages the update is the only way forward, so it takes the lime (UI-49).
-    /// Pages with their own primary action keep it secondary.
+    /// True where the update is the only way forward on the screen (Réglages, Bilan); callers keep their own action secondary meanwhile (UI-49, UI-68).
     var updateIsPrimary = false
     var body: some View {
         LHCard {
@@ -27,6 +26,9 @@ struct ChatGPTAccountConnectionCard: View {
             }
         }
         .onAppear { runtime.refreshAccount(userInitiated: true) }
+    }
+    private var updateButton: some View {
+        Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }
     }
     private var status: String {
         switch runtime.connectionState {
@@ -51,9 +53,9 @@ struct ChatGPTAccountConnectionCard: View {
             }
         case .codexUnavailable:
             if updateIsPrimary {
-                Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHPrimaryButtonStyle())
+                updateButton.buttonStyle(LHPrimaryButtonStyle())
             } else {
-                Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }.buttonStyle(LHSecondaryButtonStyle())
+                updateButton.buttonStyle(LHSecondaryButtonStyle())
             }
         default:
             HStack(spacing: 10) {

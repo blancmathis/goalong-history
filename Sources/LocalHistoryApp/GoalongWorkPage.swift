@@ -96,7 +96,10 @@ import SwiftUI
                 Spacer(minLength: 8)
                 statusAction
             }
-            Toggle("Classer automatiquement les nouveaux contextes", isOn: $work.automatic)
+            // Without consent the switch reads off whatever the stored preference says (UI-69).
+            Toggle("Classer automatiquement les nouveaux contextes",
+                   isOn: Binding(get: { work.automatic && agent.readiness != .noConsent },
+                                 set: { work.automatic = $0 }))
                 .toggleStyle(.goalongSwitch).disabled(agent.readiness == .noConsent)
                 .accessibilityIdentifier("work-automatic")
             Text("Quand vous ouvrez Activité : la journée affichée, au plus toutes les 15 minutes pour aujourd’hui. Aucune minuterie en arrière-plan ; un contexte déjà classé n’est jamais renvoyé.")
@@ -371,7 +374,7 @@ import SwiftUI
             VStack(spacing: 0) {
                 ForEach(rows) { row in
                     rowView(row)
-                    if row.id != rows.last?.id { Divider().padding(.leading, 34) }
+                    if row.id != rows.last?.id { Divider().padding(.leading, 32) }
                 }
             }
             if group.rows.count > 6 {
