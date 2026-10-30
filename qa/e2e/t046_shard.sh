@@ -54,7 +54,7 @@ cleanup() {
   drv close-extra "$BUNDLE" "Goalong History — Dev" >/dev/null 2>&1
   true
 }
-# Navigation vocabulary (as qa/e2e/lot1_steps.sh): nav:SECTION pane:PANE p:LABEL (required) o:LABEL (optional)
+# Navigation vocabulary (as qa/e2e/lot1_steps.sh): nav:SECTION pane:PANE p:LABEL (required) pp:ID-PREFIX (required, first id starting with it) o:LABEL (optional)
 # si (status item) pc (panel closed itself) w:N set:ID\ 0|1 t:DISCLOSURE|TARGET. Prints the failed required steps.
 navigate() {
   local miss="" c
@@ -70,6 +70,7 @@ navigate() {
               drv press "$BUNDLE" settings-back >/dev/null 2>&1 && sleep 1
               if [[ "${c#pane:}" != home ]]; then press3 "settings-${c#pane:}" || miss+="$c;"; sleep 1.5; fi ;;
       p:*) drv press "$BUNDLE" "${c#p:}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      pp:*) drv pressprefix "$BUNDLE" "${c#pp:}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
       o:*) drv press "$BUNDLE" "${c#o:}" >/dev/null 2>&1; sleep 1 ;;
       si) drv status-item "$BUNDLE" >/dev/null 2>&1 && panel=$((1 - panel)) || miss+="si;"; sleep 2 ;;
       pc) panel=0 ;;

@@ -90,6 +90,24 @@ case "press":
         }
     }
     print("press '\(needle)': not found"); exit(5)
+case "pressprefix":
+    // First element whose AXIdentifier starts with PREFIX (ids with a variable tail: blocking-suggestion-<id>).
+    let prefix = args[3]
+    for root in roots(args[2]) {
+        var budget = 6000
+        var hit: AXUIElement?
+        _ = walk(root, budget: &budget) { e, _ in
+            let match = text(e, "AXIdentifier").hasPrefix(prefix)
+            if match { hit = e }
+            return match
+        }
+        if let hit {
+            let status = AXUIElementPerformAction(hit, kAXPressAction as CFString)
+            print("pressprefix '\(prefix)' -> \(describe(hit)) : \(status.rawValue)")
+            exit(status == .success || status.rawValue == -25204 ? 0 : 4)
+        }
+    }
+    print("pressprefix '\(prefix)': not found"); exit(5)
 case "menu":
     // Application menu: TOP is the menu-bar title, ITEM a prefix of the item title (submenus searched too).
     guard let bar = attr(app(args[2]), kAXMenuBarAttribute) else { print("no menu bar"); exit(6) }
@@ -376,5 +394,5 @@ case "textshot":
     NSGraphicsContext.restoreGraphicsState()
     try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: args[3]))
 default:
-    print("usage: ax_driver trusted | dump B F | press B TEXT [ROLE] | menu B TOP ITEM | status-item B | status-menu B | windows B | input S"); exit(2)
+    print("usage: ax_driver trusted | dump B F | press B TEXT [ROLE] | pressprefix B PREFIX | menu B TOP ITEM | status-item B | status-menu B | windows B | input S"); exit(2)
 }
