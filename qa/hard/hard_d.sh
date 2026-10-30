@@ -37,6 +37,22 @@ launch || fail "l’app ne démarre pas"
 onboarding; record_on
 activity 10; quit_app
 try "seed 2 days" python3 -I "$HERE/seed_events.py" "$DATA" --days 2 --per-day 300
+# The site export reads the Apple Screen Time daily archive; the runner has none. Synthetic days written by
+# the unit job (T046OfflinePairingTests, archive format), Screen Time source enabled in the consent file.
+FIX="$RUNNER_TEMP/t046-unit/screen-time-days"
+if compgen -G "$FIX/*.json" >/dev/null; then
+  mkdir -p "$DATA/apple-screen-time/days"; chmod 700 "$DATA/apple-screen-time" "$DATA/apple-screen-time/days"
+  cp "$FIX"/*.json "$DATA/apple-screen-time/days/"; chmod 600 "$DATA/apple-screen-time/days/"*.json
+  python3 -I - "$DATA/capability-consent.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["capabilities"]["appleScreenTime"] = {"enabled": True, "changedAt": "2026-10-30T00:00:00Z", "surface": "settings"}
+json.dump(d, open(p, "w"), indent=2)
+PY
+  log "[fixture] $(ls "$DATA/apple-screen-time/days" | tr '\n' ' ')"
+else
+  fail "HARNAIS : jours Temps d’écran synthétiques absents ($FIX)"
+fi
 PORT=$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
 curl -sS -m 3 -o /dev/null "http://127.0.0.1:$PORT/" && fail "HARNAIS : port $PORT ouvert"
 TOKEN="$RUNNER_TEMP/site-access.token"
@@ -59,13 +75,13 @@ if axhas 'id=sharing-send' >/dev/null; then
   shot sharing-sent; dump sharing-sent; p=$(last_shot)
   msg="$(axhas 'id=sharing-error')"
   running || fail "l’app s’est arrêtée à l’envoi"
-  if [[ -n $msg ]]; then
+  if [[ $msg == *"pu être joint"* || $msg == *injoignable* || $msg == *"Pas de connexion"* ]]; then
     obs "J-0283 : « ${msg:0:200} »"
     axhas 'id=sharing-send|Aperçu local du' >/dev/null && obs "aperçu conservé" || fail "aperçu perdu après l’échec"
     axhas 'id=sharing-success' >/dev/null && fail "J-0283 : succès affiché sans site"
     row J-0283 pass "erreur lisible, aperçu conservé" "$p"
   else
-    fail "J-0283 : pas de message d’erreur après l’envoi"; row J-0283 fail "pas de sharing-error" "$p"
+    fail "J-0283 : pas de message « site injoignable » après l’envoi (${msg:0:160})"; row J-0283 fail "message : ${msg:0:80}" "$p"
   fi
 else
   msg="$(axhas 'id=sharing-error|Choisissez|Aucune|désactivée')"
@@ -81,7 +97,7 @@ shot manual-preview; dump manual-preview
 try "send reviewed" press3 "Envoyer les données vérifiées" AXButton; sleep 12
 shot manual-sent; dump manual-sent; p=$(last_shot)
 running || fail "l’app s’est arrêtée à l’envoi manuel"
-msg="$(axhas 'injoignable|connexion|Connexion|joindre|réseau|Impossible')"
+msg="$(axhas 'pu être joint|injoignable|Pas de connexion|hors ligne|Impossible d')"
 if [[ -n $msg ]] && ! axhas 'Reçu par le site' >/dev/null; then
   obs "J-0258 : « ${msg:0:200} »"; row J-0258 pass "erreur lisible" "$p"
 else

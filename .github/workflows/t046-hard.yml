@@ -16,7 +16,9 @@ concurrency:
 
 jobs:
   hard:
-    if: github.event_name != 'pull_request' || github.head_ref == 't046/hard'
+    # Part d reads the synthetic Screen Time days the unit job writes.
+    needs: unit
+    if: always() && (github.event_name != 'pull_request' || github.head_ref == 't046/hard')
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +27,14 @@ jobs:
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Synthetic Screen Time days (part d)
+        if: matrix.part == 'd'
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: t046-unit
+          path: ${{ runner.temp }}/t046-unit
 
       - name: Build app and .dmg
         run: qa/hard/build.sh "$RUNNER_TEMP/dist"
@@ -58,13 +68,17 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: T-046 L4c unit tests (throwaway HOME, window guard)
+        env:
+          T046_SCREEN_TIME_FIXTURE_DIR: ${{ runner.temp }}/screen-time-days
         run: scripts/run_swift_tests.sh check T046Offline 2>&1 | tee "$RUNNER_TEMP/unit.log"; test "${PIPESTATUS[0]}" -eq 0
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: t046-unit
-          path: ${{ runner.temp }}/unit.log
+          path: |
+            ${{ runner.temp }}/unit.log
+            ${{ runner.temp }}/screen-time-days
           retention-days: 1
 
   results:
