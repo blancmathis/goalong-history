@@ -26,13 +26,14 @@ import LocalHistoryQueryCLI
 
     // MARK: Profil
 
-    /// J-0508: closing the share sheet clears the pending analysis.
-    func testProfileShareSheetClosesByClearingThePendingShare() {
-        let host = GoalongProfileStudioHost(currentRevision: { "r" })
+    /// Receiving an analysis keeps its bytes and the privacy revision in force, and asks the dashboard to come forward.
+    /// (Closing the sheet is an inline Binding setter in the view: J-0508 is an N/A row.)
+    func testReceivingAnAnalysisKeepsItsBytesAndPrivacyRevision() {
+        let host = GoalongProfileStudioHost(currentRevision: { "r1" })
+        var presented = 0; host.onNeedsPresentation = { presented += 1 }
         host.receive(Data("a".utf8))
-        XCTAssertNotNil(host.pending)
-        host.pending = nil
-        XCTAssertNil(host.pending)
+        XCTAssertEqual(host.pending, .init(data: Data("a".utf8), privacyRevision: "r1"))
+        XCTAssertEqual(presented, 1)
     }
     /// J-0510: opening reopens a saved analysis or a bare selection, and refuses a foreign file.
     func testOpeningSavedArchiveRequestOrForeignFile() throws {
@@ -113,9 +114,9 @@ import LocalHistoryQueryCLI
         model.correct("missing", field: "caveat", text: "x")
         XCTAssertEqual(model.result?.items.count, 1)
     }
-    /// J-0528: keeping the analysis fails closed. With nothing prepared it is a no-op; with storage the secure
-    /// writer refuses (the disposable test HOME lives under /tmp), the user gets a message, nothing is notified.
-    func testKeepingTheAnalysisFailsClosedAndNeverClaimsASave() throws {
+    /// J-0528: with nothing prepared, saving is a no-op. With an analysis, the secure writer refuses the disposable
+    /// test HOME (under /tmp): the user gets a message, no success status, no notification.
+    func testKeepingTheAnalysisRefusedByTheSecureWriterReportsAnErrorAndNeverClaimsASave() throws {
         let idle = GoalongProfileStudioModel(); idle.save()
         XCTAssertNil(idle.error); XCTAssertEqual(idle.status, "")
         let model = try analysedModel()
@@ -123,11 +124,9 @@ import LocalHistoryQueryCLI
         let token = NotificationCenter.default.addObserver(forName: .goalongProfileAnalysisDidSave, object: nil, queue: nil) { _ in notified = true }
         defer { NotificationCenter.default.removeObserver(token) }
         model.save()
-        if model.error == nil {
-            XCTAssertEqual(model.status, "Enregistré dans Goalong History. Aucun envoi au site."); XCTAssertTrue(notified)
-        } else {
-            XCTAssertFalse(notified); XCTAssertNotEqual(model.status, "Enregistré dans Goalong History. Aucun envoi au site.")
-        }
+        XCTAssertNotNil(model.error)
+        XCTAssertFalse(notified)
+        XCTAssertNotEqual(model.status, "Enregistré dans Goalong History. Aucun envoi au site.")
     }
     /// J-0533, J-0611: export writes the chosen bytes, privately, and refuses a non-file URL.
     func testExportWriterWritesExactBytesPrivately() throws {
@@ -156,12 +155,16 @@ import LocalHistoryQueryCLI
     func testTypedIntentReachesTheRequestAndPrompt() throws {
         let (_, request) = try rhythmModel()
         XCTAssertEqual(request.intent, "Construire le lot")
-        XCTAssertTrue(request.prompt.contains("Analyse en français"))
+        XCTAssertTrue(request.prompt.contains("Construire le lot"))
     }
     /// J-0783, J-0784: with the source disabled, preparing refuses and reads nothing.
-    func testRhythmLoadRefusesWhenSourceIsNotEnabled() {
+    @MainActor func testRhythmLoadRefusesWhenSourceIsNotEnabled() {
+        let consents = GoalongCapabilityConsentStore.shared
+        let was = consents.isEnabled(.localComputerHistory)
+        _ = consents.set(.localComputerHistory, enabled: false, surface: .settings)
+        defer { _ = consents.set(.localComputerHistory, enabled: was, surface: .settings) }
+        XCTAssertFalse(consents.isEnabled(.localComputerHistory))
         let model = GoalongRhythmStudioModel()
-        guard !GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) else { return }
         model.load(start: Date(), end: Date().addingTimeInterval(60), project: "P", intent: "", masks: [], rich: false)
         XCTAssertEqual(model.error, "Activez les sources sélectionnées dans les réglages de Goalong History.")
         XCTAssertFalse(model.busy); XCTAssertNil(model.request)
@@ -192,17 +195,6 @@ import LocalHistoryQueryCLI
         let (model, _) = try rhythmModel(); model.consentToAnalyze = false
         model.analyze()
         XCTAssertEqual(model.error, "Relisez la sélection et autorisez son analyse."); XCTAssertFalse(model.busy)
-    }
-    /// J-0789, J-0795: the hand-off file holds the instructions and the request, nothing else.
-    func testRhythmHandOffFileHoldsInstructionsAndRequest() throws {
-        let (model, _) = try rhythmModel()
-        let selected = try XCTUnwrap(model.selection)
-        let object: [String: Any] = ["instructions": selected.prompt, "request": try JSONSerialization.jsonObject(with: selected.encoded())]
-        let file = temp("session.json")
-        try GoalongSiteAnalysisExportWriter.write(JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]), to: file)
-        let back = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
-        XCTAssertEqual(Set(back.keys), ["instructions", "request"])
-        XCTAssertEqual((back["request"] as? [String: Any])?["request_id"] as? String, selected.request_id)
     }
     /// J-0790, J-0796: a foreign answer is refused and the request stays; without a request nothing happens.
     func testImportingAForeignRhythmAnswerKeepsStateAndSetsError() throws {

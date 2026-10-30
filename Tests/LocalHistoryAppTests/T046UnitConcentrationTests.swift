@@ -96,7 +96,7 @@ final class T046UnitConcentrationTests: XCTestCase {
     }
 
     // « Enregistrer » / « Ajouter une intention du jour » (J-0119…J-0121)
-    @MainActor func testDayIntentionIsSavedTrimmedToTheLimit() throws {
+    @MainActor func testDayIntentionIsSavedAndRefusedOverTheLimit() throws {
         let c = try controller(); let day = BlockingController.dayKey(now)
         try c.addPlanItem(title: "A", day: day)
         var plan = try c.plan(on: day); plan.intention = "Finir le chapitre"

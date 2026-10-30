@@ -45,15 +45,43 @@ final class T046UnitSiteSharingTests: XCTestCase {
         XCTAssertEqual(out.selectedWebsiteDomains, ["a.example"])
     }
 
+    /// J-0908: « Masquer dans tous les partages » stores a hidden rule under the normalized host, and ignores an empty host.
+    @MainActor func testHideWebsiteInEveryShareStoresANormalizedHiddenRuleAndRefusesEmptyHost() throws {
+        let root = try tempRoot()
+        let config = ConfigManager(), permissions = PermissionManager(), health = CaptureHealthStore(permissions: PermissionManager())
+        let agents = try AgentActivityRuntime(rootDirectory: AppPaths.agentActivityDirectory,
+            executableURL: URL(fileURLWithPath: "/nonexistent/t046-test"), performInitialDiscovery: false,
+            sourceDiscovery: { [] }, onCaptured: { _ in })
+        let store = SharingRulesStore(fileURL: root.appendingPathComponent("sharing.json"))
+        let model = DashboardViewModel(state: CaptureState(), permissions: permissions, configManager: config,
+            sharingRulesStore: store, agentActivityRuntime: agents,
+            deviceInfo: DeviceIdentityInfo(deviceID: "t046-fixture", publicKeyBase64: "", trustTier: "test", algorithm: "test"),
+            eventTapStatus: { false }, currentSuppression: { nil }, captureHealthSnapshot: { health.snapshot },
+            onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
+            onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
+            onDeleteTargetedDetails: { _, done in done(.success(0)) })
+        model.hideWebsiteInEveryShare("   ")
+        XCTAssertTrue(store.rules.isEmpty)
+        model.hideWebsiteInEveryShare("WWW.Example.COM")
+        let key = SharingSubjectKey.website(host: "WWW.Example.COM")
+        XCTAssertEqual(store.rules[key], .hidden)
+        XCTAssertEqual(model.sharingRules[key], .hidden)
+        XCTAssertEqual(store.rules.count, 1)
+    }
+
     func testDeviceSelectionIsKept() throws {
         let out = try exported(GoalongSiteExportOptions(deviceIDs: ["mac-1"], includeApplications: true))
         XCTAssertEqual(out.deviceIDs, ["mac-1"])
     }
 
-    @MainActor func testDisconnectMessageDependsOnWhoOwnsTheTokenFile() {
+    @MainActor func testDisconnectMessageSaysWhetherTheTokenFileIsDeleted() {
         let chosen = GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: "/Users/x/Downloads/goalong-token.txt")
         XCTAssertTrue(chosen.contains("restera à sa place"))
         XCTAssertTrue(GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: "").contains("restera à sa place"))
+        let managed = GoalongWebsitePairingCoordinator.connectionsDirectory.appendingPathComponent(UUID().uuidString + ".token").path
+        let message = GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: managed)
+        XCTAssertTrue(message.contains("sera supprimé de ce Mac"))
+        XCTAssertFalse(message.contains("restera à sa place"))
     }
 }
 #endif

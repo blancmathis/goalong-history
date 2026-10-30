@@ -66,29 +66,39 @@ import XCTest
         m.endBreak()
         XCTAssertFalse(m.breakStorageInvalid); XCTAssertNil(m.error); XCTAssertNil(m.timedBreak)
     }
-    func testMenuLabelsMatchTheMonitorState() {
-        XCTAssertEqual(String(format: "Surveillance en pause : %02d:%02d restantes", 605 / 60, 605 % 60),
-                       "Surveillance en pause : 10:05 restantes")
-        XCTAssertEqual(String(format: "Surveillance en pause : %02d:%02d restantes", 59 / 60, 59 % 60),
-                       "Surveillance en pause : 00:59 restantes")
-        let items = JevQuickPauseControl.menuItems(enabled: true, breakRunning: true)
-        XCTAssertTrue(items.resume)
+    func testMenuOffersResumeOnlyWhileABreakRuns() {
+        XCTAssertTrue(JevQuickPauseControl.menuItems(enabled: true, breakRunning: true).resume)
+        XCTAssertFalse(JevQuickPauseControl.menuItems(enabled: true, breakRunning: false).resume)
     }
-    func testDisablingFromTheMenuTurnsConsentOffAndCancelsTheBreak() throws {
+    func testDisablingFromTheMenuTurnsConsentOff() throws {
         let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let (m, consents) = try monitor(enabled: true, root: root)
         m.setEnabled(false)
         XCTAssertFalse(consents.isEnabled(.jevMonitoring)); XCTAssertFalse(m.enabled)
         XCTAssertEqual(m.status, "Surveillance désactivée")
     }
-    func testExcerptSwitchOffStoresFalseAndOnStoresTrueOnlyAfterConfirmation() {
+    /// A running break is not cancelled by disabling: its record stays, and turning monitoring on again does not erase it.
+    func testDisablingDuringABreakKeepsTheBreakRecord() throws {
+        let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let (m, consents) = try monitor(enabled: true, root: root)
+        m.startBreak(minutes: 10); XCTAssertNotNil(m.timedBreak)
+        m.setEnabled(false)
+        XCTAssertFalse(consents.isEnabled(.jevMonitoring)); XCTAssertNotNil(m.timedBreak)
+    }
+    func testExcerptSwitchStoresTheChosenValue() {
         let key = JevMonitor.excerptKey
         let before = UserDefaults.standard.object(forKey: key)
         defer { if let before { UserDefaults.standard.set(before, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) } }
+        let richKey = ActivityAnalysisPreferences.richContextEnabledKey
+        let richBefore = UserDefaults.standard.object(forKey: richKey)
+        defer { if let richBefore { UserDefaults.standard.set(richBefore, forKey: richKey) } else { UserDefaults.standard.removeObject(forKey: richKey) } }
+        UserDefaults.standard.set(true, forKey: richKey)
         let m = JevMonitor(loadLocalSettings: false)
-        m.setIncludeText(true); XCTAssertTrue(UserDefaults.standard.bool(forKey: key))
+        m.setIncludeText(true); XCTAssertTrue(UserDefaults.standard.bool(forKey: key)); XCTAssertTrue(m.includeText)
         m.setIncludeText(false); XCTAssertFalse(UserDefaults.standard.bool(forKey: key))
         XCTAssertFalse(m.includeText, "sans « Texte affiché », aucun extrait n’est joint")
+        UserDefaults.standard.set(false, forKey: richKey); m.setIncludeText(true)
+        XCTAssertFalse(m.includeText, "sans le contexte riche, l’extrait n’est pas joint même demandé")
     }
 }
 #endif
