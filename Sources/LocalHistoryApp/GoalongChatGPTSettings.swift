@@ -16,7 +16,7 @@ import LocalHistoryCore
             Text("Votre ChatGPT résume une journée à partir des seules données que vous choisissez.")
                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
-            ChatGPTAccountConnectionCard(runtime: runtime)
+            ChatGPTAccountConnectionCard(runtime: runtime, updateIsPrimary: true)
             GoalongSettingsList(title: "Votre analyse") {
                 GoalongSettingsLink(title: "Données pour ChatGPT", value: sourceSummary, symbol: "line.3.horizontal.decrease.circle") { open(0) }.accessibilityIdentifier("analysis-open-data")
                 GoalongRowDivider()
