@@ -610,27 +610,35 @@
             XCTAssertEqual(statusChanges, [true, false])
         }
 
-        @MainActor func testNonKeyDashboardStatusFollowsStorageWithoutDataWakeups() throws {
+        @MainActor private func statusModel(
+            health: CaptureHealthStore, virtual: VirtualDashboardTimerScheduler,
+            onHealthRead: @escaping () -> Void = {}
+        ) throws -> DashboardViewModel {
             guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
                 throw XCTSkip("Dashboard tests require an isolated test HOME")
             }
-            let virtual = VirtualDashboardTimerScheduler()
             let config = ConfigManager(), permissions = PermissionManager()
-            let health = CaptureHealthStore(permissions: PermissionManager())
             let agents = try AgentActivityRuntime(
                 rootDirectory: AppPaths.agentActivityDirectory,
                 executableURL: URL(fileURLWithPath: "/nonexistent/def04-test"), performInitialDiscovery: false,
                 sourceDiscovery: { [] }, onCaptured: { _ in })
-            let model = DashboardViewModel(
+            return DashboardViewModel(
                 state: CaptureState(), permissions: permissions, configManager: config,
                 sharingRulesStore: SharingRulesStore(), agentActivityRuntime: agents,
                 deviceInfo: DeviceIdentityInfo(
                     deviceID: "def04-fixture", publicKeyBase64: "", trustTier: "test", algorithm: "test"),
-                eventTapStatus: { false }, currentSuppression: { nil }, captureHealthSnapshot: { health.snapshot },
+                eventTapStatus: { false }, currentSuppression: { nil },
+                captureHealthSnapshot: { onHealthRead(); return health.snapshot },
                 onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
                 onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
                 onDeleteTargetedDetails: { _, done in done(.success(0)) },
                 refreshScheduler: DashboardRefreshScheduler(schedule: virtual.schedule))
+        }
+
+        @MainActor func testNonKeyDashboardStatusFollowsStorageWithoutDataWakeups() throws {
+            let virtual = VirtualDashboardTimerScheduler()
+            let health = CaptureHealthStore(permissions: PermissionManager())
+            let model = try statusModel(health: health, virtual: virtual)
 
             health.markStorageInterrupted(.diskFull)
             model.dashboardStatusDidBecomeVisible()
@@ -650,6 +658,55 @@
             virtual.advance(by: DashboardRefreshScheduler.runtimeInterval)
             XCTAssertEqual(model.runtime.storageFailure, .diskFull)
 
+            model.dashboardStatusDidBecomeHidden()
+            XCTAssertTrue(virtual.activeIntervals.isEmpty)
+            model.waitForPendingWorkForTesting()
+        }
+
+        /// R4-207: paused, window visible without the keyboard. The page body and the banner
+        /// read the same live status, so the body never contradicts the banner.
+        @MainActor func testNonKeyPausedDashboardBodyAndBannerAgree() throws {
+            let virtual = VirtualDashboardTimerScheduler()
+            let health = CaptureHealthStore(permissions: PermissionManager())
+            let model = try statusModel(health: health, virtual: virtual)
+
+            health.setPaused(true)
+            model.dashboardStatusDidBecomeVisible()
+            XCTAssertFalse(model.dashboardIsVisible)
+            XCTAssertTrue(model.recordingStatusIsLive)
+            XCTAssertEqual(
+                GoalongRecordingStateNotice.kind(
+                    localEnabled: true, globallyPaused: false,
+                    dashboardVisible: model.recordingStatusIsLive, runtime: model.runtime.state),
+                .paused)
+
+            let repositoryRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            for file in ["GoalongRecordingSetup.swift", "GoalongAnalyticsPage.swift"] {
+                let source = try String(
+                    contentsOf: repositoryRoot.appendingPathComponent("Sources/LocalHistoryApp/\(file)"),
+                    encoding: .utf8)
+                XCTAssertTrue(source.contains("dashboardVisible: model.recordingStatusIsLive"), file)
+                XCTAssertFalse(source.contains("dashboardVisible: model.dashboardIsVisible"), file)
+            }
+            model.dashboardStatusDidBecomeHidden()
+            model.waitForPendingWorkForTesting()
+        }
+
+        /// R4-207: opening with the keyboard reads the status once and arms the timers once.
+        @MainActor func testKeyedOpenReadsTheStatusOnce() throws {
+            let virtual = VirtualDashboardTimerScheduler()
+            let health = CaptureHealthStore(permissions: PermissionManager())
+            var reads = 0
+            let model = try statusModel(health: health, virtual: virtual, onHealthRead: { reads += 1 })
+
+            model.dashboardDidBecomeVisible()
+            let afterKeyedOpen = reads
+            model.dashboardStatusDidBecomeVisible()
+            XCTAssertEqual(reads, afterKeyedOpen)
+            XCTAssertEqual(virtual.scheduledCount, 2)
+
+            model.dashboardDidBecomeHidden(discardContents: false)
             model.dashboardStatusDidBecomeHidden()
             XCTAssertTrue(virtual.activeIntervals.isEmpty)
             model.waitForPendingWorkForTesting()
@@ -763,6 +820,8 @@
             self?.tasks.append(task)
             return task
         }
+
+        var scheduledCount: Int { tasks.count }
 
         var activeIntervals: [TimeInterval] {
             tasks.filter { !$0.isCancelled }.map(\.interval).sorted()

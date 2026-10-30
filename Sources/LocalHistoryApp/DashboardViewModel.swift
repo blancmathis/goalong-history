@@ -216,6 +216,8 @@
         @Published private(set) var dashboardIsVisible = false
         /// The window can be seen, with or without the keyboard: only the cheap status is kept live.
         @Published private(set) var dashboardStatusIsVisible = false
+        /// The recording status is fresh: the banner and the page bodies show it only then.
+        var recordingStatusIsLive: Bool { dashboardIsVisible || dashboardStatusIsVisible }
         private var dataRequestSequence: UInt64 = 0
         private var metadataRequestSequence: UInt64 = 0
         private var activeDataRequest:
@@ -586,6 +588,8 @@
         func dashboardStatusDidBecomeVisible() {
             guard !dashboardStatusIsVisible else { return }
             dashboardStatusIsVisible = true
+            // With the keyboard, dashboardDidBecomeVisible already read the status and armed the timers.
+            guard !dashboardIsVisible else { return }
             refreshRuntime()
             updateRefreshSchedule()
         }
@@ -593,6 +597,7 @@
         func dashboardStatusDidBecomeHidden() {
             guard dashboardStatusIsVisible else { return }
             dashboardStatusIsVisible = false
+            guard !dashboardIsVisible else { return }
             updateRefreshSchedule()
         }
 
@@ -1048,7 +1053,7 @@
         func liveCaptureHealthSnapshot() -> CaptureHealthSnapshot { captureHealthSnapshot() }
 
         private func refreshRuntime() {
-            guard dashboardIsVisible || dashboardStatusIsVisible else { return }
+            guard recordingStatusIsLive else { return }
             let status = permissions.snapshot
             let tap = eventTapStatus()
             let healthSnapshot = captureHealthSnapshot()

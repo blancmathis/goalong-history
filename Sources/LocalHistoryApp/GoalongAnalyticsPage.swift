@@ -465,7 +465,7 @@ struct GoalongAnalyticsPage: View {
     private var recordingKind: GoalongRecordingStateNotice.Kind? {
         GoalongRecordingStateNotice.kind(localEnabled: consents.isEnabled(.localComputerHistory),
             globallyPaused: analytics.paused,
-            dashboardVisible: model.dashboardIsVisible, runtime: model.runtime.state,
+            dashboardVisible: model.recordingStatusIsLive, runtime: model.runtime.state,
             captureHealth: model.runtime.captureHealth?.state)
     }
 
