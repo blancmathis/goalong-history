@@ -83,17 +83,25 @@ struct JevActivationAvailability: Equatable {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Jev").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
-                        Text("Facultatif. Jev est le service d’analyse partenaire de Goalong. Toutes les 15 secondes, Goalong vérifie que vous restez sur vos projets et affiche un rappel dès qu’une distraction est détectée de façon fiable.")
+                        Text("Facultatif. Jev est le service d’analyse partenaire de Goalong. Il vous rappelle votre projet quand une distraction est détectée de façon fiable.")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
-                    Toggle("Activer", isOn: Binding(
-                        get: { enabled },
-                        set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
-                        .toggleStyle(.goalongSwitchOnly).fixedSize()
-                        .disabled(!availability.canToggle(isEnabled: enabled))
-                        .accessibilityIdentifier("jev-enabled")
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Toggle("Activer", isOn: Binding(
+                            get: { enabled },
+                            set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
+                            .toggleStyle(.goalongSwitchOnly).fixedSize()
+                            .disabled(!availability.canToggle(isEnabled: enabled))
+                            .accessibilityIdentifier("jev-enabled")
+                        // UI-56: a switch that cannot be turned on says so, instead of looking merely off.
+                        if let reason = toggleBlockedReason {
+                            Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize()
+                                .accessibilityIdentifier("jev-enabled-reason")
+                        }
+                    }
                 }
                 // Always show the runtime's real status, including protected/idle/error states;
                 // a switch already off says « désactivée » by itself.
@@ -104,7 +112,8 @@ struct JevActivationAvailability: Equatable {
                         .accessibilityIdentifier("jev-status")
                 }
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
-                JevScopeControl()
+                // UI-56: « Quand » only matters once Jev is on.
+                JevScopeControl().disabled(!enabled)
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 connectionRow
                 if !availability.localHistoryEnabled {
@@ -130,6 +139,11 @@ struct JevActivationAvailability: Equatable {
         }
     }
 
+    private var toggleBlockedReason: String? {
+        guard !availability.canToggle(isEnabled: enabled) else { return nil }
+        return availability.hasKey ? "Activez d’abord l’historique" : "Connectez d’abord l’API"
+    }
+
     private var connectionRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
@@ -139,7 +153,9 @@ struct JevActivationAvailability: Equatable {
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 8)
+            // UI-56: until a key is saved, connecting is the step that unlocks Jev, so it is the lime action.
             Button(monitor.hasKey ? "Gérer la connexion" : "Connecter l’API") { showingConnection = true }
+                .modifier(GoalongMainActionStyle(primary: !monitor.hasKey))
                 .accessibilityIdentifier("jev-open-connection")
         }
     }

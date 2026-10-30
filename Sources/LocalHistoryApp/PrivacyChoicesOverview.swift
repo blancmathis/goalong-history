@@ -12,6 +12,7 @@ import LocalHistoryCore
     @State private var showingRetention = false
     @State private var retentionSummary = ""
     @State private var retentionEnabled = false
+    @State private var pause = GoalongGlobalPause.load()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -36,7 +37,9 @@ import LocalHistoryCore
                          : "Fenêtres privées détectées : exclues. La détection dépend du navigateur ; la pause reste le plus sûr pour une activité sensible.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 12) {
-                        Button("Modifier l’enregistrement") { model.openRecordingSettings() }.buttonStyle(LHPrimaryButtonStyle())
+                        // During the global pause, « Reprendre tout le suivi » is the one lime action of the screen.
+                        Button("Modifier l’enregistrement") { model.openRecordingSettings() }
+                            .modifier(GoalongMainActionStyle(primary: !pause.blocksActivity))
                         Button("Gérer les exclusions") { model.openApplicationsSettings() }.buttonStyle(LHSecondaryButtonStyle())
                         Button("Gérer les sources") { model.selectSection(.settings) }.buttonStyle(LHSecondaryButtonStyle())
                     }
@@ -48,7 +51,7 @@ import LocalHistoryCore
                 VStack(alignment: .leading, spacing: 13) {
                     Label("Ce qui peut quitter ce Mac", systemImage: "arrow.up.doc")
                         .font(LHTheme.cardTitleFont)
-                    Text(sender.enabled ? "L’envoi quotidien au site est activé." : "L’envoi quotidien au site est désactivé ou en pause.")
+                    Text(Self.dailySendingText(enabled: sender.enabled, paused: sender.savedConfiguration?.paused == true))
                         .font(.system(size: 13, weight: .semibold))
                     if sender.savedConfiguration != nil {
                         Text(sender.status).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -81,12 +84,18 @@ import LocalHistoryCore
                 }.fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .onAppear { refreshRetention(); analysisSelection = .load() }
+        .onAppear { refreshRetention(); analysisSelection = .load(); pause = .load() }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongRetentionPolicyDidChange)) { _ in refreshRetention() }
         .sheet(isPresented: $showingSharing) { GoalongWebsiteSharingSheet().goalongControls() }
         .sheet(isPresented: $showingRetention, onDismiss: refreshRetention) {
             HistoryRetentionSettingsSheet(legacyRetentionDays: model.appliedSettings.retentionDays).goalongControls()
         }
+    }
+    /// UI-54: the real state, never « désactivé ou en pause ».
+    nonisolated static func dailySendingText(enabled: Bool, paused: Bool) -> String {
+        enabled ? "L’envoi quotidien au site est activé."
+            : paused ? "L’envoi quotidien au site est en pause." : "L’envoi quotidien au site est désactivé."
     }
     /// Same state as the « Autoriser les analyses » switch in Réglages › Analyse ChatGPT.
     nonisolated static func chatGPTAnalysisText(consented: Bool, selection: GoalongAnalysisSelection, policy: GoalongPrivacyPolicy) -> String {
@@ -98,6 +107,14 @@ import LocalHistoryCore
         let store = HistoryRetentionStore(legacyRetentionDays: model.appliedSettings.retentionDays)
         retentionEnabled = store.isAutomaticCleanupEnabled
         retentionSummary = store.policy.retentionDescription
+    }
+}
+
+/// Lime only when the button is the screen's one main action (DESIGN §9).
+struct GoalongMainActionStyle: ViewModifier {
+    var primary: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if primary { content.buttonStyle(LHPrimaryButtonStyle()) } else { content.buttonStyle(LHSecondaryButtonStyle()) }
     }
 }
 #endif

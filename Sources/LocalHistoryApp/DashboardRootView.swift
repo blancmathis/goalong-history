@@ -295,26 +295,26 @@
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 14, weight: .semibold))
                     }
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(updates.isPreparingAvailableUpdate ? "Préparation…" : "Mise à jour disponible")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Installer la version \(version)")
-                            .font(.system(size: 12, weight: .medium))
-                            .opacity(0.76)
-                    }
-                    Spacer()
+                    // UI-50: one line in the sidebar width; the version says what « Installer » would install.
+                    Text(updates.isPreparingAvailableUpdate ? "Préparation…" : "Mise à jour \(version)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Spacer(minLength: 4)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
                         .opacity(0.7)
                 }
                 .foregroundStyle(LHTheme.accent)
                 .padding(.horizontal, 11)
-                .frame(height: 46)
+                .frame(height: 32)
                 .background(LHTheme.selectionBackground,
                             in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(updates.isPreparingAvailableUpdate)
+            .help("Installer la version \(version)")
+            .accessibilityLabel("Mise à jour disponible : installer la version \(version)")
         }
 
         private var footer: some View {

@@ -19,16 +19,14 @@
                                 model.openDataFolder()
                             }
                             .buttonStyle(LHSecondaryButtonStyle())
+                            // UI-54: the action says its name, not an icon alone.
                             Button {
                                 model.refreshEverything()
                             } label: {
-                                Image(systemName: "arrow.clockwise")
-                                    .frame(width: 28, height: 28)
+                                Label("Actualiser", systemImage: "arrow.clockwise")
                             }
                             .buttonStyle(LHSecondaryButtonStyle())
                             .disabled(model.isRefreshing)
-                            .help("Actualiser")
-                            .accessibilityLabel("Actualiser")
                         }
                     }
 

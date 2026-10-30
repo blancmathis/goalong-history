@@ -245,6 +245,9 @@ import AppKit
                     GoalongSettingsLink(title: "Terminal et agents", value: "CLI", symbol: "terminal") { model.selectSection(.cli) }
                     GoalongRowDivider()
                     GoalongSettingsLink(title: "Diagnostic et preuves", value: "", symbol: "checkmark.shield") { model.selectSection(.privacy) }
+                    GoalongRowDivider()
+                    // UI-51: a row of the list, no longer a button alone under the last section.
+                    GoalongSettingsLink(title: "Revoir le démarrage", value: "", symbol: "sparkles") { model.showWelcome = true }
                 }
                 Button("Ouvrir le fichier de configuration") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
                     .font(.system(size: 13))
@@ -254,15 +257,10 @@ import AppKit
                 Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.goalongSwitch)
                     .disabled(!updates.isConfigured)
-                if !updates.isConfigured {
-                    Text(updates.statusMessage).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
                 Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Revoir le démarrage") { model.showWelcome = true }.buttonStyle(LHSecondaryButtonStyle())
         case .tools:
             GoalongAdvancedTools(model: model)
         }
@@ -422,13 +420,21 @@ enum SettingsPane: Hashable {
             }
             Spacer(minLength: 12)
             if updates.isChecking || updates.isPreparingAvailableUpdate {
-                ProgressView().controlSize(.small)
+                // UI-51: the busy state keeps the button's place and says it, a lone small spinner was hardly visible.
+                Button {} label: {
+                    HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Recherche…") }
+                }
+                .buttonStyle(LHSecondaryButtonStyle()).disabled(true)
             } else if let version = updates.availableVersion {
                 Button("Installer la version \(version)") { updates.showAvailableUpdate() }
                     .buttonStyle(LHPrimaryButtonStyle())
+            } else if updates.requiresSignedBuild {
+                // This copy cannot update itself: the way out is the published version.
+                Button("Voir les versions") { updates.openRollingReleasePage() }.buttonStyle(LHSecondaryButtonStyle())
             } else {
-                // Always enabled: an unavailable updater explains why and links to the releases.
+                // UI-51: greyed when this build has no update configuration; the detail line says why.
                 Button(updates.lastCheckResult == .failed ? "Réessayer" : "Rechercher") { updates.checkForUpdates() }.buttonStyle(LHSecondaryButtonStyle())
+                    .disabled(!updates.isConfigured)
             }
         }
         .accessibilityElement(children: .combine)
@@ -455,6 +461,7 @@ enum SettingsPane: Hashable {
 
     private var detail: String {
         if updates.requiresSignedBuild { return "Cette version ne se met pas à jour toute seule." }
+        if !updates.isConfigured { return updates.statusMessage }
         if updates.isChecking { return "Recherche en cours…" }
         if let version = updates.availableVersion { return "La version \(version) est prête à être installée." }
         let when = updates.lastCheckedAt.map { ", vérifié " + Self.relative($0) } ?? ""
