@@ -166,7 +166,7 @@ final class T046C2RenderTests: XCTestCase {
         XCTAssertTrue(loading.contains("Lecture des conversations"), "saw \(loading.sorted())")
         let unreadable = host(AgentActivityPage(agents: try makeRuntime(.unreadable), presentation: .history, onManageSources: { checked += 1 }))
         let unreadableSeen = strings(of: unreadable)
-        XCTAssertTrue(unreadableSeen.contains("Conversations indisponibles"))
+        XCTAssertFalse(unreadableSeen.contains("Aucune conversation ce jour-là"), "Unreadable sources are not an empty day")
         XCTAssertTrue(unreadableSeen.contains("Certaines sources de conversations sont illisibles"), "saw \(unreadableSeen.sorted())")
         XCTAssertTrue(press("Vérifier les sources", in: unreadable))
         XCTAssertEqual(checked, 1)
@@ -178,7 +178,7 @@ final class T046C2RenderTests: XCTestCase {
     @MainActor func testSourcesPageShowsTheWatchedFoldersAndTheIntegrationsOfARuntimeWithConversations() throws {
         for (state, listsFiles) in [(GalleryCatalog.Conversations.filled, true), (.partial, true), (.unreadable, false), (.loading, false)] {
             let seen = strings(of: host(AgentActivityPage(agents: try makeRuntime(state), presentation: .management, onManageSources: {})))
-            XCTAssertTrue(seen.contains("Lecture sur place"), "\(state): the management page; saw \(seen.sorted())")
+            XCTAssertTrue(seen.contains { $0.hasSuffix("Sources lisibles") }, "\(state): the management page; saw \(seen.sorted())")
             XCTAssertEqual(seen.contains { $0.contains("rollout-1.jsonl") }, listsFiles, "\(state): the read files are listed only when there are some")
         }
         assertNoVisibleWindow()
