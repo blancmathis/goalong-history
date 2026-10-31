@@ -17,7 +17,11 @@ extension GalleryCatalog {
             dashboard("settings/accueil", section: .settings, pane: .home, sizes: [.window, .full(1240)],
                       themes: GalleryTheme.withContrast),
         ]
-        entries += panes.map { name, pane in dashboard("settings/\(name)", section: .settings, pane: pane) }
+        // UI-9 (32, 44): --full too, so the bottom of « Règles d'usage » and « Titres et adresses » can be seen.
+        entries += panes.map { name, pane in
+            dashboard("settings/\(name)", section: .settings, pane: pane,
+                      sizes: name == "applications" || name == "enregistrement" ? [.window, .full(1240)] : [.window])
+        }
         entries += [
             // The unsaved-changes banner shows once the member leaves Réglages.
             dashboard("settings/non-enregistre", section: .overview, configure: { model, _ in
