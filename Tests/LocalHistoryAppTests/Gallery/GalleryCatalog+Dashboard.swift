@@ -81,8 +81,9 @@ extension GalleryCatalog {
             dashboard("historique/journee-vide", section: .history, fixture: .recordingOn),
             dashboard("historique/chronologie", section: .history, sizes: [.window, .minimum, .full(1240)],
                       fixture: .realistic),
-            // UI-15C (22): no « enregistrement/journal* » here. Section .activity drew the same page as historique/
-            // (same PNG), and « Ouvrir le journal » shows the file in the Finder, outside the app's window.
+            // UI-15C (22): one state keeps the .activity destination covered. The filled variant drew the same
+            // PNG as historique/, and « Ouvrir le journal » shows the file in the Finder, outside the app's window.
+            dashboard("enregistrement/journal", section: .activity),
             dashboard("partage/avec-donnees", section: .share, fixture: .realistic),
             dashboard("temps-ecran/vide", section: .screenTime),
             dashboard("conversations-ia/vide", section: .agentActivity),
