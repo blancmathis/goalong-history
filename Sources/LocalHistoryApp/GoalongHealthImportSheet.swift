@@ -86,6 +86,8 @@ struct GoalongHealthImportSheet: View {
                     if !days.isEmpty { previewSection }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }.disabled(busy)
+            // The visible scroller says « more below » when the footer covers the selection (R7, UI-17A, 14).
+            .scrollIndicators(.visible)
             GoalongSheetFooter {
                 if busy {
                     ProgressView().controlSize(.small)

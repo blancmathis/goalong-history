@@ -307,7 +307,7 @@
     }
 
     /// Brand switch: the same corner family as buttons and fields, ink track and page-coloured knob
-    /// when on, quiet forest track when off. Lime stays for the one main action of the screen; a locked switch
+    /// when on, an empty edged well when off. Lime stays for the one main action of the screen; a locked switch
     /// is dashed with a padlock, never lime. A real Button underneath keeps keyboard focus and Space activation.
     struct GoalongSwitch: View {
         @Binding var isOn: Bool
@@ -365,6 +365,13 @@
                 }
                 RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
                     .fill(knobFill)
+                    .overlay {
+                        if !isOn && isEnabled {
+                            // The white off knob on the pale light well: a 1 pt edge, 4.2:1 (clear in dark, UI-17A).
+                            RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
+                                .strokeBorder(LHTheme.switchKnobEdge, lineWidth: 1)
+                        }
+                    }
                     .frame(width: knob + stretch, height: knob)
                     .padding(.horizontal, 3)
                     .overlay {

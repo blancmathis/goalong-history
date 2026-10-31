@@ -82,7 +82,7 @@ import Foundation
             }
             GoalongSettingsList(title: "Analyser") {
                 GoalongSettingsLink(title: "Comprendre mon travail", value: "", symbol: "chart.bar.doc.horizontal",
-                                    detail: "Vos projets et vos tâches, sur une période choisie.") { model.profileStudio.show() }
+                                    detail: "Vos projets et vos tâches, sur une période choisie.") { model.profileStudio.show(earliestDay: model.snapshot.availableDays.min()) }
                 GoalongRowDivider()
                 GoalongSettingsLink(title: "Analyser une demande du site…", value: "", symbol: "magnifyingglass",
                                     detail: "Une demande du site Goalong, traitée avec votre ChatGPT.") { siteAnalysis = true }

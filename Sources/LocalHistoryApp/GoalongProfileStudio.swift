@@ -180,7 +180,7 @@ extension Notification.Name {
         if !sameMode { return idle ? .rebuild : .modeMismatch }
         return .front
     }
-    func show(localOnly: Bool = false, initialDay: Date? = nil, onSend: @escaping (Data) -> Void) {
+    func show(localOnly: Bool = false, initialDay: Date? = nil, earliestDay: Date? = nil, onSend: @escaping (Data) -> Void) {
         if let studioWindow {
             let model = studioModel
             let idle = model.map { !$0.busy && $0.request == nil && $0.result == nil } ?? true
@@ -190,7 +190,7 @@ extension Notification.Name {
             case .front: break
             case .rebuild:
                 let frame = studioWindow.frame
-                studioWindow.contentViewController = content(localOnly: localOnly, initialDay: initialDay, onSend: onSend)
+                studioWindow.contentViewController = content(localOnly: localOnly, initialDay: initialDay, earliestDay: earliestDay, onSend: onSend)
                 studioWindow.setFrame(frame, display: true)
             case .keepWork:
                 model?.status = "Une analyse est déjà ouverte pour une autre journée. Fermez-la pour analyser la journée choisie."
@@ -201,7 +201,7 @@ extension Notification.Name {
             }
             studioWindow.makeKeyAndOrderFront(nil); return
         }
-        let window = NSWindow(contentViewController: content(localOnly: localOnly, initialDay: initialDay, onSend: onSend))
+        let window = NSWindow(contentViewController: content(localOnly: localOnly, initialDay: initialDay, earliestDay: earliestDay, onSend: onSend))
         window.title = ProductIdentity.windowTitle("Comprendre mon travail — Goalong History")
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(LHTheme.pageBackground)
@@ -214,13 +214,13 @@ extension Notification.Name {
         studioWindow = window
         window.center(); window.makeKeyAndOrderFront(nil)
     }
-    private func content(localOnly: Bool, initialDay: Date?, onSend: @escaping (Data) -> Void) -> NSViewController {
+    private func content(localOnly: Bool, initialDay: Date?, earliestDay: Date?, onSend: @escaping (Data) -> Void) -> NSViewController {
         let model = GoalongProfileStudioModel()
         studioModel = model; studioLocalOnly = localOnly; studioDay = initialDay.map { Calendar.current.startOfDay(for: $0) }
         let view = GoalongProfileStudio(onSend: { [weak self] data in
             self?.studioWindow?.close()
             onSend(data)
-        }, onClose: { [weak self] in self?.studioWindow?.close() }, localOnly: localOnly, initialDay: initialDay, model: model)
+        }, onClose: { [weak self] in self?.studioWindow?.close() }, localOnly: localOnly, initialDay: initialDay, earliestDay: earliestDay, model: model)
         return NSHostingController(rootView: view
             .environment(\.locale, GoalongUIFormat.locale)
             .background(LHTheme.pageBackground)
@@ -247,8 +247,9 @@ extension Notification.Name {
     init(currentRevision: @escaping () -> String = { GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision }) {
         self.currentRevision = currentRevision
     }
-    func show(localOnly: Bool = false, initialDay: Date? = nil) {
-        window.show(localOnly: localOnly, initialDay: initialDay) { [weak self] in self?.receive($0) }
+    /// `earliestDay`: first day with history; the studio's day selectors stop there (M3, UI-17A).
+    func show(localOnly: Bool = false, initialDay: Date? = nil, earliestDay: Date? = nil) {
+        window.show(localOnly: localOnly, initialDay: initialDay, earliestDay: earliestDay) { [weak self] in self?.receive($0) }
     }
     /// The privacy revision is captured when the member sends.
     func receive(_ data: Data) { pending = Share(data: data, privacyRevision: currentRevision()); onNeedsPresentation?() }
@@ -270,6 +271,8 @@ struct GoalongProfileStudio: View {
     let onSend: (Data) -> Void
     var onClose: (() -> Void)? = nil
     var localOnly = false
+    /// First day with history (M3, UI-17A): no day selector goes before it.
+    private let earliestDay: Date?
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model: GoalongProfileStudioModel
     @StateObject private var connection = GoalongSiteAnalysisModel()
@@ -287,8 +290,8 @@ struct GoalongProfileStudio: View {
     @State private var aliases = ""
     @State private var instructions = ""
     init(onSend: @escaping (Data) -> Void, onClose: (() -> Void)? = nil, localOnly: Bool = false, initialDay: Date? = nil,
-         model: GoalongProfileStudioModel? = nil) {
-        self.onSend = onSend; self.onClose = onClose; self.localOnly = localOnly
+         earliestDay: Date? = nil, model: GoalongProfileStudioModel? = nil) {
+        self.onSend = onSend; self.onClose = onClose; self.localOnly = localOnly; self.earliestDay = earliestDay
         _model = StateObject(wrappedValue: model ?? GoalongProfileStudioModel())
         let day = Calendar.current.startOfDay(for: initialDay ?? GoalongToday.now)
         _start = State(initialValue: day)
@@ -309,7 +312,7 @@ struct GoalongProfileStudio: View {
                             // Same label column for both days: the two selectors start on the same edge.
                             HStack(spacing: 8) {
                                 Text("Jour à analyser").font(.system(size: 13)).frame(width: Self.dayLabelWidth, alignment: .leading)
-                                DateSelectionControl(date: analyzedDay, onChange: selectDay, showsToday: false)
+                                DateSelectionControl(date: analyzedDay, onChange: selectDay, showsToday: false, earliest: earliestDay)
                             }
                             Toggle("Activité de ce Mac", isOn: $computer)
                             if computer {
@@ -320,7 +323,7 @@ struct GoalongProfileStudio: View {
                                         let picked = Calendar.current.startOfDay(for: day)
                                         startCapped = picked > analyzedDay
                                         start = min(picked, analyzedDay)
-                                    }, showsToday: false)
+                                    }, showsToday: false, earliest: earliestDay)
                                 }
                                 if startCapped {
                                     Text("Le début ne peut pas dépasser le jour à analyser : il revient à ce jour.")
@@ -332,7 +335,7 @@ struct GoalongProfileStudio: View {
                             if conversations {
                                 HStack(spacing: 8) {
                                     Text("Conversations actives depuis").font(.system(size: 13))
-                                    DateSelectionControl(date: conversationsFrom, onChange: { conversationsFrom = Calendar.current.startOfDay(for: $0) }, showsToday: false)
+                                    DateSelectionControl(date: conversationsFrom, onChange: { conversationsFrom = Calendar.current.startOfDay(for: $0) }, showsToday: false, earliest: earliestDay)
                                 }
                                 Text("Le jour à analyser et jusqu’à 31 jours avant. Seules les sources déjà autorisées sont lues. Les échanges éclairent vos projets et décisions, même si « Usage de l’IA » est décochée. Certains messages plus anciens peuvent venir sans heure précise.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             }
@@ -404,8 +407,10 @@ struct GoalongProfileStudio: View {
                     if model.busy { HStack { ProgressView(); Text(model.status); Button("Annuler") { model.cancel() } } }
                     else if !model.status.isEmpty { Text(model.status).font(.system(size: 12)) }
                     if let error = model.error ?? connection.error { Text(error).foregroundStyle(.red) }
-                }.padding(22)
+                }.padding(.horizontal, 22).padding(.top, 22).padding(.bottom, 24)
             }
+            // The visible scroller says « more below » when the footer covers the end of the form (R7, UI-17A, 11).
+            .scrollIndicators(.visible)
             // One lime action, at the foot: the next step of the analysis (DESIGN §9).
             GoalongSheetFooter(inset: 22) {
                 Spacer()

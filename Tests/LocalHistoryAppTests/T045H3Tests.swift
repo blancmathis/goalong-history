@@ -295,6 +295,20 @@
             XCTAssertNil(DateSelectionControl.steppedDay(from: now, by: 1, now: now, calendar: calendar), "Tomorrow stays out of reach")
             XCTAssertNotNil(DateSelectionControl.steppedDay(from: now, by: -1, now: now, calendar: calendar))
         }
+        /// M3 (UI-17A): « Jour précédent » never goes before the first day with history, whatever its hour.
+        func testPreviousDayStopsAtTheFirstDayWithHistory() throws {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "Europe/Paris")!
+            let first = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 20, hour: 18)))
+            let shown = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 21, hour: 9)))
+            let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 12)))
+            let back = try XCTUnwrap(DateSelectionControl.steppedDay(from: shown, by: -1, now: now, earliest: first, calendar: calendar))
+            XCTAssertTrue(calendar.isDate(back, inSameDayAs: first))
+            XCTAssertNil(DateSelectionControl.steppedDay(from: back, by: -1, now: now, earliest: first, calendar: calendar))
+            XCTAssertTrue(DateSelectionControl.isAtEarliest(back, earliest: first, calendar: calendar))
+            XCTAssertFalse(DateSelectionControl.isAtEarliest(shown, earliest: first, calendar: calendar))
+            XCTAssertNotNil(DateSelectionControl.steppedDay(from: back, by: -1, now: now, earliest: nil, calendar: calendar))
+        }
         /// H3-03: « Bilan du soir » says the end of day replaces it, but the end of day only runs on its
         /// weekdays. On the other days the evening review never came at all.
         @MainActor func testEveningReviewStillComesOnDaysWithoutEndOfDay() throws {

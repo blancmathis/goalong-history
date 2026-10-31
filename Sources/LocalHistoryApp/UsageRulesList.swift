@@ -61,17 +61,18 @@
             VStack(alignment: .leading, spacing: 12) {
                 controls
                 if filteredItems.isEmpty {
-                    // Read-only state on the page, not in a card; the sentence adds to the title (UI-13B).
-                    EmptyStateView(
-                        symbol: "app.dashed",
+                    // Read-only state on the page, not in a card; the sentence adds to the title (UI-13B). The thread
+                    // alone, on the leading edge like every other empty state (R7, UI-17A, 55: no dashed square).
+                    GoalongEmptyState(
                         title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
                         message: model.snapshot.trackedUsage.isEmpty
                             ? (recordingEnabled
                                 ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
                                 : "Activez l’enregistrement pour régler ici ce que chaque partage montre.")
                             : "Essayez une autre app, un autre site ou une autre catégorie."
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 240)
+                    ) { EmptyView() }
+                    .padding(.top, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 16) {

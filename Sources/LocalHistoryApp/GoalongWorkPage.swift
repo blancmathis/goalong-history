@@ -34,7 +34,8 @@ import SwiftUI
                 if !work.definition.isEmpty {
                     agentCard
                     GoalongWorkReviewCard(review: review, focusTask: Self.reviewFocusTask,
-                                          loadsOnAppear: Self.reviewFocusTask != nil)
+                                          loadsOnAppear: Self.reviewFocusTask != nil,
+                                          earliestDay: model.snapshot.availableDays.min())
                 }
                 GoalongDisclosureGroup("Comment fonctionne le classement ?") { explanation.padding(.top, 10) }
                     .font(.system(size: 13))
@@ -259,6 +260,8 @@ import SwiftUI
     @State private var expanded: Set<String>
     private let focusTask: String?
     private let loadsOnAppear: Bool
+    /// First day with history: the day selector stops there (M3, UI-17A).
+    private let earliestDay: Date?
     @State private var naming: GoalongWorkReviewModel.Row?
     @State private var renaming: String?
     @State private var renameRefusal: String?
@@ -274,12 +277,14 @@ import SwiftUI
 
     /// Opened from Activité, the review starts on the day shown there, already loaded,
     /// with the task the user clicked first and unfolded.
-    init(review: GoalongWorkReviewModel, day: Date = GoalongToday.now, focusTask: String? = nil, loadsOnAppear: Bool = false) {
+    init(review: GoalongWorkReviewModel, day: Date = GoalongToday.now, focusTask: String? = nil, loadsOnAppear: Bool = false,
+         earliestDay: Date? = nil) {
         _review = ObservedObject(wrappedValue: review)
         _day = State(initialValue: day)
         _expanded = State(initialValue: focusTask.map { ["task|" + $0] } ?? [])
         self.focusTask = focusTask
         self.loadsOnAppear = loadsOnAppear
+        self.earliestDay = earliestDay
     }
 
     private var groups: [ReviewGroup] {
@@ -307,7 +312,7 @@ import SwiftUI
     var body: some View {
         GoalongSettingsGroup(title: "Vérifier et corriger") {
             HStack(spacing: 12) {
-                DateSelectionControl(date: day, onChange: { day = $0 }, showsToday: false)
+                DateSelectionControl(date: day, onChange: { day = $0 }, showsToday: false, earliest: earliestDay)
                 Button(review.loadedDay == nil ? "Afficher le classement" : "Actualiser") { review.load(day: day) }
                     .buttonStyle(LHSecondaryButtonStyle()).disabled(review.loading).accessibilityIdentifier("work-review-load")
                 if review.loading { ProgressView().controlSize(.small) }

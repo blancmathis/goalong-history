@@ -69,6 +69,7 @@ struct GoalongAnalyticsPage: View {
         VStack(spacing: 0) {
             GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
                 shareBlockedReason: shareBlockedReason,
+                earliestDay: previewActive ? nil : model.snapshot.availableDays.min(),
                 onDay: { day in updateSelection { $0.selectDay(day) } },
                 onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
                 onStep: { direction in updateSelection { $0.step(direction) } },
@@ -203,7 +204,7 @@ struct GoalongAnalyticsPage: View {
             Button("Bilan quotidien et sources…") { openRecap(navigation.day) }
             Button("Projets et avancées…") {
                 guard !previewActive else { return }
-                model.profileStudio.show(localOnly: true, initialDay: navigation.day)
+                model.profileStudio.show(localOnly: true, initialDay: navigation.day, earliestDay: model.snapshot.availableDays.min())
             }
             Button("Annuler", role: .cancel) {}
         } message: {
