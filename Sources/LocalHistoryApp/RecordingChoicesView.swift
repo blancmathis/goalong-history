@@ -149,6 +149,7 @@ extension DashboardSettingsDraft {
 struct ApplicationScopePickerButton: View {
     @Binding var text: String
     @State private var error: String?
+    init(text: Binding<String>, error: String? = nil) { _text = text; _error = State(initialValue: error) }
     var body: some View {
         Button("Choisir des applications…", action: chooseApplications)
             .buttonStyle(LHSecondaryButtonStyle())
