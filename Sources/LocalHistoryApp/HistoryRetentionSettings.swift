@@ -13,10 +13,10 @@ extension HistoryDataClass {
         case .detailedEvents: return "Activité détaillée"
         case .semanticSnapshots: return "Texte affiché"
         case .memories: return "Historique et résumés locaux"
-        case .analysisCaches: return "Fichiers temporaires d’analyse"
-        case .minuteSeals: return "Preuves de chaque minute"
+        case .analysisCaches: return "Fichiers temporaires"
+        case .minuteSeals: return "Preuves d’activité"
         case .activitySummaries: return "Résumés de journée"
-        case .anchorReceipts: return "Reçus d’horodatage"
+        case .anchorReceipts: return "Reçus de date"
         }
     }
 }
@@ -116,8 +116,9 @@ extension HistoryRetentionPolicy {
                         VStack(spacing: 0) {
                             ForEach(HistoryDataClass.allCases, id: \.self) { kind in
                                 HStack(alignment: .center, spacing: 16) {
+                                    // The title stays in ink: only the value says the row is inactive (UI-12B, 28).
                                     Text(kind.retentionTitle).font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(model.automaticCleanup ? LHTheme.text : LHTheme.secondaryText)
+                                        .foregroundStyle(LHTheme.text)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     // A duration only counts once automatic cleanup is on (UI-44). Off, the value
                                     // reads as plain text instead of a greyed menu (UI-9 C).
@@ -139,6 +140,9 @@ extension HistoryRetentionPolicy {
                             }
                         }
                     }
+                    // Plain titles above; what the proofs and receipts are stays one click away (UI-12B, 28).
+                    GoalongHelpText(lead: "Les preuves et les reçus montrent que l’historique n’a pas été modifié.",
+                                    more: "Goalong signe chaque minute enregistrée : ce sont les preuves d’activité. Un service d’horodatage date ces signatures : ce sont les reçus de date. Les fichiers temporaires sont des calculs d’analyse que Goalong peut refaire.")
                     if model.automaticCleanup && model.draft.includesProofExpiry {
                         Toggle("J’autorise aussi la suppression des preuves et reçus expirés. La vérification de ces périodes peut devenir impossible.", isOn: $proofDeletionConfirmed)
                             .toggleStyle(.goalongCheckbox)

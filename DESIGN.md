@@ -267,6 +267,8 @@ Dans `GoalongControls.swift`, sauf mention.
 - **Liste** (`GoalongSettingsList`, `GoalongSettingsLink`, `GoalongRowDivider`, `SimpleSettingsComponents.swift`) :
   lignes pleine largeur dans un groupe, glyphe neutre sans tuile, libellé, valeur, chevron qui avance au survol.
 - **Dépliant** (`GoalongDisclosureGroup`) : ligne pleine largeur, chevron qui pivote. Le chevron est à gauche. Seule exception : le chevron seul, en fin de ligne, d’un tableau à colonnes fixes (règles d’usage).
+- **Aide dépliable** (`GoalongHelpText`, `GoalongDisclosureGroup.swift`) : une phrase d’aide visible, le détail
+  derrière « En savoir plus ». Pour garder une consigne courte sans perdre l’explication.
 - **Note** (`GoalongNote`) et **bandeau** (`GoalongBanner`) : information secondaire dans un bloc teinté sans
   filet ; ton neutre, confidentialité ou avertissement.
 - **En-tête de page** (`PageHeader`, `.goalongPageTitle()`) : un titre, une phrase. Jamais de sur-titre.

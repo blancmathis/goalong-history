@@ -38,13 +38,14 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
                 // Goalong stays active even while recording is off: the title names the app, not the recording (UI-43).
-                SectionTitle(title: "Goalong en arrière-plan", subtitle: "Goalong reste actif sans garder sa fenêtre ouverte.")
+                SectionTitle(title: "Goalong en arrière-plan", subtitle: "Ce qui se passe quand la fenêtre se ferme et quand le Mac démarre.")
                 LHCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Toggle("Garder Goalong actif en arrière-plan", isOn: $keepRunning)
                             .toggleStyle(.goalongSwitch)
-                        Text("Recommandé : fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation. Aucun service supplémentaire n’est installé ; votre Mac peut toujours se mettre en veille.")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        // UI-12B (43): one sentence, without « Recommandé ».
+                        GoalongHelpText(lead: "Fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation.",
+                                        more: "Aucun service supplémentaire n’est installé. Votre Mac peut toujours se mettre en veille.")
                         Divider()
                         if login.switchValue != nil {
                             Toggle(Self.loginTitle, isOn: Binding(
@@ -70,6 +71,9 @@
                             .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("settings-login-unknown")
                         }
+                        // UI-12B (43): under the switch it concerns, in plain words.
+                        Text("Ouvrir Goalong n’allume aucune source et ne reprend pas une pause.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         switch loginWarning {
                         case .failure(let message): GoalongNote(message, tone: .warning)
                         case .unknownState: GoalongNote(login.statusDetail, tone: .warning)
@@ -86,8 +90,6 @@
                             Button("Masquer") { continuity.dismissInterruptionNotice() }
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
-                        Text("Ces options n’activent aucune source et ne reprennent pas une pause.")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }.fixedSize(horizontal: false, vertical: true)
                 }
             }
