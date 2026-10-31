@@ -187,8 +187,8 @@ struct FrozenMacShield: View {
                         Text(clock(freeze.end.timeIntervalSince(now)))
                             .font(.system(size: 96, weight: .bold).monospacedDigit()).tracking(-3)
                             .accessibilityLabel("Temps restant : \(BlockingFormat.remaining(freeze.end.timeIntervalSince(now)))")
-                        // The line under the figure says what it counts: the time left, and when it ends.
-                        Label("Temps restant, Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
+                        // The figure is the time left (said to VoiceOver); the line under it says when it ends (UI-16C, 47).
+                        Label("Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
                             .font(.system(size: 17, weight: .semibold))
                     }
                     BlockingSessionThread(start: freeze.start, end: freeze.end, now: now, locked: true).frame(width: 440)

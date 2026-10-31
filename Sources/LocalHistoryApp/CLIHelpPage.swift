@@ -323,6 +323,7 @@
                 return installationReport.detail + " Exécutable de Goalong Dev : " + path
             case .missing:
                 // The « … collez cette ligne dans le Terminal : » part is said right above the line.
+                // GoalongCLIInstallationTests pins the « : » ending this check relies on (UI-16C, screen 36).
                 return installationReport.detail.hasSuffix(":")
                     ? "L’installation de l’app et ses mises à jour ne créent pas la commande goalong."
                     : installationReport.detail
