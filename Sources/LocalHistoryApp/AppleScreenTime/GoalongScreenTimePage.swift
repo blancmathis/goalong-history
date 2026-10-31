@@ -263,8 +263,7 @@ struct GoalongScreenTimePage: View {
                                 Spacer(minLength: 10)
                                 Text(duration(row.seconds)).font(.system(size: 14, weight: .semibold)).monospacedDigit()
                             }.padding(.horizontal, 18).padding(.vertical, 12).accessibilityElement(children: .combine)
-                            // UI-15C (15): rules start at the card's content edge, like the one under the search field.
-                            if row.id != visible.last?.id { Divider().padding(.horizontal, 18) }
+                            if row.id != visible.last?.id { Divider().padding(.leading, 68) }
                         }
                     }
                 }

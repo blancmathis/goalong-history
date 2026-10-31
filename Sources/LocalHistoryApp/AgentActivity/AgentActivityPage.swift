@@ -656,7 +656,7 @@
                         : (status.otherExecutablePath != nil
                             ? (status.otherExecutableExists ? "Installé pour une autre copie" : "Intégration cassée")
                             : "Lecture périodique"),
-                    symbol: status.isInstalled ? "bolt.shield.fill" : "bolt.slash",
+                    symbol: status.isInstalled ? "bolt.shield.fill" : "clock.arrow.circlepath",
                     tint: status.isInstalled ? LHTheme.success : Color.secondary
                 )
                 if status.isInstalled {
