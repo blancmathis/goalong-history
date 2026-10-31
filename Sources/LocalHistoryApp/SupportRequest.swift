@@ -95,7 +95,7 @@ enum SupportReportStore {
 
     func prepare() {
         guard phase != .preparing else { return }
-        phase = .preparing; feedback = nil
+        phase = .preparing; feedback = nil; emailUnavailable = false
         let live = SupportDiagnosticsRuntime.shared.snapshot()
         let previousBuild = SupportDiagnosticsRuntime.shared.previousWorkingBuildProvider?()
         Task {
