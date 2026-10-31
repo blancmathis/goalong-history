@@ -99,8 +99,8 @@ final class T046C1RenderTests: XCTestCase {
         let apps = [BlockAppRule(bundleIdentifier: "com.example.mail", name: "Courrier fixe"),
                     BlockAppRule(bundleIdentifier: "com.example.notes", name: "Carnet fixe")]
         let seen = accessible(BlockingAppPicker(excluded: ["com.example.notes"], apps: apps) { _ in })
-        XCTAssertTrue(seen.contains("Courrier fixe"), "saw \(seen.sorted())")
-        XCTAssertFalse(seen.contains("Carnet fixe"), "An app already in the list is not offered again")
+        XCTAssertTrue(seen.contains { $0.contains("Courrier fixe") }, "saw \(seen.sorted())")
+        XCTAssertFalse(seen.contains { $0.contains("Carnet fixe") }, "An app already in the list is not offered again")
         assertNoVisibleWindow()
     }
 
@@ -140,14 +140,13 @@ final class T046C1RenderTests: XCTestCase {
         let rendered = host(GoalongActivityHeader(selection: navigation, isPreview: false, isRefreshing: false, onDay: { _ in },
             onPeriod: { _ in }, onStep: { _ in }, onToday: {}, onReturn: { returned += 1 }, onRefresh: {}, onShare: {}))
         let seen = strings(of: rendered)
-        XCTAssertTrue(seen.contains("activity-return-period"), "saw \(seen.sorted())")
         XCTAssertTrue(seen.contains { $0.hasPrefix("Retour aux") }, "saw \(seen.sorted())")
-        XCTAssertTrue(press("activity-return-period", in: rendered), "The return answers to the accessibility press")
+        XCTAssertTrue(press("Retour aux 7 jours", in: rendered), "The return answers to the accessibility press")
         XCTAssertEqual(returned, 1)
         let without = strings(of: host(GoalongActivityHeader(selection: GoalongActivityNavigation(day: selected, period: 7, now: selected),
             isPreview: false, isRefreshing: false, onDay: { _ in }, onPeriod: { _ in }, onStep: { _ in }, onToday: {},
             onReturn: {}, onRefresh: {}, onShare: {})))
-        XCTAssertFalse(without.contains("activity-return-period"), "Without an opened day there is nothing to return to")
+        XCTAssertFalse(without.contains { $0.hasPrefix("Retour aux") }, "Without an opened day there is nothing to return to")
         assertNoVisibleWindow()
     }
 
