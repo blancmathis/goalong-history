@@ -406,6 +406,26 @@ case "status-item":
     let status = AXUIElementPerformAction(item, kAXPressAction as CFString)
     print("status-item -> \(describe(item)) : \(status.rawValue)")
     exit(status == .success ? 0 : 4)
+case "close-popover":
+    // L3m: the menu bar window (untitled, no close button) stayed open over Safari and the AX tree went mute (L3l,
+    // S3 2/3, J-0903): `si` toggles it inside navigate's subshell, so cleanup never knew it was open. Press the status
+    // item only while that window exists (a blind toggle opens it), then Escape on it as a last resort.
+    let a = app(args[2])
+    func menuBarWindows() -> [AXUIElement] {
+        ((attr(a, kAXWindowsAttribute) as? [AXUIElement]) ?? []).filter { w in
+            text(w, kAXTitleAttribute).isEmpty && attr(w, kAXCloseButtonAttribute) == nil
+                && !["AXDialog", "AXSystemDialog"].contains(text(w, kAXSubroleAttribute))
+        }
+    }
+    var presses = 0
+    for _ in 0..<2 where !menuBarWindows().isEmpty {
+        guard let extras = attr(a, "AXExtrasMenuBar"), let item = children(extras as! AXUIElement).first else { break }
+        AXUIElementPerformAction(item, kAXPressAction as CFString); usleep(800_000); presses += 1
+    }
+    if let w = menuBarWindows().first { AXUIElementPerformAction(w, kAXRaiseAction as CFString); postKey(0x35); usleep(500_000) }
+    let left = menuBarWindows().count
+    print("close-popover: \(presses) press(es), \(left) left")
+    exit(left == 0 ? 0 : 4)
 case "windows":
     let pid = NSRunningApplication.runningApplications(withBundleIdentifier: args[2]).first?.processIdentifier ?? -1
     let list = (CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]) ?? []

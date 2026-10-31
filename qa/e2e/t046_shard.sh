@@ -24,12 +24,27 @@ tmo() { local s="$1"; shift; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; }
 # a child (an osascript dialog, say) cannot keep the output pipe open after its shell is killed.
 tmog() { perl -e '$s=shift; $p=fork; if(!$p){setpgrp(0,0); exec @ARGV; exit 127}
   $SIG{ALRM}=sub{kill "KILL",-$p; waitpid($p,0); exit 142}; alarm $s; waitpid($p,0); exit($?>>8)' "$1" "${@:2}"; }
-drv() { tmo 40 "$DRIVER" "$@"; }
+# L3m: a row has ROW_MAX seconds; past its deadline every driver call fails at once (exit 142), so a mute AX tree
+# costs one row, not the job (L3l: three jobs hit 125 min).
+ROW_END=0; ROW_MAX=150
+drv() { if (( ROW_END > 0 && $(date +%s) > ROW_END )); then return 142; fi; tmo 40 "$DRIVER" "$@"; }
 
 log "== shard $SHARD slice $SLICE, $(date -u +%FT%TZ), commit $(git -C "$HERE" rev-parse --short HEAD)"
 log "Sources/ Tests/ vs 973ff6a: $(git -C "$HERE" diff --stat 973ff6a -- Sources Tests | tail -1)"
 xcrun swiftc -O "$HERE/ax_driver.swift" -o "$DRIVER" || { log "driver build failed"; exit 1; }
-python3 -I "$HERE/t046_plan.py" "$HERE/t046-rows.tsv" "$(git -C "$HERE" rev-parse --show-toplevel)" "$SHARD" "$OUT/plan-all.tsv" | tee -a "$SUMMARY"
+# L3m: Blocage rows (screen Blocage…, or a nav through the Blocage page) run in their own job SB, the only one with
+# the Blocage seed (an active block and a locked list changed other pages, and the AX tree went mute in L3l).
+blk='$9 ~ /^Blocage/ || $3 ~ /blocking/'
+if [[ $SHARD == SB ]]; then
+  : > "$OUT/plan-all.tsv"
+  for s in S1 S2 S3; do
+    python3 -I "$HERE/t046_plan.py" "$HERE/t046-rows.tsv" "$(git -C "$HERE" rev-parse --show-toplevel)" "$s" "$OUT/plan-$s.tsv" | tee -a "$SUMMARY"
+    awk -F'\t' "$blk" "$OUT/plan-$s.tsv" >> "$OUT/plan-all.tsv"
+  done
+else
+  python3 -I "$HERE/t046_plan.py" "$HERE/t046-rows.tsv" "$(git -C "$HERE" rev-parse --show-toplevel)" "$SHARD" "$OUT/plan-raw.tsv" | tee -a "$SUMMARY"
+  if [[ $SHARD == S4 ]]; then cp "$OUT/plan-raw.tsv" "$OUT/plan-all.tsv"; else awk -F'\t' "!($blk)" "$OUT/plan-raw.tsv" > "$OUT/plan-all.tsv"; fi
+fi
 total=$(wc -l < "$OUT/plan-all.tsv"); part=${SLICE%/*}; parts=${SLICE#*/}
 from=$(( (part - 1) * total / parts + 1 )); to=$(( part * total / parts ))
 sed -n "${from},${to}p" "$OUT/plan-all.tsv" > "$OUT/plan.tsv"
@@ -42,17 +57,18 @@ launch() { open "$APP"; sleep 8; pgrep -x "$EXE" >/dev/null; }
 quit_app() {
   osascript -e "tell application id \"$BUNDLE\" to quit" >/dev/null 2>&1; sleep 4
   pgrep -x "$EXE" >/dev/null && { pkill -TERM -x "$EXE"; sleep 4; }
+  pgrep -x "$EXE" >/dev/null && { pkill -KILL -x "$EXE"; sleep 2; }  # L3m: runner VM only (a mute app ignores TERM).
   true
 }
-front() { osascript -e "tell application id \"$BUNDLE\" to activate" >/dev/null 2>&1; sleep 0.4; }
+front() { tmo 15 osascript -e "tell application id \"$BUNDLE\" to activate" >/dev/null 2>&1; sleep 0.4; }
 esc() { front; osascript -e 'tell application "System Events" to key code 53' >/dev/null 2>&1; sleep 0.8; }
-panel=0
+panel=0; mute=0
 press3() { local i; for i in 1 2 3; do drv press "$BUNDLE" "$@" >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 open_dashboard() { drv press "$BUNDLE" "Ouvrir Goalong Dev" AXButton >/dev/null 2>&1 || drv press "$BUNDLE" "Ouvrir" >/dev/null 2>&1; sleep 3; }
 cleanup() {
   drv dismiss-alerts "$BUNDLE" sheets >/dev/null 2>&1
   esc
-  [[ $panel == 1 ]] && { drv status-item "$BUNDLE" >/dev/null 2>&1; sleep 1; panel=0; }
+  drv close-popover "$BUNDLE" >/dev/null 2>&1; panel=0  # L3m: `si` runs in a subshell, $panel was never reliable.
   drv close-extra "$BUNDLE" "Goalong History — Dev" >/dev/null 2>&1
   true
 }
@@ -135,17 +151,24 @@ pick_of() { local c; for c in "$@"; do [[ $c == pick:* ]] && { printf '%s' "${c#
 ui_row() { # id kind nav mode role needle action
   local id="$1" kind="$2" navs="$3" mode="$4" role="$5" needle="$6" action="$7" miss out st verdict cause
   pgrep -x "$EXE" >/dev/null || { launch; open_dashboard; }
-  front; CUR="$id"
+  # L3m: no menu bar window and no extra window left by an earlier row, Goalong Dev in front.
+  drv close-popover "$BUNDLE" >/dev/null 2>&1; drv close-extra "$BUNDLE" "Goalong History — Dev" >/dev/null 2>&1
+  front; CUR="$id"; ROW_END=$(( $(date +%s) + ROW_MAX ))
   # L3j: every row starts clean: an alert or sheet left by an earlier row (J-0863) is closed first.
   local pre; pre="$(drv dismiss-alerts "$BUNDLE" sheets 2>&1)"
   [[ $pre == *"dismissed 0 alert(s)"* || -z $pre ]] || { log "[$id] start: ${pre//$'\n'/ ; }"; sleep 1; }
   eval "set -- $navs"
   miss="$(navigate "$@")"
   out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" "$([[ $kind == trigger ]] && echo 0 || echo 3)" "$(expect_of "$@")" "$(pick_of "$@")" 2>&1)"; st=$?
+  local late=$(( $(date +%s) > ROW_END )); ROW_END=0
   sleep 0.5; rowshot "$id"
   read -r verdict cause <<< "$(row_verdict "$kind" "$st")"; cause="${cause#-}"
+  [[ $st == 142 ]] && ((late)) && cause="row-timeout-${ROW_MAX}s"
   [[ -n $miss && $verdict != pass ]] && cause="nav($miss)$cause"  # L3e: N/A rows show their nav miss too.
   record "$id" "$verdict" "rows/$id.png" "rows/ax/$id.txt" "$cause" "$out"
+  # L3m: two mute rows in a row: restart the app (data stays on disk), so the next rows are measured.
+  if [[ $st == 142 ]]; then mute=$((mute + 1)); else mute=0; fi
+  if (( mute >= 2 )); then log "[$id] AX tree mute twice: app restarted"; quit_app; launch; open_dashboard; mute=0; fi
   cleanup
   # L3h: a press that opened System Settings (or a Finder window, J-0365) leaves it in front: close it, app in front.
   if pgrep -x "System Settings" >/dev/null; then osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1; sleep 1; front; fi
@@ -235,7 +258,7 @@ launch; drv status-item "$BUNDLE" >/dev/null 2>&1; panel=1; sleep 2; open_dashbo
 log "== recording on, modules on, synthetic activity"
 log "nav miss: $(navigate pane:recording p:source-localComputerHistory w:3 o:recording-setup-confirm w:2)"; cleanup
 # L3k: the Blocage seed must exist before the module loads it (BlockingController reads it once).
-python3 -I "$HERE/seed_blocking.py" "$DATA" >> "$SUMMARY" 2>&1 || log "blocking seed failed"
+if [[ $SHARD == SB ]]; then python3 -I "$HERE/seed_blocking.py" "$DATA" >> "$SUMMARY" 2>&1 || log "blocking seed failed"; fi
 log "nav miss: $(navigate pane:modules "set:settings-module-concentration 1" "set:settings-module-blocking 1" \
   "set:settings-module-braise 1" "set:settings-module-ambiance 1" w:2)"; cleanup
 # L3b: planned tasks and today's commitment through the app's own CLI (it talks to the running app), and the
