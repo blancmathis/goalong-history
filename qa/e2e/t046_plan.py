@@ -286,6 +286,16 @@ def main():
     if only is not None:
         only |= disc
     rows = [l.rstrip("\n").split("\t") for l in open(rows_path, encoding="utf-8")][1:]
+    # L3n extension point: t046-rows.d/<lot>.tsv (same 7 columns) replaces a catalogue row by id (fixed label or screen).
+    fix = {}
+    side = os.path.join(os.path.dirname(os.path.abspath(__file__)), "t046-rows.d")
+    if os.path.isdir(side):
+        for name in sorted(os.listdir(side)):
+            if name.endswith(".tsv"):
+                for l in open(os.path.join(side, name), encoding="utf-8"):
+                    if l.strip() and not l.startswith("#"):
+                        f = l.rstrip("\n").split("\t"); fix[f[0]] = f
+    rows = [fix.get(r[0], r) for r in rows]
     plan = []
     for r in rows:
         r += [""] * (7 - len(r))

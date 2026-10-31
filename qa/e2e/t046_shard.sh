@@ -151,6 +151,16 @@ pick_of() { local c; for c in "$@"; do [[ $c == pick:* ]] && { printf '%s' "${c#
 
 # L3n lot 5: seed:NAME puts one failure or account state in place in the middle of a row (fixed list, no eval);
 # ui_row undoes every seed after the row (row_unseed). Sources: L3-na-analyse.tsv, /tmp/l3n/seeds.md (research, file:line).
+# L3n extension point: seed:NAME not listed in row_seed runs qa/e2e/seed.d/NAME.sh seed (then NAME.sh unseed after the row),
+# env DATA BUNDLE GOALONG OUT, 60 s max, output in summary.txt. Exit 0 = seeded; 3 = seeded, restart the app (state read
+# at launch); other = nav miss. One file per seed, written by a helper; row_seed's own cases win on a name clash.
+seed_ext() { # seed|unseed NAME
+  [[ $2 =~ ^[a-z0-9-]+$ && -f "$HERE/seed.d/$2.sh" ]] || return 1
+  local rc; DATA="$DATA" BUNDLE="$BUNDLE" GOALONG="$GOALONG" OUT="$OUT" tmo 60 bash "$HERE/seed.d/$2.sh" "$1" >> "$SUMMARY" 2>&1; rc=$?
+  log "[$CUR] seed.d/$2.sh $1: exit $rc"
+  if [[ $rc == 3 ]]; then quit_app; launch; open_dashboard; front; rc=0; fi
+  return $rc
+}
 row_seed() {
   local tok
   case "$1" in
@@ -172,7 +182,7 @@ row_seed() {
       mkdir -p "$DATA/Focus/plans"; printf '{bad' > "$DATA/Focus/plans/2020-01-01.json"; chmod 600 "$DATA/Focus/plans/2020-01-01.json" ;;
     consent-lock) chflags uchg "$DATA/capability-consent.json" ;;  # consent writes fail (CapabilityConsentStore persist)
     data-ro) chmod 500 "$DATA" ;;  # new files in the data folder fail (exclusions, global pause); undone after the row
-    *) return 1 ;;
+    *) seed_ext seed "$1" || return 1 ;;
   esac
   echo "$1" >> "$OUT/.seeded"; sleep 1  # navigate runs in a subshell: the list lives in a file
 }
@@ -188,6 +198,7 @@ row_unseed() {
     analysis-link) [[ -L "$DATA/analysis/$(date +%F).analysis.json" ]] && rm -f "$DATA/analysis/$(date +%F).analysis.json" ;;
     task-commit) tmo 60 "$GOALONG" --root "$DATA" commitment set --day today --kind work --target 2h >> "$SUMMARY" 2>&1 ;;
     plan-bad) rm -f "$DATA/Focus/plans/2020-01-01.json" ;;
+    *) seed_ext unseed "$s" ;;
   esac; done
   log "[$CUR] seeded and undone: $(sort -u "$OUT/.seeded" | tr '\n' ' ')"; rm -f "$OUT/.seeded"
 }
