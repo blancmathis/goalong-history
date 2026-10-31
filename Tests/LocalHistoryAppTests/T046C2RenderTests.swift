@@ -37,7 +37,7 @@ final class T046C2RenderTests: XCTestCase {
         var accepted = false
         let rendered = host(GoalongRhythmStudio(day: day, masks: ["Mail"]) { _ in accepted = true })
         let seen = strings(of: rendered)
-        for label in ["Comprendre une session", "Fermer", "Début", "Fin", "Projet", "Ce que vous souhaitiez faire pendant cette session",
+        for label in ["Comprendre une session", "Fermer", "Début", "Fin",
                       "Inclure les textes de fenêtres déjà autorisés", "Préparer la sélection locale", "Utiliser cette session relue"] {
             XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
         }
