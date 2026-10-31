@@ -465,3 +465,13 @@ J-0769	nav:history p:"Ce Mac" w:2
 J-0919	pane:home w:1 "tk:Rechercher=zz" w:1
 J-0946	nav:cli w:2 "ex:Commande copiée"
 J-0947	nav:cli w:2 "ex:Commande copiée"
+J-0044	nav:concentration p:"Distractions" w:2 "pp:blocking-list-T046 Ralentir" w:2
+J-0045	nav:concentration p:"Distractions" w:2 "pp:blocking-list-T046 Ralentir" w:2
+J-0046	nav:concentration p:"Distractions" w:2 "pp:blocking-list-T046 Réseaux" w:2 o:blocking-list-more w:1
+J-0049	nav:concentration p:"Distractions" w:2 "pp:blocking-list-T046 Réseaux" w:2 o:blocking-list-more w:1
+J-0052	nav:concentration p:"Distractions" w:2 "pp:blocking-list-T046 Jetable" w:2 o:blocking-list-more w:1 pb:Supprimer w:2
+J-0016	nav:concentration p:"Programme" w:2 p:"Bloquer autre chose" w:2
+J-0026	nav:concentration p:"Programme" w:2 o:blocking-protection w:2
+J-0027	nav:concentration p:"Programme" w:2 o:blocking-protection w:2
+J-0032	nav:concentration p:"Programme" w:2 o:blocking-protection w:2
+J-0036	nav:concentration p:"Distractions" w:2

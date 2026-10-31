@@ -13,6 +13,7 @@ lists=[
  {"id":A,"name":"T046 Réseaux","mode":"block","sites":[{"pattern":"t046-social.example"}],"apps":[],
   "program":{"ranges":[rng()]},"breaks":{"count":2,"minutes":5},"quotaMinutesPerDay":60},
  {"id":B2,"name":"T046 Vidéo","mode":"block","sites":[{"pattern":"t046-video.example"}],"apps":[],"program":{"ranges":[]}},
+ {"id":u(),"name":"T046 Jetable","mode":"block","sites":[{"pattern":"t046-spare.example"}],"apps":[],"program":{"ranges":[]}},  # L3n: J-0052 deletes it
  {"id":C2,"name":"T046 Ralentir","mode":"block","sites":[{"pattern":"t046-slow.example"}],"apps":[],"program":{"ranges":[]},
   "action":"slowDown","slowDownSeconds":5,"continueMinutes":2},
 ]

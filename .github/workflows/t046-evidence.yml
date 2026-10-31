@@ -123,8 +123,7 @@ jobs:
       max-parallel: 5
       matrix:
         include:
-          # L3n lot 1: Blocage rows (SB, with the Blocage seed) + J-0228/J-0858 (S3, no seed).
-          - { shard: S3, slice: 1/1 }
+          # L3n lot 2: Blocage rows only (SB, with the Blocage seed).
           - { shard: SB, slice: 1/2 }
           - { shard: SB, slice: 2/2 }
     steps:

@@ -1,15 +1,12 @@
-# L3n lot 1: Blocage screens (nav = Concentration › Programme tab in ui-int5) + J-0228/J-0858 out of SB = 48 rows.
+# L3n lot 2: Blocage rows still failing after lot 1 (run 41220255354), with the main-window guard and list-editor / protection navs.
 J-0001
-J-0003
 J-0009
 J-0010
 J-0011
 J-0012
 J-0013
 J-0016
-J-0020
 J-0021
-J-0023
 J-0026
 J-0027
 J-0030
@@ -31,8 +28,6 @@ J-0071
 J-0073
 J-0074
 J-0075
-J-0228
-J-0858
 J-0894
 J-0896
 J-0897

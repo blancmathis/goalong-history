@@ -153,6 +153,9 @@ ui_row() { # id kind nav mode role needle action
   pgrep -x "$EXE" >/dev/null || { launch; open_dashboard; }
   # L3m: no menu bar window and no extra window left by an earlier row, Goalong Dev in front.
   drv close-popover "$BUNDLE" >/dev/null 2>&1; drv close-extra "$BUNDLE" "Goalong History — Dev" >/dev/null 2>&1
+  # L3n: in run 41220255354 (SB 2/2) the main window was gone before the first row and no row reopened it.
+  drv dump "$BUNDLE" "$OUT/.win.txt" >/dev/null 2>&1
+  grep -q "role=AXWindow | title=Goalong History — Dev" "$OUT/.win.txt" || { log "[$id] start: main window absent, reopened"; drv status-item "$BUNDLE" >/dev/null 2>&1; sleep 2; open_dashboard; drv close-popover "$BUNDLE" >/dev/null 2>&1; front; }
   front; CUR="$id"; ROW_END=$(( $(date +%s) + ROW_MAX ))
   # L3j: every row starts clean: an alert or sheet left by an earlier row (J-0863) is closed first.
   local pre; pre="$(drv dismiss-alerts "$BUNDLE" sheets 2>&1)"
