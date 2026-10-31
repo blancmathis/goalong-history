@@ -13,7 +13,7 @@ import SwiftUI
             ConcentrationPageContent(controller: controller)
         } else {
             if !modules.isEnabled(.concentration) || runtime.error == nil {
-                GoalongModuleOffNote(module: .concentration, text: "Séances, Pomodoro, plan du jour et bilan. Le module est désactivé.")
+                GoalongModuleOffNote(module: .concentration, text: "Activez-le pour lancer des séances et des Pomodoro, préparer le plan du jour et lire le bilan.")
             } else {
                 Text("Concentration n’a pas pu démarrer. Vos données restent intactes.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)

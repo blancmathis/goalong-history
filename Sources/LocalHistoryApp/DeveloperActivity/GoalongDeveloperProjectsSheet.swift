@@ -6,9 +6,16 @@ import SwiftUI
 /// « Choisir les projets… »: the repositories whose Git history and file counts Goalong reads.
 @MainActor struct GoalongDeveloperProjectsSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var developer = GoalongDeveloperModel()
+    @StateObject private var developer: GoalongDeveloperModel
     @State private var problem: String?
     @State private var revision = 0
+    /// A model given by a test or the gallery is shown as is: it never reads the real data nor the agents.
+    private let readsAgents: Bool
+
+    init(developer: GoalongDeveloperModel? = nil) {
+        _developer = StateObject(wrappedValue: developer ?? GoalongDeveloperModel())
+        readsAgents = developer == nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,7 +61,7 @@ import SwiftUI
         }
         .frame(minWidth: 560, idealWidth: 620, minHeight: 380, idealHeight: 480)
         .background(Button("") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
-        .task(id: revision) { await developer.refresh(day: GoalongToday.now) }
+        .task(id: revision) { if readsAgents { await developer.refresh(day: GoalongToday.now) } }
         .accessibilityIdentifier("developer-projects-sheet")
     }
 

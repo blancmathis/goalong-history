@@ -439,8 +439,8 @@
 
         /// Shown instead of changing the agents' shared hook files from Goalong Dev.
         static let devHookChangeRefused = (
-            title: "Hooks gérés par Goalong installé",
-            message: "Goalong Dev ne modifie pas les relais des agents : ils sont partagés avec Goalong installé. Installez-les ou retirez-les depuis Goalong installé."
+            title: "Détection immédiate gérée par Goalong installé",
+            message: "Goalong Dev ne modifie pas la détection immédiate : elle est partagée avec Goalong installé. Activez-la ou retirez-la depuis Goalong installé."
         )
 
         /// False (and an alert) in Goalong Dev: the hooks belong to the installed Goalong.
@@ -460,10 +460,10 @@
                     DispatchQueue.main.async {
                         self.integrationStatuses = statuses
                         self.alert = AgentActivityAlert(
-                            title: "\(kind.frenchName) installé",
+                            title: "Détection immédiate activée pour \(kind.frenchName)",
                             message: kind == .codexHooks
-                                ? "Les relais n’envoient qu’un signal de relance ; le texte des conversations reste dans Codex. Relancez Codex, puis approuvez le relais Goalong depuis /hooks si Codex le demande."
-                                : "Les relais n’envoient qu’un signal de relance ; le texte des conversations reste chez l’outil d’origine. Relancez l’agent s’il est déjà ouvert."
+                                ? "Goalong reçoit seulement un signal ; le texte des conversations reste dans Codex. Relancez Codex, puis acceptez Goalong si Codex le demande (commande /hooks)."
+                                : "Goalong reçoit seulement un signal ; le texte des conversations reste dans l’outil. Relancez l’outil s’il est déjà ouvert."
                         )
                     }
                 } catch {
@@ -482,9 +482,9 @@
                     DispatchQueue.main.async {
                         self.integrationStatuses = statuses
                         self.alert = AgentActivityAlert(
-                            title: "\(kind.frenchName) retiré",
+                            title: "Détection immédiate retirée pour \(kind.frenchName)",
                             message:
-                                "L’index léger reste disponible ; Goalong ne conserve aucune copie des conversations."
+                                "Goalong regarde à nouveau vos dossiers de temps en temps. Il ne garde aucune copie des conversations."
                         )
                     }
                 } catch {

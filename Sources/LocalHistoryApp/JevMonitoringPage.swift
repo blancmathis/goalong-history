@@ -83,7 +83,7 @@ struct JevActivationAvailability: Equatable {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Jev").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
-                        Text("Facultatif. Jev est le service d’analyse partenaire de Goalong. Il vous rappelle votre projet quand une distraction est détectée de façon fiable.")
+                        Text("Facultatif. Jev, service payant de la société TypeSafe, vous rappelle votre projet quand il détecte une distraction de façon fiable.")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -112,8 +112,8 @@ struct JevActivationAvailability: Equatable {
                         .accessibilityIdentifier("jev-status")
                 }
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
-                // UI-56: « Quand » only matters once Jev is on.
-                JevScopeControl().disabled(!enabled)
+                // UI-56: « Quand » only matters once Jev is on (UI-11A: and connected).
+                JevScopeControl().disabled(!enabled || !availability.hasKey)
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 connectionRow
                 if !availability.localHistoryEnabled {
@@ -149,10 +149,10 @@ struct JevActivationAvailability: Equatable {
     private var connectionRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                // UI-9 (5): plain words, no « API »; TypeSafe is named once, as the company that bills Jev.
+                // UI-9 (5): plain words, no « API ». UI-11A (5): Jev is explained once, in the card's header.
                 Text(monitor.hasKey ? "Jev est connecté" : "Jev n’est pas connecté")
                     .font(.system(size: 13, weight: .medium))
-                Text(monitor.hasKey ? "Usage facturé par TypeSafe, la société qui fournit Jev." : "Jev est un service payant de la société TypeSafe. Votre clé d’accès reste sur ce Mac.")
+                Text(monitor.hasKey ? "L’usage est facturé par TypeSafe." : "Votre clé d’accès reste sur ce Mac.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 8)

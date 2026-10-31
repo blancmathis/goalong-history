@@ -180,7 +180,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     }
     var selectionHint: String? {
         if loading { return "Lecture de la journée…" }
-        if catalog == nil { return "Aucune journée disponible. Actualisez ou choisissez une autre date." }
+        if catalog == nil { return "Aucune journée disponible. Réessayez ou choisissez une autre date." }
         return draft.validationMessage
     }
     func invalidate() { preview = nil; reviewed = false; error = nil; status = nil }

@@ -65,14 +65,14 @@ import SwiftUI
                 // Concentration's data delete sits in its own row, not under every module.
                 // Says which data stay on this Mac before offering to delete them (UI-46), then the link on its own line (UI-9 C).
                 if module == .concentration {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(Self.concentrationKeptData).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Button("Supprimer…", role: .destructive) { confirmingDelete = true }
                             .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
                             .disabled(concentration.controller?.hasLockedBlock == true)
                             .accessibilityLabel("Supprimer les données Concentration")
-                    }.padding(.top, 2)
+                    }.padding(.top, 2).padding(.bottom, 6) // The red link keeps clear of the row's divider (UI-11C).
                 }
             }
             Spacer(minLength: 12)

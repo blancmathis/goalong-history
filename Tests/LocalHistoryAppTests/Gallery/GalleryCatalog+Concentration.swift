@@ -54,7 +54,7 @@ extension GalleryCatalog {
             },
             page("concentration-maintenant/module-coupe", height: 300) { _ in
                 tab(.concentration, GoalongModuleOffNote(module: .concentration,
-                    text: "Séances, Pomodoro, plan du jour et bilan. Le module est désactivé."))
+                    text: "Activez-le pour lancer des séances et des Pomodoro, préparer le plan du jour et lire le bilan."))
             },
             page("concentration-distractions/vide", height: 760) { f in
                 tab(.distractions, DistractionsPage(runtime: BlockingRuntime(controller: f.blocking), now: now))

@@ -33,9 +33,15 @@ import SwiftUI
             Divider()
             Toggle("Conserver les journaux techniques sur ce Mac", isOn: $enabled)
                 .toggleStyle(.goalongSwitch).onChange(of: enabled) { SupportDiagnostics.shared.setEnabled($0) }
-            Text("Recommandé : en le désactivant, plus aucun nouvel événement n’est conservé ; les journaux déjà enregistrés restent jusqu’à leur expiration ou jusqu’à « Effacer les journaux ». Conservation locale de 7 jours au plus, 5,3 Mo maximum, aucun envoi automatique.")
+            // One sentence of help, the rest in a disclosure (DESIGN §12, UI-11C).
+            Text("Recommandé : 7 jours et 5,3 Mo au plus, sur ce Mac, jamais envoyés automatiquement.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            GoalongDisclosureGroup("En savoir plus") {
+                Text("Désactivé, plus aucun nouvel événement n’est conservé. Les journaux déjà enregistrés restent jusqu’à leur expiration ou jusqu’à « Effacer les journaux ».")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
+            }.font(.system(size: 12))
             HStack {
                 Button("Noter l’heure du problème") {
                     SupportDiagnostics.shared.record(.userMarkedIssue, component: .support)

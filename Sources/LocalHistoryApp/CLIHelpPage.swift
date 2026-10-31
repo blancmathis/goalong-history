@@ -33,7 +33,7 @@
                     PageHeader(
                         title: "Commande goalong",
                         subtitle:
-                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre. Données et erreurs dans un format lisible par les programmes ; aide en texte."
+                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre."
                     ) {
                         StatusPill(
                             title: statusTitle,
@@ -228,13 +228,14 @@
                     evidenceRow(
                         symbol: "curlybraces",
                         title: "Format lisible par les programmes",
-                        detail: "Les données et les erreurs sont structurées. L’aide est en texte ; « goalong help --json » décrit le format."
+                        detail: "Les données et les erreurs sont structurées.",
+                        more: "L’aide est en texte ; « goalong help --json » décrit le format."
                     )
                     evidenceRow(
                         symbol: "lock.shield",
                         title: "Les originaux restent en lecture seule",
-                        detail:
-                            "Les sources d’origine ne sont jamais modifiées. Le Temps d’écran du jour peut mettre à jour un enregistrement Goalong ; seul un export de preuve explicite crée un fichier."
+                        detail: "Les sources d’origine ne sont jamais modifiées.",
+                        more: "Le Temps d’écran du jour peut mettre à jour un enregistrement Goalong ; seul un export de preuve explicite crée un fichier."
                     )
                     evidenceRow(
                         symbol: "externaldrive",
@@ -247,7 +248,7 @@
             }
         }
 
-        private func evidenceRow(symbol: String, title: String, detail: String) -> some View {
+        private func evidenceRow(symbol: String, title: String, detail: String, more: String? = nil) -> some View {
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
@@ -256,10 +257,13 @@
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
-                    Text(detail)
-                        .font(.system(size: 12))
-                        .foregroundStyle(LHTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // UI-14: one sentence on the page, the rest in « En savoir plus » (DESIGN §12).
+                    if let more { GoalongHelpText(lead: detail, more: more) } else {
+                        Text(detail)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }

@@ -17,7 +17,7 @@ final class HistoryRetentionSettingsGapTests: XCTestCase {
         XCTAssertEqual(lines.count, HistoryDataClass.allCases.count)
         XCTAssertTrue(lines.contains("Activité détaillée : 1 jour"))
         XCTAssertTrue(lines.contains("Preuves de chaque minute : 30 jours"))
-        XCTAssertTrue(lines.contains("Reçus d’horodatage : jusqu’à ce que je supprime"))
+        XCTAssertTrue(lines.contains("Reçus d’horodatage : jusqu’à suppression"))
         for kind in HistoryDataClass.allCases { XCTAssertFalse(kind.retentionTitle.isEmpty) }
     }
 

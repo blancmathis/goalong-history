@@ -729,6 +729,7 @@
     }
 
     /// Pop-up menu for one choice among several, drawn on the Goalong control surface instead of the AppKit bezel.
+    /// VoiceOver reads the title as the label and the current choice as the value, like the native Picker.
     struct GoalongMenuPicker<Value: Hashable>: View {
         let title: String
         @Binding var selection: Value
@@ -751,7 +752,7 @@
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Text(options.first { $0.0 == selection }?.1 ?? title).font(.system(size: 13)).lineLimit(1)
+                    Text(Self.selectedLabel(selection, in: options) ?? title).font(.system(size: 13)).lineLimit(1)
                     Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
                 }
@@ -762,6 +763,11 @@
             }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             .accessibilityLabel(title)
+            .accessibilityValue(Self.selectedLabel(selection, in: options) ?? "")
+        }
+
+        nonisolated static func selectedLabel(_ selection: Value, in options: [(Value, String)]) -> String? {
+            options.first { $0.0 == selection }?.1
         }
     }
 

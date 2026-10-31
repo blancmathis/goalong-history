@@ -219,7 +219,7 @@ import AppKit
                     GoalongRowDivider()
                     GoalongSettingsLink(title: "Analyse ChatGPT", value: "Données et personnalisation", symbol: "sparkles") { pane = .chatGPT }
                     GoalongRowDivider()
-                    GoalongSettingsLink(title: "Rappels Jev", value: "Surveillance de vos séances", symbol: "eye.circle") { pane = .jev }
+                    GoalongSettingsLink(title: "Jev", value: "Surveillance de vos séances", symbol: "eye.circle") { pane = .jev }
                 }
             }
         case .website:
@@ -323,7 +323,7 @@ enum SettingsPane: Hashable {
         case .connections: return "Connexions"
         case .website: return "Envoi à Goalong"
         case .chatGPT: return "Analyse ChatGPT"
-        case .jev: return "Rappels Jev" // UI-9 (20): « Jev » alone says nothing of the function.
+        case .jev: return "Jev" // UI-10 (M3): one name with the sidebar and the card; the row's value and the card say what it does.
         case .modules: return "Modules"
         case .permissions: return "Autorisations macOS"
         case .storage: return "Stockage"
