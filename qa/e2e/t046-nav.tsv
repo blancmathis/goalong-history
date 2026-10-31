@@ -512,3 +512,5 @@ J-0963	pane:chatGPT w:2 "p:Autoriser les analyses" w:2 "ck:Activité de ce Mac=1
 J-0965	pane:chatGPT w:2 "p:Autoriser les analyses" w:2 "ck:Activité de ce Mac=1" w:1 p:analysis-save-selection w:2 seed:consent-lock "p:Autoriser les analyses" w:2
 J-0854	pane:applications w:2 "o:Sites web" w:1 "tk:Ajouter un site, exemple.fr=alerte-t046.fr" w:1 seed:data-ro pb:Exclure w:2 "o:Exclure le site" w:2
 J-0942	pane:home w:2 seed:data-ro "t:Confidentialité, tout suspendre|Tout suspendre…" w:2 "pb:Tout suspendre" w:2
+J-0109	nav:concentration "o:Préparer une séance sur" w:1 "p:T046 Réseaux" w:1 "ck:Verrouiller=1" w:1 p:concentration-start w:2
+J-0110	nav:concentration "o:Préparer une séance sur" w:1 "p:T046 Réseaux" w:1 "ck:Verrouiller=1" w:1 p:concentration-start w:2
