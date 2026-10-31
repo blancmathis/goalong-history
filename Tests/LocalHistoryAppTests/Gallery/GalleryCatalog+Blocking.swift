@@ -94,6 +94,16 @@ extension GalleryCatalog {
             }
         }
         entries += [
+            // Every break of the day taken, no extra break: the veil says so and when the block ends (UI-9).
+            panel("blocking-surfaces/voile-pauses-prises", width: 1_100, height: 720, clock: .injected) { _ in
+                let now = F.blockingNow
+                let veil = BlockingVeilPresentation(reason: .site("youtube.com"), listName: "Réseaux sociaux",
+                    start: now.addingTimeInterval(-50 * 60), end: now.addingTimeInterval(70 * 60),
+                    lock: .locked, breakMinutes: 5, breaksLeft: 0,
+                    feedback: BlockingListFeedback(listID: F.socialID, reason: "Finir le mémoire avant vendredi.",
+                                                   attemptsToday: 3, earnedMinutesToday: 0))
+                return AnyView(BlockedSiteVeil(presentation: veil, now: now))
+            },
             panel("blocking-surfaces/avis-app", width: 420, clock: .injected) { _ in
                 let now = F.blockingNow
                 return AnyView(BlockedAppNotice(app: BlockAppRule(bundleIdentifier: "com.apple.Music", name: "Musique"),

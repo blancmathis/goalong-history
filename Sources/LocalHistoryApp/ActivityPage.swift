@@ -21,15 +21,16 @@
         }
 
         var body: some View {
-            SourceAccessGate(capability: .localComputerHistory) { pageBody }
+            if showsHeader {
+                // One form for this history wherever it opens: « Historique », its tabs and Partager.
+                UnifiedHistoryPage(model: model)
+            } else {
+                SourceAccessGate(capability: .localComputerHistory) { pageBody }
+            }
         }
 
         private var pageBody: some View {
             VStack(alignment: .leading, spacing: 16) {
-                if showsHeader {
-                    header
-                }
-
                 Group {
                     if !consents.isEnabled(.localComputerHistory) {
                         ComputerHistoryActivationCard(model: model)
@@ -54,7 +55,7 @@
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .padding(.horizontal, LHTheme.pageInset)
-            .padding(.top, showsHeader ? 28 : 18)
+            .padding(.top, 18)
             .padding(.bottom, 22)
             .background(LHTheme.pageBackground)
             .onAppear {
@@ -73,40 +74,6 @@
             .onChange(of: model.historyDeletionGeneration) { _ in
                 refreshVisibleAnalysis(day: model.selectedDay, forceRebuild: true)
             }
-        }
-
-        var header: some View {
-            PageHeader(
-                title: "Historique de ce Mac",
-                subtitle: "Consultez l’activité enregistrée par tranches de 10 minutes, sans résumé généré par IA."
-            ) {
-                HStack(spacing: 10) {
-                    DateSelectionControl(
-                        date: model.selectedDay,
-                        onChange: model.selectDay
-                    )
-                    Button {
-                        model.refreshEverything()
-                        refreshVisibleAnalysis(day: model.selectedDay, forceRebuild: true)
-                    } label: {
-                        Image(
-                            systemName: analysesLoading
-                                ? "arrow.triangle.2.circlepath"
-                                : "arrow.clockwise"
-                        )
-                        .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(LHSecondaryButtonStyle())
-                    .disabled(analysesLoading)
-                    .help("Actualiser l’activité enregistrée")
-                    .accessibilityLabel("Actualiser")
-                }
-            }
-        }
-
-        private var analysesLoading: Bool {
-            model.isRefreshing
-                || computerHistoryModel.isLoading
         }
 
         private func refreshVisibleAnalysis(day: Date, forceRebuild: Bool = false) {

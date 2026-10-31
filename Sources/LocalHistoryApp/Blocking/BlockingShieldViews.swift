@@ -52,12 +52,19 @@ struct BlockedSiteVeil: View {
                         Text("Pauses du jour prises. Le mot de passe en accorde une de plus.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
+                } else if presentation.breakMinutes != nil {
+                    // No break left and no extra one: say it, instead of a veil that silently lost its way out.
+                    Text(BlockingFormat.isOpenEnded(presentation.end) ? "Pauses du jour prises."
+                         : "Pauses du jour prises. Le blocage s’arrête à \(BlockingFormat.endTime(presentation.end)).")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .accessibilityIdentifier("blocking-veil-no-break")
                 }
             }
             .padding(32)
             Spacer(minLength: 24)
             HStack(spacing: 8) {
-                GoalongMark().stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                // A signature, not an action: lime stays for the one thing to do (DESIGN §3.2).
+                GoalongMark().stroke(LHTheme.secondaryText, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .frame(width: 20, height: 14)
                 Text("Blocage Goalong").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
             }
@@ -171,12 +178,15 @@ struct FrozenMacShield: View {
             VStack(spacing: 0) {
                 Spacer()
                 VStack(spacing: 28) {
-                    GoalongMark().stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                    // The mark signs the shield; lime stays for actions and data (DESIGN §3.2).
+                    GoalongMark().stroke(LHTheme.secondaryText, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 52, height: 36)
                     VStack(spacing: 10) {
                         Text(clock(freeze.end.timeIntervalSince(now)))
                             .font(.system(size: 96, weight: .bold).monospacedDigit()).tracking(-3)
-                        Label("Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
+                            .accessibilityLabel("Temps restant : \(BlockingFormat.remaining(freeze.end.timeIntervalSince(now)))")
+                        // The line under the figure says what it counts: the time left, and when it ends.
+                        Label("Temps restant, Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
                             .font(.system(size: 17, weight: .semibold))
                     }
                     BlockingSessionThread(start: freeze.start, end: freeze.end, now: now, locked: true).frame(width: 440)

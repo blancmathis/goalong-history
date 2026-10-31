@@ -134,8 +134,8 @@
 
         // N2: « gagnée » agrees with the number of minutes.
         func testEarnedBreakAgreesInNumber() {
-            XCTAssertEqual(BlockingFormat.earnedBreak(minutes: 1), "+1 min de pause gagnée en concentration")
-            XCTAssertEqual(BlockingFormat.earnedBreak(minutes: 2), "+2 min de pause gagnées en concentration")
+            XCTAssertEqual(BlockingFormat.earnedBreak(minutes: 1), "+1 min de pause gagnée pendant vos séances de concentration")
+            XCTAssertEqual(BlockingFormat.earnedBreak(minutes: 2), "+2 min de pause gagnées pendant vos séances de concentration")
         }
 
         private func session(start: Date, end: Date) -> ActivitySession {

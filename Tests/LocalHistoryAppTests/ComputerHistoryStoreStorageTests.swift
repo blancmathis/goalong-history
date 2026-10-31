@@ -1660,8 +1660,8 @@
 
         /// H28 L1: counts of one stay singular.
         func testCoverageCountsUseFrenchPlurals() {
-            XCTAssertEqual(ComputerHistoryPageCopy.tenMinuteSummary(count: 1), "1 période de dix minutes. Ouvrez une période pour voir ses détails.")
-            XCTAssertEqual(ComputerHistoryPageCopy.tenMinuteSummary(count: 3), "3 périodes de dix minutes. Ouvrez une période pour voir ses détails.")
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 1, total: 1, searching: false), "1 période")
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 3, total: 3, searching: false), "3 périodes")
             XCTAssertEqual(ComputerHistoryPageCopy.retainedEpisodesLabel(1), "1 épisode représentatif conservé")
             XCTAssertEqual(ComputerHistoryPageCopy.retainedEpisodesLabel(2), "2 épisodes représentatifs conservés")
             XCTAssertEqual(ComputerHistoryPageCopy.retainedResourcesLabel(1), "1 lien source représentatif conservé")
