@@ -118,6 +118,12 @@ RECIPES = {
     "J-0469": ("", "id", "AXButton", "activity-explore-code"),
     "J-0779": ("", "label", "AXButton", "Analyser le contexte d’une session"),
     "J-0794": ("", "label", "AXButton", "Utiliser cette session relue"),
+    # L3i: the target is the date picker itself (act type sets it one day back, reads it, restores it).
+    "J-0515": ("", "label", "AXDateTimeArea", "Conversations actives depuis"),
+    # L3i: « Actions groupées » became a kit menu (AXMenuButton); the nav's pick: chooses the item.
+    "J-0427": ("", "label", "AXMenuButton", "Actions groupées"),
+    "J-0428": ("", "label", "AXMenuButton", "Actions groupées"),
+    "J-0429": ("", "label", "AXMenuButton", "Actions groupées"),
 }
 
 # UI branch (t046/evidence-ui): labels the UI lots renamed between 06e199f and 973ff6a. The matrix (and a

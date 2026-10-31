@@ -394,14 +394,21 @@ case "scroll":
 case "set":
     // Put a checkbox/switch (by AXIdentifier) in the wanted state: press only when its AXValue differs.
     // L3f: else a checkbox/switch whose title or description equals ID (unlabeled ids: « Activité de ce Mac »).
+    // L3i: « LABEL#N » takes the N-th label match (per-app checkboxes repeat the common labels, J-0416).
     var hit: AXUIElement?
+    var setLabel = args[3], nth = 1
+    if let r = setLabel.range(of: "#", options: .backwards), let n = Int(setLabel[r.upperBound...]), n > 0 {
+        nth = n; setLabel = String(setLabel[..<r.lowerBound])
+    }
     for byLabel in [false, true] where hit == nil {
+        var seen = 0
         for root in roots(args[2]) where hit == nil {
             var budget = 6000
             _ = walk(root, budget: &budget) { e, _ in
-                let ok = byLabel ? toggleRoles.contains(text(e, kAXRoleAttribute))  // L3h: and disclosure triangles (J-0424)
-                    && [kAXTitleAttribute, kAXDescriptionAttribute].contains { normText(text(e, $0)) == normText(args[3]) }
+                var ok = byLabel ? toggleRoles.contains(text(e, kAXRoleAttribute))  // L3h: and disclosure triangles (J-0424)
+                    && [kAXTitleAttribute, kAXDescriptionAttribute].contains { normText(text(e, $0)) == normText(setLabel) }
                     : text(e, "AXIdentifier") == args[3]
+                if ok && byLabel { seen += 1; ok = seen == nth }
                 if ok { hit = e }
                 return ok
             }
@@ -718,11 +725,20 @@ case "act":
             AXUIElementSetAttributeValue(e, kAXValueAttribute as CFString, (v0 == "nil" ? "" : v0) as CFString)
             pass = v1.contains(probe)
         } else {
-            // Date/time pickers: the value is read and written back as is (accepted or refused, status kept).
+            // L3i: a date picker is set one day earlier, read back, then restored; it passes only if the value moved.
+            // Other values are written back as is (accepted or refused, status kept).
             let cur = attr(e, kAXValueAttribute)
-            let s = cur.map { AXUIElementSetAttributeValue(e, kAXValueAttribute as CFString, $0).rawValue } ?? -1
-            print("value=\(v0)"); print("set=\(s)")
-            pass = cur != nil
+            if let d0 = cur as? Date {
+                let s = AXUIElementSetAttributeValue(e, kAXValueAttribute as CFString, d0.addingTimeInterval(-86_400) as CFDate).rawValue
+                usleep(500_000); let d1 = attr(e, kAXValueAttribute) as? Date
+                print("set=\(s)"); print("value=\(d0)->\(d1.map { "\($0)" } ?? "nil")")
+                AXUIElementSetAttributeValue(e, kAXValueAttribute as CFString, d0 as CFDate)
+                pass = okStatus(s) && d1 != nil && d1 != d0
+            } else {
+                let s = cur.map { AXUIElementSetAttributeValue(e, kAXValueAttribute as CFString, $0).rawValue } ?? -1
+                print("value=\(v0)"); print("set=\(s)")
+                pass = cur != nil
+            }
         }
     case "menu":
         if r == "AXMenuItem" {

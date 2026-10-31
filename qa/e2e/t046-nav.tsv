@@ -365,3 +365,24 @@ J-0524	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon tra
 J-0525	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
 J-0527	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
 J-0529	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+# L3i: kit menus (#224-#228), real key events for SwiftUI search, Mon travail already unlocked (o:Autoriser), the 7 navs that ended on « Ouvrir Réglages Système… ».
+J-0768	nav:history p:"Ce Mac" w:2 "wf:Rechercher dans la chronologie" "tk:Rechercher dans la chronologie=zzqx-t046-aucun" w:2 "wf:Effacer la recherche"
+J-0427	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pick:Tout autoriser, durées seulement"
+J-0428	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pick:Tout autoriser, détails choisis"
+J-0429	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pick:Tout exclure"
+J-0416	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pkc:Données de |Détails choisis" w:1 px:Personnaliser w:1 "ck:Titres des fenêtres#2=1" w:1
+J-0421	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 px:Aperçu w:1 p:"Préparer l’aperçu local" w:4 "wf:Afficher les suivants"
+J-0523	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3 "ck:J’autorise l’envoi de ce contexte à l’agent connecté=1" w:1
+J-0488	nav:work w:2 o:work-allow w:1 o:Autoriser w:2 p:work-review-load w:3 "pkc:Corriger le classement de|Nouvelle tâche…" w:2 "wf:Nom de la tâche"
+J-0492	nav:work w:2 o:work-allow w:1 o:Autoriser w:2 p:work-review-load w:3 "pkc:Corriger le classement de|Nouvelle tâche…" w:2 "wf:Nom de la tâche"
+J-0494	nav:work w:2 o:work-allow w:1 o:Autoriser w:2 p:work-review-load w:3
+J-0500	nav:work w:2 o:work-allow w:1 o:Autoriser w:2 p:work-review-load w:3 "pk:Corriger le classement de|" w:1
+J-0501	nav:work w:2 o:work-allow w:1 o:Autoriser w:2 p:work-review-load w:3 "pk:Corriger le classement de|" w:1
+J-0503	nav:work w:2 o:work-allow w:1 o:Autoriser w:2 p:work-review-load w:3 "pk:Corriger le classement de|" w:1
+J-0120	nav:concentration w:2 p:"Ajouter une intention du jour" w:1 "wf:Enregistrer"
+J-0754	nav:braise w:2 p:braise-add-rule w:2
+J-0372	nav:history p:"Conversations locales" w:2 p:"Modifier le suivi de" w:2
+J-0373	nav:history p:"Conversations locales" w:2 p:"Modifier le suivi de" w:2
+J-0331	pane:jev w:2
+J-0526	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0880	pane:advanced p:"Outils de partage et analyses" w:2 p:"Analyser une demande du site" w:3

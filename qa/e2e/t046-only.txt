@@ -137,3 +137,11 @@ J-0983
 J-0993
 J-1020
 J-0807
+# L3i: the 7 rows whose L3h nav ended on « Ouvrir Réglages Système… » (reported apart from the 136).
+J-0120
+J-0754
+J-0372
+J-0373
+J-0331
+J-0526
+J-0880
