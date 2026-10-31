@@ -11,8 +11,8 @@ import SwiftUI
     @State private var dragging: (day: Int, start: Int, end: Int)?
     @State private var editing: BlockingRangeDraft?
 
-    private static let rowHeight: CGFloat = 26
-    private static let laneHeight: CGFloat = 18
+    private static let rowHeight: CGFloat = 28
+    private static let laneHeight: CGFloat = 20
     private static let label: CGFloat = 52
     private static let gap: CGFloat = 10
     private static let spacing: CGFloat = 4
@@ -159,8 +159,12 @@ import SwiftUI
                 if drawn.contains(where: { !$0.slowed && Self.isSolid(lock: $0.lock, slowed: false) }) {
                     legend(Capsule().fill(LHTheme.text), "Verrouillé")
                 }
-                if drawn.contains(where: { !$0.slowed && !Self.isSolid(lock: $0.lock, slowed: false) }) {
-                    legend(Capsule().fill(LHTheme.text.opacity(Self.freeFill)), "Libre ou difficile")
+                // Free and difficult share the light tint; the difficult one carries its symbol, like its range.
+                if drawn.contains(where: { !$0.slowed && $0.lock == .free }) {
+                    legend(Capsule().fill(LHTheme.text.opacity(Self.freeFill)), "Libre")
+                }
+                if drawn.contains(where: { !$0.slowed && $0.lock == .typing }) {
+                    legend(Capsule().fill(LHTheme.text.opacity(Self.freeFill)), "Difficile", symbol: BlockLock.typing.symbol)
                 }
                 if drawn.contains(where: \.slowed) {
                     legend(Capsule().strokeBorder(LHTheme.text.opacity(0.7), lineWidth: 1.5), "Ralenti")
@@ -256,11 +260,11 @@ import SwiftUI
                 Capsule().fill(LHTheme.pageBackground)
                 Capsule().fill(ink)
             }
-            if width > CGFloat(span.name.count) * 6.8 + 26 {
+            if width > CGFloat(span.name.count) * 7.2 + 26 {
                 HStack(spacing: 4) {
-                    if span.lock != .free { Image(systemName: span.lock.symbol).font(.system(size: 8, weight: .bold)) }
-                    // 11 pt: the smallest text size of the app (DESIGN §6), even inside a range.
-                    Text(span.name).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                    if span.lock != .free { Image(systemName: span.lock.symbol).font(.system(size: 9, weight: .bold)) }
+                    // 12 pt medium: the range name reads like the legend, not as a micro caption (UI-13A).
+                    Text(span.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 }
                 .foregroundStyle(solid ? LHTheme.pageBackground : LHTheme.text)
                 .padding(.horizontal, 9)
@@ -275,9 +279,10 @@ import SwiftUI
         .accessibilityAddTraits(.isButton)
     }
 
-    private func legend(_ mark: some View, _ text: String) -> some View {
+    private func legend(_ mark: some View, _ text: String, symbol: String? = nil) -> some View {
         HStack(spacing: 6) {
             mark.frame(width: 18, height: 7)
+            if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .bold)).padding(.leading, -2) }
             Text(text)
         }
     }

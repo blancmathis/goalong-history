@@ -87,7 +87,7 @@ struct JevRecentCheck: Identifiable {
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
             keyStorageInvalid = true
-            messages.append("Clé API illisible : surveillance suspendue. Enregistrez-la à nouveau dans Gérer la connexion.")
+            messages.append("Clé d’accès Jev illisible : surveillance suspendue. Enregistrez-la à nouveau dans Gérer la connexion.")
         }
         do {
             if let data = try JevLocalFiles.read("break.json", root: localRoot) {
@@ -158,8 +158,8 @@ struct JevRecentCheck: Identifiable {
         if let issue = scopePreferences.error { return issue }
         if !scopePreferences.scope.permits(sessionActive: focusSessionID != nil) { return "En attente d’une séance" }
         if let issue = JevWorkContextStore.shared.error { return issue }
-        if keyStorageInvalid { return "Clé API illisible : surveillance suspendue" }
-        if !hasKey { return "Configurez la connexion API pour activer la surveillance" }
+        if keyStorageInvalid { return "Clé d’accès Jev illisible : surveillance suspendue" }
+        if !hasKey { return "Configurez la connexion à Jev pour activer la surveillance" }
         if circuitOpen { return circuitReason?.errorDescription ?? "Surveillance suspendue après erreur : vérifiez la connexion" }
         if GoalongGlobalPause.isPaused() { return "Arrêt de confidentialité : historique et surveillance suspendus" }
         if !consents.isEnabled(.localComputerHistory) { return "Activez l’historique de ce Mac pour utiliser la surveillance" }

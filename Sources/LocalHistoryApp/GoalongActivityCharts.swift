@@ -80,12 +80,14 @@ enum GoalongStackedBars {
 /// Hour by hour, split into work, other and still-to-classify time.
 struct GoalongHourlyClassChart: View {
     let day: GoalongLocalAnalytics.Day
+    /// The page's focus threshold: the bars, the « Heures et valeurs » list and the range read the same hours.
+    let minimumMinutes: Int
     let dateRange: ClosedRange<Date>
     let hourStride: Int
     private let height: CGFloat = 180
 
     var body: some View {
-        let hours = day.hours(minimumMinutes: 25).filter { $0.seconds > 0 }
+        let hours = day.hours(minimumMinutes: minimumMinutes).filter { $0.seconds > 0 }
         let scale = GoalongAnalyticsChartScale(maximumSeconds: hours.map(\.seconds).max() ?? 0, hourly: true)
         let span = dateRange.upperBound.timeIntervalSince(dateRange.lowerBound) / 3600
         VStack(alignment: .leading, spacing: 10) {

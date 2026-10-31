@@ -14,12 +14,12 @@ import UniformTypeIdentifiers
         if modules.isEnabled(.ambiance), let controller = model.ambianceModule.controller {
             AmbianceLivePage(controller: controller, settings: model.ambianceModule.settings)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
+            // UI-12A: the same off state as Blocage and Concentration, with its « Activer » button.
+            VStack(alignment: .leading, spacing: 0) {
                 Text("Ambiance").goalongPageTitle()
-                Text("Le module est désactivé. Activez-le dans Réglages › Modules.")
-                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 28)
+                GoalongModuleOffNote(module: .ambiance, text: "De la musique pour travailler ou souffler, téléchargée à la demande. Rien ne joue avant votre choix.")
             }
-            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(LHTheme.pageBackground)
         }

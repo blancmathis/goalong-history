@@ -46,11 +46,10 @@ import LocalHistoryCore
                         analyzeButton.buttonStyle(LHSecondaryButtonStyle())
                     }
                 }
-                if !runtime.isAccountConnected {
-                    // The hint names the action the account card really offers.
-                    Text(runtime.connectionState == .codexUnavailable
-                         ? "Mettez Goalong à jour pour analyser une journée."
-                         : "Connectez ChatGPT pour analyser une journée.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                // The hint names the action the account card really offers; when that is an update,
+                // the card already says it once (UI-12B, 38).
+                if !runtime.isAccountConnected && runtime.connectionState != .codexUnavailable {
+                    Text("Connectez ChatGPT pour analyser une journée.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Text("ChatGPT reçoit uniquement votre sélection. Le bilan n’est pas envoyé au site automatiquement.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)

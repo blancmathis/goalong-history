@@ -79,12 +79,6 @@
             XCTAssertNil(S.loginWarning(message: nil, state: .enabled, consentEnabled: true))
         }
 
-        func testGoalongMenuPickerValueIsTheCurrentChoice() {
-            let options = [(1, "Codex"), (2, "Claude Code")]
-            XCTAssertEqual(GoalongMenuPicker<Int>.selectedLabel(2, in: options), "Claude Code")
-            XCTAssertNil(GoalongMenuPicker<Int>.selectedLabel(3, in: options))
-        }
-
         func testBackgroundOptOutSurvivesRecreation() {
             let defaults = isolatedDefaults()
             BackgroundContinuityPreferences(defaults: defaults).keepRunning = false

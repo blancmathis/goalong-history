@@ -29,7 +29,7 @@ import AppKit
                 Button(denied ? "Ouvrir Réglages Système…" : "Autoriser l’accès…") {
                     if denied { GoalongCalendarSettings.open() } else { Task { await system.requestCalendarPermissions() } }
                 }
-                .buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("settings-calendar-access")
+                .buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("settings-calendar-access")
             }
         }
     }
@@ -80,7 +80,7 @@ import AppKit
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
                     ForEach(visiblePanes, id: \.self) { item in
-                        GoalongSettingsLink(title: item.title, value: summary(item), symbol: item.symbol) { pane = item }
+                        GoalongSettingsLink(title: item.title, value: summary(item), symbol: item.symbol, detail: detail(item)) { pane = item }
                             .accessibilityIdentifier("settings-\(item.identifier)")
                         if item != visiblePanes.last { GoalongRowDivider() }
                     }
@@ -100,12 +100,12 @@ import AppKit
                         GoalongGlobalPauseControl(model: model)
                     }.padding(.top, 12)
                 }.accessibilityIdentifier("settings-privacy-stop")
-                VStack(alignment: .leading, spacing: 16) {
-                    GoalongUpdateStatusRow()
-                    Button("Signaler un problème…") { SupportRequestController.shared.present() }
-                        .buttonStyle(LHQuietButtonStyle())
+                GoalongUpdateStatusRow().font(.system(size: 13))
+                // UI-12B (20): a row of a list, aligned like the others, no longer a bold link alone.
+                LHCard(padding: 0) {
+                    GoalongSettingsLink(title: "Signaler un problème…", value: "", symbol: "stethoscope") { SupportRequestController.shared.present() }
                         .accessibilityIdentifier("settings-report-problem")
-                }.font(.system(size: 13))
+                }
             }
         case .recording:
             GoalongRecordingCoverageNotice(model: model)
@@ -215,11 +215,12 @@ import AppKit
         case .connections:
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
-                    GoalongSettingsLink(title: "Envoi à Goalong", value: "Compte, données et fréquence", symbol: "arrow.up.circle") { pane = .website }
+                    // UI-12B (20): the description under the title, the value column for the state only.
+                    GoalongSettingsLink(title: "Envoi à Goalong", value: "", symbol: "arrow.up.circle", detail: detail(.website)) { pane = .website }
                     GoalongRowDivider()
-                    GoalongSettingsLink(title: "Analyse ChatGPT", value: "Données et personnalisation", symbol: "sparkles") { pane = .chatGPT }
+                    GoalongSettingsLink(title: "Analyse ChatGPT", value: "", symbol: "sparkles", detail: detail(.chatGPT)) { pane = .chatGPT }
                     GoalongRowDivider()
-                    GoalongSettingsLink(title: "Jev", value: "Surveillance de vos séances", symbol: "eye.circle") { pane = .jev }
+                    GoalongSettingsLink(title: "Jev", value: summary(.jev), symbol: "eye.circle", detail: detail(.jev)) { pane = .jev }
                 }
             }
         case .website:
@@ -255,6 +256,12 @@ import AppKit
                 Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.goalongSwitch)
                     .disabled(!updates.isConfigured)
+                // UI-12B (58): the locked switch says why, right under it.
+                if !updates.isConfigured {
+                    Text("Indisponible dans cette copie : seule la version publiée reçoit les mises à jour.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -281,19 +288,26 @@ import AppKit
     private var visiblePanes: [SettingsPane] {
         SettingsPane.matches(search)
     }
+    /// The value column holds a state only (UI-12B, 20); descriptions go under the title (`detail`).
     private func summary(_ item: SettingsPane) -> String {
         switch item {
         case .recording: return consents.isEnabled(.localComputerHistory) ? "Activé" : "Désactivé"
+        case .jev: return consents.isEnabled(.jevMonitoring) ? "Activé" : "Désactivé"
+        case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
+        default: return ""
+        }
+    }
+    private func detail(_ item: SettingsPane) -> String? {
+        switch item {
         case .applications: return "Choisir les exclusions"
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
-        case .jev: return GoalongHomeRows.jevSummary(enabled: GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
-        case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
+        case .jev: return "Surveillance de vos séances"
         case .permissions: return "Selon vos fonctions"
         case .storage: return "Conservation et effacement"
         case .advanced: return "Outils et diagnostics"
-        default: return ""
+        default: return nil
         }
     }
 }

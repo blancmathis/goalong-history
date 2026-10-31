@@ -38,7 +38,8 @@ struct AgentTokenUsageCard: View {
     var body: some View {
         let summary = Self.summary(usage: usage, scanning: scanning)
         let rows = usage?.rows ?? []
-        // Read-only figures sit on the page: the headline is the section title, no eyebrow, no card (UI-67).
+        // Read-only figures sit on the page under the conversation list they describe: the headline is
+        // the section title, no eyebrow, no card (UI-67, UI-13B).
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(summary.headline)
@@ -53,7 +54,7 @@ struct AgentTokenUsageCard: View {
             Text("Usage de l’IA du jour sélectionné, journaux locaux, \(Self.zoneName()). Les jetons ne correspondent ni à un quota d’abonnement ni à une facture.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             if let analyzedAt {
-                Text("Analysé à \(analyzedAt.formatted(.dateTime.hour().minute().locale(Self.locale))), actualisez la journée pour mettre à jour")
+                Text("Analysé à \(analyzedAt.formatted(.dateTime.hour().minute().locale(Self.locale))). Actualisez la journée pour mettre à jour.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             if summary.showsPartialCoverage {
