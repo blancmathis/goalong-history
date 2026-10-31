@@ -68,7 +68,8 @@ import SwiftUI
                     VStack(alignment: .leading, spacing: 6) {
                         Text(Self.concentrationKeptData).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Supprimer…", role: .destructive) { confirmingDelete = true }
+                        // UI-13C (42): the link says what it deletes.
+                        Button("Supprimer les données de Concentration…", role: .destructive) { confirmingDelete = true }
                             .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
                             .disabled(concentration.controller?.hasLockedBlock == true)
                             .accessibilityLabel("Supprimer les données Concentration")

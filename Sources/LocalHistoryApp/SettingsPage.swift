@@ -350,6 +350,9 @@ enum SettingsPane: Hashable {
         switch self {
         case .chatGPT: return "Votre ChatGPT résume une journée à partir des seules données que vous choisissez."
         case .modules: return "Activez seulement les fonctions dont vous avez besoin."
+        // UI-13C (27, 40): the page's sentence sits under its title, as on ChatGPT and Modules.
+        case .applications: return "Désactivez une app ou un site pour l’exclure du suivi détaillé et des prochains envois."
+        case .storage: return "Votre historique reste sur ce Mac. Choisissez combien de temps le garder et ce qu’il faut effacer."
         default: return nil
         }
     }

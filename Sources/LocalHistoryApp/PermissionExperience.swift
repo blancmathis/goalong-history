@@ -132,8 +132,8 @@ struct PermissionSetupSteps: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            step(1, title: "Ouvrir les réglages macOS", detail: copy.settingsPath, done: openedSettings || ready, active: !openedSettings && !ready)
-            step(2, title: copy.status == .screenTimeSetup ? "Activer le temps d’écran" : "Autoriser Goalong",
+            step(1, title: "Ouvrir Réglages Système", detail: copy.settingsPath, done: openedSettings || ready, active: !openedSettings && !ready)
+            step(2, title: copy.status == .screenTimeSetup ? "Temps d’écran" : "Autoriser Goalong",
                  detail: copy.status == .screenTimeSetup ? "Apple commencera à mesurer votre usage." : "Dans la liste de macOS, l’app s’appelle « \(PermissionSetupCopy.macOSListName()) ». Activez-la.",
                  done: ready, active: openedSettings && !ready)
             step(3, title: "Revenir dans Goalong", detail: "Vérification automatique au retour. Relancez Goalong si macOS le demande.", done: ready, active: false)

@@ -243,8 +243,9 @@ final class T046C1RenderTests: XCTestCase {
         let model = GoalongDeveloperModel(root: root.appendingPathComponent("data"), consents: consents)
         let empty = accessible(GoalongDeveloperProjectsSheet(developer: model))
         XCTAssertTrue(empty.contains("Projets suivis"), "saw \(empty.sorted())")
-        XCTAssertTrue(empty.contains("Aucun projet suivi."))
-        XCTAssertFalse(empty.contains("Vus dans vos agents"))
+        XCTAssertTrue(empty.contains("Aucun projet suivi"))
+        XCTAssertTrue(empty.contains("Ajouter un dossier…"))
+        XCTAssertFalse(empty.contains("Projets vus par vos agents"))
         let followed = GoalongDeveloperProject(root: URL(fileURLWithPath: "/Users/demo/Projets/suivi-fixe"), name: "suivi-fixe")
         let seenProject = GoalongDeveloperProject(root: URL(fileURLWithPath: "/Users/demo/Projets/vu-fixe"), name: "vu-fixe")
         model.setSelectedProjectsForTesting([followed])
@@ -254,10 +255,10 @@ final class T046C1RenderTests: XCTestCase {
         model.setValueForTesting(value)
         let rendered = host(GoalongDeveloperProjectsSheet(developer: model))
         let seen = strings(of: rendered)
-        for label in ["suivi-fixe", "vu-fixe", "Vus dans vos agents", "Retirer", "Suivre", "Ajouter un dossier…", "OK", "developer-projects-sheet"] {
+        for label in ["suivi-fixe", "vu-fixe", "Projets vus par vos agents", "Retirer", "Suivre", "Ajouter un dossier…", "OK", "developer-projects-sheet"] {
             XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
         }
-        XCTAssertFalse(seen.contains("Aucun projet suivi."))
+        XCTAssertFalse(seen.contains("Aucun projet suivi"))
         XCTAssertEqual(model.selectedProjects, [followed], "Showing the sheet changes nothing: the given model is not refreshed")
         assertNoVisibleWindow()
     }
