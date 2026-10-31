@@ -158,7 +158,7 @@
                             .accessibilityElement(children: .combine)
                             if let fix = model.attentionFix {
                                 Button(fix.label) { model.perform(fix) }
-                                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                                    .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                                     .accessibilityIdentifier("menubar-attention-fix")
                             }
                         }
@@ -265,7 +265,7 @@
                         if label != "24 h" { Spacer(minLength: 0) }
                     }
                 }
-                .font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityHidden(true)
             }
             .onAppear {
@@ -419,7 +419,7 @@
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                            .strokeBorder(selected ? LHTheme.accent : LHTheme.separator, lineWidth: selected ? 2 : 1)
+                            .strokeBorder(selected ? LHTheme.text : LHTheme.separator, lineWidth: selected ? 2 : 1)
                     )
                     .contentShape(Rectangle())
             }
@@ -475,8 +475,11 @@
                         player
                         volume
                         if let error = model.ambianceError {
-                            Text(error).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
+                            Text(error.replacingOccurrences(of: " Réessayez.", with: "")).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if let current = model.ambianceCurrent {
+                                Button("Réessayer") { model.play(current) }.buttonStyle(LHSecondaryButtonStyle())
+                            }
                         }
                         if showsGrid { grid.transition(.opacity) }
                     }
@@ -603,7 +606,7 @@
                 .background(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
                     .fill(hovered ? LHTheme.hoverBackground : LHTheme.elevatedBackground))
                 .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                    .strokeBorder(selected ? LHTheme.accent : LHTheme.separator, lineWidth: selected ? 2 : 1))
+                    .strokeBorder(selected ? LHTheme.text : LHTheme.separator, lineWidth: selected ? 2 : 1))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -699,7 +702,7 @@
                 Button(action: model.openApp) {
                     HStack(spacing: 6) {
                         Text("Ouvrir \(ProductIdentity.displayName)").font(.system(size: 13, weight: .medium))
-                        Text("⌘O").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                        Text("⌘O").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8).frame(height: 28)

@@ -147,7 +147,7 @@ extension GalleryCatalog {
             },
             panel("braise/echec-demarrage", width: 900, height: 420) { _ in
                 AnyView(BraiseUnavailableView(error: "Braise n’a pas pu démarrer. Aucun filtre n’a été appliqué.",
-                                              onRetry: {}, onOpenModules: {}))
+                                              onRetry: {}, onOpenModules: {}, onEnable: {}))
             },
             panel("braise/editeur-de-regle", width: 650, height: 400) { ctx in
                 let controller = try braise(ctx)

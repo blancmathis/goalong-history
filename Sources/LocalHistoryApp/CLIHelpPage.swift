@@ -33,7 +33,7 @@
                     PageHeader(
                         title: "Commande goalong",
                         subtitle:
-                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre. Données et erreurs en JSON ; aide en texte."
+                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre. Données et erreurs dans un format lisible par les programmes ; aide en texte."
                     ) {
                         StatusPill(
                             title: statusTitle,
@@ -134,7 +134,7 @@
                                 "Copiez une consigne complète (commandes, traitement sûr des données, pagination, provenance, données manquantes) et collez-la telle quelle dans votre agent."
                             )
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 8)
@@ -166,8 +166,8 @@
                         Text("Commencer dans le Terminal")
                             .font(.system(size: 15, weight: .semibold))
                         Text("Ces quatre commandes suffisent pour découvrir l’outil et poser une première question.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                     .padding(18)
 
@@ -190,7 +190,7 @@
                         .font(.system(size: 12, weight: .semibold))
                     Text(Self.frenchDetail(item))
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer(minLength: 16)
                 Text(item.command)
@@ -222,8 +222,8 @@
                         .font(.system(size: 15, weight: .semibold))
                     evidenceRow(
                         symbol: "curlybraces",
-                        title: "JSON clair",
-                        detail: "Données et erreurs sont en JSON structuré. L’aide est en texte ; « goalong help --json » décrit le contrat machine."
+                        title: "Format lisible par les programmes",
+                        detail: "Les données et les erreurs sont structurées. L’aide est en texte ; « goalong help --json » décrit le format."
                     )
                     evidenceRow(
                         symbol: "lock.shield",
@@ -246,14 +246,14 @@
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(LHTheme.accent)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 22, height: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     Text(detail)
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

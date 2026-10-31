@@ -87,7 +87,7 @@
                     state: .missing,
                     linkPath: linkPath,
                     resolvedTargetPath: nil,
-                    detail: "L’installation par l’image disque (DMG) et les mises à jour Sparkle ne créent pas la commande goalong. Cliquez sur « Installer la commande », ou collez cette ligne dans le Terminal :",
+                    detail: "L’installation de l’app et ses mises à jour ne créent pas la commande goalong. Cliquez sur « Installer la commande », ou collez cette ligne dans le Terminal :",
                     linkCommand: expectedExecutableURL.map { linkCommand(executableURL: $0, linkURL: linkURL) },
                     canInstall: expectedExecutableURL != nil
                 )

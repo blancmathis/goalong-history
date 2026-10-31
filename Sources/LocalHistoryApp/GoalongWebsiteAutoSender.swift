@@ -104,7 +104,7 @@ import LocalHistoryCore
                 status = Self.activeStatus(saved)
             } else if let reason = saved.pauseReason, saved.paused == true {
                 pauseReason = reason; status = reason
-            } else { status = "Synchronisation en pause · vos choix sont conservés sur ce Mac." }
+            } else { status = "Synchronisation en pause, vos choix sont conservés sur ce Mac." }
         }
     }
     private func configuration() -> Configuration? {
@@ -114,7 +114,7 @@ import LocalHistoryCore
     private let beforeStore: (Configuration) throws -> Void
     private func store(_ value: Configuration) throws { try beforeStore(value); defaults.set(try JSONEncoder().encode(value), forKey: key) }
     static func timeLabel(_ value: Configuration) -> String {
-        String(format: "%02d:%02d", value.hour ?? 9, value.minute ?? 0) + " · " + (value.timeZoneIdentifier ?? TimeZone.current.identifier)
+        String(format: "%02d:%02d", value.hour ?? 9, value.minute ?? 0) + ", " + (value.timeZoneIdentifier ?? TimeZone.current.identifier)
     }
     private let hiddenWebsites: () -> (String) -> Bool
     /// Sites hidden in every share never leave, even when an older plan still lists them.
@@ -184,7 +184,7 @@ import LocalHistoryCore
         lastSuccess = nil
         pauseReason = nil
         enabled = true
-        status = "Activée · la veille après \(Self.timeLabel(value)). Nouveaux appareils, apps, domaines et récaps exclus."
+        status = "Activée, la veille après \(Self.timeLabel(value)). Nouveaux appareils, apps, domaines et récaps exclus."
         start()
     }
     /// A stop the app decided alone passes a `reason`; a user stop clears it.
@@ -192,7 +192,7 @@ import LocalHistoryCore
         if var saved = configuration() { saved.paused = true; saved.pauseReason = reason; try? store(saved) }
         enabled = false
         pauseReason = reason
-        status = reason ?? (busy ? "En pause. Un envoi déjà commencé peut encore aboutir." : "Synchronisation en pause · vos choix sont conservés.")
+        status = reason ?? (busy ? "En pause. Un envoi déjà commencé peut encore aboutir." : "Synchronisation en pause, vos choix sont conservés.")
     }
     private func stopAutomatically(_ message: String) { networkRetry = nil; stop(reason: message) }
     /// Records that the site refused this access, so the account card offers « Relier mon Mac ».
@@ -316,7 +316,7 @@ import LocalHistoryCore
             networkRetry = nil
             do {
                 try store(current)
-                status = "Journée du \(GoalongUIFormat.day(key: day)) reçue · prochain envoi après \(Self.timeLabel(current))."
+                status = "Journée du \(GoalongUIFormat.day(key: day)) reçue, prochain envoi après \(Self.timeLabel(current))."
                     + (skipped.map { " " + Self.missingDayNotice($0) } ?? "")
             } catch {
                 // The site has the day: only the local record failed. Not "nothing was sent", and no resend by itself
@@ -368,7 +368,7 @@ import LocalHistoryCore
         }
     }
     private static func activeStatus(_ saved: Configuration) -> String {
-        "Activée · la veille à partir de \(timeLabel(saved)), lorsque Goalong est ouvert."
+        "Activée, la veille à partir de \(timeLabel(saved)), lorsque Goalong est ouvert."
             + (saved.missingDay.map { " " + missingDayNotice($0) } ?? "")
     }
     private static let missingDayShown = 3

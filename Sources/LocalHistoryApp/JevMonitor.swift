@@ -186,7 +186,7 @@ struct JevRecentCheck: Identifiable {
     func saveKey(_ value: String) {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.validKey(key) else {
-            error = "La clé API Jev doit être une valeur ASCII sans espace (8 à 1 024 caractères)."; errorIsTransient = false; return
+            error = "La clé d’accès Jev doit être une valeur ASCII sans espace (8 à 1 024 caractères)."; errorIsTransient = false; return
         }
         do {
             try JevLocalFiles.write(Data(key.utf8), name: "api-key", root: localRoot)
@@ -260,7 +260,7 @@ struct JevRecentCheck: Identifiable {
         boundary = Date(); previousWall = boundary; previousUptime = ProcessInfo.processInfo.systemUptime
         let available = gate == nil
         inbox.configure(enabled: available, includeText: includeText, collectDistractions: focusSessionID != nil)
-        status = gate ?? "En attente d’activité · vérification toutes les 15 s"
+        status = gate ?? "En attente d’activité, vérification toutes les 15 s"
         if timedBreak != nil && !breakStorageInvalid {
             scheduleTimer(seconds: 1)
         } else if available { scheduleTimer(seconds: 15) }
@@ -288,7 +288,7 @@ struct JevRecentCheck: Identifiable {
         let start = boundary; boundary = end
         guard request == nil else { SupportDiagnostics.shared.record(.monitorCycle, component: .monitoring, level: .warning, values: [.state: .state(.timedOut)]); cancelPending(); status = "Analyse trop lente : série remise à zéro"; return }
         guard let window = inbox.take(start: start, end: end), window.hasActivity else {
-            SupportDiagnostics.shared.recordIfChanged(.monitorCycle, component: .monitoring, values: [.state: .state(.skipped)]); resetInterventions(); status = "Aucune nouvelle activité observable · aucun appel"; return
+            SupportDiagnostics.shared.recordIfChanged(.monitorCycle, component: .monitoring, values: [.state: .state(.skipped)]); resetInterventions(); status = "Aucune nouvelle activité observable, aucun appel"; return
         }
         guard now >= retryAfter else { resetInterventions(); return }
         let body: Data
@@ -342,7 +342,7 @@ struct JevRecentCheck: Identifiable {
                 let warn = self.streak.accept(verdict, start: start, end: end)
                 switch verdict {
                 case .productive: self.status = "Activité classée productive"; self.resetInterventions()
-                case .unknown: self.status = "Activité indéterminée · aucune alerte"; self.resetInterventions()
+                case .unknown: self.status = "Activité indéterminée, aucune alerte"; self.resetInterventions()
                 case .procrastination:
                     self.status = JevReminderPresentation.status(after: self.streak.observedSeconds)
                 }

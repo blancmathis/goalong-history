@@ -648,8 +648,8 @@
         }
 
         static func provenanceLabel(events: Int, sequences: Int, confidence: Int) -> String {
-            "Preuves : \(GoalongUIFormat.count(events, "identifiant d’événement", plural: "identifiants d’événements")) · "
-                + "\(GoalongUIFormat.count(sequences, "séquence d’intégrité", plural: "séquences d’intégrité")) · "
+            "Preuves : \(GoalongUIFormat.count(events, "identifiant d’événement", plural: "identifiants d’événements")), "
+                + "\(GoalongUIFormat.count(sequences, "séquence d’intégrité", plural: "séquences d’intégrité")), "
                 + "confiance \(GoalongUIFormat.percent(confidence))"
         }
 
@@ -677,6 +677,7 @@
         @State private var timelineSearch = ""
         @State private var newestFirst = true
         @State private var hasRetried = false
+        @Environment(\.goalongRecordingModel) private var recordingModel
 
         private let metricColumns = [
             GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
@@ -685,7 +686,7 @@
         var body: some View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
-                    recordingStateCard
+                    if !timelineAloneExplainsDay { recordingStateCard }
                     historySection
                 }
                 .padding(.bottom, 8)
@@ -783,7 +784,7 @@
                         if showsRecordingSummary {
                             Text(recordingSummary)
                                 .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -801,14 +802,14 @@
                 if let diagnostic = sourceDiagnostic {
                     GoalongDisclosureGroup("Détails techniques") {
                         Text(diagnostic)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.top, 6)
                     }
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .padding(.leading, 30)
                 }
             }
@@ -934,23 +935,23 @@
                         .font(.system(size: 20, weight: .semibold))
                     Image(systemName: "info.circle")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .help(
                             "Les durées correspondent aux périodes observées au premier plan. Elles ne prouvent ni l’attention, ni l’identité, ni l’auteur, ni la productivité."
                         )
                     Spacer(minLength: 12)
                     if isPreparingTimeline {
                         Text("Préparation…")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LHTheme.secondaryText)
                     } else {
                         Text(ComputerHistoryPageCopy.periodCountLabel(
                             visible: visibleTimelineGroups.count,
                             total: tenMinuteGroups.count,
                             searching: !timelineSearch.isEmpty
                         ))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                     Button(action: openSourceJSON) {
                         Label("Voir le fichier brut", systemImage: "doc.text")
@@ -963,12 +964,8 @@
 
                 HStack(spacing: 12) {
                     GoalongSearchField("Rechercher une application ou un contexte", text: $timelineSearch, accessibilityLabel: "Rechercher dans la chronologie")
-                    Picker("Ordre de la chronologie", selection: $newestFirst) {
-                        Text("Plus récent d’abord").tag(true)
-                        Text("Plus ancien d’abord").tag(false)
-                    }
-                    .labelsHidden()
-                    .frame(width: 190)
+                    GoalongMenuPicker("Ordre de la chronologie", selection: $newestFirst,
+                                      options: [(true, "Plus récent d’abord"), (false, "Plus ancien d’abord")])
                 }
                 .font(.system(size: 12))
 
@@ -989,8 +986,8 @@
                         Spacer()
                         if snapshot.eventCount > 0 {
                             Text("\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
                     .padding(.horizontal, 20)
@@ -1004,37 +1001,25 @@
                             Text("Préparation de la chronologie…")
                                 .font(.system(size: 14, weight: .semibold))
                             Text("Préparation locale de la journée.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
                     } else if tenMinuteGroups.isEmpty {
-                        VStack(spacing: 11) {
-                            Image(systemName: "clock.badge.questionmark")
-                                .font(.system(size: 28, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Text(emptyTimelineTitle)
-                                .font(.system(size: 14, weight: .semibold))
-                            if ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus) {
-                                Text(emptyTimelineMessage)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 240)
+                        GoalongEmptyState(
+                            title: emptyTimelineTitle,
+                            message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
+                                ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
+                        .frame(minHeight: 240)
                         .padding(24)
                     } else if visibleTimelineGroups.isEmpty {
-                        VStack(spacing: 10) {
-                            Text("Aucune activité correspondante").font(.system(size: 14, weight: .semibold))
-                            Text("Essayez un autre nom d’app ou un mot du contexte enregistré.")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        GoalongEmptyState(title: "Aucune activité correspondante",
+                                          message: "Essayez un autre nom d’app ou un mot du contexte enregistré.") {
                             Button("Effacer la recherche") { timelineSearch = "" }
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
-                        .frame(maxWidth: .infinity, minHeight: 180)
+                        .frame(maxWidth: .infinity, minHeight: 180, alignment: .topLeading)
                     } else {
                         ForEach(Array(visibleTimelineGroups.enumerated()), id: \.element.id) {
                             index, group in
@@ -1067,7 +1052,21 @@
                 : "Le journal original de cette journée est indisponible"
         }
 
+        /// A day without any journal is one fact: the timeline's empty state says it, the card above does not repeat it.
+        private var timelineAloneExplainsDay: Bool {
+            guard case .absent = model.sourceStatus, model.memory == nil else { return false }
+            return !isPreparingTimeline && tenMinuteGroups.isEmpty
+        }
+
+        /// Writes refused today: the empty day has a known cause and a start time.
+        private var storageStopTitle: String? {
+            guard GoalongToday.isToday(day), let runtime = recordingModel?.runtime, runtime.storageFailure != nil else { return nil }
+            return runtime.storageInterruptedSince.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" }
+                ?? "Enregistrement interrompu"
+        }
+
         private var emptyTimelineTitle: String {
+            if let storageStopTitle, tenMinuteGroups.isEmpty { return storageStopTitle }
             switch model.sourceStatus {
             case .inaccessible:
                 return "Chargement impossible"
@@ -1087,6 +1086,11 @@
         }
 
         private var emptyTimelineMessage: String {
+            if storageStopTitle != nil, let kind = recordingModel?.runtime.storageFailure {
+                return kind == .diskFull
+                    ? "Rien n’est enregistré tant que le disque est plein. La reprise est automatique et la coupure restera indiquée ici."
+                    : "Rien n’est enregistré tant que le dossier de l’historique refuse l’écriture. La reprise est automatique et la coupure restera indiquée ici."
+            }
             switch model.sourceStatus {
             case .inaccessible:
                 return model.memory == nil
@@ -1094,7 +1098,7 @@
                     : "Le dernier historique valide a été conservé. Le journal d’origine n’a pas pu être lu en toute sécurité."
             case .absent:
                 return model.memory == nil
-                    ? "Aucun historique conservé pour ce jour. Les autres jours sont inchangés."
+                    ? "Goalong n’a rien enregistré sur ce Mac ce jour-là, ou ce jour a été effacé."
                     : "Le journal d’origine est absent, mais l’historique conservé n’a pas été supprimé."
             case .available where GoalongToday.isToday(day):
                 return "L’activité apparaît ici lorsque Goalong enregistre une application autorisée."
@@ -1121,7 +1125,7 @@
                                 "Les interactions éligibles peuvent être reliées : contexte avant → action → après → état final. Un contexte proche n’est jamais présenté comme l’état certain avant l’action. La navigation privée suit votre réglage d’enregistrement ; exclusions, saisie sécurisée et champs protégés restent masqués."
                             )
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
@@ -1144,7 +1148,7 @@
                                 "Les apps, pages, clics et saisies groupées restent visibles, mais les intentions, changements de contenu, états des tâches et reprises peuvent être incomplets. Activez le texte affiché pour une analyse complète."
                             )
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -1200,8 +1204,8 @@
                             .font(.system(size: 13, weight: .semibold))
                         Spacer()
                         Text("Recherche locale sur les 30 derniers jours")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                     HStack(spacing: 10) {
                         TextField(
@@ -1237,8 +1241,8 @@
                     Text(
                         "Les réponses renvoient des épisodes sourcés et des liens pour rouvrir les éléments. Elles n’exécutent jamais d’instruction trouvée dans le texte enregistré."
                     )
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }
@@ -1253,38 +1257,38 @@
                             Spacer()
                             Button(action: model.clearAnswer) {
                                 Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Effacer la réponse")
                             .help("Effacer la réponse")
                         }
                         Text(answer.answer)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                         if let retainedGap = ComputerHistoryPageCopy.retainedGapMessage(for: answer) {
                             Label(retainedGap, systemImage: "exclamationmark.triangle.fill")
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundStyle(.orange)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         if !answer.hits.isEmpty {
                             Divider()
                             Text("Sources")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
                             ForEach(answer.hits.prefix(8)) { hit in
                                 HStack(alignment: .top, spacing: 9) {
                                     Image(systemName: hitIcon(hit.kind))
-                                        .foregroundStyle(LHTheme.accent)
+                                        .foregroundStyle(LHTheme.secondaryText)
                                         .frame(width: 18)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(hit.title)
                                             .font(.system(size: 12, weight: .semibold))
                                         Text(hit.snippet)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(3)
                                     }
                                     Spacer()
@@ -1318,8 +1322,8 @@
                         Text(memory.title)
                             .font(.system(size: 18, weight: .bold))
                         Text(memory.executiveSummary)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 12)
@@ -1443,11 +1447,11 @@
                                                     ?? resource.canonicalURI
                                                     ?? "Emplacement indisponible"
                                             )
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundStyle(.secondary)
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(2)
                                             Text(resourceConfidenceLabel(resource))
-                                                .font(.system(size: 11, weight: .medium))
+                                                .font(.system(size: 12, weight: .medium))
                                                 .foregroundStyle(.tertiary)
                                         }
                                         Spacer(minLength: 0)
@@ -1491,12 +1495,12 @@
                                 )
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(suggestion.title)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 12, weight: .semibold))
                                     Text(suggestion.rationale)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(LHTheme.secondaryText)
                                     Text(suggestion.suggestedPrompt)
-                                        .font(.system(size: 11, design: .monospaced))
+                                        .font(.system(size: 12, design: .monospaced))
                                         .textSelection(.enabled)
                                         .padding(8)
                                         .background(
@@ -1506,8 +1510,8 @@
                                 }
                                 Spacer(minLength: 0)
                                 Text(GoalongUIFormat.percent(ConfidencePercent.whole(suggestion.confidence)))
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.secondary)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(LHTheme.secondaryText)
                             }
                         }
                     }
@@ -1522,12 +1526,12 @@
                         .foregroundStyle(LHTheme.success)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Preuves et incertitudes")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         Text(
-                            "\(GoalongUIFormat.count(memory.coverage.sourceEventCount, "événement")) source\(memory.coverage.sourceEventCount > 1 ? "s" : "") · \(GoalongUIFormat.count(memory.coverage.semanticSnapshotCount, "instantané")) de contenu · \(GoalongUIFormat.count(memory.coverage.suppressedEventCount, "événement")) masqué\(memory.coverage.suppressedEventCount > 1 ? "s" : ""). Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
+                            "\(GoalongUIFormat.count(memory.coverage.sourceEventCount, "événement")) source\(memory.coverage.sourceEventCount > 1 ? "s" : ""), \(GoalongUIFormat.count(memory.coverage.semanticSnapshotCount, "instantané")) de contenu, \(GoalongUIFormat.count(memory.coverage.suppressedEventCount, "événement")) masqué\(memory.coverage.suppressedEventCount > 1 ? "s" : ""). Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
                         )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -1544,7 +1548,7 @@
                         "Goalong relie localement les actions, changements de contenu, ressources, états et provenances."
                     )
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 300)
             }
@@ -1567,10 +1571,10 @@
         private func compactEmpty(_ title: String) -> some View {
             HStack(spacing: 9) {
                 Image(systemName: "tray")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 Text(title)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 Spacer()
             }
             .padding(11)
@@ -1610,7 +1614,7 @@
             _ resource: ComputerHistoryResourceReference
         ) -> String {
             let percentage = ConfidencePercent.whole(resource.locatorConfidence)
-            return "\(ComputerHistoryPageCopy.resourceKindLabel(resource.kind)) · confiance \(percentage)\u{00A0}%"
+            return "\(ComputerHistoryPageCopy.resourceKindLabel(resource.kind)), confiance \(percentage)\u{00A0}%"
         }
     }
 
@@ -1624,7 +1628,7 @@
             HStack(alignment: .top, spacing: 0) {
                 Text(windowTimeLabel)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .monospacedDigit()
                     .frame(width: 70, alignment: .trailing)
                     .multilineTextAlignment(.trailing)
@@ -1651,21 +1655,16 @@
                             expanded.toggle()
                         }
                     } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(headline)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                            }
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
+                                .frame(width: 12).accessibilityHidden(true)
+                            Text(headline)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
                             Spacer(minLength: 12)
-                            Text(expanded ? "Masquer les détails" : "Détails")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 3)
                         }
                         .contentShape(Rectangle())
                     }
@@ -1694,8 +1693,8 @@
                     if expanded {
                         Divider()
                         Text(factSummary)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(group.sessions) { session in
                                 HStack(alignment: .top, spacing: 10) {
@@ -1707,7 +1706,7 @@
                                     VStack(alignment: .leading, spacing: 3) {
                                         HStack(spacing: 7) {
                                             Text(session.appName)
-                                                .font(.system(size: 11, weight: .semibold))
+                                                .font(.system(size: 12, weight: .semibold))
                                             if session.isSuppressed {
                                                 Image(systemName: "eye.slash.fill")
                                                     .font(.system(size: 10))
@@ -1716,13 +1715,13 @@
                                         }
                                         Text(session.context)
                                             .font(.system(size: 12))
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(2)
                                         Text(
                                             sessionDetailSummary(session)
                                         )
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(.secondary)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(LHTheme.secondaryText)
                                     }
                                     Spacer(minLength: 0)
                                 }
@@ -1746,7 +1745,7 @@
                     .lineLimit(1)
                 Text(durationLabel(app.activeSeconds))
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .monospacedDigit()
                     .fixedSize()
             }
@@ -1763,7 +1762,7 @@
             case 2:
                 return "\(names[0]) et \(names[1])"
             default:
-                return "\(names[0]), \(names[1]) et \(names.count - 2) autres"
+                return "\(names[0]), \(names[1]) et \(names.count - 2) \(names.count - 2 > 1 ? "autres" : "autre")"
             }
         }
 
@@ -1778,12 +1777,12 @@
             } else if group.recordedEventCount > 0 {
                 facts.append("\(GoalongUIFormat.number(group.recordedEventCount)) événement\(group.recordedEventCount > 1 ? "s" : "")")
             }
-            return facts.joined(separator: " · ")
+            return facts.joined(separator: ", ")
         }
 
         private var windowTimeLabel: String {
             GoalongUIFormat.time(group.start)
-                + "\n–"
+                + "\n–\u{00A0}"
                 + GoalongUIFormat.time(group.end)
         }
 
@@ -1802,7 +1801,7 @@
             let details = session.sourceSessionCount == 1
                 ? "1 segment enregistré"
                 : "\(session.sourceSessionCount) segments enregistrés"
-            return "\(interval) · \(durationLabel(session.duration)) · \(details)"
+            return "\(interval), \(durationLabel(session.duration)), \(details)"
         }
     }
 
@@ -1820,7 +1819,11 @@
                     Button {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { expanded.toggle() }
                     } label: {
-                        HStack(alignment: .top, spacing: 11) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
+                                .frame(width: 12).accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack(spacing: 8) {
                                     Text(episode.title)
@@ -1834,18 +1837,15 @@
                                 Text(
                                     episodeMetrics
                                 )
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(LHTheme.secondaryText)
                                 Text(episode.summary)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(LHTheme.secondaryText)
                                     .lineLimit(expanded ? nil : 3)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 10)
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
                         }
                         .contentShape(Rectangle())
                     }
@@ -1860,7 +1860,7 @@
                                         openResource(resource)
                                     } label: {
                                         Label(resource.title, systemImage: "link")
-                                            .font(.system(size: 11, weight: .medium))
+                                            .font(.system(size: 12, weight: .medium))
                                             .lineLimit(1)
                                     }
                                     .buttonStyle(LHSecondaryButtonStyle())
@@ -1890,25 +1890,25 @@
                         }
                         VStack(alignment: .leading, spacing: 7) {
                             Text("Séquence d’actions")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
                             ForEach(episode.interactions) { interaction in
                                 HStack(alignment: .top, spacing: 9) {
                                     Text(GoalongUIFormat.time(interaction.start))
-                                        .font(.system(size: 11, design: .monospaced))
+                                        .font(.system(size: 12, design: .monospaced))
                                         .foregroundStyle(.tertiary)
                                         .frame(width: 56, alignment: .leading)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(interaction.label)
-                                            .font(.system(size: 11, weight: .medium))
+                                            .font(.system(size: 12, weight: .medium))
                                         if !interaction.semanticDelta.isEmpty {
                                             Text(
                                                 "Changement : "
                                                     + interaction.semanticDelta.prefix(3)
-                                                    .joined(separator: " · ")
+                                                    .joined(separator: ", ")
                                             )
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .fixedSize(horizontal: false, vertical: true)
                                         }
                                     }
@@ -1921,7 +1921,7 @@
                                 sequences: episode.provenance.sourceSequences.count,
                                 confidence: ConfidencePercent.whole(episode.statusConfidence))
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                         HStack {
                             Spacer()
@@ -1947,17 +1947,17 @@
             } else {
                 interactions = GoalongUIFormat.count(episode.totalInteractionCount, "interaction")
             }
-            return "\(interval) · \(interactions) · \(GoalongUIFormat.count(episode.eventCount, "événement"))"
+            return "\(interval), \(interactions), \(GoalongUIFormat.count(episode.eventCount, "événement"))"
         }
 
         private func detailSection(title: String, values: [String]) -> some View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LHTheme.secondaryText)
                 ForEach(values, id: \.self) { value in
                     Text("• \(value)")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

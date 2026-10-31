@@ -4,6 +4,8 @@
 
     @MainActor
     struct BackgroundContinuitySettings: View {
+        static let loginTitle = "Ouvrir Goalong à l’ouverture de session"
+        static let unknownStateTitle = "État inconnu"
         @AppStorage(BackgroundContinuityPreferences.keepRunningKey) private var keepRunning = true
         @StateObject private var login = LaunchAtLoginManager()
         @ObservedObject private var continuity = BackgroundContinuityController.shared
@@ -14,28 +16,41 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
-                SectionTitle(title: "Enregistrement en arrière-plan", subtitle: "Goalong reste actif sans garder sa fenêtre ouverte.")
+                // Goalong stays active even while recording is off: the title names the app, not the recording (UI-43).
+                SectionTitle(title: "Goalong en arrière-plan", subtitle: "Goalong reste actif sans garder sa fenêtre ouverte.")
                 LHCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Toggle("Garder Goalong actif en arrière-plan", isOn: $keepRunning)
                             .toggleStyle(.goalongSwitch)
                         Text("Recommandé : fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation. Aucun service supplémentaire n’est installé ; votre Mac peut toujours se mettre en veille.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         Divider()
-                        Toggle("Ouvrir Goalong à l’ouverture de session", isOn: Binding(
-                            get: { login.isRegistered },
-                            set: { _ = login.setUserPreference($0, surface: .settings) }
-                        )).toggleStyle(.goalongSwitch).disabled(login.isChanging || blockingHoldsLogin)
-                        Text(blockingHoldsLogin
-                             ? LaunchAtLoginManager.heldMessage
-                             : login.statusDetail)
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        if login.switchValue != nil {
+                            Toggle(Self.loginTitle, isOn: Binding(
+                                get: { login.isRegistered },
+                                set: { _ = login.setUserPreference($0, surface: .settings) }
+                            )).toggleStyle(.goalongSwitch).disabled(login.isChanging || blockingHoldsLogin)
+                            Text(blockingHoldsLogin
+                                 ? LaunchAtLoginManager.heldMessage
+                                 : login.statusDetail)
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        } else {
+                            // macOS gave no state: say so on the row instead of an "off" switch (UI-43).
+                            HStack(alignment: .center, spacing: 16) {
+                                Text(Self.loginTitle).frame(maxWidth: .infinity, alignment: .leading)
+                                Label(Self.unknownStateTitle, systemImage: "questionmark.circle")
+                                    .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.warning)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("settings-login-unknown")
+                            GoalongNote(login.statusDetail, tone: .warning)
+                        }
                         if consents.isEnabled(.launchAtLogin) && !login.isEnabled {
                             Text("Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système.")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                         }
                         if login.requiresApproval || login.state == .unavailable {
-                            Button("Ouvrir les éléments d’ouverture…") { login.openLoginItemsSettings() }
+                            Button("Ouvrir Réglages Système…") { login.openLoginItemsSettings() }
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
                         if let message = login.message {
@@ -48,7 +63,7 @@
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
                         Text("Ces options n’activent aucune source et ne reprennent pas une pause.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }.fixedSize(horizontal: false, vertical: true)
                 }
             }

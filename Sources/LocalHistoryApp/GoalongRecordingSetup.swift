@@ -55,9 +55,9 @@ enum GoalongRecordingSetup {
     }
     static func profile(_ settings: DashboardSettingsDraft, visibleText: Bool) -> String {
         let count = enabledCount(settings, visibleText: visibleText)
-        if count == 8 { return "Complet · 8/8" }
+        if count == 8 { return "Complet, 8/8" }
         if count == 0 { return "Applications seules" }
-        return "Personnalisé · \(count)/8"
+        return "Personnalisé, \(count)/8"
     }
 }
 
@@ -106,7 +106,7 @@ struct GoalongRecordingSetupSheet: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Votre enregistrement local").font(LHTheme.sheetTitleFont)
                 Text("Tout est proposé. Décochez ce que vous ne souhaitez pas conserver.")
-                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
             Divider()
             ScrollView {
@@ -119,7 +119,7 @@ struct GoalongRecordingSetupSheet: View {
                         }
                     }
                     Text("Sur ce Mac uniquement. Les exclusions et la navigation privée gardent vos réglages. Aucun envoi n’est autorisé ici.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     if let error { Label(error, systemImage: "exclamationmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.warning) }
                 }.padding(24)
             }
@@ -198,9 +198,16 @@ struct GoalongRecordingStateNotice: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 12)
-                        Button(actionTitle(kind)) { perform(kind) }
-                            .buttonStyle(LHPrimaryButtonStyle())
-                            .accessibilityIdentifier("activity-recording-action")
+                        // One lime per screen: pending changes own the primary action (UI-42).
+                        if model.settingsHaveChanges {
+                            Button(actionTitle(kind)) { perform(kind) }
+                                .buttonStyle(LHSecondaryButtonStyle())
+                                .accessibilityIdentifier("activity-recording-action")
+                        } else {
+                            Button(actionTitle(kind)) { perform(kind) }
+                                .buttonStyle(LHPrimaryButtonStyle())
+                                .accessibilityIdentifier("activity-recording-action")
+                        }
                     }
                 }
                 .accessibilityElement(children: .contain)
@@ -231,7 +238,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "Activez-le pour voir ici votre temps actif, vos blocs de travail et vos apps et sites. Tout reste sur ce Mac."
         case .paused: return "Aucune nouvelle activité n’est enregistrée. L’historique existant reste consultable."
         case .permissions: return "Rien n’est enregistré tant que l’accès n’est pas rétabli. Goalong vous guide pas à pas."
-        case .input: return "Le clavier et la souris ne parviennent pas à Goalong : une partie de votre activité peut manquer. Vérifiez la Surveillance de l’entrée."
+        case .input: return "Le clavier et la souris ne parviennent pas à Goalong : une partie de votre activité peut manquer. Vérifiez la surveillance de l’entrée."
         }
     }
     private func actionTitle(_ kind: Kind) -> String {
@@ -269,10 +276,11 @@ struct GoalongRecordingCoverageNotice: View {
     private var profile: String { GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText) }
     var body: some View {
         if !hidden && consents.isEnabled(.localComputerHistory) && count < 8 && !(dismissible && dismissedProfile == profile) {
-            LHCard {
+            // A note is a tinted block without a border (DESIGN §8).
+            HStack(spacing: 16) {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(count == 0 ? "Seules les applications sont enregistrées" : "Suivi personnalisé · \(count)/8 types de détails")
+                        Text(count == 0 ? "Seules les applications sont enregistrées" : "Suivi personnalisé, \(count)/8 types de détails")
                             .font(.system(size: 13, weight: .semibold))
                         Text("Certains clics, interactions ou textes ne sont pas enregistrés selon vos choix. Vos durées et vos apps restent mesurées.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -282,7 +290,7 @@ struct GoalongRecordingCoverageNotice: View {
                     GoalongCompleteRecordingButton(model: model)
                     if dismissible {
                         Button { dismissedProfile = profile } label: {
-                            Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                            Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                         }
                         .buttonStyle(LHQuietButtonStyle())
                         .help("Garder mes choix et masquer ce message")
@@ -290,7 +298,10 @@ struct GoalongRecordingCoverageNotice: View {
                         .accessibilityIdentifier("recording-incomplete-dismiss")
                     }
                 }
-            }.accessibilityIdentifier("recording-incomplete-notice")
+            }
+            .padding(14)
+            .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+            .accessibilityIdentifier("recording-incomplete-notice")
         }
     }
 }

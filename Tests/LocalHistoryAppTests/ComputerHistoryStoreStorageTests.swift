@@ -1667,9 +1667,9 @@
             XCTAssertEqual(ComputerHistoryPageCopy.retainedResourcesLabel(1), "1 lien source représentatif conservé")
             XCTAssertEqual(ComputerHistoryPageCopy.retainedResourcesLabel(2), "2 liens sources représentatifs conservés")
             XCTAssertEqual(ComputerHistoryPageCopy.provenanceLabel(events: 1, sequences: 1, confidence: 80),
-                           "Preuves : 1 identifiant d’événement · 1 séquence d’intégrité · confiance 80\u{00A0}%")
+                           "Preuves : 1 identifiant d’événement, 1 séquence d’intégrité, confiance 80\u{00A0}%")
             XCTAssertEqual(ComputerHistoryPageCopy.provenanceLabel(events: 2, sequences: 3, confidence: 50),
-                           "Preuves : 2 identifiants d’événements · 3 séquences d’intégrité · confiance 50\u{00A0}%")
+                           "Preuves : 2 identifiants d’événements, 3 séquences d’intégrité, confiance 50\u{00A0}%")
         }
 
         func testEmptyDayIsExplainedInOnePlace() {

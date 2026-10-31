@@ -35,7 +35,7 @@ struct BlockedSiteVeil: View {
                 Text(detail).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     .multilineTextAlignment(.center).frame(maxWidth: 460).fixedSize(horizontal: false, vertical: true)
                 if let counts = countsLine {
-                    Text(counts).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
+                    Text(counts).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                         .accessibilityIdentifier("blocking-veil-attempts")
                 }
                 if let minutes = presentation.breakMinutes, presentation.breaksLeft > 0 {
@@ -43,14 +43,14 @@ struct BlockedSiteVeil: View {
                         Button(action: onBreak) { Label("Pause de \(minutes) min", systemImage: "cup.and.saucer") }
                             .accessibilityIdentifier("blocking-veil-break")
                         Text(presentation.breaksLeft == 1 ? "Dernière pause du jour" : "\(presentation.breaksLeft) pauses restantes aujourd’hui")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                 } else if presentation.breakMinutes != nil, presentation.extraBreak {
                     VStack(spacing: 6) {
                         Button(action: onBreak) { Label("Pause supplémentaire…", systemImage: "key") }
                             .accessibilityIdentifier("blocking-veil-extra-break")
                         Text("Pauses du jour prises. Le mot de passe en accorde une de plus.")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                 }
             }
@@ -59,7 +59,7 @@ struct BlockedSiteVeil: View {
             HStack(spacing: 8) {
                 GoalongMark().stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .frame(width: 20, height: 14)
-                Text("Goalong · Blocage").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.tertiaryText)
+                Text("Blocage Goalong").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
             }
             .padding(.bottom, 22)
         }
@@ -91,14 +91,14 @@ struct BlockedSiteVeil: View {
 
     private var countsLine: String? {
         let parts = [presentation.feedback?.attemptLine, presentation.feedback?.earnedLine].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: ". ") + "."
     }
 
     var detail: String {
         switch presentation.reason {
-        case .site: return "Liste « \(presentation.listName) »."
-        case .quotaUsed(_, let minutes): return "Temps du jour écoulé : \(BlockingFormat.duration(minutes: minutes)) (liste « \(presentation.listName) »)."
-        case .unsupportedBrowser(let name): return "\(name) n’est pas pris en charge : Goalong ne lit pas l’adresse dans ce navigateur. Pendant un blocage de sites, il reste couvert. Safari, Chrome, Edge, Brave, Arc et Aside sont pris en charge."
+        case .site: return "Bloqué par la liste « \(presentation.listName) »."
+        case .quotaUsed(_, let minutes): return "Vous avez utilisé votre temps du jour : \(BlockingFormat.duration(minutes: minutes)) (liste « \(presentation.listName) »)."
+        case .unsupportedBrowser(let name): return "\(name) n’est pas pris en charge : Goalong ne lit pas l’adresse dans ce navigateur. Pendant un blocage de sites, ses fenêtres restent masquées. Safari, Chrome, Edge, Brave, Arc et Aside sont pris en charge."
         }
     }
 }
@@ -123,7 +123,7 @@ struct BlockedAppNotice: View {
     }
 
     private func detail(_ parts: [String?]) -> some View {
-        Text(parts.compactMap { $0 }.joined(separator: " · "))
+        Text(parts.compactMap { $0 }.joined(separator: ". ") + ".")
             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
     }
 
@@ -131,7 +131,7 @@ struct BlockedAppNotice: View {
         HStack(spacing: 14) {
             BlockingStruckIcon(item: .app(app), size: 36)
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(app.name) est bloqué").font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                Text("Accès bloqué à \(app.name)").font(.system(size: 14, weight: .semibold)).lineLimit(1)
                 if let reason = feedback?.reasonLine {
                     Text(reason).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 }
@@ -199,7 +199,7 @@ struct FrozenMacShield: View {
                 }
                 Spacer()
                 Text("Éteindre le Mac reste possible. Au redémarrage, le gel reprend.")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText).padding(.bottom, 32)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.bottom, 32)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

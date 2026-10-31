@@ -16,7 +16,7 @@
             VStack(alignment: .leading, spacing: 24) {
                 Text("Retrouvez le fil de ce que vous faisiez.").goalongPageTitle()
                 Text("Réunissez votre activité, votre temps d’écran et vos conversations IA locales. Choisissez vos sources ; vous pourrez ajouter les autres plus tard.")
-                    .font(.system(size: 14)).foregroundStyle(.secondary)
+                    .font(.system(size: 14)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 LHCard {
                     VStack(alignment: .leading, spacing: 16) {
@@ -52,7 +52,7 @@
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Enregistrer l’activité de ce Mac").font(.system(size: 15, weight: .semibold))
                                 Text("Tout reste sur ce Mac. Aucun envoi, aucune capture d’écran, aucun texte tapé.")
-                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 12)
@@ -62,8 +62,8 @@
                         }
                         Divider()
                         HStack {
-                            Text("Détails enregistrés · tous proposés, modifiables à tout moment")
-                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                            Text("Détails enregistrés, tous proposés, modifiables à tout moment")
+                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
                         }
                         GoalongVisibleTextChoice(enabled: $visibleTextDraft)
@@ -118,7 +118,7 @@
                 }
                 // Warn here, not only on the last step: with every source off, Activité stays empty.
                 if ![GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations].contains(where: { consents.isEnabled($0) }) {
-                    GoalongNote("Aucune source : Activité restera vide.", symbol: "exclamationmark.circle", tone: .warning)
+                    GoalongNote("Aucune source : Activité restera vide.", symbol: "exclamationmark.circle")
                         .accessibilityIdentifier("onboarding-no-source-note")
                 }
             }
@@ -175,7 +175,7 @@
                 LHCard {
                     Toggle(isOn: $launchAtLoginPreference) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Ouvrir Goalong à la connexion").font(.system(size: 13, weight: .medium))
+                            Text("Lancer Goalong à l’ouverture de session").font(.system(size: 13, weight: .medium))
                             Text(launchAtLogin.heldByBlocking
                                  ? LaunchAtLoginManager.heldMessage
                                  : "Conseillé et sélectionné par défaut. Seules les sources que vous avez activées démarrent.")
@@ -188,17 +188,17 @@
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 if let note { GoalongNote(note, tone: .warning) }
                 if launchAtLoginPreference && launchAtLogin.requiresApproval {
-                    Button("Ouvrir les éléments d’ouverture") { launchAtLogin.openLoginItemsSettings() }
+                    Button("Ouvrir Réglages Système") { launchAtLogin.openLoginItemsSettings() }
                 }
             }
         }
 
         func introduction(_ title: String, symbol: String, detail: String) -> some View {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: symbol).frame(width: 22).foregroundStyle(.secondary)
+                Image(systemName: symbol).frame(width: 22).foregroundStyle(LHTheme.secondaryText)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title).font(.system(size: 13, weight: .medium))
-                    Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

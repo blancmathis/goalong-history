@@ -136,7 +136,7 @@ import LocalHistoryCore
 
     private func unlockText(_ origin: BlockSession.Origin, end: Date) -> String {
         if case .program = origin { return "Cette plage du programme s’arrête pour aujourd’hui. Elle revient la prochaine fois." }
-        return "Le blocage s’arrête maintenant, avant \(BlockingFormat.endTime(end))."
+        return "Débloquer arrête ce blocage prévu jusqu’à \(BlockingFormat.endTime(end))."
     }
 }
 
@@ -272,8 +272,8 @@ struct BlockingStopRequest: Identifiable {
         var words: String
         switch block.lock {
         case .locked: words = "Verrouillé jusqu’à \(BlockingFormat.endTime(block.end))"
-        case .password: words = "Protégé par mot de passe · jusqu’à \(BlockingFormat.endTime(block.end))"
-        case .typing: words = "Difficile à arrêter · jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .password: words = "Protégé par mot de passe jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .typing: words = "Difficile à arrêter jusqu’à \(BlockingFormat.endTime(block.end))"
         case .free: words = "Bloqué jusqu’à \(BlockingFormat.endTime(block.end))"
         }
         let lists = block.listIDs.compactMap(controller.list)
@@ -281,7 +281,7 @@ struct BlockingStopRequest: Identifiable {
             words = words.replacingOccurrences(of: "Bloqué jusqu", with: "Ralenti jusqu")
         }
         let origin: String
-        if case .program = block.origin { origin = " · programme" } else { origin = "" }
+        if case .program = block.origin { origin = ", selon le programme" } else { origin = "" }
         if triggerApps(block) != nil {
             words = lists.allSatisfy({ $0.effectiveAction == .slowDown }) ? "Ralenti tant que l’app est ouverte" : "Bloqué tant que l’app est ouverte"
             symbol = "app.badge"
@@ -337,7 +337,7 @@ struct BlockingStopRequest: Identifiable {
                 Image(systemName: "hourglass").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
                 Text((left > 0 ? "\(list.name) : encore \(BlockingFormat.remaining(left)) aujourd’hui"
                                : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota + earned)) du jour sont passées")
-                     + (earned > 0 ? " · \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
+                     + (earned > 0 ? ". \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
                 Spacer(minLength: 8)
                 BlockingMeter(fraction: 1 - left / Double(max(1, (quota + earned) * 60))).frame(width: 120)
             }
@@ -409,7 +409,7 @@ struct BlockingSessionThread: View {
                 if locked { Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold)) }
                 Text(BlockingFormat.endTime(end))
             }
-            .font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
+            .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("De \(BlockingFormat.time(start)) à \(BlockingFormat.endTime(end)), \(GoalongUIFormat.percent(progress * 100)) écoulés")
@@ -564,7 +564,7 @@ struct BlockingMeter: View {
                                 }
                                 if later {
                                     DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
-                                        .labelsHidden().fixedSize()
+                                        .goalongDateField()
                                         .environment(\.locale, Locale(identifier: "fr_FR"))
                                         .accessibilityIdentifier("blocking-start-at")
                                 }
@@ -582,7 +582,7 @@ struct BlockingMeter: View {
                             }
                             if span == .until {
                                 DatePicker("Heure de fin", selection: $until, displayedComponents: .hourAndMinute)
-                                    .labelsHidden().fixedSize()
+                                    .goalongDateField()
                                     .environment(\.locale, Locale(identifier: "fr_FR"))
                             }
                         }
@@ -993,7 +993,7 @@ struct BlockingLockExplainer: View {
     /// What the Standard level cannot stop. Kept in step with docs/BLOCKING.md.
     static let limits = [
         "Forcer Goalong à quitter arrête le blocage jusqu’à la prochaine ouverture de session, même avec un mot de passe.",
-        "Retirer Goalong des éléments d’ouverture, ou supprimer l’app à la main, met fin au blocage.",
+        "Retirer Goalong de l’ouverture de session, ou supprimer l’app à la main, met fin au blocage.",
         "Supprimer le dossier de blocage puis relancer Goalong efface les verrous.",
         "Changer l’heure du Mac puis redémarrer peut raccourcir un verrou.",
         "Un navigateur que Goalong ne connaît pas, et dont il ne lit pas l’adresse, n’est pas couvert.",
@@ -1003,27 +1003,28 @@ struct BlockingLockExplainer: View {
 
     /// Réglages Système › Général › Ouverture, where macOS lets Goalong start and run in the background.
     private var loginItemsButton: AnyView {
-        AnyView(Button("Ouvrir Réglages…") { SMAppService.openSystemSettingsLoginItems() }
+        AnyView(Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
             .help("Autorisez Goalong dans Réglages Système › Général › Ouverture.")
             .accessibilityIdentifier("blocking-open-login-items"))
     }
 
     private func statusRow(symbol: String, title: String, ok: Bool, value: String, action: AnyView? = nil) -> some View {
-        HStack(spacing: 12) {
+        // The action sits under its row, on the text's left edge: the title keeps one line.
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 Image(systemName: symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 20).accessibilityHidden(true)
-                Text(title).font(.system(size: 13, weight: .medium))
+                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 12)
                 Image(systemName: ok ? "checkmark.circle.fill" : "circle.dashed")
                     .foregroundStyle(ok ? LHTheme.success : LHTheme.tertiaryText).accessibilityHidden(true)
                 Text(value).foregroundStyle(LHTheme.secondaryText)
             }
+            .frame(minHeight: 38)
             .accessibilityElement(children: .combine)
-            if let action { action }
+            if let action { action.padding(.leading, 32).padding(.bottom, 8) }
         }
-        .frame(minHeight: 38)
     }
 
     private var browsersRow: some View {

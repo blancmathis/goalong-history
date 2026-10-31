@@ -39,7 +39,7 @@
         static let switchKnob = adaptive(light: 0xFFFFFF, dark: 0xB4C2B7)
         static let placeholder = adaptive(light: 0x8A9486, dark: 0x66766A, highLight: 0x5E6859, highDark: 0x93A396)
         /// Chart axes and the resting thread: quieter than secondary text, never body copy.
-        static let tertiaryText = adaptive(light: 0x7A8475, dark: 0x74857A, highLight: 0x566252, highDark: 0xA0B0A4)
+        static let tertiaryText = adaptive(light: 0x646F5F, dark: 0x7E9084, highLight: 0x566252, highDark: 0xA0B0A4)
 
         /// The three states of active time, always in this order. Lime is work as the person
         /// defined it; time outside work is a calm periwinkle, never a warning; what is not

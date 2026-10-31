@@ -14,9 +14,9 @@ extension HistoryDataClass {
         case .semanticSnapshots: return "Texte affiché"
         case .memories: return "Historique et résumés locaux"
         case .analysisCaches: return "Fichiers temporaires d’analyse"
-        case .minuteSeals: return "Sceaux d’intégrité"
+        case .minuteSeals: return "Contrôles d’intégrité"
         case .activitySummaries: return "Résumés de journée"
-        case .anchorReceipts: return "Reçus de vérification"
+        case .anchorReceipts: return "Confirmations de vérification"
         }
     }
 }
@@ -98,10 +98,9 @@ extension HistoryRetentionPolicy {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Durée de conservation locale").font(LHTheme.sheetTitleFont)
-                    Text("Règles distinctes pour les détails, souvenirs et preuves.").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text("Règles distinctes pour les détails, souvenirs et preuves.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
-                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(24)
             Divider()
             ScrollView {
@@ -111,19 +110,22 @@ extension HistoryRetentionPolicy {
                         .accessibilityIdentifier("retention-automatic")
                     Text(model.automaticCleanup
                          ? "Après confirmation, les données expirées peuvent être supprimées tout de suite puis lors du nettoyage quotidien. Réduire une durée s’applique aussi aux données existantes."
-                         : "Le nettoyage automatique est désactivé : les données restent jusqu’à ce que vous les supprimiez. Choisir une durée ci-dessous n’active pas la suppression.")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                         : "Le nettoyage automatique est désactivé : les données restent jusqu’à ce que vous les supprimiez. Activez-le pour choisir les durées.")
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     LHCard(padding: 0) {
                         VStack(spacing: 0) {
                             ForEach(HistoryDataClass.allCases, id: \.self) { kind in
                                 HStack(alignment: .center, spacing: 16) {
                                     Text(kind.retentionTitle).font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(model.automaticCleanup ? LHTheme.text : LHTheme.secondaryText)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     Picker(kind.retentionTitle, selection: durationBinding(kind)) {
                                         Text(HistoryRetentionPolicy.noLimitLabel).tag(0)
                                         ForEach(durationOptions(kind), id: \.self) { days in Text(GoalongUIFormat.count(days, "jour")).tag(days) }
                                     }.labelsHidden().frame(width: 230)
                                         .accessibilityIdentifier("retention-\(kind.rawValue)")
+                                        // A duration only counts once automatic cleanup is on (UI-44).
+                                        .disabled(!model.automaticCleanup)
                                 }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
                                 if kind != HistoryDataClass.allCases.last { GoalongRowDivider(inset: LHTheme.cardInset) }
                             }
@@ -136,7 +138,7 @@ extension HistoryRetentionPolicy {
                             .accessibilityIdentifier("retention-confirm-proofs")
                     }
                     Text("Ces règles couvrent les données ci-dessus. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni les exports, sauvegardes ou données déjà envoyées. Les bilans ChatGPT ne sont pas concernés : effacez-les avec « Effacer l’historique détaillé » pour les jours voulus.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     if let error = model.error {
                         Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                     }
@@ -149,9 +151,12 @@ extension HistoryRetentionPolicy {
             }
             Divider()
             HStack {
-                Text("Rien n’est appliqué avant votre confirmation.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Rien n’est appliqué avant votre confirmation.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 Spacer()
-                Button(model.automaticCleanup ? "Vérifier et appliquer…" : "Enregistrer sans suppression automatique") {
+                // Cancel and the main action sit together in the footer (UI-44).
+                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                    .buttonStyle(LHSecondaryButtonStyle())
+                Button(model.automaticCleanup ? "Vérifier et appliquer…" : "Enregistrer") {
                     if model.automaticCleanup { showingConfirmation = true }
                     else if model.apply(proofDeletionConfirmed: false) { dismiss() }
                 }.buttonStyle(LHPrimaryButtonStyle())

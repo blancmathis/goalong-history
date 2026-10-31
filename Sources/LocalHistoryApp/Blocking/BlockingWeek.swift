@@ -146,7 +146,7 @@ import SwiftUI
                 Color.clear.frame(width: Self.label, height: 1)
                 GeometryReader { proxy in
                     ForEach([0, 6, 12, 18, 24], id: \.self) { hour in
-                        Text("\(hour) h").font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
+                        Text("\(hour) h").font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
                             .fixedSize()
                             .position(x: min(max(10, proxy.size.width * CGFloat(hour) / 24), proxy.size.width - 12), y: 7)
                     }
@@ -162,7 +162,7 @@ import SwiftUI
                     Text("Maintenant")
                 }
             }
-            .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             .padding(.leading, Self.label + Self.gap).padding(.top, 6)
         }
         .coordinateSpace(name: "blocking-week")
@@ -219,7 +219,7 @@ import SwiftUI
                     .frame(width: max(Self.laneHeight, x(high) - x(low)), height: Self.laneHeight)
                     .overlay(alignment: .top) {
                         Text("\(BlockingFormat.minuteOfDay(low)) → \(high == 1_440 ? "24:00" : BlockingFormat.minuteOfDay(high))")
-                            .font(.system(size: 11, weight: .medium).monospacedDigit()).fixedSize()
+                            .font(.system(size: 12, weight: .medium).monospacedDigit()).fixedSize()
                             .offset(y: -16)
                     }
                     .offset(x: x(low), y: (Self.rowHeight - Self.laneHeight) / 2)
@@ -260,7 +260,7 @@ import SwiftUI
         .frame(width: width, height: Self.laneHeight - 3)
         .padding(.vertical, 1.5)
         .contentShape(Capsule())
-        .help("\(span.name) · \(BlockingFormat.minuteOfDay(span.start)) → \(BlockingFormat.rangeEnd(span.end))")
+        .help("\(span.name), \(BlockingFormat.minuteOfDay(span.start)) → \(BlockingFormat.rangeEnd(span.end))")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(BlockingFormat.rangeLabel(name: span.name, weekday: day, start: span.start, end: span.end, lock: span.lock))
         .accessibilityAddTraits(.isButton)
@@ -342,9 +342,11 @@ struct BlockingRangeDraft: Identifiable {
                     } label: {
                         Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
                             .frame(width: 32, height: 28)
-                            .foregroundStyle(on ? LHTheme.onAccent : LHTheme.secondaryText)
-                            .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
+                            .foregroundStyle(on ? LHTheme.text : LHTheme.secondaryText)
+                            .background(on ? LHTheme.selectionBackground : LHTheme.insetBackground,
                                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(LHTheme.text, lineWidth: on ? 1 : 0))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(BlockingFormat.weekdayShort[day - 1])
@@ -358,11 +360,11 @@ struct BlockingRangeDraft: Identifiable {
             }
             HStack(spacing: 12) {
                 Text("De").font(.system(size: 13))
-                DatePicker("De", selection: $start, displayedComponents: .hourAndMinute).labelsHidden()
+                DatePicker("De", selection: $start, displayedComponents: .hourAndMinute).goalongDateField()
                     .fixedSize().padding(.trailing, 6)
                     .environment(\.locale, Locale(identifier: "fr_FR"))
                 Text("à").font(.system(size: 13))
-                DatePicker("à", selection: $end, displayedComponents: .hourAndMinute).labelsHidden()
+                DatePicker("à", selection: $end, displayedComponents: .hourAndMinute).goalongDateField()
                     .fixedSize().padding(.trailing, 6)
                     .environment(\.locale, Locale(identifier: "fr_FR"))
                 if minutes(end) <= minutes(start), minutes(end) != 0 {

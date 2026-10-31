@@ -23,7 +23,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
 
     var summary: String {
         switch self {
-        case .concentration: return "Séances, Pomodoro, plan du jour et bilan, statut."
+        case .concentration: return "Séances, Pomodoro, plan du jour et bilan. Le Terminal peut suivre la séance en cours."
         case .blocking: return "Bloquer des sites et des apps, verrouiller un blocage, geler le Mac."
         case .ambiance: return "De la musique pour travailler ou souffler, téléchargée à la demande."
         case .braise: return "Filtre rouge, luminosité et horaires, sans accès supplémentaire."

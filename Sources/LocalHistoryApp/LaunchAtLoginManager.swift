@@ -59,7 +59,18 @@
             case .disabled:
                 return "Vous pouvez toujours ouvrir \(ProductIdentity.displayName) vous-même à tout moment."
             case .unavailable:
-                return "macOS n’a pas pu lire l’état d’ouverture à la connexion."
+                return "macOS n’a pas pu lire l’état de l’ouverture de session."
+            }
+        }
+
+        /// The value a switch may show. An unread state is unknown, never drawn as "off" (UI-43).
+        var switchValue: Bool? { Self.switchValue(for: state) }
+
+        nonisolated static func switchValue(for state: State) -> Bool? {
+            switch state {
+            case .enabled, .requiresApproval: return true
+            case .disabled: return false
+            case .unavailable: return nil
             }
         }
 
@@ -103,7 +114,7 @@
         @discardableResult
         func setEnabled(_ enabled: Bool, channel: GoalongBuildChannel = .current) -> Bool {
             guard channel.allowsLoginItems else {
-                message = "Goalong Dev ne gère pas l’ouverture à la connexion : c’est le rôle de Goalong installé."
+                message = "Goalong Dev ne gère pas l’ouverture de session : c’est le rôle de Goalong installé."
                 // Turning it off needs no change, so it succeeds; only turning it on is refused.
                 return !enabled
             }
@@ -174,7 +185,7 @@
             return setEnabled(enabled)
         }
 
-        static let heldMessage = "Un blocage verrouillé est en cours : Goalong reste ouvert à la connexion jusqu’à la fin."
+        static let heldMessage = "Un blocage verrouillé est en cours : Goalong reste dans l’ouverture de session jusqu’à la fin."
 
 
         func openLoginItemsSettings() {

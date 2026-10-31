@@ -73,7 +73,7 @@ final class BlockingPlusTests: XCTestCase {
         c.observe(target(now, url: "allowed.org"))
         now = now.addingTimeInterval(1); c.observe(target(now))
         XCTAssertEqual(c.attemptsToday[list.id], 2)
-        XCTAssertEqual(backend.lastFeedback?.attemptLine, "2e tentative aujourd’hui")
+        XCTAssertEqual(backend.lastFeedback?.attemptLine, "2ᵉ tentative aujourd’hui")
     }
     @MainActor func testFirstAttemptAfterMidnightKeepsYesterdayInHistory() {
         var now = date(8, 23, 59).addingTimeInterval(56)

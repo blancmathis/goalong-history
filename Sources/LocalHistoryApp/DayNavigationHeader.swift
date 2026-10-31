@@ -10,6 +10,8 @@
         let onShare: () -> Void
         let onRefresh: () -> Void
         var sharingEnabled = true
+        /// Why sharing is grey; nil keeps the preview wording.
+        var sharingDisabledReason: String? = nil
 
         var body: some View {
             ViewThatFits(in: .horizontal) {
@@ -46,7 +48,8 @@
                     Label("Partager cette journée…", systemImage: "square.and.arrow.up")
                 }
                 .disabled(!sharingEnabled)
-                .help(sharingEnabled ? "Partager cette journée. Rien n’est envoyé sans votre validation." : "Les données fictives ne peuvent pas être partagées")
+                .help(sharingEnabled ? "Partager cette journée. Rien n’est envoyé sans votre validation."
+                      : sharingDisabledReason ?? "Les données fictives ne peuvent pas être partagées")
                 Button(action: onRefresh) {
                     Group {
                         if isRefreshing { ProgressView().controlSize(.small) }

@@ -63,7 +63,7 @@ struct JevActivationAvailability: Equatable {
                     JevInterventionControls().padding(.top, 12)
                 }.accessibilityIdentifier("jev-intervention-settings")
                 if !monitor.recentChecks.isEmpty {
-                    GoalongDisclosureGroup("Dernières vérifications · cette session") {
+                    GoalongDisclosureGroup("Dernières vérifications, cette session") {
                         JevRecentChecksView(checks: Array(monitor.recentChecks.prefix(6)))
                             .padding(.top, 12)
                     }
@@ -135,7 +135,7 @@ struct JevActivationAvailability: Equatable {
             VStack(alignment: .leading, spacing: 2) {
                 Text(monitor.hasKey ? "Clé API Jev enregistrée" : "Connexion API nécessaire")
                     .font(.system(size: 13, weight: .medium))
-                Text(monitor.hasKey ? "Usage facturé par TypeSafe, le fournisseur de Jev." : "Votre clé API reste sur ce Mac. L’API de Jev est payante (TypeSafe).")
+                Text(monitor.hasKey ? "Usage facturé par TypeSafe, le fournisseur de Jev." : "Votre clé d’accès reste sur ce Mac. Le service de Jev est payant (TypeSafe).")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 8)

@@ -12,6 +12,7 @@ import SwiftUI
     @State private var confirmingDelete = false
     @State private var deleteMessage: String?
     /// Commitments live in the same folder: open ones go too, without a result (T-045 H5-01).
+    static let concentrationKeptData = "Ses séances, plans et engagements restent sur ce Mac, même désactivé."
     static let concentrationDeleteMessage = "Séances, plans, bilans, engagements (en cours compris) et réglages de ce module. Le reste de Goalong ne change pas."
 
     var body: some View {
@@ -60,12 +61,16 @@ import SwiftUI
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 // Concentration's data delete sits in its own row, not under every module.
+                // Says which data stay on this Mac before offering to delete them (UI-46).
                 if module == .concentration {
-                    Button("Supprimer ses données…", role: .destructive) { confirmingDelete = true }
-                        .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
-                        .disabled(concentration.controller?.hasLockedBlock == true)
-                        .accessibilityLabel("Supprimer les données Concentration")
-                        .padding(.top, 2)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(Self.concentrationKeptData).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Supprimer…", role: .destructive) { confirmingDelete = true }
+                            .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
+                            .disabled(concentration.controller?.hasLockedBlock == true)
+                            .accessibilityLabel("Supprimer les données Concentration")
+                    }.padding(.top, 2)
                 }
             }
             Spacer(minLength: 12)

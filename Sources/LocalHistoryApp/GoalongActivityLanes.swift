@@ -83,6 +83,7 @@ struct GoalongLaneMatrix: View {
         var faint: [DateInterval] = []
         var outlined: [DateInterval] = []
         var ticks: [Date] = []
+        var isEmpty: Bool { segments.isEmpty && solid.isEmpty && faint.isEmpty && outlined.isEmpty && ticks.isEmpty }
     }
 
     static let solidColor = LHTheme.text.opacity(0.55)
@@ -109,6 +110,12 @@ struct GoalongLaneMatrix: View {
                                               upper: range.upperBound, thickness: 10)
                         }
                         Canvas { context, size in draw(row, in: context, size: size) }
+                        if row.isEmpty {
+                            // An empty lane is a reading (nothing that day), not a missing source.
+                            Text("aucun").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                                .padding(.horizontal, 6).background(LHTheme.pageBackground)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     .frame(height: 20)
                 }
@@ -129,7 +136,10 @@ struct GoalongLaneMatrix: View {
         func rect(_ interval: DateInterval, height: CGFloat) -> CGRect? {
             let x0 = x(interval.start), x1 = x(interval.end)
             guard interval.end > lower, interval.start < range.upperBound else { return nil }
-            return CGRect(x: x0, y: (size.height - height) / 2, width: max(1.5, x1 - x0), height: height)
+            // A mark as wide as the lane is thick: one or two points would read as a rendering artefact.
+            let width = max(height, x1 - x0)
+            let left = min(max(0, (x0 + x1 - width) / 2), max(0, size.width - width))
+            return CGRect(x: left, y: (size.height - height) / 2, width: width, height: height)
         }
         for interval in GoalongIntervals.merged(row.faint) {
             if let r = rect(interval, height: 10) {
@@ -189,7 +199,7 @@ struct GoalongLaneLegend: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if showsThreadClasses { GoalongActivityClassLegend(size: 11) }
+            if showsThreadClasses { GoalongActivityClassLegend(size: 12) }
             HStack(spacing: 16) {
                 ForEach(items.indices, id: \.self) { index in
                     HStack(spacing: 6) {
@@ -198,7 +208,7 @@ struct GoalongLaneLegend: View {
                     }
                 }
             }
-            .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             .accessibilityHidden(true)
         }
     }
@@ -263,7 +273,7 @@ struct GoalongCodeDay: Equatable {
         if commits > 0 { parts.append(Self.count(commits, "commit", "commits")) }
         else if fileChanges > 0 { parts.append(Self.count(fileChanges, "modification de fichier", "modifications de fichiers")) }
         else if conversations > 0 { parts.append(Self.count(conversations, "conversation", "conversations")) }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 
     /// « 2 projets actifs ce jour-là : … ». A conversation without project is not in any project: the count says so.
@@ -293,7 +303,7 @@ struct GoalongCodeDay: Equatable {
         if project.otherGitActions > 0 { parts.append(count(project.otherGitActions, "autre action Git", "autres actions Git")) }
         if project.fileChanges > 0 { parts.append(count(project.fileChanges, "modification de fichier", "modifications de fichiers")) }
         if project.partial { parts.append("données partielles") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 
     static func count(_ value: Int, _ one: String, _ many: String) -> String {

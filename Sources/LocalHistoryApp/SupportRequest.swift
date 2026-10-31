@@ -231,7 +231,7 @@ struct SupportRequestView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "stethoscope")
-                .font(.system(size: 22, weight: .medium)).foregroundStyle(LHTheme.accent)
+                .font(.system(size: 22, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 44, height: 44)
                 .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {
@@ -245,7 +245,7 @@ struct SupportRequestView: View {
 
     @ViewBuilder private var detected: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Ce que Goalong a détecté").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
+            Text("Ce que Goalong a détecté").font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
             LHCard(padding: 16) {
                 VStack(alignment: .leading, spacing: 0) {
                 switch controller.phase {
@@ -277,16 +277,16 @@ struct SupportRequestView: View {
 
     private var contents: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Ce que contient le rapport").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
+            Text("Ce que contient le rapport").font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
             LHCard(padding: 16) {
                 VStack(alignment: .leading, spacing: 10) {
                     contentLine("checkmark.circle.fill", LHTheme.success,
                                 "Version de Goalong et de macOS, états des sources et des autorisations, erreurs et leurs codes, mises à jour, espace disque, indices de plantage — sur les 7 derniers jours.")
-                    contentLine("xmark.circle.fill", LHTheme.danger,
+                    contentLine("minus.circle", LHTheme.secondaryText,
                                 "Jamais : votre historique, les apps ou sites visités, titres, textes, conversations, captures d’écran, e-mails, mots de passe ou clés.")
                     if case .ready(_, _, let bytes, let events) = controller.phase {
                         HStack(spacing: 12) {
-                            Text("\(GoalongUIFormat.count(events, "événement")) technique\(events > 1 ? "s" : "") · \(GoalongUIFormat.bytes(Int64(bytes)))")
+                            Text("\(GoalongUIFormat.count(events, "événement")) technique\(events > 1 ? "s" : ""), \(GoalongUIFormat.bytes(Int64(bytes)))")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
                             Button("Afficher le fichier") { controller.revealReport() }
@@ -336,7 +336,7 @@ struct SupportRequestView: View {
             }
             if ready == nil {
                 Text(emailHint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.trailing)
+                    .lineLimit(1).fixedSize()
                     .accessibilityIdentifier("support-email-hint")
             }
             Button {

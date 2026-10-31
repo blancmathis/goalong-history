@@ -1,0 +1,15 @@
+# T-046 L3: extra screen captures for the screens without a gallery capture (T-046.md, 2026-10-30). name<TAB>nav steps<TAB>scroll shots
+11-profil-studio	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:4	0
+11-profil-activite	nav:overview p:activity-explore-usage w:2 p:analytics-projects w:4	0
+29-analyse-site	pane:advanced p:"Outils de partage et analyses" w:2 p:"Analyser une demande du site…" w:3	1
+32-regles-usage	pane:applications w:2	3
+48-mon-travail	nav:work w:3	3
+56-depliant-ouvert	pane:storage o:"Fichiers locaux" w:2	1
+jev-page	pane:jev w:2	3
+jev-connexion	pane:jev p:jev-open-connection w:3	1
+jev-intervention	pane:jev o:jev-intervention-settings w:2	2
+alerte-effacement	pane:storage p:"Effacer de l’historique…" w:2	0
+alerte-sante	pane:advanced p:"Outils de partage et analyses" w:2 p:"Importer Apple Santé…" w:2	0
+alerte-bandeau	nav:overview w:2	0
+enregistrement-pleine-hauteur	pane:recording w:2	5
+outils-partage	pane:advanced p:"Outils de partage et analyses" w:2	1

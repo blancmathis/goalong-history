@@ -1,0 +1,1028 @@
+id	shard	screen_journey	ax_target	action	expected	na_reason
+J-0001	S3	Blocage :: nav:blocking	AXButton[label~"Démarrage à la connexion indisponible"]	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0002	S3	Blocage :: nav:blocking	id=blocking-empty-new-list	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0003	S3	Blocage :: nav:blocking	id=blocking-compose	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0004	S3	Blocage :: nav:blocking	AXSheet ouvert par l’action hôte (BlockingPage.swift:109)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0005	S3	Blocage :: nav:blocking	AXSheet ouvert par l’action hôte (BlockingPage.swift:113)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0006	S3	Blocage :: nav:blocking	AXSheet ouvert par l’action hôte (BlockingPage.swift:118)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0007	S3	Blocage :: nav:blocking	AXSheet ouvert par l’action hôte (BlockingPage.swift:125)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0008	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingPage.swift:150	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0009	S3	Blocage :: nav:blocking	id=blocking-extra-break	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0010	S3	Blocage :: nav:blocking	id=blocking-take-break	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0011	S3	Blocage :: nav:blocking	id=blocking-stop	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0012	S3	Blocage :: nav:blocking	id=blocking-stop	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0013	S3	Blocage :: nav:blocking	id=blocking-unlock	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0014	S3	Blocage :: nav:blocking	AXDialog ouvert par l’action hôte (BlockingPage.swift:533)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0015	S3	Blocage :: nav:blocking	id=blocking-start-at	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0016	S3	Blocage :: nav:blocking	AXDatePicker[label~"Heure de fin"]	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0017	S3	Blocage :: nav:blocking	id=blocking-freeze-keep	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0018	S3	Blocage :: nav:blocking	id=wholeMac ? "blocking-freeze" : "blocking-start" (identifiant calculé)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0019	S3	Blocage :: nav:blocking	AXDialog[desc="alerte" title~"Annuler"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0020	S3	Blocage :: nav:blocking	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0021	S3	Blocage :: nav:blocking	AXButton[label~"Protéger"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0022	S3	Blocage :: nav:blocking	AXDialog[desc="alerte" title~"Geler le Mac"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0023	S3	Blocage :: nav:blocking	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0024	S3	Blocage :: nav:blocking	AXButton[label~"Geler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0025	S3	Blocage :: nav:blocking	AXButton[label~"Tout le Mac"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0026	S3	Blocage :: nav:blocking	AXButton[label~"Protection renforcée"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0027	S3	Blocage :: nav:blocking	id=blocking-remove-guard	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0028	S3	Blocage :: nav:blocking	AXSheet ouvert par l’action hôte (BlockingPage.swift:929)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0029	S3	Blocage :: nav:blocking	AXMenuButton[label~"Défini"]	menu	le menu s’ouvre et liste ses éléments	
+J-0030	S3	Blocage :: nav:blocking	AXButton[label~"Changer…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0031	S3	Blocage :: nav:blocking	AXButton[label~"Supprimer…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0032	S3	Blocage :: nav:blocking	id=blocking-open-login-items	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0033	S3	Blocage :: nav:blocking	id=blocking-typing-field	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0034	S3	Blocage :: nav:blocking	AXButton[label~"Continuer le blocage"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0035	S3	Blocage :: nav:blocking	AXButton[label~"Arrêter"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0036	S3	Blocage :: nav:blocking	id=blocking-new-list	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0037	S3	Blocage :: nav:blocking	id=blocking-suggestion-\(suggestion.id)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0038	S3	Blocage :: nav:blocking	AXButton[label~"Liste vide"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0039	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingPageLists.swift:50	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0040	S3	Blocage :: nav:blocking	id=blocking-list-name	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0041	S3	Blocage :: nav:blocking	id=blocking-list-reason	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0042	S3	Blocage :: nav:blocking	id=blocking-add-site	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0043	S3	Blocage :: nav:blocking	id=blocking-add-app	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0044	S3	Blocage :: nav:blocking	AXButton[label~"Attendre"]	click	l’étape suivante s’affiche	
+J-0045	S3	Blocage :: nav:blocking	id=blocking-friction-counts	click	l’étape suivante s’affiche	
+J-0046	S3	Blocage :: nav:blocking	id=blocking-list-earn	click	l’étape suivante s’affiche	
+J-0047	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingPageLists.swift:279	click	l’étape suivante s’affiche	
+J-0048	S3	Blocage :: nav:blocking	id=blocking-list-more	click	l’étape suivante s’affiche	
+J-0049	S3	Blocage :: nav:blocking	id=blocking-lock-program	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0050	S3	Blocage :: nav:blocking	AXButton[label~"Supprimer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0051	S3	Blocage :: nav:blocking	AXButton[label~"Terminé"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0052	S3	Blocage :: nav:blocking	AXButton[label~"Supprimer «"]	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0053	S3	Blocage :: nav:blocking	AXDialog[desc="alerte" title~"Supprimer «"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0054	S3	Blocage :: nav:blocking	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0055	S3	Blocage :: nav:blocking	AXButton[label~"Supprimer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0056	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingPageLists.swift:361	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0057	S3	Blocage :: nav:blocking	id=blocking-open-trigger	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0058	S3	Blocage :: nav:blocking	AXButton[label~"Ajouter une app déclencheuse"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0059	S3	Blocage :: nav:blocking	id=blocking-open-\(identifier)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0060	S3	Blocage :: nav:blocking	id=blocking-add-\(identifier)	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0061	S3	Blocage :: nav:blocking	AXCheckBox@Sources/LocalHistoryApp/Blocking/BlockingPageLists.swift:555	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0062	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingPageLists.swift:595	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0063	S3	Blocage :: nav:blocking	AXDatePicker[label~"Jusqu’au"]	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0064	S3	Blocage :: nav:blocking	AXButton[label~"Verrouiller jusqu’au"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0065	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingPageLists.swift:813	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0066	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingPageLists.swift:843	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0067	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingPageLists.swift:877	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0068	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingWeek.swift:124	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0069	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingWeek.swift:207	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0070	S3	Blocage :: nav:blocking	AXButton@Sources/LocalHistoryApp/Blocking/BlockingWeek.swift:340	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0071	S3	Blocage :: nav:blocking	AXDatePicker@Sources/LocalHistoryApp/Blocking/BlockingWeek.swift:361	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0072	S3	Blocage :: nav:blocking	AXDatePicker@Sources/LocalHistoryApp/Blocking/BlockingWeek.swift:365	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0073	S3	Blocage :: nav:blocking	id=blocking-range-save	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0074	S3	Blocage :: nav:blocking	id=blocking-range-save	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0075	S3	Blocage :: nav:blocking	id=blocking-range-save	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0076	S3	Concentration :: nav:concentration	id=concentration-commitment-create	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0077	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationCommitmentViews.swift:400	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0078	S3	Concentration :: nav:concentration	AXButton[label~"Modifier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0079	S3	Concentration :: nav:concentration	id=concentration-commitment-declare	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0080	S3	Concentration :: nav:concentration	id=concentration-commitment-joker	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0081	S3	Concentration :: nav:concentration	id=concentration-commitment-panel	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0082	S3	Concentration :: nav:concentration	id=concentration-commitment-task	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0083	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationCommitmentViews.swift:648	click	l’étape suivante s’affiche	
+J-0084	S3	Concentration :: nav:concentration	id=concentration-commitment-save	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0085	S3	Concentration :: nav:concentration	id=concentration-commitment-save	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0086	S3	Concentration :: nav:concentration	id=concentration-commitment-save	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0087	S3	Concentration :: nav:concentration	id=concentration-review-commit	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0088	S3	Concentration :: nav:concentration	id=module-enable-\(module.rawValue)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0089	S3	Concentration :: nav:concentration	AXButton[label~"Masquer ce message"]	click	le clic déclenche l’action (message masqué / ouverture)	
+J-0090	S3	Concentration :: nav:concentration	id=module-enable-blocking	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0091	S3	Concentration :: nav:concentration	AXSheet ouvert par l’action hôte (ConcentrationHubPage.swift:118)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0092	S3	Concentration :: nav:concentration	id=distractions-words-editor	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0093	S3	Concentration :: nav:concentration	id=distractions-words-save	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0094	S3	Concentration :: nav:concentration	id=distractions-words-edit	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0095	S3	Concentration :: nav:concentration	id=blocking-new-list-inline	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0096	S3	Concentration :: nav:concentration	AXSheet ouvert par l’action hôte (ConcentrationHubPage.swift:209)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0097	S3	Concentration :: nav:concentration	AXSheet ouvert par l’action hôte (ConcentrationHubPage.swift:262)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0098	S3	Concentration :: nav:concentration	AXButton[label~"Nouvelle liste…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0099	S3	Concentration :: nav:concentration	id=suggestion-add-\(item.target.value)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0100	S3	Concentration :: nav:concentration	id=suggestion-ignore-\(item.target.value)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0101	S3	Concentration :: nav:concentration	id=suggestion-ignore-\(item.target.value)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0102	S3	Concentration :: nav:concentration	id=jev-open-settings	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0103	S3	Concentration :: nav:concentration	id=concentration-error	click	le clic déclenche l’action (message masqué / ouverture)	
+J-0104	S3	Concentration :: nav:concentration	AXSheet ouvert par l’action hôte (ConcentrationPage.swift:98)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0105	S3	Concentration :: nav:concentration	AXSheet ouvert par l’action hôte (ConcentrationPage.swift:103)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0106	S3	Concentration :: nav:concentration	id=concentration-intent	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0107	S3	Concentration :: nav:concentration	id=concentration-start	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0108	S3	Concentration :: nav:concentration	AXDialog[desc="alerte" title~"Verrouiller chaque phase de travail ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0109	S3	Concentration :: nav:concentration	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0110	S3	Concentration :: nav:concentration	AXButton[label~"Verrouiller"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0111	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:349	click	l’étape suivante s’affiche	
+J-0112	S3	Concentration :: nav:concentration	AXCheckBox[label~"Aussi pendant les pauses"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0113	S3	Concentration :: nav:concentration	AXCheckBox[label~"Verrouiller"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0114	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:410	click	l’étape suivante s’affiche	
+J-0115	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:448	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0116	S3	Concentration :: nav:concentration	id=concentration-skip	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0117	S3	Concentration :: nav:concentration	id=concentration-stop	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0118	S3	Concentration :: nav:concentration	id=concentration-open-review	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0119	S3	Concentration :: nav:concentration	AXTextField[label~"L’important aujourd’hui"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0120	S3	Concentration :: nav:concentration	AXButton[label~"Enregistrer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0121	S3	Concentration :: nav:concentration	AXButton[label~"Ajouter une intention du jour"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0122	S3	Concentration :: nav:concentration	AXCheckBox@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:777	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0123	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:793	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0124	S3	Concentration :: nav:concentration	AXButton[label~"Déplacer à demain"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0125	S3	Concentration :: nav:concentration	AXButton[label~"Abandonner"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0126	S3	Concentration :: nav:concentration	AXButton[label~"Rouvrir"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0127	S3	Concentration :: nav:concentration	id=concentration-plan-item	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0128	S3	Concentration :: nav:concentration	id=concentration-add-item	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0129	S3	Concentration :: nav:concentration	AXTextField[label~"Projet"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0130	S3	Concentration :: nav:concentration	AXTextField@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:873	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0131	S3	Concentration :: nav:concentration	AXButton[label~"Ajouter"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0132	S3	Concentration :: nav:concentration	AXButton[label~"Sans réponse"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0133	S3	Concentration :: nav:concentration	AXButton[label~"Sans réponse"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0134	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:1087	click	l’étape suivante s’affiche	
+J-0135	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:1089	click	l’étape suivante s’affiche	
+J-0136	S3	Concentration :: nav:concentration	AXCheckBox@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:1134	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0137	S3	Concentration :: nav:concentration	AXDatePicker@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:1143	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0138	S3	Concentration :: nav:concentration	AXCheckBox@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:1147	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0139	S3	Concentration :: nav:concentration	AXTextField@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:1156	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0140	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationPage.swift:1178	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0141	S3	Concentration :: nav:concentration	AXTextField[label~"hh:mm"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0142	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationPanelViews.swift:177	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0143	S3	Concentration :: nav:concentration	id=concentration-review-note	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0144	S3	Concentration :: nav:concentration	AXButton@Sources/LocalHistoryApp/Concentration/ConcentrationPanelViews.swift:194	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0145	S3	Concentration :: nav:concentration	id=concentration-review-panel	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0146	S3	Concentration :: nav:concentration	id=concentration-review-panel	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0147	S3	Concentration :: nav:concentration	id=morning ? "concentration-morning-panel" : "concentration-evening-panel" (identifiant calculé)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0148	S3	Concentration :: nav:concentration	id=concentration-limit-panel	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0149	S3	Concentration :: nav:concentration	id=concentration-tomorrow-first	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0150	S3	Concentration :: nav:concentration	id=concentration-save-review	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0151	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong help / --help / -h	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0152	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong capabilities	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0153	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong version / --version	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0154	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong status	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0155	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong focus / session / sessions / plan / review / limits / block-lists / friction / commitment / commitments / braise	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0156	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong recent	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0157	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong day / summary	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0158	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong computer-history / computer-history-context	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0159	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong activities	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0160	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong activity	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0161	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong screen-time	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0162	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong analysis-evidence	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0163	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong analysis-prompt / analysis-review / analysis-export	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0164	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong export-site / send-site	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0165	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong export-health / import-health	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0166	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong health	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0167	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong websites	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0168	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong ai-conversations	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0169	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong recap	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0170	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong verify-recap	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0171	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong export-proof	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0172	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong verify-proof	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0173	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong verify-share	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0174	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong days / recaps	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0175	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong ask	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0176	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong search / app / site	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0177	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong gaps	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0178	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong memories	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0179	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong sources	cli-cmd	code retour 0 (ou erreur documentée) ; sortie texte capturée sur données synthétiques	
+J-0180	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --root	cli-cmd	la commande accepte l’option --root (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0181	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --help	cli-cmd	la commande accepte l’option --help (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0182	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --json	cli-cmd	la commande accepte l’option --json (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0183	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --version	cli-cmd	la commande accepte l’option --version (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0184	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --minutes	cli-cmd	la commande accepte l’option --minutes (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0185	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --actions-only	cli-cmd	la commande accepte l’option --actions-only (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0186	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --gaps-only	cli-cmd	la commande accepte l’option --gaps-only (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0187	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --semantic-only	cli-cmd	la commande accepte l’option --semantic-only (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0188	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --tokens	cli-cmd	la commande accepte l’option --tokens (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0189	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --start-utc	cli-cmd	la commande accepte l’option --start-utc (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0190	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --end-utc	cli-cmd	la commande accepte l’option --end-utc (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0191	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --limit	cli-cmd	la commande accepte l’option --limit (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0192	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --offset	cli-cmd	la commande accepte l’option --offset (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0193	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --mac-only	cli-cmd	la commande accepte l’option --mac-only (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0194	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --devices	cli-cmd	la commande accepte l’option --devices (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0195	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --include-rich-context	cli-cmd	la commande accepte l’option --include-rich-context (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0196	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --include-conversations	cli-cmd	la commande accepte l’option --include-conversations (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0197	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --conversations-only	cli-cmd	la commande accepte l’option --conversations-only (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0198	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --conversations-from	cli-cmd	la commande accepte l’option --conversations-from (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0199	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --request	cli-cmd	la commande accepte l’option --request (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0200	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --file	cli-cmd	la commande accepte l’option --file (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0201	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --items	cli-cmd	la commande accepte l’option --items (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0202	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --include-apps	cli-cmd	la commande accepte l’option --include-apps (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0203	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --include-hourly	cli-cmd	la commande accepte l’option --include-hourly (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0204	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --include-websites	cli-cmd	la commande accepte l’option --include-websites (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0205	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --include-recap	cli-cmd	la commande accepte l’option --include-recap (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0206	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --structured	cli-cmd	la commande accepte l’option --structured (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0207	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --mask-apps	cli-cmd	la commande accepte l’option --mask-apps (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0208	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --rhythm-project	cli-cmd	la commande accepte l’option --rhythm-project (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0209	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --rhythm-apps	cli-cmd	la commande accepte l’option --rhythm-apps (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0210	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --rhythm-timeline	cli-cmd	la commande accepte l’option --rhythm-timeline (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0211	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --rhythm-times	cli-cmd	la commande accepte l’option --rhythm-times (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0212	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --url	cli-cmd	la commande accepte l’option --url (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0213	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --token-file	cli-cmd	la commande accepte l’option --token-file (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0214	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --from	cli-cmd	la commande accepte l’option --from (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0215	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --to	cli-cmd	la commande accepte l’option --to (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0216	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --timezone	cli-cmd	la commande accepte l’option --timezone (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0217	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --groups	cli-cmd	la commande accepte l’option --groups (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0218	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --output	cli-cmd	la commande accepte l’option --output (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0219	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --days	cli-cmd	la commande accepte l’option --days (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0220	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --start	cli-cmd	la commande accepte l’option --start (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0221	S4	CLI goalong :: transcription CLI sur le runner	cli: goalong <commande> --end	cli-cmd	la commande accepte l’option --end (code 0) ; l’option figure dans « goalong help » ; sortie capturée	
+J-0222	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXSheet[label~"Déconnecter ce compte ?"]	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0223	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXDialog[desc="alerte" title~"Déconnecter ce compte ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0224	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0225	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Déconnecter"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0226	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXDialog[desc="alerte" title~"Fichier d’accès conservé"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0227	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton@Sources/LocalHistoryApp/GoalongWebsiteConnectionCard.swift:85	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0228	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Terminé"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0229	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton@Sources/LocalHistoryApp/GoalongWebsiteConnectionCard.swift:205	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0230	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Relier depuis le site"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0231	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXTextField[label~"Adresse du site, par exemple https://votre-hote-goalong"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0232	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Choisir le fichier d’accès…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0233	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Oublier le fichier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0234	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXDialog[desc="alerte" title~"Déconnecter ce compte ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0235	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0236	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Déconnecter"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0237	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXTextField[label~"~/Downloads/goalong-token.txt"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0238	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Valider ce fichier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0239	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Ouvrir « Sources » sur le site"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0240	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXDatePicker[label~"Journée enregistrée"]	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0241	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Noms des applications et durées"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0242	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Répartition par heure, si elle est enregistrée"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0243	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Sites observés sur ce Mac"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0244	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Résumé d’analyse enregistré"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0245	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXTextField[label~"Applications à masquer avant envoi (noms séparés par des virgules)"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0246	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Rapport structuré de productivité"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0247	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Calculer le rythme à partir de l’historique de ce Mac"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0248	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Analyser le contexte d’une session…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0249	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Retirer cette analyse"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0250	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXTextField[label~"Nom du projet"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0251	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXTextField[label~"Applications liées au projet, séparées par des virgules"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0252	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Inclure les épisodes simplifiés"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0253	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Inclure les sujets, explications et éléments de contexte relus"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0254	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Inclure l’heure de début précise"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0255	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox@Sources/LocalHistoryApp/GoalongWebsiteConnectionCard.swift:313	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0256	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Mettre la synchronisation en pause"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0257	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Préparer l’aperçu hors ligne"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0258	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Envoyer les données vérifiées"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0259	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXSheet ouvert par l’action hôte (GoalongWebsiteConnectionCard.swift:392)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0260	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Choisissez votre fichier d’accès Goalong (envoi uniquement)"]	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-0261	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXDialog[desc="alerte" title~"Protéger ce fichier ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0262	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Charger le récap de cette journée"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0263	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Produire ou actualiser avec mon agent"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0264	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox@Sources/LocalHistoryApp/GoalongWebsiteConnectionCard.swift:502	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0265	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXDialog[desc="alerte" title~"Déconnecter ce compte ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0266	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXDialog[desc="alerte" title~"Relier ce Mac à votre compte Goalong ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0267	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXDialog[desc="alerte" title~"Connexion non confirmée"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0268	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXSheet ouvert par l’action hôte (GoalongWebsiteSettings.swift:42)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0269	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	id=sharing-close	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0270	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXSheet[label~"Destination"]	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0271	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Règles du site"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0272	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXDatePicker[label~"La veille, après"]	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0273	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	id=sharing-selected-date	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0274	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Inclure des applications"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0275	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Inclure des sites"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0276	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox[label~"Inclure leurs noms personnels"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0277	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Sélectionner les résultats"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0278	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Tout exclure"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0279	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXPopUpButton[label~"Envoi de"]	click	l’option choisie devient la valeur affichée	
+J-0280	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Retirer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0281	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	id=sharing-confirm-review	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0282	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	id=sharing-preview	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0283	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	id=sharing-send	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0284	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Sélectionner les résultats"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0285	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXButton[label~"Tout décocher"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0286	S3	Site Goalong (partage) :: pane:website (carte de connexion + feuille de partage)	AXCheckBox@Sources/LocalHistoryApp/GoalongWebsiteSharingSheet.swift:353	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0287	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-api-key	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0288	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-remove-key	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0289	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-connection-close	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0290	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-connection-close	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0291	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-save-key	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0292	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXDialog[desc="alerte" title~"Supprimer la clé Jev ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0293	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0294	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Supprimer la clé"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0295	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXCheckBox[label~"Joindre un bref extrait du texte affiché"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0296	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXDialog[desc="alerte" title~"Transmettre un extrait du texte affiché ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0297	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0298	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Autoriser ces extraits"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0299	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-break-countdown	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0300	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-end-break	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0301	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-break-\(duration)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0302	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Durée"]	click	l’étape suivante s’affiche	
+J-0303	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Mettre en pause"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0304	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXMenuItem@Sources/LocalHistoryApp/JevControls.swift:113	menu	l’élément est présent, activé, et son action s’exécute	
+J-0305	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXMenuItem[label~"Surveillance en pause"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0306	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXMenuItem[label~"Surveillance en pause"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0307	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXMenuItem[label~"Reprendre la surveillance"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0308	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXMenuItem[label~"Pause de"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0309	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXMenuItem[label~"Ouvrir la surveillance…"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0310	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXMenuItem[label~"Désactiver la surveillance"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0311	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-move-warning	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0312	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-effects-enabled	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0313	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-strength-\(strength.rawValue)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0314	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-stage-\(index)-enabled	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0315	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-stage-\(index)-minutes	click	l’étape suivante s’affiche	
+J-0316	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-stage-\(index)-effect	click	l’option choisie devient la valeur affichée	
+J-0317	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-stage-\(index)-intensity	click	la valeur du curseur change et s’affiche	
+J-0318	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Reprendre la surveillance"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0319	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-quick-pause	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0320	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXSheet[label~"Activer Jev ?"]	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0321	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXDialog[desc="alerte" title~"Activer Jev ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0322	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0323	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Autoriser les envois à Jev"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0324	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-enabled	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0325	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-open-recording	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0326	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-retry	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0327	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-open-connection	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0328	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=jev-warning-close	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0329	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXDialog[desc="alerte" title~"Changer la définition du travail ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0330	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0331	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXButton[label~"Enregistrer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0332	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=monitoring-edit-goals	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0333	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=monitoring-cancel-goals	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0334	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=monitoring-save-goals	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0335	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=monitoring-add-procrastination	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0336	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	id=identifier (identifiant calculé)	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0337	S3	Jev (surveillance) :: nav:monitoring (+ pane:jev)	AXCheckBox[label~"Monitor future activity for"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0338	S2	Conversations IA :: nav:history > p:Conversations locales	AXDialog ouvert par l’action hôte (AgentActivityPage.swift:162)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0339	S2	Conversations IA :: nav:history > p:Conversations locales	AXSheet ouvert par l’action hôte (AgentActivityPage.swift:169)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0340	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton@Sources/LocalHistoryApp/AgentActivity/AgentActivityPage.swift:189	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0341	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Ajouter un dossier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0342	S2	Conversations IA :: nav:history > p:Conversations locales	AXPopUpButton[label~"Outil"]	click	l’option choisie devient la valeur affichée	
+J-0343	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Vérifier les sources"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0344	S2	Conversations IA :: nav:history > p:Conversations locales	id=conversation-source-health	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0345	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Vérifier les sources"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0346	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Effacer les filtres"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0347	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Afficher la source d’origine"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0348	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Vérifier l’empreinte SHA-256"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0349	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Ouvrir les signaux de relance"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0350	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Détecter"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0351	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Retirer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0352	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Retirer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0353	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Réinstaller pour cette copie"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0354	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Installer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0355	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Détecter les dossiers courants"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0356	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Ajouter un dossier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0357	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Ajouter un dossier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0358	S2	Conversations IA :: nav:history > p:Conversations locales	AXCheckBox[label~"Suivre ce dossier"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0359	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton@Sources/LocalHistoryApp/AgentActivity/AgentActivityPage.swift:734	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0360	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton@Sources/LocalHistoryApp/AgentActivity/AgentActivityPage.swift:742	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0361	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton@Sources/LocalHistoryApp/AgentActivity/AgentActivityPage.swift:750	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0362	S2	Conversations IA :: nav:history > p:Conversations locales	AXPopUpButton[label~"Outil"]	click	l’option choisie devient la valeur affichée	
+J-0363	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Afficher la source d’origine"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0364	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Vérifier l’empreinte SHA-256"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0365	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Ouvrir le dossier de l’index"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0366	S2	Conversations IA :: nav:history > p:Conversations locales	AXTextField[label~"Nom affiché"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0367	S2	Conversations IA :: nav:history > p:Conversations locales	AXPopUpButton[label~"Outil"]	click	l’option choisie devient la valeur affichée	
+J-0368	S2	Conversations IA :: nav:history > p:Conversations locales	AXPopUpButton[label~"Lecture"]	click	l’option choisie devient la valeur affichée	
+J-0369	S2	Conversations IA :: nav:history > p:Conversations locales	AXCheckBox[label~"Suivre ce dossier"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0370	S2	Conversations IA :: nav:history > p:Conversations locales	AXCheckBox[label~"Inclure les sous-dossiers"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0371	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0372	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Enregistrer"]	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0373	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Enregistrer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0374	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton@Sources/LocalHistoryApp/AgentActivity/AgentActivityPage.swift:1084	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0375	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton@Sources/LocalHistoryApp/AgentActivity/AgentActivityRuntime.swift:293	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-0376	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Base OpenCode d’origine"]	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0377	S2	Conversations IA :: nav:history > p:Conversations locales	AXButton[label~"Le fichier d’origine n’existe plus"]	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0378	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton@Sources/LocalHistoryApp/MenuBar/MenuBarPanelView.swift:89	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0379	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	id=menubar-attention-fix	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0380	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton[label~"Commencer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0381	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton@Sources/LocalHistoryApp/MenuBar/MenuBarPanelView.swift:328	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0382	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	id=menubar-focus-fix	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0383	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton[label~"Arrêter"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0384	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton@Sources/LocalHistoryApp/MenuBar/MenuBarPanelView.swift:411	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0385	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton[label~"Réduire"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0386	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton@Sources/LocalHistoryApp/MenuBar/MenuBarPanelView.swift:520	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0387	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXSlider[label~"Volume de l’Ambiance"]	click	la valeur du curseur change et s’affiche	
+J-0388	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton@Sources/LocalHistoryApp/MenuBar/MenuBarPanelView.swift:557	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0389	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton@Sources/LocalHistoryApp/MenuBar/MenuBarPanelView.swift:594	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0390	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton[label~"Arrêter…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0391	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXCheckBox[label~"Bloquer"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0392	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton[label~"Ouvrir"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0393	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXButton[label~"Réglages"]	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0394	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Confidentialité · tout suspendre…"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0395	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Confidentialité · tout suspendre…"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0396	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Confidentialité · tout suspendre…"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0397	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Rechercher les mises à jour…"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0398	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Rechercher les mises à jour…"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0399	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Rechercher les mises à jour…"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0400	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Rechercher les mises à jour…"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0401	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	id=goalong-menu	observe	la fenêtre existe (liste des fenêtres) avec son titre	
+J-0402	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Confidentialité"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0403	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Autorisations"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0404	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Effacer l’historique détaillé"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0405	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem[label~"Avancé"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0406	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXMenuItem@Sources/LocalHistoryApp/MenuBarController.swift:371	menu	l’élément est présent, activé, et son action s’exécute	
+J-0407	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXDialog ouvert par l’action hôte (MenuBarController.swift:392)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0408	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXDialog[desc="alerte" title~"Annuler"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0409	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXDialog ouvert par l’action hôte (MenuBarController.swift:409)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0410	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXDialog[desc="alerte" title~"Suspendre tout le suivi ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0411	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXDialog ouvert par l’action hôte (MenuBarController.swift:558)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0412	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXDialog ouvert par l’action hôte (MenuBarController.swift:576)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0413	S1	Barre des menus (panneau) :: si > panneau barre des menus > p:Plus d’options	AXDialog[desc="alerte" title~"Échec de la suppression"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0414	S2	Activité › Analyse :: nav:analytics	AXPopUpButton[label~"Données de"]	click	l’option choisie devient la valeur affichée	
+J-0415	S2	Activité › Analyse :: nav:analytics	AXCheckBox@Sources/LocalHistoryApp/GoalongAnalysisEditorComponents.swift:37	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0416	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Utiliser les réglages communs"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0417	S2	Activité › Analyse :: nav:analytics	AXTextField[label~"Bonjour Charlie"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0418	S2	Activité › Analyse :: nav:analytics	AXTextField[label~"Projet A · vide pour supprimer"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0419	S2	Activité › Analyse :: nav:analytics	AXCheckBox[label~"Respecter la casse"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0420	S2	Activité › Analyse :: nav:analytics	AXCheckBox[label~"Mot entier"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0421	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Afficher les suivants"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0422	S2	Activité › Analyse :: nav:analytics	id=analysis-cancel	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0423	S2	Activité › Analyse :: nav:analytics	id=analysis-field-\(field.rawValue)	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0424	S2	Activité › Analyse :: nav:analytics	AXTextField[label~"exemple.fr · un domaine par ligne"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0425	S2	Activité › Analyse :: nav:analytics	AXCheckBox@Sources/LocalHistoryApp/GoalongAnalysisSelectionSheet.swift:165	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0426	S2	Activité › Analyse :: nav:analytics	AXMenuButton[label~"Actions groupées"]	menu	le menu s’ouvre et liste ses éléments	
+J-0427	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Tout autoriser · durées seulement"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0428	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Tout autoriser · détails choisis"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0429	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Tout exclure"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0430	S2	Activité › Analyse :: nav:analytics	AXCheckBox@Sources/LocalHistoryApp/GoalongAnalysisSelectionSheet.swift:209	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0431	S2	Activité › Analyse :: nav:analytics	AXCheckBox[label~"Nombre de messages"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0432	S2	Activité › Analyse :: nav:analytics	AXCheckBox[label~"Titres des conversations"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0433	S2	Activité › Analyse :: nav:analytics	id=analysis-replacements-title	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0434	S2	Activité › Analyse :: nav:analytics	id=analysis-replacements-title	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0435	S2	Activité › Analyse :: nav:analytics	AXTextField[label~"Texte d’exemple"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0436	S2	Activité › Analyse :: nav:analytics	AXCheckBox[label~"Configurer la source"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0437	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Configurer la source"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0438	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Activité"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0439	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Consulter le"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0440	S2	Activité › Analyse :: nav:analytics	AXSheet ouvert par l’action hôte (GoalongAnalyticsPage.swift:179)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0441	S2	Activité › Analyse :: nav:analytics	AXSheet ouvert par l’action hôte (GoalongAnalyticsPage.swift:180)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0442	S2	Activité › Analyse :: nav:analytics	AXSheet ouvert par l’action hôte (GoalongAnalyticsPage.swift:181)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0443	S2	Activité › Analyse :: nav:analytics	AXSheet[label~"Analyser la journée du"]	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0444	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Analyser la journée du"]	click	la confirmation exécute l’action ; Annuler la laisse intacte	
+J-0445	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Bilan quotidien et sources…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0446	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Projets et avancées…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0447	S2	Activité › Analyse :: nav:analytics	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0448	S2	Activité › Analyse :: nav:analytics	id=analytics-preview-toggle	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0449	S2	Activité :: nav:overview	AXButton[label~"Ouvrir"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0450	S2	Activité :: nav:overview	id=activity-content	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0451	S2	Activité :: nav:overview	id=activity-define-work	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0452	S2	Activité :: nav:overview	AXButton[label~"Ouvre la correction du classement de cette tâche"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0453	S2	Activité :: nav:overview	id=activity-tasks	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0454	S2	Activité :: nav:overview	id=activity-explore-\(item.rawValue)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0455	S2	Activité :: nav:overview	id=activity-detail-back	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0456	S2	Activité :: nav:overview	id=activity-full-day	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0457	S2	Activité :: nav:overview	AXButton[label~"Examiner cette journée dans l’historique"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0458	S2	Activité :: nav:overview	AXButton@Sources/LocalHistoryApp/GoalongActivityContent.swift:628	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0459	S2	Activité :: nav:overview	id=analytics-projects	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0460	S2	Activité :: nav:overview	AXPopUpButton[label~"Rubrique"]	click	l’option choisie devient la valeur affichée	
+J-0461	S2	Activité :: nav:overview	AXButton[label~"Ouvrir le bilan et ses sources"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0462	S2	Activité :: nav:overview	id=activity-reports	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0463	S2	Activité :: nav:overview	AXButton[label~"Exporter l’activité"]	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
+J-0464	S2	Activité :: nav:overview	AXButton[label~"L’export n’a pas pu être enregistré. Essayez un autre dossier."]	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0465	S2	Activité :: nav:overview	id=activity-return-period	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0466	S2	Activité :: nav:overview	id=activity-today	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0467	S2	Activité :: nav:overview	id=activity-refresh	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0468	S2	Activité :: nav:overview	AXButton[label~"Partager cette journée…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0469	S2	Activité :: nav:overview	id=activity-code	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0470	S2	Activité :: nav:overview	id=activity-note-add	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0471	S2	Activité :: nav:overview	AXButton[label~"Annuler"]	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0472	S2	Activité :: nav:overview	AXButton@Sources/LocalHistoryApp/GoalongActivitySystemLanes.swift:402	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0473	S2	Activité :: nav:overview	AXButton[label~"Fermer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0474	S2	Activité :: nav:overview	AXButton[label~"Voir cette journée dans l’historique"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0475	S2	Activité :: nav:overview	id=activity-usage-sort	click	l’option choisie devient la valeur affichée	
+J-0476	S2	Activité :: nav:overview	id=activity-usage-show-all	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0477	S2	Activité :: nav:overview	id=activity-usage-export	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0478	S2	Activité :: nav:overview	AXButton@Sources/LocalHistoryApp/GoalongActivityUsageList.swift:99	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0479	S2	Mon travail :: nav:work	AXDialog[desc="alerte" title~"Autoriser ChatGPT à classer votre temps ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0480	S2	Mon travail :: nav:work	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0481	S2	Mon travail :: nav:work	AXButton[label~"Autoriser"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0482	S2	Mon travail :: nav:work	AXButton[label~"Tout reclasser avec votre définition actuelle ?"]	click	la confirmation exécute l’action ; Annuler la laisse intacte	
+J-0483	S2	Mon travail :: nav:work	AXButton[label~"Tout reclasser"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0484	S2	Mon travail :: nav:work	id=work-automatic	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0485	S2	Mon travail :: nav:work	AXButton[label~"Connexion…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0486	S2	Mon travail :: nav:work	id=work-review-load	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0487	S2	Mon travail :: nav:work	AXDialog[desc="alerte" title~"Nouvelle tâche"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0488	S2	Mon travail :: nav:work	AXTextField[label~"Nom de la tâche"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0489	S2	Mon travail :: nav:work	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0490	S2	Mon travail :: nav:work	AXButton[label~"Classer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0491	S2	Mon travail :: nav:work	AXDialog[desc="alerte" title~"Renommer la tâche"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0492	S2	Mon travail :: nav:work	AXTextField[label~"Nom de la tâche"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0493	S2	Mon travail :: nav:work	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0494	S2	Mon travail :: nav:work	AXButton[label~"Renommer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0495	S2	Mon travail :: nav:work	AXDialog[desc="alerte" title~"Renommage impossible"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0496	S2	Mon travail :: nav:work	AXButton@Sources/LocalHistoryApp/GoalongWorkPage.swift:348	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0497	S2	Mon travail :: nav:work	AXDialog[desc="alerte" title~"Tâche renommée, avec une réserve"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0498	S2	Mon travail :: nav:work	AXButton@Sources/LocalHistoryApp/GoalongWorkPage.swift:351	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0499	S2	Mon travail :: nav:work	AXButton[label~"Réduire"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0500	S2	Mon travail :: nav:work	AXButton[label~"Nouvelle tâche…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0501	S2	Mon travail :: nav:work	AXButton[label~"Nouvelle tâche…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0502	S2	Mon travail :: nav:work	AXButton[label~"Hors travail"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0503	S2	Mon travail :: nav:work	AXButton[label~"Laisser l’agent décider"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0504	S2	Mon travail :: nav:work	id=work-review-sheet-done	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0505	S2	Mon travail :: nav:work	id=work-review-sheet	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0506	S2	Mon travail :: nav:work	id=monitoring-open-work	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0507	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXWindow[label~"Comprendre mon travail — Goalong History"]	observe	la fenêtre existe (liste des fenêtres) avec son titre	
+J-0508	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXSheet ouvert par l’action hôte (GoalongProfileStudio.swift:261)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0509	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Comprendre mon travail"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0510	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Ouvrir une analyse ou une sélection enregistrée…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0511	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXDatePicker[label~"Journée analysée — jusqu’à"]	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0512	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXCheckBox[label~"Historique de ce Mac — activité de l’ordinateur"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0513	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXCheckBox[label~"Activité depuis"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0514	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXCheckBox[label~"Historique des conversations — utiliser les conversations IA comme con"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0515	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXDatePicker[label~"Conversations actives depuis"]	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0516	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Charger les sources choisies"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0517	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Tout sélectionner"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0518	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXCheckBox[label~"2. Choisir les analyses et protéger le contexte"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0519	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXCheckBox[label~"Décochez une rubrique pour que l’agent ne l’analyse pas. La rubrique «"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0520	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Préparer le prompt protégé"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0521	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Déconnecter ChatGPT"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0522	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXCheckBox[label~"J’autorise l’envoi de ce contexte à l’agent connecté"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0523	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Lancer l’analyse"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0524	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Exporter le prompt pour mon agent…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0525	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXCheckBox[label~"Transmettre"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0526	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXTextField[label~"Titre"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0527	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXTextField[label~"Limites"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0528	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Conserver l’analyse dans Goalong History"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0529	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXCheckBox[label~"J’ai relu les résultats sélectionnés et leur confidentialité"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0530	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Exporter les cartes sélectionnées…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0531	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0532	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton@Sources/LocalHistoryApp/GoalongProfileStudio.swift:408	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-0533	S2	Activité › Profil :: pane:website > feuille Profil (GoalongProfileStudio)	AXButton[label~"Fichier exporté. Aucun envoi au site."]	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
+J-0534	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Scellement minute de l’historique	observe	transcription runner : la tâche « Scellement minute de l’historique » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0535	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Capture clavier/souris (event tap)	observe	transcription runner : la tâche « Capture clavier/souris (event tap) » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0536	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Suivi app/fenêtre active	observe	transcription runner : la tâche « Suivi app/fenêtre active » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0537	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Observation Accessibilité	observe	transcription runner : la tâche « Observation Accessibilité » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0538	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Continuité en arrière-plan	observe	transcription runner : la tâche « Continuité en arrière-plan » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0539	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Envoi auto vers le site	observe	transcription runner : la tâche « Envoi auto vers le site » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0540	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Envoi des engagements	observe	transcription runner : la tâche « Envoi des engagements » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0541	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Synchronisation durable	observe	transcription runner : la tâche « Synchronisation durable » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0542	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Vérification de mise à jour	observe	transcription runner : la tâche « Vérification de mise à jour » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0543	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Nettoyage historique dérivé	observe	transcription runner : la tâche « Nettoyage historique dérivé » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0544	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Purge par durée de conservation	observe	transcription runner : la tâche « Purge par durée de conservation » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0545	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Nettoyage des fichiers temporaires	observe	transcription runner : la tâche « Nettoyage des fichiers temporaires » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0546	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Ouverture au login	observe	transcription runner : la tâche « Ouverture au login » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0547	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Garde de blocage anti-kill	observe	transcription runner : la tâche « Garde de blocage anti-kill » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0548	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Jev : surveillance et alertes	observe	transcription runner : la tâche « Jev : surveillance et alertes » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0549	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Scan des conversations IA	observe	transcription runner : la tâche « Scan des conversations IA » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0550	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Bilan quotidien ChatGPT	observe	transcription runner : la tâche « Bilan quotidien ChatGPT » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0551	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Analyse d’activité	observe	transcription runner : la tâche « Analyse d’activité » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0552	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Suivi des fichiers développeur	observe	transcription runner : la tâche « Suivi des fichiers développeur » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0553	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Détection d’appel	observe	transcription runner : la tâche « Détection d’appel » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0554	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Surveillance réactivité	observe	transcription runner : la tâche « Surveillance réactivité » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0555	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Session de concentration	observe	transcription runner : la tâche « Session de concentration » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0556	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Braise	observe	transcription runner : la tâche « Braise » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0557	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Lecture ambiance	observe	transcription runner : la tâche « Lecture ambiance » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0558	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Migration ancienne installation	observe	transcription runner : la tâche « Migration ancienne installation » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0559	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Journal d’intégrité	observe	transcription runner : la tâche « Journal d’intégrité » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0560	S4	Comportements en arrière-plan :: transcription processus/logs sur le runner	bg:Récupération des permissions	observe	transcription runner : la tâche « Récupération des permissions » tourne ou laisse une trace (log, fichier, processus) ; sortie texte = preuve	
+J-0561	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-overview	click	la section s’ouvre ; son titre est visible	
+J-0562	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-analytics	click	la section s’ouvre ; son titre est visible	
+J-0563	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-work	click	la section s’ouvre ; son titre est visible	
+J-0564	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-history	click	la section s’ouvre ; son titre est visible	
+J-0565	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-monitoring	click	la section s’ouvre ; son titre est visible	
+J-0566	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-blocking	click	la section s’ouvre ; son titre est visible	
+J-0567	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-concentration	click	la section s’ouvre ; son titre est visible	
+J-0568	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-distractions	click	la section s’ouvre ; son titre est visible	
+J-0569	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-ambiance	click	la section s’ouvre ; son titre est visible	
+J-0570	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-braise	click	la section s’ouvre ; son titre est visible	
+J-0571	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-activity	click	la section s’ouvre ; son titre est visible	
+J-0572	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-screenTime	click	la section s’ouvre ; son titre est visible	
+J-0573	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-agentActivity	click	la section s’ouvre ; son titre est visible	
+J-0574	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-chatGPTRecap	click	la section s’ouvre ; son titre est visible	
+J-0575	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-share	click	la section s’ouvre ; son titre est visible	
+J-0576	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-privacy	click	la section s’ouvre ; son titre est visible	
+J-0577	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-cli	click	la section s’ouvre ; son titre est visible	
+J-0578	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-settings	click	la section s’ouvre ; son titre est visible	
+J-0579	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-overview	click	la section s’ouvre ; son titre est visible	
+J-0580	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-analytics	click	la section s’ouvre ; son titre est visible	
+J-0581	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-work	click	la section s’ouvre ; son titre est visible	
+J-0582	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-history	click	la section s’ouvre ; son titre est visible	
+J-0583	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-monitoring	click	la section s’ouvre ; son titre est visible	
+J-0584	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-blocking	click	la section s’ouvre ; son titre est visible	
+J-0585	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-concentration	click	la section s’ouvre ; son titre est visible	
+J-0586	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-distractions	click	la section s’ouvre ; son titre est visible	
+J-0587	S1	Fenêtre principale (barre latérale) :: nav:* (sidebar-<section>)	id=sidebar-ambiance	click	la section s’ouvre ; son titre est visible	
+J-0588	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Fermer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0589	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXPopUpButton[label~"Déjà sur ce Mac"]	click	l’option choisie devient la valeur affichée	
+J-0590	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Afficher"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0591	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Mettre à la corbeille"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0592	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Annuler la lecture"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0593	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Oublier ce fichier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0594	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXDatePicker@Sources/LocalHistoryApp/GoalongHealthImportSheet.swift:130	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0595	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXDatePicker@Sources/LocalHistoryApp/GoalongHealthImportSheet.swift:131	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0596	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXCheckBox[label~"Source"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0597	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXPopUpButton[label~"Source"]	click	l’option choisie devient la valeur affichée	
+J-0598	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Préparer l’aperçu local"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0599	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXPopUpButton[label~"Journée"]	click	l’option choisie devient la valeur affichée	
+J-0600	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Conserver sur ce Mac"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0601	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Exporter pour Goalong…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0602	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXTextField[label~"Adresse du site Goalong (https://…)"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0603	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Choisir mon fichier de connexion…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0604	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Oublier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0605	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXDialog[desc="alerte" title~"Déconnecter ce compte ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0606	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0607	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Déconnecter"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0608	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXCheckBox[label~"J’autorise l’envoi de ces données Santé au site indiqué."]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0609	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"Choisir l’export Apple Santé"]	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-0610	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXDialog[desc="alerte" title~"Le fichier compact de cette journée sera déplacé dans la corbeille. L’"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0611	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton[label~"goalong-sante.json"]	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
+J-0612	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXButton@Sources/LocalHistoryApp/GoalongHealthImportSheet.swift:309	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-0613	S3	Réglages › Import santé :: pane:storage > feuille Import santé	AXDialog[desc="alerte" title~"Protéger ce fichier d’accès ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0614	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton@Sources/LocalHistoryApp/AppleScreenTime/AppleScreenTimeDashboardModel.swift:357	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
+J-0615	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton@Sources/LocalHistoryApp/AppleScreenTime/AppleScreenTimeDashboardModel.swift:379	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0616	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton@Sources/LocalHistoryApp/AppleScreenTime/AppleScreenTimeDashboardModel.swift:396	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0617	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton@Sources/LocalHistoryApp/AppleScreenTime/AppleScreenTimeDashboardModel.swift:397	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0618	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton@Sources/LocalHistoryApp/AppleScreenTime/AppleScreenTimeDashboardModel.swift:403	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0619	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton@Sources/LocalHistoryApp/AppleScreenTime/AppleScreenTimeDashboardModel.swift:404	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0620	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton@Sources/LocalHistoryApp/AppleScreenTime/AppleScreenTimeDashboardModel.swift:405	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0621	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton[label~"Actualiser"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0622	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXDialog ouvert par l’action hôte (GoalongScreenTimePage.swift:82)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0623	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	id=screen-time-open-settings	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0624	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton[label~"Ce Mac"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0625	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	id=screen-time-show-all	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0626	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton[label~"Vérifier les autorisations macOS…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0627	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXPopUpButton[label~"Détail de l’export"]	click	l’option choisie devient la valeur affichée	
+J-0628	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton@Sources/LocalHistoryApp/AppleScreenTime/ScreenTimePage.swift:31	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0629	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXDialog ouvert par l’action hôte (ScreenTimePage.swift:69)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0630	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton[label~"Ouvrir l’accès complet au disque"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0631	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton[label~"Ouvrir les réglages Temps d’écran"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0632	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXPopUpButton[label~"Device scope"]	click	l’option choisie devient la valeur affichée	
+J-0633	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXPopUpButton[label~"Disclosure"]	click	l’option choisie devient la valeur affichée	
+J-0634	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton[label~"Exporter les données"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0635	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton[label~"Ouvrir l’accès complet au disque"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0636	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton[label~"Ouvrir les réglages Temps d’écran"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0637	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton[label~"Ouvrir le dossier de configuration"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0638	S2	Temps d’écran Apple :: nav:history > p:Temps d’écran Apple	AXButton@Sources/LocalHistoryApp/AppleScreenTime/ScreenTimePage.swift:446	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0639	S3	Confidentialité et sécurité :: nav:privacy	AXSheet ouvert par l’action hôte (PrivacyChoicesOverview.swift:86)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0640	S3	Confidentialité et sécurité :: nav:privacy	AXSheet ouvert par l’action hôte (PrivacyChoicesOverview.swift:87)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0641	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Ouvrir le dossier des données"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0642	S3	Confidentialité et sécurité :: nav:privacy	AXButton@Sources/LocalHistoryApp/PrivacyPage.swift:22	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0643	S3	Confidentialité et sécurité :: nav:privacy	AXDialog[desc="alerte" title~"Supprimer"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0644	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Ouvrir les réglages d’accès complet au disque"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0645	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Ouvrir la configuration guidée"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0646	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Ouvrir la Surveillance de l’entrée"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0647	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Vérifier la saisie"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0648	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Vérifier la saisie maintenant"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0649	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Ouvrir le dossier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0650	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Ouvrir le fichier d’activité"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0651	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Diagnostics"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0652	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Réessayer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0653	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Compris"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0654	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Dernière session d’application"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0655	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"10 dernières minutes"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0656	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Dernière heure"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0657	S3	Confidentialité et sécurité :: nav:privacy	AXButton[label~"Toute l’activité locale et les souvenirs"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0658	S3	Confidentialité et sécurité :: nav:privacy	AXDialog[desc="alerte" title~"Supprimer la dernière session d’application ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0659	S3	Confidentialité et sécurité :: nav:privacy	AXButton@Sources/LocalHistoryApp/PrivacyPage.swift:620	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0660	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	id=settings-back	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0661	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	id=settings-back	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0662	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardComponents.swift:329	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0663	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	id=identifierPrefix.map { "\($0 (identifiant calculé)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0664	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	id=identifierPrefix.map { "\($0 (identifiant calculé)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0665	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardComponents.swift:406	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0666	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXDatePicker[label~"Jour"]	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0667	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton[label~"Afficher le jour"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0668	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardComponents.swift:432	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0669	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton[label~"Abandonner"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0670	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton[label~"Vérifier les modifications"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0671	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXSheet ouvert par l’action hôte (DashboardRootView.swift:65)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0672	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXDialog ouvert par l’action hôte (DashboardRootView.swift:73)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0673	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardRootView.swift:204	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0674	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardRootView.swift:256	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0675	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardRootView.swift:288	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0676	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardRootView.swift:323	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0677	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardViewModel.swift:249	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0678	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardViewModel.swift:678	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0679	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXButton@Sources/LocalHistoryApp/DashboardViewModel.swift:702	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
+J-0680	S1	Fenêtre principale :: fenêtre principale (nav:overview) + barre de titre	AXWindow ouvert par l’action hôte (DashboardWindowController.swift:146)	observe	la fenêtre existe (liste des fenêtres) avec son titre	
+J-0681	S4	Makefile (cibles) :: transcription make sur le runner	cli: make check	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0682	S4	Makefile (cibles) :: transcription make sur le runner	cli: make test	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0683	S4	Makefile (cibles) :: transcription make sur le runner	cli: make test-ui	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0684	S4	Makefile (cibles) :: transcription make sur le runner	cli: make gallery	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0685	S4	Makefile (cibles) :: transcription make sur le runner	cli: make gallery-diff	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0686	S4	Makefile (cibles) :: transcription make sur le runner	cli: make gallery-accept	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0687	S4	Makefile (cibles) :: transcription make sur le runner	cli: make gallery-index	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0688	S4	Makefile (cibles) :: transcription make sur le runner	cli: make gallery-compare	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0689	S4	Makefile (cibles) :: transcription make sur le runner	cli: make gallery-clean	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0690	S4	Makefile (cibles) :: transcription make sur le runner	cli: make build	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0691	S4	Makefile (cibles) :: transcription make sur le runner	cli: make app	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0692	S4	Makefile (cibles) :: transcription make sur le runner	cli: make dev	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0693	S4	Makefile (cibles) :: transcription make sur le runner	cli: make dev-stop	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0694	S4	Makefile (cibles) :: transcription make sur le runner	cli: make dev-status	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0695	S4	Makefile (cibles) :: transcription make sur le runner	cli: make dmg	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0696	S4	Makefile (cibles) :: transcription make sur le runner	cli: make audit	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0697	S4	Makefile (cibles) :: transcription make sur le runner	cli: make install	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0698	S4	Makefile (cibles) :: transcription make sur le runner	cli: make install-source	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0699	S4	Makefile (cibles) :: transcription make sur le runner	cli: make uninstall	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0700	S4	Makefile (cibles) :: transcription make sur le runner	cli: make clean	cli-cmd	la cible s’exécute (ou « make -n » liste la recette) ; code retour consigné	
+J-0701	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=recording-visible-text-draft	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0702	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=recording-setup-cancel	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0703	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=recording-setup-confirm	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0704	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=recording-setup-confirm	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0705	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=recording-complete-setup	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0706	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXSheet ouvert par l’action hôte (GoalongRecordingSetup.swift:152)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0707	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=activity-recording-action	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0708	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=recording-incomplete-dismiss	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0709	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=onboarding-record-local	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0710	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXCheckBox[label~"Ouvrir Goalong à la connexion"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0711	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXButton[label~"Ouvrir les éléments d’ouverture"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0712	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXSheet ouvert par l’action hôte (OnboardingView.swift:52)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0713	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXButton[label~"Retour"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0714	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXButton@Sources/LocalHistoryApp/OnboardingView.swift:132	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0715	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=onboarding-continue	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0716	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	id=recording-\(choice.id)	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0717	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXButton[label~"Choisir des applications…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0718	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXDialog[desc="alerte" title~"L’application n’a pas pu être ajoutée"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0719	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXButton@Sources/LocalHistoryApp/RecordingChoicesView.swift:156	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0720	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXButton[label~"Choisir des applications"]	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-0721	S3	Réglages :: nav:settings > pane:home	id=settings-calendar-access	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0722	S3	Réglages :: nav:settings > pane:home	AXSheet[label~"Inclure la navigation privée ?"]	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0723	S3	Réglages :: nav:settings > pane:home	AXDialog[desc="alerte" title~"Inclure la navigation privée ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0724	S3	Réglages :: nav:settings > pane:home	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0725	S3	Réglages :: nav:settings > pane:home	AXButton[label~"Inclure"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0726	S3	Réglages :: nav:settings > pane:home	AXDialog[desc="alerte" title~"Conserver les paramètres des adresses ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0727	S3	Réglages :: nav:settings > pane:home	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0728	S3	Réglages :: nav:settings > pane:home	AXButton[label~"Conserver les valeurs"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0729	S3	Réglages :: nav:settings > pane:home	id=settings-report-problem	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0730	S3	Réglages :: nav:settings > pane:home	id=settings-foreground-idle-limit	click	l’option choisie devient la valeur affichée	
+J-0731	S3	Réglages :: nav:settings > pane:home	AXCheckBox[label~"Inclure les fenêtres privées détectées"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0732	S3	Réglages :: nav:settings > pane:home	AXCheckBox[label~"Masquer les valeurs des paramètres d’URL"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0733	S3	Réglages :: nav:settings > pane:home	AXCheckBox[label~"Rechercher les mises à jour automatiquement"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0734	S3	Réglages :: nav:settings > pane:home	AXDialog[desc="alerte" title~"Réinitialiser les réglages ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0735	S3	Réglages :: nav:settings > pane:home	id=settings-config-backup	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0736	S3	Réglages :: nav:settings > pane:home	id=settings-config-backup	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0737	S3	Réglages :: nav:settings > pane:home	AXButton[label~"Installer la version"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0738	S3	Réglages :: nav:settings > pane:home	AXButton[label~"En savoir plus"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0739	S3	Réglages :: nav:settings > pane:home	AXButton@Sources/LocalHistoryApp/SimpleSettingsComponents.swift:37	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0740	S3	Réglages :: nav:settings > pane:home	AXSheet ouvert par l’action hôte (SimpleSettingsComponents.swift:191)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0741	S3	Braise :: nav:braise	id=braise-mode	click	l’option choisie devient la valeur affichée	
+J-0742	S3	Braise :: nav:braise	AXButton[label~"· le lendemain"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0743	S3	Braise :: nav:braise	AXCheckBox[label~"Activer l’horaire"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0744	S3	Braise :: nav:braise	id=braise-add-rule	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0745	S3	Braise :: nav:braise	AXCheckBox[label~"Ouvrir Goalong à la connexion"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0746	S3	Braise :: nav:braise	id=braise-page	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0747	S3	Braise :: nav:braise	AXSheet ouvert par l’action hôte (BraisePage.swift:124)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0748	S3	Braise :: nav:braise	AXSlider@Sources/LocalHistoryApp/Braise/BraisePage.swift:130	click	la valeur du curseur change et s’affiche	
+J-0749	S3	Braise :: nav:braise	AXCheckBox@Sources/LocalHistoryApp/Braise/BraisePage.swift:153	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0750	S3	Braise :: nav:braise	AXButton[label~"Tous les jours"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0751	S3	Braise :: nav:braise	AXButton[label~"Semaine"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0752	S3	Braise :: nav:braise	AXButton[label~"Week-end"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0753	S3	Braise :: nav:braise	AXButton[label~"Annuler"]	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0754	S3	Braise :: nav:braise	AXButton[label~"Enregistrer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0755	S3	Braise :: nav:braise	AXButton@Sources/LocalHistoryApp/Braise/BraisePage.swift:173	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0756	S3	Braise :: nav:braise	AXTextField[label~"HH:mm"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0757	S3	Braise :: nav:braise	AXButton@Sources/LocalHistoryApp/Braise/BraisePage.swift:245	click	l’étape suivante s’affiche	
+J-0758	S3	Braise :: nav:braise	id=goalong-braise	observe	la fenêtre existe (liste des fenêtres) avec son titre	
+J-0759	S3	Braise :: nav:braise	AXMenuItem@Sources/LocalHistoryApp/Braise/BraiseRuntime.swift:149	menu	l’élément est présent, activé, et son action s’exécute	
+J-0760	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXPopUpButton[label~"Filtre des événements"]	click	l’option choisie devient la valeur affichée	
+J-0761	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXTextField[label~"Filtrer le contexte des événements"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0762	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton@Sources/LocalHistoryApp/ActivityPage.swift:88	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0763	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton@Sources/LocalHistoryApp/ComputerHistoryPage.swift:214	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0764	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXDialog[desc="alerte" title~"Supprimer cet élément de l’historique ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0765	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton[label~"Réessayer encore"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0766	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton[label~"Voir le fichier brut"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0767	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXPopUpButton[label~"Ordre de la chronologie"]	click	l’option choisie devient la valeur affichée	
+J-0768	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton[label~"Effacer la recherche"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0769	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXTextField[label~"Où en étais-je avant ma pause ? Retrouve la proposition. Qu’est-ce qui"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0770	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton[label~"Demander"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0771	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton@Sources/LocalHistoryApp/ComputerHistoryPage.swift:1254	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0772	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton[label~"Ouvrir"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0773	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton[label~"Afficher les fichiers"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0774	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton@Sources/LocalHistoryApp/ComputerHistoryPage.swift:1429	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0775	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton@Sources/LocalHistoryApp/ComputerHistoryPage.swift:1649	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0776	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton@Sources/LocalHistoryApp/ComputerHistoryPage.swift:1820	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0777	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton@Sources/LocalHistoryApp/ComputerHistoryPage.swift:1859	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0778	S2	Historique de ce Mac :: nav:history > p:Ce Mac	AXButton[label~"Supprimer cet élément…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0779	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"Comprendre une session"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0780	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXDatePicker[label~"Début"]	type	la date/heure saisie est acceptée ou refusée avec message	
+J-0781	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXTextField[label~"Projet"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0782	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXTextField[label~"Ce que vous souhaitiez faire pendant cette session"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0783	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXCheckBox[label~"Inclure les extraits de contexte enrichi déjà autorisés"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0784	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"Préparer la sélection locale"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0785	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXCheckBox[label~"Contexte non fourni"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0786	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"Déconnecter ChatGPT"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0787	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXCheckBox[label~"J’autorise l’envoi de cette sélection à l’agent connecté"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0788	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"Analyser le contexte de cette session"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0789	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"Préparer pour mon autre agent…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0790	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"Importer sa réponse…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0791	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXPopUpButton[label~"Association"]	click	l’option choisie devient la valeur affichée	
+J-0792	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXCheckBox[label~"Inclure l’interprétation relue"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0793	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0794	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"Vous choisirez ensuite les champs transmis au site."]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0795	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"goalong-session"]	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
+J-0796	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton@Sources/LocalHistoryApp/GoalongRhythmStudio.swift:223	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-0797	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXButton@Sources/LocalHistoryApp/SourceActivation.swift:168	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0798	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	id=source-\(capability.rawValue)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0799	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	id=source-\(capability.rawValue)	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0800	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXSheet ouvert par l’action hôte (SourceActivation.swift:332)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0801	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXSheet ouvert par l’action hôte (SourceActivation.swift:336)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0802	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXDialog[desc="alerte" title~"Accès à vérifier"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0803	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXButton@Sources/LocalHistoryApp/SourceActivation.swift:368	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0804	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXDialog[desc="alerte" title~"Modification non enregistrée"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0805	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXButton@Sources/LocalHistoryApp/SourceActivation.swift:370	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0806	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXButton[label~"Plus tard"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0807	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXButton[label~"Ouvrir les Réglages"]	shortcut	la touche équivalente déclenche la même action que le bouton (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0808	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	id=permission-open-settings	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0809	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXButton[label~"Vérifier à nouveau"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0810	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	id=permission-primary-action	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0811	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	id=permission-primary-action	shortcut	la touche équivalente déclenche la même action que le bouton (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0812	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXSheet ouvert par l’action hôte (SourceActivation.swift:551)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0813	S1	Autre (SourceActivation) :: pane:permissions / onboarding étape 2-sources (SourceActivation)	AXButton[label~"Vérifier l’accès à nouveau"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (SourceActivation) rattaché à l’écran hôte)	
+J-0814	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton[label~"J’ai déjà activé cet accès dans macOS"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0815	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionExperience.swift:292	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0816	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton[label~"Préparation du relancement…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0817	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionManager.swift:301	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0818	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionManager.swift:352	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0819	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionManager.swift:362	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0820	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionManager.swift:396	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0821	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionManager.swift:397	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0822	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionManager.swift:415	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0823	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionManager.swift:416	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0824	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionManager.swift:430	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0825	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton@Sources/LocalHistoryApp/PermissionManager.swift:431	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-0826	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	id=permission-targeted-repair	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0827	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton[label~"Relancer Goalong après autorisation"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0828	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton[label~"Réinitialiser cette autorisation de Goalong ?"]	click	la confirmation exécute l’action ; Annuler la laisse intacte	
+J-0829	S1	Permissions :: pane:permissions (settings-permissions) + alertes permission	AXButton[label~"Réinitialiser et ouvrir les réglages"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0830	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	id=support-export-diagnostics	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0831	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXCheckBox[label~"Conserver les journaux techniques sur ce Mac"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0832	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"Noter l’heure du problème"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0833	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"Effacer les journaux…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0834	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"Effacer uniquement les journaux techniques ?"]	click	la confirmation exécute l’action ; Annuler la laisse intacte	
+J-0835	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"Effacer les journaux"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0836	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXWindow[label~"Signaler un problème"]	observe	la fenêtre existe (liste des fenêtres) avec son titre	
+J-0837	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"Enregistrer une copie du diagnostic"]	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
+J-0838	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"La copie n’a pas pu être enregistrée. Essayez un autre dossier."]	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0839	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton@Sources/LocalHistoryApp/SupportRequest.swift:162	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0840	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	id=support-reveal	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0841	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"Noter l’heure du problème"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0842	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"Actualiser le rapport"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0843	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	id=support-more	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0844	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	id=support-email	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0845	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	id=support-email	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0846	S3	Réglages › Applications :: pane:applications	AXCheckBox[label~"Exclusions seulement"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0847	S3	Réglages › Applications :: pane:applications	AXTextField[label~"Ajouter un site · exemple.fr"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0848	S3	Réglages › Applications :: pane:applications	AXButton[label~"Exclure"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0849	S3	Réglages › Applications :: pane:applications	AXCheckBox[label~"Autoriser"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0850	S3	Réglages › Applications :: pane:applications	AXCheckBox[label~"Autoriser"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0851	S3	Réglages › Applications :: pane:applications	AXDialog[desc="alerte" title~"Reconnaître ce site pour l’exclure ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0852	S3	Réglages › Applications :: pane:applications	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0853	S3	Réglages › Applications :: pane:applications	AXButton[label~"Exclure le site"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0854	S3	Réglages › Applications :: pane:applications	AXDialog[desc="alerte" title~"Exclusion non modifiée"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0855	S3	Réglages › Applications :: pane:applications	AXButton[label~"Fermer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0856	S3	Réglages › Applications :: pane:applications	AXTextField[label~"Site à exclure · exemple.fr"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0857	S3	Réglages › Applications :: pane:applications	AXButton[label~"Ajouter"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0858	S3	Réglages › Applications :: pane:applications	AXButton[label~"Retirer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0859	S3	Réglages › Conservation :: pane:storage > rétention	AXPopUpButton[label~"Période"]	click	l’option choisie devient la valeur affichée	
+J-0860	S3	Réglages › Conservation :: pane:storage > rétention	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0861	S3	Réglages › Conservation :: pane:storage > rétention	AXDialog[desc="alerte" title~"Confirmer la suppression ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0862	S3	Réglages › Conservation :: pane:storage > rétention	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0863	S3	Réglages › Conservation :: pane:storage > rétention	AXButton[label~"Effacer sur ce Mac"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0864	S3	Réglages › Conservation :: pane:storage > rétention	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0865	S3	Réglages › Conservation :: pane:storage > rétention	id=retention-automatic	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0866	S3	Réglages › Conservation :: pane:storage > rétention	id=retention-\(kind.rawValue)	click	l’option choisie devient la valeur affichée	
+J-0867	S3	Réglages › Conservation :: pane:storage > rétention	id=retention-confirm-proofs	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0868	S3	Réglages › Conservation :: pane:storage > rétention	id=retention-apply	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0869	S3	Réglages › Conservation :: pane:storage > rétention	AXDialog[desc="alerte" title~"Appliquer la suppression automatique ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0870	S3	Réglages › Conservation :: pane:storage > rétention	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0871	S3	Réglages › Conservation :: pane:storage > rétention	AXButton[label~"Appliquer ces règles"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0872	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXButton[label~"Fermer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0873	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXButton[label~"Se déconnecter"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0874	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXButton[label~"Se connecter à ChatGPT"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0875	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXButton[label~"Annuler l’opération"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0876	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXButton[label~"Installer ou mettre à jour Codex"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0877	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXButton[label~"Choisir la demande…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0878	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXCheckBox[label~"J’autorise l’envoi des seules données affichées à ChatGPT pour cette a"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0879	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXButton[label~"Analyser avec ChatGPT"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0880	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXTextField[label~"Titre"]	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0881	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXButton[label~"Choisir la demande d’analyse Goalong"]	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-0882	S2	Activité › Analyse site :: nav:analytics > feuille Analyse site	AXButton[label~"Exporter le brouillon relu"]	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
+J-0883	S3	Ambiance :: nav:ambiance	id=ambiance-add-files	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0884	S3	Ambiance :: nav:ambiance	id=ambiance-remove-\(pack.id)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0885	S3	Ambiance :: nav:ambiance	AXButton@Sources/LocalHistoryApp/Ambiance/AmbiancePage.swift:246	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-0886	S3	Ambiance :: nav:ambiance	id=ambiance-volume	click	la valeur du curseur change et s’affiche	
+J-0887	S3	Ambiance :: nav:ambiance	id=ambiance-play	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0888	S3	Ambiance :: nav:ambiance	id=ambiance-play	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0889	S3	Ambiance :: nav:ambiance	id=ambiance-download-\(pack.id)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0890	S3	Ambiance :: nav:ambiance	AXButton@Sources/LocalHistoryApp/Ambiance/AmbiancePage.swift:387	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0891	S3	Ambiance :: nav:ambiance	AXButton@Sources/LocalHistoryApp/Ambiance/AmbiancePage.swift:438	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0892	S3	Ambiance :: nav:ambiance	AXButton@Sources/LocalHistoryApp/Ambiance/AmbiancePage.swift:460	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0893	S3	Ambiance :: nav:ambiance	id=ambiance-download-\(pack.id)	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0894	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	id=blocking-password-set	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0895	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	AXSheet ouvert par l’action hôte (BlockingPasswordViews.swift:51)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0896	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	id=blocking-password-field	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0897	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	id=blocking-password-new	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0898	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	id=blocking-password-again	type	le texte saisi apparaît en AXValue ; champ vidable	
+J-0899	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	id=blocking-password-submit	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0900	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	id=blocking-password-submit	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0901	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	id=blocking-password-submit	shortcut	la touche équivalente déclenche la même action que le bouton	
+J-0902	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0903	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	AXButton[label~"Annuler…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0904	S3	Blocage › Mot de passe :: nav:blocking > feuille mot de passe	AXButton[label~"Annuler…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0905	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXPopUpButton[label~"Règle de partage par défaut"]	click	l’option choisie devient la valeur affichée	
+J-0906	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXPopUpButton[label~"Visibilité de"]	click	l’option choisie devient la valeur affichée	
+J-0907	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXButton@Sources/LocalHistoryApp/UsageRulesList.swift:259	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0908	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXButton[label~"Masquer dans tous les partages"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0909	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXButton[label~"Partager seulement la catégorie"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0910	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXButton[label~"Afficher le nom du site dans les partages"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0911	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXButton[label~"Exclu par la règle «"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0912	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXButton[label~"Autoriser de nouveau les détails"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0913	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXButton[label~"Exclure tous les détails futurs"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0914	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXCheckBox@Sources/LocalHistoryApp/UsageRulesList.swift:343	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0915	S3	Réglages › Règles d’usage :: pane:applications > règles d’usage	AXButton[label~"Activer la mémoire des pages"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0916	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)			 (Autre (GoalongControls) rattaché à l’écran hôte)	enveloppe/style générique interne sans identifiant propre : contrôle vérifié via les écrans qui l’utilisent
+J-0917	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)	AXTextField@Sources/LocalHistoryApp/GoalongControls.swift:253	type	le texte saisi apparaît en AXValue ; champ vidable (Autre (GoalongControls) rattaché à l’écran hôte)	
+J-0918	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)	id=identifier ?? "" (identifiant calculé)	type	le texte saisi apparaît en AXValue ; champ vidable (Autre (GoalongControls) rattaché à l’écran hôte)	
+J-0919	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)	AXButton[label~"Effacer la recherche"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (GoalongControls) rattaché à l’écran hôte)	
+J-0920	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)	AXButton@Sources/LocalHistoryApp/GoalongControls.swift:318	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (GoalongControls) rattaché à l’écran hôte)	
+J-0921	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)			 (Autre (GoalongControls) rattaché à l’écran hôte)	enveloppe/style générique interne sans identifiant propre : contrôle vérifié via les écrans qui l’utilisent
+J-0922	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)			 (Autre (GoalongControls) rattaché à l’écran hôte)	enveloppe/style générique interne sans identifiant propre : contrôle vérifié via les écrans qui l’utilisent
+J-0923	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)			 (Autre (GoalongControls) rattaché à l’écran hôte)	enveloppe/style générique interne sans identifiant propre : contrôle vérifié via les écrans qui l’utilisent
+J-0924	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)			 (Autre (GoalongControls) rattaché à l’écran hôte)	enveloppe/style générique interne sans identifiant propre : contrôle vérifié via les écrans qui l’utilisent
+J-0925	S3	Autre (GoalongControls) :: nav:settings > pane:home (champ de recherche, interrupteurs communs)			 (Autre (GoalongControls) rattaché à l’écran hôte)	enveloppe/style générique interne sans identifiant propre : contrôle vérifié via les écrans qui l’utilisent
+J-0926	S2	Bilan quotidien (ChatGPT) :: nav:chatGPTRecap	AXButton[label~"Connexion…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0927	S2	Bilan quotidien (ChatGPT) :: nav:chatGPTRecap	AXDialog ouvert par l’action hôte (ChatGPTRecapPage.swift:102)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0928	S2	Bilan quotidien (ChatGPT) :: nav:chatGPTRecap	AXButton[label~"Choisir les données"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0929	S2	Bilan quotidien (ChatGPT) :: nav:chatGPTRecap	AXButton[label~"Exporter la preuve"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0930	S2	Bilan quotidien (ChatGPT) :: nav:chatGPTRecap	AXButton[label~"Fichiers de rapport"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0931	S2	Bilan quotidien (ChatGPT) :: nav:chatGPTRecap	AXButton[label~"Analyse en cours…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0932	S2	Bilan quotidien (ChatGPT) :: nav:chatGPTRecap	AXButton[label~"Relire les sources"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0933	S2	Bilan quotidien (ChatGPT) :: nav:chatGPTRecap	AXButton@Sources/LocalHistoryApp/ChatGPT/ChatGPTRecapRuntime.swift:542	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0934	S2	Bilan quotidien (ChatGPT) :: nav:chatGPTRecap	id=goalong-proof	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
+J-0935	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	id=goalong-global-pause	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0936	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	AXDialog[desc="alerte" title~"Suspendre aussi l’historique ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0937	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0938	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	AXButton[label~"Tout suspendre"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0939	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	AXDialog[desc="alerte" title~"Annuler"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0940	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0941	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	AXButton[label~"Fermer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0942	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	AXDialog[desc="alerte" title~"Fermer"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0943	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	AXButton[label~"Fermer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0944	S2	Terminal (page CLI) :: nav:cli	AXButton@Sources/LocalHistoryApp/CLIHelpPage.swift:67	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0945	S2	Terminal (page CLI) :: nav:cli	AXButton[label~"Installer la commande"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0946	S2	Terminal (page CLI) :: nav:cli	AXButton[label~"Commande copiée"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0947	S2	Terminal (page CLI) :: nav:cli	AXButton[label~"Commande copiée"]	click	le presse-papiers contient le texte attendu (pbpaste)	
+J-0948	S2	Terminal (page CLI) :: nav:cli	AXButton@Sources/LocalHistoryApp/CLIHelpPage.swift:141	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0949	S2	Terminal (page CLI) :: nav:cli	AXButton@Sources/LocalHistoryApp/CLIHelpPage.swift:205	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0950	S2	Terminal (page CLI) :: nav:cli	AXButton[label~"Instructions pour l’agent copiées"]	click	le presse-papiers contient le texte attendu (pbpaste)	
+J-0951	S2	Terminal (page CLI) :: nav:cli	AXButton[label~"Commande copiée"]	click	le presse-papiers contient le texte attendu (pbpaste)	
+J-0952	S1	Installation :: launch app hors /Applications > alerte emplacement d’installation	AXDialog[desc="alerte" title~"Terminer l’installation de Goalong History"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0953	S1	Installation :: launch app hors /Applications > alerte emplacement d’installation	AXDialog[desc="alerte" title~"Une version plus récente est déjà dans Applications"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0954	S1	Installation :: launch app hors /Applications > alerte emplacement d’installation	AXButton@Sources/LocalHistoryApp/InstallationLocationManager.swift:48	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0955	S1	Installation :: launch app hors /Applications > alerte emplacement d’installation	AXDialog[desc="alerte" title~"Goalong History est déjà dans Applications"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0956	S1	Installation :: launch app hors /Applications > alerte emplacement d’installation	AXButton@Sources/LocalHistoryApp/InstallationLocationManager.swift:61	click	l’URL ou le panneau externe est demandé (ouverture capturée, pas suivie)	
+J-0957	S1	Installation :: launch app hors /Applications > alerte emplacement d’installation	AXDialog[desc="alerte" title~"Goalong History n’a pas pu être déplacé"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0958	S1	Installation :: launch app hors /Applications > alerte emplacement d’installation	AXDialog[desc="alerte" title~"Goalong History est déjà ouvert"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0959	S3	Réglages › ChatGPT :: pane:chatGPT	AXCheckBox[label~"Autoriser les analyses"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0960	S3	Réglages › ChatGPT :: pane:chatGPT	AXCheckBox[label~"Analyser automatiquement la journée d’hier"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0961	S3	Réglages › ChatGPT :: pane:chatGPT	AXButton[label~"Analyser cette journée"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0962	S3	Réglages › ChatGPT :: pane:chatGPT	AXSheet[label~"Réglage non modifié"]	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0963	S3	Réglages › ChatGPT :: pane:chatGPT	AXDialog[desc="alerte" title~"Réglage non modifié"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0964	S3	Réglages › ChatGPT :: pane:chatGPT	AXButton[label~"Fermer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0965	S3	Réglages › ChatGPT :: pane:chatGPT	AXDialog[desc="alerte" title~"Fermer"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0966	S1	Menu de l’app (barre macOS) :: m:Goalong History>… (barre de menus de l’app)	AXMenuItem[label~"Rechercher les mises à jour…"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0967	S1	Menu de l’app (barre macOS) :: m:Goalong History>… (barre de menus de l’app)	AXMenuItem[label~"Services"]	menu	l’élément est présent, activé, et son action s’exécute	
+J-0968	S1	Menu de l’app (barre macOS) :: m:Goalong History>… (barre de menus de l’app)	AXMenuItem@Sources/LocalHistoryApp/ApplicationMenuController.swift:176	menu	l’élément est présent, activé, et son action s’exécute	
+J-0969	S1	Menu de l’app (barre macOS) :: m:Goalong History>… (barre de menus de l’app)	AXMenuItem@Sources/LocalHistoryApp/ApplicationMenuController.swift:186	menu	l’élément est présent, activé, et son action s’exécute	
+J-0970	S1	Menu de l’app (barre macOS) :: m:Goalong History>… (barre de menus de l’app)	AXMenuItem@Sources/LocalHistoryApp/ApplicationMenuController.swift:196	menu	l’élément est présent, activé, et son action s’exécute	
+J-0971	S1	Menu de l’app (barre macOS) :: m:Goalong History>… (barre de menus de l’app)	AXDialog[desc="alerte" title~"Goalong est resté ouvert"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0972	S3	Réglages › Stockage :: pane:storage	AXButton[label~"Ouvrir le dossier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0973	S3	Réglages › Stockage :: pane:storage	AXSheet ouvert par l’action hôte (GoalongStorageSettings.swift:56)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0974	S3	Réglages › Stockage :: pane:storage	AXSheet ouvert par l’action hôte (GoalongStorageSettings.swift:58)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0975	S3	Réglages › Stockage :: pane:storage	AXSheet ouvert par l’action hôte (GoalongStorageSettings.swift:81)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0976	S3	Réglages › Stockage :: pane:storage	AXSheet ouvert par l’action hôte (GoalongStorageSettings.swift:82)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0977	S3	Réglages › Stockage :: pane:storage	AXSheet ouvert par l’action hôte (GoalongStorageSettings.swift:83)	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0978	S1	App (cycle de vie) :: launch / quit (osascript) / relaunch	AXDialog ouvert par l’action hôte (AppDelegate.swift:193)	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0979	S1	App (cycle de vie) :: launch / quit (osascript) / relaunch	AXDialog[desc="alerte" title~"Quitter Goalong et arrêter l’enregistrement ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0980	S1	App (cycle de vie) :: launch / quit (osascript) / relaunch	AXDialog[desc="alerte" title~"Un blocage est verrouillé"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0981	S1	App (cycle de vie) :: launch / quit (osascript) / relaunch	AXDialog[desc="alerte" title~"Mot de passe de blocage exigé"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0982	S1	App (cycle de vie) :: launch / quit (osascript) / relaunch	AXDialog[desc="alerte" title~"Goalong reste ouvert"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0983	S3	Réglages › Modules :: pane:modules	AXDialog[desc="alerte" title~"Supprimer les données Concentration ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-0984	S3	Réglages › Modules :: pane:modules	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0985	S3	Réglages › Modules :: pane:modules	AXButton[label~"Supprimer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0986	S3	Réglages › Modules :: pane:modules	AXButton[label~"Supprimer ses données…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0987	S3	Réglages › Modules :: pane:modules	id=settings-module-\(module.rawValue)	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-0988	S3	Autre (BackgroundContinuitySettings) :: pane:home > BackgroundContinuitySettings	AXCheckBox[label~"Garder Goalong actif en arrière-plan"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli (Autre (BackgroundContinuitySettings) rattaché à l’écran hôte)	
+J-0989	S3	Autre (BackgroundContinuitySettings) :: pane:home > BackgroundContinuitySettings	AXCheckBox[label~"Ouvrir Goalong à l’ouverture de session"]	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli (Autre (BackgroundContinuitySettings) rattaché à l’écran hôte)	
+J-0990	S3	Autre (BackgroundContinuitySettings) :: pane:home > BackgroundContinuitySettings	AXButton[label~"Ouvrir les éléments d’ouverture…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (BackgroundContinuitySettings) rattaché à l’écran hôte)	
+J-0991	S3	Autre (BackgroundContinuitySettings) :: pane:home > BackgroundContinuitySettings	AXButton[label~"Masquer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (BackgroundContinuitySettings) rattaché à l’écran hôte)	
+J-0992	S3	Autre (VisibleContextControl) :: pane:recording > recording-visible-text	id=recording-visible-text	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli (Autre (VisibleContextControl) rattaché à l’écran hôte)	
+J-0993	S3	Autre (VisibleContextControl) :: pane:recording > recording-visible-text	AXDialog[desc="alerte" title~"Enregistrer le texte affiché ?"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet (Autre (VisibleContextControl) rattaché à l’écran hôte)	
+J-0994	S3	Autre (VisibleContextControl) :: pane:recording > recording-visible-text	AXButton[label~"Annuler"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (VisibleContextControl) rattaché à l’écran hôte)	
+J-0995	S3	Autre (VisibleContextControl) :: pane:recording > recording-visible-text	AXButton[label~"Autoriser le texte affiché"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (VisibleContextControl) rattaché à l’écran hôte)	
+J-0996	S1	Bandeau d’attention :: nav:overview > bandeau d’attention	AXButton[label~"Signaler le problème…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0997	S1	Bandeau d’attention :: nav:overview > bandeau d’attention	AXButton[label~"Masquer"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0998	S1	Bandeau d’attention :: nav:overview > bandeau d’attention	AXButton[label~"Gérer le stockage…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-0999	S1	Bandeau d’attention :: nav:overview > bandeau d’attention	AXButton@Sources/LocalHistoryApp/GoalongAttentionBanner.swift:112	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-1000	S4	Installation (scripts) :: transcription scripts sur le runner	cli: install.sh	cli-cmd	le script s’exécute en VM jetable (ou « bash -n » + sortie) ; code retour consigné	
+J-1001	S4	Installation (scripts) :: transcription scripts sur le runner	cli: uninstall.sh	cli-cmd	le script s’exécute en VM jetable (ou « bash -n » + sortie) ; code retour consigné	
+J-1002	S4	Installation (scripts) :: transcription scripts sur le runner	cli: Install.command	cli-cmd	le script s’exécute en VM jetable (ou « bash -n » + sortie) ; code retour consigné	
+J-1003	S4	Installation (scripts) :: transcription scripts sur le runner	cli: Uninstall.command	cli-cmd	le script s’exécute en VM jetable (ou « bash -n » + sortie) ; code retour consigné	
+J-1004	S3	Blocage › Écran de blocage :: nav:blocking > écran de blocage (shield)	id=blocking-veil-break	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1005	S3	Blocage › Écran de blocage :: nav:blocking > écran de blocage (shield)	id=blocking-veil-extra-break	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1006	S3	Blocage › Écran de blocage :: nav:blocking > écran de blocage (shield)	AXButton@Sources/LocalHistoryApp/Blocking/BlockingShieldViews.swift:186	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1007	S2	Mon travail › Développeur :: nav:work > bloc Développeur	AXButton@Sources/LocalHistoryApp/DeveloperActivity/GoalongDeveloperProjectsSheet.swift:23	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1008	S2	Mon travail › Développeur :: nav:work > bloc Développeur	id=developer-projects-sheet	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1009	S2	Mon travail › Développeur :: nav:work > bloc Développeur	AXButton[label~"Suivre"]	click	le sélecteur de fichier s’ouvre ; un fichier valide est importé	
+J-1010	S2	Activité (navigation jour) :: nav:overview > Jour précédent / Aujourd’hui / Choisir un jour	AXButton[label~"Partager cette journée…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1011	S2	Activité (navigation jour) :: nav:overview > Jour précédent / Aujourd’hui / Choisir un jour	AXButton@Sources/LocalHistoryApp/DayNavigationHeader.swift:50	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1012	S2	Autre (GoalongSystemLaneBuilders) :: (aucun écran hôte) Autre (GoalongSystemLaneBuilders)				type interne sans rendu propre : constructeur de voies système, ouverture de Réglages macOS sans contrôle Goalong distinct
+J-1013	S2	Autre (GoalongSystemLaneBuilders) :: (aucun écran hôte) Autre (GoalongSystemLaneBuilders)				type interne sans rendu propre : constructeur de voies système, ouverture de Réglages macOS sans contrôle Goalong distinct
+J-1014	S3	Autre (WorkspaceOpenPolicy) :: (aucun écran hôte) Autre (WorkspaceOpenPolicy)				politique interne d’ouverture (NSWorkspace) sans rendu propre ; l’ouverture est vérifiée par l’écran hôte appelant
+J-1015	S3	Autre (WorkspaceOpenPolicy) :: (aucun écran hôte) Autre (WorkspaceOpenPolicy)				politique interne d’ouverture (NSWorkspace) sans rendu propre ; l’ouverture est vérifiée par l’écran hôte appelant
+J-1016	S3	Blocage › Ralentir :: nav:blocking > Ralentir	id=slowdown-renounce	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1017	S3	Blocage › Ralentir :: nav:blocking > Ralentir	id=slowdown-continue	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1018	S2	Calendrier :: pane:connections > settings-calendar-access	AXButton@Sources/LocalHistoryApp/GoalongCalendarBackend.swift:81	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-1019	S2	Calendrier :: pane:connections > settings-calendar-access	AXButton@Sources/LocalHistoryApp/GoalongCalendarBackend.swift:83	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	
+J-1020	S1	Mise à jour :: m:Goalong History>Rechercher les mises à jour… / settings-update-status	AXDialog[desc="alerte" title~"Mises à jour indisponibles dans cette version"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-1021	S1	Mise à jour :: m:Goalong History>Rechercher les mises à jour… / settings-update-status	AXDialog[desc="alerte" title~"Impossible de vérifier les mises à jour"]	observe	l’alerte s’affiche avec titre et boutons ; Annuler/Fermer la ferme sans effet	
+J-1022	S3	Partager :: nav:share	AXButton@Sources/LocalHistoryApp/SharePage.swift:16	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1023	S3	Partager :: nav:share	AXButton[label~"Créer le fichier"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
+J-1024	S3	Autre (GoalongDisclosureGroup) :: pane:home > Confidentialité · tout suspendre	AXButton@Sources/LocalHistoryApp/GoalongDisclosureGroup.swift:48	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse (Autre (GoalongDisclosureGroup) rattaché à l’écran hôte)	
+J-1025	S2	Autre (GoalongThread) :: (aucun écran hôte) Autre (GoalongThread)				type interne sans rendu propre : marques graphiques du fil, pas de contrôle AX distinct
+J-1026	S3	Réglages › Développeur :: pane:advanced > Développeur	id=settings-developer-mode	toggle	l’état AXValue passe 0↔1, état lu après bascule puis rétabli	
+J-1027	S3	Réglages › Ouverture au login :: pane:home > BackgroundContinuitySettings	AXButton@Sources/LocalHistoryApp/LaunchAtLoginManager.swift:181	observe	l’état de la permission est affiché ; la demande ou l’ouverture des Réglages macOS est déclenchée	

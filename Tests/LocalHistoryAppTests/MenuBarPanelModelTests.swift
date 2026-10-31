@@ -95,14 +95,14 @@ final class MenuBarPanelModelTests: XCTestCase {
         f.globallyPaused.paused = true; f.globallyPaused.changedAt = f.now
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .paused(since: f.now))
         f.globallyPaused.paused = false; f.consent = false
-        model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention("Enregistrement désactivé"))
+        model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention("Suivi en pause"))
         f.consent = true; f.health = .storageUnavailable
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention(f.health.frenchTitle))
         f.health = .permissionRequired
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention(f.health.frenchTitle))
         XCTAssertEqual(model.attentionTitle, f.health.frenchTitle)
         f.health = .ready; f.consent = false
-        model.refreshRuntimeState(); XCTAssertEqual(model.attentionTitle, "Enregistrement désactivé")
+        model.refreshRuntimeState(); XCTAssertEqual(model.attentionTitle, "Suivi en pause")
         f.consent = true
         model.refreshRuntimeState(); XCTAssertNil(model.attentionTitle)
     }
@@ -136,7 +136,7 @@ final class MenuBarPanelModelTests: XCTestCase {
         // applyCapabilityConsents sets the manual pause whenever consent is off.
         f.consent = false; f.state.setManualPaused(true)
         model.refreshRuntimeState()
-        XCTAssertEqual(model.tracking, .attention("Enregistrement désactivé"))
+        XCTAssertEqual(model.tracking, .attention("Suivi en pause"))
         XCTAssertEqual(model.trackingDetail, "Activez l’enregistrement dans Réglages")
         f.globallyPaused.paused = true; f.globallyPaused.changedAt = f.now
         model.refreshRuntimeState()

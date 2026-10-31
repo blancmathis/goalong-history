@@ -45,6 +45,8 @@ enum RecordingSignal: String, CaseIterable, Identifiable {
 
 struct RecordingChoicesView: View {
     @Binding var draft: DashboardSettingsDraft
+    /// Settings use one column so every switch sits on the shared right edge (UI-48).
+    var columns = 2
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -58,7 +60,7 @@ struct RecordingChoicesView: View {
             signalGroup("Titres et adresses", choices: choices([.windowTitles, .interfaceLabels, .browserURLs]))
             if (!draft.excludedDomainsText.isEmpty || !draft.includedDomainsText.isEmpty) && !draft.captureURLs {
                 Label("Les filtres web peuvent bloquer le navigateur. Vérifiez Apps et sites.", systemImage: "info.circle")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
     }
@@ -82,9 +84,9 @@ struct RecordingChoicesView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
             Grid(horizontalSpacing: 32, verticalSpacing: 0) {
-                ForEach(0..<((choices.count + 1) / 2), id: \.self) { row in
+                ForEach(0..<((choices.count + columns - 1) / columns), id: \.self) { row in
                     GridRow {
-                        ForEach(Array(choices[(row * 2)..<min(row * 2 + 2, choices.count)])) { choice in
+                        ForEach(Array(choices[(row * columns)..<min(row * columns + columns, choices.count)])) { choice in
                             HStack(spacing: 8) {
                                 Text(choice.title).font(.system(size: 13))
                                 GoalongHelpButton(text: choice.detail)

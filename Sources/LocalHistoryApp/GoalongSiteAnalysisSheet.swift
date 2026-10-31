@@ -92,7 +92,7 @@ final class GoalongSiteAnalysisModel: ObservableObject {
                     guard self.operationID == id else { return }
                     self.busy = false
                     self.connected = true
-                    self.accountLabel = "ChatGPT connecté" + (account.displayPlan.map { " · \($0)" } ?? "")
+                    self.accountLabel = "ChatGPT connecté" + (account.displayPlan.map { ", \($0)" } ?? "")
                 }
             } catch { self.fail(id, "La connexion ChatGPT n’a pas abouti. Vérifiez que Codex est installé et à jour, puis réessayez.") }
         }
@@ -249,7 +249,7 @@ struct GoalongSiteAnalysisSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Votre abonnement ChatGPT est utilisé via Codex sur ce Mac. Cette connexion est propre aux demandes du site : vos identifiants restent gérés par Codex, sans être transmis à Goalong en ligne.")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(LHTheme.secondaryText)
                     if !consents.isEnabled(.chatGPTAnalysis) {
                         Text("Avant de vous connecter, activez « Autoriser les analyses » dans Réglages › Analyse ChatGPT. Vous pourrez ensuite autoriser chaque analyse ici.")
                             .font(.subheadline).foregroundStyle(LHTheme.warning)
@@ -279,10 +279,10 @@ struct GoalongSiteAnalysisSheet: View {
                     Text("1. Ouvrez le fichier téléchargé sur le site").font(.headline)
                     Button("Choisir la demande…", action: chooseRequest).disabled(model.busy)
                     if let selected = model.request {
-                        Text("\(selected.date) · \(selected.timezone)").font(.subheadline.weight(.medium))
+                        Text("\(selected.date), \(selected.timezone)").font(.subheadline.weight(.medium))
                         Text("2. Vérifiez les données qui seront envoyées").font(.headline)
                         Text("Ce fichier est la seule source de cette analyse. Les archives locales, conversations, notes et données Strava ne sont pas ajoutées.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(LHTheme.secondaryText)
                         ScrollView([.vertical, .horizontal]) {
                             Text(selected.previewJSON).font(.system(.caption, design: .monospaced))
                                 .textSelection(.enabled).padding(12)
@@ -291,8 +291,8 @@ struct GoalongSiteAnalysisSheet: View {
                         .background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
                         Toggle("J’autorise l’envoi des seules données affichées à ChatGPT pour cette analyse", isOn: $model.reviewed)
                             .disabled(model.busy)
-                        Text("GPT-5.6 Luna · High · utilisation décomptée selon votre compte ChatGPT. La disponibilité et les limites dépendent de votre abonnement.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text("GPT-5.6 Luna, High, utilisation décomptée selon votre compte ChatGPT. La disponibilité et les limites dépendent de votre abonnement.")
+                            .font(.caption).foregroundStyle(LHTheme.secondaryText)
                         HStack {
                             Button("Analyser avec ChatGPT", action: model.analyze)
                                 .buttonStyle(LHPrimaryButtonStyle())
@@ -309,7 +309,7 @@ struct GoalongSiteAnalysisSheet: View {
                         GoalongTextArea(text: $model.outcomes, minHeight: 80)
                             .accessibilityLabel("Résultats du brouillon")
                         Text("Le fichier exporté contiendra uniquement votre récap. Aucune mesure ni vérification n’est créée. Importez-le ensuite sur le site ; vos règles de partage s’y appliqueront.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(LHTheme.secondaryText)
                         Button("Exporter le brouillon…", action: exportDraft).buttonStyle(LHPrimaryButtonStyle())
                     }
                     if let error = model.error {

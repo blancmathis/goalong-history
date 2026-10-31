@@ -65,7 +65,7 @@ struct GoalongAnalyticsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
-                shareBlockedReason: shareBlockedReason, hidesShare: recordingInterrupted,
+                shareBlockedReason: shareBlockedReason,
                 onDay: { day in updateSelection { $0.selectDay(day) } },
                 onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
                 onStep: { direction in updateSelection { $0.step(direction) } },
@@ -84,9 +84,6 @@ struct GoalongAnalyticsPage: View {
                         Color.clear.frame(height: 0).id("activity-top")
                         if !previewActive {
                             GoalongRecordingStateNotice(model: model)
-                            GoalongRecordingCoverageNotice(model: model, dismissible: true,
-                                hidden: recordingInterrupted
-                                    || !GoalongRecordingCoverageNotice.showsOnActivity(recording: recordingKind, globallyPaused: analytics.paused))
                             ConcentrationActivityMarks(day: selection.day)
                         }
                         if developerMode { previewControl }
@@ -95,7 +92,7 @@ struct GoalongAnalyticsPage: View {
                             // The pause banner at the top of the window names the pause and resumes it;
                             // here only what it means for this page, without repeating it.
                             if analytics.payload == nil {
-                                GoalongEmptyState(title: "Activité en pause",
+                                GoalongEmptyState(title: "Suivi en pause",
                                     message: "Vos observations ne sont pas lues pendant la pause. Vos durées reviennent ici dès que le suivi reprend.")
                                     .accessibilityIdentifier("activity-read-paused")
                             } else {
@@ -118,6 +115,9 @@ struct GoalongAnalyticsPage: View {
                                 lanes: lanes,
                                 workStatus: previewActive ? .preview : workStatus,
                                 recording: previewActive ? nil : recordingKind,
+                                storageStop: previewActive ? nil : model.runtime.storageFailure.map {
+                                    GoalongActivityEmptyCopy.StorageStop(kind: $0, since: model.runtime.storageInterruptedSince)
+                                },
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { model.selectSection(.work) },
                                 onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
@@ -138,6 +138,12 @@ struct GoalongAnalyticsPage: View {
                             GoalongPageLoadingView(title: "Lecture des observations locales…",
                                 message: "Les durées sont calculées sur ce Mac, sans envoyer votre historique.")
                                 .accessibilityIdentifier("analytics-primary-loading-motion")
+                        }
+                        if !previewActive {
+                            // A choice of details, not an alert: after the hero, never in a named view (back link first).
+                            GoalongRecordingCoverageNotice(model: model, dismissible: true,
+                                hidden: recordingInterrupted || detail != nil
+                                    || !GoalongRecordingCoverageNotice.showsOnActivity(recording: recordingKind, globallyPaused: analytics.paused))
                         }
                         if !previewActive && detail == .screenTime {
                             if selection.period == 1 {
@@ -417,7 +423,7 @@ struct GoalongAnalyticsPage: View {
         } else if permissions.contains(where: { $0 != .ready }) {
             rows.append(.init(id: "calendar", title: "Agenda et rappels", state: .needsPermission,
                               detail: "macOS n’a pas donné l’accès à l’agenda ou aux rappels.",
-                              actionTitle: permissions.contains(.permissionDenied) ? "Ouvrir…" : "Autoriser…", action: allowCalendar))
+                              actionTitle: permissions.contains(.permissionDenied) ? "Ouvrir Réglages Système…" : "Autoriser…", action: allowCalendar))
         } else if let calendar = value?.calendar {
             var detail = GoalongCodeDay.count(calendar.events.filter(\.isPlannedBusy).count, "événement prévu", "événements prévus")
                 + " et " + GoalongCodeDay.count(calendar.completedReminders.count, "rappel terminé", "rappels terminés") + " ce jour-là."
@@ -539,7 +545,7 @@ struct GoalongAnalyticsPreviewBanner: View {
                         .accessibilityIdentifier("analytics-preview-exit")
                 }
                 Text("Aucune donnée personnelle n’est lue par cet aperçu. Rien n’est ajouté à l’historique ; le partage et l’analyse IA sont désactivés.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
         }.accessibilityIdentifier("analytics-preview-banner")
     }

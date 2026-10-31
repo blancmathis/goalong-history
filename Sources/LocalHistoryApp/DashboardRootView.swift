@@ -194,7 +194,7 @@
                         .font(.system(size: 17, weight: .bold))
                         .tracking(-0.5)
                     Text("Historique sur ce Mac")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                 }
             }
@@ -266,10 +266,9 @@
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : LHTheme.tertiaryText)
                         .frame(width: 7, height: 7)
-                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Enregistrement désactivé")
+                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Suivi en pause")
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.85)
                     Spacer()
                     if model.runtime.needsAttention {
                         Image(systemName: "chevron.right")
@@ -298,9 +297,9 @@
                     }
                     VStack(alignment: .leading, spacing: 1) {
                         Text(updates.isPreparingAvailableUpdate ? "Préparation…" : "Mise à jour disponible")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         Text("Installer la version \(version)")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .opacity(0.76)
                     }
                     Spacer()
@@ -339,7 +338,7 @@
                 )
                 Spacer()
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
             .foregroundStyle(LHTheme.secondaryText)
         }
 
