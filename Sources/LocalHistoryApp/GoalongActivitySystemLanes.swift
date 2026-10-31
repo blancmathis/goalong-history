@@ -198,9 +198,10 @@ struct GoalongAgendaSection: View {
     private var eventList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Prévu").font(.system(size: 13, weight: .semibold))
+            // Rows and rules start on the title's edge, without a 6 pt indent (UI-14, écran 53).
             VStack(spacing: 0) {
                 ForEach(Array(agenda.events.enumerated()), id: \.element.id) { index, event in
-                    if index > 0 { Divider().padding(.leading, 6) }
+                    if index > 0 { Divider() }
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text("\(GoalongSummaryFormat.time(event.start)) – \(GoalongSummaryFormat.time(event.end))")
                             .font(.system(size: 12)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
@@ -217,7 +218,7 @@ struct GoalongAgendaSection: View {
                                 .font(.system(size: 12)).monospacedDigit()
                         }
                     }
-                    .padding(.vertical, 7).padding(.horizontal, 6)
+                    .padding(.vertical, 7)
                     .accessibilityElement(children: .combine)
                 }
             }
@@ -248,7 +249,7 @@ struct GoalongAgendaSection: View {
             // Same rows and rules as « Prévu »; each line says whether the reminder is done.
             VStack(spacing: 0) {
                 ForEach(Array(agenda.reminders.enumerated()), id: \.element.id) { index, reminder in
-                    if index > 0 { Divider().padding(.leading, 6) }
+                    if index > 0 { Divider() }
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text("fait à \(GoalongSummaryFormat.time(reminder.completedAt))").font(.system(size: 12)).monospacedDigit()
                             .foregroundStyle(LHTheme.secondaryText).frame(width: 96, alignment: .leading)
@@ -257,7 +258,7 @@ struct GoalongAgendaSection: View {
                         Text(reminder.title.isEmpty ? "Sans titre" : reminder.title).font(.system(size: 13)).lineLimit(1)
                         Spacer(minLength: 0)
                     }
-                    .padding(.vertical, 7).padding(.horizontal, 6)
+                    .padding(.vertical, 7)
                     .accessibilityElement(children: .combine)
                 }
             }
@@ -266,7 +267,7 @@ struct GoalongAgendaSection: View {
                 Text(GoalongCodeDay.count(agenda.openDueReminders,
                         "autre rappel prévu ce jour-là reste ouvert, sans être listé ici.",
                         "autres rappels prévus ce jour-là restent ouverts, sans être listés ici."))
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.horizontal, 6)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
     }
@@ -373,7 +374,7 @@ struct GoalongOtherDevicesSection: View {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(spacing: 0) {
                     ForEach(Array(value.devices.enumerated()), id: \.element.id) { index, device in
-                        if index > 0 { Divider().padding(.leading, 6) }
+                        if index > 0 { Divider() }
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
                             Text(device.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
                             Text("\(GoalongAnalyticsFormatting.duration(device.screenOnSeconds)) d’écran en tout")
@@ -382,7 +383,7 @@ struct GoalongOtherDevicesSection: View {
                             Text(GoalongAnalyticsFormatting.duration(device.duringGapsSeconds) + (device.estimated ? " env." : ""))
                                 .font(.system(size: 13, weight: .semibold)).monospacedDigit()
                         }
-                        .padding(.vertical, 9).padding(.horizontal, 6)
+                        .padding(.vertical, 9)
                         .accessibilityElement(children: .combine)
                     }
                 }

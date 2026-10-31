@@ -275,6 +275,8 @@ struct GoalongProfileStudio: View {
     @StateObject private var connection = GoalongSiteAnalysisModel()
     @StateObject private var windowHost = GoalongWebsiteWindowHost()
     @State private var start = Calendar.current.startOfDay(for: GoalongToday.now)
+    /// True when the last day picked for the start came after the analysed day and was brought back to it (UI-14, M3).
+    @State private var startCapped = false
     @State private var end = GoalongToday.now
     @State private var rich = false
     @State private var computer = true
@@ -311,7 +313,16 @@ struct GoalongProfileStudio: View {
                                 // UI-12A: the same day selector as above, never the system DatePicker; at most the analysed day.
                                 HStack(spacing: 8) {
                                     Text("Début de l’activité").font(.system(size: 13))
-                                    DateSelectionControl(date: start, onChange: { start = min(Calendar.current.startOfDay(for: $0), analyzedDay) }, showsToday: false)
+                                    DateSelectionControl(date: start, onChange: { day in
+                                        let picked = Calendar.current.startOfDay(for: day)
+                                        startCapped = picked > analyzedDay
+                                        start = min(picked, analyzedDay)
+                                    }, showsToday: false)
+                                }
+                                if startCapped {
+                                    Text("Le début ne peut pas dépasser la journée analysée : il revient à ce jour.")
+                                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                        .accessibilityIdentifier("profile-start-capped")
                                 }
                                 Toggle("Inclure les textes de fenêtres déjà autorisés", isOn: $rich) }
                             Toggle("Conversations IA, comme contexte", isOn: $conversations)
@@ -335,6 +346,8 @@ struct GoalongProfileStudio: View {
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading) {
                                 ForEach(GoalongProfileAnalysis.modules, id: \.self) { key in Toggle(GoalongProfileAnalysis.labels[key] ?? key, isOn: Binding(get: { modules.contains(key) }, set: { yes in if yes { modules.insert(key) } else { modules.remove(key) }; settingsChanged() })) }
                             }
+                            // Ten ticked boxes: ink, so the lime stays rare (UI-14, écran 11).
+                            .toggleStyle(.goalongCheckboxInk)
                             Text("Décochez une rubrique pour que l’agent ne l’analyse pas. La rubrique « Usage de l’IA » ne dépend pas du choix des conversations IA plus haut.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Text("Exclure des applications, projets ou termes — un par ligne").font(.system(size: 13, weight: .medium))
                             GoalongTextArea(text: $exclusions, minHeight: 60).accessibilityLabel("Termes à exclure")
@@ -425,6 +438,7 @@ struct GoalongProfileStudio: View {
     private func selectDay(_ day: Date) {
         let start = Calendar.current.startOfDay(for: day)
         self.start = start
+        startCapped = false
         end = min(GoalongToday.now, Calendar.current.date(byAdding: .day, value: 1, to: start) ?? GoalongToday.now)
     }
     private func prepare() {

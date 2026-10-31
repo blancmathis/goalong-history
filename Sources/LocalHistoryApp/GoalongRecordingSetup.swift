@@ -188,7 +188,8 @@ struct GoalongRecordingStateNotice: View {
         Group {
             if let kind {
                 // The shared banner (DESIGN §9): tinted block, no border, one action on the right (UI-12C, screens 24/44).
-                GoalongBanner(symbol: symbol(kind), title: title(kind), detail: detail(kind)) {
+                GoalongBanner(symbol: symbol(kind), title: title(kind), detail: detail(kind),
+                              tone: kind == .permissions || kind == .input ? .warning : .neutral) {
                     // One lime per screen: pending changes own the primary action (UI-42).
                     if model.settingsHaveChanges {
                         Button(actionTitle(kind)) { perform(kind) }

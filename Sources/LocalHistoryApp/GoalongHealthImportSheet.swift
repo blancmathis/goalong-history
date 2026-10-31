@@ -22,6 +22,8 @@ struct GoalongHealthImportSheet: View {
     @State private var savedDate = ""
     @State private var message: String?
     @State private var error: String?
+    /// The export itself could not be read: only then does the sheet send the member back to « Choisir export.xml… ».
+    @State private var fileRefused = false
     @State private var busy = false
     @State private var readTask: Task<GoalongHealthImportResult, Error>?
     @State private var sourceChoices: [GoalongHealthGroup: [String]] = [:]
@@ -48,7 +50,7 @@ struct GoalongHealthImportSheet: View {
             _payload = State(initialValue: result.payload); _days = State(initialValue: rows)
             _previewDate = State(initialValue: rows.last?["date"] as? String ?? ""); _message = State(initialValue: message)
         case let .failed(text):
-            _error = State(initialValue: text)
+            _error = State(initialValue: text); _fileRefused = State(initialValue: true)
         }
     }
 
@@ -117,8 +119,8 @@ struct GoalongHealthImportSheet: View {
                             font: .system(size: 13))
             HStack {
                 // Lime marks the current step only: choose, then prepare, then send (UI-59).
-                // A refused file sends the member back to this step (R33 F1).
-                if file == nil || error != nil { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
+                // A refused file sends the member back to this step (R33 F1); a send or save failure does not (UI-14).
+                if file == nil || fileRefused { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
                 else { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHSecondaryButtonStyle()) }
                 if let file { Text(file.lastPathComponent).font(.system(size: 12)); Button("Oublier ce fichier") { self.file = nil; sourceChoices = [:]; preferred = [:]; invalidate() } }
             }
@@ -128,8 +130,9 @@ struct GoalongHealthImportSheet: View {
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("health-import-error")
             }
-            GoalongHelpText(lead: "Le fichier complet est lu sur ce Mac.",
-                            more: "Les dossiers médicaux, médicaments, trajets GPS et autres données non proposées ici sont exclus.")
+            // Plain text: one « En savoir plus » per section at most (UI-14, écran 14).
+            Text("Le fichier complet est lu sur ce Mac. Dossiers médicaux, médicaments, trajets GPS et données non proposées ici sont exclus.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
         }
     }
     private var selectionSection: some View {
@@ -157,7 +160,8 @@ struct GoalongHealthImportSheet: View {
             GoalongHelpText(lead: "Les durées de sommeil sont réparties à minuit dans le fuseau \(TimeZone.current.identifier).",
                             more: "Une nuit peut donc apparaître sur deux journées. Une valeur absente reste inconnue.")
             if payload == nil && error == nil { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHPrimaryButtonStyle()).disabled(selected.isEmpty) }
-            else { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHSecondaryButtonStyle()).disabled(selected.isEmpty) }
+            // After a refused file, preparing again would read the same file: change it, or the dates or data (UI-14, écran 14).
+            else { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHSecondaryButtonStyle()).disabled(selected.isEmpty || fileRefused) }
         }
     }
     private var previewSection: some View {
@@ -241,7 +245,7 @@ struct GoalongHealthImportSheet: View {
     }
 
     private var keepIsNextStep: Bool { result != nil && !savedLocally && !consent }
-    private func invalidate() { savedLocally = false; payload = nil; previewPrivacyRevision = nil; result = nil; days = []; consent = false; message = nil; error = nil }
+    private func invalidate() { savedLocally = false; payload = nil; previewPrivacyRevision = nil; result = nil; days = []; consent = false; message = nil; error = nil; fileRefused = false }
     private func setPayload(_ data: Data) throws {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard object?["source"] as? String == "apple-health", let rows = object?["days"] as? [[String: Any]] else { throw CocoaError(.fileReadCorruptFile) }
@@ -268,7 +272,11 @@ struct GoalongHealthImportSheet: View {
         Task { @MainActor in
             defer { busy = false; readTask = nil }
             do {
-                let value = try await task.value
+                let value: GoalongHealthImportResult
+                do { value = try await task.value } catch {
+                    if !(error is CancellationError) { fileRefused = true }
+                    throw error
+                }
                 let after = GoalongPrivacyPolicy.load(in: privacyRoot)
                 guard !before.blocked else { throw GoalongSiteExportError.invalid("Les exclusions sont illisibles. Vérifiez-les dans les réglages, puis préparez un nouvel aperçu.") }
                 guard after.revision == before.revision else { throw GoalongSiteExportError.invalid("Les exclusions ont changé pendant la préparation. Préparez un nouvel aperçu.") }
