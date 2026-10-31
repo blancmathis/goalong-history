@@ -82,8 +82,8 @@ struct JevActivationAvailability: Equatable {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Jev").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
-                        Text("Facultatif. Jev, service payant de la société TypeSafe, vous rappelle votre projet quand il détecte une distraction de façon fiable.")
+                        Text("Surveillance").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
+                        Text("Facultatif. Jev, service payant de la société TypeSafe, vous rappelle votre projet quand il repère une distraction.")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }

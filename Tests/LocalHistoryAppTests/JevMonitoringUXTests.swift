@@ -83,7 +83,7 @@ final class JevMonitoringUXTests: XCTestCase {
         XCTAssertFalse(focus.contains("Crédit Jev"))
         XCTAssertTrue(focus.contains("Rechargez le compte TypeSafe"))
         XCTAssertTrue(try source("SupportReport.swift").contains("Rechargez le compte TypeSafe"))
-        XCTAssertTrue(try source("JevConnectionSheet.swift").contains("Text(\"Clé API\")"))
+        XCTAssertTrue(try source("JevConnectionSheet.swift").contains("Text(\"Clé d’accès Jev\")"))
     }
 
     private func source(_ name: String) throws -> String {

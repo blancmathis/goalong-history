@@ -416,8 +416,9 @@ import SwiftUI
                     Divider()
                     Button("Laisser l’agent décider") { correct(row, nil, task: nil) }
                 }
-            } label: { Text("Corriger").font(.system(size: 12)) }
-                .menuIndicator(.hidden).controlSize(.small).fixedSize()
+            } label: { Text("Corriger").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text) }
+                // DESIGN §9 rank 3: ink text, no chrome, like LHQuietButtonStyle.
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).tint(LHTheme.text).fixedSize()
                 .accessibilityLabel("Corriger le classement de \(row.label.title ?? row.label.application)")
         }.padding(.vertical, 6)
     }
@@ -481,7 +482,7 @@ struct GoalongWorkReviewRequest: Identifiable {
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
                     if store.context.isEmpty {
-                        Text("Pas encore défini. Sans définition, la surveillance ne peut pas savoir ce qui sert votre travail.")
+                        Text("Pas encore défini. Décrivez votre travail pour que Jev sache quoi surveiller.")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     } else {
                         ForEach([store.context.summary, store.context.applications, store.context.content].filter { !$0.isEmpty }, id: \.self) {
