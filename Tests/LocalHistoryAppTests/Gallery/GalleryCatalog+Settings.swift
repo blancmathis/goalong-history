@@ -94,7 +94,8 @@ extension GalleryCatalog {
                 return AnyView(GoalongDeveloperProjectsSheet(developer: developerModel(ctx, followed: [site, app], suggested: [seen])))
             },
         ]
-        for (tab, name) in ["applications", "sites", "categories"].enumerated() {
+        // UI-15C (8): each name is the tab it shows (Données, Remplacements, Consignes).
+        for (tab, name) in ["donnees", "remplacements", "consignes"].enumerated() {
             entries.append(panel("settings-sheets/analyse-\(name)", width: 940, clock: .injected) { ctx in
                 let model = try GalleryFixtures.dashboardModel(ctx, .init(section: .settings, settingsPane: .chatGPT))
                 return AnyView(GoalongAnalysisSelectionSheet(model: model, selection: GoalongAnalysisSelection.load(),
@@ -102,7 +103,7 @@ extension GalleryCatalog {
             })
         }
         // A freshly added rule has no search text yet: the test area must not pretend it replaced something.
-        entries.append(panel("settings-sheets/analyse-sites-regle-vide", width: 940, clock: .injected) { ctx in
+        entries.append(panel("settings-sheets/analyse-remplacements-regle-vide", width: 940, clock: .injected) { ctx in
             let model = try GalleryFixtures.dashboardModel(ctx, .init(section: .settings, settingsPane: .chatGPT))
             var selection = GoalongAnalysisSelection.load()
             selection.replacements = [GoalongTextReplacement()]

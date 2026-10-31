@@ -226,7 +226,7 @@ struct GoalongScreenTimePage: View {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text("Usages reçus d’Apple").font(LHTheme.cardTitleFont)
+                        Text("Temps par app et par site").font(LHTheme.cardTitleFont)
                         Spacer(minLength: 12)
                         GoalongSegmentedControl("Type d’usage Apple", selection: $filter,
                                                 options: GoalongAppleUsageFilter.allCases) { $0.title }
@@ -263,7 +263,8 @@ struct GoalongScreenTimePage: View {
                                 Spacer(minLength: 10)
                                 Text(duration(row.seconds)).font(.system(size: 14, weight: .semibold)).monospacedDigit()
                             }.padding(.horizontal, 18).padding(.vertical, 12).accessibilityElement(children: .combine)
-                            if row.id != visible.last?.id { Divider().padding(.leading, 68) }
+                            // UI-15C (15): rules start at the card's content edge, like the one under the search field.
+                            if row.id != visible.last?.id { Divider().padding(.horizontal, 18) }
                         }
                     }
                 }

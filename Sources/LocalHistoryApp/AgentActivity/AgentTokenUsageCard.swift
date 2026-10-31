@@ -51,7 +51,8 @@ struct AgentTokenUsageCard: View {
             if let detail = summary.detail {
                 Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
-            Text("Usage de l’IA du jour sélectionné, journaux locaux, \(Self.zoneName()). Les jetons ne correspondent ni à un quota d’abonnement ni à une facture.")
+            // UI-15C (6): the day is the page's day; no time zone name in the sentence.
+            Text("Usage de l’IA du jour sélectionné, d’après les journaux locaux. Les jetons ne correspondent ni à un quota d’abonnement ni à une facture.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             if let analyzedAt {
                 Text("Analysé à \(analyzedAt.formatted(.dateTime.hour().minute().locale(Self.locale))). Actualisez la journée pour mettre à jour.")
@@ -63,7 +64,7 @@ struct AgentTokenUsageCard: View {
             }
             ForEach(Array(Set(rows.map(\.provider))).sorted { $0.frenchName.localizedStandardCompare($1.frenchName) == .orderedAscending }) { provider in
                 let totals = rows.filter { $0.provider == provider }.flatMap(\.events).compactMap(\.total)
-                Text("\(provider.frenchName) : \(totals.isEmpty ? "inconnu" : totals.reduce(0, +).formatted(.number.locale(Self.locale)) + " jetons observés")")
+                Text("\(provider.frenchName) : \(totals.isEmpty ? "inconnu" : totals.reduce(0, +).formatted(.number.locale(Self.locale)))")
                     .font(.system(size: 12))
             }
             if !rows.isEmpty {

@@ -240,7 +240,7 @@
                     Label("Aucune source n’est analysée", systemImage: "pause.circle.fill")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Les événements et preuves existants restent disponibles. Activez cette source seulement si vous voulez que Goalong lise Codex, Claude, OpenCode ou un dossier que vous ajoutez."
+                        "Les événements et preuves existants restent disponibles. Activez cette source seulement si vous voulez que Goalong lise Codex, Claude Code, OpenCode ou un dossier que vous ajoutez."
                     )
                     .font(.system(size: 12))
                     .foregroundStyle(LHTheme.secondaryText)
@@ -296,7 +296,7 @@
                             Image(systemName: sourceHealth.symbol).foregroundStyle(LHTheme.warning)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(sourceHealth.title).font(.system(size: 13, weight: .semibold))
-                                Text(sourceHealth.message)
+                                Text(sourceHealth.message(hasReadableConversations: !agents.overview.captures.isEmpty))
                                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -365,26 +365,38 @@
         }
 
         /// One message for one problem: what failed, what to do (no count, no token line, no card).
+        /// UI-15C (6): aligned on the page's left edge, one lime action (retry), the other secondary.
         private var unreadableSourcesState: some View {
-            VStack(spacing: 16) {
-                EmptyStateView(
-                    symbol: sourceHealth.symbol,
-                    title: sourceHealth.title,
-                    message: sourceHealth.message
-                )
+            VStack(alignment: .leading, spacing: 14) {
+                GoalongThreadPlaceholder(width: 72)
+                Label(sourceHealth.title, systemImage: sourceHealth.symbol)
+                    .font(LHTheme.cardTitleFont)
+                    .accessibilityAddTraits(.isHeader)
+                Text(sourceHealth.message(hasReadableConversations: false))
+                    .font(.system(size: 13))
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 520, alignment: .leading)
                 HStack(spacing: 10) {
-                    if let onManageSources {
-                        Button("Vérifier les sources", action: onManageSources)
-                            .buttonStyle(LHSecondaryButtonStyle())
-                    }
                     if let title = sourceHealth.actionTitle {
                         Button(title) { agents.scanNow(analyzeSelectedDay: true) }
-                            .buttonStyle(LHSecondaryButtonStyle())
+                            .buttonStyle(LHPrimaryButtonStyle())
                             .disabled(agents.isScanning)
                     }
+                    if let onManageSources {
+                        if sourceHealth.actionTitle == nil {
+                            Button("Vérifier les sources", action: onManageSources)
+                                .buttonStyle(LHPrimaryButtonStyle())
+                        } else {
+                            Button("Vérifier les sources", action: onManageSources)
+                                .buttonStyle(LHSecondaryButtonStyle())
+                        }
+                    }
                 }
+                .padding(.top, 2)
             }
-            .frame(maxWidth: .infinity, minHeight: 240)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 24)
             .accessibilityIdentifier("conversation-source-health")
         }
 
@@ -398,11 +410,9 @@
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                         .help(title)
-                    HStack(spacing: 6) {
-                        Text(GoalongUIFormat.time(AgentConversationListPresentation.date(for: record)) + ",")
-                            .monospacedDigit()
-                        Text(conversationDetail(record))
-                    }
+                    // UI-15C (6): one text, one space after the comma.
+                    Text(GoalongUIFormat.time(AgentConversationListPresentation.date(for: record)) + ", " + conversationDetail(record))
+                        .monospacedDigit()
                     .font(.system(size: 12))
                     .foregroundStyle(LHTheme.secondaryText)
                     .lineLimit(1)
@@ -551,6 +561,8 @@
                         .buttonStyle(LHSecondaryButtonStyle())
                     }
 
+                    // UI-15C (6): a rule above every row, the Codex folder one included.
+                    Divider()
                     providerDirectoryRow
                     ForEach(AgentIntegrationKind.allCases) { kind in
                         Divider()
@@ -622,11 +634,8 @@
                 VStack(alignment: .leading, spacing: 3) {
                     Text(kind.frenchName)
                         .font(.system(size: 12, weight: .semibold))
-                    // The file path is developer detail: on hover, and listed in « En savoir plus » below.
-                    Text(status.isInstalled ? "Prévient Goalong dès qu’une conversation change." : "Goalong regarde les dossiers de temps en temps.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(LHTheme.secondaryText)
-                        .lineLimit(1)
+                        // The file path is developer detail: on hover, and listed in « En savoir plus » below.
+                        // UI-15C (6): the card subtitle says once what each state does; no sentence per row.
                         .help(configurationPathLabel(status.configurationPath))
                     if let otherPath = status.otherExecutablePath {
                         Text(
@@ -646,7 +655,7 @@
                         ? "Détection immédiate"
                         : (status.otherExecutablePath != nil
                             ? (status.otherExecutableExists ? "Installé pour une autre copie" : "Intégration cassée")
-                            : "Non installée"),
+                            : "Lecture périodique"),
                     symbol: status.isInstalled ? "bolt.shield.fill" : "bolt.slash",
                     tint: status.isInstalled ? LHTheme.success : Color.secondary
                 )
@@ -702,8 +711,10 @@
                         EmptyStateView(
                             symbol: "folder.badge.plus",
                             title: "Aucun dossier suivi pour l’instant",
-                            message:
-                                "Choisissez un dossier contenant des conversations locales. La lecture ne commence qu’une fois la source activée.",
+                            // UI-15C (6): says what the folders are for, and the switch only when it is off.
+                            message: consents.isEnabled(.aiConversations)
+                                ? "Codex, Claude Code et OpenCode sont déjà lus. Ajoutez un dossier seulement pour un autre outil."
+                                : "Activez la lecture des conversations, puis ajoutez un dossier pour un autre outil.",
                             // Source off: no lime action that cannot read anything yet.
                             buttonTitle: consents.isEnabled(.aiConversations) ? "Choisir un dossier" : nil,
                             action: consents.isEnabled(.aiConversations) ? agents.chooseFolder : nil
