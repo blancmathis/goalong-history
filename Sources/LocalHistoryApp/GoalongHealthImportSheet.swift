@@ -117,7 +117,8 @@ struct GoalongHealthImportSheet: View {
                             font: .system(size: 13))
             HStack {
                 // Lime marks the current step only: choose, then prepare, then send (UI-59).
-                if file == nil { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
+                // A refused file sends the member back to this step (R33 F1).
+                if file == nil || error != nil { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
                 else { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHSecondaryButtonStyle()) }
                 if let file { Text(file.lastPathComponent).font(.system(size: 12)); Button("Oublier ce fichier") { self.file = nil; sourceChoices = [:]; preferred = [:]; invalidate() } }
             }
@@ -155,7 +156,7 @@ struct GoalongHealthImportSheet: View {
             }
             GoalongHelpText(lead: "Les durées de sommeil sont réparties à minuit dans le fuseau \(TimeZone.current.identifier).",
                             more: "Une nuit peut donc apparaître sur deux journées. Une valeur absente reste inconnue.")
-            if payload == nil { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHPrimaryButtonStyle()).disabled(selected.isEmpty) }
+            if payload == nil && error == nil { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHPrimaryButtonStyle()).disabled(selected.isEmpty) }
             else { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHSecondaryButtonStyle()).disabled(selected.isEmpty) }
         }
     }

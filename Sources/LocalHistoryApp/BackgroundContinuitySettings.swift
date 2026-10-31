@@ -44,8 +44,8 @@
                         Toggle("Garder Goalong actif en arrière-plan", isOn: $keepRunning)
                             .toggleStyle(.goalongSwitch)
                         // UI-12B (43): one sentence, without « Recommandé ».
-                        Text("Fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation.")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        GoalongHelpText(lead: "Fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation.",
+                                        more: "Aucun service supplémentaire n’est installé. Votre Mac peut toujours se mettre en veille.")
                         Divider()
                         if login.switchValue != nil {
                             Toggle(Self.loginTitle, isOn: Binding(

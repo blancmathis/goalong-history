@@ -653,7 +653,6 @@ settings/accueil   # UI-12B (écrans 20/43/59 : description sous le libellé, va
 settings/connexions   # UI-12B (écran 20 : description sous le libellé, valeur = état)
 settings/chatgpt   # UI-12B (écran 38 : point final, plus de redite « Mettez Goalong à jour… »)
 settings/avance   # UI-12B (écran 58 : raison du verrou de « Rechercher les mises à jour automatiquement »)
-mises-a-jour/   # UI-12B (écran 58 : raison du verrou de la recherche automatique)
 settings-sheets/conservation   # UI-12B (écran 28 : titres en encre, mots simples, détail dans « En savoir plus »)
 settings-sheets/analyse-demande-site   # UI-12B (écran 29 : titre 22 pt, note d’avertissement, « Installer ou mettre à jour Codex… » lime en pied, étapes sans numéro ; nouvel état « -pret »)
 terminal/   # UI-12B (écran 36 : largeur de lecture 760, commande longue à la ligne, mots simples)

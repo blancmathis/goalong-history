@@ -59,7 +59,7 @@ extension GalleryCatalog {
                 AnyView(GoalongProfileStudio(onSend: { _ in }, localOnly: true))
             },
             panel("settings-sheets/analyse-demande-site", width: 700, clock: .injected) { _ in AnyView(GoalongSiteAnalysisSheet()) },
-            // UI-12B (29): the main state, connected with a request chosen and ready to analyse (inert model, no Codex).
+            // UI-12B (29): the main state, connected, a request chosen and reviewed, « Analyser » active (inert model, no Codex).
             panel("settings-sheets/analyse-demande-site-pret", width: 700, clock: .injected) { _ in
                 GoalongCapabilityConsentStore.shared.set(.chatGPTAnalysis, enabled: true, surface: .settings)
                 let model = GoalongSiteAnalysisModel(consent: { true }, makeSession: { throw CodexAppServerError.executableUnavailable })
@@ -69,6 +69,7 @@ extension GalleryCatalog {
                     "data": ["totals": [["device": "SELECTED_PHONE", "kind": "phone", "source": "apple-screen-time", "seconds": 3600]]],
                 ], options: [.sortedKeys]))
                 model.setStateForTesting(request: request, connected: true, accountLabel: "ChatGPT connecté, Plus")
+                model.reviewed = true
                 return AnyView(GoalongSiteAnalysisSheet(model: model))
             },
             // UI-9 (48): « Projets suivis », with a model on the gallery's own folder (no real project, no agent read).

@@ -246,6 +246,8 @@ struct GoalongSiteAnalysisSheet: View {
     @StateObject private var model: GoalongSiteAnalysisModel
     @StateObject private var windowHost = GoalongWebsiteWindowHost()
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    // Lime goes to « Installer… » only when Codex is missing; otherwise to « Se connecter » (R33 F2).
+    @State private var codexInstalled = CodexExecutableLocator.locate() != nil
 
     /// `model` lets a test or the gallery show a given state; the sheet builds its own otherwise.
     init(model: GoalongSiteAnalysisModel? = nil) { _model = StateObject(wrappedValue: model ?? GoalongSiteAnalysisModel()) }
@@ -273,7 +275,8 @@ struct GoalongSiteAnalysisSheet: View {
                         if model.connected {
                             Button("Se déconnecter", action: model.disconnect)
                         } else {
-                            Button("Se connecter à ChatGPT", action: model.connect).buttonStyle(LHSecondaryButtonStyle())
+                            Button("Se connecter à ChatGPT", action: model.connect)
+                                .modifier(GoalongMainActionStyle(primary: codexInstalled && consents.isEnabled(.chatGPTAnalysis)))
                                 .disabled(!consents.isEnabled(.chatGPTAnalysis))
                         }
                     }.disabled(model.busy)
@@ -338,7 +341,7 @@ struct GoalongSiteAnalysisSheet: View {
                         if let url = URL(string: "https://developers.openai.com/codex/cli") {
                             _ = GoalongWorkspaceOpenPolicy.open(url, purpose: .documentation)
                         }
-                    }.buttonStyle(LHPrimaryButtonStyle())
+                    }.modifier(GoalongMainActionStyle(primary: !codexInstalled))
                 }
             }
         }
