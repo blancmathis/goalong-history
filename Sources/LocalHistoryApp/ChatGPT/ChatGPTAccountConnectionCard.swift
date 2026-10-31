@@ -34,7 +34,7 @@ struct ChatGPTAccountConnectionCard: View {
         switch runtime.connectionState {
         case .connected(let email, _): return email ?? "Compte connecté"
         case .checking: return "Vérification de la connexion…"
-        case .codexUnavailable: return "Composant de connexion indisponible"
+        case .codexUnavailable: return "Cette version de Goalong ne peut pas se connecter à ChatGPT"
         case .signedOut: return "Non connecté"
         case .unsupportedCredentialMode: return "Utilisez une connexion ChatGPT, pas une clé API"
         case .failed: return "Connexion non vérifiée, réessayez"
