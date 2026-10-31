@@ -596,3 +596,6 @@ partage/   # UI-11C (écran 55 : « Signaler le problème… » sans lime, phras
 programme/   # UI-11C (écran 1 : légende de la semaine limitée aux types de plages affichés)
 modules/   # UI-11C (écran 42 : lien « Supprimer… » détaché du filet)
 mises-a-jour/non-configure--   # UI-11C (écrans 54/58 : « Cette copie n’a pas de mises à jour intégrées… »)
+enregistrement/journal   # UI-11C (écran 22 : en-tête Historique, actions à droite du titre, date dessous)
+agenda/   # UI-11C (écrans 17/35, 23 : page Activité, axe des heures centré et borné ; réglages : raison du verrou des choix)
+mises-a-jour/   # UI-11C (écran 40 : volet Avancé, aide des journaux en une phrase + « En savoir plus »)
