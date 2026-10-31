@@ -25,8 +25,9 @@
                     header
 
                     // One ChatGPT card, one action: the connection card replaces the data card until connected.
+                    // Its update button stays secondary: the report below is this page's focus (R4, screen 34).
                     if consents.isEnabled(.chatGPTAnalysis), !isConnected {
-                        ChatGPTAccountConnectionCard(runtime: recapRuntime, updateIsPrimary: true)
+                        ChatGPTAccountConnectionCard(runtime: recapRuntime, updateIsPrimary: false)
                     } else {
                         analysisConsentCard
                     }
@@ -69,8 +70,18 @@
                         coverageCard(overview)
                     } else if recapRuntime.isLoadingDayOverview {
                         loadingDataCard
-                    } else {
+                    } else if recapRuntime.dayOverviewError != nil || recapRuntime.recap != nil {
                         emptyDataCard
+                    } else if consents.isEnabled(.chatGPTAnalysis) {
+                        // The report's empty state already speaks for the day: one plain line, not a second empty state.
+                        HStack(spacing: 12) {
+                            Text("Aucune activité source pour ce jour.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
+                            Button("Relire les sources") { recapRuntime.refreshDayOverview() }
+                                .buttonStyle(LHQuietButtonStyle())
+                                .font(.system(size: 12))
+                        }
                     }
 
                     if consents.isEnabled(.chatGPTAnalysis), isConnected {
@@ -330,7 +341,8 @@
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(LHTheme.secondaryText)
                         }
-                        .frame(width: 168, alignment: .leading)
+                        // Wide enough for « Part de la journée sur Mon travail » and the confidence on one line.
+                        .frame(width: 220, alignment: .leading)
 
                         Divider()
 

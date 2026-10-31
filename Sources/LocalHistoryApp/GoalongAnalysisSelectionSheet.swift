@@ -70,9 +70,15 @@ import AgentActivity
                 Text(footerNote).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("analysis-footer-note")
                 Spacer(minLength: 8)
-                if tab != 3 { Button("Vérifier l’aperçu") { tab = 3; preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(catalogLoading || installedApps.loading || !selection.hasSources) }
-                Button("Enregistrer mes choix") { save() }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.hasSources || previewBusy || catalogLoading || installedApps.loading)
-                    .accessibilityIdentifier("analysis-save-selection")
+                if needsSourceSetup {
+                    // Nothing can be sent yet: the one useful action is the lime one (R4, screens 8 and 27).
+                    Button("Configurer les sources", action: configureSources).buttonStyle(LHPrimaryButtonStyle())
+                        .accessibilityIdentifier("analysis-configure-sources")
+                } else {
+                    if tab != 3 { Button("Vérifier l’aperçu") { tab = 3; preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(catalogLoading || installedApps.loading || !selection.hasSources) }
+                    Button("Enregistrer mes choix") { save() }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.hasSources || previewBusy || catalogLoading || installedApps.loading)
+                        .accessibilityIdentifier("analysis-save-selection")
+                }
             }
         }
         .frame(minWidth: 740, idealWidth: 940, maxWidth: 1080, minHeight: 580, idealHeight: 760, maxHeight: 980)
@@ -96,9 +102,13 @@ import AgentActivity
     }
     private var footerNote: String {
         if catalogLoading || installedApps.loading { return "Lecture des applications et des appareils…" }
+        if needsSourceSetup { return "Aucune source n’est encore activée sur ce Mac." }
         if !selection.hasSources { return "Activez au moins une source pour enregistrer." }
         return "Aucun envoi en configurant ces choix."
     }
+    /// No source can be chosen until one is set up in Réglages › Enregistrement.
+    private var needsSourceSetup: Bool { !selection.hasSources && unconfiguredSources > 0 }
+    private func configureSources() { dismiss(); model.selectSection(.settings); model.settingsPane = .recording }
     /// Sources listed in Données whose capability is off: one note and one link, not a link per row (UI-62).
     private var unconfiguredSources: Int {
         let developer: GoalongCapability = consents.isEnabled(.aiConversations) ? .aiConversations : .developerActivity
@@ -116,12 +126,18 @@ import AgentActivity
     private var dataChoices: some View {
         VStack(alignment: .leading, spacing: 20) {
             if unconfiguredSources > 0 {
-                HStack(spacing: 12) {
-                    Label("\(FrenchCount.count(unconfiguredSources, "source", "sources")) à configurer", systemImage: "info.circle")
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Label {
+                        Text("\(FrenchCount.count(unconfiguredSources, "source", "sources")) à configurer. Une source verrouillée attend d’être activée dans Réglages › Enregistrement ; elle ne peut pas encore être choisie ici.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: { Image(systemName: "lock") }
                         .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     Spacer(minLength: 8)
-                    Button("Configurer les sources") { dismiss(); model.selectSection(.settings); model.settingsPane = .recording }
-                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12)).accessibilityIdentifier("analysis-configure-sources")
+                    // With no source at all, the footer carries this action in lime.
+                    if !needsSourceSetup {
+                        Button("Configurer les sources", action: configureSources)
+                            .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12)).accessibilityIdentifier("analysis-configure-sources")
+                    }
                 }
             }
             GoalongSettingsGroup(title: "Sources") {
@@ -136,7 +152,7 @@ import AgentActivity
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            GoalongSettingsGroup(title: "Sources du jour, chacune à part") {
+            GoalongSettingsGroup(title: "Autres sources de la journée") {
                 source("Appels", capability: .localComputerHistory, value: daySource(\.calls))
                 source("Agenda et rappels", capability: .calendar, value: daySource(\.calendar))
                 source("Autres appareils Apple", capability: .appleScreenTime, value: daySource(\.otherDevices))
@@ -266,7 +282,14 @@ import AgentActivity
             }
             GoalongSettingsGroup(title: "Tester vos remplacements") {
                 TextField("Texte d’exemple", text: $sampleText, axis: .vertical).textFieldStyle(GoalongFieldStyle()).lineLimit(2...4)
-                Text(transformedExample).font(.system(size: 14)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                if rules.wrappedValue.allSatisfy({ $0.search.isEmpty }) {
+                    // No usable rule yet: an empty-state line, not a result (R4, screen 8).
+                    Label(transformedExample, systemImage: "arrow.left.arrow.right")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(transformedExample).font(.system(size: 13)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             Text("Les remplacements portent sur le texte transmis et vos consignes, jamais sur les fichiers d’origine. Ils ne garantissent pas une anonymisation complète.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
