@@ -13,24 +13,19 @@
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
+        /// Gallery only: a runtime with its sources replaced, shown inside the real window (UI-13C, screen 34).
+        nonisolated(unsafe) static var galleryRuntime: ChatGPTRecapRuntime?
+
         /// `runtime` is the app's own; the gallery passes one with its sources replaced.
-        init(model: DashboardViewModel, runtime: ChatGPTRecapRuntime = .shared) {
+        init(model: DashboardViewModel, runtime: ChatGPTRecapRuntime? = nil) {
             self.model = model
-            _recapRuntime = ObservedObject(wrappedValue: runtime)
+            _recapRuntime = ObservedObject(wrappedValue: runtime ?? Self.galleryRuntime ?? .shared)
         }
 
         var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
-
-                    // One ChatGPT card, one action: the connection card replaces the data card until connected.
-                    // Its update button stays secondary: the report below is this page's focus (R4, screen 34).
-                    if consents.isEnabled(.chatGPTAnalysis), !isConnected {
-                        ChatGPTAccountConnectionCard(runtime: recapRuntime, updateIsPrimary: false)
-                    } else {
-                        analysisConsentCard
-                    }
 
                     if recapRuntime.isGenerating, !recapRuntime.isGeneratingSelectedDay,
                         let generatingDay = recapRuntime.generatingDay
@@ -46,12 +41,20 @@
                         proofCard(proof, report: recapRuntime.proofReport)
                     }
 
+                    // One ChatGPT card, one action: the connection card replaces the data card until connected.
+                    // The report is this page's focus, so it comes first (UI-13C, screen 34); the update button stays secondary.
+                    if consents.isEnabled(.chatGPTAnalysis), !isConnected {
+                        ChatGPTAccountConnectionCard(runtime: recapRuntime, updateIsPrimary: false)
+                    } else {
+                        analysisConsentCard
+                    }
+
                     if consents.isEnabled(.chatGPTAnalysis), let overview = recapRuntime.dayOverview {
                         metricsBand(overview)
                         HStack(alignment: .top, spacing: 14) {
                             usagePanel(
                                 title: "Applications de l’ordinateur",
-                                subtitle: "Activité représentée au premier plan",
+                                subtitle: "Apps au premier plan",
                                 symbol: "macbook",
                                 values: overview.computerApplications,
                                 emptyMessage: "Aucune activité d’application disponible."
@@ -82,12 +85,8 @@
                                 .buttonStyle(LHQuietButtonStyle())
                                 .font(.system(size: 12))
                         }
-                    } else {
-                        // Analysis off and nothing to show: say why the day stays empty, in one plain line.
-                        Text("L’analyse ChatGPT est désactivée : aucune activité de la journée n’est lue ici.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(LHTheme.secondaryText)
                     }
+                    // Analysis off: the report's empty state is the one message (UI-13C, screen 34).
 
                     if consents.isEnabled(.chatGPTAnalysis), isConnected {
                         automaticCard
@@ -127,7 +126,7 @@
         private var analysisConsentCard: some View {
             GoalongPlainBlock {
                 HStack(spacing: 14) {
-                    Image(systemName: "sparkles").foregroundStyle(LHTheme.accent)
+                    Image(systemName: "sparkles").foregroundStyle(LHTheme.secondaryText)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Analyse avec ChatGPT").font(.system(size: 14, weight: .semibold))
                         Text("Les données autorisées sont envoyées à ChatGPT, pas au site Goalong.")
@@ -292,7 +291,8 @@
                         .help(generationBlockedReason ?? "")
                         .accessibilityHint(generationBlockedReason ?? "")
                     }
-                    if let reason = generationBlockedReason, !recapRuntime.isGenerating {
+                    // Analyses off: the report's empty state already says it (one message, UI-13C).
+                    if let reason = generationBlockedReason, !recapRuntime.isGenerating, consents.isEnabled(.chatGPTAnalysis) {
                         Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize().accessibilityHidden(true)
                     }
@@ -367,7 +367,7 @@
                                     )
                                 } else {
                                     StatusPill(
-                                        title: "Rapport sans signature",
+                                        title: "Rapport non vérifié",
                                         symbol: "clock.arrow.circlepath",
                                         tint: LHTheme.warning
                                     )
@@ -379,9 +379,10 @@
                             }
                             ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                    // Ink, not lime: the lime stays for the next step (DESIGN §3, UI-13C).
                                     Text("\(index + 1)")
                                         .font(.system(size: 12, weight: .bold))
-                                        .foregroundStyle(LHTheme.accent)
+                                        .foregroundStyle(LHTheme.text)
                                         .frame(width: 16)
                                     Text(line)
                                         .font(.system(size: 12))
@@ -598,7 +599,7 @@
                         .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
                 }
-                .frame(maxWidth: .infinity, minHeight: 100, alignment: .center)
+                .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
             }
         }
 
@@ -651,12 +652,12 @@
 
         static func emptyReportMessage(analysesEnabled: Bool, connected: Bool, needsUpdate: Bool) -> String {
             if !analysesEnabled {
-                return "Les analyses sont désactivées. Activez « Autoriser les analyses » dans Réglages › Analyse ChatGPT pour générer le bilan en cinq lignes."
+                return "Les analyses sont désactivées. Choisissez les données ci-dessous pour générer le bilan en cinq lignes."
             }
             if connected { return "Générez-le maintenant, ou laissez l’analyse automatique des journées terminées." }
             return needsUpdate
                 ? "Mettez Goalong à jour pour générer le bilan en cinq lignes."
-                : "Connectez ChatGPT ci-dessus pour générer le bilan en cinq lignes."
+                : "Connectez ChatGPT ci-dessous pour générer le bilan en cinq lignes."
         }
 
         private var generationButtonTitle: String {
