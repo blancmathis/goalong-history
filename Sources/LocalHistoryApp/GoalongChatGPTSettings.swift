@@ -13,9 +13,7 @@ import LocalHistoryCore
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Text("Votre ChatGPT résume une journée à partir des seules données que vous choisissez.")
-                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            // Its sentence is under the pane title (SettingsPane.lead), close to it.
             ChatGPTAccountConnectionCard(runtime: runtime, updateIsPrimary: true)
             GoalongSettingsList(title: "Votre analyse") {
                 GoalongSettingsLink(title: "Données pour ChatGPT", value: sourceSummary, symbol: "line.3.horizontal.decrease.circle") { open(0) }.accessibilityIdentifier("analysis-open-data")

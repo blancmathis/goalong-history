@@ -202,6 +202,12 @@ final class GoalongGranularAnalysisTests: XCTestCase {
         XCTAssertTrue(PrivacyChoicesOverview.chatGPTAnalysisText(consented: false, selection: GoalongAnalysisSelection(), policy: policy)
             .hasPrefix("L’analyse ChatGPT est désactivée"))
     }
+    /// UI-54: the daily sending names its real state, never « désactivé ou en pause ».
+    func testPrivacyOverviewDailySendingNamesTheRealState() {
+        XCTAssertEqual(PrivacyChoicesOverview.dailySendingText(enabled: true, paused: false), "L’envoi quotidien au site est activé.")
+        XCTAssertEqual(PrivacyChoicesOverview.dailySendingText(enabled: false, paused: true), "L’envoi quotidien au site est en pause.")
+        XCTAssertEqual(PrivacyChoicesOverview.dailySendingText(enabled: false, paused: false), "L’envoi quotidien au site est désactivé.")
+    }
     /// T-044 B2-06: an Apple app without a display name never leaves as its raw identifier.
     func testOutgoingAppleApplicationNameIsNeverARawBundleIdentifier() {
         XCTAssertEqual(AppleScreenTimeApplicationUsage(bundleIdentifier: "com.apple.SIMSetupUIService", displayName: nil, duration: 30).readableName,

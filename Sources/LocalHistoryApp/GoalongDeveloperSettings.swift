@@ -17,10 +17,10 @@ struct GoalongDeveloperSettings: View {
             Toggle("Mode développeur", isOn: $enabled)
                 .toggleStyle(.goalongSwitch)
                 .accessibilityIdentifier("settings-developer-mode")
-            Text("Désactivé par défaut. Ajoute dans Activité un bouton pour explorer un exemple complet avec des données fictives.")
+            // UI-53: one sentence; the switch already shows its state.
+            Text("Ajoute dans Activité un aperçu avec des données fictives, sans toucher à votre historique ni rien envoyer.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-            Text("L’aperçu est temporaire : il ne modifie pas votre historique, ne lance pas d’analyse IA et ne peut pas être envoyé à Goalong. Désactiver ce mode ferme immédiatement l’aperçu.")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
