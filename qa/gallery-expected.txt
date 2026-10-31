@@ -735,3 +735,6 @@ settings-sheets/analyse-demande-site   # UI-15B (écran 29 : trois étapes numé
 partage/   # UI-15B (écrans 32/55 : liste sans fondu, « Créer le fichier » toujours visible, note « Sites vus dans … » une seule fois)
 settings/applications   # UI-15B (écran 32 : sites sans « Vu dans … » répété)
 blocking-surfaces/voile-   # UI-15B (écran 47 : « 3e ouverture aujourd’hui. » et la pause gagnée sur deux lignes)
+compte/relie   # UI-15B (écran 4 : carte Site, « Choisir et voir l’aperçu » à la taille standard)
+compte/acces-refuse   # UI-15B (écran 4 : carte Site, « Choisir et voir l’aperçu » à la taille standard)
+concentration-engagements/nouvel-engagement   # UI-15B (écran 1 : compteurs « +3 » des listes à 12 pt)
