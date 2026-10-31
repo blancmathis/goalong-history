@@ -18,9 +18,9 @@ enum BlockingFormat {
         return value == "00:00" ? "minuit" : value
     }
 
-    /// Quota bonus earned by focusing: « +1 min de pause gagnée en concentration ».
+    /// Quota bonus earned by focusing: « +1 min de pause gagnée pendant vos séances de concentration ».
     static func earnedBreak(minutes: Int) -> String {
-        "+\(minutes) min de pause \(minutes > 1 ? "gagnées" : "gagnée") en concentration"
+        "+\(minutes) min de pause \(minutes > 1 ? "gagnées" : "gagnée") pendant vos séances de concentration"
     }
 
     static func minuteOfDay(_ minute: Int) -> String {

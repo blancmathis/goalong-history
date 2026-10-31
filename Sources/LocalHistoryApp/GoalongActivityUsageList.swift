@@ -9,6 +9,8 @@ struct GoalongActivityUsageList: View {
     @Binding var grouping: GoalongActivityUsageGrouping
     var isPreview = false
     var onExport: (() -> Void)? = nil
+    /// What the « + / − » gaps compare with (« la veille »); the list names it once above the rows.
+    var comparedTo: String? = nil
     let onSelect: (GoalongActivityUsageItem) -> Void
     @State private var search = ""
     @State private var showsAll = false
@@ -35,6 +37,11 @@ struct GoalongActivityUsageList: View {
                                       options: GoalongActivityUsageSort.allCases.map { ($0, $0.title) })
                         .accessibilityIdentifier("activity-usage-sort")
                 }
+                if let comparedTo, visible.contains(where: { GoalongActivityUsageRow.delta(of: $0) != nil }) {
+                    Text("Écarts (+ ou −) par rapport à \(comparedTo).")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .accessibilityIdentifier("activity-usage-delta-caption")
+                }
                 LHCard(padding: 0) {
                     if visible.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
@@ -46,7 +53,7 @@ struct GoalongActivityUsageList: View {
                     } else {
                         LazyVStack(spacing: 0) {
                             ForEach(visible) { item in
-                                GoalongActivityUsageRow(item: item, total: totalSeconds, onSelect: { onSelect(item) })
+                                GoalongActivityUsageRow(item: item, total: totalSeconds, comparedTo: comparedTo, onSelect: { onSelect(item) })
                                 if item.id != visible.last?.id { GoalongRowDivider(inset: LHTheme.cardInset + 40) }
                             }
                         }
@@ -85,6 +92,7 @@ struct GoalongActivityUsageList: View {
 struct GoalongActivityUsageRow: View {
     let item: GoalongActivityUsageItem
     let total: TimeInterval
+    var comparedTo: String? = nil
     let onSelect: () -> Void
     private var share: Double { min(1, max(0, item.seconds / max(1, total))) }
     private var barColor: Color {
@@ -124,12 +132,16 @@ struct GoalongActivityUsageRow: View {
               : "Tâches : " + item.mainTasks.prefix(3).map(\.name).joined(separator: ", "))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.displayName)
-        .accessibilityValue("\(GoalongAnalyticsFormatting.duration(item.seconds)), \(Int((share * 100).rounded())) pour cent du temps actif, \(classLabel)")
+        .accessibilityValue("\(GoalongAnalyticsFormatting.duration(item.seconds)), \(Int((share * 100).rounded())) pour cent du temps actif, \(classLabel)"
+            + (delta.map { ", \(GoalongAnalyticsFormatting.duration(abs($0))) \($0 > 0 ? "de plus" : "de moins") que \(comparedTo ?? "la période précédente")" } ?? ""))
         .accessibilityHint("Ouvrir les horaires et la répartition par journée")
         .accessibilityAddTraits(.isButton)
     }
 
-    private var delta: TimeInterval? {
+    private var delta: TimeInterval? { Self.delta(of: item) }
+
+    /// The gap shown next to the duration: at least five minutes, else nothing.
+    static func delta(of item: GoalongActivityUsageItem) -> TimeInterval? {
         guard let before = item.previousSeconds else { return nil }
         let value = item.seconds - before
         return abs(value) >= 300 ? value : nil
@@ -139,7 +151,7 @@ struct GoalongActivityUsageRow: View {
         Text((value > 0 ? "+" : "−") + GoalongAnalyticsFormatting.duration(abs(value)))
             .font(.system(size: 12)).monospacedDigit()
             .foregroundStyle(LHTheme.tertiaryText)
-            .help("Par rapport à la période précédente de même durée")
+            .help("Par rapport à \(comparedTo ?? "la période précédente de même durée")")
     }
 
     private var classLabel: String { item.classLabel }

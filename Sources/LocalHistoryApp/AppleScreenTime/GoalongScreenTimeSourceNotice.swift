@@ -16,12 +16,13 @@ struct GoalongScreenTimeSourcePresentation {
         switch assurance {
         case .appleSettingsObservablePresentation: return "Présentation des Réglages Apple"
         case .publicDeviceActivityExport: return "Export Apple autorisé"
-        case .privateAppleAggregateStore: return "Agrégat Apple"
+        case .privateAppleAggregateStore: return "Base Apple de ce Mac"
         case .reconstructedAppleUsage: return "Données Apple partielles"
         }
     }
 
-    var durationTitle: String { isPartial ? "Durée reconstituée" : "Temps d’écran Apple" }
+    /// The page and the card are already titled « Temps d’écran Apple »: the figure says what it counts.
+    var durationTitle: String { isPartial ? "Durée reconstituée" : "Total de la journée" }
 
     var detail: String {
         switch assurance {
@@ -30,10 +31,19 @@ struct GoalongScreenTimeSourcePresentation {
         case .publicDeviceActivityExport:
             return "Données issues d’un export Apple autorisé, limitées à son périmètre et à sa date de mise à jour."
         case .privateAppleAggregateStore:
-            return "Données issues de l’agrégat Apple local. Le périmètre des appareils et l’heure de mise à jour peuvent différer des Réglages Apple."
+            return "Durées lues dans la base Apple de ce Mac. Les appareils inclus et l’heure de mise à jour peuvent différer des Réglages Apple."
         case .reconstructedAppleUsage:
             return "macOS ne rend pas le total complet accessible à Goalong. Les durées ci-dessous sont reconstituées à partir des données Apple lisibles, pas le total officiel des Réglages, et peuvent différer de celui-ci. Les données manquantes restent inconnues, pas à zéro."
         }
+    }
+}
+
+/// The source off: the same words on the page and in Activité, so the state has one form.
+enum GoalongScreenTimeOffCopy {
+    static let title = "Temps d’écran Apple désactivé"
+    static func message(accessRevoked: Bool) -> String {
+        accessRevoked ? "La lecture a été arrêtée car macOS refuse l’accès. Réactivez cette source pour vérifier les autorisations."
+            : "Source facultative. L’accès est expliqué et vérifié avant toute lecture."
     }
 }
 

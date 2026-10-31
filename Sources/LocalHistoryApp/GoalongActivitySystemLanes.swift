@@ -56,7 +56,9 @@ struct GoalongAgendaDay: Equatable {
     }
 
     /// The first line of « Appels et agenda ». The notes under the section say which source is off or not allowed.
-    var lead: String {
+    var lead: String { lead(isToday: false) }
+
+    func lead(isToday: Bool) -> String {
         var sentences: [String] = []
         let planned = plannedSeconds, callTime = callSeconds
         if readsEvents && callsOn && (planned >= 60 || callTime >= 60) {
@@ -72,7 +74,13 @@ struct GoalongAgendaDay: Equatable {
         if !reminders.isEmpty {
             sentences.append(GoalongCodeDay.count(reminders.count, "rappel terminé.", "rappels terminés."))
         }
-        return sentences.isEmpty ? nothingRead + " ce jour-là." : sentences.joined(separator: " ")
+        guard sentences.isEmpty else { return sentences.joined(separator: " ") }
+        let when = isToday ? " aujourd’hui." : " ce jour-là."
+        // A refused agenda is the subject of the day: say it before what the calls show.
+        if calendarOn && calendarAccess != .granted {
+            return "Agenda non lu : macOS n’en donne pas l’accès." + (callsOn ? " Aucun appel observé" + when : "")
+        }
+        return nothingRead + when
     }
 
     /// The agenda is read only when it is on and macOS gives the access.
@@ -97,7 +105,7 @@ struct GoalongAgendaSection: View {
     var onAllowCalendar: () -> Void = {}
 
     var body: some View {
-        GoalongSection(title: "Appels et agenda", subtitle: agenda.lead) {
+        GoalongSection(title: "Appels et agenda", subtitle: agenda.lead(isToday: GoalongToday.isToday(day.date))) {
             VStack(alignment: .leading, spacing: 22) {
                 if !agenda.events.isEmpty || !agenda.calls.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -108,19 +116,46 @@ struct GoalongAgendaSection: View {
                 if !agenda.events.isEmpty { eventList }
                 if !agenda.callApplications.isEmpty { callList }
                 if !agenda.reminders.isEmpty || agenda.openDueReminders > 0 { reminderList }
+                if agenda.isEmpty && notes.isEmpty { emptyDay }
                 ForEach(notes, id: \.text) { note in
-                    HStack(alignment: .center, spacing: 12) {
+                    // The action sits under its note, on the text's edge, not alone at the far right.
+                    VStack(alignment: .leading, spacing: 8) {
                         GoalongNote(note.text)
                         Button(note.action, action: note.perform).buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                             .disabled(isPreview)
                     }
                 }
-                Text("Un appel compte quand le micro ou la caméra sert à une app : ce n’est pas une preuve de réunion. Aucun son ni image n’est lu. Avec une exclusion globale, la caméra n’est pas enregistrée et le jour reste partiel. Les titres de l’agenda sont lus à l’affichage et jamais enregistrés. Rien de tout cela ne s’ajoute au temps actif.")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                explanation
             }
         }
         .accessibilityIdentifier("activity-agenda")
+    }
+
+    /// One sentence on the page; what Goalong reads and keeps waits in the disclosure.
+    private var explanation: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Un appel compte quand le micro ou la caméra sert à une app. Il ne s’ajoute pas au temps actif.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            GoalongDisclosureGroup("Ce que Goalong lit") {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("Un appel n’est pas la preuve d’une réunion. Goalong ne lit ni le son ni l’image.")
+                    Text("Si vous excluez tout un moment de l’enregistrement, la caméra n’est pas lue et la journée reste incomplète.")
+                    Text("Les titres de l’agenda s’affichent ici sans jamais être enregistrés.")
+                }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10).padding(.bottom, 8)
+            }.font(.system(size: 13)).padding(.horizontal, -6)
+        }
+        .frame(maxWidth: 760, alignment: .leading)
+    }
+
+    /// A day with nothing read: the waiting thread and the way to the sources, as every empty state.
+    private var emptyDay: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            GoalongThreadPlaceholder()
+            Button("Choisir les sources…", action: onSettings).buttonStyle(LHSecondaryButtonStyle())
+                .disabled(isPreview).accessibilityIdentifier("activity-agenda-empty-settings")
+        }
     }
 
     private var legend: [(mark: GoalongLaneMark, title: String)] {

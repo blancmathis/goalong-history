@@ -1630,8 +1630,8 @@
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(LHTheme.secondaryText)
                     .monospacedDigit()
-                    .frame(width: 70, alignment: .trailing)
-                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .frame(width: 84, alignment: .trailing)
                     .padding(.top, 14)
                     .padding(.trailing, 8)
 
@@ -1780,10 +1780,9 @@
             return facts.joined(separator: ", ")
         }
 
+        /// One line: a range cut before its dash read as two times, the second one starting with « – ».
         private var windowTimeLabel: String {
-            GoalongUIFormat.time(group.start)
-                + "\n–\u{00A0}"
-                + GoalongUIFormat.time(group.end)
+            GoalongUIFormat.time(group.start) + "–" + GoalongUIFormat.time(group.end)
         }
 
         private func durationLabel(_ seconds: TimeInterval) -> String {
