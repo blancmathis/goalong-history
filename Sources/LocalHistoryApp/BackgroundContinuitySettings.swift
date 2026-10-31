@@ -38,12 +38,17 @@
                             // macOS gave no state: say so on the row instead of an "off" switch (UI-43).
                             HStack(alignment: .center, spacing: 16) {
                                 Text(Self.loginTitle).frame(maxWidth: .infinity, alignment: .leading)
-                                Label(Self.unknownStateTitle, systemImage: "questionmark.circle")
-                                    .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.warning)
+                                // UI-9 (59): the glyph carries the colour, the word stays in ink (DESIGN §9).
+                                Label {
+                                    Text(Self.unknownStateTitle).foregroundStyle(LHTheme.text)
+                                } icon: {
+                                    Image(systemName: "questionmark.circle").foregroundStyle(LHTheme.warning)
+                                }
+                                .font(.system(size: 12, weight: .medium))
                             }
                             .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("settings-login-unknown")
-                            GoalongNote(login.statusDetail, tone: .warning)
+                            GoalongNote(login.statusDetail)
                         }
                         if consents.isEnabled(.launchAtLogin) && !login.isEnabled {
                             Text("Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système.")

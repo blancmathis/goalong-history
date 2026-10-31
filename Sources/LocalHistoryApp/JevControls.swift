@@ -69,6 +69,15 @@ struct JevRecentChecksView: View {
     @ObservedObject private var monitor = JevMonitor.shared
     @State private var minutes = 10
     var body: some View {
+        // UI-56: with monitoring off there is nothing to pause: one sentence is a note, not a group (DESIGN §8).
+        if !monitor.breakStorageInvalid, monitor.timedBreak == nil, !monitor.enabled {
+            GoalongNote("La surveillance est désactivée : il n’y a aucun rappel à mettre en pause.", symbol: "pause.circle")
+        } else {
+            group
+        }
+    }
+
+    private var group: some View {
         GoalongSettingsGroup(title: "Faire une pause") {
             if monitor.breakStorageInvalid {
                 Text(JevMonitor.unreadableBreakNotice).foregroundStyle(LHTheme.secondaryText)

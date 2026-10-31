@@ -86,7 +86,7 @@ struct GoalongAnalyticsPage: View {
                             GoalongRecordingStateNotice(model: model)
                             ConcentrationActivityMarks(day: selection.day)
                         }
-                        if developerMode { previewControl }
+                        if developerMode && !previewActive { previewControl }
                         if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
                         if analytics.paused {
                             // The pause banner at the top of the window names the pause and resumes it;
@@ -170,7 +170,9 @@ struct GoalongAnalyticsPage: View {
                         }
                     }
                     .frame(maxWidth: 1080, alignment: .leading)
-                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, LHTheme.pageBottomInset)
+                    // UI-9 (8): a named view starts 28 pt under the header, like other pages, not 56 pt: the
+                    // top anchor above already adds one spacing of 24 pt.
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, detail == nil ? 24 : 4).padding(.bottom, LHTheme.pageBottomInset)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .onChange(of: detail) { shown in
@@ -475,26 +477,21 @@ struct GoalongAnalyticsPage: View {
             captureHealth: model.runtime.captureHealth?.state)
     }
 
+    /// UI-52: one way in; the preview banner has the one way out. The mode is a plain neutral mark, not a capsule
+    /// that reads as a button.
     private var previewControl: some View {
         HStack(spacing: 12) {
             Button {
                 showingAnalysisChoice = false
-                if !showingPreview { previewNavigation = navigation }
-                showingPreview.toggle()
+                previewNavigation = navigation
+                showingPreview = true
             } label: {
-                Label(previewActive ? "Revenir à mes données" : "Aperçu avec données fictives",
-                      systemImage: previewActive ? "arrow.uturn.backward" : "testtube.2")
+                Label("Aperçu avec données fictives", systemImage: "testtube.2")
             }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).accessibilityIdentifier("analytics-preview-toggle")
             Spacer(minLength: 0)
             Label("Mode développeur", systemImage: "hammer")
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                // Border as a filled ring: a stroked capsule rendered 1 pt ticks at both ends (gallery, u01-r1-02).
-                .background {
-                    Capsule().fill(LHTheme.warning.opacity(0.14))
-                        .overlay(CapsuleRing(width: 1).fill(LHTheme.warning.opacity(0.35), style: FillStyle(eoFill: true)))
-                }
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityIdentifier("analytics-developer-mode")
         }
     }
@@ -539,7 +536,7 @@ struct GoalongAnalyticsPreviewBanner: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label("Aperçu développeur, données fictives", systemImage: "testtube.2")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.warning)
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.text)
                     Spacer(minLength: 8)
                     Button("Quitter l’aperçu", action: onExit).buttonStyle(LHQuietButtonStyle())
                         .accessibilityIdentifier("analytics-preview-exit")
@@ -551,16 +548,6 @@ struct GoalongAnalyticsPreviewBanner: View {
     }
 }
 #endif
-
-/// A capsule outline of `width` drawn as an even-odd fill, so it has no stroke join at the rounded ends.
-private struct CapsuleRing: Shape {
-    var width: CGFloat
-    func path(in rect: CGRect) -> Path {
-        var path = Capsule().path(in: rect)
-        path.addPath(Capsule().path(in: rect.insetBy(dx: width, dy: width)))
-        return path
-    }
-}
 
 /// Codex and Claude Code transcripts are read on this Mac (text of visible messages); T3 Code is read as metadata only.
 enum GoalongAgentSourceCopy {

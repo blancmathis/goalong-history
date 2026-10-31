@@ -105,19 +105,24 @@
         /// The DMG and Sparkle do not create the command: the exact line to paste, built from this app's path.
         private func linkCommandRow(_ command: String) -> some View {
             HStack(alignment: .center, spacing: 12) {
-                Text(command)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                // UI-55: a path is never cut in the middle; the line scrolls instead of wrapping. The copied value is unchanged.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(command)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Button {
                     linkCommandCopied = GoalongClipboardWriter.copy(command)
                     announce(linkCommandCopied ? "Commande copiée" : "La commande n’a pas pu être copiée")
                 } label: {
-                    Label(linkCommandCopied ? "Copiée" : "Copier", systemImage: linkCommandCopied ? "checkmark" : "doc.on.doc")
+                    Image(systemName: linkCommandCopied ? "checkmark" : "doc.on.doc")
                 }
-                .controlSize(.small)
+                // UI-55: same form as the other copy buttons, a glyph in ink (lime is the screen's main action).
+                .buttonStyle(LHQuietButtonStyle())
                 .help("Copier la commande qui crée ~/.local/bin/goalong")
+                .accessibilityLabel(linkCommandCopied ? "Commande copiée" : "Copier la commande")
             }
             .padding(12)
             .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -138,12 +143,12 @@
                             .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 8)
+                        // UI-55: one lime action per screen, at the standard size. While the command is not
+                        // installed, « Installer la commande » is that action.
                         Button(action: copyAgentInstructions) {
                             Label(copyButtonTitle, systemImage: copyButtonSymbol)
-                                .frame(minWidth: 172, minHeight: 32)
                         }
-                        .buttonStyle(LHPrimaryButtonStyle())
-                        .controlSize(.large)
+                        .modifier(GoalongMainActionStyle(primary: !installationReport.canInstall))
                         .accessibilityHint("Copie toutes les instructions de la commande goalong pour un agent local")
                     }
 

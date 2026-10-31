@@ -93,7 +93,12 @@ extension GalleryCatalog {
             dashboard("confidentialite/suivi-actif", section: .privacy, fixture: .realistic),
             // The page shows the install command with the home folder: a fixed displayed home, not the shard's
             // `/tmp/goalong-gallery-<run>/shard-N-…`, which changes every run.
-            dashboard("terminal/aide", section: .cli, configure: { _, ctx in showFixedHome(ctx) }),
+            // UI-9 (36): the installed app's executable, not the xctest runner's.
+            dashboard("terminal/aide", section: .cli, configure: { _, ctx in
+                showFixedHome(ctx)
+                GoalongCLIInstallation.galleryExecutableURL = URL(fileURLWithPath: "/Applications/Goalong History.app/Contents/MacOS/Goalong History")
+                ctx.cleanups.append { GoalongCLIInstallation.galleryExecutableURL = nil }
+            }),
             // Without a key but with history on and a work definition: not the same image as Réglages › Jev, which
             // the section opens (C2-couverture-01).
             dashboard("surveillance/a-configurer", section: .monitoring, fixture: .recordingOn, configure: { _, _ in
