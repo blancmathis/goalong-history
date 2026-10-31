@@ -34,13 +34,10 @@
                         title: "Commande goalong",
                         subtitle:
                             "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre."
-                    ) {
-                        StatusPill(
-                            title: statusTitle,
-                            symbol: statusSymbol,
-                            tint: statusTint
-                        )
-                    }
+                    )
+
+                    // UI-17B (36): the state pill sits here in every state, not beside the title in one and under it in another.
+                    StatusPill(title: statusTitle, symbol: statusSymbol, tint: statusTint)
 
                     readinessBanner
                     if installationReport.canInstall || installOutcome != nil { installRow }
@@ -307,7 +304,7 @@
 
         private var readinessTitle: String {
             switch installationReport.state {
-            case .ready: return "Vérifiée pour le Terminal"
+            case .ready: return "Prête dans le Terminal"
             case .missing: return "Installez la commande goalong"
             case .conflict: return "Le lien de la commande n’est pas fiable"
             case .development: return "La commande goalong sert Goalong installé"

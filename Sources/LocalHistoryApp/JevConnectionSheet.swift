@@ -25,7 +25,7 @@ import SwiftUI
                 .goalongPlaceholder("Collez votre clé", isEmpty: key.isEmpty)
                 .accessibilityLabel("Clé d’accès Jev")
                 .accessibilityIdentifier("jev-api-key")
-            Text("L’usage du service est facturé par TypeSafe, le fournisseur de Jev. Enregistrer une clé ne donne aucune nouvelle autorisation d’envoi. La surveillance reste soumise à votre choix d’activation sur sa page.")
+            Text("L’usage est facturé par TypeSafe, le fournisseur de Jev ; enregistrer une clé n’autorise aucun envoi.")
                 .font(.callout).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             Label("Clé conservée dans un fichier privé de ce Mac, jamais dans l’historique ni les journaux de diagnostic.", systemImage: "lock")

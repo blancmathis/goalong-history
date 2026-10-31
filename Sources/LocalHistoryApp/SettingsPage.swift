@@ -102,7 +102,7 @@ import AppKit
                     GoalongUpdateStatusRow().font(.system(size: 13))
                         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10)
                     GoalongRowDivider()
-                    GoalongDisclosureGroup("Confidentialité, tout suspendre") {
+                    GoalongDisclosureGroup("Tout suspendre, pour une activité sensible") {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Réglages › Jev : l’historique continue.")
                                 .font(.callout).foregroundStyle(LHTheme.secondaryText)
@@ -121,7 +121,7 @@ import AppKit
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Enregistrer mon activité").font(.system(size: 14, weight: .medium))
                         // UI-15A (24, 44): one sentence.
-                        Text("Reste sur ce Mac et n’autorise aucun envoi ; le démarrage se règle sur l’accueil des Réglages.")
+                        Text("Reste sur ce Mac et n’autorise aucun envoi.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -129,10 +129,8 @@ import AppKit
             }
             // Details stay readable but inert while recording is off (UI-48).
             Group {
-                GoalongSettingsGroup(title: "Enregistrement de l’activité") {
+                GoalongSettingsGroup(title: "Activité") {
                     // UI-9 (24, 44): one help sentence per setting, the rest in « En savoir plus » (DESIGN §12).
-                    Text("Lire, réfléchir ou regarder sans cliquer compte aussi.")
-                        .font(.callout).foregroundStyle(LHTheme.secondaryText)
                     // UI-15A (24, 44): the app's menu, as in Activité and Historique, not the system pop-up.
                     HStack(spacing: 12) {
                         Text("Sans interaction, continuer à compter").font(.system(size: 13))
@@ -142,7 +140,7 @@ import AppKit
                             .fixedSize()
                             .accessibilityIdentifier("settings-foreground-idle-limit")
                     }
-                    Text("Le délai repart à chaque interaction ; augmentez-le pour de longues lectures.")
+                    Text("Lire, réfléchir ou regarder sans cliquer compte aussi, tant que le délai ne s’écoule pas.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     GoalongDisclosureGroup("En savoir plus") {
@@ -317,7 +315,7 @@ import AppKit
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
         case .jev: return "Surveillance de vos séances"
-        case .permissions: return "Selon vos fonctions"
+        case .permissions: return "Accès accordés à Goalong"
         case .storage: return "Conservation et effacement"
         case .advanced: return "Outils et diagnostics"
         default: return nil

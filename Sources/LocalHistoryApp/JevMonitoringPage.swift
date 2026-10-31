@@ -54,7 +54,7 @@ struct JevActivationAvailability: Equatable {
 
     private var content: some View {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Des rappels pour rester sur vos projets de travail. Vos pauses n’arrêtent pas l’historique.")
+                Text("Des rappels pour rester sur vos projets de travail.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 monitoringCard
                 GoalongWorkDefinitionSummary(onOpen: onOpenWork)

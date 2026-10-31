@@ -201,9 +201,9 @@
             if let sharedApp { sentences.append("Sites vus dans \(sharedApp).") }
             let older = items.filter { !$0.identityProofAvailable }.count
             if older == items.count, older > 0 {
-                sentences.append("Leurs entrées plus anciennes ne partagent que la catégorie.")
+                sentences.append("Pour ces sites, les entrées plus anciennes n’indiquent que la catégorie.")
             } else if older > 0 {
-                sentences.append("Pour certains sites, les entrées plus anciennes ne partagent que la catégorie.")
+                sentences.append("Pour certains sites, les entrées plus anciennes n’indiquent que la catégorie.")
             }
             return sentences.isEmpty ? nil : sentences.joined(separator: " ")
         }
