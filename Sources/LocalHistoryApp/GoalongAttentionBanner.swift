@@ -85,10 +85,13 @@ struct GoalongAttentionBanner: View {
         switch notice {
         case .storage(.diskFull):
             return "Libérez de l’espace : l’enregistrement reprendra seul, la coupure restera visible."
+        // UI-15A (40, 45): the refused write says its cause and how to repair it.
+        case .storage(.permissionDenied):
+            return "Goalong ne peut plus écrire dans son dossier : macOS en refuse l’accès. Rendez l’accès, puis actualisez."
         case .storage:
             return "Goalong réessaie seul. Si cela dure, signalez-le : le rapport contient la cause, pas votre activité."
         case .lowSpace(let free):
-            return "Il reste \(StorageHealth.formatted(free)) : macOS peut bientôt empêcher Goalong d’enregistrer."
+            return "Il reste \(StorageHealth.formatted(free)). macOS peut bientôt empêcher Goalong d’enregistrer."
         case .updated(let previous, _):
             return "La mise à jour depuis la version \(previous) s’est bien déroulée. Vos réglages et votre historique sont conservés."
         }
@@ -99,6 +102,9 @@ struct GoalongAttentionBanner: View {
         switch notice {
         case .storage(.diskFull):
             manageStorageButton(primary: true)
+        case .storage(.permissionDenied):
+            Button("Actualiser") { model.refreshEverything() }
+                .buttonStyle(LHSecondaryButtonStyle())
         case .storage:
             Button("Signaler le problème…") { SupportRequestController.shared.present() }
                 .buttonStyle(LHSecondaryButtonStyle())

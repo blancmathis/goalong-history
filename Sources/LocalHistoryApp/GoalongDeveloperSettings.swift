@@ -10,6 +10,7 @@ enum GoalongDeveloperPreferences {
 }
 
 struct GoalongDeveloperSettings: View {
+    static let activeText = "Mode développeur actif : l’aperçu est dans Activité."
     @AppStorage(GoalongDeveloperPreferences.enabledKey) private var enabled = false
 
     var body: some View {
@@ -21,6 +22,16 @@ struct GoalongDeveloperSettings: View {
             Text("Ajoute dans Activité un aperçu avec des données fictives, sans toucher à votre historique ni rien envoyer.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            // UI-15A (58): while it is on, one line confirms it and says where to look.
+            if enabled {
+                Label {
+                    Text(Self.activeText).foregroundStyle(LHTheme.text)
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(LHTheme.success)
+                }
+                    .font(.system(size: 12, weight: .medium))
+                    .accessibilityIdentifier("settings-developer-mode-active")
+            }
         }
     }
 }

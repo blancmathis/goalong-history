@@ -32,6 +32,8 @@ extension HistoryRetentionPolicy {
         case .anchorReceipts: anchorReceipts = duration
         }
     }
+    /// What « Preuves d’activité » and « Reçus de date » are, in one sentence under the list (UI-15A, 28).
+    static let proofExplanation = "Les preuves d’activité signent chaque minute enregistrée et les reçus de date datent ces signatures : ensemble, ils montrent que l’historique n’a pas été modifié."
     /// Shared labels so every entry point names the same policy the same way.
     static let noLimitLabel = "Jusqu’à suppression"
     static let automaticCleanupLabel = "Supprimer automatiquement les données expirées"
@@ -140,9 +142,9 @@ extension HistoryRetentionPolicy {
                             }
                         }
                     }
-                    // Plain titles above; what the proofs and receipts are stays one click away (UI-12B, 28).
-                    GoalongHelpText(lead: "Les preuves et les reçus montrent que l’historique n’a pas été modifié.",
-                                    more: "Goalong signe chaque minute enregistrée : ce sont les preuves d’activité. Un service d’horodatage date ces signatures : ce sont les reçus de date. Les fichiers temporaires sont des calculs d’analyse que Goalong peut refaire.")
+                    // UI-15A (28): the two proof rows are said in one visible sentence; the rest stays one click away.
+                    GoalongHelpText(lead: HistoryRetentionPolicy.proofExplanation,
+                                    more: "Les fichiers temporaires sont des calculs d’analyse que Goalong peut refaire.")
                     if model.automaticCleanup && model.draft.includesProofExpiry {
                         Toggle("J’autorise aussi la suppression des preuves et reçus expirés. La vérification de ces périodes peut devenir impossible.", isOn: $proofDeletionConfirmed)
                             .toggleStyle(.goalongCheckbox)
