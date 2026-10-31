@@ -404,3 +404,4 @@ terminal/installe--   # UI-55 (L-UI-6 : « Copier les instructions » seul lime,
 surveillance/a-configurer--   # UI-56 (L-UI-6 : « Connecter l’API » en lime ; raison sous l’interrupteur ; « Quand » grisé ; phrase sans « Toutes les 15 secondes » ; pause en note)
 settings/jev--   # UI-56 (L-UI-6 : « Connecter l’API » en lime ; raison sous l’interrupteur ; « Quand » grisé ; phrase sans « Toutes les 15 secondes » ; pause en note)
 programme/saisie-de-texte--   # UI-63 (L-UI-6 : indicatif « Recopiez ici » en police système ; compteur « caractères recopiés » ; pied de feuille commun GoalongSheetFooter)
+settings/accueil--   # UI-51 (L-UI-6 : ligne d’état des mises à jour de l’accueil, GoalongUpdateStatusRow ; « Rechercher » grisé et état non configuré dans la ligne ; boîte 275,1028 726×31)
