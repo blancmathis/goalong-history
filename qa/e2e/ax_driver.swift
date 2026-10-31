@@ -68,6 +68,40 @@ func mouseClick(_ c: CGPoint) {
         usleep(80_000)
     }
 }
+/// L3j: bring E into the visible part of its scroll area and of the screen before a mouse click. A click at the
+/// position of a scrolled-out element lands elsewhere: the menu bar (J-0768), below the screen (y=1107 on 960, J-0427).
+func bringIntoView(_ e: AXUIElement) {
+    AXUIElementPerformAction(e, "AXScrollToVisible" as CFString); usleep(300_000)
+    var area: AXUIElement?, cur = e
+    for _ in 0..<30 {
+        guard let p = attr(cur, kAXParentAttribute) else { break }
+        cur = p as! AXUIElement
+        if text(cur, kAXRoleAttribute) == "AXScrollArea" { area = cur; break }
+    }
+    let scr = CGDisplayBounds(CGMainDisplayID())
+    for _ in 0..<15 {
+        guard let c = centerOf(e) else { return }
+        var top = scr.minY + 40, bottom = scr.maxY - 100  // menu bar above, Dock below
+        if let area, let ac = centerOf(area), let sz = attr(area, kAXSizeAttribute) {
+            var size = CGSize.zero; AXValueGetValue(sz as! AXValue, .cgSize, &size)
+            top = max(top, ac.y - size.height / 2 + 10); bottom = min(bottom, ac.y + size.height / 2 - 10)
+        }
+        if c.y >= top && c.y <= bottom { return }
+        guard let area, let ac = centerOf(area) else { print("into view: no scroll area, y=\(Int(c.y))"); return }
+        let up = c.y < top
+        if let bar = attr(area, "AXVerticalScrollBar"), let v = attr(bar as! AXUIElement, kAXValueAttribute) as? Double {
+            let nv = up ? max(0, v - 0.08) : min(1, v + 0.08)
+            if nv == v { print("into view: scroll end, y=\(Int(c.y))"); return }
+            AXUIElementSetAttributeValue(bar as! AXUIElement, kAXValueAttribute as CFString, nv as CFNumber)
+        } else {
+            let at = CGPoint(x: ac.x, y: min(max(ac.y, scr.minY + 60), scr.maxY - 120))
+            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: at, mouseButton: .left)?.post(tap: .cghidEventTap)
+            CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: up ? 120 : -120, wheel2: 0, wheel3: 0)?.post(tap: .cghidEventTap)
+        }
+        usleep(300_000)
+    }
+    if let c = centerOf(e) { print("into view: still y=\(Int(c.y))") }
+}
 func postKey(_ code: CGKeyCode) {
     let src = CGEventSource(stateID: .hidSystemState)
     for down in [true, false] { CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down)?.post(tap: .cghidEventTap) }
@@ -115,8 +149,9 @@ func openMenu(_ bundle: String, _ target: AXUIElement) -> Bool {
         if menuItem(bundle, "", extra: [target]) != nil { return true }
         usleep(500_000)
     }
-    guard let c = centerOf(target) else { return false }
     postKey(0x35); usleep(400_000)
+    bringIntoView(target)
+    guard let c = centerOf(target) else { return false }
     mouseClick(c); usleep(800_000)
     let shown = menuItem(bundle, "", extra: [target]) != nil
     print("menu mouse click at \(Int(c.x)),\(Int(c.y)) items=\(shown ? 1 : 0)")
@@ -208,6 +243,13 @@ case "press":
                 return match
             }
             if let hit {
+                // L3j: a SwiftUI .link button (AXLink, « Supprimer les données Concentration », J-0983) may ignore
+                // AXPress: a mouse click on it, in view, with the app in front.
+                if text(hit, kAXRoleAttribute) == "AXLink" {
+                    NSRunningApplication.runningApplications(withBundleIdentifier: args[2]).first?.activate()
+                    usleep(300_000); bringIntoView(hit)
+                    if let c = centerOf(hit) { mouseClick(c); print("press '\(needle)' -> \(describe(hit)) : click"); exit(0) }
+                }
                 let status = AXUIElementPerformAction(hit, kAXPressAction as CFString)
                 print("press '\(needle)' -> \(describe(hit)) : \(status.rawValue)")
                 // -25204 (cannot complete): the press opened a modal menu or popover and the app stopped answering
@@ -287,6 +329,7 @@ case "typekeys":
     // L3e: settext does not reach a SwiftUI binding (L3d). Focus the field, click it, then type TEXT as key events.
     guard let hit = findField(args[2], args[3]) else { print("typekeys '\(args[3])': not found"); exit(5) }
     if let running = NSRunningApplication.runningApplications(withBundleIdentifier: args[2]).first { running.activate() }
+    bringIntoView(hit)
     AXUIElementSetAttributeValue(hit, kAXFocusedAttribute as CFString, kCFBooleanTrue)
     if let pos = attr(hit, kAXPositionAttribute), let size = attr(hit, kAXSizeAttribute) {
         var p = CGPoint.zero, sz = CGSize.zero
@@ -360,12 +403,37 @@ case "windows":
     }
 case "dismiss-alerts":
     // Close leftover alerts (e.g. « Configuration rechargée » after MNB-07): an app-modal alert blocks every later step.
+    // L3j: also an alert or sheet inside a window (AXSheet, « Détails locaux supprimés » after J-0863 blocked
+    // J-0865…J-0983). Cancel button first, then a safe closing button, then the only button; never another default.
     var closed = 0
-    for w in (attr(app(args[2]), kAXWindowsAttribute) as? [AXUIElement]) ?? []
-    where ["AXDialog", "AXSystemDialog"].contains(text(w, kAXSubroleAttribute)) || text(w, kAXDescriptionAttribute) == "alerte" {
-        if let b = attr(w, kAXCancelButtonAttribute) ?? attr(w, kAXDefaultButtonAttribute) {
-            AXUIElementPerformAction(b as! AXUIElement, kAXPressAction as CFString); closed += 1
+    let safe = ["OK", "Annuler", "Fermer", "Terminé", "Plus tard", "Pas maintenant", "Cancel", "Close", "Done"]
+    func buttons(_ e: AXUIElement) -> [AXUIElement] {
+        var out: [AXUIElement] = [], budget = 600
+        _ = walk(e, budget: &budget) { x, d in if d <= 4 && text(x, kAXRoleAttribute) == "AXButton" { out.append(x) }; return false }
+        return out
+    }
+    func closeOne(_ w: AXUIElement) -> Bool {
+        let bs = buttons(w)
+        let b = (attr(w, kAXCancelButtonAttribute) as! AXUIElement?)
+            ?? bs.first { b in [kAXTitleAttribute, kAXDescriptionAttribute].contains { safe.contains(normText(text(b, $0))) } }
+            ?? (bs.count == 1 ? bs[0] : nil)
+        guard let b else { return false }
+        AXUIElementPerformAction(b, kAXPressAction as CFString); usleep(500_000)
+        print("closed \(describe(w)) with \(describe(b))"); return true
+    }
+    for _ in 0..<3 {
+        var n = 0
+        for w in (attr(app(args[2]), kAXWindowsAttribute) as? [AXUIElement]) ?? [] {
+            if ["AXDialog", "AXSystemDialog"].contains(text(w, kAXSubroleAttribute)) || text(w, kAXDescriptionAttribute) == "alerte" {
+                if closeOne(w) { n += 1 }; continue
+            }
+            // Sheets only with « sheets » (ui rows): the onboarding rows keep their sheet between twins (J-0807/J-0811).
+            if args.count > 3 && args[3] == "sheets" {
+                for c in children(w) where text(c, kAXRoleAttribute) == "AXSheet" { if closeOne(c) { n += 1 } }
+            }
         }
+        closed += n
+        if n == 0 { break }
     }
     print("dismissed \(closed) alert(s)")
 case "scroll":
@@ -560,6 +628,8 @@ case "act":
                 switch mode {
                 case "id": ok = text(e, "AXIdentifier") == needle
                 case "idprefix": ok = text(e, "AXIdentifier").hasPrefix(needle)
+                // L3j: whole-label match, so « Enregistrer » in an alert is not « Enregistrer ma définition » behind it.
+                case "exact": ok = texts(e).contains { $0 == n }
                 case "dialog": ok = isDialog(e) && (n.isEmpty || subtreeHas(e, n))
                 case "role": ok = r == role
                 default: ok = texts(e).contains { $0.contains(n) }

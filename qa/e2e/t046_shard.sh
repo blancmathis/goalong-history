@@ -50,7 +50,7 @@ panel=0
 press3() { local i; for i in 1 2 3; do drv press "$BUNDLE" "$@" >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 open_dashboard() { drv press "$BUNDLE" "Ouvrir Goalong Dev" AXButton >/dev/null 2>&1 || drv press "$BUNDLE" "Ouvrir" >/dev/null 2>&1; sleep 3; }
 cleanup() {
-  drv dismiss-alerts "$BUNDLE" >/dev/null 2>&1
+  drv dismiss-alerts "$BUNDLE" sheets >/dev/null 2>&1
   esc
   [[ $panel == 1 ]] && { drv status-item "$BUNDLE" >/dev/null 2>&1; sleep 1; panel=0; }
   drv close-extra "$BUNDLE" "Goalong History — Dev" >/dev/null 2>&1
@@ -71,6 +71,7 @@ cleanup() {
 # L3h: wf:TEXT waits (12 s) until TEXT shows, else presses the last nav:/p:/pb:/px:/pp: step again and waits once more;
 # sd:LABEL=DAYS@HOUR sets a date picker (sd:Activité depuis=-1@9: yesterday 09:00); pick:ITEM is not a step: the row's
 # act opens its target's menu and chooses ITEM (ax_driver act, 9th argument). ck: also opens a disclosure triangle.
+# L3j: nm waits for the next minute (+1 s): « Actualisé à HH:MM » then moves when the refresh runs (J-0467).
 navigate() {
   local miss="" c last=""
   for c in "$@"; do
@@ -104,6 +105,7 @@ navigate() {
       pc) panel=0 ;;
       set:*) drv set "$BUNDLE" ${c#set:} >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
       w:*) sleep "${c#w:}" ;;
+      nm) sleep $(( 61 - 10#$(date +%S) )) ;;
       px:*) drv pressexact "$BUNDLE" "${c#px:}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
       pk:*) local k="${c#pk:}"
         drv popup "$BUNDLE" "${k%%|*}" "${k#*|}" "$ROWS/ax/${CUR:-setup}-menu.txt" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
@@ -134,6 +136,9 @@ ui_row() { # id kind nav mode role needle action
   local id="$1" kind="$2" navs="$3" mode="$4" role="$5" needle="$6" action="$7" miss out st verdict cause
   pgrep -x "$EXE" >/dev/null || { launch; open_dashboard; }
   front; CUR="$id"
+  # L3j: every row starts clean: an alert or sheet left by an earlier row (J-0863) is closed first.
+  local pre; pre="$(drv dismiss-alerts "$BUNDLE" sheets 2>&1)"
+  [[ $pre == *"dismissed 0 alert(s)"* || -z $pre ]] || { log "[$id] start: ${pre//$'\n'/ ; }"; sleep 1; }
   eval "set -- $navs"
   miss="$(navigate "$@")"
   out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" "$([[ $kind == trigger ]] && echo 0 || echo 3)" "$(expect_of "$@")" "$(pick_of "$@")" 2>&1)"; st=$?
@@ -176,6 +181,8 @@ printf 'Note de test synthétique T-046.\nAucune donnée réelle.\n' > "$RUNNER_
 # L3b prepared state: 14 days of activity (same seed as L4), and one local Claude Code conversation in the
 # runner's own HOME (disposable VM) for the Conversations IA source.
 python3 -I "$HERE/seed_events.py" "$DATA" --days 14 --per-day 720 --today | tee -a "$SUMMARY"
+# L3j: owner-classified tasks for those contexts (Activité « Tâches », Corriger, Nouvelle tâche: J-0452/0453/0504/0505/0488).
+python3 -I "$HERE/seed_work.py" "$DATA" | tee -a "$SUMMARY"
 # L3e: the work definition and a synthetic Jev key as files the app reads at launch (settext and typed UI fields do
 # not reach the SwiftUI bindings, L3d). JevWorkContextStore: jev/work-context.json schema 3, <= 800 bytes;
 # JevMonitor: jev/api-key, 8-1024 printable ASCII. JevLocalFiles: dir 0700, files 0600.
@@ -189,6 +196,8 @@ printf '%s\n' \
   "{\"type\":\"user\",\"sessionId\":\"$sid\",\"cwd\":\"/tmp/t046\",\"timestamp\":\"$ts\",\"uuid\":\"u1\",\"message\":{\"role\":\"user\",\"content\":\"Conversation synthétique T-046\"}}" \
   "{\"type\":\"assistant\",\"sessionId\":\"$sid\",\"cwd\":\"/tmp/t046\",\"timestamp\":\"$ts\",\"uuid\":\"a1\",\"parentUuid\":\"u1\",\"message\":{\"role\":\"assistant\",\"model\":\"synthetic\",\"content\":[{\"type\":\"text\",\"text\":\"Réponse synthétique.\"}],\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}}" \
   > "$conv/$sid.jsonl"
+# L3j: a second common folder (Codex), so « Détecter les dossiers courants » lists two (Discovery.swift candidates).
+mkdir -p "$HOME/.codex/sessions/t046"; printf '%s\n' "{\"type\":\"session_meta\",\"timestamp\":\"$ts\"}" > "$HOME/.codex/sessions/t046/rollout-t046.jsonl"
 launch || log "app did not start"
 drv status-item "$BUNDLE" >/dev/null 2>&1; sleep 2
 open_dashboard
@@ -237,6 +246,9 @@ done
 tmo 60 "$GOALONG" --root "$DATA" commitment set --day today --kind work --target 2h >> "$SUMMARY" 2>&1 || log "commitment set failed"
 # L3e: the work definition is seeded in jev/work-context.json before launch (the UI typing of L3d saved nothing).
 log "nav miss: $(navigate nav:history p:"Conversations locales" w:2 o:source-aiConversations w:3 o:"Détecter les dossiers courants" w:3)"; cleanup
+# L3j: that button only exists on the management page (AgentActivityPage.swift:120/132), not in Historique:
+# detect the folders there, so J-0372/0373 find « Modifier le suivi de … ».
+log "nav miss: $(navigate pane:recording p:"Choisir les dossiers de conversations…" w:3 o:"Détecter les dossiers courants" w:3)"; cleanup
 open -a TextEdit "$RUNNER_TEMP/synthetic-note.txt"; sleep 3; drv input 60 >> "$SUMMARY"
 open -a Safari; sleep 3; drv input 30 >> "$SUMMARY"
 front; sleep 3

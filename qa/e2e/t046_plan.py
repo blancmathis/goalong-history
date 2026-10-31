@@ -96,6 +96,10 @@ RECIPES = {
     # L3d: a container id (activity-header, activity-usage) hides the child id: match the child's label.
     "J-0466": ("", "label", "AXButton", "Aujourd’hui"),
     "J-0467": ("", "label", "AXButton", "Actualiser"),
+    # L3j: alert and folder-sheet « Enregistrer », not the longer « Enregistrer … » buttons of the page behind.
+    "J-0331": ("", "exact", "AXButton", "Enregistrer"),
+    "J-0372": ("", "exact", "AXButton", "Enregistrer"),
+    "J-0373": ("", "exact", "AXButton", "Enregistrer"),
     # L3h: GoalongMenuPicker is a SwiftUI Menu (AXMenuButton); the nav's pick: chooses the item.
     "J-0475": ("", "label", "AXMenuButton", "Trier les usages"),
     "J-0477": ("", "label", "AXButton", "Exporter les durées"),

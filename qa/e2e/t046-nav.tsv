@@ -386,3 +386,11 @@ J-0373	nav:history p:"Conversations locales" w:2 p:"Modifier le suivi de" w:2
 J-0331	pane:jev w:2
 J-0526	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
 J-0880	pane:advanced p:"Outils de partage et analyses" w:2 p:"Analyser une demande du site" w:3
+# L3j: refresh proof (« Actualisé à HH:MM » moves to the next minute), seeded tasks, folders on the management page,
+# work definition edited under an open « travail » commitment (alert « Changer la définition du travail ? »).
+J-0467	nav:overview w:2 nm
+J-0504	nav:overview w:3 p:activity-tasks-review w:3
+J-0505	nav:overview w:3 p:activity-tasks-review w:3
+J-0372	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2
+J-0373	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2
+J-0331	pane:jev w:2 p:monitoring-edit-goals w:1 "tk:Projets et objectifs= Revue T-046." w:1 p:monitoring-save-goals w:2
