@@ -780,10 +780,19 @@ struct FocusThreadModel: Equatable {
                 .disabled(item.status == .moved)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(2)
-                    .strikethrough(done, color: LHTheme.tertiaryText)
-                    .foregroundStyle(closed ? LHTheme.secondaryText : LHTheme.text)
-                if let meta = meta(item, running: running) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(2)
+                        .strikethrough(done, color: LHTheme.tertiaryText)
+                        .foregroundStyle(closed ? LHTheme.secondaryText : LHTheme.text)
+                    // The task of the running session: a tag, so it is not read as a second copy of the session title.
+                    if running {
+                        Text("En cours").font(.system(size: 11, weight: .semibold)).foregroundStyle(LHTheme.text)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(LHTheme.selectionBackground, in: Capsule())
+                            .fixedSize()
+                    }
+                }
+                if let meta = meta(item) {
                     Text(meta).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                 }
             }
@@ -821,9 +830,8 @@ struct FocusThreadModel: Equatable {
         .accessibilityIdentifier("concentration-plan-item")
     }
 
-    private func meta(_ item: FocusPlanItem, running: Bool) -> String? {
+    private func meta(_ item: FocusPlanItem) -> String? {
         var parts: [String] = []
-        if running { parts.append("en cours") }
         if let project = item.project { parts.append(project) }
         switch item.status {
         case .moved: parts.append(item.toDay == tomorrow ? "déplacée à demain" : "déplacée au \(item.toDay ?? "")")
@@ -857,7 +865,7 @@ struct FocusThreadModel: Equatable {
                     .frame(width: 20).accessibilityHidden(true)
                 TextField("", text: $newTitle)
                     .textFieldStyle(GoalongFieldStyle())
-                    .goalongPlaceholder(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", isEmpty: newTitle.isEmpty)
+                    .planPlaceholder(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", isEmpty: newTitle.isEmpty)
                     .focused(addFocused)
                     .onSubmit(add)
                     .onChange(of: newTitle) { _ in addError = nil }
@@ -865,14 +873,14 @@ struct FocusThreadModel: Equatable {
                     .accessibilityIdentifier("concentration-add-item")
                 TextField("", text: $newProject)
                     .textFieldStyle(GoalongFieldStyle())
-                    .goalongPlaceholder("Projet", isEmpty: newProject.isEmpty)
+                    .planPlaceholder("Projet", isEmpty: newProject.isEmpty)
                     .frame(width: 120)
                     .accessibilityLabel("Projet")
                     .onSubmit(add)
                     .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
                 TextField("", text: $newEstimate)
                     .textFieldStyle(GoalongFieldStyle())
-                    .goalongPlaceholder("min", isEmpty: newEstimate.isEmpty)
+                    .planPlaceholder("min", isEmpty: newEstimate.isEmpty)
                     .frame(width: 64)
                     .onSubmit(add)
                     .help("Estimation, facultative : de 5 à 600 minutes.")
@@ -882,8 +890,10 @@ struct FocusThreadModel: Equatable {
                         .font(.system(size: 12, weight: .medium).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                         .help("Vos estimations : ×\(FocusUIFormat.decimal(ratio)). Médiane du temps mesuré sur le temps prévu, sur vos 20 dernières tâches estimées.")
                 }
+                // Never greyed out for an empty title (a pale button read as 2.5:1): it then puts the cursor in the field.
                 Button("Ajouter", action: add)
-                    .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty || plan.items.count >= FocusPlan.maximumItems)
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .disabled(plan.items.count >= FocusPlan.maximumItems)
             }
             if let addError {
                 Text(addError).font(.system(size: 12)).foregroundStyle(LHTheme.warning).padding(.leading, 28)
@@ -905,7 +915,7 @@ struct FocusThreadModel: Equatable {
 
     private func add() {
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
+        guard !title.isEmpty else { addFocused.wrappedValue = true; return }
         // Entrée in any field takes the same path as the button, which is off on a full plan.
         guard plan.items.count < FocusPlan.maximumItems else { addError = FocusUIError.message(FocusFailure.planFull); return }
         var estimate: Int?
@@ -1340,6 +1350,20 @@ enum FocusUIError {
         case .moduleDisabled: return "Activez Blocage dans Réglages › Modules pour bloquer pendant une séance."
         case .appNotRunning: return "Goalong ne répond pas. Réessayez ; si cela continue, relancez Goalong."
         case nil: return isReadableSentence(raw) ? raw : "L’action n’a pas abouti. Réessayez."
+        }
+    }
+}
+
+private extension View {
+    /// The plan's add row hints in secondary text (≥ 4.5:1), not the paler shared placeholder:
+    /// on a running session it is the one way into the plan (UI-13A, screen 2).
+    func planPlaceholder(_ placeholder: String, isEmpty: Bool) -> some View {
+        overlay(alignment: .leading) {
+            if isEmpty {
+                Text(placeholder).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    .padding(.horizontal, 11)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
         }
     }
 }

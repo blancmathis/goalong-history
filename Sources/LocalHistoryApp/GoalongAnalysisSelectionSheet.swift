@@ -128,7 +128,7 @@ import AgentActivity
             if unconfiguredSources > 0 {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Label {
-                        Text("\(FrenchCount.count(unconfiguredSources, "source", "sources")) à configurer. Une source verrouillée attend d’être activée dans Réglages › Enregistrement ; elle ne peut pas encore être choisie ici.")
+                        Text("\(FrenchCount.count(unconfiguredSources, "source", "sources")) à configurer. Activez une source verrouillée dans Réglages › Enregistrement pour pouvoir la choisir ici.")
                             .fixedSize(horizontal: false, vertical: true)
                     } icon: { Image(systemName: "lock") }
                         .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
@@ -312,7 +312,7 @@ import AgentActivity
                 GoalongTextArea(text: Binding(get: { selection.outputGuidance ?? "" }, set: { selection.outputGuidance = String($0.prefix(4000)) }),
                                 placeholder: "Concentre-toi sur les progrès de mes projets…", minHeight: 190)
                     .accessibilityLabel("Consignes de rédaction pour ChatGPT")
-                Text("Exemple : Concentre-toi sur les progrès de mes projets. Ne cite pas les noms de personnes. Évite les détails de mes loisirs.")
+                Text("Exemple, adressé à ChatGPT : « Concentre-toi sur les progrès de mes projets. Ne cite pas les noms de personnes. Évite les détails de mes loisirs. »")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 HStack {
                     Text("Les consignes influencent le bilan, pas les données envoyées.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)

@@ -376,7 +376,7 @@ struct FocusCommitmentEditRequest: Identifiable {
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
         }
         Button("Prendre un engagement") { onCreate(currentPeriod) }
-            .buttonStyle(LHQuietButtonStyle())
+            .buttonStyle(LHSecondaryButtonStyle())
             .accessibilityIdentifier("concentration-commitment-create")
     }
 
