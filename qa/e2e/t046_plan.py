@@ -247,10 +247,18 @@ def source_file(src, target, needle):
 
 def table(name):
     """Optional side file of qa/e2e: tab-separated lines, # comments skipped."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
-    if not os.path.exists(path):
+    # L3n: per-lot side files <stem>.d/*<ext> (one writer each, sorted by name) come after the main file, so a
+    # lot adds lines without touching the shared file (no merge conflict); the last nav line for an id still wins.
+    here = os.path.dirname(os.path.abspath(__file__))
+    stem, ext = os.path.splitext(name)
+    paths = [os.path.join(here, name)]
+    side = os.path.join(here, stem + ".d")
+    if os.path.isdir(side):
+        paths += [os.path.join(side, f) for f in sorted(os.listdir(side)) if f.endswith(ext)]
+    paths = [p for p in paths if os.path.exists(p)]
+    if not paths:
         return None
-    return [l.rstrip("\n").split("\t") for l in open(path, encoding="utf-8") if l.strip() and not l.startswith("#")]
+    return [l.rstrip("\n").split("\t") for p in paths for l in open(p, encoding="utf-8") if l.strip() and not l.startswith("#")]
 
 
 def main():
