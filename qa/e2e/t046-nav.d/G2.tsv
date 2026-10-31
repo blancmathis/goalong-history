@@ -1,0 +1,9 @@
+# T-046 lot G2: recipes = the current recipe + a seed token (seeds in seed.d/g2-*.sh). Other G2 J lines (0390 0391 0653 0734 0464 0382 0379 0971) have no recipe yet: L3n adds the nav.
+J-0803	pane:recording w:2 seed:g2-source-missing "set:source-aiConversations 0" w:2
+J-0805	pane:recording w:2 seed:consent-lock "set:source-aiConversations 0" w:2
+J-0981	seed:g2-blockpw "mi:Goalong Dev,Goalong History Dev|Quitter Goalong" w:2
+J-0982	seed:g2-blockpw "mi:Goalong Dev,Goalong History Dev|Quitter Goalong" w:2
+J-0991	seed:g2-unclean-exit si
+J-0940	seed:g2-pause-bad si
+J-0997	seed:g2-update-banner si
+J-0658	seed:g2-recent-events pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 "pkc:Supprimer les détails…|Dernière session d’application" w:2

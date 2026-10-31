@@ -1,0 +1,17 @@
+# T-046 G2: J lines checked against the source (state, trigger, text). See G2.md.
+J-0390
+J-0391
+J-0803
+J-0805
+J-0981
+J-0982
+J-0464
+J-0653
+J-0991
+J-0734
+J-0658
+J-0940
+J-0997
+J-0382
+J-0379
+J-0971
