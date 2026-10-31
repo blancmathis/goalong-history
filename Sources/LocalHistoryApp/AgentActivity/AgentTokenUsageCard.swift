@@ -63,7 +63,7 @@ struct AgentTokenUsageCard: View {
             ForEach(Array(Set(rows.map(\.provider))).sorted { $0.frenchName.localizedStandardCompare($1.frenchName) == .orderedAscending }) { provider in
                 let totals = rows.filter { $0.provider == provider }.flatMap(\.events).compactMap(\.total)
                 Text("\(provider.frenchName) : \(totals.isEmpty ? "inconnu" : totals.reduce(0, +).formatted(.number.locale(Self.locale)) + " jetons observés")")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12))
             }
             if !rows.isEmpty {
             GoalongDisclosureGroup("Détails par outil, modèle et conversation") {

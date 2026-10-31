@@ -46,9 +46,12 @@
             "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
         }
 
+        /// Gallery only: the installed app's executable, so the page does not show the test runner's path.
+        nonisolated(unsafe) static var galleryExecutableURL: URL?
+
         static func inspect(
             linkURL: URL = defaultLinkURL,
-            expectedExecutableURL: URL? = Bundle.main.executableURL,
+            expectedExecutableURL: URL? = galleryExecutableURL ?? Bundle.main.executableURL,
             fileManager: FileManager = .default,
             isDevelopment: Bool = GoalongBuildChannel.current.isDevelopment
         ) -> GoalongCLIInstallationReport {

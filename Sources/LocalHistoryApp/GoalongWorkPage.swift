@@ -96,13 +96,14 @@ import SwiftUI
                 Spacer(minLength: 8)
                 statusAction
             }
-            // Without consent the switch reads off whatever the stored preference says (UI-69).
+            // Without consent, or with the history off, the switch reads off whatever the stored preference says (UI-69, UI-9 C).
+            let canClassify = agent.readiness != .noConsent && agent.readiness != .historyOff
             Toggle("Classer automatiquement les nouveaux contextes",
-                   isOn: Binding(get: { work.automatic && agent.readiness != .noConsent },
+                   isOn: Binding(get: { work.automatic && canClassify },
                                  set: { work.automatic = $0 }))
-                .toggleStyle(.goalongSwitch).disabled(agent.readiness == .noConsent)
+                .toggleStyle(.goalongSwitch).disabled(!canClassify)
                 .accessibilityIdentifier("work-automatic")
-            Text("Quand vous ouvrez Activité : la journée affichée, au plus toutes les 15 minutes pour aujourd’hui. Aucune minuterie en arrière-plan ; un contexte déjà classé n’est jamais renvoyé.")
+            Text("Le classement a lieu quand vous ouvrez Activité, au plus toutes les 15 minutes. Un contexte déjà classé n’est jamais renvoyé.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             if GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory),
                                         selection: GoalongAnalysisSelection.load()).withholdsTitles {

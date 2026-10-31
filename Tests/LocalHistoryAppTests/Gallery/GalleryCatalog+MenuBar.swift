@@ -76,10 +76,8 @@ extension GalleryCatalog {
     static var supportEntries: [GalleryEntry] {
         let findings = [
             SupportFinding(severity: .warning, code: .recordingWasInterrupted, title: "Enregistrement interrompu 2 fois",
-                           detail: "Au moins une coupure venait d’un disque plein. 14 observation(s) n’ont pas pu être "
+                           detail: "Au moins une coupure venait d’un disque plein. 14 observations n’ont pas pu être "
                                + "enregistrées ; chaque coupure est marquée dans l’historique."),
-            SupportFinding(severity: .info, code: .noProblemDetected, title: "Aucun problème détecté automatiquement",
-                           detail: "Décrivez ce que vous avez fait et ce que vous attendiez dans votre message."),
         ]
         let phases: [(String, SupportRequestController.Phase)] = [
             ("preparation", .preparing),

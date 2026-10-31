@@ -70,6 +70,12 @@ extension GalleryCatalog {
                 AnyView(BlockingTypingChallengeSheet(text: String(repeating: "aB3kZ", count: 24), onSubmit: { _ in }, onCancel: {}))
             },
             panel("modules/reglages", width: 760) { _ in AnyView(GoalongModulesSettings(onOpen: { _ in }).padding(32)) },
+            // Every module on, Blocage locked by a running « mot de passe » block: its switch is refused (UI-9 C).
+            panel("modules/actifs-verrouille", width: 760, clock: .injected) { ctx in
+                let modules = ctx.keep(GoalongModuleStore(defaults: ctx.defaults))
+                for module in GoalongModule.allCases { modules.setEnabled(module, true) }
+                return AnyView(GoalongModulesSettings(onOpen: { _ in }, modules: modules, blockingController: ctx.keep(F.blockingGuarded())).padding(32))
+            },
         ]
         let veils: [(String, BlockingVeilPresentation.Reason)] = [
             ("voile-site", .site("youtube.com")),
@@ -88,6 +94,16 @@ extension GalleryCatalog {
             }
         }
         entries += [
+            // Every break of the day taken, no extra break: the veil says so and when the block ends (UI-9).
+            panel("blocking-surfaces/voile-pauses-prises", width: 1_100, height: 720, clock: .injected) { _ in
+                let now = F.blockingNow
+                let veil = BlockingVeilPresentation(reason: .site("youtube.com"), listName: "Réseaux sociaux",
+                    start: now.addingTimeInterval(-50 * 60), end: now.addingTimeInterval(70 * 60),
+                    lock: .locked, breakMinutes: 5, breaksLeft: 0,
+                    feedback: BlockingListFeedback(listID: F.socialID, reason: "Finir le mémoire avant vendredi.",
+                                                   attemptsToday: 3, earnedMinutesToday: 0))
+                return AnyView(BlockedSiteVeil(presentation: veil, now: now))
+            },
             panel("blocking-surfaces/avis-app", width: 420, clock: .injected) { _ in
                 let now = F.blockingNow
                 return AnyView(BlockedAppNotice(app: BlockAppRule(bundleIdentifier: "com.apple.Music", name: "Musique"),

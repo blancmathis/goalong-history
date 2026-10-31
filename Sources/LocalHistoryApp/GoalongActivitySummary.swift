@@ -41,6 +41,10 @@ struct GoalongActivitySummary {
     }
 
     var isDay: Bool { period.days.count == 1 }
+    /// What the usage gaps compare with: the previous period of the same length.
+    var previousLabel: String {
+        isDay ? "la veille" : "les \(GoalongUIFormat.count(period.days.count, "jour")) précédent\(period.days.count > 1 ? "s" : "")"
+    }
     var observedDays: [GoalongLocalAnalytics.Day] { period.observedDays }
     var activeSeconds: TimeInterval { period.activeSeconds }
     var workSeconds: TimeInterval { period.workSeconds }
@@ -235,7 +239,7 @@ struct GoalongActivitySummary {
         if let change = biggestChange, let before = change.previousSeconds {
             let delta = change.seconds - before
             result.append(Insight(id: "mover", symbol: "arrow.up.arrow.down",
-                text: "Plus forte variation : \(change.displayName) (\(Self.duration(abs(delta))) \(delta > 0 ? "de plus" : "de moins") qu’avant)."))
+                text: "Plus forte variation : \(change.displayName) (\(Self.duration(abs(delta))) \(delta > 0 ? "de plus" : "de moins") que \(previousLabel))."))
         }
         if workIsMeasurable {
             var text = "Travail : \(Self.duration(workSeconds)) (\(GoalongUIFormat.percent(workShare * 100)) du temps actif)"

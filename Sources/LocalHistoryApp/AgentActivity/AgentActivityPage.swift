@@ -67,6 +67,11 @@
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @State private var search = ""
         @State private var providerFilter: AgentProvider?
+
+        /// The kit menu, same height and surface as the search field beside it.
+        private var providerOptions: [(AgentProvider?, String)] {
+            [(nil, "Tous les outils")] + availableProviders.map { (Optional($0), $0.frenchName) }
+        }
         @State private var editingFolder: AgentWatchedFolder?
         private let presentation: AgentActivityPresentation
         private let onManageSources: (() -> Void)?
@@ -277,14 +282,8 @@
                     }
                     Spacer()
                     if availableProviders.count > 1 {
-                        Picker("Outil", selection: $providerFilter) {
-                            Text("Tous les outils").tag(nil as AgentProvider?)
-                            ForEach(availableProviders) { provider in
-                                Text(provider.frenchName).tag(provider as AgentProvider?)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 150)
+                        GoalongMenuPicker("Outil", selection: $providerFilter, options: providerOptions)
+                            .frame(width: 150)
                     }
                     GoalongSearchField("Rechercher dans les conversations", text: $search)
                         .frame(width: 280)
@@ -397,6 +396,9 @@
                         .frame(width: 24, height: 24)
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .tint(LHTheme.secondaryText)
+                .foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 30)
                 .accessibilityLabel("Actions sur la conversation")
             }
@@ -523,7 +525,7 @@
                     HStack(alignment: .top) {
                         sectionHeader(
                             symbol: "point.3.connected.trianglepath.dotted",
-                            tint: LHTheme.accent,
+                            tint: LHTheme.secondaryText,
                             title: "Signaux de relance des agents",
                             subtitle:
                                 "Les relais d’agents facultatifs ne font que relancer la détection. Leur contenu est ignoré et jamais ajouté à l’index."
@@ -765,13 +767,8 @@
                         )
                         Spacer()
                         if availableProviders.count > 1 {
-                            Picker("Outil", selection: $providerFilter) {
-                                Text("Tous les outils").tag(nil as AgentProvider?)
-                                ForEach(availableProviders) { provider in
-                                    Text(provider.frenchName).tag(provider as AgentProvider?)
-                                }
-                            }
-                            .frame(width: 165)
+                            GoalongMenuPicker("Outil", selection: $providerFilter, options: providerOptions)
+                                .frame(width: 165)
                         }
                         GoalongSearchField("Rechercher sessions, fichiers, modèles ou outils", text: $search)
                             .frame(width: 285)
@@ -839,10 +836,14 @@
                     Divider()
                     Button("Vérifier que la source est intacte") { agents.verify(record) }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
+                        .frame(width: 24, height: 24)
                 }
                 .menuStyle(.borderlessButton)
-                .frame(width: 26)
+                .menuIndicator(.hidden)
+                .tint(LHTheme.secondaryText)
+                .foregroundStyle(LHTheme.secondaryText)
+                .frame(width: 30)
                 .accessibilityLabel("Plus d’actions")
                 .help("Afficher la source ou vérifier l’empreinte")
             }

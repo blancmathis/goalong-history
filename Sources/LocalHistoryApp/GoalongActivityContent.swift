@@ -108,13 +108,14 @@ struct GoalongAnalyticsContent: View {
             // Apple's source has its own explanations; these describe Goalong's observations only.
             if detail.wrappedValue != .screenTime {
                 VStack(alignment: .leading, spacing: 4) {
-                    methodology
+                    // The row's hover background spills out of the text: the chevron sits on the titles' edge.
+                    methodology.padding(.horizontal, -6)
                     Text(payload.isPreview ? "Données fictives, non enregistrées."
                          : workStatus.classifiesOnOpen
                          ? "Durées calculées sur ce Mac ; nouveaux contextes classés par ChatGPT. Actualisé à \(time(payload.updatedAt))."
                          : "Calculé sur ce Mac, sans envoi. Actualisé à \(time(payload.updatedAt)).")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
-                        .padding(.top, 12).padding(.leading, 6)
+                        .padding(.top, 12)
                 }
             }
         }
@@ -538,18 +539,23 @@ struct GoalongAnalyticsContent: View {
     // MARK: - Named views
 
     @ViewBuilder private func detailView(_ shown: GoalongActivityDetail, summary: GoalongActivitySummary) -> some View {
-        Button { detail.wrappedValue = nil } label: { Label("Activité", systemImage: "chevron.left") }
-            .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
-            .help("Revenir à l’activité de la \(isDay ? "journée" : "période")")
-            .accessibilityIdentifier("activity-detail-back")
+        // The way back and the title of the sub-page form one header; the sections follow it.
+        VStack(alignment: .leading, spacing: 8) {
+            Button { detail.wrappedValue = nil } label: { Label("Activité", systemImage: "chevron.left") }
+                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                .help("Revenir à l’activité de la \(isDay ? "journée" : "période")")
+                .accessibilityIdentifier("activity-detail-back")
+            if shown == .rhythm && !(shown.needsObservations && current.observedSeconds == 0) {
+                // A sub-page title, above its sections: not a section title left without content.
+                Text("Rythme").font(LHTheme.sheetTitleFont).tracking(-0.4)
+                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("activity-rhythm-title")
+            }
+        }
         if shown.needsObservations && current.observedSeconds == 0 {
             emptyState
         } else {
             switch shown {
             case .rhythm:
-                // The named view says where it is, right under the way back.
-                Text("Rythme").font(LHTheme.sectionTitleFont).tracking(-0.2)
-                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("activity-rhythm-title")
                 insightsSection(summary, items: usageItems, showsClassification: showsWorkCard(summary))
                 rhythmSection
             case .usage:
@@ -657,7 +663,7 @@ struct GoalongAnalyticsContent: View {
                 isPreview: payload.isPreview,
                 onExport: {
                     exportMessage = GoalongActivityExport.save(period: current, grouping: grouping)
-                }) { selectedUsage = $0 }
+                }, comparedTo: summary.previousLabel) { selectedUsage = $0 }
             if let exportMessage {
                 Label(exportMessage, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
             }

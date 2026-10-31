@@ -6,9 +6,11 @@ import SwiftUI
     var onOpen: (DashboardSection) -> Void
     /// Lets a module stop at once when it is turned off (Ambiance stops its music).
     var onChange: (GoalongModule, Bool) -> Void = { _, _ in }
-    @ObservedObject private var modules = GoalongModuleStore.shared
+    @ObservedObject var modules = GoalongModuleStore.shared
     @ObservedObject private var concentration = ConcentrationRuntime.shared
     @ObservedObject private var blocking = BlockingRuntime.shared
+    /// The gallery shows a running locked block without starting the Blocage runtime.
+    var blockingController: BlockingController?
     @State private var confirmingDelete = false
     @State private var deleteMessage: String?
     /// Commitments live in the same folder: open ones go too, without a result (T-045 H5-01).
@@ -51,7 +53,7 @@ import SwiftUI
 
     private func row(_ module: GoalongModule) -> some View {
         let on = modules.isEnabled(module)
-        let locked = (module == .blocking && blocking.controller?.moduleOffRefusal != nil) || (module == .concentration && concentration.controller?.hasLockedBlock == true)
+        let locked = (module == .blocking && (blockingController ?? blocking.controller)?.moduleOffRefusal != nil) || (module == .concentration && concentration.controller?.hasLockedBlock == true)
         return HStack(alignment: .center, spacing: 12) {
             Image(systemName: module.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 22).accessibilityHidden(true)
@@ -61,9 +63,9 @@ import SwiftUI
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 // Concentration's data delete sits in its own row, not under every module.
-                // Says which data stay on this Mac before offering to delete them (UI-46).
+                // Says which data stay on this Mac before offering to delete them (UI-46), then the link on its own line (UI-9 C).
                 if module == .concentration {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(Self.concentrationKeptData).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Button("Supprimer…", role: .destructive) { confirmingDelete = true }

@@ -121,7 +121,7 @@ struct GoalongScreenTimePage: View {
                 }
                 HStack(spacing: 16) {
                     Button("Voir dans les Réglages Apple") { screenTime.openScreenTimeSettings() }
-                        .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).accessibilityIdentifier("screen-time-open-settings")
+                        .buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("screen-time-open-settings")
                     Text("Aucune modification de vos réglages Apple.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
             }.fixedSize(horizontal: false, vertical: true)
@@ -174,6 +174,14 @@ struct GoalongScreenTimePage: View {
         case .selectedDevices: return "Les appareils choisis, reçus sur ce Mac."
         }
     }
+    /// Under the hero: which devices the figure covers, in plain words.
+    private var scopeCaption: String {
+        switch screenTime.configuration.scope.mode {
+        case .macOnly: return "Ce Mac seulement"
+        case .allDevices: return "Tous les appareils Apple reçus"
+        case .selectedDevices: return "Les appareils choisis"
+        }
+    }
     private var scopePicker: some View {
         GoalongSegmentedControl("Appareils inclus", selection: Binding(get: { screenTime.configuration.scope.mode }, set: screenTime.setScopeMode),
                                 options: [AppleScreenTimeScopeMode.macOnly, .allDevices, .selectedDevices]) {
@@ -190,7 +198,7 @@ struct GoalongScreenTimePage: View {
                     Text(presentation.durationTitle).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                     Text(duration(summary.totalScreenOnDuration)).font(LHTheme.heroFont).tracking(LHTheme.heroTracking)
                         .monospacedDigit().accessibilityIdentifier("screen-time-day-total")
-                    Text(presentation.isPartial ? "Valeur partielle, pas le total officiel" : "Périmètre Apple sélectionné")
+                    Text(presentation.isPartial ? "Valeur partielle, pas le total officiel" : scopeCaption)
                         .font(.system(size: 12)).foregroundStyle(presentation.isPartial ? LHTheme.warning : LHTheme.secondaryText)
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -250,11 +258,8 @@ struct GoalongScreenTimePage: View {
                             HStack(spacing: 14) {
                                 if let host = row.host { WebsiteIconView(host: host, size: 36).accessibilityHidden(true) }
                                 else { AppIconView(bundleIdentifier: row.bundleIdentifier, appName: row.name, size: 36).accessibilityHidden(true) }
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(row.name).font(.system(size: 13, weight: .medium)).lineLimit(1).help(row.name)
-                                    Text(row.isWebsite ? "Site fourni par Apple" : "Application, source Apple")
-                                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                }
+                                // The filter above already says applications or sites, and the page says Apple.
+                                Text(row.name).font(.system(size: 13, weight: .medium)).lineLimit(1).help(row.name)
                                 Spacer(minLength: 10)
                                 Text(duration(row.seconds)).font(.system(size: 14, weight: .semibold)).monospacedDigit()
                             }.padding(.horizontal, 18).padding(.vertical, 12).accessibilityElement(children: .combine)
@@ -294,9 +299,8 @@ struct GoalongScreenTimePage: View {
     /// Source off: the empty state itself carries the one action (UI-60).
     private var emptyState: some View {
         SourceActivationToggle(capability: .appleScreenTime, activateButtonTitle: "Activer…") {
-            GoalongEmptyState(title: "Temps d’écran Apple désactivé",
-                message: accessRevoked ? "La lecture a été arrêtée car macOS refuse l’accès. Réactivez cette source pour vérifier les autorisations."
-                    : "Source facultative. L’accès est expliqué et vérifié avant toute lecture.")
+            GoalongEmptyState(title: GoalongScreenTimeOffCopy.title,
+                message: GoalongScreenTimeOffCopy.message(accessRevoked: accessRevoked))
         }
     }
     private var screenTimeConsentCard: some View {

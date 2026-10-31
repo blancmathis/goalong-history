@@ -900,7 +900,8 @@ struct BlockingLockExplainer: View {
                         Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        loginItemsButton
+                        // UI-9 (1): one « Ouvrir Réglages Système… » per group; « Relance » already shows it when off.
+                        if controller.protection.launchAtLogin { loginItemsButton }
                     }
                         .padding(.leading, 32).padding(.bottom, 8)
                         .accessibilityIdentifier("blocking-level-help")
@@ -983,7 +984,8 @@ struct BlockingLockExplainer: View {
                 .menuStyle(.borderlessButton).fixedSize()
                 .foregroundStyle(LHTheme.secondaryText)
             } else {
-                Button("Choisir…") { passwordPurpose = .create }.buttonStyle(LHQuietButtonStyle())
+                // UI-9 (1): a button like the group's other actions, not bare text.
+                Button("Choisir…") { passwordPurpose = .create }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
             }
         }
         .frame(minHeight: 38)
@@ -1066,27 +1068,39 @@ struct BlockingTypingChallengeSheet: View {
     private var matched: Int { zip(text, typed).prefix { $0 == $1 }.count }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Recopier pour arrêter").font(LHTheme.sheetTitleFont).tracking(-0.4)
-                Text("Le blocage s’arrête quand le texte est identique. Le collage est refusé.")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+        // UI-63: the shared sheet body and footer (GoalongControls), as the other sheets.
+        VStack(spacing: 0) {
+            GoalongSheetScroll(cap: 420) {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Recopier pour arrêter").font(LHTheme.sheetTitleFont).tracking(-0.4)
+                        Text("Le blocage s’arrête quand le texte est identique. Le collage est refusé.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    }
+                    Text(groups(text, matched: matched))
+                        .font(.system(size: 15, design: .monospaced)).lineSpacing(6)
+                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+                        .textSelection(.disabled)
+                    TextField("", text: Binding(get: { typed }, set: { value in
+                        // One character at a time: a jump of several characters is a paste.
+                        if value.count <= typed.count + 1 { typed = value }
+                    }))
+                        // 14 pt monospaced text is 17 pt high: 8 + 17 + 9 fills the 34 pt field.
+                        .textFieldStyle(GoalongFieldStyle(textFont: .monospaced14))
+                        // The hint is not text to copy: system font, not the monospaced font of the field.
+                        .overlay(alignment: .leading) { placeholder }
+                        .accessibilityLabel("Recopiez ici")
+                        .accessibilityIdentifier("blocking-typing-field")
+                    HStack(spacing: 10) {
+                        BlockingMeter(fraction: Double(matched) / Double(max(1, text.count))).frame(width: 160)
+                        Text("\(matched) / \(text.count) caractères recopiés")
+                            .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                    }
+                }
+                .padding(28)
             }
-            Text(groups(text, matched: matched))
-                .font(.system(size: 15, design: .monospaced)).lineSpacing(6)
-                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
-                .textSelection(.disabled)
-            TextField("Recopiez ici", text: Binding(get: { typed }, set: { value in
-                // One character at a time: a jump of several characters is a paste.
-                if value.count <= typed.count + 1 { typed = value }
-            }))
-                // 14 pt monospaced text is 17 pt high: 8 + 17 + 9 fills the 34 pt field.
-                .textFieldStyle(GoalongFieldStyle(textFont: .monospaced14))
-                .accessibilityIdentifier("blocking-typing-field")
-            HStack {
-                BlockingMeter(fraction: Double(matched) / Double(max(1, text.count))).frame(width: 160)
-                Text("\(matched) / \(text.count)").font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+            GoalongSheetFooter(inset: 28) {
                 Spacer()
                 Button("Continuer le blocage", action: onCancel).keyboardShortcut(.cancelAction)
                 Button("Arrêter") { onSubmit(typed) }
@@ -1094,8 +1108,15 @@ struct BlockingTypingChallengeSheet: View {
                     .disabled(typed != text)
             }
         }
-        .padding(28).frame(width: 560)
+        .frame(width: 560)
         .background(LHTheme.pageBackground)
+    }
+
+    @ViewBuilder private var placeholder: some View {
+        if typed.isEmpty {
+            Text("Recopiez ici").font(.system(size: 14)).foregroundStyle(LHTheme.tertiaryText)
+                .padding(.leading, 11).allowsHitTesting(false).accessibilityHidden(true)
+        }
     }
 
     private func groups(_ value: String, matched: Int) -> AttributedString {

@@ -23,6 +23,9 @@ extension GalleryCatalog {
             }),
             dashboard("settings/enregistrement-actif", section: .settings, pane: .recording, fixture: .realistic),
             dashboard("settings/stockage-avec-donnees", section: .settings, pane: .storage, fixture: .realistic),
+            // UI-9 (58): Avancé with developer mode on, its switch and help shown.
+            dashboard("settings/avance-developpeur", section: .settings, pane: .advanced,
+                      configure: { _, ctx in ctx.defaults.set(true, forKey: GoalongDeveloperPreferences.enabledKey) }),
             // Recording on, so the history row asks for the missing access instead of « Fonction désactivée ».
             dashboard("settings/permission-manquante", section: .settings, pane: .permissions,
                       environment: { $0.permissions = .galleryMissing }, fixture: .recordingOn),
@@ -39,6 +42,11 @@ extension GalleryCatalog {
             panel("settings-sheets/connexion-jev", width: 560) { _ in AnyView(JevConnectionSheet()) },
             panel("settings-sheets/conservation", width: 700, height: 670) { _ in AnyView(HistoryRetentionSettingsSheet()) },
             panel("settings-sheets/partage-site", width: 740, clock: .injected) { _ in AnyView(GoalongWebsiteSharingSheet()) },
+            // UI-9 (11, 29): the two analysis windows opened from Réglages › Stockage; both inits are inert until a button is pressed.
+            panel("settings-sheets/comprendre-mon-travail", width: 760, clock: .injected) { _ in
+                AnyView(GoalongProfileStudio(onSend: { _ in }, localOnly: true))
+            },
+            panel("settings-sheets/analyse-demande-site", width: 700, clock: .injected) { _ in AnyView(GoalongSiteAnalysisSheet()) },
         ]
         for (tab, name) in ["applications", "sites", "categories"].enumerated() {
             entries.append(panel("settings-sheets/analyse-\(name)", width: 940, clock: .injected) { ctx in
