@@ -96,7 +96,8 @@ RECIPES = {
     # L3d: a container id (activity-header, activity-usage) hides the child id: match the child's label.
     "J-0466": ("", "label", "AXButton", "Aujourd’hui"),
     "J-0467": ("", "label", "AXButton", "Actualiser"),
-    "J-0475": ("", "label", "AXPopUpButton", "Trier les usages"),
+    # L3h: GoalongMenuPicker is a SwiftUI Menu (AXMenuButton); the nav's pick: chooses the item.
+    "J-0475": ("", "label", "AXMenuButton", "Trier les usages"),
     "J-0477": ("", "label", "AXButton", "Exporter les durées"),
     # L3e: the permission row's button carries a fixed id; several « activity-usage » buttons share one id (J-0476);
     # the confirmation dialog's buttons are action-button-N: match « Annuler » (J-0444).
@@ -112,6 +113,11 @@ RECIPES = {
     "J-0434": ("", "label", "AXCheckBox", "Mot entier"),
     # L3f: « Nouvelle tâche… » / « Laisser l’agent décider » are items of the row menu « Corriger » (left open by pk:).
     **{f"J-{n:04d}": ("", "menuitem", "AXMenuItem", None) for n in (500, 501, 503)},
+    # L3h: the control, not the page or sheet it opens (L3g audit); the nav's ex: names the opened page or sheet.
+    "J-0462": ("", "id", "AXButton", "activity-explore-reports"),
+    "J-0469": ("", "id", "AXButton", "activity-explore-code"),
+    "J-0779": ("", "label", "AXButton", "Analyser le contexte d’une session"),
+    "J-0794": ("", "label", "AXButton", "Utiliser cette session relue"),
 }
 
 # UI branch (t046/evidence-ui): labels the UI lots renamed between 06e199f and 973ff6a. The matrix (and a

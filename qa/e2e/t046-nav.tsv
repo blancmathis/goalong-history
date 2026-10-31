@@ -345,3 +345,23 @@ J-0658	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’acc
 
 # UI branch: « Supprimer… » is now also in GoalongModulesSettings, so FILE_NAV no longer finds BlockingPage.swift.
 J-0031	nav:concentration p:"Programme" w:2
+# L3h: menu picked by name (pick:), late AX content awaited (wf:), ex: effect checks (checkbox values, Finder window, sheet
+# reopened for J-0807), Atelier on yesterday 09:00-11:00 (sd:) instead of recording off, collapsed sections opened (ck:).
+J-0475	nav:overview p:activity-explore-usage w:2 "pick:Nom A–Z" "ex:Nom A–Z"
+J-0768	nav:history p:"Ce Mac" w:2 "wf:Rechercher dans la chronologie" "ty:Rechercher dans la chronologie=zzqx-t046-aucun" w:2
+J-0778	nav:history p:"Ce Mac" w:2 "wf:Afficher les détails de" p:"Afficher les détails de" w:2 "wf:Supprimer cet élément"
+J-0751	nav:braise w:2 p:braise-add-rule w:2 pb:"Tous les jours" w:1 "ex:Sam=0 && Lun=1"
+J-0462	nav:overview w:2 ex:activity-reports
+J-0469	nav:overview w:2 ex:activity-code
+J-0779	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 "ex:Comprendre une session"
+J-0365	pane:recording p:"Choisir les dossiers de conversations…" w:2 "ex:app:com.apple.finder=agent-activity-v2"
+J-0807	@onboarding pb:"Plus tard" w:2 pb:Retour w:2 "pu:onboarding-continue|permission-primary-action" "ex:source-access-check-result"
+J-0466	nav:overview w:2 pb:"Jour précédent" w:2
+J-0424	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "ck:Exclure des sites de l’analyse=1" w:1
+J-0856	pane:applications "ck:Règles avancées d’enregistrement=1" w:1
+J-0522	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0523	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0524	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0525	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0527	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0529	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "sd:Activité depuis=-1@9" "sd:Journée analysée — jusqu’à=-1@11" w:1 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3

@@ -48,7 +48,104 @@ func describe(_ e: AXUIElement) -> String {
                   ("desc", kAXDescriptionAttribute), ("help", kAXHelpAttribute)]
     var parts = fields.compactMap { k, a -> String? in let v = text(e, a); return v.isEmpty ? nil : "\(k)=\(v)" }
     if let v = attr(e, kAXValueAttribute) as? String, !v.isEmpty { parts.append("value=\(v.prefix(80))") }
+    // L3h: a checkbox's state is a number (Braise day boxes, J-0751): in the dump and in act's signature.
+    if toggleRoles.contains(text(e, kAXRoleAttribute)), let v = attr(e, kAXValueAttribute) as? NSNumber { parts.append("value=\(v.intValue)") }
     return parts.joined(separator: " | ")
+}
+let toggleRoles = ["AXCheckBox", "AXSwitch", "AXToggle", "AXRadioButton", "AXDisclosureTriangle"]
+
+func centerOf(_ e: AXUIElement) -> CGPoint? {
+    guard let pos = attr(e, kAXPositionAttribute), let size = attr(e, kAXSizeAttribute) else { return nil }
+    var p = CGPoint.zero, sz = CGSize.zero
+    AXValueGetValue(pos as! AXValue, .cgPoint, &p); AXValueGetValue(size as! AXValue, .cgSize, &sz)
+    return CGPoint(x: p.x + sz.width / 2, y: p.y + sz.height / 2)
+}
+func mouseClick(_ c: CGPoint) {
+    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(200_000)
+    for t in [CGEventType.leftMouseDown, .leftMouseUp] {
+        CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
+        usleep(80_000)
+    }
+}
+func postKey(_ code: CGKeyCode) {
+    let src = CGEventSource(stateID: .hidSystemState)
+    for down in [true, false] { CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down)?.post(tap: .cghidEventTap) }
+}
+func typeText(_ s: String) {
+    let src = CGEventSource(stateID: .hidSystemState)
+    for ch in s.utf16 {
+        var u = ch
+        for down in [true, false] {
+            let ev = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: down)
+            ev?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &u)
+            ev?.post(tap: .cghidEventTap)
+        }
+        usleep(25_000)
+    }
+}
+/// L3h: an open menu's item whose title contains ITEM (empty: any titled item), outside the app's main menu bar
+/// (the status item's extras bar is searched, as before).
+func menuItem(_ bundle: String, _ item: String, extra: [AXUIElement] = []) -> AXUIElement? {
+    var hit: AXUIElement?
+    let bar = attr(app(bundle), kAXMenuBarAttribute)
+    func rec(_ e: AXUIElement, _ d: Int, _ budget: inout Int) {
+        guard hit == nil, budget > 0, d < 40 else { return }
+        budget -= 1
+        if let bar, CFEqual(e, bar) { return }
+        let r = text(e, kAXRoleAttribute)
+        if r == "AXMenuItem" {
+            let t = normText(text(e, kAXTitleAttribute))
+            if item.isEmpty ? !t.isEmpty : t.contains(item) { hit = e; return }
+        }
+        for c in children(e) { rec(c, d + 1, &budget) }
+    }
+    for root in extra + roots(bundle) where hit == nil { var budget = 8000; rec(root, 0, &budget) }
+    return hit
+}
+/// L3h: open TARGET's menu. AXPress first (AXShowMenu if refused); a SwiftUI Menu (AXMenuButton) pressed so shows no
+/// item in the AX tree (J-0427, J-0475): Escape, then a mouse click on the button. Returns true when items show.
+func openMenu(_ bundle: String, _ target: AXUIElement) -> Bool {
+    AXUIElementSetMessagingTimeout(target, 1.5)
+    var s = AXUIElementPerformAction(target, kAXPressAction as CFString).rawValue
+    if s != 0 && s != -25204 { s = AXUIElementPerformAction(target, kAXShowMenuAction as CFString).rawValue }
+    print("menu opener -> \(describe(target)) : \(s)")
+    usleep(700_000)
+    for _ in 0..<5 {  // As before L3h: the items may take up to 3 s to show.
+        if menuItem(bundle, "", extra: [target]) != nil { return true }
+        usleep(500_000)
+    }
+    guard let c = centerOf(target) else { return false }
+    postKey(0x35); usleep(400_000)
+    mouseClick(c); usleep(800_000)
+    let shown = menuItem(bundle, "", extra: [target]) != nil
+    print("menu mouse click at \(Int(c.x)),\(Int(c.y)) items=\(shown ? 1 : 0)")
+    return shown
+}
+/// L3h: open TARGET's menu and choose ITEM (AXPress, or a mouse click with CLICK). Items not in the AX tree under an
+/// open AXMenuButton: type the item's first word (menu type-select) and Return. False: nothing chosen, menu closed.
+func pickItem(_ bundle: String, _ target: AXUIElement, _ item: String, click: Bool = false) -> Bool {
+    let shown = openMenu(bundle, target)
+    var hit: AXUIElement?
+    for _ in 0..<(shown ? 6 : 1) where hit == nil {
+        hit = menuItem(bundle, item, extra: [target])
+        if hit == nil { usleep(500_000) }
+    }
+    if let hit {
+        AXUIElementSetMessagingTimeout(hit, 1.5)
+        if click, let c = centerOf(hit) { mouseClick(c); print("picked=click \(describe(hit))"); return true }
+        let s = AXUIElementPerformAction(hit, kAXPressAction as CFString).rawValue
+        print("picked=press \(describe(hit)) : \(s)")
+        return s == 0 || s == -25204
+    }
+    if !shown && text(target, kAXRoleAttribute) == "AXMenuButton" {
+        typeText(String(item.split(separator: " ").first ?? "")); usleep(300_000); postKey(0x24)
+        print("picked=typed \(item)")
+        return true
+    }
+    postKey(0x35)  // An open menu blocks the next rows.
+    print("picked=0 '\(item)' not found")
+    return false
 }
 
 func dumpTree(_ bundle: String, to path: String) -> Int {
@@ -178,48 +275,14 @@ case "popup":
         }
     }
     guard let target else { print("popup '\(args[3])': opener not found"); exit(5) }
-    AXUIElementSetMessagingTimeout(target, 1.5)
-    var s = AXUIElementPerformAction(target, kAXPressAction as CFString).rawValue
-    if s != 0 && s != -25204 { s = AXUIElementPerformAction(target, kAXShowMenuAction as CFString).rawValue }
-    print("popup opener -> \(describe(target)) : \(s)")
-    usleep(700_000)
-    if !dumpPath.isEmpty { print("dumped \(dumpTree(bundle, to: dumpPath)) nodes to \(dumpPath)") }
-    if item.isEmpty { exit(s == 0 || s == -25204 ? 0 : 4) }
-    var hit: AXUIElement?
-    for _ in 0..<6 where hit == nil {
-        for root in [target] + roots(bundle) where hit == nil {
-            var budget = 8000
-            _ = walk(root, budget: &budget) { e, _ in
-                let ok = text(e, kAXRoleAttribute) == "AXMenuItem" && normText(text(e, kAXTitleAttribute)).contains(item)
-                if ok { hit = e }
-                return ok
-            }
-        }
-        if hit == nil { usleep(500_000) }
-    }
-    guard let hit else {
-        // Close the menu left open: an open menu blocks the next rows.
-        let src = CGEventSource(stateID: .hidSystemState)
-        for down in [true, false] { CGEvent(keyboardEventSource: src, virtualKey: 0x35, keyDown: down)?.post(tap: .cghidEventTap) }
-        print("popup item '\(args[4])': not found"); exit(5)
-    }
-    AXUIElementSetMessagingTimeout(hit, 1.5)
+    // L3h: openMenu / pickItem (SwiftUI Menu fallback: Escape, mouse click, type-select).
     // L3f: CLICK (6th argument) clicks the item with the mouse: AXPress on a pop-up item ran but chose nothing (J-0643).
-    if args.count > 6 && args[6] == "click", let pos = attr(hit, kAXPositionAttribute), let size = attr(hit, kAXSizeAttribute) {
-        var p = CGPoint.zero, sz = CGSize.zero
-        AXValueGetValue(pos as! AXValue, .cgPoint, &p); AXValueGetValue(size as! AXValue, .cgSize, &sz)
-        let c = CGPoint(x: p.x + sz.width / 2, y: p.y + sz.height / 2)
-        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
-        usleep(200_000)
-        for t in [CGEventType.leftMouseDown, .leftMouseUp] {
-            CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
-            usleep(80_000)
-        }
-        print("popup item clicked at \(Int(c.x)),\(Int(c.y)) -> \(describe(hit))"); exit(0)
+    if item.isEmpty {
+        let shown = openMenu(bundle, target)
+        if !dumpPath.isEmpty { print("dumped \(dumpTree(bundle, to: dumpPath)) nodes to \(dumpPath)") }
+        exit(shown ? 0 : 4)
     }
-    let ps = AXUIElementPerformAction(hit, kAXPressAction as CFString).rawValue
-    print("popup item -> \(describe(hit)) : \(ps)")
-    exit(ps == 0 || ps == -25204 ? 0 : 4)
+    exit(pickItem(bundle, target, item, click: args.count > 6 && args[6] == "click") ? 0 : 5)
 case "typekeys":
     // L3e: settext does not reach a SwiftUI binding (L3d). Focus the field, click it, then type TEXT as key events.
     guard let hit = findField(args[2], args[3]) else { print("typekeys '\(args[3])': not found"); exit(5) }
@@ -336,7 +399,7 @@ case "set":
         for root in roots(args[2]) where hit == nil {
             var budget = 6000
             _ = walk(root, budget: &budget) { e, _ in
-                let ok = byLabel ? ["AXCheckBox", "AXSwitch", "AXToggle"].contains(text(e, kAXRoleAttribute))
+                let ok = byLabel ? toggleRoles.contains(text(e, kAXRoleAttribute))  // L3h: and disclosure triangles (J-0424)
                     && [kAXTitleAttribute, kAXDescriptionAttribute].contains { normText(text(e, $0)) == normText(args[3]) }
                     : text(e, "AXIdentifier") == args[3]
                 if ok { hit = e }
@@ -351,6 +414,45 @@ case "set":
     let after = (attr(hit, kAXValueAttribute) as? NSNumber)?.intValue ?? -1
     print("set '\(args[3])' \(now) -> \(after) (wanted \(args[4])) : \(status.rawValue)")
     exit(after == Int(args[4]) ? 0 : 4)
+case "waitfor":
+    // L3h: wait until TEXT (an id, or a title/description/value/placeholder) is in the app's windows, SECS at most.
+    // SwiftUI can publish a view late: an empty AXOpaqueProviderGroup after « Ce Mac » (J-0768, J-0778).
+    let want = normText(args[3]), until = Date().addingTimeInterval(Double(args.count > 4 ? args[4] : "12") ?? 12)
+    let wa = app(args[2])
+    repeat {
+        for w in (attr(wa, kAXWindowsAttribute) as? [AXUIElement]) ?? [] {
+            var budget = 8000
+            if walk(w, budget: &budget, visit: { e, _ in
+                text(e, "AXIdentifier") == args[3] || [kAXTitleAttribute, kAXDescriptionAttribute, kAXPlaceholderValueAttribute]
+                    .contains { normText(text(e, $0)).contains(want) } || normText((attr(e, kAXValueAttribute) as? String) ?? "").contains(want)
+            }) { print("waitfor '\(args[3])': found"); exit(0) }
+        }
+        usleep(500_000)
+    } while Date() < until
+    print("waitfor '\(args[3])': not found"); exit(5)
+case "setdate":
+    // L3h: set a date picker (AXDateTimeArea whose title or description is LABEL) to DAYS from today at HOUR:00.
+    // The Atelier reads a short closed period (yesterday) instead of today, which recording keeps changing (J-0522).
+    let label = normText(args[3]), days = Int(args[4]) ?? 0, hour = Int(args.count > 5 ? args[5] : "0") ?? 0
+    var hit: AXUIElement?
+    for root in roots(args[2]) where hit == nil {
+        var budget = 6000
+        _ = walk(root, budget: &budget) { e, _ in
+            let ok = text(e, kAXRoleAttribute) == "AXDateTimeArea"
+                && [kAXTitleAttribute, kAXDescriptionAttribute].contains { normText(text(e, $0)) == label }
+            if ok { hit = e }
+            return ok
+        }
+    }
+    guard let hit else { print("setdate '\(args[3])': not found"); exit(5) }
+    let cal = Calendar.current
+    let day = cal.date(byAdding: .day, value: days, to: cal.startOfDay(for: Date()))!
+    let when = cal.date(bySettingHour: hour, minute: 0, second: 0, of: day)!
+    let st = AXUIElementSetAttributeValue(hit, kAXValueAttribute as CFString, when as CFDate).rawValue
+    usleep(500_000)
+    let got = attr(hit, kAXValueAttribute) as? Date
+    print("setdate '\(args[3])' -> \(when) : \(st) now=\(got.map { "\($0)" } ?? "nil")")
+    exit(got.map { abs($0.timeIntervalSince(when)) < 61 } == true ? 0 : 4)
 case "settext":
     // Type TEXT into a text field found by exact AXIdentifier, else by a title/description/placeholder containing ID|LABEL.
     // L3d: a search with no result, a domain to exclude, the saved work definition (state seeded through the UI).
@@ -402,9 +504,13 @@ case "act":
     // L3g, strict click: 10 = no effect (changed=0 and EXPECT absent), 11 = not a control (Group/Heading/StaticText
     // with no actionable ancestor or child of the same label or id), 12 = disabled. EXPECT (8th argument, optional):
     // an id or a text that must be in the tree after the click (the row's effect check).
+    // L3h: EXPECT terms joined by " && ": ID or TEXT; LABEL=0|1 (a checkbox's AXValue); app:BUNDLE=TEXT (a window of
+    // BUNDLE titled TEXT, Finder opened by the press). Also checked by shortcut/escape when changed=0.
+    // PICK (9th argument): a click opens the target's menu and chooses PICK; changed covers the whole sequence.
     let (bundle, action, mode, role, needle) = (args[2], args[3], args[4], args[5], args[6])
     let scrolls = Int(args.count > 7 ? args[7] : "3") ?? 3
     let expect = args.count > 8 ? args[8] : ""
+    let pick = normText(args.count > 9 ? args[9] : "")
     let a = app(bundle)
     func norm(_ s: String) -> String {
         s.replacingOccurrences(of: "\u{a0}", with: " ").replacingOccurrences(of: "\u{202f}", with: " ")
@@ -536,14 +642,36 @@ case "act":
         print("enabled=\(en.map { $0 ? 1 : 0 }.map(String.init) ?? "-")")
         if en == false { exit(12) }
     }
-    func expected() -> Bool {  // The row's effect check: EXPECT (id, or text) present in the tree after the action.
+    func expected() -> Bool {  // The row's effect check: every EXPECT term holds in the tree after the action.
         guard !expect.isEmpty else { return false }
-        let x = norm(expect)
-        for root in searchRoots() {
-            var budget = 8000
-            if walk(root, budget: &budget, visit: { el, _ in text(el, "AXIdentifier") == expect || texts(el).contains { $0.contains(x) } }) { return true }
+        return expect.components(separatedBy: " && ").allSatisfy { term in
+            if term.hasPrefix("app:"), let eq = term.firstIndex(of: "=") {
+                let b = String(term[term.index(term.startIndex, offsetBy: 4)..<eq]), t = norm(String(term[term.index(after: eq)...]))
+                for _ in 0..<6 {
+                    if let run = NSRunningApplication.runningApplications(withBundleIdentifier: b).first {
+                        let wins = (attr(AXUIElementCreateApplication(run.processIdentifier), kAXWindowsAttribute) as? [AXUIElement]) ?? []
+                        if wins.contains(where: { norm(text($0, kAXTitleAttribute)).contains(t) }) { return true }
+                    }
+                    usleep(500_000)
+                }
+                return false
+            }
+            if let eq = term.lastIndex(of: "="), let want = Int(term[term.index(after: eq)...]) {
+                let label = norm(String(term[..<eq]))
+                return searchRoots().contains { root in
+                    var budget = 8000
+                    return walk(root, budget: &budget) { x, _ in
+                        toggleRoles.contains(text(x, kAXRoleAttribute)) && (attr(x, kAXValueAttribute) as? NSNumber)?.intValue == want
+                            && [kAXTitleAttribute, kAXDescriptionAttribute].contains { norm(text(x, $0)) == label }
+                    }
+                }
+            }
+            let x = norm(term)
+            return searchRoots().contains { root in
+                var budget = 8000
+                return walk(root, budget: &budget) { el, _ in text(el, "AXIdentifier") == term || texts(el).contains { $0.contains(x) } }
+            }
         }
-        return false
     }
     switch action {
     case "click" where r == "AXSlider":
@@ -551,6 +679,17 @@ case "act":
         _ = AXUIElementPerformAction(e, kAXDecrementAction as CFString)
         print("increment=\(s)")
         pass = okStatus(s)
+    case "click" where !pick.isEmpty:
+        let before = signature()
+        guard pickItem(bundle, e, pick) else { exit(5) }
+        usleep(1_200_000)
+        let changed = before != signature()
+        print("changed=\(changed ? 1 : 0)")
+        if !changed {
+            let fx = expected()
+            if !expect.isEmpty { print("expect=\(expect) present=\(fx ? 1 : 0)") }
+            if !fx { exit(10) }
+        }
     case "click":
         let before = signature(); let s = press(); usleep(1_200_000)
         let changed = before != signature()
@@ -612,6 +751,7 @@ case "act":
         usleep(1_200_000)
         let changed = before != signature()
         print("key=\(action == "escape" ? "Escape" : "Return")"); print("changed=\(changed ? 1 : 0)"); pass = changed
+        if !changed && !expect.isEmpty { pass = expected(); print("expect=\(expect) present=\(pass ? 1 : 0)") }
     default:  // observe
         print("role=\(r)"); print("enabled=\((attr(e, kAXEnabledAttribute) as? Bool).map { "\($0)" } ?? "-")")
     }

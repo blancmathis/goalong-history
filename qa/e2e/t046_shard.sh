@@ -68,9 +68,13 @@ cleanup() {
 # clicks ITEM with the mouse; rec:off turns this Mac's recording off (ui_row turns it back on after the row).
 # L3g: ex:ID|TEXT is not a step: it is the row's effect check, passed to ax_driver act (a click with changed=0
 # passes only if ID or TEXT is in the tree after the press).
+# L3h: wf:TEXT waits (12 s) until TEXT shows, else presses the last nav:/p:/pb:/px:/pp: step again and waits once more;
+# sd:LABEL=DAYS@HOUR sets a date picker (sd:Activité depuis=-1@9: yesterday 09:00); pick:ITEM is not a step: the row's
+# act opens its target's menu and chooses ITEM (ax_driver act, 9th argument). ck: also opens a disclosure triangle.
 navigate() {
-  local miss="" c
+  local miss="" c last=""
   for c in "$@"; do
+    case "$c" in nav:*|p:*|pb:*|px:*|pp:*) last="$c" ;; esac
     case "$c" in
       nav:*) press3 "sidebar-${c#nav:}" || miss+="$c;"; sleep 1.5
              # Activité keeps its detail view (usage, rhythm...) between rows: back to the day first.
@@ -108,6 +112,10 @@ navigate() {
       pkc:*) local k="${c#pkc:}"
         drv popup "$BUNDLE" "${k%%|*}" "${k#*|}" "$ROWS/ax/${CUR:-setup}-menu.txt" click >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
       rec:off) miss+="$(navigate pane:recording "set:source-localComputerHistory 0" w:2)"; cleanup >/dev/null ;;
+      wf:*) drv waitfor "$BUNDLE" "${c#wf:}" 12 >/dev/null 2>&1 || { [[ -n $last ]] && navigate "$last" >/dev/null
+              drv waitfor "$BUNDLE" "${c#wf:}" 12 >/dev/null 2>&1 || miss+="$c;"; } ;;
+      sd:*) local f="${c#sd:}" v; v="${f##*=}"
+            drv setdate "$BUNDLE" "${f%=*}" "${v%@*}" "${v#*@}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
       dump:*) drv dump "$BUNDLE" "$ROWS/ax/${CUR:-setup}-${c#dump:}.txt" >/dev/null 2>&1 ;;
     esac
   done
@@ -120,6 +128,7 @@ record() { # id verdict png ax cause detail; L3g: changed and enabled columns, c
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$SHARD" "$2" "$3" "$4" "$5" "$(printf '%s' "$6" | tr '\t\n' '  ' | cut -c1-400)" "$ch" "$en" >> "$RESULTS"
 }
 expect_of() { local c; for c in "$@"; do [[ $c == ex:* ]] && { printf '%s' "${c#ex:}"; return; }; done; }
+pick_of() { local c; for c in "$@"; do [[ $c == pick:* ]] && { printf '%s' "${c#pick:}"; return; }; done; }
 
 ui_row() { # id kind nav mode role needle action
   local id="$1" kind="$2" navs="$3" mode="$4" role="$5" needle="$6" action="$7" miss out st verdict cause
@@ -127,12 +136,15 @@ ui_row() { # id kind nav mode role needle action
   front; CUR="$id"
   eval "set -- $navs"
   miss="$(navigate "$@")"
-  out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" "$([[ $kind == trigger ]] && echo 0 || echo 3)" "$(expect_of "$@")" 2>&1)"; st=$?
+  out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" "$([[ $kind == trigger ]] && echo 0 || echo 3)" "$(expect_of "$@")" "$(pick_of "$@")" 2>&1)"; st=$?
   sleep 0.5; rowshot "$id"
   read -r verdict cause <<< "$(row_verdict "$kind" "$st")"; cause="${cause#-}"
   [[ -n $miss && $verdict != pass ]] && cause="nav($miss)$cause"  # L3e: N/A rows show their nav miss too.
   record "$id" "$verdict" "rows/$id.png" "rows/ax/$id.txt" "$cause" "$out"
   cleanup
+  # L3h: a press that opened System Settings (or a Finder window, J-0365) leaves it in front: close it, app in front.
+  if pgrep -x "System Settings" >/dev/null; then osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1; sleep 1; front; fi
+  if [[ $navs == *app:com.apple.finder* ]]; then osascript -e 'tell application "Finder" to close every window' >/dev/null 2>&1; front; fi
   # L3f: a row that read with recording off (rec:off) turns it back on, as the setup did.
   if [[ $navs == *rec:off* ]]; then navigate pane:recording p:source-localComputerHistory w:3 o:recording-setup-confirm w:2 >/dev/null; cleanup; fi
 }
@@ -189,7 +201,7 @@ while IFS=$'\037' read -r -u 3 id kind navs mode role needle action na screen; d
   if [[ $kind == na ]]; then record "$id" N/A "" "" na "$na"; continue; fi
   # L3d: an onboarding row may need its step first (navs = onboarding-continue presses, from t046-nav.tsv @onboarding).
   set --; if [[ -n $navs ]]; then eval "set -- $navs"; navigate "$@" >/dev/null; fi
-  out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" 0 "$(expect_of "$@")" 2>&1)"; st=$?
+  out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" 0 "$(expect_of "$@")" "$(pick_of "$@")" 2>&1)"; st=$?
   rowshot "$id"; drv dismiss-alerts "$BUNDLE" >/dev/null 2>&1
   # L3f: a row that opened System Settings (J-0807) leaves it in front: a later Return key would go there (J-0811).
   if pgrep -x "System Settings" >/dev/null; then osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1; sleep 1; front; fi
