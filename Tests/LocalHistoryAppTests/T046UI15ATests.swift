@@ -53,14 +53,14 @@ final class T046UI15ATests: XCTestCase {
                        "a source switched off is not paused")
     }
 
-    func testIdleMenuNamesTheCurrentValue() {
+    @MainActor func testIdleMenuNamesTheCurrentValue() {
         XCTAssertEqual(SettingsPage.idleOptions(current: 300).count, 6)
         let custom = SettingsPage.idleOptions(current: 45)
         XCTAssertEqual(custom.count, 7)
         XCTAssertEqual(custom.last?.1, "45 secondes, personnalisé")
     }
 
-    func testTerminalExampleQuestionIsInFrench() throws {
+    @MainActor func testTerminalExampleQuestionIsInFrench() throws {
         let ask = try XCTUnwrap(GoalongCLIContract.quickStartCommands.first { $0.command.hasPrefix("goalong ask") })
         let shown = CLIHelpPage.displayCommand(ask)
         XCTAssertTrue(shown.hasPrefix("goalong ask --days 1 \""), shown)
@@ -69,7 +69,7 @@ final class T046UI15ATests: XCTestCase {
         XCTAssertEqual(CLIHelpPage.displayCommand(status), "goalong status")
     }
 
-    func testUnknownLoginStateSaysWhatToCheckNotTheSameFactAgain() {
+    @MainActor func testUnknownLoginStateSaysWhatToCheckNotTheSameFactAgain() {
         let text = BackgroundContinuitySettings.unknownStateText
         XCTAssertTrue(text.contains(LoginItemsPanel.path), text)
         XCTAssertFalse(text.localizedCaseInsensitiveContains("inconnu"), text)
