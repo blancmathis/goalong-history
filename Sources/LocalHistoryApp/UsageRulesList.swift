@@ -198,10 +198,7 @@
                 if item.kind == .application {
                     AppIconView(bundleIdentifier: item.bundleIdentifier, appName: item.name, size: 32)
                 } else {
-                    Image(systemName: "globe")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(LHTheme.secondaryText)
-                        .frame(width: 32, height: 32)
+                    WebsiteIconView(host: item.host ?? item.name, size: 32).accessibilityHidden(true)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {

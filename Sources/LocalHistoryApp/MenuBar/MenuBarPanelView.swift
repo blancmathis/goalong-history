@@ -159,13 +159,16 @@
                             if let fix = model.attentionFix {
                                 Button(fix.label) { model.perform(fix) }
                                     .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
+                                    // 8 pt under the message: the repair reads as its own step, apart from the pause button.
+                                    .padding(.top, 7)
                                     .accessibilityIdentifier("menubar-attention-fix")
                             }
                         }
                     }
                     .help(model.attentionTitle.map { "\($0) : \(model.trackingDetail)" } ?? model.trackingDetail)
                 }
-                Spacer(minLength: 8)
+                // 16 pt at least: « Réparer… » never touches the pause button.
+                Spacer(minLength: 16)
                 PanelIconButton(
                     symbol: model.consentOff || model.globalPaused ? "gearshape.fill" : (paused ? "play.fill" : "pause.fill"),
                     label: model.headerActionLabel,
@@ -375,7 +378,8 @@
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {
                             Rectangle().fill(LHTheme.separator).frame(height: 1)
-                            Capsule().fill(LHTheme.workData)
+                            // Ink, not lime: lime stays rare in the panel (DESIGN.md).
+                            Capsule().fill(LHTheme.text)
                                 .frame(width: max(4, proxy.size.width * min(1, max(0, progress))), height: 4)
                         }
                         .frame(maxHeight: .infinity)
@@ -388,7 +392,7 @@
                     if let cycle = run.cycle, let cycles = run.cycles {
                         HStack(spacing: 4) {
                             ForEach(1...max(1, cycles), id: \.self) { index in
-                                Capsule().fill(index <= cycle ? LHTheme.workData : LHTheme.separator).frame(width: 14, height: 4)
+                                Capsule().fill(index <= cycle ? LHTheme.text : LHTheme.separator).frame(width: 14, height: 4)
                             }
                         }
                         .accessibilityHidden(true)
@@ -503,7 +507,8 @@
                     RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous).strokeBorder(LHTheme.separator)
                     if let current = model.ambianceCurrent {
                         AmbianceWave(seed: current.id, character: AmbianceWaveCharacter(current),
-                                     look: model.ambianceLoading ? .waiting : (model.ambiancePlaying ? .active : .idle))
+                                     // A neutral tile: ink while playing, never lime (DESIGN §12, no tinted icon tile).
+                                     look: model.ambianceLoading ? .waiting : (model.ambiancePlaying ? .playing : .idle))
                             .padding(.horizontal, 6).padding(.vertical, 10)
                     }
                 }

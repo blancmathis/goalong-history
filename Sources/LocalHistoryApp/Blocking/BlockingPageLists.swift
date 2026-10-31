@@ -82,7 +82,7 @@ import SwiftUI
     }
 
     static func behaviour(_ list: BlockList) -> String {
-        var parts = [list.effectiveAction == .slowDown ? "Ralentit \(list.delaySeconds) s" : "Bloque"]
+        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) s" : "Bloque l’accès"]
         if let quota = list.quotaMinutesPerDay { parts.append("\(BlockingFormat.duration(minutes: quota)) libres/jour") }
         if let breaks = list.breaks { parts.append("\(breaks.count) pause\(breaks.count > 1 ? "s" : "")") }
         return parts.joined(separator: ", ")
@@ -785,19 +785,11 @@ struct BlockingIconStack: View {
     }
 }
 
-/// A site has no icon offline: a globe on a quiet tile, the same shape as an app icon.
+/// A site has no icon offline: its monogram (`WebsiteIconView`), the same shape as an app icon.
 struct BlockingSiteTile: View {
     let host: String
     var size: CGFloat = 22
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-        Image(systemName: "globe")
-            .font(.system(size: size * 0.5, weight: .medium))
-            .foregroundStyle(LHTheme.secondaryText)
-            .frame(width: size, height: size)
-            .background(shape.fill(LHTheme.insetBackground))
-            .overlay(shape.strokeBorder(LHTheme.separator))
-    }
+    var body: some View { WebsiteIconView(host: host, size: size) }
 }
 
 /// One site or app in a list: icon, name, and a remove cross when removing is allowed.

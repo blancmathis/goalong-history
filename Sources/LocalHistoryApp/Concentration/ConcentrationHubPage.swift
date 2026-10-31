@@ -155,7 +155,7 @@ struct ConcentrationHubHeader: View {
                 } else {
                     HStack(alignment: .top, spacing: 14) {
                         Text(store.context.procrastination.isEmpty
-                             ? "Aucun exemple. Ex. « Scroller le fil de X, regarder des vidéos de divertissement. »"
+                             ? "Aucun exemple. Par exemple : « faire défiler le fil de X », « regarder des vidéos de divertissement »."
                              : store.context.procrastination)
                             .foregroundStyle(store.context.procrastination.isEmpty ? LHTheme.secondaryText : LHTheme.text)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)

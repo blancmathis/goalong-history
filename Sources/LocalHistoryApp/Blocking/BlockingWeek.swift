@@ -248,10 +248,11 @@ import SwiftUI
                 Capsule().fill(LHTheme.pageBackground)
                 Capsule().fill(ink)
             }
-            if width > CGFloat(span.name.count) * 6.5 + 26 {
+            if width > CGFloat(span.name.count) * 6.8 + 26 {
                 HStack(spacing: 4) {
                     if span.lock != .free { Image(systemName: span.lock.symbol).font(.system(size: 8, weight: .bold)) }
-                    Text(span.name).font(.system(size: 10.5, weight: .semibold)).lineLimit(1)
+                    // 11 pt: the smallest text size of the app (DESIGN §6), even inside a range.
+                    Text(span.name).font(.system(size: 11, weight: .semibold)).lineLimit(1)
                 }
                 .foregroundStyle(solid ? LHTheme.pageBackground : LHTheme.text)
                 .padding(.horizontal, 9)
@@ -323,7 +324,7 @@ struct BlockingRangeDraft: Identifiable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(list?.name ?? "Programmer un blocage").font(LHTheme.cardTitleFont)
+            Text(list?.name ?? "Programmer un blocage").font(LHTheme.sheetTitleFont)
             if draft.existing == nil {
                 BlockingFlow(spacing: 6) {
                     ForEach(controller.lists) { list in
