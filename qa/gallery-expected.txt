@@ -598,3 +598,5 @@ conversations-ia/gestion-remplie--   # UI-10 R25-3 (rattrapage UI-9 B, déjà da
 conversations-ia/indexees--   # UI-10 R25-3 (rattrapage UI-9 B, déjà dans la base : carte « Intégration » en gris, menu « Outil » du kit (Codex et Claude Code), menus « ⋯ » neutres)
 conversations-ia/lecture-en-cours--   # UI-10 R25-3 (rattrapage UI-9 B, déjà dans la base : en-tête de l’historique, menu « Outil » du kit s’il y a plusieurs outils)
 conversations-ia/sources-illisibles--   # UI-10 R25-3 (rattrapage UI-9 B, déjà dans la base : en-tête de l’historique, menu « Outil » du kit s’il y a plusieurs outils)
+settings/connexions--   # UI-10 M3 (ligne « Jev » au lieu de « Rappels Jev » dans la liste des réglages)
+surveillance/a-configurer--   # UI-10 M3 (la section ouvre Réglages › Jev : titre du panneau « Jev », plus « Rappels Jev »)
