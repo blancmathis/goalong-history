@@ -765,7 +765,8 @@ struct BlockingIconStack: View {
         HStack(spacing: max(2, size * 0.14)) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in icon(item) }
             if overflow > 0 {
-                Text("+\(overflow)").font(.system(size: overflowFont ?? max(10, size * 0.5), weight: .medium).monospacedDigit())
+                // 12 pt floor: « +3 » reads like the chip's name, not as a micro caption (UI-15B, 1).
+                Text("+\(overflow)").font(.system(size: overflowFont ?? max(12, size * 0.5), weight: .medium).monospacedDigit())
                     .foregroundStyle(LHTheme.secondaryText).fixedSize().padding(.leading, 2)
             }
         }

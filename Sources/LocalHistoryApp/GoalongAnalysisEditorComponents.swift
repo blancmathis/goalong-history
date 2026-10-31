@@ -67,7 +67,7 @@ struct GoalongReplacementRow: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Rechercher").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        Text("Texte à remplacer").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         TextField("Bonjour Charlie", text: $rule.search).textFieldStyle(GoalongFieldStyle())
                     }
                     Image(systemName: "arrow.right").foregroundStyle(LHTheme.secondaryText)
@@ -78,7 +78,7 @@ struct GoalongReplacementRow: View {
                     Button(action: remove) { Image(systemName: "trash").frame(width: 30, height: 30) }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Supprimer le remplacement")
                 }
                 if rule.search.isEmpty && !rule.replacement.isEmpty {
-                    Text("Indiquez le texte à rechercher.").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                    Text("Indiquez le texte à remplacer.").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                 }
                 HStack(spacing: 24) {
                     Toggle("Distinguer majuscules et minuscules", isOn: $rule.caseSensitive).toggleStyle(.goalongCheckbox)

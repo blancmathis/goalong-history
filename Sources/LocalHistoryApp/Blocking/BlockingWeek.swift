@@ -10,6 +10,7 @@ import SwiftUI
     let now: Date
     @State private var dragging: (day: Int, start: Int, end: Int)?
     @State private var editing: BlockingRangeDraft?
+    @Environment(\.colorScheme) private var colorScheme
 
     private static let rowHeight: CGFloat = 28
     private static let laneHeight: CGFloat = 20
@@ -18,6 +19,10 @@ import SwiftUI
     private static let spacing: CGFloat = 4
     /// A range without a lock: a light tint, so its name (in the text colour) stays readable in both themes.
     static let freeFill = 0.2
+    /// A locked range in dark mode: a muted tint, not a white bar that outshines the page (UI-15B, 1).
+    /// Its page-coloured label keeps more than 7:1 on it.
+    static let darkSolidFill = 0.78
+    private var solidFill: Double { colorScheme == .dark ? Self.darkSolidFill : 1 }
 
     /// A capsule is filled with the text colour only when its lock protects the lists and it does not slow down.
     /// Its label then takes the page colour; on every other capsule the label keeps the text colour.
@@ -157,7 +162,7 @@ import SwiftUI
             let drawn = spans.values.flatMap { $0 }
             HStack(spacing: 16) {
                 if drawn.contains(where: { !$0.slowed && Self.isSolid(lock: $0.lock, slowed: false) }) {
-                    legend(Capsule().fill(LHTheme.text), "Verrouillé")
+                    legend(Capsule().fill(LHTheme.text.opacity(solidFill)), "Verrouillé")
                 }
                 // Free and difficult share the light tint; the difficult one carries its symbol, like its range.
                 if drawn.contains(where: { !$0.slowed && $0.lock == .free }) {
@@ -250,7 +255,7 @@ import SwiftUI
 
     private func spanView(_ span: Span, day: Int, width: CGFloat) -> some View {
         let solid = Self.isSolid(lock: span.lock, slowed: span.slowed)
-        let ink = LHTheme.text.opacity(solid ? 1 : Self.freeFill)
+        let ink = LHTheme.text.opacity(solid ? solidFill : Self.freeFill)
         return ZStack(alignment: .leading) {
             if span.slowed {
                 Capsule().fill(LHTheme.pageBackground)
