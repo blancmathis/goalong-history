@@ -65,6 +65,8 @@ struct GoalongDisclosureGroupStyle: DisclosureGroupStyle {
                 .contentShape(Rectangle())
             }
             .buttonStyle(LHNavigationButtonStyle())
+            // The hover background overflows; the chevron sits on the group's edge (UI-16A, 20/24/27).
+            .padding(.horizontal, -6)
             .accessibilityElement(children: .combine)
             .accessibilityValue(configuration.isExpanded ? "Déplié" : "Replié")
             .accessibilityHint(configuration.isExpanded ? "Masquer le contenu" : "Afficher le contenu")
@@ -72,7 +74,8 @@ struct GoalongDisclosureGroupStyle: DisclosureGroupStyle {
             if configuration.isExpanded {
                 configuration.content
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 26)
+                    // Under the label: chevron 12 + spacing 8.
+                    .padding(.leading, 20)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -6)))
             }
         }

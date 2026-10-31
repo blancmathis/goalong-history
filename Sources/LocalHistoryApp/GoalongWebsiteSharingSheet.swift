@@ -142,8 +142,10 @@ import LocalHistoryQueryCLI
             // UI-11A (4): the day reads « 23 octobre 2026 », as on the page, not « 23/10/2026 ».
             HStack(spacing: 8) {
                 Text(dayLabel).font(.system(size: 13)).accessibilityHidden(true)
-                GoalongSharingDayButton(date: model.draft.date, onChange: { model.draft.date = $0 })
-                    .accessibilityLabel(dayLabel)
+                // UI-16A (4): the shared calendar button, with a chevron that says it opens a calendar.
+                GoalongCalendarButton(date: model.draft.date, onChange: { model.draft.date = $0 },
+                                      label: GoalongUIFormat.day(model.draft.date), chevron: true,
+                                      accessibilityName: dayLabel)
                     .accessibilityIdentifier("sharing-selected-date")
             }
             // Same default day as the page (plan UI-13B), but today is not over: say what is sent.
@@ -187,9 +189,9 @@ import LocalHistoryQueryCLI
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             } else {
                 // UI-11A (4): one note says why nothing can be chosen; the footer stays silent.
-                // UI-15B (4): the glyph carries the warning colour, the sentence stays in ink.
-                GoalongSharingNote(text: model.error ?? "Aucune donnée disponible pour cette journée. Choisissez une autre date.",
-                                   warning: model.error != nil)
+                // UI-15B (4): the glyph carries the warning colour, the sentence stays in ink (GoalongNote, UI-16A).
+                GoalongNote(model.error ?? "Aucune donnée disponible pour cette journée. Choisissez une autre date.",
+                            tone: model.error != nil ? .warning : .neutral)
                     .accessibilityIdentifier("sharing-error")
                 if model.error == GoalongWebsiteSharingModel.screenTimeOffMessage {
                     // A retry cannot succeed while the source is off: the action goes where it is turned on.
@@ -409,66 +411,4 @@ struct GoalongSharingSelector: View {
     }
 }
 
-/// The day to send, with a chevron that says it opens a calendar (UI-15B, 4).
-struct GoalongSharingDayButton: View {
-    let date: Date
-    let onChange: (Date) -> Void
-    @State private var showsCalendar = false
-    @State private var calendarDate = GoalongToday.now
-
-    var body: some View {
-        Button {
-            calendarDate = date
-            showsCalendar.toggle()
-        } label: {
-            HStack(spacing: 6) {
-                Text(GoalongUIFormat.day(date)).font(.system(size: 13, weight: .medium)).monospacedDigit()
-                Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
-            }
-            .fixedSize()
-            .padding(.horizontal, 8).frame(height: 24)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
-        .accessibilityValue(date.formatted(.dateTime.weekday(.wide).day().month(.wide).year().locale(GoalongUIFormat.locale)))
-        .help("Choisir un jour dans le calendrier")
-        .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {
-            VStack(alignment: .trailing, spacing: 12) {
-                DatePicker("Jour", selection: $calendarDate, in: ...GoalongToday.now, displayedComponents: .date)
-                    .labelsHidden()
-                    .datePickerStyle(.graphical)
-                    .environment(\.locale, GoalongUIFormat.locale)
-                    .fixedSize()
-                Button("Afficher le jour") {
-                    onChange(Calendar.current.startOfDay(for: calendarDate))
-                    showsCalendar = false
-                }
-                .buttonStyle(LHPrimaryButtonStyle())
-                .keyboardShortcut(.defaultAction)
-            }
-            .padding(12)
-        }
-    }
-}
-
-/// Same quiet block as `GoalongNote`; a warning keeps its colour on the glyph only (UI-15B, 4).
-struct GoalongSharingNote: View {
-    let text: String
-    let warning: Bool
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 9) {
-            Image(systemName: warning ? "exclamationmark.triangle" : "info.circle")
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(warning ? LHTheme.warning : LHTheme.secondaryText)
-                .frame(width: 14).accessibilityHidden(true)
-            Text(text).font(.system(size: 12)).foregroundStyle(warning ? LHTheme.text : LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 10)
-        .background(warning ? LHTheme.warning.opacity(0.08) : LHTheme.insetBackground,
-                    in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
-    }
-}
 #endif
