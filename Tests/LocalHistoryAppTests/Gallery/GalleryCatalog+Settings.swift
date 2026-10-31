@@ -23,6 +23,12 @@ extension GalleryCatalog {
             }),
             dashboard("settings/enregistrement-actif", section: .settings, pane: .recording, fixture: .realistic),
             dashboard("settings/stockage-avec-donnees", section: .settings, pane: .storage, fixture: .realistic),
+            // UI-10 (59): macOS gave no login state: « État inconnu » on the row and one orange note under it (UI-43).
+            dashboard("settings/accueil-etat-inconnu", section: .settings, pane: .home, sizes: [.full(1240)],
+                      prepare: { ctx in
+                LaunchAtLoginManager.galleryState = .unavailable
+                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
+            }),
             // UI-9 (58): Avancé with developer mode on, its switch and help shown.
             dashboard("settings/avance-developpeur", section: .settings, pane: .advanced,
                       configure: { _, ctx in ctx.defaults.set(true, forKey: GoalongDeveloperPreferences.enabledKey) }),
