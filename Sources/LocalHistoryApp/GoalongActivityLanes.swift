@@ -293,7 +293,7 @@ struct GoalongCodeDay: Equatable {
         var parts: [String] = []
         if project.requests > 0 {
             parts.append(count(project.requests, "demande à T3", "demandes à T3"))
-            if project.parallel > 1 { parts.append("jusqu’à \(project.parallel) demandes en même temps") }
+            if project.parallel > 1 { parts.append("jusqu’à " + count(project.parallel, "demande", "demandes") + " en même temps") }
         }
         if project.conversations > 0 {
             let who = project.providers.filter { $0 != "T3 Code" }.joined(separator: ", ")
