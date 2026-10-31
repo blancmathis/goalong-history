@@ -35,6 +35,17 @@ extension GalleryCatalog {
                 LaunchAtLoginManager.galleryState = .unavailable
                 ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
             }),
+            // UI-13C (59): the normal states too, open at login on and off.
+            dashboard("settings/accueil-ouverture-activee", section: .settings, pane: .home, sizes: [.full(1240)],
+                      prepare: { ctx in
+                LaunchAtLoginManager.galleryState = .enabled
+                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
+            }),
+            dashboard("settings/accueil-ouverture-desactivee", section: .settings, pane: .home, sizes: [.full(1240)],
+                      prepare: { ctx in
+                LaunchAtLoginManager.galleryState = .disabled
+                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
+            }),
             // UI-9 (58): Avancé with developer mode on, its switch and help shown.
             dashboard("settings/avance-developpeur", section: .settings, pane: .advanced,
                       configure: { _, ctx in ctx.defaults.set(true, forKey: GoalongDeveloperPreferences.enabledKey) }),
@@ -111,7 +122,8 @@ extension GalleryCatalog {
              .unavailable("Une réparation d’autorisation est en cours. Aucun nouvel accès n’est confirmé.")),
         ]
         entries += activations.map { name, capability, status in
-            panel("permissions/\(name)", width: 620, height: 690) { _ in
+            // UI-13C (25): fitted height, as a real sheet sizes itself; a fixed 690 left ~40 % empty above the footer.
+            panel("permissions/\(name)", width: 620) { _ in
                 AnyView(SourceActivationSheet(capability: capability, surface: .settings, prepare: {},
                                               check: { _, done in done(status) }, initialStatus: status))
             }

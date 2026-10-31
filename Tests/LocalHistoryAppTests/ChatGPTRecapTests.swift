@@ -12,7 +12,7 @@
             XCTAssertNotNil(ChatGPTRecapPage.generationBlockedReason(analysesEnabled: false, connected: true, needsUpdate: false, hasMeaningfulData: true),
                             "« Analyser la journée » stays off while analyses are off, even with ChatGPT connected")
             let message = ChatGPTRecapPage.emptyReportMessage(analysesEnabled: false, connected: true, needsUpdate: false)
-            XCTAssertEqual(message, "Les analyses sont désactivées. Activez « Autoriser les analyses » dans Réglages › Analyse ChatGPT pour générer le bilan en cinq lignes.")
+            XCTAssertEqual(message, "Les analyses sont désactivées. Choisissez les données ci-dessous pour générer le bilan en cinq lignes.")
             XCTAssertNil(ChatGPTRecapPage.generationBlockedReason(analysesEnabled: true, connected: true, needsUpdate: false, hasMeaningfulData: true))
         }
 

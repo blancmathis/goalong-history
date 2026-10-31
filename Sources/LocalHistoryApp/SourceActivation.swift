@@ -532,7 +532,7 @@ import LocalHistoryCore
                     Button("Plus tard", role: .cancel) { PermissionRecovery.clearSetup(); flow.cancel(); dismiss() }
                         .keyboardShortcut(.cancelAction).buttonStyle(LHSecondaryButtonStyle()).disabled(restarting)
                     Spacer(minLength: 8)
-                    // Step 1 says « Ouvrir les réglages macOS »: give it a button even when the source is unavailable.
+                    // Step 1 says « Ouvrir Réglages Système »: give it a button even when the source is unavailable.
                     if isUnavailable && !ready && !openedSettings {
                         Button("Ouvrir Réglages Système…") {
                             if copy.permission == "Accès complet au disque" { PermissionManager.shared.openFullDiskAccessSettings() }

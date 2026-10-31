@@ -10,9 +10,6 @@ import Foundation
     @State private var retentionSummary = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("Votre historique reste sur ce Mac. Choisissez combien de temps le garder et ce qu’il faut effacer.")
-                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
             GoalongSettingsGroup(title: "Sur ce Mac") {
                 HStack {
                     Text("Espace utilisé par Goalong")
@@ -49,10 +46,8 @@ import Foundation
                 Button("Effacer de l’historique…", role: .destructive) { deletion = true }.buttonStyle(LHSecondaryButtonStyle())
                 Text("Les originaux Apple, les conversations et les données déjà envoyées au site Goalong restent conservés.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-            }
-            // A group like the others: its edge lines up with the page instead of an inset chevron (UI-11C, screen 40).
-            GoalongSettingsGroup(title: "Fichiers locaux") {
-                Button("Ouvrir le dossier") { model.openDataFolder() }.buttonStyle(LHSecondaryButtonStyle())
+                // UI-13C (40): one button needs no group of its own; it sits under the note.
+                Button("Ouvrir le dossier des données") { model.openDataFolder() }.buttonStyle(LHSecondaryButtonStyle())
             }
         }
         .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls() }
