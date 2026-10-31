@@ -52,7 +52,10 @@ struct GoalongAnalyticsPage: View {
     /// Disk full or unwritable: « Gérer le stockage… » in the top banner stays the only action.
     private var recordingInterrupted: Bool { !previewActive && model.runtime.storageFailure != nil }
     private var shareBlockedReason: String? {
-        guard !previewActive, let payload = analytics.payload, selection.matches(payload, preview: false) else { return nil }
+        guard !previewActive else { return nil }
+        // Paused: nothing is read, so there is nothing to share yet (same grey button as an empty day).
+        if analytics.paused { return "Suivi en pause : rien à partager pour l’instant" }
+        guard let payload = analytics.payload, selection.matches(payload, preview: false) else { return nil }
         return payload.current.observedSeconds > 0 ? nil : "Rien à partager ce jour-là"
     }
     private var selection: GoalongActivityNavigation { previewActive ? previewNavigation : navigation }
@@ -65,7 +68,7 @@ struct GoalongAnalyticsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
-                shareBlockedReason: shareBlockedReason, hidesShare: recordingInterrupted,
+                shareBlockedReason: shareBlockedReason,
                 onDay: { day in updateSelection { $0.selectDay(day) } },
                 onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
                 onStep: { direction in updateSelection { $0.step(direction) } },
@@ -84,18 +87,15 @@ struct GoalongAnalyticsPage: View {
                         Color.clear.frame(height: 0).id("activity-top")
                         if !previewActive {
                             GoalongRecordingStateNotice(model: model)
-                            GoalongRecordingCoverageNotice(model: model, dismissible: true,
-                                hidden: recordingInterrupted
-                                    || !GoalongRecordingCoverageNotice.showsOnActivity(recording: recordingKind, globallyPaused: analytics.paused))
                             ConcentrationActivityMarks(day: selection.day)
                         }
-                        if developerMode { previewControl }
+                        if developerMode && !previewActive { previewControl }
                         if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
                         if analytics.paused {
                             // The pause banner at the top of the window names the pause and resumes it;
                             // here only what it means for this page, without repeating it.
                             if analytics.payload == nil {
-                                GoalongEmptyState(title: "Activité en pause",
+                                GoalongEmptyState(title: "Suivi en pause",
                                     message: "Vos observations ne sont pas lues pendant la pause. Vos durées reviennent ici dès que le suivi reprend.")
                                     .accessibilityIdentifier("activity-read-paused")
                             } else {
@@ -118,6 +118,9 @@ struct GoalongAnalyticsPage: View {
                                 lanes: lanes,
                                 workStatus: previewActive ? .preview : workStatus,
                                 recording: previewActive ? nil : recordingKind,
+                                storageStop: previewActive ? nil : model.runtime.storageFailure.map {
+                                    GoalongActivityEmptyCopy.StorageStop(kind: $0, since: model.runtime.storageInterruptedSince)
+                                },
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { model.selectSection(.work) },
                                 onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
@@ -138,6 +141,12 @@ struct GoalongAnalyticsPage: View {
                             GoalongPageLoadingView(title: "Lecture des observations locales…",
                                 message: "Les durées sont calculées sur ce Mac, sans envoyer votre historique.")
                                 .accessibilityIdentifier("analytics-primary-loading-motion")
+                        }
+                        if !previewActive {
+                            // A choice of details, not an alert: after the hero, never in a named view (back link first).
+                            GoalongRecordingCoverageNotice(model: model, dismissible: true,
+                                hidden: recordingInterrupted || detail != nil
+                                    || !GoalongRecordingCoverageNotice.showsOnActivity(recording: recordingKind, globallyPaused: analytics.paused))
                         }
                         if !previewActive && detail == .screenTime {
                             if selection.period == 1 {
@@ -164,7 +173,9 @@ struct GoalongAnalyticsPage: View {
                         }
                     }
                     .frame(maxWidth: 1080, alignment: .leading)
-                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, LHTheme.pageBottomInset)
+                    // UI-9 (8): a named view starts 28 pt under the header, like other pages, not 56 pt: the
+                    // top anchor above already adds one spacing of 24 pt. The summary starts 40 pt under the rule, not 48 (UI-14, écran 13/17).
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, detail == nil ? 16 : 4).padding(.bottom, LHTheme.pageBottomInset)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .onChange(of: detail) { shown in
@@ -417,7 +428,7 @@ struct GoalongAnalyticsPage: View {
         } else if permissions.contains(where: { $0 != .ready }) {
             rows.append(.init(id: "calendar", title: "Agenda et rappels", state: .needsPermission,
                               detail: "macOS n’a pas donné l’accès à l’agenda ou aux rappels.",
-                              actionTitle: permissions.contains(.permissionDenied) ? "Ouvrir…" : "Autoriser…", action: allowCalendar))
+                              actionTitle: permissions.contains(.permissionDenied) ? "Ouvrir Réglages Système…" : "Autoriser…", action: allowCalendar))
         } else if let calendar = value?.calendar {
             var detail = GoalongCodeDay.count(calendar.events.filter(\.isPlannedBusy).count, "événement prévu", "événements prévus")
                 + " et " + GoalongCodeDay.count(calendar.completedReminders.count, "rappel terminé", "rappels terminés") + " ce jour-là."
@@ -469,26 +480,21 @@ struct GoalongAnalyticsPage: View {
             captureHealth: model.runtime.captureHealth?.state)
     }
 
+    /// UI-52: one way in; the preview banner has the one way out. The mode is a plain neutral mark, not a capsule
+    /// that reads as a button.
     private var previewControl: some View {
         HStack(spacing: 12) {
             Button {
                 showingAnalysisChoice = false
-                if !showingPreview { previewNavigation = navigation }
-                showingPreview.toggle()
+                previewNavigation = navigation
+                showingPreview = true
             } label: {
-                Label(previewActive ? "Revenir à mes données" : "Aperçu avec données fictives",
-                      systemImage: previewActive ? "arrow.uturn.backward" : "testtube.2")
+                Label("Aperçu avec données fictives", systemImage: "testtube.2")
             }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small).accessibilityIdentifier("analytics-preview-toggle")
             Spacer(minLength: 0)
             Label("Mode développeur", systemImage: "hammer")
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                // Border as a filled ring: a stroked capsule rendered 1 pt ticks at both ends (gallery, u01-r1-02).
-                .background {
-                    Capsule().fill(LHTheme.warning.opacity(0.14))
-                        .overlay(CapsuleRing(width: 1).fill(LHTheme.warning.opacity(0.35), style: FillStyle(eoFill: true)))
-                }
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityIdentifier("analytics-developer-mode")
         }
     }
@@ -533,28 +539,18 @@ struct GoalongAnalyticsPreviewBanner: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label("Aperçu développeur, données fictives", systemImage: "testtube.2")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.warning)
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.text)
                     Spacer(minLength: 8)
                     Button("Quitter l’aperçu", action: onExit).buttonStyle(LHQuietButtonStyle())
                         .accessibilityIdentifier("analytics-preview-exit")
                 }
                 Text("Aucune donnée personnelle n’est lue par cet aperçu. Rien n’est ajouté à l’historique ; le partage et l’analyse IA sont désactivés.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
         }.accessibilityIdentifier("analytics-preview-banner")
     }
 }
 #endif
-
-/// A capsule outline of `width` drawn as an even-odd fill, so it has no stroke join at the rounded ends.
-private struct CapsuleRing: Shape {
-    var width: CGFloat
-    func path(in rect: CGRect) -> Path {
-        var path = Capsule().path(in: rect)
-        path.addPath(Capsule().path(in: rect.insetBy(dx: width, dy: width)))
-        return path
-    }
-}
 
 /// Codex and Claude Code transcripts are read on this Mac (text of visible messages); T3 Code is read as metadata only.
 enum GoalongAgentSourceCopy {

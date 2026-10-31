@@ -135,25 +135,25 @@ struct GoalongRhythmStudio: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Choisissez un projet et une plage de la journée. Les durées viennent des observations ; l’agent explique leur contexte.").foregroundStyle(.secondary)
-                    HStack { DatePicker("Début", selection: $start, displayedComponents: .hourAndMinute); DatePicker("Fin", selection: $end, displayedComponents: .hourAndMinute) }
+                    Text("Choisissez un projet et une plage de la journée. Les durées viennent des observations ; l’agent explique leur contexte.").foregroundStyle(LHTheme.secondaryText)
+                    HStack { DatePicker("Début", selection: $start, displayedComponents: .hourAndMinute).goalongDateField(label: "Début"); DatePicker("Fin", selection: $end, displayedComponents: .hourAndMinute).goalongDateField(label: "Fin") }
                     TextField("Projet", text: $project).textFieldStyle(GoalongFieldStyle())
                     TextField("Ce que vous souhaitiez faire pendant cette session", text: $intent).textFieldStyle(GoalongFieldStyle())
-                    Toggle("Inclure les extraits de contexte enrichi déjà autorisés", isOn: $rich)
-                    Text("Les titres et domaines disponibles servent de contexte. Le texte enrichi est facultatif et peut contenir des informations personnelles ; relisez les extraits avant analyse.").font(.caption).foregroundStyle(.secondary)
+                    Toggle("Inclure les textes de fenêtres déjà autorisés", isOn: $rich)
+                    Text("Les titres et les sites servent de contexte. Les textes de fenêtres sont facultatifs et peuvent contenir des informations personnelles ; relisez-les avant analyse.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     Button("Préparer la sélection locale") { model.load(start: start, end: end, project: project, intent: intent, masks: masks, rich: rich) }.disabled(model.busy || project.isEmpty)
                     if let selected = model.selection {
                         Divider()
                         Text("Contexte à analyser").font(.headline)
                         Text("Décochez les éléments privés. Les épisodes sans contexte restent à préciser.").font(.caption)
                         ForEach(selected.rhythm.episodes ?? [], id: \.id) { row in
-                            GoalongDisclosureGroup("\(row.application ?? "Non observé") · +\(duration(row.offset_ms)) · \(duration(row.duration_ms))") {
+                            GoalongDisclosureGroup("\(row.application ?? "Non observé"), +\(duration(row.offset_ms)), \(duration(row.duration_ms))") {
                                 ForEach(model.request?.rhythm.episodes?.first(where: {$0.id == row.id})?.evidence ?? [], id: \.id) { item in
                                     Toggle(isOn: Binding(get: { model.selectedEvidence.contains(item.id) }, set: { include in
                                         if include { model.selectedEvidence.insert(item.id) } else { model.selectedEvidence.remove(item.id) }; model.selectionChanged()
                                     })) { Text(item.text).font(.caption).textSelection(.enabled) }
                                 }
-                                if row.evidence?.isEmpty != false { Text("Contexte non fourni").font(.caption).foregroundStyle(.secondary) }
+                                if row.evidence?.isEmpty != false { Text("Contexte non fourni").font(.caption).foregroundStyle(LHTheme.secondaryText) }
                             }
                         }
                         GoalongDisclosureGroup("Voir la sélection exacte pour l’agent") { Text(String(decoding: (try? selected.encoded()) ?? Data(), as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
@@ -168,21 +168,21 @@ struct GoalongRhythmStudio: View {
                             Button("Préparer pour mon autre agent…") { exportRequest(selected) }.disabled(model.busy)
                             Button("Importer sa réponse…") { importResponse() }.disabled(model.busy)
                         }
-                        Text("L’autre agent reçoit seulement le fichier que vous lui fournissez et suit ses propres conditions. Aucune analyse n’envoie de données au site.").font(.caption).foregroundStyle(.secondary)
+                        Text("L’autre agent reçoit seulement le fichier que vous lui fournissez et suit ses propres conditions. Aucune analyse n’envoie de données au site.").font(.caption).foregroundStyle(LHTheme.secondaryText)
                     }
                     if let value = model.result {
                         Divider(); Text("Relire et corriger").font(.headline)
-                        HStack { metric("Lié au projet", value.project_ms); metric("Plus longue séquence", value.longest_project_ms); VStack { Text("Consultations brèves").font(.caption); Text("\(value.brief_consultations) · \(duration(value.brief_consultation_ms))").font(.headline) } }
+                        HStack { metric("Lié au projet", value.project_ms); metric("Plus longue séquence", value.longest_project_ms); VStack { Text("Consultations brèves").font(.caption); Text("\(value.brief_consultations), \(duration(value.brief_consultation_ms))").font(.headline) } }
                         ForEach(value.episodes ?? [], id: \.id) { row in
                             VStack(alignment: .leading) {
                                 HStack {
-                                    Text("\(row.application ?? "Non observé") · \(duration(row.duration_ms))").font(.subheadline)
+                                    Text("\(row.application ?? "Non observé"), \(duration(row.duration_ms))").font(.subheadline)
                                     Spacer()
                                     if row.relation != "unknown" { Picker("Association", selection: Binding(get: { row.relation }, set: { model.correct(id: row.id, relation: $0) })) {
                                         Text("Projet").tag("project"); Text("Autre sujet").tag("other"); Text("À préciser").tag("unclassified")
                                     }.frame(width: 180) }
                                 }
-                                if let explanation = row.explanation { Text(explanation).font(.caption).foregroundStyle(.secondary) }
+                                if let explanation = row.explanation { Text(explanation).font(.caption).foregroundStyle(LHTheme.secondaryText) }
                                 ForEach(row.evidence ?? [], id: \.id) { Text("Élément choisi : \($0.text)").font(.caption).textSelection(.enabled) }
                             }
                         }

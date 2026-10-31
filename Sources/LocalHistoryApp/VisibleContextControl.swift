@@ -18,8 +18,8 @@ struct VisibleContextControl: View {
                     }
                 }.toggleStyle(.goalongSwitch).accessibilityIdentifier("recording-visible-text")
                 if enabled {
-                    Text("Activé · les anciennes données sont conservées après arrêt.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("Activé, les anciennes données sont conservées après arrêt.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }

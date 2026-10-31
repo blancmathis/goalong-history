@@ -48,6 +48,8 @@ struct GoalongAnalyticsContent: View {
     var workStatus = GoalongWorkStatus.preview
     /// Why nothing new is recorded right now, as the banner above the page says; nil when recording runs.
     var recording: GoalongRecordingStateNotice.Kind? = nil
+    /// Writes refused (disk full or folder refused) and since when; the banner above holds the action.
+    var storageStop: GoalongActivityEmptyCopy.StorageStop? = nil
     var onDay: (Date) -> Void = { _ in }
     var onWork: () -> Void = {}
     /// Opens the correction of the day on screen; the task is the one clicked, if any.
@@ -97,22 +99,26 @@ struct GoalongAnalyticsContent: View {
                 }
                 exploreSection
             } else {
-                emptyState
-                if isDay && lanes.noteAvailable {
-                    GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
+                // The note belongs to the empty day: 16 pt under it (8 + the empty state's own 8), not a section gap (UI-14, écran 13/17).
+                VStack(alignment: .leading, spacing: 8) {
+                    emptyState
+                    if isDay && lanes.noteAvailable {
+                        GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
+                    }
                 }
                 exploreSection
             }
             // Apple's source has its own explanations; these describe Goalong's observations only.
             if detail.wrappedValue != .screenTime {
                 VStack(alignment: .leading, spacing: 4) {
-                    methodology
+                    // The row's hover background spills out of the text: the chevron sits on the titles' edge.
+                    methodology.padding(.horizontal, -6)
                     Text(payload.isPreview ? "Données fictives, non enregistrées."
                          : workStatus.classifiesOnOpen
                          ? "Durées calculées sur ce Mac ; nouveaux contextes classés par ChatGPT. Actualisé à \(time(payload.updatedAt))."
                          : "Calculé sur ce Mac, sans envoi. Actualisé à \(time(payload.updatedAt)).")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
-                        .padding(.top, 12).padding(.leading, 6)
+                        .padding(.top, 12)
                 }
             }
         }
@@ -191,7 +197,7 @@ struct GoalongAnalyticsContent: View {
         var parts = ["sur \(duration(active)) actives"]
         if value(.other) >= 60 { parts.append("\(duration(value(.other))) hors travail") }
         if value(.unclassified) >= 60 { parts.append("\(duration(value(.unclassified))) à classer") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 
     private func headlineDetails(_ summary: GoalongActivitySummary) -> [String] {
@@ -401,7 +407,7 @@ struct GoalongAnalyticsContent: View {
                     } else {
                         Button { onReview(task.name) } label: { taskRow(task, total: total) }
                             .buttonStyle(.plain)
-                            .help("\(task.name) · cliquer pour corriger son classement")
+                            .help("\(task.name), cliquer pour corriger son classement")
                             .accessibilityHint("Ouvre la correction du classement de cette tâche")
                     }
                 }
@@ -479,7 +485,7 @@ struct GoalongAnalyticsContent: View {
         case .coverage: return coverageCaption
         case .reports:
             let count = payload.cards.count
-            return count == 0 ? "Aucun bilan enregistré · analyse facultative"
+            return count == 0 ? "Aucun bilan enregistré, analyse facultative"
                 : "\(FrenchCount.count(count, "bilan ou projet enregistré", "bilans ou projets enregistrés"))"
         case .screenTime: return "Source Apple distincte, jamais additionnée"
         }
@@ -520,7 +526,7 @@ struct GoalongAnalyticsContent: View {
                             Text(exploreCaption(item)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
-                            GoalongRowChevron(size: 10)
+                            GoalongRowChevron(size: 12)
                         }.padding(.vertical, 9).padding(.horizontal, 6).contentShape(Rectangle())
                     }
                     .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
@@ -536,10 +542,22 @@ struct GoalongAnalyticsContent: View {
     // MARK: - Named views
 
     @ViewBuilder private func detailView(_ shown: GoalongActivityDetail, summary: GoalongActivitySummary) -> some View {
-        Button { detail.wrappedValue = nil } label: { Label("Activité", systemImage: "chevron.left") }
-            .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
-            .help("Revenir à l’activité de la \(isDay ? "journée" : "période")")
-            .accessibilityIdentifier("activity-detail-back")
+        // The way back and the title of the sub-page form one header; the sections follow it.
+        VStack(alignment: .leading, spacing: 8) {
+            Button { detail.wrappedValue = nil } label: { Label("Activité", systemImage: "chevron.left") }
+                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                .help("Revenir à l’activité de la \(isDay ? "journée" : "période")")
+                .accessibilityIdentifier("activity-detail-back")
+            if shown == .rhythm && !(shown.needsObservations && current.observedSeconds == 0) {
+                // A sub-page title, above its sections: not a section title left without content.
+                Text("Rythme").font(LHTheme.sheetTitleFont).tracking(-0.4)
+                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("activity-rhythm-title")
+            } else if shown == .screenTime {
+                // Same title as the « Temps d’écran Apple » page reached from the sidebar (UI-14, écran 15).
+                Text(shown.title(isDay: isDay)).font(LHTheme.sheetTitleFont).tracking(-0.4)
+                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("activity-screen-time-title")
+            }
+        }
         if shown.needsObservations && current.observedSeconds == 0 {
             emptyState
         } else {
@@ -597,7 +615,8 @@ struct GoalongAnalyticsContent: View {
             VStack(alignment: .leading, spacing: 12) {
                 if isDay, let day = current.days.first {
                     if hourly || sparse {
-                        GoalongHourlyClassChart(day: day, dateRange: chartDateRange, hourStride: hourStride)
+                        GoalongHourlyClassChart(day: day, minimumMinutes: focusMinutes, dateRange: hourlyRange(day),
+                                                hourStride: Self.strideHours(for: hourlyRange(day)))
                     } else {
                         GoalongUsageTimelineChart(day: day, grouping: grouping, dateRange: chartDateRange, hourStride: hourStride)
                     }
@@ -633,7 +652,7 @@ struct GoalongAnalyticsContent: View {
                                             Text("dont \(duration(day.seconds(.work))) de travail").foregroundStyle(LHTheme.secondaryText)
                                         }
                                         Spacer(minLength: 8)
-                                        GoalongRowChevron(size: 10)
+                                        GoalongRowChevron(size: 12)
                                     }.font(.system(size: 12)).padding(.vertical, 8).padding(.horizontal, 6).contentShape(Rectangle())
                                 }.buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
                                     .accessibilityLabel("Explorer le \(shortDate(day.date))")
@@ -652,7 +671,7 @@ struct GoalongAnalyticsContent: View {
                 isPreview: payload.isPreview,
                 onExport: {
                     exportMessage = GoalongActivityExport.save(period: current, grouping: grouping)
-                }) { selectedUsage = $0 }
+                }, comparedTo: summary.previousLabel) { selectedUsage = $0 }
             if let exportMessage {
                 Label(exportMessage, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
             }
@@ -670,16 +689,15 @@ struct GoalongAnalyticsContent: View {
         } content: {
             VStack(alignment: .leading, spacing: 8) {
                 if !payload.cards.isEmpty {
-                    Picker("Rubrique", selection: $module) {
-                        Text("Tous les éléments").tag("all")
-                        Text("Bilans quotidiens").tag("dailyRecap")
-                        ForEach(GoalongProfileAnalysis.modules, id: \.self) { key in
-                            Text(GoalongProfileAnalysis.labels[key] ?? key).tag(key)
-                        }
-                    }.pickerStyle(.menu).labelsHidden().frame(maxWidth: 260, alignment: .leading)
+                    GoalongMenuPicker("Rubrique", selection: $module,
+                                      options: [("all", "Tous les éléments"), ("dailyRecap", "Bilans quotidiens")]
+                                        + GoalongProfileAnalysis.modules.map { ($0, GoalongProfileAnalysis.labels[$0] ?? $0) })
+                        .frame(maxWidth: 260, alignment: .leading)
                     if cards.isEmpty {
-                        Text("Aucun élément enregistré dans cette rubrique.")
-                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                        GoalongEmptyState(title: "Rien dans cette rubrique",
+                                          message: "Aucun élément enregistré dans cette rubrique.") {
+                            Button("Voir tous les éléments") { module = "all" }.buttonStyle(LHSecondaryButtonStyle())
+                        }
                     }
                 }
                 ForEach(visible) { card in
@@ -759,17 +777,17 @@ struct GoalongAnalyticsContent: View {
     private var comparisonDetails: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Comparaison avec la période précédente").font(.system(size: 13, weight: .semibold))
-            Text("Période sélectionnée : \(duration(current.activeSeconds)) · \(current.daysWithObservations)/\(current.days.count) \(FrenchCount.word(current.days.count, "jour", "jours")) avec activité mesurée.")
+            Text("Période sélectionnée : \(duration(current.activeSeconds)), \(current.daysWithObservations)/\(current.days.count) \(FrenchCount.word(current.days.count, "jour", "jours")) avec activité mesurée.")
             if payload.comparisonPending {
                 Text("Période précédente : lecture en cours.")
             } else {
-                Text("Période précédente : \(payload.previous.observedSeconds > 0 ? duration(payload.previous.activeSeconds) : "—") · \(payload.previous.daysWithObservations)/\(payload.previous.days.count) \(FrenchCount.word(payload.previous.days.count, "jour", "jours")) avec activité mesurée.")
+                Text("Période précédente : \(payload.previous.observedSeconds > 0 ? duration(payload.previous.activeSeconds) : "—"), \(payload.previous.daysWithObservations)/\(payload.previous.days.count) \(FrenchCount.word(payload.previous.days.count, "jour", "jours")) avec activité mesurée.")
             }
             if let first = payload.previous.days.first, let last = payload.previous.days.last {
                 Text("Référence : " + (first.id == last.id ? shortDate(first.date) : "\(shortDate(first.date)) – \(shortDate(last.date))"))
             }
             Text("Les comparaisons utilisent la moyenne des jours observés (ou la veille à la même heure pour aujourd’hui). Un écart de temps ne mesure pas l’efficacité.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(LHTheme.secondaryText)
         }.font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
     }
 
@@ -781,7 +799,8 @@ struct GoalongAnalyticsContent: View {
     @ViewBuilder private var emptyState: some View {
         let copy = GoalongActivityEmptyCopy.copy(isDay: isDay, isToday: isEmptyTodayCandidate,
             eventCount: current.eventCount, incompleteDays: current.incompleteDays,
-            purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording)
+            purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording,
+            storage: storageStop)
         VStack(alignment: .leading, spacing: 12) {
             GoalongEmptyState(title: copy.title, message: copy.message) {
                 if copy.offersHistory {
@@ -817,9 +836,17 @@ struct GoalongAnalyticsContent: View {
         }.font(.system(size: 13))
     }
 
-    private var hourStride: Int {
-        let hours = chartDateRange.upperBound.timeIntervalSince(chartDateRange.lowerBound) / 3600
+    private var hourStride: Int { Self.strideHours(for: chartDateRange) }
+    private static func strideHours(for range: ClosedRange<Date>) -> Int {
+        let hours = range.upperBound.timeIntervalSince(range.lowerBound) / 3600
         return hours > 16 ? 4 : hours > 8 ? 2 : 1
+    }
+    /// « Heure par heure » ends with the last hour that has a bar: no empty hours on the right.
+    /// Same threshold as the chart and the list, so the range never cuts a bar (UI-12C, screen 23).
+    private func hourlyRange(_ day: GoalongLocalAnalytics.Day) -> ClosedRange<Date> {
+        let hours = day.hours(minimumMinutes: focusMinutes).filter { $0.seconds > 0 }
+        guard !fullDay, let first = hours.map(\.start).min(), let last = hours.map(\.end).max() else { return chartDateRange }
+        return first...max(last, first.addingTimeInterval(3600))
     }
     private var chartDateRange: ClosedRange<Date> {
         guard isDay, let day = current.days.first else { return dateRange }
@@ -863,11 +890,24 @@ enum GoalongActivityEmptyCopy {
         var showsObservationCount = false
     }
 
+    struct StorageStop: Equatable {
+        let kind: CaptureStorageFailureKind
+        let since: Date?
+    }
+
     static func copy(isDay: Bool, isToday: Bool, eventCount: Int, incompleteDays: Int, purged: Bool,
-                     recording: GoalongRecordingStateNotice.Kind?) -> Copy {
+                     recording: GoalongRecordingStateNotice.Kind?, storage: StorageStop? = nil) -> Copy {
         if purged {
             return Copy(title: "Détail effacé",
                 message: "Ce jour a été effacé après la durée de conservation, avant que Goalong garde un résumé de chaque journée. Une absence de données n’est pas une journée à zéro.",
+                offersHistory: false)
+        }
+        // Writes refused today: one empty state names the cause and its time, never a promise of minutes to come.
+        if isDay && isToday, let storage {
+            let title = storage.since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
+            let cause = storage.kind == .diskFull ? "le disque est plein" : "le dossier de l’historique refuse l’écriture"
+            return Copy(title: title,
+                message: "Rien n’est enregistré tant que \(cause). La reprise est automatique et la coupure restera indiquée dans votre historique.",
                 offersHistory: false)
         }
         // Today, a stopped recording is the known cause, never a promise of minutes to come; a real read error still shows.

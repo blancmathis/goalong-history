@@ -31,12 +31,12 @@ struct GoalongGlobalPauseControl: View {
                       systemImage: pause.blocksActivity ? "play.circle" : "pause.circle")
                     .font(.system(size: 12, weight: .medium))
                     .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
-            }.buttonStyle(LHSecondaryButtonStyle())
+            }.goalongPauseButtonStyle(primary: pause.blocksActivity)
                 .accessibilityIdentifier("goalong-global-pause")
                 .help("Suspendre le suivi, les lectures Apple et IA, les analyses et les envois. Les choix autorisés sont conservés.")
             if !compact {
                 Text("Apple et les autres apps continuent leur propre historique, qui peut être relu après reprise. Un envoi déjà commencé peut aboutir.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -65,6 +65,13 @@ struct GoalongGlobalPauseControl: View {
     }
 }
 
+private extension View {
+    /// While everything is paused, resuming is the one main action of the window (DESIGN §9).
+    @ViewBuilder func goalongPauseButtonStyle(primary: Bool) -> some View {
+        if primary { buttonStyle(LHPrimaryButtonStyle()) } else { buttonStyle(LHSecondaryButtonStyle()) }
+    }
+}
+
 struct GoalongGlobalPauseBanner: View {
     @ObservedObject var model: DashboardViewModel
     @State private var pause = GoalongGlobalPause.load()
@@ -72,17 +79,19 @@ struct GoalongGlobalPauseBanner: View {
         Group {
             if pause.blocksActivity {
                 HStack(spacing: 14) {
-                    Image(systemName: "pause.circle.fill").foregroundStyle(LHTheme.accent)
+                    Image(systemName: "pause.circle.fill").foregroundStyle(LHTheme.secondaryText)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Historique suspendu · confidentialité").font(.system(size: 13, weight: .semibold))
-                        Text(pause.invalid ? GoalongGlobalPauseText.damagedNotice : "Tout le suivi est arrêté, pas seulement la surveillance. Reprenez-le pour enregistrer à nouveau.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Suivi en pause").font(.system(size: 13, weight: .semibold))
+                        Text(pause.invalid ? GoalongGlobalPauseText.damagedNotice : "Tout le suivi est arrêté, y compris la surveillance Jev. Reprenez-le pour enregistrer à nouveau.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                     // The action keeps its whole name: the text beside it wraps instead.
                     GoalongGlobalPauseControl(model: model, compact: true).fixedSize()
-                }.padding(14).background(LHTheme.cardBackground)
+                }
+                // Same inset as the other top banners: the action stays inside the page edge.
+                .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12).background(LHTheme.cardBackground)
                 Divider()
             }
         }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }

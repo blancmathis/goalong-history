@@ -10,6 +10,8 @@ struct GoalongAttentionBanner: View {
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var updates = SoftwareUpdateManager.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    /// The global pause banner already says nothing is recorded: storage alerts wait for the resume.
+    @State private var globalPause = GoalongGlobalPause.load()
 
     private enum Notice: Equatable {
         case storage(CaptureStorageFailureKind)
@@ -18,13 +20,19 @@ struct GoalongAttentionBanner: View {
     }
 
     private var notice: Notice? {
-        if consents.isEnabled(.localComputerHistory), let kind = model.runtime.storageFailure { return .storage(kind) }
-        if consents.isEnabled(.localComputerHistory), let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
+        let recordingExpected = consents.isEnabled(.localComputerHistory) && !globalPause.blocksActivity
+        if recordingExpected, let kind = model.runtime.storageFailure { return .storage(kind) }
+        if recordingExpected, let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
         if let previous = updates.updatedFromVersion { return .updated(from: previous, to: updates.currentVersion) }
         return nil
     }
 
     var body: some View {
+        Group { content }
+            .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in globalPause = .load() }
+    }
+
+    @ViewBuilder private var content: some View {
         if let notice {
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 14) {
@@ -32,7 +40,8 @@ struct GoalongAttentionBanner: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title(notice)).font(.system(size: 13, weight: .semibold))
-                        Text(detail(notice)).font(.system(size: 12)).foregroundStyle(.secondary)
+                        // Short details fit one line at the window's width: the three banners keep one height (UI-13C, 45).
+                        Text(detail(notice)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 12)
@@ -49,8 +58,8 @@ struct GoalongAttentionBanner: View {
 
     private func symbol(_ notice: Notice) -> String {
         switch notice {
-        case .storage: return "externaldrive.badge.exclamationmark"
-        case .lowSpace: return "externaldrive.badge.minus"
+        // The internal disk, not an external drive (read as a car at 16 pt).
+        case .storage, .lowSpace: return "internaldrive"
         case .updated: return "checkmark.seal.fill"
         }
     }
@@ -68,38 +77,44 @@ struct GoalongAttentionBanner: View {
         case .storage(.diskFull): return "Enregistrement interrompu : le disque est plein"
         case .storage: return "Enregistrement interrompu"
         case .lowSpace: return "Espace disque presque plein"
-        case .updated(_, let version): return "Goalong est à jour · version \(version)"
+        case .updated(_, let version): return "Goalong est à jour, version \(version)"
         }
     }
 
     private func detail(_ notice: Notice) -> String {
         switch notice {
         case .storage(.diskFull):
-            return "Libérez un peu d’espace : l’enregistrement reprendra tout seul et la coupure sera indiquée dans votre historique."
+            return "Libérez de l’espace : l’enregistrement reprendra seul, la coupure restera visible."
+        // UI-15A (40, 45): the refused write says its cause and how to repair it.
+        case .storage(.permissionDenied):
+            return "Goalong ne peut plus écrire dans son dossier : macOS en refuse l’accès. Rendez l’accès, puis actualisez."
         case .storage:
-            return "Goalong réessaie automatiquement. Si cela dure, envoyez-nous un rapport : il contient la cause technique, pas votre activité."
+            return "Goalong réessaie seul. Si cela dure, signalez-le : le rapport contient la cause, pas votre activité."
         case .lowSpace(let free):
-            return "Il reste \(StorageHealth.formatted(free)). En dessous d’environ \(StorageHealth.lowSpaceThresholdText), macOS peut empêcher Goalong d’enregistrer."
+            return "Il reste \(StorageHealth.formatted(free)). macOS peut bientôt empêcher Goalong d’enregistrer."
         case .updated(let previous, _):
             return "La mise à jour depuis la version \(previous) s’est bien déroulée. Vos réglages et votre historique sont conservés."
         }
     }
 
+    // UI-13C (45): one action per storage banner, same place; the report only when the disk refused a write.
     @ViewBuilder private func actions(_ notice: Notice) -> some View {
         switch notice {
-        case .storage(let kind):
-            HStack(spacing: 8) {
-                if kind == .diskFull { manageStorageButton(primary: true) }
-                Button("Signaler le problème…") { SupportRequestController.shared.present() }
-                    .buttonStyle(LHSecondaryButtonStyle())
-            }
+        case .storage(.diskFull):
+            manageStorageButton(primary: true)
+        case .storage(.permissionDenied):
+            Button("Actualiser") { model.refreshEverything() }
+                .buttonStyle(LHSecondaryButtonStyle())
+        case .storage:
+            Button("Signaler le problème…") { SupportRequestController.shared.present() }
+                .buttonStyle(LHSecondaryButtonStyle())
         case .lowSpace:
             manageStorageButton(primary: false)
         case .updated:
             HStack(spacing: 8) {
                 Button("Nouveautés") { updates.openRollingReleasePage() }.buttonStyle(LHSecondaryButtonStyle())
                 Button { updates.acknowledgeUpdateConfirmation() } label: {
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                 }
                 .buttonStyle(LHQuietButtonStyle())
                 .accessibilityLabel("Masquer")

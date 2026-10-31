@@ -49,8 +49,8 @@
             let report = GoalongCLIInstallation.inspect(linkURL: link, expectedExecutableURL: fixture.executable)
 
             XCTAssertEqual(report.state, .missing)
-            XCTAssertTrue(report.detail.contains("(DMG)"))
-            XCTAssertTrue(report.detail.contains("Sparkle ne créent pas"))
+            XCTAssertTrue(report.detail.contains("L’installation de l’app"))
+            XCTAssertTrue(report.detail.contains("ne créent pas la commande"))
             XCTAssertFalse(report.detail.contains("recrée"))
             let command = try XCTUnwrap(report.linkCommand)
             XCTAssertEqual(

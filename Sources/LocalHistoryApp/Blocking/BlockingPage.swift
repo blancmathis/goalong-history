@@ -14,7 +14,7 @@ import LocalHistoryCore
         if let controller = runtime.controller {
             BlockingPageContent(controller: controller, onOpenLists: onOpenLists)
         } else {
-            GoalongModuleOffNote(module: .blocking, text: "Le programme bloque vos listes à heures fixes. Il vient du module Blocage, désactivé.")
+            GoalongModuleOffNote(module: .blocking, text: "Le programme bloque vos listes à heures fixes.")
         }
     }
 }
@@ -77,7 +77,8 @@ import LocalHistoryCore
                                 controller.save(list)
                                 if controller.lists.contains(where: { $0.id == list.id }) { editingList = list.id }
                             } label: { Label("Nouvelle liste", systemImage: "plus") }
-                                .buttonStyle(LHSecondaryButtonStyle())
+                                // The focal point of the empty page; « Bloquer » stays inert until a list exists (UI-14, écran 1).
+                                .buttonStyle(LHPrimaryButtonStyle())
                                 .accessibilityIdentifier("blocking-empty-new-list")
                         }
                     }
@@ -136,7 +137,7 @@ import LocalHistoryCore
 
     private func unlockText(_ origin: BlockSession.Origin, end: Date) -> String {
         if case .program = origin { return "Cette plage du programme s’arrête pour aujourd’hui. Elle revient la prochaine fois." }
-        return "Le blocage s’arrête maintenant, avant \(BlockingFormat.endTime(end))."
+        return "Débloquer arrête ce blocage prévu jusqu’à \(BlockingFormat.endTime(end))."
     }
 }
 
@@ -272,8 +273,8 @@ struct BlockingStopRequest: Identifiable {
         var words: String
         switch block.lock {
         case .locked: words = "Verrouillé jusqu’à \(BlockingFormat.endTime(block.end))"
-        case .password: words = "Protégé par mot de passe · jusqu’à \(BlockingFormat.endTime(block.end))"
-        case .typing: words = "Difficile à arrêter · jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .password: words = "Protégé par mot de passe jusqu’à \(BlockingFormat.endTime(block.end))"
+        case .typing: words = "Difficile à arrêter jusqu’à \(BlockingFormat.endTime(block.end))"
         case .free: words = "Bloqué jusqu’à \(BlockingFormat.endTime(block.end))"
         }
         let lists = block.listIDs.compactMap(controller.list)
@@ -281,7 +282,7 @@ struct BlockingStopRequest: Identifiable {
             words = words.replacingOccurrences(of: "Bloqué jusqu", with: "Ralenti jusqu")
         }
         let origin: String
-        if case .program = block.origin { origin = " · programme" } else { origin = "" }
+        if case .program = block.origin { origin = ", selon le programme" } else { origin = "" }
         if triggerApps(block) != nil {
             words = lists.allSatisfy({ $0.effectiveAction == .slowDown }) ? "Ralenti tant que l’app est ouverte" : "Bloqué tant que l’app est ouverte"
             symbol = "app.badge"
@@ -337,7 +338,7 @@ struct BlockingStopRequest: Identifiable {
                 Image(systemName: "hourglass").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
                 Text((left > 0 ? "\(list.name) : encore \(BlockingFormat.remaining(left)) aujourd’hui"
                                : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota + earned)) du jour sont passées")
-                     + (earned > 0 ? " · \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
+                     + (earned > 0 ? ". \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
                 Spacer(minLength: 8)
                 BlockingMeter(fraction: 1 - left / Double(max(1, (quota + earned) * 60))).frame(width: 120)
             }
@@ -409,7 +410,7 @@ struct BlockingSessionThread: View {
                 if locked { Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold)) }
                 Text(BlockingFormat.endTime(end))
             }
-            .font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
+            .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("De \(BlockingFormat.time(start)) à \(BlockingFormat.endTime(end)), \(GoalongUIFormat.percent(progress * 100)) écoulés")
@@ -564,7 +565,7 @@ struct BlockingMeter: View {
                                 }
                                 if later {
                                     DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
-                                        .labelsHidden().fixedSize()
+                                        .goalongDateField()
                                         .environment(\.locale, Locale(identifier: "fr_FR"))
                                         .accessibilityIdentifier("blocking-start-at")
                                 }
@@ -582,7 +583,7 @@ struct BlockingMeter: View {
                             }
                             if span == .until {
                                 DatePicker("Heure de fin", selection: $until, displayedComponents: .hourAndMinute)
-                                    .labelsHidden().fixedSize()
+                                    .goalongDateField()
                                     .environment(\.locale, Locale(identifier: "fr_FR"))
                             }
                         }
@@ -895,12 +896,13 @@ struct BlockingLockExplainer: View {
                           ok: Self.levelIsSettled(controller.protection),
                           value: Self.levelLabel(controller.protection))
                 if let help = Self.levelHelp(controller.protection) {
-                    // A failed service names where to repair it: its background item in Ouverture.
+                    // A failed or waiting service names where to repair it: its item in Réglages Système › Ouverture.
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        loginItemsButton
+                        // UI-9 (1): one « Ouvrir Réglages Système… » per group; « Relance » already shows it when off.
+                        if controller.protection.launchAtLogin { loginItemsButton }
                     }
                         .padding(.leading, 32).padding(.bottom, 8)
                         .accessibilityIdentifier("blocking-level-help")
@@ -938,16 +940,21 @@ struct BlockingLockExplainer: View {
     static func levelLabel(_ protection: BlockingProtectionState) -> String {
         if protection.level == .strict { return "Renforcé" }
         switch protection.guardian {
-        case .awaitingApproval: return "À autoriser dans Réglages Système › Général › Ouverture"
+        case .awaitingApproval: return "À autoriser"
         case .failed: return "Indisponible"
         case .running, .notInstalled: return "Standard"
         }
     }
 
     /// Why the guard is unavailable, under « Niveau »: its own words, never an alert (R5-garde-01).
+    /// UI-12A: a guard waiting for approval names the path here, so the value stays one short line.
     static func levelHelp(_ protection: BlockingProtectionState) -> String? {
-        guard protection.level != .strict, case .failed(let reason) = protection.guardian else { return nil }
-        return reason
+        guard protection.level != .strict else { return nil }
+        switch protection.guardian {
+        case .failed(let reason): return reason
+        case .awaitingApproval: return "Autorisez Goalong dans \(LoginItemsPanel.path)."
+        case .running, .notInstalled: return nil
+        }
     }
 
     /// « Standard » is a normal level, not something missing: only a guard waiting or failed keeps the dashed circle.
@@ -983,7 +990,8 @@ struct BlockingLockExplainer: View {
                 .menuStyle(.borderlessButton).fixedSize()
                 .foregroundStyle(LHTheme.secondaryText)
             } else {
-                Button("Choisir…") { passwordPurpose = .create }.buttonStyle(LHQuietButtonStyle())
+                // UI-9 (1): a button like the group's other actions, not bare text.
+                Button("Choisir…") { passwordPurpose = .create }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
             }
         }
         .frame(minHeight: 38)
@@ -993,7 +1001,7 @@ struct BlockingLockExplainer: View {
     /// What the Standard level cannot stop. Kept in step with docs/BLOCKING.md.
     static let limits = [
         "Forcer Goalong à quitter arrête le blocage jusqu’à la prochaine ouverture de session, même avec un mot de passe.",
-        "Retirer Goalong des éléments d’ouverture, ou supprimer l’app à la main, met fin au blocage.",
+        "Retirer Goalong de l’ouverture de session, ou supprimer l’app à la main, met fin au blocage.",
         "Supprimer le dossier de blocage puis relancer Goalong efface les verrous.",
         "Changer l’heure du Mac puis redémarrer peut raccourcir un verrou.",
         "Un navigateur que Goalong ne connaît pas, et dont il ne lit pas l’adresse, n’est pas couvert.",
@@ -1001,29 +1009,30 @@ struct BlockingLockExplainer: View {
         "Un autre compte utilisateur du Mac n’est pas bloqué.",
     ]
 
-    /// Réglages Système › Général › Ouverture, where macOS lets Goalong start and run in the background.
+    /// Réglages Système › Ouverture (LoginItemsPanel.path): where macOS lets Goalong start and run in the background.
     private var loginItemsButton: AnyView {
-        AnyView(Button("Ouvrir Réglages…") { SMAppService.openSystemSettingsLoginItems() }
+        AnyView(Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
-            .help("Autorisez Goalong dans Réglages Système › Général › Ouverture.")
+            .help("Autorisez Goalong dans \(LoginItemsPanel.path).")
             .accessibilityIdentifier("blocking-open-login-items"))
     }
 
     private func statusRow(symbol: String, title: String, ok: Bool, value: String, action: AnyView? = nil) -> some View {
-        HStack(spacing: 12) {
+        // The action sits under its row, on the text's left edge: the title keeps one line.
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 Image(systemName: symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 20).accessibilityHidden(true)
-                Text(title).font(.system(size: 13, weight: .medium))
+                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 12)
                 Image(systemName: ok ? "checkmark.circle.fill" : "circle.dashed")
                     .foregroundStyle(ok ? LHTheme.success : LHTheme.tertiaryText).accessibilityHidden(true)
                 Text(value).foregroundStyle(LHTheme.secondaryText)
             }
+            .frame(minHeight: 38)
             .accessibilityElement(children: .combine)
-            if let action { action }
+            if let action { action.padding(.leading, 32).padding(.bottom, 8) }
         }
-        .frame(minHeight: 38)
     }
 
     private var browsersRow: some View {
@@ -1065,27 +1074,39 @@ struct BlockingTypingChallengeSheet: View {
     private var matched: Int { zip(text, typed).prefix { $0 == $1 }.count }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Recopier pour arrêter").font(LHTheme.sheetTitleFont).tracking(-0.4)
-                Text("Le blocage s’arrête quand le texte est identique. Le collage est refusé.")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+        // UI-63: the shared sheet body and footer (GoalongControls), as the other sheets.
+        VStack(spacing: 0) {
+            GoalongSheetScroll(cap: 420) {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Recopier pour arrêter").font(LHTheme.sheetTitleFont).tracking(-0.4)
+                        Text("Le blocage s’arrête quand le texte est identique. Le collage est refusé.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    }
+                    Text(groups(text, matched: matched))
+                        .font(.system(size: 15, design: .monospaced)).lineSpacing(6)
+                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+                        .textSelection(.disabled)
+                    TextField("", text: Binding(get: { typed }, set: { value in
+                        // One character at a time: a jump of several characters is a paste.
+                        if value.count <= typed.count + 1 { typed = value }
+                    }))
+                        // 14 pt monospaced text is 17 pt high: 8 + 17 + 9 fills the 34 pt field.
+                        .textFieldStyle(GoalongFieldStyle(textFont: .monospaced14))
+                        // The hint is not text to copy: system font, not the monospaced font of the field.
+                        .overlay(alignment: .leading) { placeholder }
+                        .accessibilityLabel("Recopiez ici")
+                        .accessibilityIdentifier("blocking-typing-field")
+                    HStack(spacing: 10) {
+                        BlockingMeter(fraction: Double(matched) / Double(max(1, text.count))).frame(width: 160)
+                        Text("\(matched) / \(text.count) caractères recopiés")
+                            .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                    }
+                }
+                .padding(28)
             }
-            Text(groups(text, matched: matched))
-                .font(.system(size: 15, design: .monospaced)).lineSpacing(6)
-                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
-                .textSelection(.disabled)
-            TextField("Recopiez ici", text: Binding(get: { typed }, set: { value in
-                // One character at a time: a jump of several characters is a paste.
-                if value.count <= typed.count + 1 { typed = value }
-            }))
-                // 14 pt monospaced text is 17 pt high: 8 + 17 + 9 fills the 34 pt field.
-                .textFieldStyle(GoalongFieldStyle(textFont: .monospaced14))
-                .accessibilityIdentifier("blocking-typing-field")
-            HStack {
-                BlockingMeter(fraction: Double(matched) / Double(max(1, text.count))).frame(width: 160)
-                Text("\(matched) / \(text.count)").font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+            GoalongSheetFooter(inset: 28) {
                 Spacer()
                 Button("Continuer le blocage", action: onCancel).keyboardShortcut(.cancelAction)
                 Button("Arrêter") { onSubmit(typed) }
@@ -1093,8 +1114,15 @@ struct BlockingTypingChallengeSheet: View {
                     .disabled(typed != text)
             }
         }
-        .padding(28).frame(width: 560)
+        .frame(width: 560)
         .background(LHTheme.pageBackground)
+    }
+
+    @ViewBuilder private var placeholder: some View {
+        if typed.isEmpty {
+            Text("Recopiez ici").font(.system(size: 14)).foregroundStyle(LHTheme.tertiaryText)
+                .padding(.leading, 11).allowsHitTesting(false).accessibilityHidden(true)
+        }
     }
 
     private func groups(_ value: String, matched: Int) -> AttributedString {

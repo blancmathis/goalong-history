@@ -13,7 +13,7 @@ import SwiftUI
             ConcentrationPageContent(controller: controller)
         } else {
             if !modules.isEnabled(.concentration) || runtime.error == nil {
-                GoalongModuleOffNote(module: .concentration, text: "Séances, Pomodoro, plan du jour et bilan. Le module est désactivé.")
+                GoalongModuleOffNote(module: .concentration, text: "Activez-le pour lancer des séances et des Pomodoro, préparer le plan du jour et lire le bilan.")
             } else {
                 Text("Concentration n’a pas pu démarrer. Vos données restent intactes.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
@@ -326,7 +326,7 @@ struct FocusComposerDraft: Equatable {
 
     private var startTitle: String {
         guard let end = plannedEnd else { return "Commencer" }
-        return "Commencer · jusqu’à \(BlockingFormat.time(end))"
+        return "Commencer, jusqu’à \(BlockingFormat.time(end))"
     }
 
     private var previewDescription: String {
@@ -498,7 +498,7 @@ struct FocusPlanChip: View {
             FocusSessionThread(model: FocusThreadModel.make(session, now: now), now: now, locked: locked)
             HStack(alignment: .center, spacing: 12) {
                 if !lists.isEmpty {
-                    BlockingIconCluster(lists: lists, size: 20, limit: 6)
+                    BlockingIconCluster(lists: lists, size: 20, limit: 6, overflowFont: 12)
                     Text(blockingWords).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                 }
                 Spacer(minLength: 12)
@@ -523,14 +523,14 @@ struct FocusPlanChip: View {
         switch (session.mode.kind, phase.kind) {
         case (.free, _):
             symbol = "scope"
-            words = phase.endsAt.map { "Séance libre · jusqu’à \(BlockingFormat.time($0))" } ?? "Séance libre, sans fin"
+            words = phase.endsAt.map { "Séance libre jusqu’à \(BlockingFormat.time($0))" } ?? "Séance libre, sans fin"
         case (_, .work):
             symbol = "scope"
-            words = "Travail · cycle \(phase.cycle)\(session.mode.cycles.map { " sur \($0)" } ?? "")"
+            words = "Travail, cycle \(phase.cycle)\(session.mode.cycles.map { " sur \($0)" } ?? "")"
         case (_, .longBreak):
-            symbol = "cup.and.saucer"; words = "Pause longue · jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "")"
+            symbol = "cup.and.saucer"; words = "Pause longue jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "")"
         default:
-            symbol = "cup.and.saucer"; words = "Pause · jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "")"
+            symbol = "cup.and.saucer"; words = "Pause jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "")"
         }
         return Label(words, systemImage: locked ? "lock.fill" : symbol)
             .font(.system(size: 13, weight: .medium))
@@ -555,7 +555,7 @@ struct FocusPlanChip: View {
     private var blockingWords: String {
         let names = lists.map(\.name).joined(separator: ", ")
         if !phase.isWork && !session.blockDuringBreaks { return "\(names) : libre pendant la pause" }
-        return lists.allSatisfy { $0.effectiveAction == .slowDown } ? "\(names) : ralenti" : "\(names) : bloqué"
+        return lists.allSatisfy { $0.effectiveAction == .slowDown } ? "\(names) : \(lists.count > 1 ? "ralentis" : "ralenti")" : "\(names) : \(lists.count > 1 ? "bloqués" : "bloqué")"
     }
 
     private func act(_ action: () throws -> Void) {
@@ -780,10 +780,19 @@ struct FocusThreadModel: Equatable {
                 .disabled(item.status == .moved)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(2)
-                    .strikethrough(done, color: LHTheme.tertiaryText)
-                    .foregroundStyle(closed ? LHTheme.secondaryText : LHTheme.text)
-                if let meta = meta(item, running: running) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(2)
+                        .strikethrough(done, color: LHTheme.tertiaryText)
+                        .foregroundStyle(closed ? LHTheme.secondaryText : LHTheme.text)
+                    // The task of the running session: a tag, so it is not read as a second copy of the session title.
+                    if running {
+                        Text("En cours").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.text)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(LHTheme.selectionBackground, in: Capsule())
+                            .fixedSize()
+                    }
+                }
+                if let meta = meta(item) {
                     Text(meta).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                 }
             }
@@ -821,16 +830,15 @@ struct FocusThreadModel: Equatable {
         .accessibilityIdentifier("concentration-plan-item")
     }
 
-    private func meta(_ item: FocusPlanItem, running: Bool) -> String? {
+    private func meta(_ item: FocusPlanItem) -> String? {
         var parts: [String] = []
-        if running { parts.append("en cours") }
         if let project = item.project { parts.append(project) }
         switch item.status {
         case .moved: parts.append(item.toDay == tomorrow ? "déplacée à demain" : "déplacée au \(item.toDay ?? "")")
         case .dropped: parts.append("abandonnée")
         default: break
         }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
     @ViewBuilder private func measure(_ item: FocusPlanItem) -> some View {
@@ -857,7 +865,7 @@ struct FocusThreadModel: Equatable {
                     .frame(width: 20).accessibilityHidden(true)
                 TextField("", text: $newTitle)
                     .textFieldStyle(GoalongFieldStyle())
-                    .goalongPlaceholder(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", isEmpty: newTitle.isEmpty)
+                    .planPlaceholder(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", isEmpty: newTitle.isEmpty)
                     .focused(addFocused)
                     .onSubmit(add)
                     .onChange(of: newTitle) { _ in addError = nil }
@@ -865,14 +873,14 @@ struct FocusThreadModel: Equatable {
                     .accessibilityIdentifier("concentration-add-item")
                 TextField("", text: $newProject)
                     .textFieldStyle(GoalongFieldStyle())
-                    .goalongPlaceholder("Projet", isEmpty: newProject.isEmpty)
+                    .planPlaceholder("Projet", isEmpty: newProject.isEmpty)
                     .frame(width: 120)
                     .accessibilityLabel("Projet")
                     .onSubmit(add)
                     .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
                 TextField("", text: $newEstimate)
                     .textFieldStyle(GoalongFieldStyle())
-                    .goalongPlaceholder("min", isEmpty: newEstimate.isEmpty)
+                    .planPlaceholder("min", isEmpty: newEstimate.isEmpty)
                     .frame(width: 64)
                     .onSubmit(add)
                     .help("Estimation, facultative : de 5 à 600 minutes.")
@@ -882,8 +890,10 @@ struct FocusThreadModel: Equatable {
                         .font(.system(size: 12, weight: .medium).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                         .help("Vos estimations : ×\(FocusUIFormat.decimal(ratio)). Médiane du temps mesuré sur le temps prévu, sur vos 20 dernières tâches estimées.")
                 }
+                // Never greyed out for an empty title (a pale button read as 2.5:1): it then puts the cursor in the field.
                 Button("Ajouter", action: add)
-                    .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty || plan.items.count >= FocusPlan.maximumItems)
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .disabled(plan.items.count >= FocusPlan.maximumItems)
             }
             if let addError {
                 Text(addError).font(.system(size: 12)).foregroundStyle(LHTheme.warning).padding(.leading, 28)
@@ -905,7 +915,7 @@ struct FocusThreadModel: Equatable {
 
     private func add() {
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
+        guard !title.isEmpty else { addFocused.wrappedValue = true; return }
         // Entrée in any field takes the same path as the button, which is off on a full plan.
         guard plan.items.count < FocusPlan.maximumItems else { addError = FocusUIError.message(FocusFailure.planFull); return }
         var estimate: Int?
@@ -987,7 +997,7 @@ struct FocusThreadModel: Equatable {
             total + FocusMeasurement.workIntervals(session, until: now).reduce(0) { $0 + $1.duration }
         }
         let count = finished.count == 1 ? "1 séance" : "\(finished.count) séances"
-        return "\(count) · \(BlockingFormat.duration(minutes: Int((seconds / 60).rounded()))) de phases de travail."
+        return "\(count) : \(BlockingFormat.duration(minutes: Int((seconds / 60).rounded()))) de phases de travail."
     }
 
     private func row(_ session: FocusSession) -> some View {
@@ -1142,7 +1152,7 @@ struct FocusThreadModel: Equatable {
             Spacer(minLength: 12)
             DatePicker(title, selection: Binding(get: { Self.date(minute.wrappedValue) }, set: { minute.wrappedValue = Self.minute($0) }),
                        displayedComponents: .hourAndMinute)
-                .labelsHidden().fixedSize().disabled(!isOn.wrappedValue)
+                .goalongDateField().disabled(!isOn.wrappedValue)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
             Toggle(title, isOn: isOn).toggleStyle(.goalongSwitchOnly).fixedSize()
         }
@@ -1181,7 +1191,7 @@ struct FocusThreadModel: Equatable {
                         if let message = change.error { limitError = message; return }
                         save(change.settings)
                     } label: {
-                        Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 11, weight: .semibold))
+                        Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
                             .frame(width: 22, height: 22)
                             .foregroundStyle(on ? LHTheme.onAccent : LHTheme.secondaryText)
                             .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
@@ -1310,8 +1320,8 @@ enum FocusUIFormat {
         }
     }
 
-    /// « 1re », « 2e », « 3e ».
-    static func ordinal(_ value: Int) -> String { value == 1 ? "1re" : "\(value)e" }
+    /// « 1ʳᵉ », « 2ᵉ », « 3ᵉ ».
+    static func ordinal(_ value: Int) -> String { value == 1 ? "1ʳᵉ" : "\(value)ᵉ" }
 }
 
 enum FocusUIError {
@@ -1340,6 +1350,20 @@ enum FocusUIError {
         case .moduleDisabled: return "Activez Blocage dans Réglages › Modules pour bloquer pendant une séance."
         case .appNotRunning: return "Goalong ne répond pas. Réessayez ; si cela continue, relancez Goalong."
         case nil: return isReadableSentence(raw) ? raw : "L’action n’a pas abouti. Réessayez."
+        }
+    }
+}
+
+private extension View {
+    /// The plan's add row hints in secondary text (≥ 4.5:1), not the paler shared placeholder:
+    /// on a running session it is the one way into the plan (UI-13A, screen 2).
+    func planPlaceholder(_ placeholder: String, isEmpty: Bool) -> some View {
+        overlay(alignment: .leading) {
+            if isEmpty {
+                Text(placeholder).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    .padding(.horizontal, 11)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
         }
     }
 }
