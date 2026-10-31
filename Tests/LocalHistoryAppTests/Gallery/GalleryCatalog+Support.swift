@@ -45,7 +45,7 @@ extension GalleryCatalog {
                                                              "Décrivez ce que vous avez fait et ce que vous attendiez dans votre message.")],
                                        byteCount: 52_480, eventCount: 38)),
             supportPanel("support/retour-repere", note: "retour d’information : repère ajouté", phase: supportReport(journalOff: false),
-                         feedback: "Repère ajouté à 09:41. Reproduisez le problème puis cliquez sur « Actualiser le rapport »."),
+                         feedback: "Repère ajouté à 09:41. Reproduisez le problème, puis choisissez « Autres options › Actualiser le rapport »."),
             supportPanel("support/retour-messagerie-absente", note: "retour d’information : aucune app de messagerie", phase: supportReport(journalOff: false),
                          feedback: "Aucune app de messagerie n’est configurée. Utilisez « Partager » ou « Enregistrer une copie ».",
                          kind: .problem, emailUnavailable: true),

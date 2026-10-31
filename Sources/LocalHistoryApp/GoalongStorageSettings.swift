@@ -50,11 +50,10 @@ import Foundation
                 Text("Les originaux Apple, les conversations et les données déjà envoyées au site Goalong restent conservés.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
-            GoalongDisclosureGroup("Fichiers locaux") {
-                HStack {
-                    Button("Ouvrir le dossier") { model.openDataFolder() }
-                }.buttonStyle(LHSecondaryButtonStyle()).padding(.top, 12)
-            }.font(.system(size: 13))
+            // A group like the others: its edge lines up with the page instead of an inset chevron (UI-11C, screen 40).
+            GoalongSettingsGroup(title: "Fichiers locaux") {
+                Button("Ouvrir le dossier") { model.openDataFolder() }.buttonStyle(LHSecondaryButtonStyle())
+            }
         }
         .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls() }
         .onAppear(perform: refresh)
