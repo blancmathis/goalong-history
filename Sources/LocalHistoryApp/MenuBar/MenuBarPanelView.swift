@@ -136,7 +136,8 @@
         }
 
         var body: some View {
-            HStack(spacing: 10) {
+            // UI-12A: top-aligned, so the logo stays on the « Goalong » line when a repair message grows.
+            HStack(alignment: .top, spacing: 10) {
                 Image(nsImage: GoalongBrandAssets.menuBarImage)
                     .renderingMode(.template).resizable().scaledToFit()
                     .frame(width: 18, height: 18).foregroundStyle(LHTheme.text)
@@ -175,6 +176,7 @@
                     prominent: paused,
                     action: model.togglePause
                 )
+                .padding(.top, 2)
             }
             .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 12))
         }
@@ -316,12 +318,10 @@
                     $0 == .pomodoro ? "Pomodoro" : "Libre"
                 }
                 if model.focusKind == .pomodoro {
-                    HStack(spacing: 6) {
-                        ForEach(model.focusMinuteChoices, id: \.self) { minutes in
-                            ChoiceChip(title: BlockingFormat.duration(minutes: minutes), selected: model.focusMinutes == minutes) {
-                                model.focusMinutes = minutes
-                            }
-                        }
+                    // UI-12A: one selection style in the panel, the raised pill of « Type de séance ».
+                    GoalongSegmentedControl("Durée", selection: $model.focusMinutes,
+                                            options: model.focusMinuteChoices, fills: true) {
+                        BlockingFormat.duration(minutes: $0)
                     }
                 }
                 Button(action: model.startFocus) {
@@ -402,35 +402,6 @@
                         .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                 }
             }
-        }
-    }
-
-    private struct ChoiceChip: View {
-        let title: String
-        let selected: Bool
-        let action: () -> Void
-        @State private var hovered = false
-
-        var body: some View {
-            Button(action: action) {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
-                    .lineLimit(1)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                            .fill(hovered ? LHTheme.hoverBackground : LHTheme.elevatedBackground)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                            .strokeBorder(selected ? LHTheme.text : LHTheme.separator, lineWidth: selected ? 2 : 1)
-                    )
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { hovered = $0 }
-            .animation(LHTheme.hover, value: hovered)
-            .accessibilityAddTraits(selected ? .isSelected : [])
         }
     }
 
@@ -560,22 +531,29 @@
 
         private var grid: some View {
             VStack(alignment: .leading, spacing: 8) {
+                // UI-12A: the raised pill of GoalongSegmentedControl, kept here so long names may shrink.
                 HStack(spacing: 2) {
                     ForEach(tabs, id: \.self) { t in
                         Button { tab = t } label: {
-                            Text(tabTitle(t)).font(.system(size: 12, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(tabTitle(t)).font(.system(size: 12, weight: tab == t ? .semibold : .medium))
+                                .lineLimit(1).minimumScaleFactor(0.8)
                                 .foregroundStyle(tab == t ? LHTheme.text : LHTheme.secondaryText)
                                 .padding(.horizontal, 6).padding(.vertical, 3)
-                                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(tab == t ? LHTheme.elevatedBackground : .clear))
-                                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(tab == t ? LHTheme.separator : .clear))
+                                .frame(maxWidth: .infinity)
+                                .background {
+                                    if tab == t {
+                                        GoalongSurface(corner: LHTheme.controlRadius - 2, fill: LHTheme.segmentSelected, highlighted: true)
+                                    }
+                                }
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(tab == t ? .isSelected : [])
                     }
                 }
+                .padding(2)
+                .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous).strokeBorder(LHTheme.controlBorder))
                 let sources = model.ambianceSources.filter { $0.kind == kind(of: tab) }
                 if sources.isEmpty {
                     Text("Aucun son ici pour l’instant.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -605,13 +583,18 @@
                     Spacer(minLength: 0)
                     if !source.isAvailable { Image(systemName: "arrow.down.circle").font(.system(size: 10)) }
                 }
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: selected ? .semibold : .medium))
                 .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.secondaryText)
                 .padding(.horizontal, 8).padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                    .fill(hovered ? LHTheme.hoverBackground : LHTheme.elevatedBackground))
-                .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                    .strokeBorder(selected ? LHTheme.text : LHTheme.separator, lineWidth: selected ? 2 : 1))
+                // UI-12A: the piece playing wears the raised pill of the panel's other selections, not a black ring.
+                .background {
+                    if selected {
+                        GoalongSurface(corner: LHTheme.controlRadius, fill: LHTheme.segmentSelected, highlighted: true)
+                    } else {
+                        RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+                            .fill(hovered ? LHTheme.hoverBackground : LHTheme.insetBackground)
+                    }
+                }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
