@@ -1,0 +1,20 @@
+# id	nav — T-046 L3n lot E-A (2026-10-31). Each line checked against an AX dump: run job row line (E-A.md in the suivi folder).
+# Jev: the status menu « Plus d’options » holds the Jev submenu (41172963577 J-0394 l.230, l.234).
+J-0304	si p:"Plus d’options" pc w:1
+J-0309	si p:"Plus d’options" pc w:1
+# Jev alerts: opener in the dump, alert from the source; « Annuler » is the only AXButton of that name.
+J-0293	pane:jev w:2 p:jev-open-connection w:2 p:jev-remove-key w:2
+J-0322	pane:jev w:2 p:jev-enabled w:2
+# Same nav as J-0296 (41180395400, alert l.76-81); it leaves « Texte affiché » on.
+J-0297	pane:recording "set:recording-visible-text 0" w:1 p:recording-visible-text w:2 pb:"Autoriser le texte affiché" w:2 pane:jev "t:Fonctionnement et confidentialité|Joindre un bref extrait du texte affiché" w:2
+# Conversation folder editor (41227452518 S2-4 J-0366: sheet l.142, Annuler l.163, Enregistrer l.164 = .defaultAction).
+J-0371	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2
+J-0374	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2
+# Data selection sheet: first AXPopUpButton « Données de … » (41227452518 S2-2 J-0430 l.103).
+J-0414	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "ck:Conversations locales=1" w:2
+# Site analysis sheet: only AXButton « Fermer » (41227452518 S2-3 J-0881 l.37).
+J-0872	pane:advanced p:"Outils de partage et analyses" w:2 p:"Analyser une demande du site…" w:2
+# Mon travail alerts, without o:work-allow o:Autoriser (that pair left the consent alert open in J-0502).
+J-0480	nav:work w:2 p:work-allow w:2
+J-0493	nav:work w:2 p:"Renommer…" w:2
+J-0489	nav:work w:2 p:work-review-load w:3 "pk:Corriger le classement de|Nouvelle tâche…" w:2
