@@ -70,6 +70,12 @@ extension GalleryCatalog {
                 AnyView(BlockingTypingChallengeSheet(text: String(repeating: "aB3kZ", count: 24), onSubmit: { _ in }, onCancel: {}))
             },
             panel("modules/reglages", width: 760) { _ in AnyView(GoalongModulesSettings(onOpen: { _ in }).padding(32)) },
+            // Every module on, Blocage locked by a running « mot de passe » block: its switch is refused (UI-9 C).
+            panel("modules/actifs-verrouille", width: 760, clock: .injected) { ctx in
+                let modules = ctx.keep(GoalongModuleStore(defaults: ctx.defaults))
+                for module in GoalongModule.allCases { modules.setEnabled(module, true) }
+                return AnyView(GoalongModulesSettings(onOpen: { _ in }, modules: modules, blockingController: ctx.keep(F.blockingGuarded())).padding(32))
+            },
         ]
         let veils: [(String, BlockingVeilPresentation.Reason)] = [
             ("voile-site", .site("youtube.com")),

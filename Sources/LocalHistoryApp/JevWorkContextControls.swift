@@ -91,9 +91,9 @@ import LocalHistoryCore
             sectionLabel("Hors travail", mark: LHTheme.otherData).padding(.top, 8)
             field("Ce qui n’est pas du travail",
                   detail: "Des exemples clairs, pas une liste complète.", help: procrastinationText,
-                  hint: "Ex. Scroller le fil Pour vous de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
+                  hint: "Ex. Scroller le fil « Pour vous » de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
                   text: $procrastination, identifier: "monitoring-procrastination")
-            GoalongNote("Ces critères restent stockés sur ce Mac. Enregistrer autorise leur envoi à votre compte ChatGPT avec les contextes à classer si le classement est activé, et l’envoi de vos critères de travail et exemples hors travail à TypeSafe avec les prochaines analyses si la surveillance est activée. N’indiquez ni clé API ni information sensible.",
+            GoalongNote("Ces critères restent sur ce Mac. Enregistrer autorise leur envoi à votre compte ChatGPT si le classement est activé, et l’envoi de vos critères de travail et exemples hors travail à TypeSafe (le fournisseur de Jev) si la surveillance est activée. N’indiquez ni clé API ni information sensible.",
                         tone: .privacy)
             HStack(spacing: 10) {
                 if draftBytes > 0 { budget }
