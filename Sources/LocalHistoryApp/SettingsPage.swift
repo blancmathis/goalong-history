@@ -36,7 +36,14 @@ import AppKit
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text(pane.title).goalongPageTitle()
+                // UI-9 (38, 42): a title, then its sentence close under it (DESIGN §7, §9).
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(pane.title).goalongPageTitle()
+                    if let lead = pane.lead {
+                        Text(lead).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 GoalongConfigStatusBanner(model: model)
                 // While config.json is unreadable, nothing may be saved over it.
                 content.disabled(model.configLocked && pane != .home)
@@ -322,6 +329,14 @@ enum SettingsPane: Hashable {
         case .storage: return "Stockage"
         case .advanced: return "Avancé"
         case .tools: return "Outils de partage et analyses"
+        }
+    }
+    /// The sentence under the pane's title, when the pane has one.
+    var lead: String? {
+        switch self {
+        case .chatGPT: return "Votre ChatGPT résume une journée à partir des seules données que vous choisissez."
+        case .modules: return "Activez seulement les fonctions dont vous avez besoin."
+        default: return nil
         }
     }
     /// Stable accessibility identifier of the pane's entry on the Settings home.

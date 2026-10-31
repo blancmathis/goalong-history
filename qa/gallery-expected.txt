@@ -416,3 +416,5 @@ programme/protection--   # UI-9 (1) (L-UI-6 : « Choisir… » en bouton seconda
 programme/protection-a-autoriser--   # UI-9 (1) (L-UI-6 : « Choisir… » en bouton secondaire, plus en texte nu)
 programme/protection-renforcee--   # UI-9 (1) (L-UI-6 : « Choisir… » en bouton secondaire, plus en texte nu)
 programme/protection-indisponible--   # UI-9 (1) (L-UI-6 : un seul « Ouvrir Réglages Système… » par groupe, le doublon sous le niveau retiré ; 352→331 px)
+settings/chatgpt--   # UI-9 (38) (L-UI-6 : la phrase passe juste sous le titre, écart titre–phrase réduit ; SettingsPane.lead)
+settings/modules--   # UI-9 (42) (L-UI-6 : phrase ajoutée sous le titre, « un titre, une phrase »)
