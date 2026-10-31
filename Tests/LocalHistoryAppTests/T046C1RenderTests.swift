@@ -2,6 +2,7 @@
 import AppKit
 import AgentActivity
 import LocalHistoryCore
+import LocalHistoryQueryCLI
 import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
