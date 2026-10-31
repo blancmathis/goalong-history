@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("root")
 parser.add_argument("--days", type=int, required=True)
 parser.add_argument("--per-day", type=int, required=True)
-parser.add_argument("--today", action="store_true", help="also seed today, 08:00 to now (L3b: Activité shows today)")
+parser.add_argument("--today", action="store_true", help="also seed today, up to 12 h before now (L3b: Activité shows today)")
 args = parser.parse_args()
 
 events = pathlib.Path(args.root, "events")
@@ -37,13 +37,20 @@ total = 0
 for back in range(args.days, -1 if args.today else 0, -1):
     day = today - dt.timedelta(days=back)
     start = dt.datetime.combine(day, dt.time(8)).astimezone()  # Local 08:00, written in UTC.
+    count, day_step = args.per_day, step
+    if day == today:
+        # L3f: the run of 00:01Z found today empty (08:00 was still ahead). Today fits its events into
+        # [max(local midnight, now - 12 h), now - 5 min], one second apart at least; nothing in the future.
+        end = dt.datetime.now().astimezone() - dt.timedelta(minutes=5)
+        start = max(dt.datetime.combine(day, dt.time(0)).astimezone(), end - dt.timedelta(hours=12))
+        span = (end - start).total_seconds()
+        day_step = max(1.0, span / args.per_day) if span > 0 else 1.0
+        count = 0 if span <= 0 else min(args.per_day, int(span // day_step) + 1)
     path = events / f"{day.isoformat()}.jsonl"
     with open(path, "w", encoding="utf-8") as out:
-        for i in range(args.per_day):
+        for i in range(count):
             name, bundle = APPS[(i // 7) % len(APPS)]
-            stamp = (start + dt.timedelta(seconds=int(i * step))).astimezone(dt.timezone.utc)
-            if stamp > dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5):
-                break  # Today: nothing in the future.
+            stamp = (start + dt.timedelta(seconds=int(i * day_step))).astimezone(dt.timezone.utc)
             event = {
                 "schemaVersion": 2, "id": str(uuid.uuid4()).upper(), "sessionID": session,
                 "timestamp": stamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -58,5 +65,5 @@ for back in range(args.days, -1 if args.today else 0, -1):
                                 "host": "docs.t046-synthetique.fr", "redactionApplied": False}
             out.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
     os.chmod(path, 0o600)
-    total += args.per_day
+    total += count
 print(f"seeded {total} events over {args.days} days in {events}")

@@ -107,6 +107,11 @@ RECIPES = {
     **{f"J-{n:04d}": ("", "menuitem", "AXMenuItem", None) for n in (427, 428, 429)},
     # The site rules are the items of the row menu « Règles du site » (opened by the nav).
     **{f"J-{n:04d}": ("", "menuitem", "AXMenuItem", None) for n in range(908, 916)},
+    # L3f: the replacements tab title is static text; its toggles are the rule's checkboxes (after « Ajouter… »).
+    "J-0433": ("", "label", "AXCheckBox", "Respecter la casse"),
+    "J-0434": ("", "label", "AXCheckBox", "Mot entier"),
+    # L3f: « Nouvelle tâche… » / « Laisser l’agent décider » are items of the row menu « Corriger » (left open by pk:).
+    **{f"J-{n:04d}": ("", "menuitem", "AXMenuItem", None) for n in (500, 501, 503)},
 }
 
 LITERAL_CALL = re.compile(r'(?:(?:Button|Toggle|DatePicker|Stepper|Picker|Label|TextField|SecureField|Menu|Link|Text|'
@@ -256,7 +261,8 @@ def main():
         plan.append([rid, kind, nav, mode, role, needle, action or "observe", na, screen])
     # Onboarding needs a fresh app: first. Lifecycle quits the app: last.
     order = {"Onboarding": 0, "App (cycle de vie)": 2}
-    plan.sort(key=lambda p: (order.get(p[8], 1), p[8], p[0]))
+    # L3f: J-0807 opens System Settings; J-0810/0811 (same button, Return key) play before it.
+    plan.sort(key=lambda p: (order.get(p[8], 1), p[8], p[0] == "J-0807", p[0]))
     with open(out, "w", encoding="utf-8") as f:
         for p in plan:
             f.write("\t".join(x.replace("\t", " ") for x in p) + "\n")

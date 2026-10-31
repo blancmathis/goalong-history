@@ -3,7 +3,7 @@
 // Usage: ax_driver trusted | dump BUNDLE FILE | press BUNDLE TEXT [ROLE] | menu BUNDLE TOP [ITEM]
 //        | close-extra BUNDLE MAIN_TITLE | status-item BUNDLE | status-menu BUNDLE | windows BUNDLE | input SECONDS
 //        | dismiss-alerts BUNDLE | scroll BUNDLE | set BUNDLE ID 0|1 | settext BUNDLE ID|LABEL TEXT
-//        | pressexact BUNDLE TEXT [ROLE] | popup BUNDLE OPENER [ITEM] [DUMP] | typekeys BUNDLE ID|LABEL TEXT (L3e)
+//        | pressexact BUNDLE TEXT [ROLE] | popup BUNDLE OPENER [ITEM] [DUMP] [click] | typekeys BUNDLE ID|LABEL TEXT (L3e)
 //        | act BUNDLE ACTION MODE ROLE NEEDLE SCROLLS (T-046, one matrix row) | textshot IN.txt OUT.png
 import AppKit
 import ApplicationServices
@@ -204,6 +204,19 @@ case "popup":
         print("popup item '\(args[4])': not found"); exit(5)
     }
     AXUIElementSetMessagingTimeout(hit, 1.5)
+    // L3f: CLICK (6th argument) clicks the item with the mouse: AXPress on a pop-up item ran but chose nothing (J-0643).
+    if args.count > 6 && args[6] == "click", let pos = attr(hit, kAXPositionAttribute), let size = attr(hit, kAXSizeAttribute) {
+        var p = CGPoint.zero, sz = CGSize.zero
+        AXValueGetValue(pos as! AXValue, .cgPoint, &p); AXValueGetValue(size as! AXValue, .cgSize, &sz)
+        let c = CGPoint(x: p.x + sz.width / 2, y: p.y + sz.height / 2)
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
+        usleep(200_000)
+        for t in [CGEventType.leftMouseDown, .leftMouseUp] {
+            CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: c, mouseButton: .left)?.post(tap: .cghidEventTap)
+            usleep(80_000)
+        }
+        print("popup item clicked at \(Int(c.x)),\(Int(c.y)) -> \(describe(hit))"); exit(0)
+    }
     let ps = AXUIElementPerformAction(hit, kAXPressAction as CFString).rawValue
     print("popup item -> \(describe(hit)) : \(ps)")
     exit(ps == 0 || ps == -25204 ? 0 : 4)
@@ -317,13 +330,18 @@ case "scroll":
     print("scrolled")
 case "set":
     // Put a checkbox/switch (by AXIdentifier) in the wanted state: press only when its AXValue differs.
-    var budget = 6000
+    // L3f: else a checkbox/switch whose title or description equals ID (unlabeled ids: « Activité de ce Mac »).
     var hit: AXUIElement?
-    for root in roots(args[2]) {
-        _ = walk(root, budget: &budget) { e, _ in
-            let ok = text(e, "AXIdentifier") == args[3]
-            if ok { hit = e }
-            return ok
+    for byLabel in [false, true] where hit == nil {
+        for root in roots(args[2]) where hit == nil {
+            var budget = 6000
+            _ = walk(root, budget: &budget) { e, _ in
+                let ok = byLabel ? ["AXCheckBox", "AXSwitch", "AXToggle"].contains(text(e, kAXRoleAttribute))
+                    && [kAXTitleAttribute, kAXDescriptionAttribute].contains { normText(text(e, $0)) == normText(args[3]) }
+                    : text(e, "AXIdentifier") == args[3]
+                if ok { hit = e }
+                return ok
+            }
         }
     }
     guard let hit else { print("set '\(args[3])': not found"); exit(5) }

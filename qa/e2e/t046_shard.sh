@@ -64,6 +64,8 @@ cleanup() {
 # L3e: px:TEXT presses the control whose title/description equals TEXT; pk:OPENER|ITEM opens a menu and picks ITEM in
 # one driver process (empty ITEM: the menu stays open for the row's act; the tree after the press goes to
 # rows/ax/<row>-menu.txt); tk:FIELD=TEXT types TEXT as key events into a field; dump:NAME saves rows/ax/<row>-NAME.txt.
+# L3f: ck:LABEL=0|1 sets a checkbox found by id or exact label (idempotent, unlike p:); pkc:OPENER|ITEM as pk: but
+# clicks ITEM with the mouse; rec:off turns this Mac's recording off (ui_row turns it back on after the row).
 navigate() {
   local miss="" c
   for c in "$@"; do
@@ -100,6 +102,10 @@ navigate() {
       pk:*) local k="${c#pk:}"
         drv popup "$BUNDLE" "${k%%|*}" "${k#*|}" "$ROWS/ax/${CUR:-setup}-menu.txt" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
       tk:*) local f="${c#tk:}"; drv typekeys "$BUNDLE" "${f%%=*}" "${f#*=}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      ck:*) local f="${c#ck:}"; drv set "$BUNDLE" "${f%=*}" "${f##*=}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      pkc:*) local k="${c#pkc:}"
+        drv popup "$BUNDLE" "${k%%|*}" "${k#*|}" "$ROWS/ax/${CUR:-setup}-menu.txt" click >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      rec:off) miss+="$(navigate pane:recording "set:source-localComputerHistory 0" w:2)"; cleanup >/dev/null ;;
       dump:*) drv dump "$BUNDLE" "$ROWS/ax/${CUR:-setup}-${c#dump:}.txt" >/dev/null 2>&1 ;;
     esac
   done
@@ -127,6 +133,8 @@ ui_row() { # id kind nav mode role needle action
   [[ -n $miss && $verdict != pass ]] && cause="nav($miss)$cause"  # L3e: N/A rows show their nav miss too.
   record "$id" "$verdict" "rows/$id.png" "rows/ax/$id.txt" "$cause" "$out"
   cleanup
+  # L3f: a row that read with recording off (rec:off) turns it back on, as the setup did.
+  if [[ $navs == *rec:off* ]]; then navigate pane:recording p:source-localComputerHistory w:3 o:recording-setup-confirm w:2 >/dev/null; cleanup; fi
 }
 
 finish_onboarding() {
@@ -180,6 +188,8 @@ while IFS=$'\037' read -r -u 3 id kind navs mode role needle action na screen; d
   if [[ -n $navs ]]; then eval "set -- $navs"; navigate "$@" >/dev/null; fi
   out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" 0 2>&1)"; st=$?
   rowshot "$id"; drv dismiss-alerts "$BUNDLE" >/dev/null 2>&1
+  # L3f: a row that opened System Settings (J-0807) leaves it in front: a later Return key would go there (J-0811).
+  if pgrep -x "System Settings" >/dev/null; then osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1; sleep 1; front; fi
   read -r v c <<< "$(row_verdict "$kind" "$st")"
   record "$id" "$v" "rows/$id.png" "rows/ax/$id.txt" "${c#-}" "$out"
 done 3< <(tr "\t" "\037" < "$OUT/plan.tsv")

@@ -301,3 +301,44 @@ J-0979	"mi:Goalong Dev,Goalong History Dev|Quitter Goalong" w:2
 J-0643	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 "pk:Supprimer les détails…|10 dernières minutes" w:2
 J-0658	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 "pk:Supprimer les détails…|Dernière session d’application" w:2
 J-0472	nav:overview p:activity-note-add w:2 "tk:activity-note-text=Note synthétique T-046" w:1
+# L3f: ck: makes « Calculer le rythme » idempotent (p: flipped it row after row: J-0782/0784 failed, 0783/0787 passed);
+# sources checked before the Données rows; recording off during the Atelier read; consent and classement in Mon travail;
+# replacement rule checkboxes; pop-up items clicked with the mouse (J-0643/0658 second approach).
+J-0779	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3
+J-0782	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3
+J-0783	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3
+J-0794	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3
+J-0784	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1
+J-0787	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0789	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0790	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0791	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0785	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3 o:"Afficher le contenu" w:1
+J-0416	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pkc:Données de |Détails choisis" w:1 px:Personnaliser w:1
+J-0421	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 px:Aperçu w:1 p:"Préparer l’aperçu local" w:4
+J-0423	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2
+J-0424	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2
+J-0426	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2
+J-0427	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pk:Actions groupées|" w:1
+J-0428	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pk:Actions groupées|" w:1
+J-0429	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pk:Actions groupées|" w:1
+J-0430	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "ck:Conversations locales=1" w:2
+J-0431	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "ck:Conversations locales=1" w:2
+J-0432	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "ck:Conversations locales=1" w:2
+J-0433	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2 pb:"Ajouter un remplacement" w:1
+J-0434	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2 pb:"Ajouter un remplacement" w:1
+J-0522	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0523	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0524	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0525	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0527	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0529	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0484	nav:work w:2 o:work-allow w:1 px:Autoriser w:2
+J-0488	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pkc:Corriger le classement de|Nouvelle tâche…" w:2
+J-0492	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pkc:Corriger le classement de|Nouvelle tâche…" w:2
+J-0494	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3
+J-0500	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pk:Corriger le classement de|" w:1
+J-0501	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pk:Corriger le classement de|" w:1
+J-0503	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pk:Corriger le classement de|" w:1
+J-0643	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 "pkc:Supprimer les détails…|10 dernières minutes" w:2
+J-0658	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 "pkc:Supprimer les détails…|Dernière session d’application" w:2
