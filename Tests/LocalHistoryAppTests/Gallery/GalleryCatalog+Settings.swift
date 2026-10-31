@@ -1,6 +1,8 @@
 #if os(macOS)
 import Foundation
 import SwiftUI
+import AgentActivity
+import LocalHistoryCore
 @testable import LocalHistoryApp
 
 /// Réglages (every pane, in the real window), their sheets, the source activation sheets and the onboarding.
@@ -47,6 +49,16 @@ extension GalleryCatalog {
                 AnyView(GoalongProfileStudio(onSend: { _ in }, localOnly: true))
             },
             panel("settings-sheets/analyse-demande-site", width: 700, clock: .injected) { _ in AnyView(GoalongSiteAnalysisSheet()) },
+            // UI-9 (48): « Projets suivis », with a model on the gallery's own folder (no real project, no agent read).
+            panel("settings-sheets/projets-suivis-vide", width: 620, height: 480) { ctx in
+                AnyView(GoalongDeveloperProjectsSheet(developer: developerModel(ctx, followed: [], suggested: [])))
+            },
+            panel("settings-sheets/projets-suivis", width: 620, height: 560) { ctx in
+                let site = GoalongDeveloperProject(root: URL(fileURLWithPath: "/Users/demo/Projets/goalong-site"), name: "goalong-site")
+                let app = GoalongDeveloperProject(root: URL(fileURLWithPath: "/Users/demo/Projets/goalong-app"), name: "goalong-app")
+                let seen = GoalongDeveloperProject(root: URL(fileURLWithPath: "/Users/demo/Projets/carnet"), name: "carnet")
+                return AnyView(GoalongDeveloperProjectsSheet(developer: developerModel(ctx, followed: [site, app], suggested: [seen])))
+            },
         ]
         for (tab, name) in ["applications", "sites", "categories"].enumerated() {
             entries.append(panel("settings-sheets/analyse-\(name)", width: 940, clock: .injected) { ctx in
@@ -97,6 +109,19 @@ extension GalleryCatalog {
                 return AnyView(LocalHistoryOnboardingView(model: built))
             }
         }
+    }
+
+    /// A developer model on the gallery's temporary folder, with fixed projects and no consent: it reads nothing real.
+    @MainActor private static func developerModel(_ ctx: GalleryContext, followed: [GoalongDeveloperProject],
+                                                  suggested: [GoalongDeveloperProject]) -> GoalongDeveloperModel {
+        let root = ctx.home.appendingPathComponent("developer", isDirectory: true)
+        let model = ctx.keep(GoalongDeveloperModel(root: root, consents: GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("capability-consent.json"))))
+        model.setSelectedProjectsForTesting(followed)
+        let day = Calendar.current.startOfDay(for: GoalongToday.now)
+        model.setValueForTesting(GoalongDeveloperDay(day: day, t3: T3CodeMetadataReader.read(day: day, enabled: false, shouldContinue: { true }),
+            agents: GoalongAgentProjectGrouping.group(.init(day: day), t3: nil, enabled: false), git: [],
+            files: .init(status: .noData, buckets: []), selectedProjects: followed, suggestions: suggested, developerStatus: .noData))
+        return model
     }
 }
 #endif
