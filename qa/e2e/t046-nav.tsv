@@ -4,7 +4,7 @@ J-0020	si
 J-0023	si
 J-0024	nav:concentration p:"Programme" w:2 p:"Tout le Mac" w:2
 J-0035	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
-J-0036	nav:concentration o:"Blocage" w:2
+J-0036	nav:concentration p:"Programme" w:2
 J-0038	nav:concentration p:"Distractions" w:2 p:"blocking-new-list" w:2
 J-0040	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
 J-0041	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
@@ -20,7 +20,7 @@ J-0059	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-
 J-0060	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
 J-0065	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
 J-0072	nav:braise p:"Tous les jours" w:2
-J-0078	nav:concentration o:"Blocage" w:2
+J-0078	nav:concentration p:"Programme" w:2
 J-0087	nav:concentration p:"concentration-open-review" w:2
 J-0092	nav:concentration p:"Distractions" w:2 p:"distractions-words-edit" w:2
 J-0093	nav:concentration p:"Distractions" w:2 p:"distractions-words-edit" w:2
@@ -37,7 +37,7 @@ J-0273	nav:overview p:"Partager cette journée…" w:2
 J-0282	nav:overview p:"Partager cette journée…" w:2
 J-0293	si
 J-0297	si
-J-0302	nav:concentration o:"Blocage" w:2
+J-0302	nav:concentration p:"Programme" w:2
 J-0303	si
 J-0322	si
 J-0330	si
@@ -81,7 +81,7 @@ J-0596	nav:overview
 J-0597	nav:overview
 J-0599	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"OK" w:2
 J-0606	si
-J-0633	nav:concentration o:"Blocage" w:2
+J-0633	nav:concentration p:"Programme" w:2
 J-0649	si
 J-0651	si
 J-0652	nav:overview p:"Partager cette journée…" w:2
@@ -435,10 +435,10 @@ J-0887	nav:ambiance w:2 ex:Arrêter
 J-0888	nav:ambiance w:2 ex:Arrêter
 J-1009	pane:recording p:settings-developer-projects w:2 ex:Retirer
 # L3k lot 3 (class C): rows that the new Blocage, session, Braise, conversation and settings seeds make reachable
-J-0003	nav:blocking
-J-0010	nav:blocking
-J-0011	nav:blocking
-J-0012	nav:blocking
+J-0003	nav:concentration p:"Programme" w:2
+J-0010	nav:concentration p:"Programme" w:2
+J-0011	nav:concentration p:"Programme" w:2
+J-0012	nav:concentration p:"Programme" w:2
 J-0015	nav:blocking p:"Bloquer autre chose" w:1 p:"Plus tard" w:1
 J-0033	nav:blocking p:"Arrêter…" w:2
 J-0034	nav:blocking p:"Arrêter…" w:2
@@ -449,14 +449,14 @@ J-0125	nav:concentration
 J-0132	nav:concentration
 J-0133	nav:concentration
 J-0742	nav:braise
-J-0894	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
-J-0897	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
-J-0898	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
-J-0899	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
-J-0900	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
-J-0901	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
-J-0903	nav:blocking
-J-0904	nav:blocking
+J-0894	nav:concentration p:"Programme" w:2 p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0897	nav:concentration p:"Programme" w:2 p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0898	nav:concentration p:"Programme" w:2 p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0899	nav:concentration p:"Programme" w:2 p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0900	nav:concentration p:"Programme" w:2 p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0901	nav:concentration p:"Programme" w:2 p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0903	nav:concentration p:"Programme" w:2
+J-0904	nav:concentration p:"Programme" w:2
 J-0346	nav:history p:"Conversations locales" w:2 "tk:Rechercher dans les conversations=zzzz" w:2
 J-0366	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2
 J-0370	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2

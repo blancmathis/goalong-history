@@ -123,21 +123,10 @@ jobs:
       max-parallel: 5
       matrix:
         include:
-          # L3m: small slices (about 25 rows) so no job nears 125 min; SB = the Blocage rows, alone with the Blocage seed.
-          - { shard: S1, slice: 1/2 }
-          - { shard: S1, slice: 2/2 }
-          - { shard: S2, slice: 1/4 }
-          - { shard: S2, slice: 2/4 }
-          - { shard: S2, slice: 3/4 }
-          - { shard: S2, slice: 4/4 }
-          - { shard: S3, slice: 1/5 }
-          - { shard: S3, slice: 2/5 }
-          - { shard: S3, slice: 3/5 }
-          - { shard: S3, slice: 4/5 }
-          - { shard: S3, slice: 5/5 }
+          # L3n lot 1: Blocage rows (SB, with the Blocage seed) + J-0228/J-0858 (S3, no seed).
+          - { shard: S3, slice: 1/1 }
           - { shard: SB, slice: 1/2 }
           - { shard: SB, slice: 2/2 }
-          - { shard: S4, slice: 1/1 }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
