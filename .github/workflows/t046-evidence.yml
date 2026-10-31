@@ -123,9 +123,11 @@ jobs:
       max-parallel: 5
       matrix:
         include:
-          # L3n lot 4: scriptable triggers on existing seeds (L3-na-analyse.tsv).
+          # L3n lots 4-5: scriptable triggers on existing seeds, then per-row failure seeds (seed:NAME).
+          - { shard: S1, slice: 1/1 }
           - { shard: S2, slice: 1/1 }
-          - { shard: S3, slice: 1/1 }
+          - { shard: S3, slice: 1/2 }
+          - { shard: S3, slice: 2/2 }
           - { shard: SB, slice: 1/1 }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

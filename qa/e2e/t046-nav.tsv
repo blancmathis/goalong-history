@@ -496,3 +496,19 @@ J-0329	nav:monitoring w:2 o:monitoring-edit-goals w:1 "ty:monitoring-work-goals=
 J-0329	nav:monitoring w:2 o:monitoring-edit-goals w:1 "tk:monitoring-work-goals= T046 nouvelle définition" w:1 p:monitoring-save-goals w:2
 J-0108	nav:concentration "o:Préparer une séance sur" w:1 "p:T046 Réseaux" w:1 "ck:Verrouiller=1" w:1 p:concentration-start w:2
 J-0980	"mi:Goalong Dev,Goalong History Dev|Quitter Goalong" w:2
+J-0222	seed:site pane:website w:2 pb:Déconnecter w:2
+J-0223	seed:site pane:website w:2 pb:Déconnecter w:2
+J-0226	seed:site-unmanaged pane:website w:2 pb:Déconnecter w:2 pb:Déconnecter w:2
+J-0234	seed:site pane:website w:2 "o:Connexion manuelle et options avancées" w:1 "p:Oublier le fichier" w:2
+J-0605	seed:site pane:storage w:2 "p:Importer Apple Santé…" w:2 pb:Oublier w:2
+J-0610	seed:health pane:storage w:2 "p:Importer Apple Santé…" w:2 "o:Déjà sur ce Mac" w:1 "o:Choisir une journée" w:1 "p:Mettre à la corbeille" w:2
+J-0413	seed:analysis-link si w:1 "pk:Plus d’options|10 dernières minutes" pc w:2 pb:Effacer w:3
+J-0495	seed:task-commit w:2 nav:work w:2 p:"Renommer…" w:2 "tk:Nom de la tâche= bis" w:1 pb:Renommer w:2
+J-0497	seed:plan-bad nav:work w:2 p:"Renommer…" w:2 "tk:Nom de la tâche= bis" w:1 pb:Renommer w:2
+J-0804	pane:recording w:2 seed:consent-lock "set:source-aiConversations 0" w:2
+J-0802	pane:recording w:2 seed:consent-lock "set:source-developerActivity 1" w:2
+J-0962	pane:chatGPT w:2 "p:Autoriser les analyses" w:2 "ck:Activité de ce Mac=1" w:1 p:analysis-save-selection w:2 seed:consent-lock "p:Autoriser les analyses" w:2
+J-0963	pane:chatGPT w:2 "p:Autoriser les analyses" w:2 "ck:Activité de ce Mac=1" w:1 p:analysis-save-selection w:2 seed:consent-lock "p:Autoriser les analyses" w:2
+J-0965	pane:chatGPT w:2 "p:Autoriser les analyses" w:2 "ck:Activité de ce Mac=1" w:1 p:analysis-save-selection w:2 seed:consent-lock "p:Autoriser les analyses" w:2
+J-0854	pane:applications w:2 "o:Sites web" w:1 "tk:Ajouter un site, exemple.fr=alerte-t046.fr" w:1 seed:data-ro pb:Exclure w:2 "o:Exclure le site" w:2
+J-0942	pane:home w:2 seed:data-ro "t:Confidentialité, tout suspendre|Tout suspendre…" w:2 "pb:Tout suspendre" w:2

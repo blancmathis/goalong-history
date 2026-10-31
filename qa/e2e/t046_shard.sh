@@ -103,6 +103,7 @@ navigate() {
               drv press "$BUNDLE" settings-back >/dev/null 2>&1 && sleep 1
               if [[ "${c#pane:}" != home ]]; then press3 "settings-${c#pane:}" || miss+="$c;"; sleep 1.5; fi ;;
       p:*) drv press "$BUNDLE" "${c#p:}" >/dev/null 2>&1 || miss+="$c;"; sleep 1 ;;
+      seed:*) row_seed "${c#seed:}" || miss+="$c;" ;;
       pp:*) local ok=0 a; IFS='|' read -ra alts <<< "${c#pp:}"
             for a in "${alts[@]}"; do drv pressprefix "$BUNDLE" "$a" >/dev/null 2>&1 && { ok=1; break; }; done
             ((ok)) || miss+="$c;"; sleep 1 ;;
@@ -148,6 +149,49 @@ record() { # id verdict png ax cause detail; L3g: changed and enabled columns, c
 expect_of() { local c; for c in "$@"; do [[ $c == ex:* ]] && { printf '%s' "${c#ex:}"; return; }; done; }
 pick_of() { local c; for c in "$@"; do [[ $c == pick:* ]] && { printf '%s' "${c#pick:}"; return; }; done; }
 
+# L3n lot 5: seed:NAME puts one failure or account state in place in the middle of a row (fixed list, no eval);
+# ui_row undoes every seed after the row (row_unseed). Sources: L3-na-analyse.tsv, /tmp/l3n/seeds.md (research, file:line).
+row_seed() {
+  local tok
+  case "$1" in
+    site|site-unmanaged)  # website account linked (GoalongSiteSubmission.swift:130: regular file, 0600 exactly)
+      mkdir -p "$DATA/website-connections"; chmod 700 "$DATA/website-connections"
+      if [[ $1 == site ]]; then tok="$DATA/website-connections/$(uuidgen).token"; else tok="$DATA/t046-token.txt"; fi
+      printf 'tok-t046' > "$tok"; chmod 600 "$tok"
+      defaults write "$BUNDLE" goalong.website.origin "https://example-t046.invalid"
+      defaults write "$BUNDLE" goalong.website.tokenFilePath "$tok" ;;
+    health)  # one saved Apple Health day (GoalongHealthArchive.validate)
+      mkdir -p "$DATA/health"; chmod 700 "$DATA/health"; local d; d=$(date -v-1d +%F)
+      printf '{"version":2,"source":"apple-health","days":[{"date":"%s","title":"Santé T-046","summary":"","outcomes":[],"activities":[],"telemetry":{"timezone":"Europe/Paris","receivedAt":"%s","state":"completed","devices":[],"websites":null,"agent":null},"health":{"version":1,"coverage":"partial","workouts":[],"metrics":[{"key":"sleepSeconds","value":25200,"unit":"s","source":"Synthetic","sampleCount":1,"aggregation":"interval-union"}]}}]}' \
+        "$d" "$(date -u +%FT%TZ)" > "$DATA/health/$d.json"; chmod 600 "$DATA/health/$d.json" ;;
+    analysis-link)  # a derived file that is not a regular file: the delete preflight refuses (DerivedHistoryCleaner.swift:67)
+      mkdir -p "$DATA/analysis"; [[ -e "$DATA/analysis/$(date +%F).analysis.json" ]] || ln -s /dev/null "$DATA/analysis/$(date +%F).analysis.json" ;;
+    task-commit)  # an open commitment on a task blocks its rename (GoalongWorkStore.swift:233)
+      tmo 60 "$GOALONG" --root "$DATA" commitment set --day today --kind task --task "Rapport T-046" --target 30m >> "$SUMMARY" 2>&1 ;;
+    plan-bad)  # an unreadable plan day: rename ends with a notice (GoalongWorkStore.swift:242)
+      mkdir -p "$DATA/Focus/plans"; printf '{bad' > "$DATA/Focus/plans/2020-01-01.json"; chmod 600 "$DATA/Focus/plans/2020-01-01.json" ;;
+    consent-lock) chflags uchg "$DATA/capability-consent.json" ;;  # consent writes fail (CapabilityConsentStore persist)
+    data-ro) chmod 500 "$DATA" ;;  # new files in the data folder fail (exclusions, global pause); undone after the row
+    *) return 1 ;;
+  esac
+  echo "$1" >> "$OUT/.seeded"; sleep 1  # navigate runs in a subshell: the list lives in a file
+}
+row_unseed() {
+  [[ -s "$OUT/.seeded" ]] || return 0
+  local s; for s in $(sort -u "$OUT/.seeded"); do case "$s" in
+    data-ro) chmod 700 "$DATA" ;;
+    consent-lock) chflags nouchg "$DATA/capability-consent.json" ;;
+    site|site-unmanaged) defaults delete "$BUNDLE" goalong.website.tokenFilePath >/dev/null 2>&1
+      for k in origin accountID accountCredentialFingerprint; do defaults delete "$BUNDLE" "goalong.website.$k" >/dev/null 2>&1; done
+      rm -f "$DATA/t046-token.txt"; rm -rf "$DATA/website-connections" ;;
+    health) rm -f "$DATA"/health/*.json ;;
+    analysis-link) [[ -L "$DATA/analysis/$(date +%F).analysis.json" ]] && rm -f "$DATA/analysis/$(date +%F).analysis.json" ;;
+    task-commit) tmo 60 "$GOALONG" --root "$DATA" commitment set --day today --kind work --target 2h >> "$SUMMARY" 2>&1 ;;
+    plan-bad) rm -f "$DATA/Focus/plans/2020-01-01.json" ;;
+  esac; done
+  log "[$CUR] seeded and undone: $(sort -u "$OUT/.seeded" | tr '\n' ' ')"; rm -f "$OUT/.seeded"
+}
+
 ui_row() { # id kind nav mode role needle action
   local id="$1" kind="$2" navs="$3" mode="$4" role="$5" needle="$6" action="$7" miss out st verdict cause
   pgrep -x "$EXE" >/dev/null || { launch; open_dashboard; }
@@ -172,6 +216,7 @@ ui_row() { # id kind nav mode role needle action
   # L3m: two mute rows in a row: restart the app (data stays on disk), so the next rows are measured.
   if [[ $st == 142 ]]; then mute=$((mute + 1)); else mute=0; fi
   if (( mute >= 2 )); then log "[$id] AX tree mute twice: app restarted"; quit_app; launch; open_dashboard; mute=0; fi
+  row_unseed
   cleanup
   # L3h: a press that opened System Settings (or a Finder window, J-0365) leaves it in front: close it, app in front.
   if pgrep -x "System Settings" >/dev/null; then osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1; sleep 1; front; fi
