@@ -246,111 +246,191 @@ struct GoalongSiteAnalysisSheet: View {
     @StateObject private var model: GoalongSiteAnalysisModel
     @StateObject private var windowHost = GoalongWebsiteWindowHost()
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
-    // Lime goes to « Installer… » only when Codex is missing; otherwise to « Se connecter » (R33 F2).
     @State private var codexInstalled = CodexExecutableLocator.locate() != nil
+    private let onOpenSettings: (() -> Void)?
 
     /// `model` lets a test or the gallery show a given state; the sheet builds its own otherwise.
-    init(model: GoalongSiteAnalysisModel? = nil) { _model = StateObject(wrappedValue: model ?? GoalongSiteAnalysisModel()) }
+    /// `onOpenSettings` opens Réglages › Analyse ChatGPT, where the analyses are allowed.
+    init(model: GoalongSiteAnalysisModel? = nil, onOpenSettings: (() -> Void)? = nil) {
+        _model = StateObject(wrappedValue: model ?? GoalongSiteAnalysisModel())
+        self.onOpenSettings = onOpenSettings
+    }
+
+    private var allowed: Bool { consents.isEnabled(.chatGPTAnalysis) }
+    /// Before a request is chosen the sheet is short: it takes the height of its content (UI-15B, 29).
+    private var compact: Bool { model.request == nil && !model.hasDraft }
+
+    /// UI-15B (29): the first step not done carries the sheet's one lime action.
+    private enum Step { case allow, install, connect, choose, analyze, export }
+    private var nextStep: Step {
+        if model.hasDraft { return .export }
+        if !allowed { return .allow }
+        if !model.connected { return codexInstalled ? .connect : .install }
+        return model.request == nil ? .choose : .analyze
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(alignment: .center, spacing: 12) {
                 Text("Analyser une demande du site").font(LHTheme.sheetTitleFont)
-                Spacer()
-                Button("Fermer") { model.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
+                Spacer(minLength: 0)
+                StatusPill(title: model.accountLabel, symbol: model.connected ? "checkmark.circle.fill" : "circle.dashed",
+                           tint: model.connected ? LHTheme.success : LHTheme.secondaryText)
             }.padding(24)
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    // UI-12B (29): one plain sentence; the tool's name stays in « En savoir plus ».
-                    GoalongHelpText(lead: "Goalong utilise votre abonnement ChatGPT sur ce Mac. Vos identifiants ne sont pas transmis à Goalong en ligne.",
-                                    more: "La connexion passe par Codex, l’outil d’OpenAI qui relie ChatGPT à ce Mac. Elle sert seulement aux demandes du site.",
-                                    font: .system(size: 13))
-                    if !consents.isEnabled(.chatGPTAnalysis) {
-                        GoalongNote("Avant de vous connecter, activez « Autoriser les analyses » dans Réglages › Analyse ChatGPT. Vous pourrez ensuite autoriser chaque analyse ici.", tone: .warning)
-                    }
-                    HStack {
-                        Text(model.accountLabel).font(.subheadline)
-                        Spacer()
-                        if model.connected {
-                            Button("Se déconnecter", action: model.disconnect)
-                        } else {
-                            Button("Se connecter à ChatGPT", action: model.connect)
-                                .modifier(GoalongMainActionStyle(primary: codexInstalled && consents.isEnabled(.chatGPTAnalysis)))
-                                .disabled(!consents.isEnabled(.chatGPTAnalysis))
-                        }
-                    }.disabled(model.busy)
-                    if model.busy {
-                        HStack {
-                            ProgressView().controlSize(.small)
-                            Text("Opération en cours…").font(.caption)
-                            Button("Annuler l’opération", action: model.cancel)
-                        }
-                    }
-                    Text("Ouvrez la demande téléchargée sur le site").font(.headline)
-                    Button("Choisir la demande…", action: chooseRequest).disabled(model.busy)
-                    if let selected = model.request {
-                        Text("\(selected.date), \(selected.timezone)").font(.subheadline.weight(.medium))
-                        Text("Vérifiez les données qui seront envoyées").font(.headline)
-                        Text("Ce fichier est la seule source de cette analyse. Les archives locales, conversations, notes et données Strava ne sont pas ajoutées.")
-                            .font(.caption).foregroundStyle(LHTheme.secondaryText)
-                        ScrollView([.vertical, .horizontal]) {
-                            Text(selected.previewJSON).font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled).padding(12)
-                        }
-                        .frame(height: 230)
-                        .background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
-                        Toggle("J’autorise l’envoi des seules données affichées à ChatGPT pour cette analyse", isOn: $model.reviewed)
-                            .disabled(model.busy)
-                        Text("GPT-5.6 Luna, High, utilisation décomptée selon votre compte ChatGPT. La disponibilité et les limites dépendent de votre abonnement.")
-                            .font(.caption).foregroundStyle(LHTheme.secondaryText)
-                        HStack {
-                            // Lime once connected; before that, the footer's « Installer… » is the step (UI-12B).
-                            Button("Analyser avec ChatGPT", action: model.analyze)
-                                .modifier(GoalongMainActionStyle(primary: model.connected))
-                                .disabled(model.busy || !model.reviewed || !model.connected || !consents.isEnabled(.chatGPTAnalysis))
-                        }
-                    }
-                    if model.hasDraft {
-                        Divider()
-                        Text("Relisez votre brouillon").font(.headline)
-                        TextField("Titre", text: $model.title).textFieldStyle(GoalongFieldStyle())
-                        GoalongTextArea(text: $model.summary, minHeight: 150)
-                            .accessibilityLabel("Résumé du brouillon")
-                        Text("Résultats à retenir, un par ligne").font(.caption)
-                        GoalongTextArea(text: $model.outcomes, minHeight: 80)
-                            .accessibilityLabel("Résultats du brouillon")
-                        Text("Le fichier exporté contiendra uniquement votre récap. Aucune mesure ni vérification n’est créée. Importez-le ensuite sur le site ; vos règles de partage s’y appliqueront.")
-                            .font(.caption).foregroundStyle(LHTheme.secondaryText)
-                        Button("Exporter le brouillon…", action: exportDraft).buttonStyle(LHPrimaryButtonStyle())
-                    }
-                    if let error = model.error {
-                        Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(LHTheme.warning)
-                    }
-                    if let status = model.status {
-                        Label(status, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success)
-                    }
-                }.padding(24)
+            if compact {
+                content
+            } else {
+                ScrollView { content }
             }
-            // UI-12B (29): before the connection, the tool it needs is the sheet's main action, in the footer.
-            if !model.connected {
-                GoalongSheetFooter {
-                    Text("La connexion demande Codex, à jour, sur ce Mac.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            GoalongSheetFooter {
+                if !model.connected {
+                    // UI-15B (29): Codex is said once, here, next to its action.
+                    Text("Codex, l’outil d’OpenAI qui relie ChatGPT à ce Mac, doit être installé et à jour.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     Button("Installer ou mettre à jour Codex…") {
                         if let url = URL(string: "https://developers.openai.com/codex/cli") {
                             _ = GoalongWorkspaceOpenPolicy.open(url, purpose: .documentation)
                         }
-                    }.modifier(GoalongMainActionStyle(primary: !codexInstalled))
+                    }.modifier(GoalongMainActionStyle(primary: nextStep == .install))
+                } else {
+                    Spacer(minLength: 0)
                 }
+                Button("Fermer") { model.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
             }
         }
-        .frame(width: 700, height: 780)
+        .frame(width: 700)
+        .frame(height: compact ? nil : 780)
         .background(GoalongWebsiteWindowReader(host: windowHost).frame(width: 0, height: 0))
         .onDisappear { model.cancel() }
         .onChange(of: consents.document) { _ in
             if !consents.isEnabled(.chatGPTAnalysis) { model.cancel() }
         }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Goalong utilise votre abonnement ChatGPT sur ce Mac pour expliquer une demande du site. Vos identifiants ne sont pas transmis à Goalong en ligne.")
+                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            // UI-15B (29): the prerequisites are three numbered steps, each with its own action.
+            GoalongSettingsList(title: "") {
+                stepRow(1, title: "Autoriser", done: allowed,
+                        detail: allowed ? "Les analyses sont autorisées dans Réglages › Analyse ChatGPT."
+                                        : "Activez « Autoriser les analyses » une fois, dans Réglages.") {
+                    if !allowed {
+                        Button("Ouvrir Réglages › Analyse ChatGPT") { model.cancel(); onOpenSettings?() }
+                            .modifier(GoalongMainActionStyle(primary: nextStep == .allow))
+                    }
+                }
+                GoalongRowDivider(inset: LHTheme.cardInset + 34)
+                stepRow(2, title: "Se connecter", done: model.connected, detail: connectDetail) {
+                    if model.connected {
+                        Button("Se déconnecter", action: model.disconnect).disabled(model.busy)
+                    } else {
+                        Button("Se connecter à ChatGPT", action: model.connect)
+                            .modifier(GoalongMainActionStyle(primary: nextStep == .connect))
+                            .disabled(model.busy || !allowed)
+                    }
+                }
+                GoalongRowDivider(inset: LHTheme.cardInset + 34)
+                stepRow(3, title: "Choisir la demande", done: model.request != nil, detail: chooseDetail) {
+                    Button("Choisir la demande…", action: chooseRequest)
+                        .modifier(GoalongMainActionStyle(primary: nextStep == .choose))
+                        .disabled(model.busy || !model.connected)
+                }
+            }
+            if model.busy {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Opération en cours…").font(.system(size: 12))
+                    Button("Annuler l’opération", action: model.cancel)
+                }
+            }
+            if let selected = model.request {
+                Text("Vérifiez les données qui seront envoyées").font(.headline)
+                Text("Ce fichier est la seule source de cette analyse. Les archives locales, conversations, notes et données Strava ne sont pas ajoutées.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                ScrollView([.vertical, .horizontal]) {
+                    Text(selected.previewJSON).font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled).padding(12)
+                }
+                .frame(height: 230)
+                .background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
+                Toggle("J’autorise l’envoi des seules données affichées à ChatGPT pour cette analyse", isOn: $model.reviewed)
+                    .disabled(model.busy)
+                Text("GPT-5.6 Luna, High, utilisation décomptée selon votre compte ChatGPT. La disponibilité et les limites dépendent de votre abonnement.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Analyser avec ChatGPT", action: model.analyze)
+                    .modifier(GoalongMainActionStyle(primary: nextStep == .analyze))
+                    .disabled(model.busy || !model.reviewed || !model.connected || !allowed)
+            }
+            if model.hasDraft {
+                Divider()
+                Text("Relisez votre brouillon").font(.headline)
+                TextField("Titre", text: $model.title).textFieldStyle(GoalongFieldStyle())
+                GoalongTextArea(text: $model.summary, minHeight: 150)
+                    .accessibilityLabel("Résumé du brouillon")
+                Text("Résultats à retenir, un par ligne").font(.system(size: 12))
+                GoalongTextArea(text: $model.outcomes, minHeight: 80)
+                    .accessibilityLabel("Résultats du brouillon")
+                Text("Le fichier exporté contiendra uniquement votre récap. Aucune mesure ni vérification n’est créée. Importez-le ensuite sur le site ; vos règles de partage s’y appliqueront.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Exporter le brouillon…", action: exportDraft).buttonStyle(LHPrimaryButtonStyle())
+            }
+            if let error = model.error {
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(LHTheme.warning)
+            }
+            if let status = model.status {
+                Label(status, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var connectDetail: String {
+        if model.connected { return "Votre compte ChatGPT sert seulement à cette analyse." }
+        if !allowed { return "Possible après l’autorisation." }
+        if !codexInstalled { return "Installez d’abord Codex, en bas de cette fenêtre." }
+        return "La page de connexion officielle s’ouvre dans votre navigateur."
+    }
+
+    private var chooseDetail: String {
+        if let selected = model.request { return "\(selected.date), \(selected.timezone)" }
+        if !model.connected { return "Possible une fois connecté à ChatGPT." }
+        return "Le fichier JSON téléchargé sur le site Goalong."
+    }
+
+    private func stepRow<Action: View>(_ number: Int, title: String, done: Bool, detail: String,
+                                       @ViewBuilder action: () -> Action) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                if done {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(LHTheme.success)
+                } else {
+                    Circle().strokeBorder(LHTheme.separator, lineWidth: 1.5)
+                    Text("\(number)").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.text)
+                }
+            }
+            .frame(width: 22, height: 22)
+            .accessibilityElement()
+            .accessibilityLabel(done ? "Étape \(number), faite" : "Étape \(number)")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .semibold))
+                Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            action()
+        }
+        .padding(.horizontal, LHTheme.cardInset)
+        .padding(.vertical, 12)
     }
 
     private func chooseRequest() {

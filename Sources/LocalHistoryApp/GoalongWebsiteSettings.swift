@@ -34,7 +34,7 @@ import LocalHistoryQueryCLI
                 HStack {
                     Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 14))
                     Spacer()
-                    Button("Choisir et voir l’aperçu") { presentation = .init(day: model.selectedDay) }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.large).accessibilityIdentifier("website-open-selected-day")
+                    Button("Choisir et voir l’aperçu") { presentation = .init(day: model.selectedDay) }.buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("website-open-selected-day")
                 }
                 Text("Tout est préparé localement. Seul le bouton d’envoi transmet les données.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }

@@ -36,6 +36,7 @@ struct BlockedSiteVeil: View {
                     .multilineTextAlignment(.center).frame(maxWidth: 460).fixedSize(horizontal: false, vertical: true)
                 if let counts = countsLine {
                     Text(counts).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                        .multilineTextAlignment(.center).lineSpacing(3)
                         .accessibilityIdentifier("blocking-veil-attempts")
                 }
                 if let minutes = presentation.breakMinutes, presentation.breaksLeft > 0 {
@@ -98,7 +99,8 @@ struct BlockedSiteVeil: View {
 
     private var countsLine: String? {
         let parts = [presentation.feedback?.attemptLine, presentation.feedback?.earnedLine].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: ". ") + "."
+        // One fact per line: the attempt count, then the earned break (UI-15B, 47).
+        return parts.isEmpty ? nil : parts.map { $0 + "." }.joined(separator: "\n")
     }
 
     var detail: String {
