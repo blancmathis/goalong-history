@@ -109,8 +109,9 @@ struct GoalongHourlyClassChart: View {
             .chartLegend(.hidden).chartXScale(domain: dateRange).chartYScale(domain: 0...scale.upperBound)
             .chartPlotStyle { $0.clipped() }
             .chartXAxis {
-                AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
-                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
+                // Each bar fills its hour: the hour's name sits under the bar, not on the edge between two bars.
+                AxisMarks(values: Self.hourTicks(dateRange, stride: hourStride)) { _ in
+                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour(), centered: hourStride == 1)
                         .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                 }
             }
@@ -125,6 +126,19 @@ struct GoalongHourlyClassChart: View {
             .accessibilityIdentifier("activity-hourly-class-chart")
             GoalongActivityClassLegend()
         }
+    }
+
+    /// Hour starts inside the range, the closing edge excluded (a centred label there would fall outside).
+    static func hourTicks(_ range: ClosedRange<Date>, stride: Int, calendar: Calendar = .current) -> [Date] {
+        var tick = calendar.dateInterval(of: .hour, for: range.lowerBound)?.start ?? range.lowerBound
+        if tick < range.lowerBound { tick = calendar.date(byAdding: .hour, value: 1, to: tick) ?? range.lowerBound }
+        var ticks: [Date] = []
+        while tick < range.upperBound, ticks.count < 25 {
+            ticks.append(tick)
+            guard let next = calendar.date(byAdding: .hour, value: max(1, stride), to: tick) else { break }
+            tick = next
+        }
+        return ticks
     }
 }
 
