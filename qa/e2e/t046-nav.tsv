@@ -1,0 +1,344 @@
+# id	nav — L3b: navigation of a row whose AX dump (run 4 or run 1) held the target; when that row acted, its press is replayed.
+J-0017	nav:concentration p:"Programme" w:2 p:"Tout le Mac" w:2
+J-0020	si
+J-0023	si
+J-0024	nav:concentration p:"Programme" w:2 p:"Tout le Mac" w:2
+J-0035	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0036	nav:concentration o:"Blocage" w:2
+J-0038	nav:concentration p:"Distractions" w:2 p:"blocking-new-list" w:2
+J-0040	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0041	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0042	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0043	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0048	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0050	si
+J-0051	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0054	si
+J-0055	si
+J-0057	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0059	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0060	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0065	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0072	nav:braise p:"Tous les jours" w:2
+J-0078	nav:concentration o:"Blocage" w:2
+J-0087	nav:concentration p:"concentration-open-review" w:2
+J-0092	nav:concentration p:"Distractions" w:2 p:"distractions-words-edit" w:2
+J-0093	nav:concentration p:"Distractions" w:2 p:"distractions-words-edit" w:2
+J-0109	si
+J-0119	nav:concentration p:"Ajouter une intention du jour" w:2
+J-0120	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0149	nav:concentration p:"concentration-open-review" w:2
+J-0150	nav:concentration p:"concentration-open-review" w:2
+J-0224	si
+J-0228	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0235	si
+J-0269	nav:overview p:"Partager cette journée…" w:2
+J-0273	nav:overview p:"Partager cette journée…" w:2
+J-0282	nav:overview p:"Partager cette journée…" w:2
+J-0293	si
+J-0297	si
+J-0302	nav:concentration o:"Blocage" w:2
+J-0303	si
+J-0322	si
+J-0330	si
+J-0331	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0334	nav:work p:"work-review-sheet" w:2
+J-0341	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0349	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0350	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0351	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0352	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0354	si
+J-0355	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0356	pane:recording p:"Choisir les dossiers de conversations…" w:2
+J-0357	pane:recording p:"Choisir les dossiers de conversations…" w:2
+J-0358	pane:recording p:"Choisir les dossiers de conversations…" w:2
+J-0365	pane:recording p:"Choisir les dossiers de conversations…" w:2
+J-0369	pane:recording p:"Choisir les dossiers de conversations…" w:2
+J-0371	si
+J-0372	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0373	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0385	si
+J-0392	si
+J-0410	si p:"Plus d’options" pc w:1 p:"Confidentialité · tout suspendre…" w:2
+J-0422	pane:chatGPT p:"Autoriser les analyses" w:2
+J-0436	pane:chatGPT p:"Autoriser les analyses" w:2
+J-0437	pane:chatGPT p:"Autoriser les analyses" w:2
+J-0447	si
+J-0456	nav:overview p:activity-explore-rhythm w:2
+J-0471	si
+J-0473	si
+J-0480	si
+J-0489	si
+J-0493	si
+J-0499	si
+J-0506	pane:jev p:jev-open-connection w:2 p:"jev-connection-close" w:2
+J-0517	si
+J-0526	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0531	si
+J-0588	si
+J-0596	nav:overview
+J-0597	nav:overview
+J-0599	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"OK" w:2
+J-0606	si
+J-0633	nav:concentration o:"Blocage" w:2
+J-0649	si
+J-0651	si
+J-0652	nav:overview p:"Partager cette journée…" w:2
+J-0711	pane:website p:"settings-back" w:2
+J-0713	si
+J-0724	si
+J-0727	si
+J-0751	nav:braise w:2
+J-0752	nav:braise p:"Tous les jours" w:2
+J-0753	si
+J-0754	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0793	si
+J-0798	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0799	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-0810	@onboarding
+J-0811	@onboarding
+J-0832	pane:home p:settings-report-problem w:3 p:"Outil" w:2
+J-0834	pane:advanced p:"Effacer les journaux" w:2
+J-0841	pane:home p:settings-report-problem w:3 p:"Outil" w:2
+J-0842	pane:home p:settings-report-problem w:3 p:"support-more" w:2
+J-0848	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"OK" w:2
+J-0852	si
+J-0855	si
+J-0858	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2
+J-0860	si
+J-0862	si
+J-0864	si
+J-0870	si
+J-0872	si
+J-0880	pane:home p:settings-report-problem w:3 p:"Ouvrir les éléments d’ouverture" w:2
+J-0886	nav:ambiance p:"ambiance-download-" w:2
+J-0887	nav:ambiance p:"ambiance-download-" w:2
+J-0888	nav:ambiance p:"ambiance-download-" w:2
+J-0902	si
+J-0937	si
+J-0940	si
+J-0943	si
+J-0964	si
+J-0972	si
+J-0983	pane:modules p:"Supprimer" w:2
+J-0984	si
+J-0991	si
+J-0993	pane:recording p:"recording-visible-text" w:2
+J-0994	si
+J-0995	pane:recording p:"recording-visible-text" w:2
+J-0997	si
+J-1009	nav:history p:"Conversations locales" w:2 p:"Vérifier les sources" w:2
+J-1020	si p:"Plus d’options" pc w:1 p:"Rechercher les mises à jour…" w:2
+J-0807	@onboarding
+# L3c: sheets/alerts opened by a scripted host control (sources read, not run).
+J-0722	pane:recording "t:Confidentialité avancée|Inclure les fenêtres privées détectées" w:2
+J-0723	pane:recording "t:Confidentialité avancée|Inclure les fenêtres privées détectées" w:2
+J-0726	pane:recording "t:Confidentialité avancée|Masquer les valeurs des paramètres d’URL" w:2
+J-0861	pane:storage p:"Effacer de l’historique…" w:2 p:"Effacer…" w:2
+J-0869	pane:storage p:"Choisir…" w:2 p:"Vérifier et appliquer…" w:2
+J-0936	pane:home "t:Confidentialité · tout suspendre|Tout suspendre…" w:2
+J-0939	pane:home "t:Confidentialité · tout suspendre|Tout suspendre…" w:2
+J-0019	nav:concentration p:"Programme" w:2 p:"Tout le Mac" w:2 p:"Geler le Mac" w:2
+J-0022	nav:concentration p:"Programme" w:2 p:"Tout le Mac" w:2 p:"Geler le Mac" w:2
+# L3d: navs from the L3c dumps (later lines win).
+J-0019	nav:concentration p:"Programme" w:2 p:"Tout le Mac" w:2 p:blocking-freeze w:2
+J-0022	nav:concentration p:"Programme" w:2 p:"Tout le Mac" w:2 p:blocking-freeze w:2
+J-0416	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0417	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0418	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0419	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0420	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0421	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0422	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0423	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0424	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0425	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0426	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0427	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0428	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0429	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0430	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0431	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0432	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0433	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0434	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0435	pane:chatGPT p:"Voir les données qui partiront" w:3
+J-0439	nav:overview p:activity-explore-screenTime w:2
+J-0443	nav:overview p:activity-explore-reports w:2 p:analytics-projects w:2
+J-0444	nav:overview p:activity-explore-reports w:2 p:analytics-projects w:2
+J-0445	nav:overview p:activity-explore-reports w:2 p:analytics-projects w:2
+J-0446	nav:overview p:activity-explore-reports w:2 p:analytics-projects w:2
+J-0448	nav:overview p:activity-explore-reports w:2
+J-0459	nav:overview p:activity-explore-reports w:2
+J-0461	nav:overview p:activity-explore-reports w:2
+J-0462	nav:overview p:activity-explore-reports w:2
+J-0457	nav:overview p:activity-explore-rhythm w:2 o:"Heures et valeurs" w:1
+J-0469	nav:overview p:activity-explore-code w:2
+J-0474	nav:overview p:activity-explore-usage w:2 p:"TextEdit" w:2
+J-0504	nav:work w:2 p:"Corriger" w:2
+J-0505	nav:work w:2 p:"Corriger" w:2
+J-0479	nav:work w:2 p:work-allow w:2
+J-0515	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Historique des conversations" w:2
+J-0521	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Préparer le prompt protégé" w:3
+J-0522	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Préparer le prompt protégé" w:3
+J-0523	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Préparer le prompt protégé" w:3
+J-0524	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Préparer le prompt protégé" w:3
+J-0525	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Préparer le prompt protégé" w:3
+J-0527	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Préparer le prompt protégé" w:3
+J-0529	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Préparer le prompt protégé" w:3
+J-0760	nav:history p:"Ce Mac" w:2 p:"Afficher les détails de" w:2
+J-0761	nav:history p:"Ce Mac" w:2 p:"Afficher les détails de" w:2
+J-0778	nav:history p:"Ce Mac" w:2 p:"Afficher les détails de" w:2
+J-0764	nav:history p:"Ce Mac" w:2 p:"Afficher les détails de" w:2 p:"Supprimer cet élément" w:2
+J-0768	nav:history p:"Ce Mac" w:2 "ty:Rechercher dans la chronologie=zzqx-t046-aucun" w:2
+J-0779	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0782	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0783	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0784	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0785	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0786	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0787	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0788	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0789	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0790	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0791	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0792	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0794	pane:website p:website-open-selected-day w:3 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0847	pane:applications p:"Sites web" w:2
+J-0851	pane:applications p:"Sites web" w:2 "ty:Ajouter un site=exemple-t046.fr" w:1 pb:"Exclure" w:2
+J-0853	pane:applications p:"Sites web" w:2 "ty:Ajouter un site=exemple-t046.fr" w:1 pb:"Exclure" w:2
+J-0863	pane:storage p:"Effacer de l’historique…" w:2 p:"Effacer…" w:2
+J-0865	pane:storage p:"Choisir…" w:2
+J-0866	pane:storage p:"Choisir…" w:2
+J-0868	pane:storage p:"Choisir…" w:2
+J-0867	pane:storage p:"Choisir…" w:2 "set:retention-automatic 1" w:1
+J-0869	pane:storage p:"Choisir…" w:2 "set:retention-automatic 1" w:1 p:"Vérifier et appliquer…" w:2
+J-0908	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 p:"Règles du site" w:1
+J-0909	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 p:"Règles du site" w:1
+J-0910	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 p:"Règles du site" w:1
+J-0911	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 p:"Règles du site" w:1
+J-0912	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 p:"Règles du site" w:1
+J-0913	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 p:"Règles du site" w:1
+J-0914	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 p:"Règles du site" w:1
+J-0915	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 p:"Règles du site" w:1
+J-1008	nav:overview p:activity-explore-coverage w:2 p:"Choisir les projets…" w:2
+J-0751	nav:braise w:2 p:braise-add-rule w:2
+J-0755	nav:braise w:2 p:braise-add-rule w:2
+J-0807	@onboarding "pu:onboarding-continue|permission-primary-action"
+J-0810	@onboarding "pu:onboarding-continue|permission-primary-action"
+J-0811	@onboarding "pu:onboarding-continue|permission-primary-action"
+J-0856	pane:applications
+# L3d: lot A (host action, then the alert/sheet; shortcut rows: the host of the button).
+J-0053	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2 pb:"Supprimer" w:2
+J-0270	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2
+J-0296	pane:jev p:"Joindre un bref extrait du texte affiché" w:2
+J-0320	pane:jev p:jev-enabled w:2
+J-0321	pane:jev p:jev-enabled w:2
+J-0410	si p:"Plus d’options" pc w:1 pm:"Confidentialité · tout suspendre…" w:2
+J-1020	"mi:Goalong Dev,Goalong History Dev|Rechercher les mises à jour" w:2
+J-0979	"mi:Goalong Dev,Goalong History Dev|Quitter" w:2
+J-0983	pane:modules p:"Supprimer ses données…" w:2
+J-0643	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 p:"Supprimer les détails…" w:1 pm:"10 dernières minutes" w:2
+J-0658	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 p:"Supprimer les détails…" w:1 pm:"Dernière session d’application" w:2
+J-0229	pane:website p:website-open-selected-day w:3
+J-0374	nav:history p:"Conversations locales" w:2 p:"Modifier le suivi" w:2
+J-0472	nav:overview p:activity-note-edit w:2 "ty:activity-note-text=Note synthétique T-046" w:1
+J-0668	nav:overview p:"Choisir un jour" w:2
+# L3e: exact tab press (px:), menus opened and picked in one driver process (pk:), typed keys (tk:), the work
+# definition and a Jev key seeded as files, a Safari site in the seed. Later lines win.
+J-0416	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2
+J-0423	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2
+J-0424	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2
+J-0426	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2
+J-0430	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2
+J-0431	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2
+J-0432	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2
+J-0427	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "pk:Actions groupées|" w:1
+J-0428	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "pk:Actions groupées|" w:1
+J-0429	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "pk:Actions groupées|" w:1
+J-0417	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2
+J-0433	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2
+J-0434	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2
+J-0435	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2
+J-0418	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2 pb:"Ajouter un remplacement" w:1
+J-0419	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2 pb:"Ajouter un remplacement" w:1
+J-0420	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2 pb:"Ajouter un remplacement" w:1
+J-0421	pane:chatGPT p:"Voir les données qui partiront" w:3 p:"Préparer l’aperçu local" w:4
+J-0521	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0522	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0523	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0524	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0525	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0527	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0529	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0779	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0782	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0783	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0794	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3
+J-0784	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1
+J-0785	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0786	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0787	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0788	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0789	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0790	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0791	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0792	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0908	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 "pk:Règles du site|" w:1
+J-0909	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 "pk:Règles du site|" w:1
+J-0910	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 "pk:Règles du site|" w:1
+J-0911	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 "pk:Règles du site|" w:1
+J-0912	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 "pk:Règles du site|" w:1
+J-0913	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 "pk:Règles du site|" w:1
+J-0915	pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 o:"Afficher les détails" w:1
+J-0229	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2
+J-0983	pane:modules p:"Supprimer les données Concentration" w:2
+J-0993	pane:recording "set:recording-visible-text 0" w:1 p:recording-visible-text w:2 dump:after
+J-0296	pane:recording "set:recording-visible-text 0" w:1 p:recording-visible-text w:2 pb:"Autoriser le texte affiché" w:2 pane:jev "t:Fonctionnement et confidentialité|Joindre un bref extrait du texte affiché" w:2
+J-0410	si "pk:Plus d’options|Confidentialité · tout suspendre" pc w:2
+J-0979	"mi:Goalong Dev,Goalong History Dev|Quitter Goalong" w:2
+J-0643	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 "pk:Supprimer les détails…|10 dernières minutes" w:2
+J-0658	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 "pk:Supprimer les détails…|Dernière session d’application" w:2
+J-0472	nav:overview p:activity-note-add w:2 "tk:activity-note-text=Note synthétique T-046" w:1
+# L3f: ck: makes « Calculer le rythme » idempotent (p: flipped it row after row: J-0782/0784 failed, 0783/0787 passed);
+# sources checked before the Données rows; recording off during the Atelier read; consent and classement in Mon travail;
+# replacement rule checkboxes; pop-up items clicked with the mouse (J-0643/0658 second approach).
+J-0779	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3
+J-0782	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3
+J-0783	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3
+J-0794	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3
+J-0784	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1
+J-0787	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0789	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0790	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0791	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3
+J-0785	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 "ck:Calculer le rythme à partir de l’historique de ce Mac=1" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3 o:"Afficher le contenu" w:1
+J-0416	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pkc:Données de |Détails choisis" w:1 px:Personnaliser w:1
+J-0421	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 px:Aperçu w:1 p:"Préparer l’aperçu local" w:4
+J-0423	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2
+J-0424	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2
+J-0426	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2
+J-0427	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pk:Actions groupées|" w:1
+J-0428	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pk:Actions groupées|" w:1
+J-0429	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pk:Actions groupées|" w:1
+J-0430	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "ck:Conversations locales=1" w:2
+J-0431	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "ck:Conversations locales=1" w:2
+J-0432	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "ck:Conversations locales=1" w:2
+J-0433	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2 pb:"Ajouter un remplacement" w:1
+J-0434	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Remplacements w:2 pb:"Ajouter un remplacement" w:1
+J-0522	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0523	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0524	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0525	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0527	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0529	rec:off pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les sources choisies" w:4 p:"Préparer le prompt protégé" w:3
+J-0484	nav:work w:2 o:work-allow w:1 px:Autoriser w:2
+J-0488	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pkc:Corriger le classement de|Nouvelle tâche…" w:2
+J-0492	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pkc:Corriger le classement de|Nouvelle tâche…" w:2
+J-0494	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3
+J-0500	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pk:Corriger le classement de|" w:1
+J-0501	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pk:Corriger le classement de|" w:1
+J-0503	nav:work w:2 o:work-allow w:1 px:Autoriser w:2 p:work-review-load w:3 "pk:Corriger le classement de|" w:1
+J-0643	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 "pkc:Supprimer les détails…|10 dernières minutes" w:2
+J-0658	pane:permissions "t:Résoudre un problème|Ouvrir les diagnostics d’accès" w:2 "pkc:Supprimer les détails…|Dernière session d’application" w:2

@@ -1,0 +1,27 @@
+J-0534	seal
+J-0535	event ?tap|input-?monitor|listenEvent|inputEvent
+J-0536	frontmost|activeApp|active app|focusedWindow
+J-0537	accessibility|AXObserver|kAXTrusted
+J-0538	background|continuity
+J-0539	site.?(upload|send|submission)|send-site
+J-0540	commitment
+J-0541	durable|sync
+J-0542	sparkle|update check|updates? (disabled|off)
+J-0543	derived
+J-0544	retention|purge
+J-0545	tmp|temporary|cleanup
+J-0546	login.?item|SMAppService|launch at login
+J-0547	guard
+J-0548	jev
+J-0549	conversation|aiConversations
+J-0550	chatgpt|recap
+J-0551	analys|analytic
+J-0552	developer|fsevents
+J-0553	call|meeting
+J-0554	hang|responsive|watchdog|stall
+J-0555	focus|session
+J-0556	braise
+J-0557	ambiance
+J-0558	migrat|legacy
+J-0559	integrity
+J-0560	permission
