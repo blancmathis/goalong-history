@@ -32,8 +32,17 @@ final class T046C2RenderTests: XCTestCase {
     }
 
     private var calendar: Calendar { .current }
+    /// The day the views treat as today in the date tests: never the real clock (no midnight race).
+    private let fixedNow = Calendar.current.date(from: .init(year: 2026, month: 9, day: 21, hour: 12))!
 
-    @MainActor func testRhythmStudioOffersToPickAProjectAndPrepareTheSelectionButNotBeforeAProjectIsNamed() throws {
+    /// Freezes the views' « today » to `date`; the previous clock comes back at teardown.
+    @MainActor private func freezeToday(_ date: Date) {
+        let before = GoalongToday.galleryClock
+        GoalongToday.galleryClock = { date }
+        addTeardownBlock { GoalongToday.galleryClock = before }
+    }
+
+    @MainActor func testRhythmStudioOffersToPickAProjectAndPrepareTheSelectionButNotBeforeAProjectIsNamed() {
         var accepted = false
         let rendered = host(GoalongRhythmStudio(day: day, masks: ["Mail"]) { _ in accepted = true })
         let seen = strings(of: rendered)
@@ -49,8 +58,9 @@ final class T046C2RenderTests: XCTestCase {
         assertNoVisibleWindow()
     }
 
-    @MainActor func testDateControlStepsOneDayBackAndHidesTheStepForwardOnTodayAndOffersToday() throws {
-        let earlier = calendar.date(byAdding: .day, value: -3, to: GoalongToday.now)!
+    @MainActor func testDateControlStepsOneDayBackAndHidesTheStepForwardOnTodayAndOffersToday() {
+        freezeToday(fixedNow)
+        let earlier = calendar.date(byAdding: .day, value: -3, to: fixedNow)!
         var chosen: [Date] = []
         let rendered = host(DateSelectionControl(date: earlier, onChange: { chosen.append($0) }))
         let seen = strings(of: rendered)
@@ -63,14 +73,16 @@ final class T046C2RenderTests: XCTestCase {
         XCTAssertEqual(chosen.first.map { calendar.dateComponents([.day], from: $0, to: earlier).day }, 1, "One day back")
         XCTAssertTrue(press("Aujourd’hui", in: rendered))
         XCTAssertEqual(chosen.count, 2)
+        XCTAssertEqual(chosen.last, fixedNow, "« Aujourd’hui » returns the injected today")
 
-        let today = host(DateSelectionControl(date: GoalongToday.now, onChange: { _ in }))
+        let today = host(DateSelectionControl(date: fixedNow, onChange: { _ in }))
         XCTAssertEqual(isEnabled("Jour suivant", in: today), false, "No day after today")
         XCTAssertFalse(strings(of: today).contains("Aujourd’hui"), "Already on today")
         assertNoVisibleWindow()
     }
 
-    @MainActor func testDateControlStepsAWholePeriodAndShowsItsLabel() throws {
+    @MainActor func testDateControlStepsAWholePeriodAndShowsItsLabel() {
+        freezeToday(fixedNow)
         var steps: [Int] = []
         var control = DateSelectionControl(date: day, onChange: { _ in })
         control.onStep = { steps.append($0) }
@@ -83,15 +95,21 @@ final class T046C2RenderTests: XCTestCase {
         assertNoVisibleWindow()
     }
 
-    @MainActor func testCalendarButtonNamesTheDayAndOpensTheCalendarOnPress() throws {
-        let rendered = host(GoalongCalendarButton(date: day, onChange: { _ in }))
-        XCTAssertTrue(strings(of: rendered).contains("Choisir un jour"))
+    /// The popover needs a window to be presented; hosted off screen the press only toggles its state, so the test
+    /// checks the day the button names and that pressing it shows no window.
+    @MainActor func testCalendarButtonNamesTheDayAndPressingItShowsNoWindow() {
+        freezeToday(fixedNow)
+        var chosen: [Date] = []
+        let rendered = host(GoalongCalendarButton(date: day, onChange: { chosen.append($0) }))
+        let seen = strings(of: rendered)
+        XCTAssertTrue(seen.contains("Choisir un jour"))
+        XCTAssertTrue(seen.contains { $0.contains("18") && $0.contains("2026") }, "The button names the day; saw \(seen.sorted())")
         XCTAssertTrue(press("Choisir un jour", in: rendered))
-        settle()
+        XCTAssertTrue(chosen.isEmpty, "Opening the calendar chooses nothing")
         assertNoVisibleWindow()
     }
 
-    @MainActor func testApplicationRowWithDetailsButNoFieldSaysSoAndLetsTheMemberCustomizeThenGoBackToTheCommonSettings() throws {
+    @MainActor func testApplicationRowWithDetailsButNoFieldSaysSoAndLetsTheMemberCustomizeThenGoBackToTheCommonSettings() {
         final class Box { var scope = GoalongAnalysisScope() }
         let box = Box()
         let binding = Binding(get: { box.scope }, set: { box.scope = $0 })
@@ -101,7 +119,7 @@ final class T046C2RenderTests: XCTestCase {
         XCTAssertTrue(seen.contains("Aucun détail activé"), "saw \(seen.sorted())")
         XCTAssertTrue(seen.contains("Personnaliser"))
         XCTAssertTrue(press("Personnaliser", in: rendered))
-        settle()
+        spin(until: { strings(of: rendered).contains("Masquer les options") })
         seen = strings(of: rendered)
         XCTAssertTrue(seen.contains("Masquer les options"), "saw \(seen.sorted())")
         XCTAssertTrue(seen.contains("Utiliser les réglages communs"), "saw \(seen.sorted())")
@@ -117,6 +135,10 @@ final class T046C2RenderTests: XCTestCase {
     @MainActor private func makeRuntime(_ state: GalleryCatalog.Conversations) throws -> AgentActivityRuntime {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("t046-c2-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        // The consent store writes under the application-support folder: the test runners give it a throwaway HOME.
+        XCTAssertTrue(AppPaths.capabilityConsentFile.path.hasPrefix(ProcessInfo.processInfo.environment["GOALONG_TEST_HOME"] ?? "/nonexistent")
+                      || AppPaths.capabilityConsentFile.path.contains("/tmp/") || AppPaths.capabilityConsentFile.path.contains("/var/folders/"),
+                      "The consent file must not be the real one: \(AppPaths.capabilityConsentFile.path)")
         let consentBefore = GoalongCapabilityConsentStore.shared.isEnabled(.aiConversations)
         addTeardownBlock { GoalongCapabilityConsentStore.shared.set(.aiConversations, enabled: consentBefore, surface: .settings) }
         let clockBefore = GoalongToday.galleryClock
@@ -132,23 +154,27 @@ final class T046C2RenderTests: XCTestCase {
 
     @MainActor func testConversationsHistoryListsTheReadConversationsAndSaysWhenReadingOrAccessFails() throws {
         var checked = 0
-        let filled = host(AgentActivityPage(agents: try makeRuntime(.filled), presentation: .history, onManageSources: { checked += 1 }))
-        let seen = strings(of: filled)
-        XCTAssertTrue(seen.contains("Tous les outils"), "saw \(seen.sorted())")
+        let filled = strings(of: host(AgentActivityPage(agents: try makeRuntime(.filled), presentation: .history, onManageSources: { checked += 1 })))
+        XCTAssertTrue(filled.contains("Planifier la migration du module Atlas"), "A listed conversation; saw \(filled.sorted())")
+        XCTAssertFalse(filled.contains("Conversations indisponibles"))
         let loading = strings(of: host(AgentActivityPage(agents: try makeRuntime(.loading), presentation: .history, onManageSources: {})))
         XCTAssertTrue(loading.contains("Lecture des conversations"), "saw \(loading.sorted())")
         let unreadable = host(AgentActivityPage(agents: try makeRuntime(.unreadable), presentation: .history, onManageSources: { checked += 1 }))
-        XCTAssertTrue(strings(of: unreadable).contains("Conversations indisponibles"))
+        let unreadableSeen = strings(of: unreadable)
+        XCTAssertTrue(unreadableSeen.contains("Conversations indisponibles"))
+        XCTAssertTrue(unreadableSeen.contains("Certaines sources de conversations sont illisibles"), "saw \(unreadableSeen.sorted())")
         XCTAssertTrue(press("Vérifier les sources", in: unreadable))
         XCTAssertEqual(checked, 1)
-        _ = host(AgentActivityPage(agents: try makeRuntime(.partial), presentation: .history, onManageSources: {}))
+        let partial = strings(of: host(AgentActivityPage(agents: try makeRuntime(.partial), presentation: .history, onManageSources: {})))
+        XCTAssertTrue(partial.contains("Analyse des conversations en cours"), "saw \(partial.sorted())")
         assertNoVisibleWindow()
     }
 
     @MainActor func testSourcesPageShowsTheWatchedFoldersAndTheIntegrationsOfARuntimeWithConversations() throws {
-        for state in [GalleryCatalog.Conversations.filled, .unreadable, .partial, .loading] {
-            let rendered = host(AgentActivityPage(agents: try makeRuntime(state), presentation: .management, onManageSources: {}))
-            XCTAssertFalse(strings(of: rendered).isEmpty)
+        for (state, listsFiles) in [(GalleryCatalog.Conversations.filled, true), (.partial, true), (.unreadable, false), (.loading, false)] {
+            let seen = strings(of: host(AgentActivityPage(agents: try makeRuntime(state), presentation: .management, onManageSources: {})))
+            XCTAssertTrue(seen.contains("Lecture sur place"), "\(state): the management page; saw \(seen.sorted())")
+            XCTAssertEqual(seen.contains { $0.contains("rollout-1.jsonl") }, listsFiles, "\(state): the read files are listed only when there are some")
         }
         assertNoVisibleWindow()
     }
@@ -168,11 +194,18 @@ final class T046C2RenderTests: XCTestCase {
         let view = NSHostingView(rootView: root.environment(\.goalongReduceMotion, true).goalongControls())
         view.frame = NSRect(x: 0, y: 0, width: 900, height: 1600)
         view.layoutSubtreeIfNeeded()
-        settle()
+        spin(until: { !strings(of: view).isEmpty })
         return view
     }
 
-    @MainActor private func settle() { RunLoop.current.run(until: Date().addingTimeInterval(0.35)) }
+    /// Runs the run loop in 10 ms steps until `condition` holds; fails after `timeout` seconds.
+    @MainActor private func spin(until condition: () -> Bool, timeout: TimeInterval = 5, line: UInt = #line) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else { return XCTFail("Condition not met within \(timeout) s", line: line) }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+    }
 
     /// Every identifier, label, title and string value of the AX tree, with the enabled state of each element.
     @MainActor private func nodes(of view: NSView) -> [Node] {
@@ -191,7 +224,6 @@ final class T046C2RenderTests: XCTestCase {
     }
 
     @MainActor private func strings(of view: NSView) -> Set<String> { nodes(of: view).reduce(into: []) { $0.formUnion($1.texts) } }
-    @MainActor private func accessible(_ root: some View) -> Set<String> { strings(of: host(root)) }
 
     /// Enabled state of the element with this label; nil when there is none. A label counts as enabled if any element carrying it is.
     @MainActor private func isEnabled(_ label: String, in view: NSView) -> Bool? {
