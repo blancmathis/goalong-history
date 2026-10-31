@@ -900,7 +900,8 @@ struct BlockingLockExplainer: View {
                         Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        loginItemsButton
+                        // UI-9 (1): one « Ouvrir Réglages Système… » per group; « Relance » already shows it when off.
+                        if controller.protection.launchAtLogin { loginItemsButton }
                     }
                         .padding(.leading, 32).padding(.bottom, 8)
                         .accessibilityIdentifier("blocking-level-help")
@@ -983,7 +984,8 @@ struct BlockingLockExplainer: View {
                 .menuStyle(.borderlessButton).fixedSize()
                 .foregroundStyle(LHTheme.secondaryText)
             } else {
-                Button("Choisir…") { passwordPurpose = .create }.buttonStyle(LHQuietButtonStyle())
+                // UI-9 (1): a button like the group's other actions, not bare text.
+                Button("Choisir…") { passwordPurpose = .create }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
             }
         }
         .frame(minHeight: 38)

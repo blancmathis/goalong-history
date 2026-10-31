@@ -23,6 +23,9 @@ extension GalleryCatalog {
             }),
             dashboard("settings/enregistrement-actif", section: .settings, pane: .recording, fixture: .realistic),
             dashboard("settings/stockage-avec-donnees", section: .settings, pane: .storage, fixture: .realistic),
+            // UI-9 (58): Avancé with developer mode on, its switch and help shown.
+            dashboard("settings/avance-developpeur", section: .settings, pane: .advanced,
+                      configure: { _, ctx in ctx.defaults.set(true, forKey: GoalongDeveloperPreferences.enabledKey) }),
             // Recording on, so the history row asks for the missing access instead of « Fonction désactivée ».
             dashboard("settings/permission-manquante", section: .settings, pane: .permissions,
                       environment: { $0.permissions = .galleryMissing }, fixture: .recordingOn),

@@ -122,7 +122,9 @@ struct JevActivationAvailability: Equatable {
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
+                        // UI-9 (5): with a key saved, the history is the one step left, so it is the lime action.
                         Button("Configurer l’historique", action: onOpenRecording)
+                            .modifier(GoalongMainActionStyle(primary: monitor.hasKey))
                             .accessibilityIdentifier("jev-open-recording")
                     }
                 }
@@ -141,20 +143,21 @@ struct JevActivationAvailability: Equatable {
 
     private var toggleBlockedReason: String? {
         guard !availability.canToggle(isEnabled: enabled) else { return nil }
-        return availability.hasKey ? "Activez d’abord l’historique" : "Connectez d’abord l’API"
+        return availability.hasKey ? "Activez d’abord l’historique" : "Connectez d’abord Jev"
     }
 
     private var connectionRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(monitor.hasKey ? "Clé API Jev enregistrée" : "Connexion API nécessaire")
+                // UI-9 (5): plain words, no « API »; TypeSafe is named once, as the company that bills Jev.
+                Text(monitor.hasKey ? "Jev est connecté" : "Jev n’est pas connecté")
                     .font(.system(size: 13, weight: .medium))
-                Text(monitor.hasKey ? "Usage facturé par TypeSafe, le fournisseur de Jev." : "Votre clé d’accès reste sur ce Mac. Le service de Jev est payant (TypeSafe).")
+                Text(monitor.hasKey ? "Usage facturé par TypeSafe, la société qui fournit Jev." : "Jev est un service payant de la société TypeSafe. Votre clé d’accès reste sur ce Mac.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 8)
             // UI-56: until a key is saved, connecting is the step that unlocks Jev, so it is the lime action.
-            Button(monitor.hasKey ? "Gérer la connexion" : "Connecter l’API") { showingConnection = true }
+            Button(monitor.hasKey ? "Gérer la connexion" : "Connecter Jev") { showingConnection = true }
                 .modifier(GoalongMainActionStyle(primary: !monitor.hasKey))
                 .accessibilityIdentifier("jev-open-connection")
         }

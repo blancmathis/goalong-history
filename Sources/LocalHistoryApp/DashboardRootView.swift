@@ -266,9 +266,10 @@
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : LHTheme.tertiaryText)
                         .frame(width: 7, height: 7)
+                    // UI-9 (13, 17, 40): the state is read in full, on two lines if needed (« Enregistrement arrêté »).
                     Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Suivi en pause")
                         .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     if model.runtime.needsAttention {
                         Image(systemName: "chevron.right")
@@ -278,7 +279,7 @@
                 }
                 .foregroundStyle(LHTheme.secondaryText)
                 .padding(.leading, 16).padding(.trailing, 10)
-                .frame(height: 32)
+                .frame(minHeight: 32)
             }
             .buttonStyle(LHNavigationButtonStyle())
         }

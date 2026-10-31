@@ -405,3 +405,6 @@ surveillance/a-configurer--   # UI-56 (L-UI-6 : « Connecter l’API » en lime 
 settings/jev--   # UI-56 (L-UI-6 : « Connecter l’API » en lime ; raison sous l’interrupteur ; « Quand » grisé ; phrase sans « Toutes les 15 secondes » ; pause en note)
 programme/saisie-de-texte--   # UI-63 (L-UI-6 : indicatif « Recopiez ici » en police système ; compteur « caractères recopiés » ; pied de feuille commun GoalongSheetFooter)
 settings/accueil--   # UI-51 (L-UI-6 : ligne d’état des mises à jour de l’accueil, GoalongUpdateStatusRow ; « Rechercher » grisé et état non configuré dans la ligne ; boîte 275,1028 726×31)
+settings/enregistrement--   # UI-9 (24, 44) (L-UI-6 : une phrase d’aide par réglage, le reste dans « En savoir plus » ; groupe inactif lisible, sans voile à 0,55)
+settings/avance-developpeur--   # UI-9 (58) (L-UI-6 : nouvel écran, Avancé avec le mode développeur activé)
+fenetre/stockage-refuse--   # UI-9 (13, 17, 40) (L-UI-6 : statut de la barre latérale sur deux lignes, « Enregistrement arrêté » lu en entier)

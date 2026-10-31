@@ -20,8 +20,6 @@ import LocalHistoryCore
                 VStack(alignment: .leading, spacing: 14) {
                     Label("Vos choix appliqués", systemImage: "slider.horizontal.3")
                         .font(LHTheme.cardTitleFont)
-                    Text("Ce résumé montre les réglages enregistrés. Votre accord par source, les accès macOS et la disponibilité réelle des données sont distincts.")
-                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     ForEach([GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations]) { capability in
                         HStack {
                             Text(capability.title).font(.system(size: 13))
@@ -43,8 +41,13 @@ import LocalHistoryCore
                         Button("Gérer les exclusions") { model.openApplicationsSettings() }.buttonStyle(LHSecondaryButtonStyle())
                         Button("Gérer les sources") { model.selectSection(.settings) }.buttonStyle(LHSecondaryButtonStyle())
                     }
-                    Text("Les filtres d’enregistrement s’appliquent à l’historique de ce Mac, pas au Temps d’écran d’Apple ni aux conversations IA d’origine. Chaque source et chaque envoi a ses propres réglages.")
-                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    // UI-9 (16): the card shows the choices; the explanations stay one click away.
+                    GoalongDisclosureGroup("En savoir plus") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Ce résumé montre les réglages enregistrés. Votre accord par source, les accès macOS et la disponibilité réelle des données sont distincts.")
+                            Text("Les filtres d’enregistrement s’appliquent à l’historique de ce Mac, pas au Temps d’écran d’Apple ni aux conversations IA d’origine. Chaque source et chaque envoi a ses propres réglages.")
+                        }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                    }
                 }.fixedSize(horizontal: false, vertical: true)
             }
             LHCard {
@@ -59,16 +62,18 @@ import LocalHistoryCore
                     Text(Self.chatGPTAnalysisText(consented: consents.isEnabled(.chatGPTAnalysis),
                                                   selection: analysisSelection, policy: exclusions.policy))
                         .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                    Text("Envoyer au site et partager avec d’autres personnes sont deux actions différentes : les règles de destinataires du site s’appliquent après l’envoi. Un export local crée un fichier ; toute personne qui le reçoit peut en garder une copie.")
-                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 12) {
                         Button("Vérifier l’envoi au site…") { showingSharing = true }.buttonStyle(LHSecondaryButtonStyle())
                         if sender.enabled {
                             Button("Mettre en pause l’envoi quotidien") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle())
                         }
                     }
-                    Text("Mettre en pause, déconnecter ou supprimer localement n’efface pas les données déjà reçues ; un transfert en cours peut se terminer. Gérez les destinataires et supprimez les données distantes sur le site ou chez le service. La recherche de mises à jour contacte le serveur des versions sans envoyer votre activité.")
-                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    GoalongDisclosureGroup("En savoir plus") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Envoyer au site et partager avec d’autres personnes sont deux actions différentes : les règles de destinataires du site s’appliquent après l’envoi. Un export local crée un fichier ; toute personne qui le reçoit peut en garder une copie.")
+                            Text("Mettre en pause, déconnecter ou supprimer localement n’efface pas les données déjà reçues ; un transfert en cours peut se terminer. Gérez les destinataires et supprimez les données distantes sur le site ou chez le service. La recherche de mises à jour contacte le serveur des versions sans envoyer votre activité.")
+                        }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                    }
                 }.fixedSize(horizontal: false, vertical: true)
             }
             LHCard {
@@ -79,8 +84,10 @@ import LocalHistoryCore
                         .font(.system(size: 13, weight: .medium))
                     if retentionEnabled { Text(retentionSummary).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText) }
                     Button("Choisir la conservation par type de données…") { showingRetention = true }.buttonStyle(LHSecondaryButtonStyle())
-                    Text("Les fichiers d’activité sont lisibles par votre compte macOS : les permissions de fichiers ne sont pas un chiffrement. La conservation ne couvre pas tout : données Apple, conversations IA d’origine, exports, sauvegardes et copies distantes ont leurs propres réglages. Les bilans ChatGPT s’effacent avec l’historique détaillé des jours concernés.")
-                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    GoalongDisclosureGroup("En savoir plus") {
+                        Text("Les fichiers d’activité sont lisibles par votre compte macOS : les permissions de fichiers ne sont pas un chiffrement. La conservation ne couvre pas tout : données Apple, conversations IA d’origine, exports, sauvegardes et copies distantes ont leurs propres réglages. Les bilans ChatGPT s’effacent avec l’historique détaillé des jours concernés.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                    }
                 }.fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
