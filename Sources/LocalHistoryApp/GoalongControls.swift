@@ -566,7 +566,7 @@
                 .foregroundStyle(selected && isEnabled ? LHTheme.text : hovered && isEnabled ? LHTheme.text.opacity(0.85) : LHTheme.secondaryText)
                 .background(!selected && hovered && isEnabled ? LHTheme.hoverBackground.opacity(0.6) : .clear, in: shape)
                 .overlay { shape.strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2) }
-                // Disabled: no extra fade. Labels keep secondary text (≥ 4.5:1); the selected one keeps ink (UI-16A, 5).
+                // Disabled: no extra fade. Every label, the selected one too, is secondary text (≥ 4.5:1); the raised pill marks the choice (UI-16A, 5).
                 .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
                 .contentShape(shape)
                 .onHover { hovered = $0 }
