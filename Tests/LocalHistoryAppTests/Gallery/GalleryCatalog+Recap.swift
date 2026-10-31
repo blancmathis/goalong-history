@@ -51,8 +51,15 @@ extension GalleryCatalog {
                                    reader: @escaping (GalleryContext) -> (Date) throws -> ChatGPTRecapDayOverview,
                                    ready: @escaping (ChatGPTRecapRuntime) -> Bool) -> GalleryEntry {
         var runtime: ChatGPTRecapRuntime?
-        return GalleryEntry(id, sizes: [.window], clock: .injected, note: note,
-                            ready: { _ in runtime.map(ready) ?? false }) { ctx in
+        var model: DashboardViewModel?
+        // UI-13C (34): inside the real window, like bilan/non-connecte, so every state has the sidebar and the return bar.
+        return GalleryEntry(id, sizes: [.window], clock: .injected, dashboardWindow: true, note: note,
+                            section: .chatGPTRecap,
+                            ready: { ctx in
+                                guard let model, GalleryFixtures.dashboardReady(model)(ctx) else { return false }
+                                return runtime.map(ready) ?? false
+                            }) { ctx in
+            ctx.environment.usedBytes = GalleryFixtureHome.usedBytes(.recordingOn)
             try GalleryFixtureHome.install(.recordingOn)
             GoalongCapabilityConsentStore.shared.set(.chatGPTAnalysis, enabled: true, surface: .settings)
             if saved { try saveRecap() }
@@ -65,9 +72,11 @@ extension GalleryCatalog {
                 dayOverviewReader: { try read($0) }, defaults: ctx.defaults)
             runtime = built
             ctx.keep(built)
-            ctx.cleanups.append { built.stop() }
-            let model = try GalleryFixtures.dashboardModel(ctx, .init(section: .chatGPTRecap))
-            return AnyView(ChatGPTRecapPage(model: model, runtime: built))
+            ChatGPTRecapPage.galleryRuntime = built
+            ctx.cleanups.append { ChatGPTRecapPage.galleryRuntime = nil; built.stop() }
+            let dashboard = try GalleryFixtures.dashboardModel(ctx, .init(section: .chatGPTRecap))
+            model = dashboard
+            return AnyView(LocalHistoryDashboardView(model: dashboard))
         }
     }
 
