@@ -131,6 +131,9 @@ RECIPES = {
     "J-0794": ("", "label", "AXButton", "Utiliser cette session relue"),
     # L3i: the target is the date picker itself (act type sets it one day back, reads it, restores it).
     "J-0515": ("", "label", "AXDateTimeArea", "Conversations actives depuis"),
+    # L3l (ui-int3): Profile Studio and Rythme labels renamed.
+    "J-0524": ("", "label", "AXButton", "Exporter la consigne pour mon agent…"),
+    "J-0783": ("", "label", "AXCheckBox", "Inclure les textes de fenêtres déjà autorisés"),
     # L3i: « Actions groupées » became a kit menu (AXMenuButton); the nav's pick: chooses the item.
     "J-0427": ("", "label", "AXMenuButton", "Actions groupées"),
     "J-0428": ("", "label", "AXMenuButton", "Actions groupées"),
