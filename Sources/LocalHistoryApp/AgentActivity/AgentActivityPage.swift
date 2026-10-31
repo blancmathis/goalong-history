@@ -67,6 +67,11 @@
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @State private var search = ""
         @State private var providerFilter: AgentProvider?
+
+        /// The kit menu, same height and surface as the search field beside it.
+        private var providerOptions: [(AgentProvider?, String)] {
+            [(nil, "Tous les outils")] + availableProviders.map { (Optional($0), $0.frenchName) }
+        }
         @State private var editingFolder: AgentWatchedFolder?
         private let presentation: AgentActivityPresentation
         private let onManageSources: (() -> Void)?
@@ -114,14 +119,16 @@
                         disabledSourceExplanation
                         if presentation == .management { watchedFoldersCard }
                     } else if presentation == .history {
-                        AgentTokenUsageCard(usage: agents.tokenUsageSnapshot, scanning: agents.isScanning, analyzedAt: agents.tokenUsageAnalyzedAt)
                         conversationHistoryList
+                        // The token figures come after the list they describe, and not at all when no source is readable.
+                        if !sourcesUnreadable {
+                            AgentTokenUsageCard(usage: agents.tokenUsageSnapshot, scanning: agents.isScanning, analyzedAt: agents.tokenUsageAnalyzedAt)
+                        }
                         GoalongDisclosureGroup("Source et confidentialité") {
                             sourceConsentCard.padding(.top, 12)
                         }
                         .font(.system(size: 12))
                     } else {
-                        localStatusBanner
                         metrics
                         integrationCard
                         watchedFoldersCard
@@ -129,6 +136,8 @@
                         storageAndPrivacyCard
                     }
                 }
+                // Sources is a settings page: reading width (DESIGN §7). The history list keeps the full width.
+                .frame(maxWidth: presentation == .management ? LHTheme.readableWidth : .infinity, alignment: .leading)
                 .padding(.horizontal, LHTheme.pageInset)
                 .padding(.top, presentation == .management ? 28 : 18)
                 .padding(.bottom, 50)
@@ -194,22 +203,16 @@
                         } label: {
                             Label(agents.isScanning ? "Analyse…" : "Analyser maintenant", systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(LHSecondaryButtonStyle())
+                        // One lime action per page: here once a folder exists, in the folder empty state before.
+                        .modifier(AgentHeaderActionStyle(primary: !agents.userWatchedFolders.isEmpty))
                         .disabled(agents.isScanning)
-
-                        Button {
-                            agents.chooseFolder()
-                        } label: {
-                            Label("Ajouter un dossier", systemImage: "folder.badge.plus")
-                        }
-                        .buttonStyle(LHPrimaryButtonStyle())
                     }
                 }
             }
         }
 
         private var sourceConsentCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "cpu")
                         .font(.system(size: 14, weight: .medium))
@@ -223,7 +226,7 @@
                                 "Goalong lit seulement les sources que vous autorisez, à leur emplacement d’origine. Il garde un index léger de métadonnées et ne copie jamais le contenu des conversations."
                             )
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -232,15 +235,15 @@
         }
 
         private var disabledSourceExplanation: some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Aucune source n’est analysée", systemImage: "pause.circle.fill")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Les événements et preuves existants restent disponibles. Activez cette source seulement si vous voulez que Goalong lise Codex, Claude, OpenCode ou un dossier que vous ajoutez."
+                        "Les événements et preuves existants restent disponibles. Activez « Conversations locales » seulement si vous voulez que Goalong lise Codex, Claude Code, OpenCode ou un dossier que vous ajoutez."
                     )
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -252,107 +255,149 @@
 
         private var hasSourceIssue: Bool { sourceHealth.hasReadFailure }
 
+        /// No source could be read and nothing is listed: the page says it once, in the empty state.
+        private var sourcesUnreadable: Bool {
+            hasSourceIssue && agents.overview.captures.isEmpty && !agents.isScanning
+        }
+
         private var conversationHistoryList: some View {
             let captures = filteredCaptures
             return VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .bottom, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(
-                            "\(agents.overview.captures.count) conversation\(agents.overview.captures.count == 1 ? "" : "s")"
-                        )
-                        .font(.system(size: 20, weight: .semibold))
-                        HStack(spacing: 7) {
-                            Text(conversationSummaryDetail)
-                            Text("·")
-                            if agents.isScanning {
-                                ProgressView()
-                                    .controlSize(.mini)
-                                Text("Mise à jour des sources modifiées…")
-                            } else {
-                                Label("Sources d’origine", systemImage: "internaldrive")
-                            }
-                        }
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if availableProviders.count > 1 {
-                        Picker("Outil", selection: $providerFilter) {
-                            Text("Tous les outils").tag(nil as AgentProvider?)
-                            ForEach(availableProviders) { provider in
-                                Text(provider.frenchName).tag(provider as AgentProvider?)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 150)
-                    }
-                    GoalongSearchField("Rechercher dans les conversations", text: $search)
-                        .frame(width: 280)
-                }
-
-                if sourceHealth != .ready {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: sourceHealth.symbol).foregroundStyle(LHTheme.warning)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(sourceHealth.title).font(.system(size: 13, weight: .semibold))
-                            Text(sourceHealth.message)
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        if let title = sourceHealth.actionTitle {
-                            Button(title) { agents.scanNow(analyzeSelectedDay: true) }.disabled(agents.isScanning)
-                        }
-                        if let onManageSources { Button("Vérifier les sources", action: onManageSources) }
-                    }.padding(14)
-                    .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 12))
-                    .accessibilityIdentifier("conversation-source-health")
-                }
-
-                LHCard(padding: 0) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        if captures.isEmpty {
-                            EmptyStateView(
-                                symbol: agents.isScanning
-                                    ? "arrow.triangle.2.circlepath" : "bubble.left.and.bubble.right",
-                                title: agents.isScanning ? "Lecture des conversations"
-                                    : (!search.isEmpty || providerFilter != nil) ? "Aucune conversation correspondante"
-                                    : hasSourceIssue ? "Conversations indisponibles" : "Aucune conversation ce jour-là",
-                                message: agents.isScanning
-                                    ? "Goalong vérifie les sources modifiées."
-                                    : (!search.isEmpty || providerFilter != nil)
-                                        ? "Effacez la recherche ou choisissez un autre outil."
-                                        : hasSourceIssue ? "Vérifiez l’état des sources ci-dessus pour rétablir l’accès." : "Essayez un autre jour ou vérifiez vos dossiers de conversations."
-                            )
-                            .frame(minHeight: 190)
-                            if search.isEmpty, providerFilter == nil, !hasSourceIssue, let onManageSources {
-                                Button("Vérifier les sources", action: onManageSources)
-                                    .buttonStyle(LHSecondaryButtonStyle()).frame(maxWidth: .infinity).padding(.bottom, 20)
-                            }
-                            if !search.isEmpty || providerFilter != nil {
-                                Button("Effacer les filtres") { search = ""; providerFilter = nil }
-                                    .buttonStyle(LHSecondaryButtonStyle())
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.bottom, 20)
-                            }
-                        } else {
-                            ForEach(Array(captures.prefix(120).enumerated()), id: \.element.id) { index, record in
-                                conversationRow(record)
-                                if index < min(captures.count, 120) - 1 {
-                                    Divider().padding(.leading, 66)
+                if sourcesUnreadable {
+                    unreadableSourcesState
+                } else {
+                    HStack(alignment: .bottom, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(GoalongUIFormat.count(agents.overview.captures.count, "conversation"))
+                            .font(.system(size: 20, weight: .semibold))
+                            HStack(spacing: 7) {
+                                if agents.isScanning {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                    Text("Mise à jour des sources modifiées…")
+                                } else {
+                                    Text(conversationSummaryDetail + ".")
                                 }
                             }
-                            if captures.count > 120 {
-                                Text("Affichage des 120 conversations les plus récentes")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                        }
+                        Spacer()
+                        if availableProviders.count > 1 {
+                            GoalongMenuPicker("Outil", selection: $providerFilter, options: providerOptions)
+                                .frame(width: 150)
+                        }
+                        GoalongSearchField("Rechercher dans les conversations", text: $search)
+                            .frame(width: 280)
+                    }
+
+                    if sourceHealth != .ready {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: sourceHealth.symbol).foregroundStyle(LHTheme.warning)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(sourceHealth.title).font(.system(size: 13, weight: .semibold))
+                                Text(sourceHealth.message(hasReadableConversations: !agents.overview.captures.isEmpty))
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                            if let title = sourceHealth.actionTitle {
+                                Button(title) { agents.scanNow(analyzeSelectedDay: true) }
+                                    .buttonStyle(LHSecondaryButtonStyle()).disabled(agents.isScanning)
+                            }
+                            if let onManageSources {
+                                Button("Vérifier les sources", action: onManageSources).buttonStyle(LHSecondaryButtonStyle())
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .accessibilityIdentifier("conversation-source-health")
+                    }
+
+                    if captures.isEmpty {
+                        // An empty state sits on the page, not in a card (DESIGN §8).
+                        VStack(spacing: 0) {
+                                EmptyStateView(
+                                    symbol: agents.isScanning
+                                        ? "arrow.triangle.2.circlepath" : "bubble.left.and.bubble.right",
+                                    title: agents.isScanning ? "Lecture des conversations"
+                                        : (!search.isEmpty || providerFilter != nil) ? "Aucune conversation correspondante"
+                                        : hasSourceIssue ? "Conversations indisponibles" : "Aucune conversation ce jour-là",
+                                    message: agents.isScanning
+                                        ? "Goalong vérifie les sources modifiées."
+                                        : (!search.isEmpty || providerFilter != nil)
+                                            ? "Effacez la recherche ou choisissez un autre outil."
+                                            : hasSourceIssue ? "Vérifiez l’état des sources ci-dessus pour rétablir l’accès." : "Essayez un autre jour ou vérifiez vos dossiers de conversations."
+                                )
+                                .frame(minHeight: 190)
+                                if search.isEmpty, providerFilter == nil, !hasSourceIssue, let onManageSources {
+                                    Button("Vérifier les sources", action: onManageSources)
+                                        .buttonStyle(LHSecondaryButtonStyle()).frame(maxWidth: .infinity).padding(.bottom, 20)
+                                }
+                                if !search.isEmpty || providerFilter != nil {
+                                    Button("Effacer les filtres") { search = ""; providerFilter = nil }
+                                        .buttonStyle(LHSecondaryButtonStyle())
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.bottom, 20)
+                                }
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        LHCard(padding: 0) {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                    ForEach(Array(captures.prefix(120).enumerated()), id: \.element.id) { index, record in
+                                        conversationRow(record)
+                                        if index < min(captures.count, 120) - 1 {
+                                            Divider().padding(.leading, 66)
+                                        }
+                                    }
+                                    if captures.count > 120 {
+                                        Text("Affichage des 120 conversations les plus récentes")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(LHTheme.secondaryText)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                    }
                             }
                         }
                     }
                 }
             }
+        }
+
+        /// One message for one problem: what failed, what to do (no count, no token line, no card).
+        /// UI-15C (6): aligned on the page's left edge, one lime action (retry), the other secondary.
+        private var unreadableSourcesState: some View {
+            VStack(alignment: .leading, spacing: 14) {
+                GoalongThreadPlaceholder(width: 72)
+                Label(sourceHealth.title, systemImage: sourceHealth.symbol)
+                    .font(LHTheme.cardTitleFont)
+                    .accessibilityAddTraits(.isHeader)
+                Text(sourceHealth.message(hasReadableConversations: false))
+                    .font(.system(size: 13))
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 520, alignment: .leading)
+                HStack(spacing: 10) {
+                    if let title = sourceHealth.actionTitle {
+                        Button(title) { agents.scanNow(analyzeSelectedDay: true) }
+                            .buttonStyle(LHPrimaryButtonStyle())
+                            .disabled(agents.isScanning)
+                    }
+                    if let onManageSources {
+                        if sourceHealth.actionTitle == nil {
+                            Button("Vérifier les sources", action: onManageSources)
+                                .buttonStyle(LHPrimaryButtonStyle())
+                        } else {
+                            Button("Vérifier les sources", action: onManageSources)
+                                .buttonStyle(LHSecondaryButtonStyle())
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 24)
+            .accessibilityIdentifier("conversation-source-health")
         }
 
         private func conversationRow(_ record: AgentCaptureRecord) -> some View {
@@ -365,14 +410,11 @@
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                         .help(title)
-                    HStack(spacing: 6) {
-                        Text(GoalongUIFormat.time(AgentConversationListPresentation.date(for: record)))
-                            .monospacedDigit()
-                        Text("·")
-                        Text(conversationDetail(record))
-                    }
+                    // UI-15C (6): one text, one space after the comma.
+                    Text(GoalongUIFormat.time(AgentConversationListPresentation.date(for: record)) + ", " + conversationDetail(record))
+                        .monospacedDigit()
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .lineLimit(1)
                 }
 
@@ -384,19 +426,22 @@
                         .foregroundStyle(LHTheme.warning)
                 } else if !record.projectionIsComplete {
                     Label("Journée partielle", systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LHTheme.warning)
                         .help("Ce jour dépasse la limite de lecture directe ; les messages les plus anciens peuvent manquer.")
                 }
 
                 Menu {
                     Button("Afficher la source d’origine") { agents.openOriginal(record) }
-                    Button("Vérifier l’empreinte SHA-256") { agents.verify(record) }
+                    Button("Vérifier que la source est intacte") { agents.verify(record) }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 24, height: 24)
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .tint(LHTheme.secondaryText)
+                .foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 30)
                 .accessibilityLabel("Actions sur la conversation")
             }
@@ -416,7 +461,7 @@
                 "\(replies) réponse\(replies > 1 ? "s" : "") finale\(replies > 1 ? "s" : "")",
             ]
             parts.append(contentsOf: availableProviders.map(\.frenchName))
-            return parts.joined(separator: " · ")
+            return parts.joined(separator: ", ")
         }
 
         private func conversationTitle(_ record: AgentCaptureRecord) -> String {
@@ -433,121 +478,110 @@
                 return record.provider.frenchName
             }
             return
-                "\(record.provider.frenchName) · \(counts.prompts) demande\(counts.prompts > 1 ? "s" : "") · \(counts.replies) réponse\(counts.replies > 1 ? "s" : "")"
+                "\(record.provider.frenchName), \(counts.prompts) demande\(counts.prompts > 1 ? "s" : ""), \(counts.replies) réponse\(counts.replies > 1 ? "s" : "")"
         }
 
-        private var localStatusBanner: some View {
-            HStack(alignment: .top, spacing: 13) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(LHTheme.success.opacity(0.12))
-                    Image(systemName: "internaldrive.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(LHTheme.success)
+        /// One hero figure (conversations followed that day); the other counts are one sentence below it,
+        /// the source state is one pill, and the technical detail waits in « En savoir plus » (DESIGN §6).
+        private var metrics: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(GoalongUIFormat.number(agents.overview.captures.count))
+                        .font(LHTheme.heroFont)
+                        .tracking(-1.8)
+                    Text(agents.overview.captures.count > 1 ? "conversations suivies" : "conversation suivie")
+                        .font(.system(size: 13, weight: .medium))
+                    Spacer(minLength: 18)
+                    if agents.isScanning {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    StatusPill(
+                        title: agents.indexIsValid ? "Sources lisibles" : "Sources à vérifier",
+                        symbol: agents.indexIsValid ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
+                        tint: agents.indexIsValid ? LHTheme.success : LHTheme.danger
+                    )
                 }
-                .frame(width: 38, height: 38)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Lecture directe des sources")
-                        .font(.system(size: 12, weight: .semibold))
+                .accessibilityElement(children: .combine)
+                Text(metricsDetail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                if agents.overview.errorCount > 0 {
+                    Text(GoalongUIFormat.count(Int(agents.overview.errorCount), "action en erreur", plural: "actions en erreur") + ".")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LHTheme.warning)
+                }
+                if agents.lastScanResult.capacityLimitedFolderCount > 0 {
                     Text(
-                        "Le contenu des conversations est lu sur place dans Codex, Claude Code, OpenCode et les dossiers configurés. L’index local ne contient que l’outil, l’identifiant, la référence de la source, les horodatages, la taille, les positions et l’empreinte SHA-256."
+                        "Une source est trop grande pour l’index : Goalong garde ses informations les plus récentes et ne la relit pas en boucle."
+                    )
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LHTheme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                GoalongDisclosureGroup("En savoir plus") {
+                    Text(
+                        "Goalong lit Codex, Claude Code, OpenCode et les dossiers que vous ajoutez, là où ils sont, sans copier les conversations. Pour chacune, il garde une courte fiche : l’outil, l’identifiant, l’emplacement, les heures, la taille et une empreinte SHA-256 qui montre si le fichier a changé. Index local : \(formatBytes(agents.overview.indexBytes))."
                     )
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
-                    Text(
-                        "Goalong ne conserve aucune copie, aucun instantané ni contenu transmis par les hooks."
-                    )
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(LHTheme.privateTint)
-                    if agents.lastScanResult.capacityLimitedFolderCount > 0 {
-                        Text(
-                            "Une source dépasse la taille maximale de l’index léger : Goalong garde ses métadonnées les plus récentes, sans relancer de lecture en boucle."
-                        )
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(LHTheme.warning)
-                    }
+                    .padding(.top, 4)
                 }
-                Spacer(minLength: 18)
-                if agents.isScanning {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                StatusPill(
-                    title: agents.indexIsValid ? "Index léger valide" : "Index à vérifier",
-                    symbol: agents.indexIsValid ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
-                    tint: agents.indexIsValid ? LHTheme.success : LHTheme.danger
-                )
+                .font(.system(size: 12))
             }
-            .padding(14)
-            .background(LHTheme.success.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(LHTheme.success.opacity(0.14), lineWidth: 1)
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        private var metrics: some View {
-            HStack(spacing: 12) {
-                MetricCard(
-                    title: "Sessions d’agents",
-                    value: String(agents.overview.sessionCount),
-                    detail: DashboardFormatters.dayTitle.string(from: agents.selectedDay),
-                    symbol: "cpu",
-                    tint: LHTheme.accent
-                )
-                MetricCard(
-                    title: "Messages",
-                    value: String(agents.overview.messageCount),
-                    detail: "Messages utilisateur, assistant et système",
-                    symbol: "bubble.left.and.bubble.right.fill",
-                    tint: LHTheme.teal
-                )
-                MetricCard(
-                    title: "Appels d’outils",
-                    value: String(agents.overview.toolCallCount),
-                    detail: agents.overview.errorCount == 0
-                        ? "Aucun message d’erreur observé"
-                        : "\(agents.overview.errorCount) message\(agents.overview.errorCount > 1 ? "s" : "") d’erreur observé\(agents.overview.errorCount > 1 ? "s" : "")",
-                    symbol: "wrench.and.screwdriver.fill",
-                    tint: agents.overview.errorCount == 0 ? LHTheme.success : LHTheme.warning
-                )
-                MetricCard(
-                    title: "Sources indexées",
-                    value: String(agents.overview.captures.count),
-                    detail: "Index : " + formatBytes(agents.overview.indexBytes),
-                    symbol: "list.bullet.rectangle.fill",
-                    tint: LHTheme.privateTint
-                )
-            }
-            // Equal card heights: the row takes its tallest card's height.
-            .fixedSize(horizontal: false, vertical: true)
+        /// « Le 23 octobre 2026 : 12 sessions, 340 messages et 85 actions des agents. »
+        private var metricsDetail: String {
+            let day = DashboardFormatters.dayTitle.string(from: agents.selectedDay)
+            let sessions = GoalongUIFormat.count(Int(agents.overview.sessionCount), "session")
+            let messages = GoalongUIFormat.count(Int(agents.overview.messageCount), "message")
+            let actions = GoalongUIFormat.count(Int(agents.overview.toolCallCount), "action d’agent", plural: "actions d’agents")
+            return "\(day) : \(sessions), \(messages) et \(actions)."
         }
 
         private var integrationCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 15) {
                     HStack(alignment: .top) {
                         sectionHeader(
                             symbol: "point.3.connected.trianglepath.dotted",
-                            tint: LHTheme.accent,
-                            title: "Signaux de relance des agents",
+                            tint: LHTheme.secondaryText,
+                            title: "Détection immédiate (facultatif)",
                             subtitle:
-                                "Les hooks facultatifs ne font que relancer la détection. Leur contenu est ignoré et jamais ajouté à l’index."
+                                "Sans elle, Goalong regarde vos dossiers de temps en temps. Avec elle, l’outil prévient Goalong dès qu’une conversation change, sans lui envoyer son contenu."
                         )
                         Spacer()
-                        Button("Ouvrir les signaux de relance") {
+                        Button("Afficher le dossier") {
                             agents.openSignalsFolder()
                         }
                         .buttonStyle(LHSecondaryButtonStyle())
                     }
 
+                    // UI-15C (6): a rule above every row, the Codex folder one included.
+                    Divider()
                     providerDirectoryRow
                     ForEach(AgentIntegrationKind.allCases) { kind in
                         Divider()
                         integrationRow(kind)
                     }
+                    GoalongDisclosureGroup("En savoir plus") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Codex est lu dans ~/.codex. La détection immédiate modifie seulement ces fichiers de réglages :")
+                            ForEach(AgentIntegrationKind.allCases) { kind in
+                                Text("\(kind.frenchName) : \(configurationPathLabel(agents.status(for: kind).configurationPath))")
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                    }
+                    .font(.system(size: 12))
                 }
             }
         }
@@ -556,13 +590,13 @@
             HStack(spacing: 12) {
                 providerIcon(.codex)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Historique local de Codex")
-                        .font(.system(size: 11, weight: .semibold))
+                    Text("Dossier des sessions Codex")
+                        .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Goalong suit les sessions, l’historique et les journaux de Codex dans `~/.codex` lorsque ce dossier existe."
+                        "Goalong suit les sessions et l’historique de Codex quand Codex est installé sur ce Mac."
                     )
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 StatusPill(
@@ -599,19 +633,17 @@
                 providerIcon(kind.provider)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(kind.frenchName)
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(configurationPathLabel(status.configurationPath))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .font(.system(size: 12, weight: .semibold))
+                        // The file path is developer detail: on hover, and listed in « En savoir plus » below.
+                        // UI-15C (6): the card subtitle says once what each state does; no sentence per row.
+                        .help(configurationPathLabel(status.configurationPath))
                     if let otherPath = status.otherExecutablePath {
                         Text(
                             status.otherExecutableExists
                                 ? "Installé pour une autre copie : \(otherPath)"
                                 : "Cassé : copie introuvable (\(otherPath))"
                         )
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(status.otherExecutableExists ? Color.secondary : Color.orange)
                         .lineLimit(2)
                         .truncationMode(.middle)
@@ -620,11 +652,11 @@
                 Spacer()
                 StatusPill(
                     title: status.isInstalled
-                        ? "Signal de relance installé"
+                        ? "Détection immédiate"
                         : (status.otherExecutablePath != nil
                             ? (status.otherExecutableExists ? "Installé pour une autre copie" : "Intégration cassée")
-                            : "Détection périodique"),
-                    symbol: status.isInstalled ? "bolt.shield.fill" : "bolt.slash",
+                            : "Lecture périodique"),
+                    symbol: status.isInstalled ? "bolt.shield.fill" : "clock.arrow.circlepath",
                     tint: status.isInstalled ? LHTheme.success : Color.secondary
                 )
                 if status.isInstalled {
@@ -640,12 +672,12 @@
                     Button("Réinstaller pour cette copie") {
                         agents.installIntegration(kind)
                     }
-                    .buttonStyle(LHPrimaryButtonStyle())
+                    .buttonStyle(LHSecondaryButtonStyle())
                 } else {
-                    Button("Installer") {
+                    Button("Installer le relais \(kind.frenchName)") {
                         agents.installIntegration(kind)
                     }
-                    .buttonStyle(LHPrimaryButtonStyle())
+                    .buttonStyle(LHSecondaryButtonStyle())
                 }
             }
             // Goalong Dev: the hooks are shared with the installed Goalong (read-only here).
@@ -653,7 +685,7 @@
         }
 
         private var watchedFoldersCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 15) {
                     HStack(alignment: .top) {
                         sectionHeader(
@@ -661,7 +693,7 @@
                             tint: LHTheme.teal,
                             title: "Dossiers de conversations",
                             subtitle:
-                                "Une source arrêtée le reste après un redémarrage ; ajoutez-la de nouveau pour l’autoriser. Goalong ne conserve que des références légères."
+                                "Un dossier retiré le reste après un redémarrage ; ajoutez-le de nouveau pour l’autoriser. Goalong ne conserve que des références légères."
                         )
                         Spacer()
                         Button("Détecter les dossiers courants") {
@@ -670,23 +702,22 @@
                         .buttonStyle(LHSecondaryButtonStyle())
                         .disabled(!consents.isEnabled(.aiConversations))
                         // With no folder yet, the empty state below carries the one primary action.
-                        if agents.userWatchedFolders.isEmpty {
-                            Button { agents.chooseFolder() } label: { Label("Ajouter un dossier", systemImage: "plus") }
-                                .buttonStyle(LHSecondaryButtonStyle())
-                        } else {
-                            Button { agents.chooseFolder() } label: { Label("Ajouter un dossier", systemImage: "plus") }
-                                .buttonStyle(LHPrimaryButtonStyle())
-                        }
+                        // The page header carries the one primary action; the empty state below has its own.
+                        Button { agents.chooseFolder() } label: { Label("Ajouter un dossier", systemImage: "plus") }
+                            .buttonStyle(LHSecondaryButtonStyle())
                     }
 
                     if agents.userWatchedFolders.isEmpty {
                         EmptyStateView(
                             symbol: "folder.badge.plus",
                             title: "Aucun dossier suivi pour l’instant",
-                            message:
-                                "Choisissez un dossier contenant des conversations locales. La lecture ne commence qu’une fois la source activée.",
-                            buttonTitle: "Choisir un dossier",
-                            action: agents.chooseFolder
+                            // UI-15C (6): says what the folders are for, and the switch only when it is off.
+                            message: consents.isEnabled(.aiConversations)
+                                ? "Codex, Claude Code et OpenCode sont déjà lus. Ajoutez un dossier seulement pour un autre outil."
+                                : "Activez la lecture des conversations, puis ajoutez un dossier pour un autre outil.",
+                            // Source off: no lime action that cannot read anything yet.
+                            buttonTitle: consents.isEnabled(.aiConversations) ? "Choisir un dossier" : nil,
+                            action: consents.isEnabled(.aiConversations) ? agents.chooseFolder : nil
                         )
                         .frame(minHeight: 190)
                     } else {
@@ -705,18 +736,18 @@
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(folder.displayName)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                         Text(folder.captureMode.frenchName)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(providerTint(folder.provider))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(providerTint(folder.provider).opacity(0.10), in: Capsule())
+                            .background(Color.primary.opacity(0.045), in: Capsule())
                     }
                     Text(folder.path)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -760,7 +791,7 @@
         }
 
         private var captureHistoryCard: some View {
-            LHCard {
+            GoalongPlainBlock {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 12) {
                         sectionHeader(
@@ -772,13 +803,8 @@
                         )
                         Spacer()
                         if availableProviders.count > 1 {
-                            Picker("Outil", selection: $providerFilter) {
-                                Text("Tous les outils").tag(nil as AgentProvider?)
-                                ForEach(availableProviders) { provider in
-                                    Text(provider.frenchName).tag(provider as AgentProvider?)
-                                }
-                            }
-                            .frame(width: 165)
+                            GoalongMenuPicker("Outil", selection: $providerFilter, options: providerOptions)
+                                .frame(width: 165)
                         }
                         GoalongSearchField("Rechercher sessions, fichiers, modèles ou outils", text: $search)
                             .frame(width: 285)
@@ -790,7 +816,7 @@
                             title: agents.isScanning ? "Vérification des sources" : "Aucune source indexée correspondante",
                             message: agents.isScanning
                                 ? "Les sources connues sont vérifiées progressivement ; les originaux modifiés sont relus sur place."
-                                : "Lancez un agent, installez un signal de relance facultatif ou ajoutez son dossier d’historique."
+                                : "Lancez un agent, activez la détection immédiate ou ajoutez son dossier d’historique."
                         )
                         .frame(minHeight: 210)
                     } else {
@@ -800,8 +826,8 @@
                         }
                         if filteredCaptures.count > 120 {
                             Text("Affichage des 120 références les plus récentes.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.top, 5)
                         }
@@ -815,25 +841,25 @@
                 providerIcon(record.provider)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(record.summary.title ?? URL(fileURLWithPath: record.relativePath).lastPathComponent)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
-                    Text("\(record.provider.frenchName) · \(record.watchedFolderName) · \(record.relativePath)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                    Text("\(record.provider.frenchName), \(record.watchedFolderName), \(record.relativePath)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let excerpt = record.summary.excerpt, !excerpt.isEmpty {
                         Text(excerpt)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .lineLimit(2)
                     }
                 }
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(DashboardFormatters.fullTimestamp.string(from: record.sourceModifiedAt ?? record.capturedAt))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 5) {
                         compactPill("\(record.summary.messageCount) msg", symbol: "bubble.left")
                         compactPill(GoalongUIFormat.count(record.summary.toolCallCount, "outil"), symbol: "wrench")
@@ -844,12 +870,16 @@
                 Menu {
                     Button("Afficher la source d’origine") { agents.openOriginal(record) }
                     Divider()
-                    Button("Vérifier l’empreinte SHA-256") { agents.verify(record) }
+                    Button("Vérifier que la source est intacte") { agents.verify(record) }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
+                        .frame(width: 24, height: 24)
                 }
                 .menuStyle(.borderlessButton)
-                .frame(width: 26)
+                .menuIndicator(.hidden)
+                .tint(LHTheme.secondaryText)
+                .foregroundStyle(LHTheme.secondaryText)
+                .frame(width: 30)
                 .accessibilityLabel("Plus d’actions")
                 .help("Afficher la source ou vérifier l’empreinte")
             }
@@ -858,7 +888,7 @@
 
         private var storageAndPrivacyCard: some View {
             HStack(alignment: .top, spacing: 14) {
-                LHCard {
+                GoalongPlainBlock {
                     VStack(alignment: .leading, spacing: 12) {
                         sectionHeader(
                             symbol: "lock.square.stack.fill",
@@ -879,7 +909,7 @@
                 }
                 .frame(maxWidth: .infinity)
 
-                LHCard {
+                GoalongPlainBlock {
                     VStack(alignment: .leading, spacing: 12) {
                         sectionHeader(
                             symbol: "checkmark.shield.fill",
@@ -891,7 +921,7 @@
                         privacyBullet("Le contenu des conversations reste uniquement dans le stockage d’origine de chaque outil.")
                         privacyBullet("Une source modifiée remplace son empreinte précédente au lieu de créer une version.")
                         privacyBullet("Les originaux absents ou illisibles restent signalés comme tels dans l’index.")
-                        privacyBullet("Les hooks réécrivent un petit signal par outil et ignorent leur contenu.")
+                        privacyBullet("La détection immédiate ne transmet qu’un signal, jamais le contenu.")
                         privacyBullet(
                             "La recherche complète des sources est périodique ; les vérifications courantes utilisent l’index connu."
                         )
@@ -926,16 +956,14 @@
         private func providerIcon(_ provider: AgentProvider) -> some View {
             Image(systemName: providerSymbol(provider))
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(providerTint(provider))
+                .foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 34, height: 34)
-                .background(
-                    providerTint(provider).opacity(0.11), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
 
         private func compactPill(_ title: String, symbol: String) -> some View {
             Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(LHTheme.secondaryText)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(Color.primary.opacity(0.045), in: Capsule())
@@ -944,11 +972,11 @@
         private func detailLine(_ title: String, value: String) -> some View {
             HStack {
                 Text(title)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LHTheme.secondaryText)
                 Spacer()
                 Text(value)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
             }
         }
 
@@ -959,8 +987,8 @@
                     .foregroundStyle(LHTheme.success)
                     .padding(.top, 1)
                 Text(text)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -969,15 +997,14 @@
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 30, height: 30)
-                    .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
                     Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1003,20 +1030,20 @@
             }
         }
 
-        private func providerTint(_ provider: AgentProvider) -> Color {
-            switch provider {
-            case .codex: return LHTheme.success
-            case .claudeCode: return LHTheme.warning
-            case .cursor: return LHTheme.accent
-            case .openCode: return LHTheme.teal
-            case .gemini: return LHTheme.warning
-            case .copilot: return LHTheme.success
-            case .custom: return LHTheme.privateTint
-            }
-        }
-
         private func formatBytes(_ bytes: Int64) -> String {
             DashboardFormatters.byteCount.string(fromByteCount: bytes)
+        }
+    }
+
+    private struct AgentHeaderActionStyle: ViewModifier {
+        let primary: Bool
+
+        @ViewBuilder func body(content: Content) -> some View {
+            if primary {
+                content.buttonStyle(LHPrimaryButtonStyle())
+            } else {
+                content.buttonStyle(LHSecondaryButtonStyle())
+            }
         }
     }
 
@@ -1041,8 +1068,8 @@
                     Text("Modifier le dossier suivi")
                         .font(.system(size: 20, weight: .bold))
                     Text(draft.path)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(LHTheme.secondaryText)
                         .lineLimit(2)
                         .truncationMode(.middle)
                 }
@@ -1069,8 +1096,8 @@
                         ? "Chaque fichier pris en charge est indexé sur place, sauf les coffres d’identifiants, cookies, clés privées et caches."
                         : "Goalong lit directement les formats courants de conversations, journaux et traces, sans les copier."
                 )
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+                .foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
                 HStack {

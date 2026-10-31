@@ -8,18 +8,22 @@ struct VisibleContextControl: View {
     var body: some View {
         LHCard {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle(isOn: Binding(get: { enabled }, set: { value in
-                    if value { confirming = true } else { enabled = false }
-                })) {
+                // UI-17B (44): only the switch dims when locked; the title and the help keep their ink (no fade under AA).
+                HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Texte affiché").font(.system(size: 13, weight: .semibold))
                         Text("Facultatif, sur ce Mac. Peut contenir des messages et documents personnels.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
-                }.toggleStyle(.goalongSwitch).accessibilityIdentifier("recording-visible-text")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Toggle("Texte affiché", isOn: Binding(get: { enabled }, set: { value in
+                        if value { confirming = true } else { enabled = false }
+                    }))
+                    .labelsHidden().toggleStyle(.goalongSwitchOnly).accessibilityIdentifier("recording-visible-text")
+                }.frame(minHeight: 44)
                 if enabled {
-                    Text("Activé · les anciennes données sont conservées après arrêt.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("Activé, les anciennes données sont conservées après arrêt.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }

@@ -73,7 +73,7 @@ final class BlockingPlusTests: XCTestCase {
         c.observe(target(now, url: "allowed.org"))
         now = now.addingTimeInterval(1); c.observe(target(now))
         XCTAssertEqual(c.attemptsToday[list.id], 2)
-        XCTAssertEqual(backend.lastFeedback?.attemptLine, "2e tentative aujourd’hui")
+        XCTAssertEqual(backend.lastFeedback?.attemptLine, "2ᵉ ouverture aujourd’hui")
     }
     @MainActor func testFirstAttemptAfterMidnightKeepsYesterdayInHistory() {
         var now = date(8, 23, 59).addingTimeInterval(56)
@@ -224,7 +224,7 @@ final class BlockingPlusTests: XCTestCase {
         XCTAssertEqual(try c.creditEarnedTime(for: session), [a.id:300,b.id:1800])
         XCTAssertEqual(c.earnedMinutesToday, [a.id:5,b.id:30]); XCTAssertNil(c.earnedMinutesToday[plain.id])
         XCTAssertTrue(try c.creditEarnedTime(for: completed(minutes: 50, ending: now)).isEmpty)
-        XCTAssertEqual(c.feedback(for: b.id).earnedLine, "+30 min de pause gagnées en concentration")
+        XCTAssertEqual(c.feedback(for: b.id).earnedLine, "+30 min de pause gagnées pendant vos séances de concentration")
     }
     @MainActor func testRewardReceiptPersistsAndReplayCannotPayTwice() throws {
         let now = date(), list = BlockList(name: "Sites", quotaMinutesPerDay: 10, earn: .init()), s = store()

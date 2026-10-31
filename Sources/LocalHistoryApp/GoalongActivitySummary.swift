@@ -41,6 +41,10 @@ struct GoalongActivitySummary {
     }
 
     var isDay: Bool { period.days.count == 1 }
+    /// What the usage gaps compare with: the previous period of the same length.
+    var previousLabel: String {
+        isDay ? "la veille" : "les \(GoalongUIFormat.count(period.days.count, "jour")) précédent\(period.days.count > 1 ? "s" : "")"
+    }
     var observedDays: [GoalongLocalAnalytics.Day] { period.observedDays }
     var activeSeconds: TimeInterval { period.activeSeconds }
     var workSeconds: TimeInterval { period.workSeconds }
@@ -191,14 +195,14 @@ struct GoalongActivitySummary {
         if isDay, let bounds = dayBounds {
             let span = bounds.end.timeIntervalSince(bounds.start)
             result.append(Insight(id: "bounds", symbol: "sunrise",
-                text: "Première activité à \(Self.time(bounds.start)), dernière à \(Self.time(bounds.end)) · amplitude de \(Self.duration(span))."))
+                text: "Première activité à \(Self.time(bounds.start)), dernière à \(Self.time(bounds.end)), amplitude de \(Self.duration(span))."))
         } else if let bounds = typicalBounds {
             result.append(Insight(id: "bounds", symbol: "sunrise",
                 text: "En général, vous commencez vers \(Self.clock(bounds.start)) et terminez vers \(Self.clock(bounds.end))."))
         }
         if let best = bestDay, observedDays.count >= 2 {
             result.append(Insight(id: "best-day", symbol: "star",
-                text: "Journée la plus active : \(Self.weekdayDate(best.date)) · \(Self.duration(best.activeSeconds))."))
+                text: "Journée la plus active : \(Self.weekdayDate(best.date)), \(Self.duration(best.activeSeconds))."))
         }
         let workPeak = workPeakWindow
         // When work peaks in the same window, the work sentence says more with the same words.
@@ -218,7 +222,7 @@ struct GoalongActivitySummary {
         if let top = topUsage, activeSeconds > 0 {
             let share = Int((top.seconds / activeSeconds * 100).rounded())
             result.append(Insight(id: "top", symbol: top.isWebsite ? "globe" : "app",
-                text: "Usage principal : \(top.displayName) · \(Self.duration(top.seconds)) (\(GoalongUIFormat.percent(share)) du temps actif)."))
+                text: "Usage principal : \(top.displayName), \(Self.duration(top.seconds)) (\(GoalongUIFormat.percent(share)) du temps actif)."))
         }
         if let every = secondsPerChange, let perHour = changesPerActiveHour {
             // Under one change an hour the rate rounds to « 0 fois » (T-045 H1-05): the interval says it alone.
@@ -234,14 +238,13 @@ struct GoalongActivitySummary {
         }
         if let change = biggestChange, let before = change.previousSeconds {
             let delta = change.seconds - before
-            let sign = delta > 0 ? "+" : "−"
             result.append(Insight(id: "mover", symbol: "arrow.up.arrow.down",
-                text: "Plus forte variation : \(change.displayName) (\(sign)\(Self.duration(abs(delta))))."))
+                text: "Plus forte variation : \(change.displayName) (\(Self.duration(abs(delta))) \(delta > 0 ? "de plus" : "de moins") que \(previousLabel))."))
         }
         if workIsMeasurable {
             var text = "Travail : \(Self.duration(workSeconds)) (\(GoalongUIFormat.percent(workShare * 100)) du temps actif)"
             if let block = longestWorkBlock, block.workSeconds >= 600 {
-                text += " · plus longue session sur une même tâche \(Self.duration(block.workSeconds))"
+                text += ", plus longue session sur une même tâche \(Self.duration(block.workSeconds))"
             }
             result.append(Insight(id: "work", symbol: "briefcase", text: text + ".", tone: .positive))
         } else if unclassifiedShare >= 0.3 {

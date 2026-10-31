@@ -30,7 +30,8 @@ extension GalleryCatalog {
             })
         }
         return [
-            page("concentration-maintenant/vide", height: 980, themes: GalleryTheme.withContrast) { f in
+            // UI-15C (2): 1100 so the frame does not cut « Réglages » at the bottom.
+            page("concentration-maintenant/vide", height: 1_100, themes: GalleryTheme.withContrast) { f in
                 tab(.concentration, ConcentrationPageContent(controller: try f.empty(), now: now, measures: [], draft: draft))
             },
             page("concentration-maintenant/plan-du-jour", height: 1_700) { f in
@@ -54,7 +55,7 @@ extension GalleryCatalog {
             },
             page("concentration-maintenant/module-coupe", height: 300) { _ in
                 tab(.concentration, GoalongModuleOffNote(module: .concentration,
-                    text: "Séances, Pomodoro, plan du jour et bilan. Le module est désactivé."))
+                    text: "Activez-le pour lancer des séances et des Pomodoro, préparer le plan du jour et lire le bilan."))
             },
             page("concentration-distractions/vide", height: 760) { f in
                 tab(.distractions, DistractionsPage(runtime: BlockingRuntime(controller: f.blocking), now: now))
@@ -147,7 +148,7 @@ extension GalleryCatalog {
             },
             panel("braise/echec-demarrage", width: 900, height: 420) { _ in
                 AnyView(BraiseUnavailableView(error: "Braise n’a pas pu démarrer. Aucun filtre n’a été appliqué.",
-                                              onRetry: {}, onOpenModules: {}))
+                                              onRetry: {}, onOpenModules: {}, onEnable: {}))
             },
             panel("braise/editeur-de-regle", width: 650, height: 400) { ctx in
                 let controller = try braise(ctx)

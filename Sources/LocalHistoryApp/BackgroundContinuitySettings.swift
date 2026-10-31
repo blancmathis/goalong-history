@@ -4,6 +4,31 @@
 
     @MainActor
     struct BackgroundContinuitySettings: View {
+        static let loginTitle = "Ouvrir Goalong à l’ouverture de session"
+        static let unknownStateTitle = "État inconnu"
+        static let needsAttentionText = "Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système."
+        /// UI-15A (59): the row already says « État inconnu »; the note says what to check, not the same fact again.
+        static var unknownStateText: String { "Vérifiez Goalong dans \(LoginItemsPanel.path)." }
+
+        /// The one orange line under the login row (UI-43): a failed change first, then an unread state,
+        /// then a consent macOS does not honour yet. Never two warnings together.
+        enum LoginWarning: Equatable {
+            case failure(String)
+            case unknownState
+            case needsAttention
+        }
+
+        nonisolated static func loginWarning(message: String?, state: LaunchAtLoginManager.State,
+                                             consentEnabled: Bool) -> LoginWarning? {
+            if let message { return .failure(message) }
+            if LaunchAtLoginManager.switchValue(for: state) == nil { return .unknownState }
+            if consentEnabled && state != .enabled { return .needsAttention }
+            return nil
+        }
+
+        private var loginWarning: LoginWarning? {
+            Self.loginWarning(message: login.message, state: login.state, consentEnabled: consents.isEnabled(.launchAtLogin))
+        }
         @AppStorage(BackgroundContinuityPreferences.keepRunningKey) private var keepRunning = true
         @StateObject private var login = LaunchAtLoginManager()
         @ObservedObject private var continuity = BackgroundContinuityController.shared
@@ -14,41 +39,59 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
-                SectionTitle(title: "Enregistrement en arrière-plan", subtitle: "Goalong reste actif sans garder sa fenêtre ouverte.")
+                // Goalong stays active even while recording is off: the title names the app, not the recording (UI-43).
+                SectionTitle(title: "Goalong en arrière-plan", subtitle: "Ce qui se passe quand la fenêtre se ferme et quand le Mac démarre.")
                 LHCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Toggle("Garder Goalong actif en arrière-plan", isOn: $keepRunning)
                             .toggleStyle(.goalongSwitch)
-                        Text("Recommandé : fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation. Aucun service supplémentaire n’est installé ; votre Mac peut toujours se mettre en veille.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        // UI-12B (43): one sentence, without « Recommandé ».
+                        GoalongHelpText(lead: "Fermer la fenêtre n’arrête pas l’enregistrement, et Quitter demande confirmation.",
+                                        more: "Aucun service supplémentaire n’est installé. Votre Mac peut toujours se mettre en veille.")
                         Divider()
-                        Toggle("Ouvrir Goalong à l’ouverture de session", isOn: Binding(
-                            get: { login.isRegistered },
-                            set: { _ = login.setUserPreference($0, surface: .settings) }
-                        )).toggleStyle(.goalongSwitch).disabled(login.isChanging || blockingHoldsLogin)
-                        Text(blockingHoldsLogin
-                             ? LaunchAtLoginManager.heldMessage
-                             : login.statusDetail)
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
-                        if consents.isEnabled(.launchAtLogin) && !login.isEnabled {
-                            Text("Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système.")
-                                .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                        if login.switchValue != nil {
+                            Toggle(Self.loginTitle, isOn: Binding(
+                                get: { login.isRegistered },
+                                set: { _ = login.setUserPreference($0, surface: .settings) }
+                            )).toggleStyle(.goalongSwitch).disabled(login.isChanging || blockingHoldsLogin)
+                            Text(blockingHoldsLogin
+                                 ? LaunchAtLoginManager.heldMessage
+                                 : login.statusDetail)
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        } else {
+                            // macOS gave no state: say so on the row instead of an "off" switch (UI-43).
+                            HStack(alignment: .center, spacing: 16) {
+                                Text(Self.loginTitle).frame(maxWidth: .infinity, alignment: .leading)
+                                // UI-9 (59): the glyph carries the colour, the word stays in ink (DESIGN §9).
+                                Label {
+                                    Text(Self.unknownStateTitle).foregroundStyle(LHTheme.text)
+                                } icon: {
+                                    Image(systemName: "questionmark.circle").foregroundStyle(LHTheme.warning)
+                                }
+                                .font(.system(size: 12, weight: .medium))
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("settings-login-unknown")
+                        }
+                        // UI-12B (43): under the switch it concerns, in plain words.
+                        Text("À l’ouverture de session, Goalong n’allume aucune source et garde la pause.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        switch loginWarning {
+                        case .failure(let message): GoalongNote(message, tone: .warning)
+                        case .unknownState: GoalongNote(Self.unknownStateText, tone: .warning)
+                        case .needsAttention: GoalongNote(Self.needsAttentionText, tone: .warning)
+                        case nil: EmptyView()
                         }
                         if login.requiresApproval || login.state == .unavailable {
-                            Button("Ouvrir les éléments d’ouverture…") { login.openLoginItemsSettings() }
+                            Button("Ouvrir Réglages Système…") { login.openLoginItemsSettings() }
                                 .buttonStyle(LHSecondaryButtonStyle())
-                        }
-                        if let message = login.message {
-                            Text(message).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                         }
                         if let notice = continuity.interruptionNotice {
                             Divider()
-                            Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                            GoalongNote(notice, tone: .warning)
                             Button("Masquer") { continuity.dismissInterruptionNotice() }
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
-                        Text("Ces options n’activent aucune source et ne reprennent pas une pause.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }.fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -58,4 +101,5 @@
             }
         }
     }
+
 #endif

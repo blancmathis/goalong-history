@@ -16,9 +16,18 @@ final class HistoryRetentionSettingsGapTests: XCTestCase {
         let lines = policy(events: 1, seals: 30).retentionDescription.split(separator: "\n").map(String.init)
         XCTAssertEqual(lines.count, HistoryDataClass.allCases.count)
         XCTAssertTrue(lines.contains("Activité détaillée : 1 jour"))
-        XCTAssertTrue(lines.contains("Sceaux d’intégrité : 30 jours"))
-        XCTAssertTrue(lines.contains("Reçus de vérification : jusqu’à ce que je supprime"))
+        XCTAssertTrue(lines.contains("Sceaux des minutes : 30 jours"))
+        XCTAssertTrue(lines.contains("Horodatages : jusqu’à suppression"))
         for kind in HistoryDataClass.allCases { XCTAssertFalse(kind.retentionTitle.isEmpty) }
+    }
+
+    /// UI-15A (28): both proof rows are explained by their own names, in one sentence.
+    func testProofRowsAreExplainedInOneSentence() {
+        let text = HistoryRetentionPolicy.proofExplanation
+        XCTAssertTrue(text.localizedCaseInsensitiveContains(HistoryDataClass.minuteSeals.retentionTitle), text)
+        XCTAssertTrue(text.localizedCaseInsensitiveContains(HistoryDataClass.anchorReceipts.retentionTitle), text)
+        XCTAssertEqual(text.filter { $0 == "." }.count, 1, "one sentence")
+        XCTAssertTrue(text.hasSuffix("."))
     }
 
     func testProofExpiryOnlyCountsSealsAndReceipts() {

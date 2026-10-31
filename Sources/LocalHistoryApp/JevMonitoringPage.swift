@@ -54,7 +54,7 @@ struct JevActivationAvailability: Equatable {
 
     private var content: some View {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Des rappels pour rester sur vos projets de travail. Vos pauses n’arrêtent pas l’historique.")
+                Text("Des rappels pour rester sur vos projets de travail.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 monitoringCard
                 GoalongWorkDefinitionSummary(onOpen: onOpenWork)
@@ -63,7 +63,7 @@ struct JevActivationAvailability: Equatable {
                     JevInterventionControls().padding(.top, 12)
                 }.accessibilityIdentifier("jev-intervention-settings")
                 if !monitor.recentChecks.isEmpty {
-                    GoalongDisclosureGroup("Dernières vérifications · cette session") {
+                    GoalongDisclosureGroup("Dernières vérifications, cette session") {
                         JevRecentChecksView(checks: Array(monitor.recentChecks.prefix(6)))
                             .padding(.top, 12)
                     }
@@ -82,18 +82,27 @@ struct JevActivationAvailability: Equatable {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Jev").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
-                        Text("Facultatif. Jev est le service d’analyse partenaire de Goalong. Toutes les 15 secondes, Goalong vérifie que vous restez sur vos projets et affiche un rappel dès qu’une distraction est détectée de façon fiable.")
+                        Text("Surveillance").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
+                        Text("Facultatif. Jev, service payant de la société TypeSafe, vous rappelle votre projet quand il repère une distraction.")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
-                    Toggle("Activer", isOn: Binding(
-                        get: { enabled },
-                        set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
-                        .toggleStyle(.goalongSwitchOnly).fixedSize()
-                        .disabled(!availability.canToggle(isEnabled: enabled))
-                        .accessibilityIdentifier("jev-enabled")
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Toggle("Activer", isOn: Binding(
+                            get: { enabled },
+                            set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
+                            .toggleStyle(.goalongSwitchOnly).fixedSize()
+                            .disabled(!availability.canToggle(isEnabled: enabled))
+                            .accessibilityHint(availability.canToggle(isEnabled: enabled) || availability.hasKey ? "" : "Connectez d’abord Jev, plus bas.")
+                            .accessibilityIdentifier("jev-enabled")
+                        // UI-56: a switch that cannot be turned on says so, instead of looking merely off.
+                        if let reason = toggleBlockedReason {
+                            Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize()
+                                .accessibilityIdentifier("jev-enabled-reason")
+                        }
+                    }
                 }
                 // Always show the runtime's real status, including protected/idle/error states;
                 // a switch already off says « désactivée » by itself.
@@ -104,7 +113,8 @@ struct JevActivationAvailability: Equatable {
                         .accessibilityIdentifier("jev-status")
                 }
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
-                JevScopeControl()
+                // UI-56: « Quand » only matters once Jev is on (UI-11A: and connected).
+                JevScopeControl().disabled(!enabled || !availability.hasKey)
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 connectionRow
                 if !availability.localHistoryEnabled {
@@ -113,7 +123,9 @@ struct JevActivationAvailability: Equatable {
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
+                        // UI-9 (5): with a key saved, the history is the one step left, so it is the lime action.
                         Button("Configurer l’historique", action: onOpenRecording)
+                            .modifier(GoalongMainActionStyle(primary: monitor.hasKey))
                             .accessibilityIdentifier("jev-open-recording")
                     }
                 }
@@ -130,16 +142,25 @@ struct JevActivationAvailability: Equatable {
         }
     }
 
+    private var toggleBlockedReason: String? {
+        guard !availability.canToggle(isEnabled: enabled) else { return nil }
+        // Without a key, the « Jev n’est pas connecté » row below says it once, with its action (UI-15B, 5).
+        return availability.hasKey ? "Activez d’abord l’historique" : nil
+    }
+
     private var connectionRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(monitor.hasKey ? "Clé API Jev enregistrée" : "Connexion API nécessaire")
+                // UI-9 (5): plain words, no « API ». UI-11A (5): Jev is explained once, in the card's header.
+                Text(monitor.hasKey ? "Jev est connecté" : "Jev n’est pas connecté")
                     .font(.system(size: 13, weight: .medium))
-                Text(monitor.hasKey ? "Usage facturé par TypeSafe, le fournisseur de Jev." : "Votre clé API reste sur ce Mac. L’API de Jev est payante (TypeSafe).")
+                Text(monitor.hasKey ? "L’usage est facturé par TypeSafe." : "Votre clé d’accès reste sur ce Mac.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer(minLength: 8)
-            Button(monitor.hasKey ? "Gérer la connexion" : "Connecter l’API") { showingConnection = true }
+            // UI-56: until a key is saved, connecting is the step that unlocks Jev, so it is the lime action.
+            Button(monitor.hasKey ? "Gérer la connexion" : "Connecter Jev") { showingConnection = true }
+                .modifier(GoalongMainActionStyle(primary: !monitor.hasKey))
                 .accessibilityIdentifier("jev-open-connection")
         }
     }

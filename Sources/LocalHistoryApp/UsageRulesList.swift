@@ -5,11 +5,15 @@
     struct UsageRulesList: View {
         /// Wide enough for « Catégorie seulement » without truncation.
         static let ruleColumnWidth: CGFloat = 176
+        /// Height of SharePage's export bar under the list.
+        static let exportBarHeight: CGFloat = 56
         @ObservedObject var model: DashboardViewModel
         var showsDefaultRule = false
         var websiteSummaries: [ActivitySiteSummary] = []
         var richContextEnabled = false
         var onEnableRichContext: (() -> Void)?
+        /// When recording is off, an empty list says so instead of « laissez Goalong actif ».
+        var recordingEnabled = true
 
         @State private var expandedWebsiteIDs = Set<String>()
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -57,23 +61,25 @@
             VStack(alignment: .leading, spacing: 12) {
                 controls
                 if filteredItems.isEmpty {
-                    LHCard {
-                        EmptyStateView(
-                            symbol: "app.dashed",
-                            title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
-                            message: model.snapshot.trackedUsage.isEmpty
+                    // Read-only state on the page, not in a card; the sentence adds to the title (UI-13B).
+                    EmptyStateView(
+                        symbol: "app.dashed",
+                        title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
+                        message: model.snapshot.trackedUsage.isEmpty
+                            ? (recordingEnabled
                                 ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
-                                : "Essayez une autre app, un autre site ou une autre catégorie."
-                        )
-                        .frame(minHeight: 320)
-                    }
+                                : "Activez l’enregistrement pour régler ici ce que chaque partage montre.")
+                            : "Essayez une autre app, un autre site ou une autre catégorie."
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 240)
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 16) {
                             subjectSection(title: "Sites web", symbol: "globe", items: websites)
                             subjectSection(title: "Applications", symbol: "square.grid.2x2", items: applications)
                         }
-                        .padding(.bottom, 8)
+                        // The export bar sits under the list, not over it: a small margin is enough (UI-15B, 32/55).
+                        .padding(.bottom, 12)
                     }
                 }
             }
@@ -85,26 +91,22 @@
 
                 if showsDefaultRule {
                     Text("Par défaut")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    Picker(
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText)
+                    GoalongMenuPicker(
                         "Règle de partage par défaut",
                         selection: Binding(
                             get: { model.defaultSharingVisibility },
                             set: model.setDefaultSharingVisibility
-                        )
-                    ) {
-                        ForEach(SharingVisibility.allCases) { visibility in
-                            Text(visibility.title).tag(visibility)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: UsageRulesList.ruleColumnWidth)
+                        ),
+                        options: SharingVisibility.allCases.map { ($0, $0.title) }
+                    )
+                    .frame(width: UsageRulesList.ruleColumnWidth, alignment: .leading)
                 }
 
                 Text(FrenchCount.count(filteredItems.count, "élément", "éléments"))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(minWidth: 58, alignment: .trailing)
             }
         }
@@ -118,8 +120,8 @@
                             Label(title, systemImage: symbol)
                                 .font(.system(size: 13, weight: .semibold))
                             Text("\(items.count)")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())
@@ -130,20 +132,32 @@
                             Text("Saisie active")
                                 .help("Minutes distinctes avec des clics, frappes ou défilements observés.")
                                 .frame(width: 82, alignment: .trailing)
-                            Text("Toujours lors du partage")
+                            Text("Règle de partage")
                                 .frame(width: UsageRulesList.ruleColumnWidth, alignment: .trailing)
-                            if title == "Sites web" {
-                                Text(websiteSummaries.isEmpty ? "" : "Détails")
-                                    .frame(width: 46, alignment: .trailing)
-                            }
+                            // Same trailing column in both sections so the rule pickers line up.
+                            Text(title == "Sites web" && !websiteSummaries.isEmpty ? "Détails" : "")
+                                .frame(width: 46, alignment: .trailing)
                         }
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.35)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .padding(.horizontal, 14)
                         .frame(height: 40)
 
                         Divider()
+
+                        // UI-15B (32/55): what all the sites share is said once here, not on every row.
+                        let sharedApp = title == "Sites web" ? Self.sharedAppName(items, summaries: websiteSummariesBySubjectID) : nil
+                        if title == "Sites web", let note = Self.websiteNote(items, sharedApp: sharedApp) {
+                            Text(note)
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                            Divider()
+                        }
 
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             let isExpanded = expandedWebsiteIDs.contains(item.id)
@@ -162,13 +176,36 @@
                                             expandedWebsiteIDs.insert(item.id)
                                         }
                                     }
-                                }
+                                },
+                                sharedAppName: sharedApp
                             )
                             if index < items.count - 1 { Divider().padding(.leading, 58) }
                         }
                     }
                 }
             }
+        }
+
+        /// The app every site without details was seen in, when there is one for all of them.
+        static func sharedAppName(_ items: [TrackedUsageItem], summaries: [String: ActivitySiteSummary]) -> String? {
+            let plain = items.filter { summaries[$0.id] == nil }
+            guard plain.count > 1, plain.count == items.count else { return nil }
+            let names = Set(plain.map(\.appName))
+            guard names.count == 1, let name = names.first ?? nil else { return nil }
+            return name
+        }
+
+        /// One sentence for the sites section: where they were seen, and the older entries' limit.
+        static func websiteNote(_ items: [TrackedUsageItem], sharedApp: String?) -> String? {
+            var sentences: [String] = []
+            if let sharedApp { sentences.append("Sites vus dans \(sharedApp).") }
+            let older = items.filter { !$0.identityProofAvailable }.count
+            if older == items.count, older > 0 {
+                sentences.append("Pour ces sites, les entrées plus anciennes n’indiquent que la catégorie.")
+            } else if older > 0 {
+                sentences.append("Pour certains sites, les entrées plus anciennes n’indiquent que la catégorie.")
+            }
+            return sentences.isEmpty ? nil : sentences.joined(separator: " ")
         }
     }
 
@@ -180,6 +217,8 @@
         let richContextEnabled: Bool
         let onEnableRichContext: (() -> Void)?
         let onToggleExpanded: () -> Void
+        /// Set when the section already says which app showed every site.
+        var sharedAppName: String? = nil
 
         var body: some View {
             VStack(spacing: 0) {
@@ -199,17 +238,13 @@
                 if item.kind == .application {
                     AppIconView(bundleIdentifier: item.bundleIdentifier, appName: item.name, size: 32)
                 } else {
-                    Image(systemName: "globe")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(LHTheme.teal)
-                        .frame(width: 32, height: 32)
-                        .background(LHTheme.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    WebsiteIconView(host: item.host ?? item.name, size: 32).accessibilityHidden(true)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(item.name)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                         CategoryBadge(category: item.category)
                         if let host = item.host, model.isDomainExcludedFromCapture(host) {
@@ -221,34 +256,33 @@
                             .scaleEffect(0.82, anchor: .leading)
                         }
                     }
-                    Text(secondaryLabel)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    if !secondaryLabel.isEmpty {
+                        Text(secondaryLabel)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(DashboardFormatters.duration(seconds: item.foregroundSeconds))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .frame(width: 96, alignment: .trailing)
 
                 Text(item.activeMinutes == 0 ? "—" : DashboardFormatters.duration(minutes: item.activeMinutes))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 82, alignment: .trailing)
 
-                Picker(
+                // Same Goalong menu as « Par défaut », in both themes (UI-13B).
+                GoalongMenuPicker(
                     "Visibilité de \(item.name)",
                     selection: Binding(
                         get: { model.sharingVisibility(for: item.id) },
                         set: { model.setSharingVisibility($0, for: item.id) }
-                    )
-                ) {
-                    ForEach(SharingVisibility.allCases) { visibility in
-                        Text(visibility.title).tag(visibility)
-                    }
-                }
-                .labelsHidden()
+                    ),
+                    options: SharingVisibility.allCases.map { ($0, $0.title) }
+                )
                 .frame(width: UsageRulesList.ruleColumnWidth)
 
                 if item.kind == .website {
@@ -257,7 +291,7 @@
                         // Without an analysis summary there is nothing to show, so no expand control.
                         if websiteSummary != nil {
                             Button(action: onToggleExpanded) {
-                                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                                Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
                                     .font(.system(size: 10, weight: .semibold))
                                     .frame(width: 22, height: 22)
                             }
@@ -267,6 +301,8 @@
                         }
                     }
                     .frame(width: 46, alignment: .trailing)
+                } else {
+                    Color.clear.frame(width: 46, height: 1)
                 }
             }
             .padding(.horizontal, 14)
@@ -306,6 +342,10 @@
                     .frame(width: 19, height: 22)
             }
             .menuStyle(.borderlessButton)
+            // A repeated side action: secondary ink, no lime and no extra chevron (UI-13B).
+            .menuIndicator(.hidden)
+            .tint(LHTheme.secondaryText)
+            .foregroundStyle(LHTheme.secondaryText)
             .fixedSize()
             .help("Règles permanentes du site")
             .accessibilityLabel("Règles du site")
@@ -326,10 +366,10 @@
             } else {
                 HStack(spacing: 9) {
                     Image(systemName: "info.circle")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                     Text("Les pages et interactions détaillées proviennent de l’analyse de la journée.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                     Spacer()
                 }
                 .padding(.top, 12)
@@ -348,11 +388,11 @@
                     ) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Mémoriser les détails futurs du site")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                             Text(parent.map { "Exclu par la règle « \($0) » : modifiez-la dans Réglages." }
                                 ?? "Désactivez pour ne garder désormais qu’une période privée pour ce domaine.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
                     .toggleStyle(.goalongSwitch)
@@ -372,7 +412,7 @@
                         "\(detail.semanticSnapshotCount) instantané\(detail.semanticSnapshotCount > 1 ? "s" : "") de texte visible",
                         systemImage: "text.badge.checkmark"
                     )
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(detail.semanticSnapshotCount > 0 ? LHTheme.success : Color.secondary)
                 }
             }
@@ -404,15 +444,15 @@
         private func websiteMetric(_ title: String, value: String, symbol: String) -> some View {
             HStack(spacing: 8) {
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 18, height: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.tertiary)
                     Text(value)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .lineLimit(2)
                 }
             }
@@ -442,12 +482,12 @@
                                     .background(LHTheme.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(page.title)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.system(size: 12, weight: .semibold))
                                         .fixedSize(horizontal: false, vertical: true)
                                     if let URL = page.URL {
                                         Text(URL)
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundStyle(.secondary)
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(2)
                                             .textSelection(.enabled)
                                     }
@@ -459,7 +499,7 @@
                                             "\(GoalongUIFormat.time(page.firstSeen))–\(GoalongUIFormat.time(page.lastSeen))"
                                         )
                                     }
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(.tertiary)
                                 }
                                 Spacer()
@@ -493,8 +533,8 @@
                             "L’analyse compacte a atteint sa limite ; les événements scellés contiennent les autres clics.",
                             systemImage: "ellipsis.circle"
                         )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                     }
                 }
             }
@@ -536,8 +576,8 @@
                     VStack(spacing: 6) {
                         ForEach(Array(detail.rememberedContext.enumerated()), id: \.offset) { _, text in
                             Text(text)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(9)
@@ -552,8 +592,8 @@
                             "Les événements scellés contiennent plus de contexte que ce résumé.",
                             systemImage: "ellipsis.circle"
                         )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
                     }
                 }
             }
@@ -562,10 +602,10 @@
         private func detailHeading(_ title: String, subtitle: String) -> some View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                 Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -575,8 +615,8 @@
                 Image(systemName: "minus.circle")
                     .foregroundStyle(.tertiary)
                 Text(message)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LHTheme.secondaryText)
                 Spacer()
             }
             .padding(9)
@@ -596,16 +636,15 @@
                         parts.append("via \(detail.sourceApplications.joined(separator: ", "))")
                     }
                 } else if let appName = item.appName {
-                    parts.append("Vu dans \(appName)")
+                    if sharedAppName == nil { parts.append("Vu dans \(appName)") }
                 } else {
                     parts.append("Contexte web observé")
                 }
-                if !item.identityProofAvailable {
-                    parts.append("les entrées plus anciennes ne partagent que la catégorie")
-                }
-                return parts.joined(separator: " · ")
+                // The older entries' limit is said once, at the head of the section (UI-15B, 32/55).
+                return parts.joined(separator: ", ")
             }
-            return item.bundleIdentifier ?? "Application observée localement"
+            // The bundle identifier (com.apple.…) is technical: plain words instead (UI-11C, screen 55).
+            return "Application observée sur ce Mac"
         }
 
         private var identityHelp: String {
@@ -647,11 +686,11 @@
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(interaction.label)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .fixedSize(horizontal: false, vertical: true)
                         if interaction.count > 1 {
                             Text("×\(interaction.count)")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(tint)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
@@ -660,8 +699,8 @@
                     }
                     if let pageTitle = interaction.pageTitle {
                         Text(pageTitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .lineLimit(2)
                     }
                     HStack(spacing: 8) {
@@ -672,7 +711,7 @@
                         if let role = interaction.role { Text(role) }
                         if let detail = interaction.detail { Text(detail) }
                     }
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.tertiary)
                 }
                 Spacer()
