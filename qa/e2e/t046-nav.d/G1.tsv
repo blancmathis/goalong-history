@@ -1,0 +1,26 @@
+# id	nav — T-046 G1 round 2 (2026-10-31): recipes with seed:NAME (qa/e2e/seed.d). Not run on a dump; J-0526 stops before the NSOpenPanel step.
+J-0526	seed:profile-result pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3
+J-0621	seed:screentime-on nav:history p:"Temps d’écran Apple" w:2 nm
+J-0633	seed:screentime-on nav:history p:"Temps d’écran Apple" w:2
+J-0884	seed:ambiance-packs nav:ambiance w:2
+J-0886	seed:ambiance-packs nav:ambiance w:2
+J-0887	seed:ambiance-packs nav:ambiance w:2 ex:Arrêter
+J-0888	seed:ambiance-packs nav:ambiance w:2 ex:Arrêter
+J-0460	seed:reports-saved nav:overview p:activity-explore-reports w:2
+J-0461	seed:reports-saved nav:overview p:activity-explore-reports w:2
+J-0911	seed:excluded-domain-parent pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 "pk:Règles du site|" w:1
+J-0912	seed:excluded-domain pane:advanced p:"Outils de partage et analyses" w:2 p:"Exporter un fichier signé…" w:3 "pk:Règles du site|" w:1
+J-0996	seed:storage-failed nav:overview w:8
+J-0998	seed:disk-low nav:overview w:3
+J-0521	seed:chatgpt-connected pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Préparer l’analyse" w:3 p:"Connecter ChatGPT" w:3
+J-0786	seed:chatgpt-connected nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3 p:"Connecter ChatGPT" w:3
+J-0788	seed:controls-enabled nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3 p:"Connecter ChatGPT" w:3 "ck:J’autorise l’envoi de cette sélection à l’agent connecté=1" w:1
+J-0794	seed:controls-enabled nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2 p:"Calculer le rythme" w:1 p:"Analyser le contexte d’une session" w:3 "tk:Projet=Projet T-046" w:1 p:"Préparer la sélection locale" w:3 p:"Connecter ChatGPT" w:3
+J-0874	seed:controls-enabled pane:advanced p:"Outils de partage et analyses" w:2 p:"Analyser une demande du site…" w:2
+J-0721	seed:calendar-consent pane:home w:2
+J-0734	seed:config-unreadable pane:home w:2
+J-0735	seed:config-unreadable pane:home w:2 p:"Réinitialiser les réglages…" w:2 pb:Réinitialiser w:2
+J-0736	seed:config-unreadable pane:home w:2 p:"Réinitialiser les réglages…" w:2 pb:Réinitialiser w:2
+J-0765	seed:history-source-failed nav:history p:"Ce Mac" w:2 p:"Réessayer" w:2
+J-0282	seed:site nav:overview p:"Partager cette journée…" w:2
+J-0961	seed:chatgpt-connected pane:chatGPT w:2 p:"Connecter ChatGPT" w:3
