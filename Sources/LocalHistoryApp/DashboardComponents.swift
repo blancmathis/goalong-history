@@ -565,6 +565,24 @@
             }
         }
 
+        /// UI-15A: the sidebar row holds one line (≤ 20 characters); the page says the rest.
+        func sidebarTitle(recordingEnabled: Bool, globallyPaused: Bool) -> String {
+            if globallyPaused { return "Tout est en pause" }
+            if !recordingEnabled { return "Enregistrement coupé" }
+            if isBackgroundPrivacyRule { return "Enregistrement actif" }
+            switch state {
+            case .recording: return "Enregistrement actif"
+            case .paused, .suppressed(.manualPause): return "En pause"
+            case .permissionsMissing: return "Accès à configurer"
+            case .inputTapUnavailable: return "Saisie non reçue"
+            case .storageUnavailable(.diskFull): return "Disque plein"
+            case .storageUnavailable: return "Écriture impossible"
+            case .suppressed(.sessionUnavailable): return "Session Mac inactive"
+            case .suppressed(.accessibilityUnavailable): return "Navigateur illisible"
+            case .suppressed: return "Enregistrement actif"
+            }
+        }
+
         var displayDetail: String {
             if isBackgroundPrivacyRule {
                 return "Le suivi respecte vos exclusions. Modifiez-les dans Réglages › Apps et sites."
@@ -582,7 +600,7 @@
             case .storageUnavailable(.diskFull):
                 return "Le disque est plein : rien n’est enregistré pour l’instant. Libérez de l’espace, l’enregistrement reprendra tout seul et la coupure sera signalée dans l’historique."
             case .storageUnavailable(.permissionDenied):
-                return "macOS refuse l’écriture dans le dossier d’historique. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
+                return "Goalong ne peut plus écrire dans son dossier d’historique : macOS en refuse l’accès. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
             case .storageUnavailable:
                 return "L’historique ne peut pas être écrit pour l’instant. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
             case .suppressed(let reason):

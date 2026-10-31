@@ -30,7 +30,8 @@ import SwiftUI
                 Button("OK") { dismiss() }.keyboardShortcut(.defaultAction)
             }.padding(24)
             Divider()
-            ScrollView {
+            // UI-15A (48): the sheet opens at its content's height, at most 520 pt, instead of a fixed 480.
+            GoalongSheetScroll(cap: 520) {
                 VStack(alignment: .leading, spacing: 22) {
                     // UI-13C (48): no project yet is an empty state with its one next step, in lime.
                     if developer.selectedProjects.isEmpty {
@@ -66,7 +67,7 @@ import SwiftUI
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(minWidth: 560, idealWidth: 620, minHeight: 380, idealHeight: 480)
+        .frame(minWidth: 560, idealWidth: 620)
         .background(Button("") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
         .task(id: revision) { if readsAgents { await developer.refresh(day: GoalongToday.now) } }
         .accessibilityIdentifier("developer-projects-sheet")

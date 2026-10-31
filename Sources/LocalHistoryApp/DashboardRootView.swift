@@ -1,6 +1,7 @@
 #if os(macOS)
     import Foundation
     import SwiftUI
+    import LocalHistoryCore
 
     struct LocalHistoryDashboardView: View {
         @ObservedObject var model: DashboardViewModel
@@ -136,6 +137,7 @@
         @ObservedObject private var monitor = JevMonitor.shared
 
         @ObservedObject private var modules = GoalongModuleStore.shared
+        @State private var globalPause = GoalongGlobalPause.load()
         private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled) }
         @Namespace private var selection
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -267,12 +269,12 @@
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : LHTheme.tertiaryText)
                         .frame(width: 7, height: 7)
-                    // UI-9 (13, 17, 40): the state is read in full, on two lines if needed (« Enregistrement arrêté »).
-                    // UI-13B: one word for one thing, the runtime's « Enregistrement … », never « Suivi »;
-                    // switched off is not a pause (as SharePage and UsageRulesList).
-                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Enregistrement désactivé")
+                    // UI-15A: one short line (≤ 20 characters), never two; switched off is not a pause
+                    // (as SharePage and UsageRulesList), and the global pause says so.
+                    Text(model.runtime.sidebarTitle(recordingEnabled: consents.isEnabled(.localComputerHistory),
+                                                    globallyPaused: globalPause.blocksActivity))
                         .font(.system(size: 12, weight: .medium))
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
                     Spacer()
                     if model.runtime.needsAttention {
                         Image(systemName: "chevron.right")
@@ -285,6 +287,7 @@
                 .frame(minHeight: 32)
             }
             .buttonStyle(LHNavigationButtonStyle())
+            .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in globalPause = .load() }
         }
 
         private func updateButton(version: String) -> some View {

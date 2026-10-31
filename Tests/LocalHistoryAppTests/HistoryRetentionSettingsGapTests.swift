@@ -21,6 +21,15 @@ final class HistoryRetentionSettingsGapTests: XCTestCase {
         for kind in HistoryDataClass.allCases { XCTAssertFalse(kind.retentionTitle.isEmpty) }
     }
 
+    /// UI-15A (28): both proof rows are explained by their own names, in one sentence.
+    func testProofRowsAreExplainedInOneSentence() {
+        let text = HistoryRetentionPolicy.proofExplanation
+        XCTAssertTrue(text.localizedCaseInsensitiveContains(HistoryDataClass.minuteSeals.retentionTitle), text)
+        XCTAssertTrue(text.localizedCaseInsensitiveContains(HistoryDataClass.anchorReceipts.retentionTitle), text)
+        XCTAssertEqual(text.filter { $0 == "." }.count, 1, "one sentence")
+        XCTAssertTrue(text.hasSuffix("."))
+    }
+
     func testProofExpiryOnlyCountsSealsAndReceipts() {
         XCTAssertFalse(policy(events: 7).includesProofExpiry)
         XCTAssertTrue(policy(seals: 7).includesProofExpiry)

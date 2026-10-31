@@ -25,15 +25,18 @@ import LocalHistoryCore
                             Text(capability.title).font(.system(size: 13))
                             Spacer()
                             // UI-12B: the state as a pill, the glyph carries the colour (DESIGN §9).
+                            // UI-15A: the word agrees with its source, and says « En pause » during the global pause.
                             let enabled = consents.isEnabled(capability)
-                            StatusPill(title: enabled ? "Activée" : "Désactivée",
-                                       symbol: enabled ? "checkmark.circle.fill" : "minus.circle",
-                                       tint: enabled ? LHTheme.success : LHTheme.secondaryText)
+                            let paused = enabled && pause.blocksActivity
+                            StatusPill(title: Self.sourceStateTitle(capability, enabled: enabled, paused: pause.blocksActivity),
+                                       symbol: paused ? "pause.circle" : enabled ? "checkmark.circle.fill" : "minus.circle",
+                                       tint: enabled && !paused ? LHTheme.success : LHTheme.secondaryText)
                         }
                     }
                     Divider()
                     // With every source off, the recording summary would describe a capture that does not happen.
-                    Text(Self.sources.contains { consents.isEnabled($0) } ? model.appliedSettings.recordingSummary : "Aucune source activée.")
+                    Text(pause.blocksActivity ? "Tout est en pause."
+                         : Self.sources.contains { consents.isEnabled($0) } ? model.appliedSettings.recordingSummary : "Aucune source activée.")
                         .font(.system(size: 13))
                     Text(model.appliedSettings.capturePrivateBrowsing
                          ? "Fenêtres privées détectées : incluses selon votre choix."
@@ -105,6 +108,12 @@ import LocalHistoryCore
         }
     }
     private static let sources: [GoalongCapability] = [.localComputerHistory, .appleScreenTime, .aiConversations]
+    /// « Historique de ce Mac » and « Temps d’écran Apple » are masculine, « Conversations locales » feminine plural.
+    nonisolated static func sourceStateTitle(_ capability: GoalongCapability, enabled: Bool, paused: Bool) -> String {
+        if enabled && paused { return "En pause" }
+        let feminine = capability == .aiConversations
+        return enabled ? (feminine ? "Activées" : "Activé") : (feminine ? "Désactivées" : "Désactivé")
+    }
     /// UI-54: the real state, never « désactivé ou en pause ».
     nonisolated static func dailySendingText(enabled: Bool, paused: Bool) -> String {
         enabled ? "L’envoi quotidien au site est activé."
