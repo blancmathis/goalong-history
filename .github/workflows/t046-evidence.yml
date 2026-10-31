@@ -111,24 +111,11 @@ jobs:
           retention-days: 1
 
 
-  e2e:
-    # L3: the 1027 rows of qa/e2e/t046-rows.tsv in shards S1-S4 (S2 and S3 cut in slices), one runner each.
-    # A pull_request run (workflow_dispatch cannot run a file that is not on main). App = the PR head,
-    # whose Sources/ is 973ff6a = t046/ui-int (checked in summary.txt).
+  e2e-build:
+    # L3n: one build for every e2e job (the build was ~27 % of each job); the app goes as an artifact.
     if: github.event_name == 'pull_request' && (github.head_ref == 't046/evidence' || github.head_ref == 't046/evidence-ui' || github.head_ref == 't046/evidence-ui2')
     runs-on: macos-15
-    timeout-minutes: ${{ matrix.shard == 'S4' && 330 || 150 }}
-    strategy:
-      fail-fast: false
-      max-parallel: 5
-      matrix:
-        include:
-          # L3n lots 4-5: scriptable triggers on existing seeds, then per-row failure seeds (seed:NAME).
-          - { shard: S1, slice: 1/1 }
-          - { shard: S2, slice: 1/1 }
-          - { shard: S3, slice: 1/2 }
-          - { shard: S3, slice: 2/2 }
-          - { shard: SB, slice: 1/1 }
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -157,6 +144,48 @@ jobs:
           export LOCALHISTORY_DEV_SOURCE_COMMIT LOCALHISTORY_ARCHS LOCALHISTORY_OUTPUT_DIR="$RUNNER_TEMP/app"
           ./scripts/build_app.sh > "$RUNNER_TEMP/build.log" 2>&1 || { tail -n 80 "$RUNNER_TEMP/build.log"; exit 1; }
           ls "$RUNNER_TEMP/app"
+          cp "$RUNNER_TEMP/build.log" "$RUNNER_TEMP/app/"
+          ditto -c -k --keepParent "$RUNNER_TEMP/app" "$RUNNER_TEMP/app.zip"
+      - name: Upload app
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: t046-app-${{ github.run_number }}
+          path: ${{ runner.temp }}/app.zip
+          retention-days: 1
+
+  e2e:
+    # L3: the 1027 rows of qa/e2e/t046-rows.tsv in shards S1-S4 (S2 and S3 cut in slices), one runner each.
+    # A pull_request run (workflow_dispatch cannot run a file that is not on main). App = the PR head,
+    # whose Sources/ is 973ff6a = t046/ui-int (checked in summary.txt).
+    needs: e2e-build
+    if: github.event_name == 'pull_request' && (github.head_ref == 't046/evidence' || github.head_ref == 't046/evidence-ui' || github.head_ref == 't046/evidence-ui2')
+    runs-on: macos-15
+    timeout-minutes: ${{ matrix.shard == 'S4' && 330 || 150 }}
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        include:
+          # L3n grouped run: my rows + the E-A/E-B/E-C side files (t046-only.d/); one build (e2e-build).
+          - { shard: S1, slice: 1/1 }
+          - { shard: S2, slice: 1/1 }
+          - { shard: S3, slice: 1/2 }
+          - { shard: S3, slice: 2/2 }
+          - { shard: SB, slice: 1/1 }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Download the app of e2e-build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: t046-app-${{ github.run_number }}
+          path: ${{ runner.temp }}
+      - name: Unpack the app
+        run: |
+          ditto -x -k "$RUNNER_TEMP/app.zip" "$RUNNER_TEMP"
+          cp "$RUNNER_TEMP/app/build.log" "$RUNNER_TEMP/build.log"
+          codesign --verify --deep "$RUNNER_TEMP/app/Goalong Dev.app" && ls "$RUNNER_TEMP/app"
       - name: Drive the rows of ${{ matrix.shard }} ${{ matrix.slice }}
         # L3m: S4 runs too (its 4 background rows are in t046-only.txt); an empty slice stops before the app.
         timeout-minutes: ${{ matrix.shard == 'S4' && 310 || 125 }}
