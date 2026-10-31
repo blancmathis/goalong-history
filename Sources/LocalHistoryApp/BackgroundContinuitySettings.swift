@@ -6,6 +6,27 @@
     struct BackgroundContinuitySettings: View {
         static let loginTitle = "Ouvrir Goalong à l’ouverture de session"
         static let unknownStateTitle = "État inconnu"
+        static let needsAttentionText = "Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système."
+
+        /// The one orange line under the login row (UI-43): a failed change first, then an unread state,
+        /// then a consent macOS does not honour yet. Never two warnings together.
+        enum LoginWarning: Equatable {
+            case failure(String)
+            case unknownState
+            case needsAttention
+        }
+
+        nonisolated static func loginWarning(message: String?, state: LaunchAtLoginManager.State,
+                                             consentEnabled: Bool) -> LoginWarning? {
+            if let message { return .failure(message) }
+            if LaunchAtLoginManager.switchValue(for: state) == nil { return .unknownState }
+            if consentEnabled && state != .enabled { return .needsAttention }
+            return nil
+        }
+
+        private var loginWarning: LoginWarning? {
+            Self.loginWarning(message: login.message, state: login.state, consentEnabled: consents.isEnabled(.launchAtLogin))
+        }
         @AppStorage(BackgroundContinuityPreferences.keepRunningKey) private var keepRunning = true
         @StateObject private var login = LaunchAtLoginManager()
         @ObservedObject private var continuity = BackgroundContinuityController.shared
@@ -48,18 +69,16 @@
                             }
                             .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("settings-login-unknown")
-                            GoalongNote(login.statusDetail)
                         }
-                        if consents.isEnabled(.launchAtLogin) && !login.isEnabled {
-                            Text("Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système.")
-                                .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                        switch loginWarning {
+                        case .failure(let message): GoalongNote(message, tone: .warning)
+                        case .unknownState: GoalongNote(login.statusDetail, tone: .warning)
+                        case .needsAttention: GoalongNote(Self.needsAttentionText, tone: .warning)
+                        case nil: EmptyView()
                         }
                         if login.requiresApproval || login.state == .unavailable {
                             Button("Ouvrir Réglages Système…") { login.openLoginItemsSettings() }
                                 .buttonStyle(LHSecondaryButtonStyle())
-                        }
-                        if let message = login.message {
-                            Text(message).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                         }
                         if let notice = continuity.interruptionNotice {
                             Divider()
