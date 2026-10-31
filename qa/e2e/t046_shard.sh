@@ -183,6 +183,7 @@ printf 'Note de test synthétique T-046.\nAucune donnée réelle.\n' > "$RUNNER_
 python3 -I "$HERE/seed_events.py" "$DATA" --days 14 --per-day 720 --today | tee -a "$SUMMARY"
 # L3j: owner-classified tasks for those contexts (Activité « Tâches », Corriger, Nouvelle tâche: J-0452/0453/0504/0505/0488).
 python3 -I "$HERE/seed_work.py" "$DATA" | tee -a "$SUMMARY"
+python3 -I "$HERE/seed_analysis.py" "$DATA" "$(date +%F)" | tee -a "$SUMMARY"  # L3k: J-0526
 # L3e: the work definition and a synthetic Jev key as files the app reads at launch (settext and typed UI fields do
 # not reach the SwiftUI bindings, L3d). JevWorkContextStore: jev/work-context.json schema 3, <= 800 bytes;
 # JevMonitor: jev/api-key, 8-1024 printable ASCII. JevLocalFiles: dir 0700, files 0600.
@@ -233,6 +234,8 @@ sudo killall tccd 2>/dev/null; killall tccd 2>/dev/null; sleep 2
 launch; drv status-item "$BUNDLE" >/dev/null 2>&1; panel=1; sleep 2; open_dashboard; cleanup
 log "== recording on, modules on, synthetic activity"
 log "nav miss: $(navigate pane:recording p:source-localComputerHistory w:3 o:recording-setup-confirm w:2)"; cleanup
+# L3k: the Blocage seed must exist before the module loads it (BlockingController reads it once).
+python3 -I "$HERE/seed_blocking.py" "$DATA" >> "$SUMMARY" 2>&1 || log "blocking seed failed"
 log "nav miss: $(navigate pane:modules "set:settings-module-concentration 1" "set:settings-module-blocking 1" \
   "set:settings-module-braise 1" "set:settings-module-ambiance 1" w:2)"; cleanup
 # L3b: planned tasks and today's commitment through the app's own CLI (it talks to the running app), and the
@@ -244,6 +247,12 @@ for t in "Rédiger la note T-046" "Relire le rapport synthétique" "Préparer la
   tmo 60 "$GOALONG" --root "$DATA" plan add "$t" --estimate 45 >> "$SUMMARY" 2>&1 || log "plan add failed: $t"
 done
 tmo 60 "$GOALONG" --root "$DATA" commitment set --day today --kind work --target 2h >> "$SUMMARY" 2>&1 || log "commitment set failed"
+# L3k: two finished focus sessions (J-0132/0133) and a Braise night rule (J-0742), through the same CLI.
+for i in 1 2; do
+  tmo 60 "$GOALONG" --root "$DATA" session start --intent "T046 séance $i" --minutes 5 >> "$SUMMARY" 2>&1; sleep 2
+  tmo 60 "$GOALONG" --root "$DATA" session stop --outcome done --note "note $i" >> "$SUMMARY" 2>&1 || log "session $i failed"
+done
+tmo 60 "$GOALONG" --root "$DATA" braise schedule add 1,2,3,4,5,6,7 22:00 06:00 >> "$SUMMARY" 2>&1 || log "braise rule failed"
 # L3e: the work definition is seeded in jev/work-context.json before launch (the UI typing of L3d saved nothing).
 log "nav miss: $(navigate nav:history p:"Conversations locales" w:2 o:source-aiConversations w:3 o:"Détecter les dossiers courants" w:3)"; cleanup
 # L3j: that button only exists on the management page (AgentActivityPage.swift:120/132), not in Historique:

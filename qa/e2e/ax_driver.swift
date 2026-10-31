@@ -149,7 +149,7 @@ func openMenu(_ bundle: String, _ target: AXUIElement) -> Bool {
         if menuItem(bundle, "", extra: [target]) != nil { return true }
         usleep(500_000)
     }
-    postKey(0x35); usleep(400_000)
+    // L3k: no Escape here. With no menu open it closed the host SHEET (J-0427: target gone, no click).
     bringIntoView(target)
     guard let c = centerOf(target) else { return false }
     mouseClick(c); usleep(800_000)
@@ -160,6 +160,11 @@ func openMenu(_ bundle: String, _ target: AXUIElement) -> Bool {
 /// L3h: open TARGET's menu and choose ITEM (AXPress, or a mouse click with CLICK). Items not in the AX tree under an
 /// open AXMenuButton: type the item's first word (menu type-select) and Return. False: nothing chosen, menu closed.
 func pickItem(_ bundle: String, _ target: AXUIElement, _ item: String, click: Bool = false) -> Bool {
+    // L3k: "LABEL@N" = item N (0-based) for the keyboard fallback (labels with commas defeat type-select).
+    var item = item, index = -1
+    if let at = item.range(of: "@", options: .backwards), let n = Int(item[at.upperBound...]) {
+        index = n; item = String(item[..<at.lowerBound])
+    }
     let shown = openMenu(bundle, target)
     var hit: AXUIElement?
     for _ in 0..<(shown ? 6 : 1) where hit == nil {
@@ -172,6 +177,12 @@ func pickItem(_ bundle: String, _ target: AXUIElement, _ item: String, click: Bo
         let s = AXUIElementPerformAction(hit, kAXPressAction as CFString).rawValue
         print("picked=press \(describe(hit)) : \(s)")
         return s == 0 || s == -25204
+    }
+    if !shown && index >= 0 {
+        for _ in 0...index { postKey(0x7D); usleep(200_000) }
+        postKey(0x24)
+        print("picked=keys down=\(index + 1) \(item)")
+        return true
     }
     if !shown && text(target, kAXRoleAttribute) == "AXMenuButton" {
         typeText(String(item.split(separator: " ").first ?? "")); usleep(300_000); postKey(0x24)

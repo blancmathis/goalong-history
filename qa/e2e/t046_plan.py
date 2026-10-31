@@ -97,7 +97,14 @@ RECIPES = {
     "J-0466": ("", "label", "AXButton", "Aujourd’hui"),
     "J-0467": ("", "label", "AXButton", "Actualiser"),
     # L3j: alert and folder-sheet « Enregistrer », not the longer « Enregistrer … » buttons of the page behind.
-    "J-0331": ("", "exact", "AXButton", "Enregistrer"),
+    # L3k: J-0331 = the work-definition alert after « Enregistrer » on Mon travail.
+    "J-0331": ("", "dialog", "", "Changer la définition du travail"),
+    "J-0453": ("", "id", "AXButton", "activity-tasks-review"),
+    "J-0505": ("", "dialog", "", "Corriger le classement"),
+    "J-0504": ("", "label", "AXButton", "Terminé"),
+    # L3k: « Commande copiée » is the label AFTER the press: press « Copier la commande » (ex: checks the new label).
+    "J-0946": ("", "exact", "AXButton", "Copier la commande"),
+    "J-0947": ("", "exact", "AXButton", "Copier la commande"),
     "J-0372": ("", "exact", "AXButton", "Enregistrer"),
     "J-0373": ("", "exact", "AXButton", "Enregistrer"),
     # L3h: GoalongMenuPicker is a SwiftUI Menu (AXMenuButton); the nav's pick: chooses the item.

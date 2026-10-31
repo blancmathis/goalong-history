@@ -394,3 +394,74 @@ J-0505	nav:overview w:3 p:activity-tasks-review w:3
 J-0372	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2
 J-0373	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2
 J-0331	pane:jev w:2 p:monitoring-edit-goals w:1 "tk:Projets et objectifs= Revue T-046." w:1 p:monitoring-save-goals w:2
+J-0427	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pick:Tout autoriser, durées seulement@0"
+J-0428	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pick:Tout autoriser, détails choisis@1"
+J-0429	pane:chatGPT p:"Voir les données qui partiront" w:3 px:Données w:2 "ck:Activité de ce Mac=1" w:2 "pick:Tout exclure@2"
+J-0453	nav:overview w:3
+J-0331	nav:work w:2 p:monitoring-edit-goals w:1 "tk:Projets et objectifs= Revue T-046." w:1 p:monitoring-save-goals w:2
+J-0868	pane:storage p:"Choisir…" w:2 "set:retention-automatic 1" w:1 "pkc:retention-detailedEvents|90 jours" w:1
+J-0867	pane:storage p:"Choisir…" w:2 "set:retention-automatic 1" w:1 "pkc:retention-minuteSeals|30 jours" w:1
+# L3k lot 2 (class B): one ex: per click with no visible change (/tmp/l3k/lot2.tsv: ok + unsure with a nav)
+J-0094	nav:concentration p:"Distractions" w:2 ex:distractions-words-editor
+J-0107	nav:concentration w:2 "tk:concentration-intent=Revue T-046" w:1 ex:concentration-current-intent
+J-0131	nav:concentration w:2 "tk:concentration-add-item=Relire T-046" w:1 "ex:Relire T-046"
+J-0150	nav:concentration w:2 "tk:concentration-add-item=Relire T-046" px:Ajouter w:1 p:concentration-open-review w:2 "tk:concentration-tomorrow-first=Relire le rapport" w:1 "ex:Bilan fait"
+J-0287	pane:jev w:2 p:jev-open-connection w:2 "tk:jev-api-key=abc12345" w:1
+J-0290	pane:jev w:2 p:jev-open-connection w:2
+J-0291	pane:jev w:2 p:jev-open-connection w:2 "tk:jev-api-key=abc" w:1 "ex:doit être une valeur ASCII"
+J-0302	nav:concentration w:2 px:Autre w:1 "ex:Une séance de 45 min"
+J-0349	pane:recording p:"Choisir les dossiers de conversations…" w:3 "ex:app:com.apple.finder=signals"
+J-0356	pane:recording p:"Choisir les dossiers de conversations…" w:3 "ex:Choisissez des dossiers contenant des conversations"
+J-0357	pane:recording p:"Choisir les dossiers de conversations…" w:3 "ex:Choisissez des dossiers contenant des conversations"
+J-0368	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2 "pick:Tous les fichiers pris en charge" "ex:Chaque fichier pris en charge est indexé sur place"
+J-0380	si w:1 "ex:Cycle 1 sur 4"
+J-0438	nav:analytics w:2 ex:activity-header
+J-0449	nav:history w:2 si w:2 ex:activity-header
+J-0502	nav:work w:2 o:work-allow w:1 o:Autoriser w:2 p:work-review-load w:3 "pkc:Corriger le classement de|Hors travail" w:2 "ex:corrigé par vous"
+J-0509	pane:advanced p:"Outils de partage et analyses" w:2 "ex:1. Choisir les données"
+J-0561	nav:history w:2 ex:activity-header
+J-0579	nav:history w:2 ex:activity-header
+J-0621	nav:history p:"Temps d’écran Apple" w:2 nm
+J-0661	pane:recording w:1 ex:activity-header
+J-0666	nav:overview w:2 p:"Choisir un jour" w:1 "sd:Jour=-1@0" ex:Aujourd’hui
+J-0667	nav:overview w:2 p:"Choisir un jour" w:1 "sd:Jour=-1@0" ex:Aujourd’hui
+J-0725	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 "ex:Inclure le contexte enrichi déjà autorisé=1"
+J-0752	nav:braise w:2 p:braise-add-rule w:2 pb:"Tous les jours" w:1 "ex:Sam=1 && Lun=0"
+J-0766	nav:history p:"Ce Mac" w:2 "ex:app:com.apple.finder=events"
+J-0834	nav:overview p:"Signaler un problème…" w:2 p:"Effacer les journaux…" w:1 "ex:Journaux effacés"
+J-0848	pane:applications px:"Sites web" w:1 "tk:Ajouter un site, exemple.fr=t046-exemple.fr" w:1 "ex:Reconnaître ce site pour l’exclure"
+J-0859	pane:storage p:"Effacer de l’historique…" w:2 px:"La dernière heure" w:1 "ex:La dernière heure=1"
+J-0887	nav:ambiance w:2 ex:Arrêter
+J-0888	nav:ambiance w:2 ex:Arrêter
+J-1009	pane:recording p:settings-developer-projects w:2 ex:Retirer
+# L3k lot 3 (class C): rows that the new Blocage, session, Braise, conversation and settings seeds make reachable
+J-0003	nav:blocking
+J-0010	nav:blocking
+J-0011	nav:blocking
+J-0012	nav:blocking
+J-0015	nav:blocking p:"Bloquer autre chose" w:1 p:"Plus tard" w:1
+J-0033	nav:blocking p:"Arrêter…" w:2
+J-0034	nav:blocking p:"Arrêter…" w:2
+J-0089	nav:concentration p:"Distractions" w:2
+J-0112	nav:concentration p:"Pomodoro" w:1 p:"T046 Réseaux" w:1
+J-0124	nav:concentration
+J-0125	nav:concentration
+J-0132	nav:concentration
+J-0133	nav:concentration
+J-0742	nav:braise
+J-0894	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0897	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0898	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0899	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0900	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0901	nav:blocking p:"Bloquer autre chose" w:1 p:"Mot de passe" w:1 p:"Le choisir…" w:2
+J-0903	nav:blocking
+J-0904	nav:blocking
+J-0346	nav:history p:"Conversations locales" w:2 "tk:Rechercher dans les conversations=zzzz" w:2
+J-0366	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2
+J-0370	pane:recording p:"Choisir les dossiers de conversations…" w:3 p:"Modifier le suivi de" w:2
+J-0728	pane:recording "t:Confidentialité avancée|Masquer les valeurs des paramètres d’URL" w:2
+J-0769	nav:history p:"Ce Mac" w:2
+J-0919	pane:home w:1 "tk:Rechercher=zz" w:1
+J-0946	nav:cli w:2 "ex:Commande copiée"
+J-0947	nav:cli w:2 "ex:Commande copiée"
