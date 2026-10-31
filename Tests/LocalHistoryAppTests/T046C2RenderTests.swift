@@ -194,7 +194,8 @@ final class T046C2RenderTests: XCTestCase {
         let view = NSHostingView(rootView: root.environment(\.goalongReduceMotion, true).goalongControls())
         view.frame = NSRect(x: 0, y: 0, width: 900, height: 1600)
         view.layoutSubtreeIfNeeded()
-        spin(until: { !strings(of: view).isEmpty })
+        // The conversations page first shows « Vérification des accès… » while it checks the sources.
+        spin(until: { let seen = strings(of: view); return !seen.isEmpty && !seen.contains("source-access-page-loading") })
         return view
     }
 
