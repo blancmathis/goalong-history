@@ -16,6 +16,8 @@ enum GoalongGlobalPauseText {
 struct GoalongGlobalPauseControl: View {
     @ObservedObject var model: DashboardViewModel
     var compact = false
+    /// Off where the window's pause banner already holds the lime « Reprendre » (DESIGN §9: one main action).
+    var prominent = true
     @State private var pause = GoalongGlobalPause.load()
     @State private var error: String?
     @State private var confirming = false
@@ -31,7 +33,7 @@ struct GoalongGlobalPauseControl: View {
                       systemImage: pause.blocksActivity ? "play.circle" : "pause.circle")
                     .font(.system(size: 12, weight: .medium))
                     .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
-            }.goalongPauseButtonStyle(primary: pause.blocksActivity)
+            }.goalongPauseButtonStyle(primary: prominent && pause.blocksActivity)
                 .accessibilityIdentifier("goalong-global-pause")
                 .help("Suspendre le suivi, les lectures Apple et IA, les analyses et les envois. Les choix autorisés sont conservés.")
             if !compact {

@@ -158,11 +158,19 @@
                             }
                             .accessibilityElement(children: .combine)
                             if let fix = model.attentionFix {
-                                Button(fix.label) { model.perform(fix) }
-                                    .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
-                                    // 8 pt under the message: the repair reads as its own step, apart from the pause button.
-                                    .padding(.top, 7)
-                                    .accessibilityIdentifier("menubar-attention-fix")
+                                // A missing permission stops recording and blocking: the repair is the panel's one lime
+                                // action, and « Commencer » steps down to secondary.
+                                Group {
+                                    if fix == .permissions {
+                                        Button(fix.label) { model.perform(fix) }.buttonStyle(LHPrimaryButtonStyle())
+                                    } else {
+                                        Button(fix.label) { model.perform(fix) }.buttonStyle(LHSecondaryButtonStyle())
+                                    }
+                                }
+                                .controlSize(.small)
+                                // 8 pt under the message: the repair reads as its own step, apart from the pause button.
+                                .padding(.top, 7)
+                                .accessibilityIdentifier("menubar-attention-fix")
                             }
                         }
                     }
@@ -314,6 +322,10 @@
         @ObservedObject var model: MenuBarPanelModel
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+        private var startLabel: some View {
+            Label("Commencer", systemImage: "play.fill").frame(maxWidth: .infinity)
+        }
+
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
                 // Same order and labels as the Concentration page: Libre first, « 1 h 30 ».
@@ -328,11 +340,15 @@
                         BlockingFormat.duration(minutes: $0)
                     }
                 }
-                Button(action: model.startFocus) {
-                    Label("Commencer", systemImage: "play.fill").frame(maxWidth: .infinity)
+                Group {
+                    if model.attentionFix == .permissions {
+                        Button(action: model.startFocus) { startLabel }.buttonStyle(LHSecondaryButtonStyle())
+                            .keyboardShortcut(.defaultAction)
+                    } else {
+                        Button(action: model.startFocus) { startLabel }.buttonStyle(LHPrimaryButtonStyle())
+                            .keyboardShortcut(.defaultAction)
+                    }
                 }
-                .buttonStyle(LHPrimaryButtonStyle())
-                .keyboardShortcut(.defaultAction)
                 .disabled(!model.focusAvailable)
                 if !model.focusAvailable, let reason = model.focusUnavailableReason {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
