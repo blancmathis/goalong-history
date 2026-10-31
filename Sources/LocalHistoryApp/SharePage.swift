@@ -114,14 +114,15 @@
                 }
                 .accessibilityIdentifier("share-proof-status")
                 Spacer()
-                // Lime goes to what can run: the relay when the file cannot be created yet (UI-9 C).
+                // Lime goes to what can run: opening the settings when the file cannot be created yet (UI-9 C).
                 switch proof.action {
                 case .openRecordingSettings?:
                     Button("Ouvrir les réglages") { model.openRecordingSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                 case .reportProblem?:
+                    // A problem report is a side path, not the page's purpose: no lime (UI-11C, screen 55).
                     Button("Signaler le problème…") { model.openDiagnostics() }
-                        .buttonStyle(LHPrimaryButtonStyle())
+                        .buttonStyle(LHSecondaryButtonStyle())
                 case nil:
                     EmptyView()
                 }
@@ -196,7 +197,7 @@
             return ShareProofStatus(
                 title: "\(observed), aucune vérifiée",
                 detail: recordingEnabled
-                    ? "Le fichier ne contient que les minutes vérifiées par ce Mac. Celles-ci n’ont pas pu l’être : signalez le problème."
+                    ? "Le fichier ne contient que les minutes vérifiées par ce Mac, et aucune ne l’a été. Signalez le problème pour en trouver la cause."
                     : "Le fichier ne contient que les minutes vérifiées par ce Mac pendant l’enregistrement, qui est désactivé.",
                 action: recordingEnabled ? .reportProblem : .openRecordingSettings,
                 canExport: false)

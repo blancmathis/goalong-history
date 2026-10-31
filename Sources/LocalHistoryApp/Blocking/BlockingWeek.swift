@@ -153,10 +153,18 @@ import SwiftUI
                 }
                 .frame(height: 14)
             }
+            // The legend names only the kinds of range drawn this week (UI-11C, screen 1).
+            let drawn = spans.values.flatMap { $0 }
             HStack(spacing: 16) {
-                legend(Capsule().fill(LHTheme.text), "Verrouillé")
-                legend(Capsule().fill(LHTheme.text.opacity(Self.freeFill)), "Libre ou difficile")
-                legend(Capsule().strokeBorder(LHTheme.text.opacity(0.7), lineWidth: 1.5), "Ralenti")
+                if drawn.contains(where: { !$0.slowed && Self.isSolid(lock: $0.lock, slowed: false) }) {
+                    legend(Capsule().fill(LHTheme.text), "Verrouillé")
+                }
+                if drawn.contains(where: { !$0.slowed && !Self.isSolid(lock: $0.lock, slowed: false) }) {
+                    legend(Capsule().fill(LHTheme.text.opacity(Self.freeFill)), "Libre ou difficile")
+                }
+                if drawn.contains(where: \.slowed) {
+                    legend(Capsule().strokeBorder(LHTheme.text.opacity(0.7), lineWidth: 1.5), "Ralenti")
+                }
                 HStack(spacing: 6) {
                     Circle().fill(LHTheme.accent).frame(width: 8, height: 8)
                     Text("Maintenant")

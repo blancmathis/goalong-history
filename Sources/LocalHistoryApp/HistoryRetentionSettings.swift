@@ -33,7 +33,7 @@ extension HistoryRetentionPolicy {
         }
     }
     /// Shared labels so every entry point names the same policy the same way.
-    static let noLimitLabel = "Jusqu’à ce que je supprime"
+    static let noLimitLabel = "Jusqu’à suppression"
     static let automaticCleanupLabel = "Supprimer automatiquement les données expirées"
     static func automaticCleanupSummary(enabled: Bool) -> String {
         enabled ? "Suppression automatique activée" : "Jusqu’à suppression manuelle"
@@ -41,7 +41,7 @@ extension HistoryRetentionPolicy {
     var includesProofExpiry: Bool { minuteSeals.days != nil || anchorReceipts.days != nil }
     var retentionDescription: String {
         HistoryDataClass.allCases.map { kind in
-            let duration = duration(for: kind).days.map { GoalongUIFormat.count($0, "jour") } ?? "jusqu’à ce que je supprime"
+            let duration = duration(for: kind).days.map { GoalongUIFormat.count($0, "jour") } ?? "jusqu’à suppression"
             return "\(kind.retentionTitle) : \(duration)"
         }.joined(separator: "\n")
     }
@@ -128,7 +128,8 @@ extension HistoryRetentionPolicy {
                                         }.labelsHidden().frame(width: 230)
                                             .accessibilityIdentifier("retention-\(kind.rawValue)")
                                     } else {
-                                        Text(model.draft.duration(for: kind).days.map { GoalongUIFormat.count($0, "jour") } ?? HistoryRetentionPolicy.noLimitLabel)
+                                        // Off, nothing expires: every row says what really happens, not a dormant duration (UI-11C).
+                                        Text(HistoryRetentionPolicy.noLimitLabel)
                                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                                             .frame(width: 230, alignment: .trailing)
                                             .accessibilityIdentifier("retention-\(kind.rawValue)")

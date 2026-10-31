@@ -187,7 +187,8 @@ struct GoalongRecordingStateNotice: View {
     var body: some View {
         Group {
             if let kind {
-                LHCard(padding: 16) {
+                // A banner is a tinted block without a border (DESIGN §9).
+                Group {
                     HStack(alignment: .center, spacing: 14) {
                         Image(systemName: symbol(kind)).font(.system(size: 15, weight: .medium))
                             .foregroundStyle(kind == .permissions || kind == .input ? LHTheme.warning : LHTheme.secondaryText)
@@ -210,6 +211,8 @@ struct GoalongRecordingStateNotice: View {
                         }
                     }
                 }
+                .padding(16)
+                .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("activity-recording-state")
             }
@@ -282,7 +285,7 @@ struct GoalongRecordingCoverageNotice: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(count == 0 ? "Seules les applications sont enregistrées" : "Suivi personnalisé, \(count)/8 types de détails")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Certains clics, interactions ou textes ne sont pas enregistrés selon vos choix. Vos durées et vos apps restent mesurées.")
+                        Text("Selon vos choix, une partie des interactions et des textes n’est pas enregistrée. Les durées et les applications restent mesurées.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }

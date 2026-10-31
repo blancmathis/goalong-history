@@ -47,8 +47,17 @@ struct RecordingChoicesView: View {
     @Binding var draft: DashboardSettingsDraft
     /// Settings use one column so every switch sits on the shared right edge (UI-48).
     var columns = 2
+    @Environment(\.isEnabled) private var isEnabled
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if !isEnabled {
+                // Locked switches say why, and why « Appels » may stay on (UI-11C, screens 24/44).
+                Label("Activez l’enregistrement pour modifier ces choix. « Appels » est une source à part et garde son réglage.",
+                      systemImage: "lock")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("recording-choices-locked-reason")
+            }
             HStack {
                 Text("Applications et durées").font(.system(size: 13, weight: .medium))
                 Spacer()

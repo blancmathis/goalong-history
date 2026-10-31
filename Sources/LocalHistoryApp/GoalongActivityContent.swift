@@ -608,7 +608,7 @@ struct GoalongAnalyticsContent: View {
             VStack(alignment: .leading, spacing: 12) {
                 if isDay, let day = current.days.first {
                     if hourly || sparse {
-                        GoalongHourlyClassChart(day: day, dateRange: chartDateRange, hourStride: hourStride)
+                        GoalongHourlyClassChart(day: day, dateRange: hourlyRange(day), hourStride: Self.strideHours(for: hourlyRange(day)))
                     } else {
                         GoalongUsageTimelineChart(day: day, grouping: grouping, dateRange: chartDateRange, hourStride: hourStride)
                     }
@@ -828,9 +828,16 @@ struct GoalongAnalyticsContent: View {
         }.font(.system(size: 13))
     }
 
-    private var hourStride: Int {
-        let hours = chartDateRange.upperBound.timeIntervalSince(chartDateRange.lowerBound) / 3600
+    private var hourStride: Int { Self.strideHours(for: chartDateRange) }
+    private static func strideHours(for range: ClosedRange<Date>) -> Int {
+        let hours = range.upperBound.timeIntervalSince(range.lowerBound) / 3600
         return hours > 16 ? 4 : hours > 8 ? 2 : 1
+    }
+    /// « Heure par heure » ends with the last hour that has a bar: no empty hours on the right.
+    private func hourlyRange(_ day: GoalongLocalAnalytics.Day) -> ClosedRange<Date> {
+        let hours = day.hours(minimumMinutes: 25).filter { $0.seconds > 0 }
+        guard !fullDay, let first = hours.map(\.start).min(), let last = hours.map(\.end).max() else { return chartDateRange }
+        return first...max(last, first.addingTimeInterval(3600))
     }
     private var chartDateRange: ClosedRange<Date> {
         guard isDay, let day = current.days.first else { return dateRange }
