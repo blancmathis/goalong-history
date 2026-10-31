@@ -399,8 +399,12 @@ case "act":
     // T-046: one matrix row. MODE id | idprefix | label | dialog | menuitem | role; ROLE may be empty.
     // ACTION click | toggle | type | observe | menu | shortcut. Not found: scroll and retry SCROLLS times.
     // Prints key=value lines; exit 0 = found and the action's check held, 1 = found but the check failed, 5 = not found.
+    // L3g, strict click: 10 = no effect (changed=0 and EXPECT absent), 11 = not a control (Group/Heading/StaticText
+    // with no actionable ancestor or child of the same label or id), 12 = disabled. EXPECT (8th argument, optional):
+    // an id or a text that must be in the tree after the click (the row's effect check).
     let (bundle, action, mode, role, needle) = (args[2], args[3], args[4], args[5], args[6])
     let scrolls = Int(args.count > 7 ? args[7] : "3") ?? 3
+    let expect = args.count > 8 ? args[8] : ""
     let a = app(bundle)
     func norm(_ s: String) -> String {
         s.replacingOccurrences(of: "\u{a0}", with: " ").replacingOccurrences(of: "\u{202f}", with: " ")
@@ -456,8 +460,16 @@ case "act":
     }
     func signature() -> Int {
         var h = Hasher(), budget = 3000
+        // L3g: the frontmost app (Finder, System Settings opened by the press) and numeric values and enabled
+        // states (checkboxes, steppers), which describe() leaves out.
+        h.combine(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "")
         for w in (attr(a, kAXWindowsAttribute) as? [AXUIElement]) ?? [] {
-            _ = walk(w, budget: &budget) { e, _ in h.combine(describe(e)); return false }
+            _ = walk(w, budget: &budget) { e, _ in
+                h.combine(describe(e))
+                if let v = attr(e, kAXValueAttribute) as? NSNumber { h.combine(v.doubleValue) }
+                if let en = attr(e, kAXEnabledAttribute) as? Bool { h.combine(en) }
+                return false
+            }
         }
         return h.finalize()
     }
@@ -479,13 +491,60 @@ case "act":
         if el != nil || mode == "dialog" { break }
         if attempt < scrolls { scrollOnce() }
     }
-    guard let e = el else { print("found=0"); exit(5) }
+    guard var e = el else { print("found=0"); exit(5) }
     print("found=1"); print("element=\(describe(e))")
+    // L3g: a click on a label or a container is not a click on a control. Take the actionable ancestor (6 levels)
+    // or child with the same label or id; none: not-a-control.
+    if action == "click" && ["AXGroup", "AXHeading", "AXStaticText"].contains(text(e, kAXRoleAttribute)) {
+        func actionable(_ x: AXUIElement) -> Bool {
+            var names: CFArray?
+            guard AXUIElementCopyActionNames(x, &names) == .success, let list = names as? [String] else { return false }
+            return list.contains(kAXPressAction) && !["AXGroup", "AXHeading", "AXStaticText", "AXWindow", "AXSheet",
+                "AXScrollArea", "AXApplication"].contains(text(x, kAXRoleAttribute))
+        }
+        let keys = Set(texts(e).filter { !$0.isEmpty } + (n.isEmpty || mode == "dialog" ? [] : [n]))
+        let id0 = text(e, "AXIdentifier")
+        func same(_ x: AXUIElement) -> Bool {
+            let id = text(x, "AXIdentifier")
+            if !id.isEmpty && (id == id0 || (mode == "id" && id == needle) || (mode == "idprefix" && id.hasPrefix(needle))) { return true }
+            return texts(x).contains { t in !t.isEmpty && keys.contains { t == $0 || t.contains($0) } }
+        }
+        var control: AXUIElement?
+        var up = attr(e, kAXParentAttribute).map { $0 as! AXUIElement }
+        for _ in 0..<6 {
+            guard let p = up else { break }
+            if actionable(p) && same(p) { control = p; break }
+            up = attr(p, kAXParentAttribute).map { $0 as! AXUIElement }
+        }
+        if control == nil {
+            var budget = 400
+            _ = walk(e, budget: &budget) { x, d in
+                if d > 0 && actionable(x) && same(x) { control = x; return true }
+                return false
+            }
+        }
+        guard let c = control else { print("not_a_control=\(text(e, kAXRoleAttribute))"); exit(11) }
+        e = c; print("control=\(describe(e))")
+    }
     let r = text(e, kAXRoleAttribute)
     func value() -> String { attr(e, kAXValueAttribute).map { "\($0)" } ?? "nil" }
     func press() -> Int32 { AXUIElementPerformAction(e, kAXPressAction as CFString).rawValue }
     func okStatus(_ s: Int32) -> Bool { s == 0 || s == -25204 }
     var pass = true
+    if action == "click" {
+        let en = attr(e, kAXEnabledAttribute) as? Bool
+        print("enabled=\(en.map { $0 ? 1 : 0 }.map(String.init) ?? "-")")
+        if en == false { exit(12) }
+    }
+    func expected() -> Bool {  // The row's effect check: EXPECT (id, or text) present in the tree after the action.
+        guard !expect.isEmpty else { return false }
+        let x = norm(expect)
+        for root in searchRoots() {
+            var budget = 8000
+            if walk(root, budget: &budget, visit: { el, _ in text(el, "AXIdentifier") == expect || texts(el).contains { $0.contains(x) } }) { return true }
+        }
+        return false
+    }
     switch action {
     case "click" where r == "AXSlider":
         let s = AXUIElementPerformAction(e, kAXIncrementAction as CFString).rawValue; usleep(400_000)
@@ -494,8 +553,14 @@ case "act":
         pass = okStatus(s)
     case "click":
         let before = signature(); let s = press(); usleep(1_200_000)
-        print("press=\(s)"); print("changed=\(before != signature() ? 1 : 0)")
-        pass = okStatus(s)
+        let changed = before != signature()
+        print("press=\(s)"); print("changed=\(changed ? 1 : 0)")
+        guard okStatus(s) else { exit(1) }
+        if !changed {
+            let fx = expected()
+            if !expect.isEmpty { print("expect=\(expect) present=\(fx ? 1 : 0)") }
+            if !fx { exit(10) }
+        }
     case "toggle":
         let before = signature(); let v0 = value(); let s = press(); usleep(900_000); let v1 = value()
         let opened = before != signature()

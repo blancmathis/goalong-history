@@ -16,7 +16,7 @@ DATA="$HOME/Library/Application Support/LocalHistory-Dev"
 DRIVER="$RUNNER_TEMP/ax_driver"
 ROWS="$OUT/rows"; RESULTS="$OUT/results.tsv"; SUMMARY="$OUT/summary.txt"
 mkdir -p "$ROWS/ax" "$OUT/setup"
-printf 'id\tshard\tverdict\tproof_png\tax_dump\tcause\tdetail\n' > "$RESULTS"
+printf 'id\tshard\tverdict\tproof_png\tax_dump\tcause\tdetail\tchanged\tenabled\n' > "$RESULTS"
 log() { echo "$*" | tee -a "$SUMMARY"; }
 # perl alarm: macOS has no timeout(1). A hung AX call never stalls the shard.
 tmo() { local s="$1"; shift; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; }
@@ -66,6 +66,8 @@ cleanup() {
 # rows/ax/<row>-menu.txt); tk:FIELD=TEXT types TEXT as key events into a field; dump:NAME saves rows/ax/<row>-NAME.txt.
 # L3f: ck:LABEL=0|1 sets a checkbox found by id or exact label (idempotent, unlike p:); pkc:OPENER|ITEM as pk: but
 # clicks ITEM with the mouse; rec:off turns this Mac's recording off (ui_row turns it back on after the row).
+# L3g: ex:ID|TEXT is not a step: it is the row's effect check, passed to ax_driver act (a click with changed=0
+# passes only if ID or TEXT is in the tree after the press).
 navigate() {
   local miss="" c
   for c in "$@"; do
@@ -112,9 +114,12 @@ navigate() {
   printf '%s' "$miss"
 }
 rowshot() { screencapture -x "$ROWS/$1.png"; sips -Z 1280 "$ROWS/$1.png" >/dev/null 2>&1; drv dump "$BUNDLE" "$ROWS/ax/$1.txt" >/dev/null 2>&1; }
-record() { # id verdict png ax cause detail
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$SHARD" "$2" "$3" "$4" "$5" "$(printf '%s' "$6" | tr '\t\n' '  ' | cut -c1-400)" >> "$RESULTS"
+record() { # id verdict png ax cause detail; L3g: changed and enabled columns, copied from the driver's output.
+  local ch en
+  ch="$(printf '%s\n' "$6" | sed -n 's/^changed=//p' | tail -n 1)"; en="$(printf '%s\n' "$6" | sed -n 's/^enabled=//p' | tail -n 1)"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$SHARD" "$2" "$3" "$4" "$5" "$(printf '%s' "$6" | tr '\t\n' '  ' | cut -c1-400)" "$ch" "$en" >> "$RESULTS"
 }
+expect_of() { local c; for c in "$@"; do [[ $c == ex:* ]] && { printf '%s' "${c#ex:}"; return; }; done; }
 
 ui_row() { # id kind nav mode role needle action
   local id="$1" kind="$2" navs="$3" mode="$4" role="$5" needle="$6" action="$7" miss out st verdict cause
@@ -122,14 +127,9 @@ ui_row() { # id kind nav mode role needle action
   front; CUR="$id"
   eval "set -- $navs"
   miss="$(navigate "$@")"
-  out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" "$([[ $kind == trigger ]] && echo 0 || echo 3)" 2>&1)"; st=$?
+  out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" "$([[ $kind == trigger ]] && echo 0 || echo 3)" "$(expect_of "$@")" 2>&1)"; st=$?
   sleep 0.5; rowshot "$id"
-  case "$st" in
-    0) verdict=pass; cause="" ;;
-    1) verdict=fail; cause="check" ;;
-    5) if [[ $kind == trigger ]]; then verdict=N/A; cause="trigger-not-scripted"; else verdict=fail; cause="not-found"; fi ;;
-    *) verdict=fail; cause="driver-exit-$st" ;;
-  esac
+  read -r verdict cause <<< "$(row_verdict "$kind" "$st")"; cause="${cause#-}"
   [[ -n $miss && $verdict != pass ]] && cause="nav($miss)$cause"  # L3e: N/A rows show their nav miss too.
   record "$id" "$verdict" "rows/$id.png" "rows/ax/$id.txt" "$cause" "$out"
   cleanup
@@ -149,6 +149,9 @@ row_verdict() { # kind status -> "verdict cause"
     0) echo "pass -" ;;
     1) echo "fail check" ;;
     5) [[ $1 == trigger ]] && echo "N/A trigger-not-scripted" || echo "fail not-found" ;;
+    10) echo "fail no-effect" ;;    # L3g strict click: changed=0 and the row's ex: element absent.
+    11) echo "fail not-a-control" ;;
+    12) echo "fail disabled" ;;
     *) echo "fail driver-exit-$2" ;;
   esac
 }
@@ -185,8 +188,8 @@ while IFS=$'\037' read -r -u 3 id kind navs mode role needle action na screen; d
   echo "$id" >> "$OUT/done.ids"
   if [[ $kind == na ]]; then record "$id" N/A "" "" na "$na"; continue; fi
   # L3d: an onboarding row may need its step first (navs = onboarding-continue presses, from t046-nav.tsv @onboarding).
-  if [[ -n $navs ]]; then eval "set -- $navs"; navigate "$@" >/dev/null; fi
-  out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" 0 2>&1)"; st=$?
+  set --; if [[ -n $navs ]]; then eval "set -- $navs"; navigate "$@" >/dev/null; fi
+  out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" 0 "$(expect_of "$@")" 2>&1)"; st=$?
   rowshot "$id"; drv dismiss-alerts "$BUNDLE" >/dev/null 2>&1
   # L3f: a row that opened System Settings (J-0807) leaves it in front: a later Return key would go there (J-0811).
   if pgrep -x "System Settings" >/dev/null; then osascript -e 'tell application "System Settings" to quit' >/dev/null 2>&1; sleep 1; front; fi

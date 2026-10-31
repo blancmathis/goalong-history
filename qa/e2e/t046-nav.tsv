@@ -228,7 +228,7 @@ J-0755	nav:braise w:2 p:braise-add-rule w:2
 J-0807	@onboarding "pu:onboarding-continue|permission-primary-action"
 J-0810	@onboarding "pu:onboarding-continue|permission-primary-action"
 J-0811	@onboarding "pu:onboarding-continue|permission-primary-action"
-J-0856	@onboarding "pu:onboarding-continue|Site à exclure"
+J-0856	pane:applications
 # L3d: lot A (host action, then the alert/sheet; shortcut rows: the host of the button).
 J-0053	nav:concentration p:"Distractions" w:2 "pp:blocking-suggestion-|blocking-list-" w:2 pb:"Supprimer" w:2
 J-0270	nav:overview p:"Partager cette journée…" w:2 "t:Outils avancés|Récap relu ou connexion manuelle…" w:2
