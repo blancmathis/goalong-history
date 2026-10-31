@@ -81,7 +81,7 @@ struct GoalongReplacementRow: View {
                     Text("Indiquez le texte à rechercher.").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                 }
                 HStack(spacing: 24) {
-                    Toggle("Respecter la casse", isOn: $rule.caseSensitive).toggleStyle(.goalongCheckbox)
+                    Toggle("Distinguer majuscules et minuscules", isOn: $rule.caseSensitive).toggleStyle(.goalongCheckbox)
                     Toggle("Mot entier", isOn: $rule.wholeWord).toggleStyle(.goalongCheckbox)
                 }.font(.system(size: 12))
             }

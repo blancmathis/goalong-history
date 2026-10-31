@@ -126,7 +126,8 @@ import XCTest
         c.refresh()
         XCTAssertEqual(c.protection.guardian, .awaitingApproval)
         XCTAssertEqual(c.protection.level, .standard, "only a running guard makes the protection strict")
-        XCTAssertEqual(BlockingProtectionDetails.levelLabel(c.protection), "À autoriser dans \(LoginItemsPanel.path)")
+        XCTAssertEqual(BlockingProtectionDetails.levelLabel(c.protection), "À autoriser")
+        XCTAssertEqual(BlockingProtectionDetails.levelHelp(c.protection), "Autorisez Goalong dans \(LoginItemsPanel.path).", "UI-12A: the path goes in the note")
         XCTAssertNil(c.error, "the guard never raises an error message")
         clockNow = now.addingTimeInterval(3601)
         c.refresh()
@@ -500,7 +501,8 @@ import XCTest
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Indisponible")
         XCTAssertEqual(BlockingProtectionDetails.levelHelp(state), GuardEscalation.stoppedUntilLogin, "R5-garde-01: the cause under « Niveau »")
         state.guardian = .awaitingApproval
-        XCTAssertNil(BlockingProtectionDetails.levelHelp(state))
+        XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "À autoriser")
+        XCTAssertEqual(BlockingProtectionDetails.levelHelp(state), "Autorisez Goalong dans \(LoginItemsPanel.path).")
         state.guardian = .running; state.level = .strict
         XCTAssertEqual(BlockingProtectionDetails.levelLabel(state), "Renforcé")
         XCTAssertNil(BlockingProtectionDetails.levelHelp(state))

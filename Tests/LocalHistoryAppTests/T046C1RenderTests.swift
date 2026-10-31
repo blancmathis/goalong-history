@@ -49,7 +49,7 @@ final class T046C1RenderTests: XCTestCase {
         let seen = strings(of: rendered)
         for label in ["Compte de démonstration", "Se déconnecter", "2026-09-07, Europe/Paris", "Analyser avec ChatGPT",
                       "J’autorise l’envoi des seules données affichées à ChatGPT pour cette analyse",
-                      "3. Relisez votre brouillon", "Journée de démonstration"] {
+                      "Relisez votre brouillon", "Journée de démonstration"] {
             XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
         }
         XCTAssertFalse(seen.contains("Se connecter à ChatGPT"), "A connected account only offers to disconnect")

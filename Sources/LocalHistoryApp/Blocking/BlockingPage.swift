@@ -14,7 +14,7 @@ import LocalHistoryCore
         if let controller = runtime.controller {
             BlockingPageContent(controller: controller, onOpenLists: onOpenLists)
         } else {
-            GoalongModuleOffNote(module: .blocking, text: "Le programme bloque vos listes à heures fixes. Il vient du module Blocage, désactivé.")
+            GoalongModuleOffNote(module: .blocking, text: "Le programme bloque vos listes à heures fixes.")
         }
     }
 }
@@ -895,7 +895,7 @@ struct BlockingLockExplainer: View {
                           ok: Self.levelIsSettled(controller.protection),
                           value: Self.levelLabel(controller.protection))
                 if let help = Self.levelHelp(controller.protection) {
-                    // A failed service names where to repair it: its background item in LoginItemsPanel.
+                    // A failed or waiting service names where to repair it: its item in Réglages Système › Ouverture.
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -939,16 +939,21 @@ struct BlockingLockExplainer: View {
     static func levelLabel(_ protection: BlockingProtectionState) -> String {
         if protection.level == .strict { return "Renforcé" }
         switch protection.guardian {
-        case .awaitingApproval: return "À autoriser dans \(LoginItemsPanel.path)"
+        case .awaitingApproval: return "À autoriser"
         case .failed: return "Indisponible"
         case .running, .notInstalled: return "Standard"
         }
     }
 
     /// Why the guard is unavailable, under « Niveau »: its own words, never an alert (R5-garde-01).
+    /// UI-12A: a guard waiting for approval names the path here, so the value stays one short line.
     static func levelHelp(_ protection: BlockingProtectionState) -> String? {
-        guard protection.level != .strict, case .failed(let reason) = protection.guardian else { return nil }
-        return reason
+        guard protection.level != .strict else { return nil }
+        switch protection.guardian {
+        case .failed(let reason): return reason
+        case .awaitingApproval: return "Autorisez Goalong dans \(LoginItemsPanel.path)."
+        case .running, .notInstalled: return nil
+        }
     }
 
     /// « Standard » is a normal level, not something missing: only a guard waiting or failed keeps the dashed circle.
@@ -1003,7 +1008,7 @@ struct BlockingLockExplainer: View {
         "Un autre compte utilisateur du Mac n’est pas bloqué.",
     ]
 
-    /// LoginItemsPanel.path, where macOS lets Goalong start and run in the background.
+    /// Réglages Système › Ouverture (LoginItemsPanel.path): where macOS lets Goalong start and run in the background.
     private var loginItemsButton: AnyView {
         AnyView(Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)

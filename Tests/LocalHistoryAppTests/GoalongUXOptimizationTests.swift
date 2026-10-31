@@ -202,7 +202,7 @@ final class GoalongUXOptimizationTests: XCTestCase {
 
         model.selectSection(.overview)
         model.selectSection(.screenTime)
-        XCTAssertEqual(model.secondaryReturnTitle, "Retour à Activité")
+        XCTAssertEqual(model.secondaryReturnTitle, "Activité")
         model.returnFromSecondaryPage()
         XCTAssertEqual(model.selectedSection, .overview)
         XCTAssertNil(model.secondaryReturn)

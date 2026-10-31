@@ -9,6 +9,8 @@ extension Notification.Name {
     static let goalongWebsiteConnected = Notification.Name("goalong.website.connected")
     /// A site "share" link: reveals the picker without changing the credential.
     static let goalongWebsiteShareRequested = Notification.Name("goalong.website.shareRequested")
+    /// The sharing sheet asks the main window for Réglages › Enregistrement (the sheet has no dashboard model).
+    static let goalongOpenRecordingSettings = Notification.Name("goalong.website.openRecordingSettings")
     /// The site refused the stored access (HTTP 401/403): the account card offers to pair again.
     static let goalongWebsiteAccessRefused = Notification.Name("goalong.website.accessRefused")
 }
@@ -53,6 +55,10 @@ extension Notification.Name {
                         .font(.system(size: 13, weight: .medium))
                     if !sender.enabled, let reason = sender.pauseReason { Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.warning) }
                     if let day = sender.lastSuccess { Text("Dernière journée reçue : \(GoalongUIFormat.day(key: day))").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
+                    // UI-13B (4): a disabled button says why, beside it.
+                    if !credentialAvailable, sender.pauseReason == nil {
+                        Text("Reliez d’abord votre compte.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    }
                 }
                 Spacer()
                 if sender.enabled { Button("Mettre en pause") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }

@@ -64,7 +64,7 @@ struct GoalongActivityHeader: View {
                                  dateLabel: selection.period == 1 ? nil : periodLabel)
             // A period ending today already shows today: the button goes grey, as for the day itself.
             Button("Aujourd’hui", action: onToday)
-                .disabled(GoalongToday.isToday(selection.day))
+                .modifier(GoalongHeaderButtonState(enabled: !GoalongToday.isToday(selection.day)))
                 .accessibilityIdentifier("activity-today")
         }
         .controlSize(.regular)
@@ -78,13 +78,13 @@ struct GoalongActivityHeader: View {
                     else { Image(systemName: "arrow.clockwise") }
                 }.frame(width: 16, height: 16)
             }
-            .disabled(isRefreshing).accessibilityIdentifier("activity-refresh")
+            .modifier(GoalongHeaderButtonState(enabled: !isRefreshing)).accessibilityIdentifier("activity-refresh")
             .accessibilityLabel("Actualiser").help("Actualiser")
             // Always present, grey when there is nothing to share: the same rule on every page.
             Button(action: onShare) {
                 Label(selection.period == 1 ? "Partager cette journée…" : "Partager cette période…", systemImage: "square.and.arrow.up")
             }
-            .disabled(isPreview || shareReason != nil)
+            .modifier(GoalongHeaderButtonState(enabled: !isPreview && shareReason == nil))
             .help(shareReason ?? "Partager la journée du \(shortDate(selection.day)). Rien n’est envoyé sans votre validation.")
             .accessibilityHint(shareReason ?? "")
         }

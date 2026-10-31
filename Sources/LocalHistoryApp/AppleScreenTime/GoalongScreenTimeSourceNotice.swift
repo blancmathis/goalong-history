@@ -16,7 +16,7 @@ struct GoalongScreenTimeSourcePresentation {
         switch assurance {
         case .appleSettingsObservablePresentation: return "Présentation des Réglages Apple"
         case .publicDeviceActivityExport: return "Export Apple autorisé"
-        case .privateAppleAggregateStore: return "Base Apple de ce Mac"
+        case .privateAppleAggregateStore: return "Temps d’écran de ce Mac"
         case .reconstructedAppleUsage: return "Données Apple partielles"
         }
     }
@@ -31,7 +31,7 @@ struct GoalongScreenTimeSourcePresentation {
         case .publicDeviceActivityExport:
             return "Données issues d’un export Apple autorisé, limitées à son périmètre et à sa date de mise à jour."
         case .privateAppleAggregateStore:
-            return "Durées lues dans la base Apple de ce Mac. Les appareils inclus et l’heure de mise à jour peuvent différer des Réglages Apple."
+            return "Durées lues dans le Temps d’écran de ce Mac. Les appareils inclus et l’heure de mise à jour peuvent différer des Réglages Apple."
         case .reconstructedAppleUsage:
             return "macOS ne rend pas le total complet accessible à Goalong. Les durées ci-dessous sont reconstituées à partir des données Apple lisibles, pas le total officiel des Réglages, et peuvent différer de celui-ci. Les données manquantes restent inconnues, pas à zéro."
         }
