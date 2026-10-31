@@ -530,6 +530,8 @@ struct GoalongAnalyticsContent: View {
                         }.padding(.vertical, 9).padding(.horizontal, 6).contentShape(Rectangle())
                     }
                     .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
+                    // The text starts on the section title's edge; the hover fill reaches 6 pt past it (UI-16B, écran 49).
+                    .padding(.horizontal, -6)
                     .accessibilityIdentifier("activity-explore-\(item.rawValue)")
                 }
             }

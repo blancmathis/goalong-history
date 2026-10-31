@@ -54,8 +54,9 @@ final class GoalongSystemLaneBuilderTests: XCTestCase {
         XCTAssertEqual(day.caption, "Aucun appel ni événement prévu")
         for access in [GoalongAgendaDay.CalendarAccess.denied, .notAsked] {
             day.calendarAccess = access
-            XCTAssertEqual(day.lead, "Aucun appel observé ce jour-là.", "\(access)")
-            XCTAssertEqual(day.lead(isToday: true), "Aucun appel observé aujourd’hui.")
+            // A refusal leads the section; not yet asked, the lead claims only the calls.
+            XCTAssertEqual(day.lead, access == .denied ? "Agenda non autorisé dans macOS." : "Aucun appel observé ce jour-là.", "\(access)")
+            XCTAssertEqual(day.lead(isToday: true), access == .denied ? "Agenda non autorisé dans macOS." : "Aucun appel observé aujourd’hui.")
             XCTAssertEqual(day.caption, access == .denied ? "Accès à l’agenda refusé" : "Accès à l’agenda à autoriser", "\(access)")
         }
         day = GoalongAgendaDay(callsOn: true, calendarOn: false)

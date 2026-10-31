@@ -81,10 +81,11 @@ struct GoalongAgendaDay: Equatable {
         }
         guard sentences.isEmpty else { return sentences.joined(separator: " ") }
         let when = isToday ? " aujourd’hui." : " ce jour-là."
-        // The note under the section says why the agenda is unread: the lead claims only the calls.
-        if calendarOn && calendarAccess != .granted {
-            if callsOn { return "Aucun appel observé" + when }
-            return calendarAccess == .denied ? "Agenda non autorisé dans macOS." : "Agenda pas encore autorisé."
+        // A refusal leads: « Aucun appel » first would read as an empty agenda (UI-16B, écran 53).
+        // Not yet asked, the note under the section says it; the lead claims only the calls.
+        if calendarOn && calendarAccess == .denied { return "Agenda non autorisé dans macOS." }
+        if calendarOn && calendarAccess == .notAsked {
+            return callsOn ? "Aucun appel observé" + when : "Agenda pas encore autorisé."
         }
         return nothingRead + when
     }
@@ -127,7 +128,7 @@ struct GoalongAgendaSection: View {
                     // The action sits under its note, on the text's edge, not alone at the far right.
                     VStack(alignment: .leading, spacing: 8) {
                         GoalongNote(note.text)
-                        Button(note.action, action: note.perform).buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                        Button(note.action, action: note.perform).buttonStyle(LHSecondaryButtonStyle())
                             .disabled(isPreview)
                     }
                 }

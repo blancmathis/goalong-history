@@ -229,7 +229,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "Activez-le pour voir ici votre temps actif, vos blocs de travail et vos apps et sites. Tout reste sur ce Mac."
         case .paused: return "Aucune nouvelle activité n’est enregistrée. L’historique existant reste consultable."
         case .permissions: return "Rien n’est enregistré tant que l’accès n’est pas rétabli. Goalong vous guide pas à pas."
-        case .input: return "Le clavier et la souris ne parviennent pas à Goalong : une partie de votre activité peut manquer. Vérifiez la surveillance de l’entrée."
+        case .input: return "Une partie de votre activité peut manquer."
         }
     }
     private func actionTitle(_ kind: Kind) -> String {

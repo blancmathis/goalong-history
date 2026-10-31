@@ -156,7 +156,8 @@ struct FocusStatusLabel: View {
 
     private var color: Color {
         switch status.state {
-        case "focus": return LHTheme.accent
+        // DESIGN §5: the lime is for selection and actions; the state reads in ink, darkest when focused.
+        case "focus": return LHTheme.text
         case "break", "active": return LHTheme.text.opacity(0.55)
         default: return LHTheme.text.opacity(0.22)
         }
