@@ -49,7 +49,8 @@
                     quickCommandsCard
                     evidenceCard
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // UI-12B (36): a reading width, as in Activité, instead of the whole window.
+                .frame(maxWidth: 760, alignment: .leading)
                 .padding(.horizontal, LHTheme.pageInset)
                 .padding(.top, 28)
                 .padding(.bottom, 32)
@@ -198,9 +199,11 @@
                         .foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer(minLength: 16)
+                // A long command wraps instead of being cut (UI-12B, 36).
                 Text(item.command)
                     .font(.system(.caption, design: .monospaced).weight(.medium))
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
                     .background(
@@ -227,8 +230,8 @@
                         .font(.system(size: 15, weight: .semibold))
                     evidenceRow(
                         symbol: "curlybraces",
-                        title: "Format lisible par les programmes",
-                        detail: "Les données et les erreurs sont structurées.",
+                        title: "Des réponses faciles à lire pour l’agent",
+                        detail: "Les données et les erreurs arrivent dans une forme que l’agent sait lire.",
                         more: "L’aide est en texte ; « goalong help --json » décrit le format."
                     )
                     evidenceRow(
@@ -365,7 +368,7 @@
             switch item.command {
             case "goalong status": return "Accord, fraîcheur, couverture et erreurs, sans ouvrir le contenu des conversations."
             case "goalong days": return "Liste les dates auxquelles Goalong peut répondre avec les données locales."
-            case "goalong help": return "Aide lisible ; ajoutez --json quand un agent a besoin du contrat des commandes."
+            case "goalong help": return "Aide lisible ; ajoutez --json pour donner à un agent la liste des commandes."
             default:
                 return item.command.hasPrefix("goalong ask")
                     ? "Goalong choisit le plus petit ensemble de données locales utiles." : item.detail
