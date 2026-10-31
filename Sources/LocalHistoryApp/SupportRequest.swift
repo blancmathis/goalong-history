@@ -47,6 +47,8 @@ enum SupportReportStore {
     @Published var phase: Phase = .idle
     @Published var feedback: String?
     @Published var feedbackKind: FeedbackKind = .success
+    /// No mail app could take the report: the e-mail button stays off and « Partager… » takes the lead (UI-9 C).
+    @Published var emailUnavailable = false
 
     /// Whether a feedback line reports something that worked or something that did not.
     enum FeedbackKind: Equatable {
@@ -122,6 +124,7 @@ enum SupportReportStore {
         let body = Self.messageBody(findings: findings, fileName: url.lastPathComponent)
         guard let service = NSSharingService(named: .composeEmail),
               service.canPerform(withItems: [body, url]) else {
+            emailUnavailable = true
             report("Aucune app de messagerie n’est configurée. Utilisez « Partager » ou « Enregistrer une copie ».", .problem)
             return
         }
@@ -232,8 +235,7 @@ struct SupportRequestView: View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "stethoscope")
                 .font(.system(size: 22, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                .frame(width: 44, height: 44)
-                .background(LHTheme.elevatedBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .frame(width: 28, height: 32)
             VStack(alignment: .leading, spacing: 6) {
                 Text("Signaler un problème").font(LHTheme.sheetTitleFont)
                 Text("Goalong prépare un rapport technique pour comprendre ce qui s’est passé. Vous le relisez et choisissez à qui l’envoyer : rien ne part automatiquement.")
@@ -256,14 +258,18 @@ struct SupportRequestView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 case .failed(let message):
                     VStack(alignment: .leading, spacing: 10) {
-                        Label(message, systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13)).foregroundStyle(LHTheme.danger)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // Only the glyph carries the danger colour; the sentence stays readable (UI-9 C).
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(LHTheme.danger)
+                            Text(message).foregroundStyle(LHTheme.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.system(size: 13))
                         Button("Réessayer") { controller.prepare() }.buttonStyle(LHSecondaryButtonStyle())
                     }
                 case .ready(_, let findings, _, _):
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(findings.enumerated()), id: \.offset) { _, finding in
+                        ForEach(Array(Self.shownFindings(findings).enumerated()), id: \.offset) { _, finding in
                             SupportFindingRow(finding: finding)
                         }
                     }
@@ -308,14 +314,21 @@ struct SupportRequestView: View {
         }
     }
 
-    /// Why the e-mail button is disabled: the report is still being prepared, or it failed.
+    /// « Aucun problème détecté » never sits next to a real finding.
+    static func shownFindings(_ findings: [SupportFinding]) -> [SupportFinding] {
+        findings.count > 1 ? findings.filter { $0.code != .noProblemDetected } : findings
+    }
+
+    /// Why the e-mail button is disabled: the report is still being prepared, it failed, or no mail app can send it.
     var emailHint: String {
         if case .failed = controller.phase { return "Réessayez d’abord de préparer le rapport." }
+        if controller.emailUnavailable { return "Aucune app de messagerie : utilisez « Partager… »." }
         return "Disponible quand le rapport est prêt."
     }
 
     private var actions: some View {
         let ready: URL? = { if case .ready(let url, _, _, _) = controller.phase { return url }; return nil }()
+        let canEmail = ready != nil && !controller.emailUnavailable
         return HStack(spacing: 10) {
             Menu {
                 Button("Noter l’heure du problème") { controller.markIssue() }
@@ -325,29 +338,49 @@ struct SupportRequestView: View {
                 Button("Enregistrer une copie…") { controller.saveCopy() }.disabled(ready == nil)
             } label: { Text("Autres options") }
             .menuStyle(.borderlessButton).fixedSize()
+            .tint(LHTheme.text) // Lime stays on the main action.
             .accessibilityIdentifier("support-more")
             Spacer()
             if let ready {
-                ShareLink(item: ready, subject: Text("Goalong History — rapport de diagnostic")) {
+                let share = ShareLink(item: ready, subject: Text("Goalong History — rapport de diagnostic")) {
                     Label("Partager…", systemImage: "square.and.arrow.up")
                 }
-                .buttonStyle(LHSecondaryButtonStyle())
+                Group {
+                    if controller.emailUnavailable {
+                        share.buttonStyle(LHPrimaryButtonStyle())
+                    } else {
+                        share.buttonStyle(LHSecondaryButtonStyle())
+                    }
+                }
+                .fixedSize()
                 .accessibilityIdentifier("support-share")
             }
-            if ready == nil {
+            if !canEmail {
+                // The hint wraps instead of squeezing the button label (UI-9 C).
                 Text(emailHint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .lineLimit(1).fixedSize()
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("support-email-hint")
             }
-            Button {
-                controller.sendByEmail()
-            } label: {
-                Label("Envoyer par e-mail…", systemImage: "envelope")
+            Group {
+                if canEmail {
+                    emailButton.buttonStyle(LHPrimaryButtonStyle())
+                } else {
+                    emailButton.buttonStyle(LHSecondaryButtonStyle())
+                }
             }
-            .buttonStyle(LHPrimaryButtonStyle())
-            .disabled(ready == nil)
+            .fixedSize()
+            .disabled(!canEmail)
             .keyboardShortcut(.defaultAction)
             .accessibilityIdentifier("support-email")
+        }
+    }
+
+    private var emailButton: some View {
+        Button {
+            controller.sendByEmail()
+        } label: {
+            Label("Envoyer par e-mail…", systemImage: "envelope")
         }
     }
 }

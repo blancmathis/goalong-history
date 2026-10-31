@@ -243,41 +243,42 @@
                 subtitle:
                     "Comprendre le déroulé et les résultats d’une journée à partir de l’historique, du Temps d’écran et des conversations IA."
             ) {
-                HStack(spacing: 10) {
-                    // The dashboard day is the page's day (T-045 H1-01): Historique and a return here keep the choice.
-                    DateSelectionControl(date: recapRuntime.selectedDay, onChange: { day in
-                        Self.chooseDay(day, model: model, runtime: recapRuntime)
-                    })
-                    Button {
-                        recapRuntime.revealRecapFiles()
-                    } label: {
-                        Label("Fichiers de rapport", systemImage: "doc.text.magnifyingglass")
-                    }
-                    .buttonStyle(LHSecondaryButtonStyle())
-                    .help(
-                        recapRuntime.recap?.verifiesLocalAttestation == true
-                            ? "Partagez le fichier JSON pour conserver sa signature. Le destinataire peut le vérifier hors ligne avec : goalong verify-recap CHEMIN"
-                            : "Ouvrir les fichiers de rapport. Les anciens rapports n’ont pas de signature locale."
-                    )
-                    // Lime only when it can run. Blocked, the primary moves to what unblocks it: « Choisir les données »
-                    // when analyses are off, « Connecter ChatGPT » or « Mettre Goalong à jour » in the connection card.
-                    // A day without activity has nothing to unblock, so it has no primary (UI-68).
-                    Group {
-                        if canGenerate {
-                            generateButton.buttonStyle(LHPrimaryButtonStyle())
-                        } else {
-                            generateButton.buttonStyle(LHSecondaryButtonStyle())
+                // The reason for a greyed « Générer » sits under the buttons inside the header layout,
+                // so it takes its own line instead of running into the next card (UI-9 C).
+                VStack(alignment: .trailing, spacing: 6) {
+                    HStack(spacing: 10) {
+                        // The dashboard day is the page's day (T-045 H1-01): Historique and a return here keep the choice.
+                        DateSelectionControl(date: recapRuntime.selectedDay, onChange: { day in
+                            Self.chooseDay(day, model: model, runtime: recapRuntime)
+                        })
+                        Button {
+                            recapRuntime.revealRecapFiles()
+                        } label: {
+                            Label("Fichiers de rapport", systemImage: "doc.text.magnifyingglass")
                         }
-                    }
-                    .disabled(!canGenerate || recapRuntime.isGenerating)
-                    .help(generationBlockedReason ?? "")
-                    .accessibilityHint(generationBlockedReason ?? "")
-                    .overlay(alignment: .bottomLeading) {
-                        // The reason sits under the greyed button without moving the header row.
-                        if let reason = generationBlockedReason, !recapRuntime.isGenerating {
-                            Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                .fixedSize().offset(y: 24).accessibilityHidden(true)
+                        .buttonStyle(LHSecondaryButtonStyle())
+                        .help(
+                            recapRuntime.recap?.verifiesLocalAttestation == true
+                                ? "Partagez le fichier JSON pour conserver sa signature. Le destinataire peut le vérifier hors ligne avec : goalong verify-recap CHEMIN"
+                                : "Ouvrir les fichiers de rapport. Les anciens rapports n’ont pas de signature locale."
+                        )
+                        // Lime only when it can run. Blocked, the primary moves to what unblocks it: « Choisir les données »
+                        // when analyses are off, « Connecter ChatGPT » or « Mettre Goalong à jour » in the connection card.
+                        // A day without activity has nothing to unblock, so it has no primary (UI-68).
+                        Group {
+                            if canGenerate {
+                                generateButton.buttonStyle(LHPrimaryButtonStyle())
+                            } else {
+                                generateButton.buttonStyle(LHSecondaryButtonStyle())
+                            }
                         }
+                        .disabled(!canGenerate || recapRuntime.isGenerating)
+                        .help(generationBlockedReason ?? "")
+                        .accessibilityHint(generationBlockedReason ?? "")
+                    }
+                    if let reason = generationBlockedReason, !recapRuntime.isGenerating {
+                        Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize().accessibilityHidden(true)
                     }
                 }
             }
@@ -307,18 +308,21 @@
                     lines.count == ChatGPTDailyAssessment.requiredSummaryLineCount
                 {
                     HStack(alignment: .top, spacing: 28) {
+                        // The score is the share of the day spent on « Mon travail », as ChatGPT estimates it
+                        // from the user's own definition (PRODUCT.md). Same value and attestation as before;
+                        // shown at a secondary size so the report stays the focus (UI-9 C).
                         VStack(alignment: .leading, spacing: 9) {
-                            Text("Productivité")
+                            Text("Part de la journée sur Mon travail")
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(LHTheme.secondaryText)
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Text("\(score)")
-                                    .font(.system(size: 46, weight: .bold))
-                                    .foregroundStyle(LHTheme.text)
-                                Text("/ 100")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(LHTheme.secondaryText)
-                            }
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text("\(score) %")
+                                .font(.system(size: 26, weight: .bold))
+                                .foregroundStyle(LHTheme.text)
+                            Text("Estimé par ChatGPT d’après votre définition de Mon travail.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
                             Label("Confiance des preuves : \(GoalongUIFormat.percent(confidence))", systemImage: "checkmark.shield")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(LHTheme.secondaryText)
@@ -346,7 +350,7 @@
                                     )
                                 } else {
                                     StatusPill(
-                                        title: "Ancien rapport non signé",
+                                        title: "Rapport sans signature",
                                         symbol: "clock.arrow.circlepath",
                                         tint: LHTheme.warning
                                     )
@@ -376,7 +380,7 @@
                         Text("Ancien bilan quotidien")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "Ce rapport est antérieur au format en cinq lignes. Régénérez-le pour obtenir un score, un niveau de confiance et un résumé structuré."
+                            "Ce rapport est antérieur au format en cinq lignes. Régénérez-le pour obtenir la part de la journée sur Mon travail, un niveau de confiance et un résumé structuré."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
@@ -403,7 +407,7 @@
                     metric(
                         title: "Classé travail",
                         value: duration(overview.workSeconds),
-                        detail: "Classement observable"
+                        detail: "D’après Mon travail"
                     )
                     bandDivider
                     metric(
@@ -434,7 +438,7 @@
                     .font(.system(size: 18, weight: .bold))
                 Text(detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(LHTheme.secondaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14)
@@ -458,7 +462,7 @@
                         Text(emptyMessage)
                             .font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText)
-                            .frame(maxWidth: .infinity, minHeight: 138, alignment: .center)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         let maximum = max(values.map(\.seconds).max() ?? 1, 1)
                         VStack(spacing: 11) {
@@ -585,10 +589,18 @@
             GoalongPlainBlock {
                 // The thread placeholder, not a big icon in a tall box (UI-68).
                 VStack(alignment: .leading, spacing: 9) {
-                    GoalongThreadPlaceholder().padding(.bottom, 2)
-                    Text(recapRuntime.dayOverviewError ?? "Aucune activité source pour ce jour.")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(LHTheme.secondaryText)
+                    if let error = recapRuntime.dayOverviewError {
+                        // A read failure is not an empty day: it gets the warning tone (UI-9 C).
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LHTheme.text)
+                            .symbolRenderingMode(.multicolor)
+                    } else {
+                        GoalongThreadPlaceholder().padding(.bottom, 2)
+                        Text("Aucune activité source pour ce jour.")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LHTheme.secondaryText)
+                    }
                     Button("Relire les sources") {
                         recapRuntime.refreshDayOverview()
                     }
