@@ -123,9 +123,19 @@ jobs:
       max-parallel: 5
       matrix:
         include:
-          # L3n lot 2: Blocage rows only (SB, with the Blocage seed).
-          - { shard: SB, slice: 1/2 }
-          - { shard: SB, slice: 2/2 }
+          # L3n lot 3: all non-Blocage rows, small slices (about 20 rows).
+          - { shard: S1, slice: 1/2 }
+          - { shard: S1, slice: 2/2 }
+          - { shard: S2, slice: 1/4 }
+          - { shard: S2, slice: 2/4 }
+          - { shard: S2, slice: 3/4 }
+          - { shard: S2, slice: 4/4 }
+          - { shard: S3, slice: 1/5 }
+          - { shard: S3, slice: 2/5 }
+          - { shard: S3, slice: 3/5 }
+          - { shard: S3, slice: 4/5 }
+          - { shard: S3, slice: 5/5 }
+          - { shard: S4, slice: 1/1 }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

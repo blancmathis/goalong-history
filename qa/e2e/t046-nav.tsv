@@ -475,3 +475,17 @@ J-0026	nav:concentration p:"Programme" w:2 o:blocking-protection w:2
 J-0027	nav:concentration p:"Programme" w:2 o:blocking-protection w:2
 J-0032	nav:concentration p:"Programme" w:2 o:blocking-protection w:2
 J-0036	nav:concentration p:"Distractions" w:2
+J-0082	nav:concentration o:concentration-commitment-create w:2 p:"Une tâche" w:1
+J-0088	pane:modules "set:settings-module-blocking 0" w:2 nav:concentration p:"Programme" w:2
+J-0090	pane:modules "set:settings-module-blocking 0" w:2 nav:concentration p:"Distractions" w:2
+J-0099	nav:concentration p:"Distractions" w:2
+J-0100	nav:concentration p:"Distractions" w:2
+J-0101	nav:concentration p:"Distractions" w:2
+J-0116	nav:concentration "o:Préparer une séance sur" w:1 o:concentration-start w:3
+J-0117	nav:concentration "o:Préparer une séance sur" w:1 o:concentration-start w:3
+J-0141	nav:concentration o:concentration-settings w:2
+J-0142	nav:concentration o:concentration-open-review w:2
+J-0143	nav:concentration o:concentration-open-review w:2
+J-0144	nav:concentration o:concentration-open-review w:2
+J-0145	nav:concentration o:concentration-open-review w:2
+J-0146	nav:concentration o:concentration-open-review w:2
