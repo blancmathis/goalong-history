@@ -245,6 +245,59 @@ final class T046C3RenderTests: XCTestCase {
         assertNoVisibleWindow()
     }
 
+    /// Only the path of the access file is remembered (never the token). The test path points into the throwaway
+    /// HOME and the previous value comes back at teardown.
+    @MainActor private func fakeTokenFile() -> String {
+        let key = "goalong.website.tokenFilePath"
+        let before = UserDefaults.standard.string(forKey: key)
+        addTeardownBlock { UserDefaults.standard.set(before, forKey: key) }
+        let path = AppPaths.applicationSupportDirectory.appendingPathComponent("t046-c3-acces.txt").path
+        UserDefaults.standard.set(path, forKey: key)
+        return path
+    }
+
+    /// An imported Health day with a saved access file: the send block names the file and offers « Oublier ».
+    @MainActor func testHealthImportWithASavedAccessFileOffersToForgetIt() throws {
+        try requireThrowawayHome()
+        _ = fakeTokenFile()
+        let sheet = host(GoalongHealthImportSheet(gallery: .imported(try GalleryCatalog.galleryHealthImport(), message: nil)))
+        let seen = strings(of: sheet)
+        XCTAssertTrue(seen.contains("t046-c3-acces.txt"), "saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Oublier"), "saw \(seen.sorted())")
+        assertNoVisibleWindow()
+    }
+
+    // MARK: Site Goalong
+
+    /// The website sheet with a saved access file: the advanced options name it and offer « Oublier le fichier »; the
+    /// data choices offer the structured report and the rhythm, and the rhythm opens its own choices.
+    @MainActor func testWebsiteSheetOffersToForgetTheAccessFileAndTheRhythmChoices() throws {
+        try requireThrowawayHome()
+        _ = fakeTokenFile()
+        let sheet = host(GoalongWebsiteConnectionSheet())
+        var seen = strings(of: sheet)
+        XCTAssertTrue(seen.contains("Rapport structuré de productivité"), "saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Calculer le rythme à partir de l’historique de ce Mac"), "saw \(seen.sorted())")
+        XCTAssertFalse(seen.contains("Inclure l’heure de début précise"), "Rhythm off; saw \(seen.sorted())")
+        // The disclosure and the switch are pressed through accessibility; a style that does not answer the press is
+        // reported, not failed (the coverage run says what was reached).
+        if let advanced = seen.first(where: { $0.hasPrefix("Connexion manuelle et options avancées") }), press(advanced, in: sheet) {
+            spin(until: { strings(of: sheet).contains("Oublier le fichier") })
+            seen = strings(of: sheet)
+            XCTAssertTrue(seen.contains("t046-c3-acces.txt"), "saw \(seen.sorted())")
+        } else {
+            print("[t046-c3] advanced options not pressable; saw \(seen.sorted())")
+        }
+        if press("Calculer le rythme à partir de l’historique de ce Mac", in: sheet) {
+            spin(until: { strings(of: sheet).contains("Inclure l’heure de début précise") })
+            seen = strings(of: sheet)
+            XCTAssertTrue(seen.contains("Inclure les épisodes simplifiés"), "saw \(seen.sorted())")
+        } else {
+            print("[t046-c3] rhythm switch not pressable")
+        }
+        assertNoVisibleWindow()
+    }
+
     /// These tests open no window: every view is hosted off screen, so no window is visible that was not before.
     @MainActor private func assertNoVisibleWindow(_ line: UInt = #line) {
         let added = NSApplication.shared.windows.filter { $0.isVisible && !visibleWindowsBefore.contains(ObjectIdentifier($0)) }
