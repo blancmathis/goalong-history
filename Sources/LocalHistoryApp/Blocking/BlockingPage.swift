@@ -77,7 +77,8 @@ import LocalHistoryCore
                                 controller.save(list)
                                 if controller.lists.contains(where: { $0.id == list.id }) { editingList = list.id }
                             } label: { Label("Nouvelle liste", systemImage: "plus") }
-                                .buttonStyle(LHSecondaryButtonStyle())
+                                // The focal point of the empty page; « Bloquer » stays inert until a list exists (UI-14, écran 1).
+                                .buttonStyle(LHPrimaryButtonStyle())
                                 .accessibilityIdentifier("blocking-empty-new-list")
                         }
                     }

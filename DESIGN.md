@@ -251,6 +251,8 @@ Dans `GoalongControls.swift`, sauf mention.
   et curseur carré arrondi, la même famille d'angles que les boutons. Piste encre et curseur couleur page quand il est actif, jamais lime (le lime reste rare). Verrouillé : contour pointillé et cadenas. Le
   curseur s'étire vers sa destination pendant l'appui. Taille réduite dans les longues listes.
 - **Case à cocher** (`.goalongCheckbox`) : boîte creusée, lime avec coche encre quand elle est cochée.
+  Dans une liste de plusieurs choix (grille de modules, longues listes), `.goalongCheckboxInk` : boîte encre et
+  coche couleur page, pour garder le lime rare. Une case seule ou décisive reste lime.
 - **Segmenté** (`GoalongSegmentedControl`) : piste creusée, pastille relevée qui glisse.
 - **Sélecteur de jour** (`DateSelectionControl`, `DashboardComponents.swift`) : ‹ jour ›, calendrier en popover.
 - **Menu déroulant** (`GoalongMenuPicker`) : un choix parmi plusieurs, sur la surface des contrôles Goalong

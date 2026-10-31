@@ -434,10 +434,12 @@
 
     /// Checkbox in the control family: a small sunken box, lime with an ink check when on.
     /// The whole label toggles it; assistive technologies see a native toggle.
+    /// `ink`: an ink box with a page-coloured check, for long lists of choices where lime would stop being rare.
     struct GoalongCheckboxStyle: ToggleStyle {
+        var ink = false
         func makeBody(configuration: Configuration) -> some View {
             Button { configuration.isOn.toggle() } label: { configuration.label }
-                .buttonStyle(GoalongCheckboxButtonStyle(isOn: configuration.isOn))
+                .buttonStyle(GoalongCheckboxButtonStyle(isOn: configuration.isOn, ink: ink))
                 .accessibilityRepresentation {
                     Toggle(isOn: configuration.$isOn) { configuration.label }
                 }
@@ -446,6 +448,7 @@
 
     private struct GoalongCheckboxButtonStyle: ButtonStyle {
         let isOn: Bool
+        var ink = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.isFocused) private var isFocused
         @Environment(\.colorSchemeContrast) private var contrast
@@ -456,12 +459,14 @@
             let box = RoundedRectangle(cornerRadius: 4.5, style: .continuous)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 ZStack {
-                    box.fill(isOn ? (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground) : LHTheme.fieldBackground)
+                    box.fill(!isOn ? LHTheme.fieldBackground
+                             : ink ? (hovered && isEnabled ? LHTheme.text.opacity(0.82) : LHTheme.text)
+                             : (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground))
                     if !isOn {
                         box.strokeBorder(contrast == .increased || hovered ? LHTheme.strongSeparator : LHTheme.controlBorder)
                     } else {
                         GoalongCheckShape()
-                            .stroke(LHTheme.onAccent, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                            .stroke(ink ? LHTheme.pageBackground : LHTheme.onAccent, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
                             .padding(4)
                     }
                 }
@@ -482,6 +487,7 @@
 
     extension ToggleStyle where Self == GoalongCheckboxStyle {
         static var goalongCheckbox: GoalongCheckboxStyle { GoalongCheckboxStyle() }
+        static var goalongCheckboxInk: GoalongCheckboxStyle { GoalongCheckboxStyle(ink: true) }
     }
 
     /// Segmented choice drawn in Goalong's surfaces; the selected segment is raised.
@@ -626,14 +632,18 @@
     /// A standing explanation at the top of a tool page: neutral glyph, a title, one or two
     /// sentences and an optional trailing control. Same quiet block as `GoalongNote`.
     struct GoalongBanner<Trailing: View>: View {
+        /// Neutral or warning (DESIGN §9): a warning tints the glyph and the block, never the text.
+        enum Tone { case neutral, warning }
         let symbol: String
         let title: String
         let detail: String
+        var tone: Tone = .neutral
         @ViewBuilder var trailing: () -> Trailing
 
         var body: some View {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                Image(systemName: symbol).font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(tone == .warning ? LHTheme.warning : LHTheme.secondaryText)
                     .frame(width: 22, height: 18).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.system(size: 13, weight: .semibold))
@@ -644,13 +654,14 @@
                 trailing()
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
-            .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+            .background(tone == .warning ? LHTheme.warning.opacity(0.08) : LHTheme.insetBackground,
+                        in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
         }
     }
 
     extension GoalongBanner where Trailing == EmptyView {
-        init(symbol: String, title: String, detail: String) {
-            self.init(symbol: symbol, title: title, detail: detail) { EmptyView() }
+        init(symbol: String, title: String, detail: String, tone: Tone = .neutral) {
+            self.init(symbol: symbol, title: title, detail: detail, tone: tone) { EmptyView() }
         }
     }
 
@@ -752,13 +763,14 @@
                 }
             } label: {
                 HStack(spacing: 8) {
+                    // Locked: the current value stays readable in secondary text (≥ 4.5:1), only the chevron fades (UI-14, 24/44).
                     Text(Self.selectedLabel(selection, in: options) ?? title).font(.system(size: 13)).lineLimit(1)
+                        .foregroundStyle(isEnabled ? LHTheme.text : LHTheme.secondaryText)
                     Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
+                        .foregroundStyle(LHTheme.secondaryText).opacity(isEnabled ? 1 : 0.5).accessibilityHidden(true)
                 }
                 .padding(.horizontal, 10).frame(minHeight: 28)
                 .goalongControlSurface()
-                .opacity(isEnabled ? 1 : 0.5)
                 .contentShape(Rectangle())
             }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()

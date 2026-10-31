@@ -99,9 +99,12 @@ struct GoalongAnalyticsContent: View {
                 }
                 exploreSection
             } else {
-                emptyState
-                if isDay && lanes.noteAvailable {
-                    GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
+                // The note belongs to the empty day: 16 pt under it (8 + the empty state's own 8), not a section gap (UI-14, écran 13/17).
+                VStack(alignment: .leading, spacing: 8) {
+                    emptyState
+                    if isDay && lanes.noteAvailable {
+                        GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
+                    }
                 }
                 exploreSection
             }
@@ -549,6 +552,10 @@ struct GoalongAnalyticsContent: View {
                 // A sub-page title, above its sections: not a section title left without content.
                 Text("Rythme").font(LHTheme.sheetTitleFont).tracking(-0.4)
                     .accessibilityAddTraits(.isHeader).accessibilityIdentifier("activity-rhythm-title")
+            } else if shown == .screenTime {
+                // Same title as the « Temps d’écran Apple » page reached from the sidebar (UI-14, écran 15).
+                Text(shown.title(isDay: isDay)).font(LHTheme.sheetTitleFont).tracking(-0.4)
+                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("activity-screen-time-title")
             }
         }
         if shown.needsObservations && current.observedSeconds == 0 {
