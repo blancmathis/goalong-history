@@ -112,7 +112,8 @@ struct GoalongLaneMatrix: View {
                         Canvas { context, size in draw(row, in: context, size: size) }
                         if row.isEmpty {
                             // An empty lane is a reading (nothing that day), not a missing source.
-                            Text("aucun").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                            // Caption size, not axis micro: a reading, legible at 12 pt (UI-16B, écran 53).
+                            Text("aucun").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .padding(.horizontal, 6).background(LHTheme.pageBackground)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }

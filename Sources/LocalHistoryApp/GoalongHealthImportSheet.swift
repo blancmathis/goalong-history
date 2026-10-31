@@ -95,8 +95,13 @@ struct GoalongHealthImportSheet: View {
                 } else if let message {
                     Label(message, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                } else { Text("Données déclaratives, aucune note calculée").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
+                } else { Text("Valeurs reprises telles quelles d’Apple Santé, sans note.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
                 Spacer(minLength: 0)
+                // Once an outcome is in, closing is the next step: the lime moves here, unless sending is chosen.
+                if !busy, message != nil {
+                    if finished { Button("Terminé") { dismiss() }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction) }
+                    else { Button("Terminé") { dismiss() }.buttonStyle(LHSecondaryButtonStyle()) }
+                }
             }
         }
         .frame(minWidth: 690, idealWidth: 800, maxWidth: 950, minHeight: 550, idealHeight: 720)
@@ -157,7 +162,7 @@ struct GoalongHealthImportSheet: View {
                     }
                 }
             }
-            GoalongHelpText(lead: "Les durées de sommeil sont réparties à minuit dans le fuseau \(TimeZone.current.identifier).",
+            GoalongHelpText(lead: "Les durées de sommeil sont coupées à minuit, heure de ce Mac.",
                             more: "Une nuit peut donc apparaître sur deux journées. Une valeur absente reste inconnue.")
             if payload == nil && error == nil { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHPrimaryButtonStyle()).disabled(selected.isEmpty) }
             // After a refused file, preparing again would read the same file: change it, or the dates or data (UI-14, écran 14).
@@ -238,13 +243,14 @@ struct GoalongHealthImportSheet: View {
                 Toggle("J’autorise l’envoi de ces données Santé au site indiqué.", isOn: $consent)
                 // One caller of the send action (scripts/audit_site_submission.py): the style varies, not the button.
                 Button("Envoyer les données relues", action: sendReviewedHealth)
-                    .modifier(GoalongMainActionStyle(primary: !keepIsNextStep))
+                    .modifier(GoalongMainActionStyle(primary: !keepIsNextStep && !finished))
                     .disabled(!consent || origin.isEmpty || tokenFilePath.isEmpty)
             }
         }
     }
 
     private var keepIsNextStep: Bool { result != nil && !savedLocally && !consent }
+    private var finished: Bool { message != nil && !consent }
     private func invalidate() { savedLocally = false; payload = nil; previewPrivacyRevision = nil; result = nil; days = []; consent = false; message = nil; error = nil; fileRefused = false }
     private func setPayload(_ data: Data) throws {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]

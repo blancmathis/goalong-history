@@ -294,6 +294,8 @@ struct GoalongProfileStudio: View {
         _start = State(initialValue: day)
         _end = State(initialValue: min(GoalongToday.now, Calendar.current.date(byAdding: .day, value: 1, to: day) ?? GoalongToday.now))
     }
+    // « Activité depuis le » at 13 pt, plus air: both day selectors start on this edge.
+    private static let dayLabelWidth: CGFloat = 124
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack { Text("Comprendre mon travail").font(.system(size: 22, weight: .bold)).tracking(-0.4).accessibilityAddTraits(.isHeader); Spacer(); Button("Fermer") { model.cancel(); closeStudio() } }.padding(22)
@@ -304,15 +306,16 @@ struct GoalongProfileStudio: View {
                     HStack { Button("Ouvrir une analyse ou une sélection enregistrée…") { openSaved() }; Spacer() }
                     GoalongProfileSection("Choisir les données") {
                         VStack(alignment: .leading, spacing: 10) {
+                            // Same label column for both days: the two selectors start on the same edge.
                             HStack(spacing: 8) {
-                                Text("Journée analysée").font(.system(size: 13))
+                                Text("Jour à analyser").font(.system(size: 13)).frame(width: Self.dayLabelWidth, alignment: .leading)
                                 DateSelectionControl(date: analyzedDay, onChange: selectDay, showsToday: false)
                             }
                             Toggle("Activité de ce Mac", isOn: $computer)
                             if computer {
                                 // UI-12A: the same day selector as above, never the system DatePicker; at most the analysed day.
                                 HStack(spacing: 8) {
-                                    Text("Début de l’activité").font(.system(size: 13))
+                                    Text("Activité depuis le").font(.system(size: 13)).frame(width: Self.dayLabelWidth, alignment: .leading)
                                     DateSelectionControl(date: start, onChange: { day in
                                         let picked = Calendar.current.startOfDay(for: day)
                                         startCapped = picked > analyzedDay
@@ -320,7 +323,7 @@ struct GoalongProfileStudio: View {
                                     }, showsToday: false)
                                 }
                                 if startCapped {
-                                    Text("Le début ne peut pas dépasser la journée analysée : il revient à ce jour.")
+                                    Text("Le début ne peut pas dépasser le jour à analyser : il revient à ce jour.")
                                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                         .accessibilityIdentifier("profile-start-capped")
                                 }
@@ -331,7 +334,7 @@ struct GoalongProfileStudio: View {
                                     Text("Conversations actives depuis").font(.system(size: 13))
                                     DateSelectionControl(date: conversationsFrom, onChange: { conversationsFrom = Calendar.current.startOfDay(for: $0) }, showsToday: false)
                                 }
-                                Text("La journée analysée et jusqu’à 31 jours avant. Seules les sources déjà autorisées sont lues. Les échanges éclairent vos projets et décisions, même si « Usage de l’IA » est décochée. Certains messages plus anciens peuvent venir sans heure précise.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                Text("Le jour à analyser et jusqu’à 31 jours avant. Seules les sources déjà autorisées sont lues. Les échanges éclairent vos projets et décisions, même si « Usage de l’IA » est décochée. Certains messages plus anciens peuvent venir sans heure précise.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             }
                             Text("Goalong lit les applications, fenêtres, sites et interactions, avec leurs heures. Les champs protégés et les éléments supprimés sont exclus. Les textes longs sont coupés, et un moment sans données reste inconnu.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Button("Ajouter un fichier de données…") { importEvidence() }.disabled(model.busy)
