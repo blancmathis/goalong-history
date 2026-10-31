@@ -245,9 +245,15 @@ struct SupportRequestView: View {
         }
     }
 
+    private var reportFailed: Bool {
+        if case .failed = controller.phase { return true } else { return false }
+    }
+
     @ViewBuilder private var detected: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Ce que Goalong a détecté").font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+            // A report that could not be prepared is not a finding about the Mac: it gets its own title (UI-13C, 26).
+            Text(reportFailed ? "Rapport non préparé" : "Ce que Goalong a détecté")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
             LHCard(padding: 16) {
                 VStack(alignment: .leading, spacing: 0) {
                 switch controller.phase {
