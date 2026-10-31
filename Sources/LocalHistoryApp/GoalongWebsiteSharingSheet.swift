@@ -147,6 +147,11 @@ import LocalHistoryQueryCLI
                     .accessibilityLabel(dayLabel)
                     .accessibilityIdentifier("sharing-selected-date")
             }
+            // Same default day as the page (plan UI-13B), but today is not over: say what is sent.
+            if model.draft.delivery == .once && GoalongToday.isToday(model.draft.date) {
+                GoalongNote("Journée en cours : seules les heures déjà passées seront envoyées.", symbol: "clock")
+                    .accessibilityIdentifier("sharing-day-in-progress")
+            }
             if model.loading {
                 ProgressView("Lecture sur ce Mac…").font(.system(size: 13))
             } else if let catalog = model.catalog {

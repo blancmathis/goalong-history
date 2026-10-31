@@ -268,8 +268,9 @@
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : LHTheme.tertiaryText)
                         .frame(width: 7, height: 7)
                     // UI-9 (13, 17, 40): the state is read in full, on two lines if needed (« Enregistrement arrêté »).
-                    // UI-13B: one word for one thing, the runtime's « Enregistrement … », never « Suivi ».
-                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Enregistrement en pause")
+                    // UI-13B: one word for one thing, the runtime's « Enregistrement … », never « Suivi »;
+                    // switched off is not a pause (as SharePage and UsageRulesList).
+                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Enregistrement désactivé")
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Spacer()

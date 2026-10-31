@@ -122,9 +122,9 @@
                     Button("Ouvrir les réglages") { model.openRecordingSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                 case .reportProblem?:
-                    // No verified minute: checking them is the one step forward, in lime,
+                    // No verified minute: reporting the gap is the one step forward, in lime,
                     // instead of a greyed « Créer le fichier » (UI-13B, screen 55).
-                    Button("Vérifier les minutes…") { model.openDiagnostics() }
+                    Button("Signaler l’écart…") { model.openDiagnostics() }
                         .buttonStyle(LHPrimaryButtonStyle())
                 case nil:
                     EmptyView()
@@ -196,7 +196,7 @@
             return ShareProofStatus(
                 title: "\(observed), aucune vérifiée",
                 detail: recordingEnabled
-                    ? "Le fichier ne contient que les minutes vérifiées par ce Mac, et aucune ne l’a été. Vérifiez les minutes : Goalong en cherche la cause sur ce Mac."
+                    ? "Le fichier ne contient que les minutes vérifiées par ce Mac, et aucune ne l’a été. Signalez l’écart : le rapport joint l’état de ce Mac."
                     : "Le fichier ne contient que les minutes vérifiées par ce Mac pendant l’enregistrement, qui est désactivé.",
                 action: recordingEnabled ? .reportProblem : .openRecordingSettings,
                 canExport: false)

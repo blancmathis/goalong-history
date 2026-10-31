@@ -266,100 +266,100 @@
                 if sourcesUnreadable {
                     unreadableSourcesState
                 } else {
-                HStack(alignment: .bottom, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(GoalongUIFormat.count(agents.overview.captures.count, "conversation"))
-                        .font(.system(size: 20, weight: .semibold))
-                        HStack(spacing: 7) {
-                            if agents.isScanning {
-                                ProgressView()
-                                    .controlSize(.mini)
-                                Text("Mise à jour des sources modifiées…")
-                            } else {
-                                Text(conversationSummaryDetail + ".")
-                            }
-                        }
-                        .font(.system(size: 12))
-                        .foregroundStyle(LHTheme.secondaryText)
-                    }
-                    Spacer()
-                    if availableProviders.count > 1 {
-                        GoalongMenuPicker("Outil", selection: $providerFilter, options: providerOptions)
-                            .frame(width: 150)
-                    }
-                    GoalongSearchField("Rechercher dans les conversations", text: $search)
-                        .frame(width: 280)
-                }
-
-                if sourceHealth != .ready {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: sourceHealth.symbol).foregroundStyle(LHTheme.warning)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(sourceHealth.title).font(.system(size: 13, weight: .semibold))
-                            Text(sourceHealth.message)
-                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        if let title = sourceHealth.actionTitle {
-                            Button(title) { agents.scanNow(analyzeSelectedDay: true) }
-                                .buttonStyle(LHSecondaryButtonStyle()).disabled(agents.isScanning)
-                        }
-                        if let onManageSources {
-                            Button("Vérifier les sources", action: onManageSources).buttonStyle(LHSecondaryButtonStyle())
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .accessibilityIdentifier("conversation-source-health")
-                }
-
-                if captures.isEmpty {
-                    // An empty state sits on the page, not in a card (DESIGN §8).
-                    VStack(spacing: 0) {
-                            EmptyStateView(
-                                symbol: agents.isScanning
-                                    ? "arrow.triangle.2.circlepath" : "bubble.left.and.bubble.right",
-                                title: agents.isScanning ? "Lecture des conversations"
-                                    : (!search.isEmpty || providerFilter != nil) ? "Aucune conversation correspondante"
-                                    : hasSourceIssue ? "Conversations indisponibles" : "Aucune conversation ce jour-là",
-                                message: agents.isScanning
-                                    ? "Goalong vérifie les sources modifiées."
-                                    : (!search.isEmpty || providerFilter != nil)
-                                        ? "Effacez la recherche ou choisissez un autre outil."
-                                        : hasSourceIssue ? "Vérifiez l’état des sources ci-dessus pour rétablir l’accès." : "Essayez un autre jour ou vérifiez vos dossiers de conversations."
-                            )
-                            .frame(minHeight: 190)
-                            if search.isEmpty, providerFilter == nil, !hasSourceIssue, let onManageSources {
-                                Button("Vérifier les sources", action: onManageSources)
-                                    .buttonStyle(LHSecondaryButtonStyle()).frame(maxWidth: .infinity).padding(.bottom, 20)
-                            }
-                            if !search.isEmpty || providerFilter != nil {
-                                Button("Effacer les filtres") { search = ""; providerFilter = nil }
-                                    .buttonStyle(LHSecondaryButtonStyle())
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.bottom, 20)
-                            }
-                    }
-                    .frame(maxWidth: .infinity)
-                } else {
-                LHCard(padding: 0) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(Array(captures.prefix(120).enumerated()), id: \.element.id) { index, record in
-                                conversationRow(record)
-                                if index < min(captures.count, 120) - 1 {
-                                    Divider().padding(.leading, 66)
+                    HStack(alignment: .bottom, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(GoalongUIFormat.count(agents.overview.captures.count, "conversation"))
+                            .font(.system(size: 20, weight: .semibold))
+                            HStack(spacing: 7) {
+                                if agents.isScanning {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                    Text("Mise à jour des sources modifiées…")
+                                } else {
+                                    Text(conversationSummaryDetail + ".")
                                 }
                             }
-                            if captures.count > 120 {
-                                Text("Affichage des 120 conversations les plus récentes")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(LHTheme.secondaryText)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                            }
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                        }
+                        Spacer()
+                        if availableProviders.count > 1 {
+                            GoalongMenuPicker("Outil", selection: $providerFilter, options: providerOptions)
+                                .frame(width: 150)
+                        }
+                        GoalongSearchField("Rechercher dans les conversations", text: $search)
+                            .frame(width: 280)
                     }
-                }
-                }
+
+                    if sourceHealth != .ready {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: sourceHealth.symbol).foregroundStyle(LHTheme.warning)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(sourceHealth.title).font(.system(size: 13, weight: .semibold))
+                                Text(sourceHealth.message)
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                            if let title = sourceHealth.actionTitle {
+                                Button(title) { agents.scanNow(analyzeSelectedDay: true) }
+                                    .buttonStyle(LHSecondaryButtonStyle()).disabled(agents.isScanning)
+                            }
+                            if let onManageSources {
+                                Button("Vérifier les sources", action: onManageSources).buttonStyle(LHSecondaryButtonStyle())
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .accessibilityIdentifier("conversation-source-health")
+                    }
+
+                    if captures.isEmpty {
+                        // An empty state sits on the page, not in a card (DESIGN §8).
+                        VStack(spacing: 0) {
+                                EmptyStateView(
+                                    symbol: agents.isScanning
+                                        ? "arrow.triangle.2.circlepath" : "bubble.left.and.bubble.right",
+                                    title: agents.isScanning ? "Lecture des conversations"
+                                        : (!search.isEmpty || providerFilter != nil) ? "Aucune conversation correspondante"
+                                        : hasSourceIssue ? "Conversations indisponibles" : "Aucune conversation ce jour-là",
+                                    message: agents.isScanning
+                                        ? "Goalong vérifie les sources modifiées."
+                                        : (!search.isEmpty || providerFilter != nil)
+                                            ? "Effacez la recherche ou choisissez un autre outil."
+                                            : hasSourceIssue ? "Vérifiez l’état des sources ci-dessus pour rétablir l’accès." : "Essayez un autre jour ou vérifiez vos dossiers de conversations."
+                                )
+                                .frame(minHeight: 190)
+                                if search.isEmpty, providerFilter == nil, !hasSourceIssue, let onManageSources {
+                                    Button("Vérifier les sources", action: onManageSources)
+                                        .buttonStyle(LHSecondaryButtonStyle()).frame(maxWidth: .infinity).padding(.bottom, 20)
+                                }
+                                if !search.isEmpty || providerFilter != nil {
+                                    Button("Effacer les filtres") { search = ""; providerFilter = nil }
+                                        .buttonStyle(LHSecondaryButtonStyle())
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.bottom, 20)
+                                }
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        LHCard(padding: 0) {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                    ForEach(Array(captures.prefix(120).enumerated()), id: \.element.id) { index, record in
+                                        conversationRow(record)
+                                        if index < min(captures.count, 120) - 1 {
+                                            Divider().padding(.leading, 66)
+                                        }
+                                    }
+                                    if captures.count > 120 {
+                                        Text("Affichage des 120 conversations les plus récentes")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(LHTheme.secondaryText)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                    }
+                            }
+                        }
+                    }
                 }
             }
         }
