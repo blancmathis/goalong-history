@@ -30,7 +30,8 @@ extension GalleryCatalog {
             })
         }
         return [
-            page("concentration-maintenant/vide", height: 980, themes: GalleryTheme.withContrast) { f in
+            // UI-15C (2): 1100 so the frame does not cut « Réglages » at the bottom.
+            page("concentration-maintenant/vide", height: 1_100, themes: GalleryTheme.withContrast) { f in
                 tab(.concentration, ConcentrationPageContent(controller: try f.empty(), now: now, measures: [], draft: draft))
             },
             page("concentration-maintenant/plan-du-jour", height: 1_700) { f in

@@ -36,13 +36,17 @@ enum AgentConversationSourceHealth: Equatable {
         }
     }
 
-    var message: String {
+    var message: String { message(hasReadableConversations: true) }
+
+    /// UI-15C (6): « restent disponibles » only when the page still lists conversations.
+    func message(hasReadableConversations: Bool) -> String {
         switch self {
         case .ready: return "Les messages d’erreur contenus dans une conversation ne signifient pas que la source est inaccessible."
         case .invalidIndex:
             return "Réessayez pour vérifier l’index local, ou vérifiez vos dossiers autorisés. Les conversations d’origine n’ont pas été modifiées."
         case .readFailures(let count):
-            return "\(FrenchCount.count(count, "problème", "problèmes")) de lecture. Les conversations lisibles restent disponibles. Réessayez, ou vérifiez les dossiers concernés et leurs accès."
+            let kept = hasReadableConversations ? " Les conversations lisibles restent disponibles." : ""
+            return "\(FrenchCount.count(count, "problème", "problèmes")) de lecture.\(kept) Réessayez, ou vérifiez les dossiers concernés et leurs accès."
         case .analysisPending:
             return "Les sources sont analysées par lots. Les conversations disponibles restent visibles ; gardez cette fenêtre active pour continuer, ou relancez l’analyse."
         case .capacityLimited(let count):

@@ -61,7 +61,7 @@
                             )
                             usagePanel(
                                 title: "Appareils Apple",
-                                subtitle: "Les totaux Temps d’écran peuvent se chevaucher entre appareils",
+                                subtitle: "Les totaux Temps d’écran peuvent se chevaucher entre appareils.",
                                 symbol: "macbook.and.iphone",
                                 values: overview.screenTimeDevices,
                                 emptyMessage: "Aucun appareil Temps d’écran disponible."
@@ -339,7 +339,7 @@
                                 .font(.system(size: 12))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Label("Confiance des preuves : \(GoalongUIFormat.percent(confidence))", systemImage: "checkmark.shield")
+                            Label("Preuves solides : \(GoalongUIFormat.percent(confidence))", systemImage: "checkmark.shield")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(LHTheme.secondaryText)
                             Text(isToday ? "La journée est encore en cours" : "Bilan de la journée terminée")
@@ -535,7 +535,7 @@
                         Label("Collaboration avec l’IA", systemImage: "bubble.left.and.bubble.right")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "Les conversations sont lues ponctuellement dans Codex, Claude, OpenCode et les sources configurées. Seul le rapport en cinq lignes est conservé."
+                            "Les conversations sont lues ponctuellement dans Codex, Claude Code, OpenCode et les sources configurées. Seul le rapport en cinq lignes est conservé."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
@@ -544,7 +544,7 @@
                     Spacer(minLength: 18)
                     collaborationMetric("Sessions", overview.agentSessions)
                     collaborationMetric("Messages", overview.agentMessages)
-                    collaborationMetric("Appels d’outils", overview.agentToolCalls)
+                    collaborationMetric("Actions des agents", overview.agentToolCalls)
                     collaborationMetric("Erreurs", overview.agentErrors)
                 }
             }
@@ -609,10 +609,15 @@
                 VStack(alignment: .leading, spacing: 9) {
                     if let error = recapRuntime.dayOverviewError {
                         // A read failure is not an empty day: it gets the warning tone (UI-9 C).
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 12, weight: .medium))
+                        // UI-15C (34): what failed in one line, then the cause as the read gave it.
+                        Label("Goalong n’a pas pu lire les sources de ce jour.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(LHTheme.text)
                             .symbolRenderingMode(.multicolor)
+                        Text(error)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         GoalongThreadPlaceholder().padding(.bottom, 2)
                         Text("Aucune activité source pour ce jour.")
