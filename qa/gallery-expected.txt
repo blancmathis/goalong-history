@@ -396,8 +396,6 @@ mon-travail/vide--   # UI-9 (10 : aide du classement simplifiée ; guillemets «
 mon-travail/definition-enregistree--   # UI-9 (10 : aide du classement simplifiée ; guillemets « Pour vous » ; note TypeSafe plus courte)
 mon-travail/definition-et-donnees--   # UI-9 (10 : aide du classement simplifiée ; note TypeSafe plus courte)
 mon-travail/classement-avec-donnees--   # UI-9 (10 : aide du classement simplifiée)
-mon-travail/correction-du-classement--   # UI-9 (10 : aide du classement simplifiée)
-surveillance/a-configurer--   # UI-9 (10 : guillemets « Pour vous » ; note TypeSafe plus courte)
 settings-sheets/connexion-jev--   # UI-9 (10 : « (0600) » retiré)
 partage/avec-donnees--   # UI-9 (55 : « Signaler le problème… » en lime, « Créer le fichier » secondaire ; « aucune vérifiée » ; une seule phrase de preuve ; fondu bas de liste)
 partage/vide--   # UI-9 (55 : « Ouvrir les réglages » en lime ; « Enregistrement désactivé » ; une seule phrase de preuve)
@@ -413,3 +411,4 @@ settings-sheets/conservation--   # UI-9 (28 : libellés simples ; sous-titre ; d
 modules/reglages--   # UI-9 (42 : « Supprimer… » sur sa propre ligne)
 settings/modules--   # UI-9 (42 : « Supprimer… » sur sa propre ligne)
 modules/actifs-verrouille--   # UI-9 (42 : nouvel état, modules activés et Blocage verrouillé)
+settings/chatgpt--   # UI-9 (38 : « Cette version de Goalong ne peut pas se connecter à ChatGPT » ; boîte 265,207 346×13)

@@ -316,7 +316,7 @@
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Text("\(score) %")
+                            Text(GoalongUIFormat.percent(score))
                                 .font(.system(size: 26, weight: .bold))
                                 .foregroundStyle(LHTheme.text)
                             Text("Estimé par ChatGPT d’après votre définition de Mon travail.")
