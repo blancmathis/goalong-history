@@ -102,8 +102,9 @@ import LocalHistoryQueryCLI
                 }
                 Spacer()
                 // UI-11A (4): « Relier mon Mac » keeps the rank it has on the page: the main action until linked.
+                // At step 2 the footer carries it, so this one steps back: one lime button per sheet.
                 Button(connected ? "Règles du site" : "Relier mon Mac") { openSite(fragment: connected ? "privacy" : "settings") }
-                    .modifier(GoalongMainActionStyle(primary: !connected))
+                    .modifier(GoalongMainActionStyle(primary: !connected && model.preview == nil))
             }
             if connected {
                 Text("Visibilité : vos règles du site s’appliquent après l’envoi.")
@@ -139,9 +140,10 @@ import LocalHistoryQueryCLI
         VStack(alignment: .leading, spacing: 18) {
             // UI-11A (4): the day reads « 23 octobre 2026 », as on the page, not « 23/10/2026 ».
             HStack(spacing: 8) {
-                Text(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer").font(.system(size: 13))
+                Text(dayLabel).font(.system(size: 13)).accessibilityHidden(true)
                 GoalongCalendarButton(date: model.draft.date, onChange: { model.draft.date = $0 },
                                       label: GoalongUIFormat.day(model.draft.date))
+                    .accessibilityLabel(dayLabel)
                     .accessibilityIdentifier("sharing-selected-date")
             }
             if model.loading {
@@ -287,6 +289,7 @@ import LocalHistoryQueryCLI
             }
         }.padding(20).background(LHTheme.cardBackground)
     }
+    private var dayLabel: String { model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer" }
     /// Nothing while the selection's note already says there is no day to read.
     private var footerHint: String? {
         if model.preview != nil { return "La confirmation autorise l’envoi." }

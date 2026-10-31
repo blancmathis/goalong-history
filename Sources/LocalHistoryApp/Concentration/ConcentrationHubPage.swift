@@ -381,7 +381,6 @@ extension EnvironmentValues {
 @MainActor struct JevScopeControl: View {
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
-    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -393,8 +392,6 @@ extension EnvironmentValues {
                     $0 == .always ? "Toujours" : "Pendant mes séances"
                 }
                 .controlSize(.small)
-                // UI-11A (5): the segmented control draws no disabled state of its own; Jev off must not look active.
-                .opacity(isEnabled ? 1 : 0.5)
                 .accessibilityIdentifier("jev-scope")
             }
             Text(monitor.scope == .always
