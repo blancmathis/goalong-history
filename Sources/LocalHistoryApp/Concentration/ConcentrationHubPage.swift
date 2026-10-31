@@ -381,24 +381,29 @@ extension EnvironmentValues {
 @MainActor struct JevScopeControl: View {
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
+    /// UI-12A: GoalongSegmentedControl does not draw `.disabled`, so the row greys itself.
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 Text("Quand").font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isEnabled ? LHTheme.text : LHTheme.secondaryText)
                 Spacer(minLength: 8)
                 GoalongSegmentedControl("Quand recevoir les rappels", selection: Binding(get: { monitor.scope }, set: { monitor.setScope($0) }),
                                         options: JevMonitoringScope.allCases) {
                     $0 == .always ? "Toujours" : "Pendant mes séances"
                 }
                 .controlSize(.small)
+                .opacity(isEnabled ? 1 : 0.5)
                 .accessibilityIdentifier("jev-scope")
             }
-            Text(monitor.scope == .always
+            Text(!isEnabled ? "Connectez d’abord Jev, puis activez-le, pour choisir quand il agit."
+                 : monitor.scope == .always
                  ? "Dès que les rappels Jev sont activés, toute la journée."
                  : "Seulement pendant une séance Concentration, pauses comprises. Hors séance : aucun envoi, rappel ni effet.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
-            if monitor.scope == .sessionsOnly && !modules.isEnabled(.concentration) {
+            if isEnabled && monitor.scope == .sessionsOnly && !modules.isEnabled(.concentration) {
                 GoalongNote("Activez Concentration pour lancer une séance : sans séance, Jev attend.", tone: .warning)
             }
         }
