@@ -136,9 +136,14 @@ final class T046C2RenderTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("t046-c2-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         // The consent store writes under the application-support folder: the test runners give it a throwaway HOME.
-        XCTAssertTrue(AppPaths.capabilityConsentFile.path.hasPrefix(ProcessInfo.processInfo.environment["GOALONG_TEST_HOME"] ?? "/nonexistent")
-                      || AppPaths.capabilityConsentFile.path.contains("/tmp/") || AppPaths.capabilityConsentFile.path.contains("/var/folders/"),
-                      "The consent file must not be the real one: \(AppPaths.capabilityConsentFile.path)")
+        let consentPath = AppPaths.capabilityConsentFile.path
+        let throwaway = consentPath.hasPrefix(ProcessInfo.processInfo.environment["GOALONG_TEST_HOME"] ?? "/nonexistent")
+            || consentPath.contains("/tmp/") || consentPath.contains("/var/folders/")
+        guard throwaway else {
+            let message = "The consent file must not be the real one: \(consentPath)"
+            XCTFail(message)
+            throw XCTSkip(message)
+        }
         let consentBefore = GoalongCapabilityConsentStore.shared.isEnabled(.aiConversations)
         addTeardownBlock { GoalongCapabilityConsentStore.shared.set(.aiConversations, enabled: consentBefore, surface: .settings) }
         let clockBefore = GoalongToday.galleryClock
