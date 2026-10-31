@@ -206,6 +206,11 @@ ui_row() { # id kind nav mode role needle action
   [[ $pre == *"dismissed 0 alert(s)"* || -z $pre ]] || { log "[$id] start: ${pre//$'\n'/ ; }"; sleep 1; }
   eval "set -- $navs"
   miss="$(navigate "$@")"
+  if [[ $kind == disc ]]; then  # L3n: discovery pass, nav + AX dump only; DISC is never sorted as a verdict.
+    ROW_END=0; sleep 0.5; rowshot "$id"
+    record "$id" DISC "rows/$id.png" "rows/ax/$id.txt" "${miss:+nav($miss)}discovery" "nav + dump, sans verdict"
+    row_unseed; cleanup; return
+  fi
   out="$(drv act "$BUNDLE" "$action" "$mode" "$role" "$needle" "$([[ $kind == trigger ]] && echo 0 || echo 3)" "$(expect_of "$@")" "$(pick_of "$@")" 2>&1)"; st=$?
   local late=$(( $(date +%s) > ROW_END )); ROW_END=0
   sleep 0.5; rowshot "$id"

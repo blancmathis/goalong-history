@@ -1,0 +1,11 @@
+# L3n: navs for E-A's needs (E-A.md), read after E-A.tsv. One writer: L3n.
+J-0330	nav:monitoring w:2 o:monitoring-edit-goals w:1 "tk:monitoring-work-goals= T046 nouvelle définition" w:1 p:monitoring-save-goals w:2
+J-0331	nav:work w:2 p:monitoring-edit-goals w:1 "tk:Projets et objectifs= Revue T-046." w:1 "ex:Changer la définition du travail"
+J-0347	nav:history p:"Conversations locales" w:2 "pk:Actions sur la conversation|" w:1
+J-0348	nav:history p:"Conversations locales" w:2 "pk:Actions sur la conversation|" w:1
+J-0363	nav:history p:"Conversations locales" w:2 "pk:Actions sur la conversation|" w:1
+J-0364	nav:history p:"Conversations locales" w:2 "pk:Actions sur la conversation|" w:1
+J-0523	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les données" w:4 dump:loaded
+J-0525	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les données" w:4 dump:loaded
+J-0527	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les données" w:4 dump:loaded
+J-0529	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les données" w:4 dump:loaded

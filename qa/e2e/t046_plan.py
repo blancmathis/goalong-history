@@ -138,6 +138,16 @@ RECIPES = {
     "J-0427": ("", "label", "AXMenuButton", "Actions groupées"),
     "J-0428": ("", "label", "AXMenuButton", "Actions groupées"),
     "J-0429": ("", "label", "AXMenuButton", "Actions groupées"),
+    # L3n E-A (run 41227452518 dumps): the alert's « Annuler » is action-button-2 (the page's « Annuler » comes first);
+    # « Enregistrer » of the goals editor by id; labels as shown; conversation actions are items of a menu left open.
+    "J-0330": ("", "id", "AXButton", "action-button-2"),
+    "J-0331": ("", "id", "AXButton", "monitoring-save-goals"),
+    "J-0366": ("", "label", "AXTextField", "Claude Code local history"),
+    "J-0368": ("", "label", "AXPopUpButton", "Conversations et journaux"),
+    "J-0430": ("", "label", "AXCheckBox", "Claude Code, Claude Code local history"),
+    "J-0881": ("\"ex:Choisir la demande d’analyse Goalong\"", "label", "AXButton", "Choisir la demande…"),
+    **{f"J-{n:04d}": ("", "menuitem", "AXMenuItem", "Afficher la source d’origine") for n in (347, 363)},
+    **{f"J-{n:04d}": ("", "menuitem", "AXMenuItem", "Vérifier que la source est intacte") for n in (348, 364)},
 }
 
 # UI branch (t046/evidence-ui): labels the UI lots renamed between 06e199f and 973ff6a. The matrix (and a
@@ -260,6 +270,9 @@ def table(name):
         return None
     return [l.rstrip("\n").split("\t") for p in paths for l in open(p, encoding="utf-8") if l.strip() and not l.startswith("#")]
 
+# L3n: the row's action when t046-rows.tsv names one the driver cannot play (J-0290 « Fermer » is .cancelAction).
+ACTIONS = {"J-0290": "escape"}
+
 
 def main():
     rows_path, src, shard, out = sys.argv[1:5]
@@ -267,6 +280,11 @@ def main():
     nav_of = {f[0]: f[1] for f in table("t046-nav.tsv") or [] if len(f) > 1}
     only = table("t046-only.txt")
     only = {f[0] for f in only} if only is not None else None
+    # L3n: discovery passes (t046-discover.txt and .d/): nav + AX dump, no verdict (status DISC, never sorted).
+    disc = {f[0] for f in table("t046-discover.txt") or []}
+    verdict_ids = set(only or ())
+    if only is not None:
+        only |= disc
     rows = [l.rstrip("\n").split("\t") for l in open(rows_path, encoding="utf-8")][1:]
     plan = []
     for r in rows:
@@ -337,6 +355,9 @@ def main():
                 kind, na = "ui", ""
         if only is not None and rid not in only:
             continue
+        action = ACTIONS.get(rid, action)
+        if rid in disc and rid not in verdict_ids:
+            kind, na = "disc", ""
         plan.append([rid, kind, nav, mode, role, needle, action or "observe", na, screen])
     # Onboarding needs a fresh app: first. Lifecycle quits the app: last.
     order = {"Onboarding": 0, "App (cycle de vie)": 2}
