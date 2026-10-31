@@ -82,7 +82,7 @@ import LocalHistoryCore
             sectionLabel("Travail", mark: LHTheme.workData)
             field("Projets et objectifs", hint: "Ex. Goalong : app macOS et site. Atlas : préparer le lancement.",
                   text: $draft, identifier: "monitoring-work-goals")
-            field("Applications et sites, et pour quoi faire", hint: "Ex. Xcode et GitHub pour Goalong. YouTube seulement pour le cours Swift choisi.",
+            field("Applications et sites utiles", hint: "Ex. Xcode et GitHub pour Goalong. YouTube seulement pour le cours Swift choisi.",
                   text: $applications, identifier: "monitoring-work-apps")
             field("Contenus et usages qui comptent comme travail",
                   detail: "Précisez l’usage plutôt que l’app : c’est ce que vous y faites qui compte.",
@@ -91,9 +91,9 @@ import LocalHistoryCore
             sectionLabel("Hors travail", mark: LHTheme.otherData).padding(.top, 8)
             field("Ce qui n’est pas du travail",
                   detail: "Des exemples clairs, pas une liste complète.", help: procrastinationText,
-                  hint: "Ex. Scroller le fil Pour vous de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
+                  hint: "Ex. Faire défiler le fil « Pour vous » de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
                   text: $procrastination, identifier: "monitoring-procrastination")
-            GoalongNote("Ces critères restent stockés sur ce Mac. Enregistrer autorise leur envoi à votre compte ChatGPT avec les contextes à classer si le classement est activé, et l’envoi de vos critères de travail et exemples hors travail à TypeSafe avec les prochaines analyses si la surveillance est activée. N’indiquez ni clé API ni information sensible.",
+            GoalongNote("Ces critères restent sur ce Mac. Enregistrer autorise leur envoi à ChatGPT si le classement est activé, et celui de vos critères et exemples hors travail à TypeSafe, fournisseur de Jev, si la surveillance l’est. N’y mettez aucune information sensible.",
                         tone: .privacy)
             HStack(spacing: 10) {
                 if draftBytes > 0 { budget }

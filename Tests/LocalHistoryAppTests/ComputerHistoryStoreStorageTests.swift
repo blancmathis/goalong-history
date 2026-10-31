@@ -1634,19 +1634,6 @@
                         && $0.contains("absence is not exhaustive")
                 }
             )
-            // The page warning must detect the store's own limitation text.
-            XCTAssertNotNil(ComputerHistoryPageCopy.retainedGapMessage(for: answer))
-            let complete = ComputerHistoryAnswer(
-                schemaVersion: answer.schemaVersion,
-                query: answer.query,
-                generatedAt: answer.generatedAt,
-                answer: answer.answer,
-                hits: answer.hits,
-                limitations: answer.limitations.filter {
-                    !$0.hasPrefix(ComputerHistoryStore.retainedLoadIncompletePrefix)
-                }
-            )
-            XCTAssertNil(ComputerHistoryPageCopy.retainedGapMessage(for: complete))
         }
 
         /// H28 D2: each resource kind reads in French, never as its Swift identifier.
@@ -1660,16 +1647,16 @@
 
         /// H28 L1: counts of one stay singular.
         func testCoverageCountsUseFrenchPlurals() {
-            XCTAssertEqual(ComputerHistoryPageCopy.tenMinuteSummary(count: 1), "1 période de dix minutes. Ouvrez une période pour voir ses détails.")
-            XCTAssertEqual(ComputerHistoryPageCopy.tenMinuteSummary(count: 3), "3 périodes de dix minutes. Ouvrez une période pour voir ses détails.")
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 1, total: 1, searching: false), "1 période")
+            XCTAssertEqual(ComputerHistoryPageCopy.periodCountLabel(visible: 3, total: 3, searching: false), "3 périodes")
             XCTAssertEqual(ComputerHistoryPageCopy.retainedEpisodesLabel(1), "1 épisode représentatif conservé")
             XCTAssertEqual(ComputerHistoryPageCopy.retainedEpisodesLabel(2), "2 épisodes représentatifs conservés")
             XCTAssertEqual(ComputerHistoryPageCopy.retainedResourcesLabel(1), "1 lien source représentatif conservé")
             XCTAssertEqual(ComputerHistoryPageCopy.retainedResourcesLabel(2), "2 liens sources représentatifs conservés")
             XCTAssertEqual(ComputerHistoryPageCopy.provenanceLabel(events: 1, sequences: 1, confidence: 80),
-                           "Preuves : 1 identifiant d’événement · 1 séquence d’intégrité · confiance 80\u{00A0}%")
+                           "Preuves : 1 identifiant d’événement, 1 séquence d’intégrité, confiance 80\u{00A0}%")
             XCTAssertEqual(ComputerHistoryPageCopy.provenanceLabel(events: 2, sequences: 3, confidence: 50),
-                           "Preuves : 2 identifiants d’événements · 3 séquences d’intégrité · confiance 50\u{00A0}%")
+                           "Preuves : 2 identifiants d’événements, 3 séquences d’intégrité, confiance 50\u{00A0}%")
         }
 
         func testEmptyDayIsExplainedInOnePlace() {

@@ -607,14 +607,6 @@
 
     /// Pure display strings of the Computer History page, kept testable.
     enum ComputerHistoryPageCopy {
-        /// French warning shown when the store could not read every retained memory.
-        static func retainedGapMessage(for answer: ComputerHistoryAnswer) -> String? {
-            guard answer.limitations.contains(where: {
-                $0.hasPrefix(ComputerHistoryStore.retainedLoadIncompletePrefix)
-            }) else { return nil }
-            return "Une partie de l’historique local conservé est illisible : seules les mémoires lisibles sont utilisées, une absence de résultat n’est donc pas exhaustive."
-        }
-
         /// "12 périodes", or "3 sur 12 périodes" while a search filters the timeline.
         static func periodCountLabel(visible: Int, total: Int, searching: Bool) -> String {
             let totalLabel = total <= 1 ? "\(total) période" : "\(total) périodes"
@@ -635,9 +627,8 @@
             }
         }
 
-        static func tenMinuteSummary(count: Int) -> String {
-            "\(GoalongUIFormat.count(count, "période")) de dix minutes. Ouvrez une période pour voir ses détails."
-        }
+        /// The count already sits beside « Chronologie »: the banner only says what to do with a period.
+        static let openPeriodHint = "Ouvrez une période de dix minutes pour voir ses détails."
 
         static func retainedEpisodesLabel(_ count: Int) -> String {
             GoalongUIFormat.count(count, "épisode représentatif conservé", plural: "épisodes représentatifs conservés")
@@ -648,8 +639,8 @@
         }
 
         static func provenanceLabel(events: Int, sequences: Int, confidence: Int) -> String {
-            "Preuves : \(GoalongUIFormat.count(events, "identifiant d’événement", plural: "identifiants d’événements")) · "
-                + "\(GoalongUIFormat.count(sequences, "séquence d’intégrité", plural: "séquences d’intégrité")) · "
+            "Preuves : \(GoalongUIFormat.count(events, "identifiant d’événement", plural: "identifiants d’événements")), "
+                + "\(GoalongUIFormat.count(sequences, "séquence d’intégrité", plural: "séquences d’intégrité")), "
                 + "confiance \(GoalongUIFormat.percent(confidence))"
         }
 
@@ -672,35 +663,18 @@
         let isSnapshotLoading: Bool
         let fullContextEnabled: Bool
         let openSourceJSON: () -> Void
-        let deleteEpisode: (ComputerHistoryEpisode) -> Void
-        @State private var episodePendingDeletion: ComputerHistoryEpisode?
         @State private var timelineSearch = ""
         @State private var newestFirst = true
         @State private var hasRetried = false
-
-        private let metricColumns = [
-            GridItem(.adaptive(minimum: 165, maximum: 250), spacing: 12)
-        ]
+        @Environment(\.goalongRecordingModel) private var recordingModel
 
         var body: some View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
-                    recordingStateCard
+                    if !timelineAloneExplainsDay { recordingStateCard }
                     historySection
                 }
                 .padding(.bottom, 8)
-            }
-            .alert(item: $episodePendingDeletion) { episode in
-                Alert(
-                    title: Text("Supprimer cet élément de l’historique ?"),
-                    message: Text(
-                        "Goalong retrouve cet élément dans le journal local d’origine et supprime ses événements exacts et les instantanés liés. Les analyses, les appels et l’activité de développement de ce jour sont aussi effacés ; la journée sera reconstruite. La note du jour, les sceaux, les reçus, le Temps d’écran et les conversations IA sont conservés."
-                    ),
-                    primaryButton: .destructive(Text("Supprimer")) {
-                        deleteEpisode(episode)
-                    },
-                    secondaryButton: .cancel()
-                )
             }
             .task(id: timelineRefreshID) {
                 refreshTimeline()
@@ -783,7 +757,7 @@
                         if showsRecordingSummary {
                             Text(recordingSummary)
                                 .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -801,14 +775,14 @@
                 if let diagnostic = sourceDiagnostic {
                     GoalongDisclosureGroup("Détails techniques") {
                         Text(diagnostic)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.top, 6)
                     }
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .padding(.leading, 30)
                 }
             }
@@ -916,7 +890,7 @@
             case .available:
                 break
             }
-            let summary = ComputerHistoryPageCopy.tenMinuteSummary(count: tenMinuteGroups.count)
+            let summary = ComputerHistoryPageCopy.openPeriodHint
             return model.isAnalysisPartial ? partialAnalysisNotice + " " + summary : summary
         }
 
@@ -934,26 +908,26 @@
                         .font(.system(size: 20, weight: .semibold))
                     Image(systemName: "info.circle")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LHTheme.secondaryText)
                         .help(
                             "Les durées correspondent aux périodes observées au premier plan. Elles ne prouvent ni l’attention, ni l’identité, ni l’auteur, ni la productivité."
                         )
                     Spacer(minLength: 12)
                     if isPreparingTimeline {
                         Text("Préparation…")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    } else {
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LHTheme.secondaryText)
+                    } else if !tenMinuteGroups.isEmpty {
                         Text(ComputerHistoryPageCopy.periodCountLabel(
                             visible: visibleTimelineGroups.count,
                             total: tenMinuteGroups.count,
                             searching: !timelineSearch.isEmpty
                         ))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                     Button(action: openSourceJSON) {
-                        Label("Voir le fichier brut", systemImage: "doc.text")
+                        Label("Ouvrir le journal", systemImage: "doc.text")
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
                     .controlSize(.regular)
@@ -963,12 +937,8 @@
 
                 HStack(spacing: 12) {
                     GoalongSearchField("Rechercher une application ou un contexte", text: $timelineSearch, accessibilityLabel: "Rechercher dans la chronologie")
-                    Picker("Ordre de la chronologie", selection: $newestFirst) {
-                        Text("Plus récent d’abord").tag(true)
-                        Text("Plus ancien d’abord").tag(false)
-                    }
-                    .labelsHidden()
-                    .frame(width: 190)
+                    GoalongMenuPicker("Ordre de la chronologie", selection: $newestFirst,
+                                      options: [(true, "Plus récent d’abord"), (false, "Plus ancien d’abord")])
                 }
                 .font(.system(size: 12))
 
@@ -976,7 +946,28 @@
             }
         }
 
-        private var timelineCard: some View {
+        /// An empty day is a page state, not a card: thread, title, sentence and one action.
+        @ViewBuilder private var timelineCard: some View {
+            if tenMinuteGroups.isEmpty && !isPreparingTimeline {
+                GoalongEmptyState(
+                    title: emptyTimelineTitle,
+                    message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
+                        ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.") {
+                    if !needsRetry {
+                        Button("Actualiser") { model.refresh(day: day) }
+                            .buttonStyle(LHSecondaryButtonStyle())
+                            .disabled(model.isLoading || isSnapshotLoading)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+                .accessibilityIdentifier("history-empty-day")
+            } else {
+                timelineList
+            }
+        }
+
+        private var timelineList: some View {
             LHCard(padding: 0) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     HStack {
@@ -989,8 +980,8 @@
                         Spacer()
                         if snapshot.eventCount > 0 {
                             Text("\(DashboardFormatters.duration(minutes: snapshot.activeMinutes)) d’activité")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
                     .padding(.horizontal, 20)
@@ -1004,37 +995,18 @@
                             Text("Préparation de la chronologie…")
                                 .font(.system(size: 14, weight: .semibold))
                             Text("Préparation locale de la journée.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 240)
-                        .padding(24)
-                    } else if tenMinuteGroups.isEmpty {
-                        VStack(spacing: 11) {
-                            Image(systemName: "clock.badge.questionmark")
-                                .font(.system(size: 28, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Text(emptyTimelineTitle)
-                                .font(.system(size: 14, weight: .semibold))
-                            if ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus) {
-                                Text(emptyTimelineMessage)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
                     } else if visibleTimelineGroups.isEmpty {
-                        VStack(spacing: 10) {
-                            Text("Aucune activité correspondante").font(.system(size: 14, weight: .semibold))
-                            Text("Essayez un autre nom d’app ou un mot du contexte enregistré.")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                        GoalongEmptyState(title: "Aucune activité correspondante",
+                                          message: "Essayez un autre nom d’app ou un mot du contexte enregistré.") {
                             Button("Effacer la recherche") { timelineSearch = "" }
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
-                        .frame(maxWidth: .infinity, minHeight: 180)
+                        .frame(maxWidth: .infinity, minHeight: 180, alignment: .topLeading)
                     } else {
                         ForEach(Array(visibleTimelineGroups.enumerated()), id: \.element.id) {
                             index, group in
@@ -1067,7 +1039,21 @@
                 : "Le journal original de cette journée est indisponible"
         }
 
+        /// A day without any journal is one fact: the timeline's empty state says it, the card above does not repeat it.
+        private var timelineAloneExplainsDay: Bool {
+            guard case .absent = model.sourceStatus, model.memory == nil else { return false }
+            return !isPreparingTimeline && tenMinuteGroups.isEmpty
+        }
+
+        /// Writes refused today: the empty day has a known cause and a start time.
+        private var storageStopTitle: String? {
+            guard GoalongToday.isToday(day), let runtime = recordingModel?.runtime, runtime.storageFailure != nil else { return nil }
+            return runtime.storageInterruptedSince.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" }
+                ?? "Enregistrement interrompu"
+        }
+
         private var emptyTimelineTitle: String {
+            if let storageStopTitle, tenMinuteGroups.isEmpty { return storageStopTitle }
             switch model.sourceStatus {
             case .inaccessible:
                 return "Chargement impossible"
@@ -1087,6 +1073,11 @@
         }
 
         private var emptyTimelineMessage: String {
+            if storageStopTitle != nil, let kind = recordingModel?.runtime.storageFailure {
+                return kind == .diskFull
+                    ? "Rien n’est enregistré tant que le disque est plein. La reprise est automatique et la coupure restera indiquée ici."
+                    : "Rien n’est enregistré tant que le dossier de l’historique refuse l’écriture. La reprise est automatique et la coupure restera indiquée ici."
+            }
             switch model.sourceStatus {
             case .inaccessible:
                 return model.memory == nil
@@ -1094,7 +1085,7 @@
                     : "Le dernier historique valide a été conservé. Le journal d’origine n’a pas pu être lu en toute sécurité."
             case .absent:
                 return model.memory == nil
-                    ? "Aucun historique conservé pour ce jour. Les autres jours sont inchangés."
+                    ? "Goalong n’a rien enregistré sur ce Mac ce jour-là, ou ce jour a été effacé."
                     : "Le journal d’origine est absent, mais l’historique conservé n’a pas été supprimé."
             case .available where GoalongToday.isToday(day):
                 return "L’activité apparaît ici lorsque Goalong enregistre une application autorisée."
@@ -1107,511 +1098,6 @@
             }
         }
 
-        private var contextStateCard: some View {
-            Group {
-                if fullContextEnabled {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "brain.head.profile.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(LHTheme.success)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Contexte complet activé")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(
-                                "Les interactions éligibles peuvent être reliées : contexte avant → action → après → état final. Un contexte proche n’est jamais présenté comme l’état certain avant l’action. La navigation privée suit votre réglage d’enregistrement ; exclusions, saisie sécurisée et champs protégés restent masqués."
-                            )
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        sourceReadinessPill
-                    }
-                    .padding(15)
-                    .background(
-                        LHTheme.success.opacity(0.07),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    )
-                } else {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(LHTheme.warning)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Analyse limitée aux métadonnées")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(
-                                "Les apps, pages, clics et saisies groupées restent visibles, mais les intentions, changements de contenu, états des tâches et reprises peuvent être incomplets. Activez le texte affiché pour une analyse complète."
-                            )
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .padding(15)
-                    .background(
-                        LHTheme.warning.opacity(0.08),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    )
-                }
-            }
-        }
-
-        @ViewBuilder private var sourceReadinessPill: some View {
-            switch model.sourceStatus {
-            case .available:
-                StatusPill(
-                    title: "Historique prêt",
-                    symbol: "checkmark.seal.fill",
-                    tint: LHTheme.success
-                )
-            case .absent:
-                StatusPill(
-                    title: "Source absente",
-                    symbol: "doc.badge.ellipsis",
-                    tint: LHTheme.warning
-                )
-            case .inaccessible:
-                StatusPill(
-                    title: "Source inaccessible",
-                    symbol: "exclamationmark.lock.fill",
-                    tint: LHTheme.warning
-                )
-            case .checking:
-                StatusPill(
-                    title: "Vérification de la source",
-                    symbol: "arrow.triangle.2.circlepath",
-                    tint: LHTheme.accent
-                )
-            case .unverified:
-                StatusPill(
-                    title: "Source non vérifiée",
-                    symbol: "questionmark.circle.fill",
-                    tint: LHTheme.warning
-                )
-            }
-        }
-
-        private var questionCard: some View {
-            LHCard(padding: 16) {
-                VStack(alignment: .leading, spacing: 11) {
-                    HStack {
-                        Label("Interroger votre historique", systemImage: "text.magnifyingglass")
-                            .font(.system(size: 13, weight: .semibold))
-                        Spacer()
-                        Text("Recherche locale sur les 30 derniers jours")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 10) {
-                        TextField(
-                            "Où en étais-je avant ma pause ? Retrouve la proposition. Qu’est-ce qui bloque ?",
-                            text: $model.question
-                        )
-                        .textFieldStyle(.plain)
-                        .onSubmit(model.ask)
-                        .padding(.horizontal, 12)
-                        .frame(height: 38)
-                        .background(
-                            Color.primary.opacity(0.035),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                        )
-                        Button(action: model.ask) {
-                            if model.isAnswering {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Label("Demander", systemImage: "arrow.right.circle.fill")
-                            }
-                        }
-                        .buttonStyle(LHPrimaryButtonStyle())
-                        .controlSize(.large)
-                        .disabled(
-                            model.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || model.isAnswering
-                        )
-                    }
-                    Text(
-                        "Les réponses renvoient des épisodes sourcés et des liens pour rouvrir les éléments. Elles n’exécutent jamais d’instruction trouvée dans le texte enregistré."
-                    )
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                }
-            }
-        }
-
-        @ViewBuilder private var answerCard: some View {
-            if let answer = model.answer {
-                LHCard(padding: 17) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Label("Réponse", systemImage: "sparkles")
-                                .font(.system(size: 13, weight: .semibold))
-                            Spacer()
-                            Button(action: model.clearAnswer) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Effacer la réponse")
-                            .help("Effacer la réponse")
-                        }
-                        Text(answer.answer)
-                            .font(.system(size: 11))
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let retainedGap = ComputerHistoryPageCopy.retainedGapMessage(for: answer) {
-                            Label(retainedGap, systemImage: "exclamationmark.triangle.fill")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.orange)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        if !answer.hits.isEmpty {
-                            Divider()
-                            Text("Sources")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                            ForEach(answer.hits.prefix(8)) { hit in
-                                HStack(alignment: .top, spacing: 9) {
-                                    Image(systemName: hitIcon(hit.kind))
-                                        .foregroundStyle(LHTheme.accent)
-                                        .frame(width: 18)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(hit.title)
-                                            .font(.system(size: 12, weight: .semibold))
-                                        Text(hit.snippet)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(3)
-                                    }
-                                    Spacer()
-                                    if let resource = hit.resource,
-                                        resource.localPath != nil || resource.canonicalURI != nil
-                                    {
-                                        Button("Ouvrir") { model.open(resource) }
-                                            .buttonStyle(LHSecondaryButtonStyle())
-                                            .controlSize(.small)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        private func headline(_ memory: ComputerHistoryDayMemory) -> some View {
-            LHCard(padding: 20) {
-                HStack(alignment: .top, spacing: 16) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 24))
-                        .foregroundStyle(LHTheme.privateTint)
-                        .frame(width: 56, height: 56)
-                        .background(
-                            LHTheme.privateTint.opacity(0.10),
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        )
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(memory.title)
-                            .font(.system(size: 18, weight: .bold))
-                        Text(memory.executiveSummary)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 12)
-                    Button("Afficher les fichiers") {
-                        model.revealMemoryFiles(for: day)
-                    }
-                    .buttonStyle(LHSecondaryButtonStyle())
-                    .controlSize(.small)
-                }
-            }
-        }
-
-        private func coverage(_ memory: ComputerHistoryDayMemory) -> some View {
-            LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 12) {
-                MetricCard(
-                    title: "ÉPISODES",
-                    value: "\(memory.coverage.episodeCount)",
-                    detail: episodeCoverageDetail(memory),
-                    symbol: "list.bullet.rectangle.portrait.fill",
-                    tint: LHTheme.accent
-                )
-                MetricCard(
-                    title: "INTERACTIONS",
-                    value: "\(memory.coverage.linkedInteractionCount)",
-                    detail: "Aucune minute regroupée",
-                    symbol: "cursorarrow.motionlines.click",
-                    tint: LHTheme.teal
-                )
-                MetricCard(
-                    title: "AVANT / APRÈS",
-                    value: semanticPairValue(memory.coverage),
-                    detail: "Interactions avec état avant et après",
-                    symbol: "arrow.left.and.right.square.fill",
-                    tint: LHTheme.success
-                )
-                MetricCard(
-                    title: "SOURCES",
-                    value: "\(memory.coverage.resourceCount)",
-                    detail: resourceCoverageDetail(memory),
-                    symbol: "link.circle.fill",
-                    tint: LHTheme.privateTint
-                )
-            }
-        }
-
-        private func episodeCoverageDetail(_ memory: ComputerHistoryDayMemory) -> String {
-            guard let retained = memory.coverage.retainedEpisodeCount,
-                retained < memory.coverage.episodeCount
-            else {
-                return "Travail chronologique, par tâche"
-            }
-            return ComputerHistoryPageCopy.retainedEpisodesLabel(retained)
-        }
-
-        private func resourceCoverageDetail(_ memory: ComputerHistoryDayMemory) -> String {
-            guard let retained = memory.coverage.retainedResourceCount else {
-                return "Fichiers, pages, conversations et tickets"
-            }
-            return ComputerHistoryPageCopy.retainedResourcesLabel(retained)
-        }
-
-        private func episodes(_ memory: ComputerHistoryDayMemory) -> some View {
-            let resourcesByID = Dictionary(
-                memory.resources.map { ($0.id, $0) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            return VStack(alignment: .leading, spacing: 10) {
-                SectionTitle(
-                    title: "Chronologie des actions",
-                    subtitle: "Chaque action conservée reste chronologique et sourcée"
-                )
-                if memory.episodes.isEmpty {
-                    compactEmpty("Aucun épisode n’a pu être reconstitué")
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(memory.episodes) { episode in
-                            ComputerHistoryEpisodeCard(
-                                episode: episode,
-                                resources: resourcesByID,
-                                openResource: model.open,
-                                requestDeletion: {
-                                    episodePendingDeletion = episode
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        private func sources(_ memory: ComputerHistoryDayMemory) -> some View {
-            LHCard(padding: 17) {
-                VStack(alignment: .leading, spacing: 12) {
-                    SectionTitle(
-                        title: "Index des sources",
-                        subtitle: "Ressources d’origine probables, avec niveau de confiance et lien pour les rouvrir"
-                    )
-                    if memory.resources.isEmpty {
-                        compactEmpty("Aucun emplacement stable n’a été fourni")
-                    } else {
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 260), spacing: 10)],
-                            alignment: .leading,
-                            spacing: 10
-                        ) {
-                            ForEach(memory.resources) { resource in
-                                Button {
-                                    model.open(resource)
-                                } label: {
-                                    HStack(alignment: .top, spacing: 10) {
-                                        Image(systemName: resourceIcon(resource.kind))
-                                            .font(.system(size: 13, weight: .medium))
-                                            .foregroundStyle(LHTheme.secondaryText)
-                                            .frame(width: 22, height: 18)
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(resource.title)
-                                                .font(.system(size: 12, weight: .semibold))
-                                                .lineLimit(2)
-                                            Text(
-                                                resource.localPath
-                                                    ?? resource.canonicalURI
-                                                    ?? "Emplacement indisponible"
-                                            )
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(2)
-                                            Text(resourceConfidenceLabel(resource))
-                                                .font(.system(size: 11, weight: .medium))
-                                                .foregroundStyle(.tertiary)
-                                        }
-                                        Spacer(minLength: 0)
-                                    }
-                                    .padding(11)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        Color.primary.opacity(0.03),
-                                        in: RoundedRectangle(cornerRadius: 11)
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(resource.localPath == nil && resource.canonicalURI == nil)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        @ViewBuilder private func suggestions(_ memory: ComputerHistoryDayMemory) -> some View {
-            if !memory.suggestions.isEmpty {
-                LHCard(padding: 17) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        SectionTitle(
-                            title: "Automatisations suggérées",
-                            subtitle: "Seules les séquences d’actions répétées et sourcées apparaissent ici"
-                        )
-                        ForEach(memory.suggestions) { suggestion in
-                            HStack(alignment: .top, spacing: 11) {
-                                Image(
-                                    systemName: suggestion.kind == .automation
-                                        ? "gearshape.2.fill"
-                                        : "wand.and.stars"
-                                )
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(
-                                    suggestion.kind == .automation
-                                        ? LHTheme.warning
-                                        : LHTheme.privateTint
-                                )
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(suggestion.title)
-                                        .font(.system(size: 11, weight: .semibold))
-                                    Text(suggestion.rationale)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
-                                    Text(suggestion.suggestedPrompt)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .textSelection(.enabled)
-                                        .padding(8)
-                                        .background(
-                                            Color.primary.opacity(0.035),
-                                            in: RoundedRectangle(cornerRadius: 8)
-                                        )
-                                }
-                                Spacer(minLength: 0)
-                                Text(GoalongUIFormat.percent(ConfidencePercent.whole(suggestion.confidence)))
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        private func evidence(_ memory: ComputerHistoryDayMemory) -> some View {
-            LHCard(padding: 15) {
-                HStack(alignment: .top, spacing: 11) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .foregroundStyle(LHTheme.success)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Preuves et incertitudes")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(
-                            "\(GoalongUIFormat.count(memory.coverage.sourceEventCount, "événement")) source\(memory.coverage.sourceEventCount > 1 ? "s" : "") · \(GoalongUIFormat.count(memory.coverage.semanticSnapshotCount, "instantané")) de contenu · \(GoalongUIFormat.count(memory.coverage.suppressedEventCount, "événement")) masqué\(memory.coverage.suppressedEventCount > 1 ? "s" : ""). Les états des épisodes sont des interprétations limitées ; une présence au premier plan ne prouve ni l’attention, ni l’identité, ni l’auteur, ni la productivité, ni l’achèvement."
-                        )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        }
-
-        private var loadingState: some View {
-            LHCard {
-                VStack(spacing: 13) {
-                    ProgressView()
-                    Text("Reconstitution des épisodes…")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "Goalong relie localement les actions, changements de contenu, ressources, états et provenances."
-                    )
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 300)
-            }
-        }
-
-        private var emptyState: some View {
-            LHCard {
-                EmptyStateView(
-                    symbol: "point.3.connected.trianglepath.dotted",
-                    title: "Pas encore d’historique détaillé",
-                    message: model.errorMessage
-                        ?? "Laissez Goalong actif et utilisez vos apps : cet historique se construit automatiquement au fil des événements.",
-                    buttonTitle: "Reconstruire",
-                    action: { model.refresh(day: day) }
-                )
-                .frame(minHeight: 320)
-            }
-        }
-
-        private func compactEmpty(_ title: String) -> some View {
-            HStack(spacing: 9) {
-                Image(systemName: "tray")
-                    .foregroundStyle(.secondary)
-                Text(title)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(11)
-            .background(
-                Color.primary.opacity(0.03),
-                in: RoundedRectangle(cornerRadius: 9)
-            )
-        }
-
-        private func semanticPairValue(_ coverage: ComputerHistoryCoverage) -> String {
-            guard let ratio = coverage.semanticPairCoverage else { return "—" }
-            return GoalongUIFormat.percent(ConfidencePercent.whole(ratio))
-        }
-
-        private func hitIcon(_ kind: ComputerHistorySearchHitKind) -> String {
-            switch kind {
-            case .episode: return "list.bullet.rectangle"
-            case .resource: return "link"
-            case .suggestion: return "wand.and.stars"
-            }
-        }
-
-        private func resourceIcon(_ kind: ComputerHistoryResourceKind) -> String {
-            switch kind {
-            case .file: return "doc.fill"
-            case .webPage: return "globe"
-            case .conversation: return "bubble.left.and.bubble.right.fill"
-            case .issue: return "exclamationmark.bubble.fill"
-            case .document: return "doc.text.fill"
-            case .terminalSession: return "terminal.fill"
-            case .application: return "app.fill"
-            case .unknown: return "questionmark.square.fill"
-            }
-        }
-
-        private func resourceConfidenceLabel(
-            _ resource: ComputerHistoryResourceReference
-        ) -> String {
-            let percentage = ConfidencePercent.whole(resource.locatorConfidence)
-            return "\(ComputerHistoryPageCopy.resourceKindLabel(resource.kind)) · confiance \(percentage)\u{00A0}%"
-        }
     }
 
     private struct ComputerHistoryTenMinuteRow: View {
@@ -1624,10 +1110,10 @@
             HStack(alignment: .top, spacing: 0) {
                 Text(windowTimeLabel)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .monospacedDigit()
-                    .frame(width: 70, alignment: .trailing)
-                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .frame(width: 84, alignment: .trailing)
                     .padding(.top, 14)
                     .padding(.trailing, 8)
 
@@ -1651,21 +1137,16 @@
                             expanded.toggle()
                         }
                     } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(headline)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                            }
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "chevron.right").rotationEffect(.degrees(expanded ? 90 : 0))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(LHTheme.secondaryText)
+                                .frame(width: 12).accessibilityHidden(true)
+                            Text(headline)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
                             Spacer(minLength: 12)
-                            Text(expanded ? "Masquer les détails" : "Détails")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 3)
                         }
                         .contentShape(Rectangle())
                     }
@@ -1694,8 +1175,8 @@
                     if expanded {
                         Divider()
                         Text(factSummary)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(group.sessions) { session in
                                 HStack(alignment: .top, spacing: 10) {
@@ -1707,7 +1188,7 @@
                                     VStack(alignment: .leading, spacing: 3) {
                                         HStack(spacing: 7) {
                                             Text(session.appName)
-                                                .font(.system(size: 11, weight: .semibold))
+                                                .font(.system(size: 12, weight: .semibold))
                                             if session.isSuppressed {
                                                 Image(systemName: "eye.slash.fill")
                                                     .font(.system(size: 10))
@@ -1716,13 +1197,13 @@
                                         }
                                         Text(session.context)
                                             .font(.system(size: 12))
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(LHTheme.secondaryText)
                                             .lineLimit(2)
                                         Text(
                                             sessionDetailSummary(session)
                                         )
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(.secondary)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(LHTheme.secondaryText)
                                     }
                                     Spacer(minLength: 0)
                                 }
@@ -1746,7 +1227,7 @@
                     .lineLimit(1)
                 Text(durationLabel(app.activeSeconds))
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                     .monospacedDigit()
                     .fixedSize()
             }
@@ -1763,7 +1244,7 @@
             case 2:
                 return "\(names[0]) et \(names[1])"
             default:
-                return "\(names[0]), \(names[1]) et \(names.count - 2) autres"
+                return "\(names[0]), \(names[1]) et \(names.count - 2) \(names.count - 2 > 1 ? "autres" : "autre")"
             }
         }
 
@@ -1778,13 +1259,12 @@
             } else if group.recordedEventCount > 0 {
                 facts.append("\(GoalongUIFormat.number(group.recordedEventCount)) événement\(group.recordedEventCount > 1 ? "s" : "")")
             }
-            return facts.joined(separator: " · ")
+            return facts.joined(separator: ", ")
         }
 
+        /// One line: a range cut before its dash read as two times, the second one starting with « – ».
         private var windowTimeLabel: String {
-            GoalongUIFormat.time(group.start)
-                + "\n–"
-                + GoalongUIFormat.time(group.end)
+            GoalongUIFormat.time(group.start) + "–" + GoalongUIFormat.time(group.end)
         }
 
         private func durationLabel(_ seconds: TimeInterval) -> String {
@@ -1802,187 +1282,7 @@
             let details = session.sourceSessionCount == 1
                 ? "1 segment enregistré"
                 : "\(session.sourceSessionCount) segments enregistrés"
-            return "\(interval) · \(durationLabel(session.duration)) · \(details)"
-        }
-    }
-
-    private struct ComputerHistoryEpisodeCard: View {
-        let episode: ComputerHistoryEpisode
-        let resources: [String: ComputerHistoryResourceReference]
-        let openResource: (ComputerHistoryResourceReference) -> Void
-        let requestDeletion: () -> Void
-        @State private var expanded = false
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-        var body: some View {
-            LHCard(padding: 16) {
-                VStack(alignment: .leading, spacing: 11) {
-                    Button {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { expanded.toggle() }
-                    } label: {
-                        HStack(alignment: .top, spacing: 11) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack(spacing: 8) {
-                                    Text(episode.title)
-                                        .font(.system(size: 13, weight: .semibold))
-                                    StatusPill(
-                                        title: episode.status.rawValue,
-                                        symbol: statusSymbol,
-                                        tint: statusTint
-                                    )
-                                }
-                                Text(
-                                    episodeMetrics
-                                )
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                Text(episode.summary)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(expanded ? nil : 3)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer(minLength: 10)
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    let episodeResources = episode.resourceIDs.compactMap { resources[$0] }
-                    if !episodeResources.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 7) {
-                                ForEach(episodeResources) { resource in
-                                    Button {
-                                        openResource(resource)
-                                    } label: {
-                                        Label(resource.title, systemImage: "link")
-                                            .font(.system(size: 11, weight: .medium))
-                                            .lineLimit(1)
-                                    }
-                                    .buttonStyle(LHSecondaryButtonStyle())
-                                    .controlSize(.small)
-                                    .disabled(
-                                        resource.localPath == nil
-                                            && resource.canonicalURI == nil
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if expanded {
-                        Divider()
-                        if !episode.requestsOrIntentions.isEmpty {
-                            detailSection(
-                                title: "DEMANDES OU INTENTIONS",
-                                values: episode.requestsOrIntentions
-                            )
-                        }
-                        if !episode.observableOutcomes.isEmpty {
-                            detailSection(
-                                title: "RÉSULTATS OBSERVABLES",
-                                values: episode.observableOutcomes
-                            )
-                        }
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("Séquence d’actions")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                            ForEach(episode.interactions) { interaction in
-                                HStack(alignment: .top, spacing: 9) {
-                                    Text(GoalongUIFormat.time(interaction.start))
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(.tertiary)
-                                        .frame(width: 56, alignment: .leading)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(interaction.label)
-                                            .font(.system(size: 11, weight: .medium))
-                                        if !interaction.semanticDelta.isEmpty {
-                                            Text(
-                                                "Changement : "
-                                                    + interaction.semanticDelta.prefix(3)
-                                                    .joined(separator: " · ")
-                                            )
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Text(
-                            ComputerHistoryPageCopy.provenanceLabel(
-                                events: episode.provenance.sourceEventIDs.count,
-                                sequences: episode.provenance.sourceSequences.count,
-                                confidence: ConfidencePercent.whole(episode.statusConfidence))
-                        )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                        HStack {
-                            Spacer()
-                            Button(role: .destructive, action: requestDeletion) {
-                                Label("Supprimer cet élément…", systemImage: "trash")
-                            }
-                            .buttonStyle(LHSecondaryButtonStyle())
-                            .controlSize(.small)
-                        }
-                    }
-                }
-            }
-        }
-
-        private var episodeMetrics: String {
-            let interval =
-                "\(GoalongUIFormat.time(episode.start))–\(GoalongUIFormat.time(episode.end))"
-            let interactions: String
-            if episode.totalInteractionCount > episode.interactions.count {
-                interactions =
-                    "\(GoalongUIFormat.count(episode.totalInteractionCount, "interaction")) "
-                    + "(\(episode.interactions.count) représentative\(episode.interactions.count > 1 ? "s" : ""))"
-            } else {
-                interactions = GoalongUIFormat.count(episode.totalInteractionCount, "interaction")
-            }
-            return "\(interval) · \(interactions) · \(GoalongUIFormat.count(episode.eventCount, "événement"))"
-        }
-
-        private func detailSection(title: String, values: [String]) -> some View {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                ForEach(values, id: \.self) { value in
-                    Text("• \(value)")
-                        .font(.system(size: 11))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-
-        private var statusSymbol: String {
-            switch episode.status {
-            case .completed: return "checkmark.circle.fill"
-            case .blocked: return "exclamationmark.octagon.fill"
-            case .waiting: return "hourglass"
-            case .planned: return "calendar.badge.clock"
-            case .inProgress: return "arrow.triangle.2.circlepath"
-            case .unknown: return "questionmark.circle"
-            }
-        }
-
-        private var statusTint: Color {
-            switch episode.status {
-            case .completed: return LHTheme.success
-            case .blocked: return LHTheme.danger
-            case .waiting: return LHTheme.warning
-            case .planned: return LHTheme.accent
-            case .inProgress: return LHTheme.teal
-            case .unknown: return .secondary
-            }
+            return "\(interval), \(durationLabel(session.duration)), \(details)"
         }
     }
 #endif

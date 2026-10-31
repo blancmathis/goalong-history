@@ -112,6 +112,24 @@ final class GoalongUXOptimizationTests: XCTestCase {
                        "Détail effacé")
     }
 
+    func testEmptyTodayNamesAStorageStopAndItsTime() {
+        typealias Empty = GoalongActivityEmptyCopy
+        let since = Date(timeIntervalSince1970: 1_800_000_000)
+        let full = Empty.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
+                              storage: .init(kind: .diskFull, since: since))
+        XCTAssertEqual(full.title, "Enregistrement interrompu depuis \(GoalongUIFormat.time(since))", "UI-21: the stop and its time")
+        XCTAssertTrue(full.message.contains("disque est plein"))
+        XCTAssertFalse(full.message.contains("premières minutes"), "UI-21: no promise while nothing is recorded")
+        XCTAssertFalse(full.offersHistory)
+        let refused = Empty.copy(isDay: true, isToday: true, eventCount: 4, incompleteDays: 0, purged: false, recording: .off,
+                                 storage: .init(kind: .permissionDenied, since: nil))
+        XCTAssertEqual(refused.title, "Enregistrement interrompu")
+        XCTAssertTrue(refused.message.contains("refuse l’écriture"))
+        let past = Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
+                              storage: .init(kind: .diskFull, since: since))
+        XCTAssertEqual(past.title, "Pas encore d’enregistrement", "a past day keeps its own state")
+    }
+
     func testUnknownWorkIsSaidInWordsNotAsADash() {
         XCTAssertNil(GoalongActivityHeadline.workFigure(known: false, seconds: 0), "UI-clair-02: no giant « — »")
         XCTAssertNil(GoalongActivityHeadline.workFigure(known: true, seconds: nil))
@@ -184,7 +202,7 @@ final class GoalongUXOptimizationTests: XCTestCase {
 
         model.selectSection(.overview)
         model.selectSection(.screenTime)
-        XCTAssertEqual(model.secondaryReturnTitle, "Retour à Activité")
+        XCTAssertEqual(model.secondaryReturnTitle, "Activité")
         model.returnFromSecondaryPage()
         XCTAssertEqual(model.selectedSection, .overview)
         XCTAssertNil(model.secondaryReturn)
@@ -274,11 +292,11 @@ final class GoalongUXOptimizationTests: XCTestCase {
 
     @MainActor func testWebsitePlanSummaryNeverShowsAnUnfilteredSelectionAsZero() {
         var options = GoalongSiteExportOptions(deviceIDs: ["mac"], includeApplications: true, includeWebsites: true)
-        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil · toutes les applications · tous les sites")
+        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil, toutes les applications, tous les sites")
         options.selectedApplicationIDs = ["a", "b"]; options.selectedWebsiteDomains = []
-        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil · 2 applications · 0 site")
+        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil, 2 applications, 0 site")
         options.includeWebsites = false; options.deviceIDs = []
-        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "tous les appareils · 2 applications · sans sites")
+        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "tous les appareils, 2 applications, sans sites")
     }
 
     private func isolatedModel(

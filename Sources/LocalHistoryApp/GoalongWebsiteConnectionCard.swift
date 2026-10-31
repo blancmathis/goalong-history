@@ -9,6 +9,8 @@ extension Notification.Name {
     static let goalongWebsiteConnected = Notification.Name("goalong.website.connected")
     /// A site "share" link: reveals the picker without changing the credential.
     static let goalongWebsiteShareRequested = Notification.Name("goalong.website.shareRequested")
+    /// The sharing sheet asks the main window for Réglages › Enregistrement (the sheet has no dashboard model).
+    static let goalongOpenRecordingSettings = Notification.Name("goalong.website.openRecordingSettings")
     /// The site refused the stored access (HTTP 401/403): the account card offers to pair again.
     static let goalongWebsiteAccessRefused = Notification.Name("goalong.website.accessRefused")
 }
@@ -52,7 +54,11 @@ extension Notification.Name {
                          : sender.savedConfiguration != nil || sender.pauseReason != nil ? "Envoi quotidien en pause" : "Envois automatiques désactivés")
                         .font(.system(size: 13, weight: .medium))
                     if !sender.enabled, let reason = sender.pauseReason { Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.warning) }
-                    if let day = sender.lastSuccess { Text("Dernière journée reçue : \(GoalongUIFormat.day(key: day))").font(.system(size: 12)).foregroundStyle(.secondary) }
+                    if let day = sender.lastSuccess { Text("Dernière journée reçue : \(GoalongUIFormat.day(key: day))").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
+                    // UI-13B (4): a disabled button says why, beside it.
+                    if !credentialAvailable, sender.pauseReason == nil {
+                        Text("Reliez d’abord votre compte.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    }
                 }
                 Spacer()
                 if sender.enabled { Button("Mettre en pause") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
@@ -198,7 +204,7 @@ struct GoalongWebsiteConnectionSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Relier votre compte Goalong").font(.title2.weight(.semibold))
                     Text("Envoi dans votre compte. Les règles de partage configurées sur le site s’appliquent aux dates et champs autorisés.")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button("Terminé") { dismiss() }.disabled(busy)
@@ -213,10 +219,10 @@ struct GoalongWebsiteConnectionSheet: View {
                         if !tokenFilePath.isEmpty && !origin.isEmpty {
                             Label("Accès enregistré sur ce Mac", systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(LHTheme.success)
-                            Text(origin).font(.caption).foregroundStyle(.secondary)
+                            Text(origin).font(.caption).foregroundStyle(LHTheme.secondaryText)
                         } else {
                             Text("Depuis le site, ouvrez Sources et connexions puis Relier mon Mac. L’app reçoit votre accès automatiquement.")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                                .font(.subheadline).foregroundStyle(LHTheme.secondaryText)
                             Button("Relier depuis le site") {
                                 _ = GoalongWorkspaceOpenPolicy.open(URL(string: "https://goalong.spry-crumb-3668.chatgpt.site/goalong.dc.html#settings")!, purpose: .goalongWebsite)
                             }
@@ -228,7 +234,7 @@ struct GoalongWebsiteConnectionSheet: View {
                             .textFieldStyle(GoalongFieldStyle())
                             .accessibilityLabel("Adresse HTTPS du site Goalong")
                         Text("Créez un accès en envoi seul dans la page Sources du site, puis choisissez ici le fichier téléchargé. Si besoin, Goalong propose « Protéger ce fichier » pour en limiter l’accès à votre compte. Le fichier reste sur votre Mac ; il autorise uniquement les envois que vous demandez vers ce site et peut y être révoqué.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack {
                             Button("Choisir le fichier d’accès…", action: chooseTokenFile)
@@ -250,7 +256,7 @@ struct GoalongWebsiteConnectionSheet: View {
                                     .textFieldStyle(GoalongFieldStyle())
                                     .accessibilityLabel("Chemin local du fichier de connexion")
                                 Text("Collez le chemin du fichier téléchargé, pas la clé. Seul ce fichier sera lu ; la même protection et la même validation s’appliquent.")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .font(.caption).foregroundStyle(LHTheme.secondaryText)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Button("Valider ce fichier", action: validateTokenPath)
                                     .disabled(tokenPathInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -267,9 +273,10 @@ struct GoalongWebsiteConnectionSheet: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("2. Choisir vos données").font(.headline)
                         DatePicker("Journée enregistrée", selection: $date, in: ...GoalongToday.now, displayedComponents: .date)
+                            .goalongDateField(label: "Journée enregistrée")
                             .environment(\.locale, GoalongUIFormat.locale)
                         Text("Les noms d’appareils et les totaux de temps d’écran sont inclus. Les sources doivent être activées dans Goalong. Rien n’est collecté ni analysé pendant l’export.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Toggle("Noms des applications et durées", isOn: $includeApps)
                         Toggle("Répartition par heure, si elle est enregistrée", isOn: $includeHourly)
@@ -287,7 +294,7 @@ struct GoalongWebsiteConnectionSheet: View {
                         if includeRhythm {
                             Button(contextualRhythm == nil ? "Analyser le contexte d’une session…" : "Choisir une autre session…") { showsRhythmStudio = true }
                             if let rhythm = contextualRhythm {
-                                Text("\(rhythm.project) · \(rhythm.episodes?.count ?? 0) épisodes relus").font(.subheadline)
+                                Text("\(rhythm.project), \(rhythm.episodes?.count ?? 0) épisodes relus").font(.subheadline)
                                 if let interpretation = rhythm.interpretation { Text(interpretation).font(.caption) }
                                 Button("Retirer cette analyse") { contextualRhythm = nil; invalidatePreview() }
                             } else {
@@ -303,7 +310,7 @@ struct GoalongWebsiteConnectionSheet: View {
                         }
                         if structuredReport {
                             Text("Les mêmes durées deviennent un rapport modifiable. Une application n’est pas considérée productive d’office : précisez son contexte sur le site, ou laissez votre agent préparer le rapport avant l’import. Les événements bruts et les conversations restent hors de cet export.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.caption).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         if !devices.isEmpty {
@@ -346,7 +353,7 @@ struct GoalongWebsiteConnectionSheet: View {
                                 .background(LHTheme.pageBackground, in: RoundedRectangle(cornerRadius: 8))
                             }
                             Text("Seuls les champs affichés sont transmis, y compris les extraits de contexte si vous les avez sélectionnés. Relisez-les : les conversations et journaux complets restent hors de cet export. Les données restent déclaratives.")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.caption).foregroundStyle(LHTheme.secondaryText)
                         }
                         if let status {
                             Label(status, systemImage: "checkmark.circle")
@@ -367,7 +374,7 @@ struct GoalongWebsiteConnectionSheet: View {
             HStack {
                 if busy { ProgressView().controlSize(.small) }
                 Text("Vous gardez le contrôle des destinataires sur le site.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(LHTheme.secondaryText)
                 Spacer()
                 Button("Envoyer les données vérifiées", action: sendReviewedData)
                     .buttonStyle(LHPrimaryButtonStyle())
@@ -503,11 +510,11 @@ struct GoalongWebsiteConnectionSheet: View {
                     if include { selectedRecapSections.insert(index) } else { selectedRecapSections.remove(index) }
                 })) { Text(recapSections[index]).font(.caption).textSelection(.enabled) }
             }
-            if !recapNotice.isEmpty { Text(recapNotice).font(.caption).foregroundStyle(.secondary) }
+            if !recapNotice.isEmpty { Text(recapNotice).font(.caption).foregroundStyle(LHTheme.secondaryText) }
             GoalongDisclosureGroup("Ajouter un commentaire personnel") {
                 GoalongTextArea(text: $recapExcerpt, minHeight: 70).accessibilityLabel("Commentaire personnel du récap")
             }
-            Text("L’analyse utilise les sources autorisées dans l’app. La génération et l’envoi au site sont deux actions distinctes.").font(.caption).foregroundStyle(.secondary)
+            Text("L’analyse utilise les sources autorisées dans l’app. La génération et l’envoi au site sont deux actions distinctes.").font(.caption).foregroundStyle(LHTheme.secondaryText)
         }
     }
     private func loadSavedRecap() {
@@ -563,7 +570,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     }
                 }
                 let applications = rows.reduce(0) { $0 + (($1["apps"] as? [Any])?.count ?? 0) }
-                previewSummary = "\(GoalongUIFormat.day(date)) · \(FrenchCount.count(rows.count, "appareil", "appareils")) · \(FrenchCount.count(applications, "ligne", "lignes")) d’applications · \(FrenchCount.count(result.count, "octet", "octets")). Vérifiez les champs exacts ci-dessous."
+                previewSummary = "\(GoalongUIFormat.day(date)), \(FrenchCount.count(rows.count, "appareil", "appareils")), \(FrenchCount.count(applications, "ligne", "lignes")) d’applications, \(FrenchCount.count(result.count, "octet", "octets")). Vérifiez les champs exacts ci-dessous."
                 payload = result
                 previewPrivacyRevision = reviewed.privacyRevision
             } catch { self.error = goalongUserMessage(error) }

@@ -13,10 +13,10 @@ extension HistoryDataClass {
         case .detailedEvents: return "Activité détaillée"
         case .semanticSnapshots: return "Texte affiché"
         case .memories: return "Historique et résumés locaux"
-        case .analysisCaches: return "Fichiers temporaires d’analyse"
-        case .minuteSeals: return "Sceaux d’intégrité"
+        case .analysisCaches: return "Fichiers temporaires"
+        case .minuteSeals: return "Preuves d’activité"
         case .activitySummaries: return "Résumés de journée"
-        case .anchorReceipts: return "Reçus de vérification"
+        case .anchorReceipts: return "Reçus de date"
         }
     }
 }
@@ -32,8 +32,10 @@ extension HistoryRetentionPolicy {
         case .anchorReceipts: anchorReceipts = duration
         }
     }
+    /// What « Preuves d’activité » and « Reçus de date » are, in one sentence under the list (UI-15A, 28).
+    static let proofExplanation = "Les preuves d’activité signent chaque minute enregistrée et les reçus de date datent ces signatures : ensemble, ils montrent que l’historique n’a pas été modifié."
     /// Shared labels so every entry point names the same policy the same way.
-    static let noLimitLabel = "Jusqu’à ce que je supprime"
+    static let noLimitLabel = "Jusqu’à suppression"
     static let automaticCleanupLabel = "Supprimer automatiquement les données expirées"
     static func automaticCleanupSummary(enabled: Bool) -> String {
         enabled ? "Suppression automatique activée" : "Jusqu’à suppression manuelle"
@@ -41,7 +43,7 @@ extension HistoryRetentionPolicy {
     var includesProofExpiry: Bool { minuteSeals.days != nil || anchorReceipts.days != nil }
     var retentionDescription: String {
         HistoryDataClass.allCases.map { kind in
-            let duration = duration(for: kind).days.map { GoalongUIFormat.count($0, "jour") } ?? "jusqu’à ce que je supprime"
+            let duration = duration(for: kind).days.map { GoalongUIFormat.count($0, "jour") } ?? "jusqu’à suppression"
             return "\(kind.retentionTitle) : \(duration)"
         }.joined(separator: "\n")
     }
@@ -65,7 +67,7 @@ extension HistoryRetentionPolicy {
     var hasChanges: Bool { draft != savedPolicy || automaticCleanup != savedAutomaticCleanup }
     @discardableResult func apply(proofDeletionConfirmed: Bool) -> Bool {
         guard !automaticCleanup || !draft.includesProofExpiry || proofDeletionConfirmed else {
-            error = "Confirmez séparément la suppression des preuves, ou conservez indéfiniment sceaux et reçus."
+            error = "Confirmez séparément la suppression des preuves, ou conservez indéfiniment preuves et reçus."
             return false
         }
         do {
@@ -98,10 +100,9 @@ extension HistoryRetentionPolicy {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Durée de conservation locale").font(LHTheme.sheetTitleFont)
-                    Text("Règles distinctes pour les détails, souvenirs et preuves.").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Text("Choisissez combien de temps chaque type de donnée reste sur ce Mac.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
-                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(24)
             Divider()
             ScrollView {
@@ -111,32 +112,47 @@ extension HistoryRetentionPolicy {
                         .accessibilityIdentifier("retention-automatic")
                     Text(model.automaticCleanup
                          ? "Après confirmation, les données expirées peuvent être supprimées tout de suite puis lors du nettoyage quotidien. Réduire une durée s’applique aussi aux données existantes."
-                         : "Le nettoyage automatique est désactivé : les données restent jusqu’à ce que vous les supprimiez. Choisir une durée ci-dessous n’active pas la suppression.")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                         : "Le nettoyage automatique est désactivé : les données restent jusqu’à ce que vous les supprimiez. Activez le nettoyage pour choisir les durées.")
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     LHCard(padding: 0) {
                         VStack(spacing: 0) {
                             ForEach(HistoryDataClass.allCases, id: \.self) { kind in
                                 HStack(alignment: .center, spacing: 16) {
+                                    // The title stays in ink: only the value says the row is inactive (UI-12B, 28).
                                     Text(kind.retentionTitle).font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(LHTheme.text)
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                    Picker(kind.retentionTitle, selection: durationBinding(kind)) {
-                                        Text(HistoryRetentionPolicy.noLimitLabel).tag(0)
-                                        ForEach(durationOptions(kind), id: \.self) { days in Text(GoalongUIFormat.count(days, "jour")).tag(days) }
-                                    }.labelsHidden().frame(width: 230)
-                                        .accessibilityIdentifier("retention-\(kind.rawValue)")
+                                    // A duration only counts once automatic cleanup is on (UI-44). Off, the value
+                                    // reads as plain text instead of a greyed menu (UI-9 C).
+                                    if model.automaticCleanup {
+                                        Picker(kind.retentionTitle, selection: durationBinding(kind)) {
+                                            Text(HistoryRetentionPolicy.noLimitLabel).tag(0)
+                                            ForEach(durationOptions(kind), id: \.self) { days in Text(GoalongUIFormat.count(days, "jour")).tag(days) }
+                                        }.labelsHidden().frame(width: 230)
+                                            .accessibilityIdentifier("retention-\(kind.rawValue)")
+                                    } else {
+                                        // Off, nothing expires: every row says what really happens, not a dormant duration (UI-11C).
+                                        Text(HistoryRetentionPolicy.noLimitLabel)
+                                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                                            .frame(width: 230, alignment: .trailing)
+                                            .accessibilityIdentifier("retention-\(kind.rawValue)")
+                                    }
                                 }.padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
                                 if kind != HistoryDataClass.allCases.last { GoalongRowDivider(inset: LHTheme.cardInset) }
                             }
                         }
                     }
+                    // UI-15A (28): the two proof rows are said in one visible sentence; the rest stays one click away.
+                    GoalongHelpText(lead: HistoryRetentionPolicy.proofExplanation,
+                                    more: "Les fichiers temporaires sont des calculs d’analyse que Goalong peut refaire.")
                     if model.automaticCleanup && model.draft.includesProofExpiry {
-                        Toggle("J’autorise aussi la suppression des sceaux et reçus expirés. La vérification de ces périodes peut devenir impossible.", isOn: $proofDeletionConfirmed)
+                        Toggle("J’autorise aussi la suppression des preuves et reçus expirés. La vérification de ces périodes peut devenir impossible.", isOn: $proofDeletionConfirmed)
                             .toggleStyle(.goalongCheckbox)
                             .font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                             .accessibilityIdentifier("retention-confirm-proofs")
                     }
-                    Text("Ces règles couvrent les données ci-dessus. Elles ne suppriment ni les originaux Temps d’écran d’Apple, ni les conversations IA d’origine, ni les exports, sauvegardes ou données déjà envoyées. Les bilans ChatGPT ne sont pas concernés : effacez-les avec « Effacer l’historique détaillé » pour les jours voulus.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("Ces règles ne touchent ni les originaux d’Apple et des agents IA, ni les exports, sauvegardes et données envoyées, ni les bilans ChatGPT, qu’on efface avec « Effacer de l’historique… ».")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     if let error = model.error {
                         Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                     }
@@ -149,9 +165,12 @@ extension HistoryRetentionPolicy {
             }
             Divider()
             HStack {
-                Text("Rien n’est appliqué avant votre confirmation.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Rien n’est appliqué avant votre confirmation.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 Spacer()
-                Button(model.automaticCleanup ? "Vérifier et appliquer…" : "Enregistrer sans suppression automatique") {
+                // Cancel and the main action sit together in the footer (UI-44).
+                Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                    .buttonStyle(LHSecondaryButtonStyle())
+                Button(model.automaticCleanup ? "Vérifier et appliquer…" : "Enregistrer") {
                     if model.automaticCleanup { showingConfirmation = true }
                     else if model.apply(proofDeletionConfirmed: false) { dismiss() }
                 }.buttonStyle(LHPrimaryButtonStyle())

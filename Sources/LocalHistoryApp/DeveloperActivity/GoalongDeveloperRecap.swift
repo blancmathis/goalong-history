@@ -84,7 +84,7 @@ enum GoalongDeveloperRecap {
                 else if value.files.status == .ready { parts.append("aucun fichier modifié observé") }
                 else { parts.append("Fichiers : \(value.files.status.label)") }
             }
-            let line = parts.joined(separator: " · ")
+            let line = parts.joined(separator: ", ")
             if lines.joined(separator: "\n").count + line.count + 1 > maximumCharacters - 160 { lines.append("Autres projets omis : section bornée."); break }
             lines.append(line)
         }

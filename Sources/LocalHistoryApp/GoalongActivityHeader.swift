@@ -7,8 +7,6 @@ struct GoalongActivityHeader: View {
     let isRefreshing: Bool
     /// Nil while sharing makes sense; otherwise why the day cannot be shared.
     var shareBlockedReason: String? = nil
-    /// A stopped recording keeps one action on screen: sharing hides.
-    var hidesShare = false
     var onDay: (Date) -> Void
     var onPeriod: (Int) -> Void
     var onStep: (Int) -> Void
@@ -21,7 +19,7 @@ struct GoalongActivityHeader: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(isPreview ? "Activité · aperçu" : "Activité").goalongPageTitle()
+                    Text(isPreview ? "Activité, aperçu" : "Activité").goalongPageTitle()
                     Text(rangeLabel).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                         .accessibilityIdentifier("activity-date-range")
                 }
@@ -62,9 +60,11 @@ struct GoalongActivityHeader: View {
             DateSelectionControl(date: selection.day, onChange: onDay, onStep: onStep,
                                  previousLabel: selection.period == 1 ? "Jour précédent" : "Période précédente",
                                  nextLabel: selection.period == 1 ? "Jour suivant" : "Période suivante",
-                                 identifierPrefix: "activity", showsToday: false)
+                                 identifierPrefix: "activity", showsToday: false,
+                                 dateLabel: selection.period == 1 ? nil : periodLabel)
+            // A period ending today already shows today: the button goes grey, as for the day itself.
             Button("Aujourd’hui", action: onToday)
-                .disabled(selection.period == 1 && GoalongToday.isToday(selection.day))
+                .modifier(GoalongHeaderButtonState(enabled: !GoalongToday.isToday(selection.day)))
                 .accessibilityIdentifier("activity-today")
         }
         .controlSize(.regular)
@@ -78,22 +78,33 @@ struct GoalongActivityHeader: View {
                     else { Image(systemName: "arrow.clockwise") }
                 }.frame(width: 16, height: 16)
             }
-            .disabled(isRefreshing).accessibilityIdentifier("activity-refresh")
+            .modifier(GoalongHeaderButtonState(enabled: !isRefreshing)).accessibilityIdentifier("activity-refresh")
             .accessibilityLabel("Actualiser").help("Actualiser")
-            if !hidesShare {
-                Button(action: onShare) { Label("Partager cette journée…", systemImage: "square.and.arrow.up") }
-                    .disabled(isPreview || shareBlockedReason != nil)
-                    .help(shareBlockedReason ?? "Partager la journée du \(shortDate(selection.day)). Rien n’est envoyé sans votre validation.")
-                    .accessibilityHint(shareBlockedReason ?? "")
+            // Always present, grey when there is nothing to share: the same rule on every page.
+            Button(action: onShare) {
+                Label(selection.period == 1 ? "Partager cette journée…" : "Partager cette période…", systemImage: "square.and.arrow.up")
             }
+            .modifier(GoalongHeaderButtonState(enabled: !isPreview && shareReason == nil))
+            .help(shareReason ?? "Partager la journée du \(shortDate(selection.day)). Rien n’est envoyé sans votre validation.")
+            .accessibilityHint(shareReason ?? "")
         }
         .controlSize(.regular)
+    }
+
+    /// A period is shared day by day; the page says why the button is grey.
+    private var shareReason: String? {
+        selection.period == 1 ? shareBlockedReason : "Le partage se fait par journée : choisissez « Jour » pour partager un jour."
+    }
+
+    private var periodLabel: String {
+        let format = Date.FormatStyle.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)
+        return "\(selection.interval().start.formatted(format)) – \(selection.day.formatted(format))"
     }
 
     private var rangeLabel: String {
         if selection.period == 1 {
             return GoalongToday.isToday(selection.day)
-                ? "Aujourd’hui, \(GoalongUIFormat.day(selection.day))"
+                ? "Aujourd’hui"
                 : GoalongUIFormat.day(selection.day)
         }
         return "\(shortDate(selection.interval().start)) – \(shortDate(selection.day))"

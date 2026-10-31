@@ -155,7 +155,7 @@ enum BlockingAppQuit {
         case .register:
             requestedLogin = true
             do { try GoalongLoginItemGate.perform { try SMAppService.mainApp.register() }; preferences.blockingForcedLogin = true }
-            catch { loginError = "Démarrage à la connexion indisponible : \(GoalongUserFacingError.message(error))" }
+            catch { loginError = "Ouverture de session indisponible : \(GoalongUserFacingError.message(error))" }
             loginStatus = nil
         case .release:
             // The lock is over: give the member back the choice they made (off).
@@ -170,7 +170,7 @@ enum BlockingAppQuit {
         let status = currentLoginStatus()
         result.launchAtLogin = status == .enabled
         if locked && !result.launchAtLogin {
-            result.component = status == .requiresApproval ? .awaitingApproval : .failed(loginError ?? "Activez Goalong dans les éléments d’ouverture.")
+            result.component = status == .requiresApproval ? .awaitingApproval : .failed(loginError ?? "Activez Goalong dans \(LoginItemsPanel.path).")
         }
         return result
     }
