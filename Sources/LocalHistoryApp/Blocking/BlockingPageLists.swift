@@ -859,9 +859,16 @@ struct BlockingListChip: View {
 /// Installed apps, searchable, with their icons.
 @MainActor struct BlockingAppPicker: View {
     let excluded: Set<String>
+    /// Given by a test or the gallery: shown as is, and no scan of the installed apps.
+    private let fixedApps: [BlockAppRule]?
     var onPick: (BlockAppRule) -> Void
-    @State private var apps: [BlockAppRule] = []
+    @State private var apps: [BlockAppRule]
     @State private var search = ""
+
+    init(excluded: Set<String>, apps: [BlockAppRule]? = nil, onPick: @escaping (BlockAppRule) -> Void) {
+        self.excluded = excluded; fixedApps = apps; self.onPick = onPick
+        _apps = State(initialValue: apps ?? [])
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -884,7 +891,7 @@ struct BlockingListChip: View {
             .frame(height: 300)
         }
         .padding(14).frame(width: 300)
-        .task { apps = await BlockingController.installedApps() }
+        .task { if fixedApps == nil { apps = await BlockingController.installedApps() } }
         .goalongControls()
     }
 }

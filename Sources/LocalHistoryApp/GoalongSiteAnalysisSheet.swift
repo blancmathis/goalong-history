@@ -46,6 +46,15 @@ final class GoalongSiteAnalysisModel: ObservableObject {
         self.makeSession = makeSession
     }
 
+    #if DEBUG
+    func setStateForTesting(request: GoalongSiteAnalysisRequest? = nil, connected: Bool = false, busy: Bool = false,
+                            accountLabel: String? = nil, draft: (title: String, summary: String, outcomes: String)? = nil) {
+        self.request = request; self.connected = connected; self.busy = busy
+        if let accountLabel { self.accountLabel = accountLabel }
+        if let draft { hasDraft = true; title = draft.title; summary = draft.summary; outcomes = draft.outcomes }
+    }
+    #endif
+
     func load(_ url: URL) {
         guard !busy else { return }
         request = nil
@@ -234,9 +243,12 @@ final class GoalongSiteAnalysisModel: ObservableObject {
 
 struct GoalongSiteAnalysisSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var model = GoalongSiteAnalysisModel()
+    @StateObject private var model: GoalongSiteAnalysisModel
     @StateObject private var windowHost = GoalongWebsiteWindowHost()
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+
+    /// `model` lets a test or the gallery show a given state; the sheet builds its own otherwise.
+    init(model: GoalongSiteAnalysisModel? = nil) { _model = StateObject(wrappedValue: model ?? GoalongSiteAnalysisModel()) }
 
     var body: some View {
         VStack(spacing: 0) {
