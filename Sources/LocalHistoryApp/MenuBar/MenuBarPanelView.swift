@@ -167,7 +167,8 @@
                     }
                     .help(model.attentionTitle.map { "\($0) : \(model.trackingDetail)" } ?? model.trackingDetail)
                 }
-                Spacer(minLength: 8)
+                // 16 pt at least: « Réparer… » never touches the pause button.
+                Spacer(minLength: 16)
                 PanelIconButton(
                     symbol: model.consentOff || model.globalPaused ? "gearshape.fill" : (paused ? "play.fill" : "pause.fill"),
                     label: model.headerActionLabel,
@@ -377,7 +378,8 @@
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {
                             Rectangle().fill(LHTheme.separator).frame(height: 1)
-                            Capsule().fill(LHTheme.workData)
+                            // Ink, not lime: lime stays rare in the panel (DESIGN.md).
+                            Capsule().fill(LHTheme.text)
                                 .frame(width: max(4, proxy.size.width * min(1, max(0, progress))), height: 4)
                         }
                         .frame(maxHeight: .infinity)
@@ -390,7 +392,7 @@
                     if let cycle = run.cycle, let cycles = run.cycles {
                         HStack(spacing: 4) {
                             ForEach(1...max(1, cycles), id: \.self) { index in
-                                Capsule().fill(index <= cycle ? LHTheme.workData : LHTheme.separator).frame(width: 14, height: 4)
+                                Capsule().fill(index <= cycle ? LHTheme.text : LHTheme.separator).frame(width: 14, height: 4)
                             }
                         }
                         .accessibilityHidden(true)
