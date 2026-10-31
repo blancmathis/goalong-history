@@ -66,9 +66,10 @@ struct PermissionSetupHeader: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            Image(systemName: ready ? "checkmark" : copy.symbol)
+            // The source keeps its glyph: the title says the access is there, the header keeps its shape.
+            Image(systemName: copy.symbol)
                 .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(ready ? LHTheme.success : LHTheme.secondaryText)
+                .foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {

@@ -308,24 +308,20 @@ import LocalHistoryCore
         @State private var validation = UUID()
 
         var body: some View {
-            HStack(spacing: 20) {
-                label().frame(maxWidth: .infinity, alignment: .leading)
+            Group {
                 if let activateButtonTitle, !consents.isEnabled(capability) {
-                    Button(activateButtonTitle) { beginActivation() }
-                        .buttonStyle(LHPrimaryButtonStyle())
-                        .accessibilityIdentifier("source-\(capability.rawValue)")
-                } else {
-                Toggle(isOn: Binding(
-                    get: { consents.isEnabled(capability) },
-                    set: { enabled in
-                        if enabled { beginActivation() }
-                        else { saveFailed = !consents.set(capability, enabled: false, surface: surface) }
+                    // An empty state: thread, title, sentence, then its one action under them (DESIGN §9).
+                    VStack(alignment: .leading, spacing: 16) {
+                        label().frame(maxWidth: .infinity, alignment: .leading)
+                        Button(activateButtonTitle) { beginActivation() }
+                            .buttonStyle(LHPrimaryButtonStyle())
+                            .accessibilityIdentifier("source-\(capability.rawValue)")
                     }
-                )) { Text(capability.title) }
-                .labelsHidden()
-                .toggleStyle(.goalongSwitchOnly)
-                .accessibilityIdentifier("source-\(capability.rawValue)")
-                .fixedSize()
+                } else {
+                    HStack(spacing: 20) {
+                        label().frame(maxWidth: .infinity, alignment: .leading)
+                        sourceSwitch
+                    }
                 }
             }
             .disabled(checking)
@@ -370,6 +366,20 @@ import LocalHistoryCore
                 Button("OK", role: .cancel) {}
             } message: { Text("La source est toujours activée. Essayez de la désactiver à nouveau.") }
         }
+        private var sourceSwitch: some View {
+            Toggle(isOn: Binding(
+                get: { consents.isEnabled(capability) },
+                set: { enabled in
+                    if enabled { beginActivation() }
+                    else { saveFailed = !consents.set(capability, enabled: false, surface: surface) }
+                }
+            )) { Text(capability.title) }
+            .labelsHidden()
+            .toggleStyle(.goalongSwitchOnly)
+            .accessibilityIdentifier("source-\(capability.rawValue)")
+            .fixedSize()
+        }
+
         private func beginActivation() {
             // A valid macOS permission must not bypass the initial recording choice.
             if capability == .localComputerHistory && !GoalongRecordingSetup.hasReviewedChoices() {
@@ -487,9 +497,14 @@ import LocalHistoryCore
                             }
                             PermissionSetupSteps(copy: copy, openedSettings: openedSettings, ready: ready)
                             if case .unavailable(let message) = access {
-                                Label(message, systemImage: "exclamationmark.triangle.fill")
-                                    .font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.warning)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                // The glyph carries the warning colour; the sentence stays in ink (DESIGN §9).
+                                HStack(alignment: .firstTextBaseline, spacing: 9) {
+                                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(LHTheme.warning).accessibilityHidden(true)
+                                    Text(message).font(.system(size: 13)).foregroundStyle(LHTheme.text)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                    .accessibilityElement(children: .combine)
                                     .padding(12).frame(maxWidth: .infinity, alignment: .leading)
                                     .background(LHTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                                     .accessibilityIdentifier("source-access-unavailable")

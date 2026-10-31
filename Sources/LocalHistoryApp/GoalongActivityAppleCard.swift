@@ -28,6 +28,42 @@ struct GoalongActivityAppleCard: View {
     }
 
     var body: some View {
+        Group {
+            if consents.isEnabled(.appleScreenTime) { card }
+            else {
+                // The same empty state and action as the « Temps d’écran Apple » page.
+                SourceActivationToggle(capability: .appleScreenTime, activateButtonTitle: "Activer…") {
+                    GoalongEmptyState(title: GoalongScreenTimeOffCopy.title,
+                                      message: GoalongScreenTimeOffCopy.message(accessRevoked: accessDenied))
+                }
+            }
+        }
+        .accessibilityIdentifier("activity-apple-source")
+        .onAppear { screenTime.setActive(model.dashboardIsVisible) }
+        .onDisappear { screenTime.setActive(false) }
+        .onChange(of: day) { screenTime.selectDay($0) }
+        .onChange(of: model.dashboardIsVisible) { screenTime.setActive($0) }
+        .onChange(of: refreshRevision) { _ in
+            if model.dashboardIsVisible && consents.isEnabled(.appleScreenTime) { screenTime.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongCapabilityConsentDidChange)) { _ in
+            let enabled = consents.isEnabled(.appleScreenTime)
+            if enabled { accessDenied = false }
+            screenTime.setAccessEnabled(enabled)
+        }
+        .onChange(of: screenTime.needsFullDiskAccess) { denied in
+            guard denied else { return }
+            accessDenied = true
+            let saved = consents.set(.appleScreenTime, enabled: false, surface: .settings)
+            screenTime.setAccessEnabled(false)
+            if !saved {
+                model.alert = DashboardAlert(kind: .error, title: "Accès Temps d’écran indisponible",
+                    message: "La lecture a été arrêtée, mais le réglage n’a pas pu être enregistré. Vérifiez Temps d’écran dans les réglages.")
+            }
+        }
+    }
+
+    private var card: some View {
         LHCard(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .center, spacing: 14) {
@@ -71,29 +107,6 @@ struct GoalongActivityAppleCard: View {
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
             }.fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityIdentifier("activity-apple-source")
-        .onAppear { screenTime.setActive(model.dashboardIsVisible) }
-        .onDisappear { screenTime.setActive(false) }
-        .onChange(of: day) { screenTime.selectDay($0) }
-        .onChange(of: model.dashboardIsVisible) { screenTime.setActive($0) }
-        .onChange(of: refreshRevision) { _ in
-            if model.dashboardIsVisible && consents.isEnabled(.appleScreenTime) { screenTime.refresh() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .goalongCapabilityConsentDidChange)) { _ in
-            let enabled = consents.isEnabled(.appleScreenTime)
-            if enabled { accessDenied = false }
-            screenTime.setAccessEnabled(enabled)
-        }
-        .onChange(of: screenTime.needsFullDiskAccess) { denied in
-            guard denied else { return }
-            accessDenied = true
-            let saved = consents.set(.appleScreenTime, enabled: false, surface: .settings)
-            screenTime.setAccessEnabled(false)
-            if !saved {
-                model.alert = DashboardAlert(kind: .error, title: "Accès Temps d’écran indisponible",
-                    message: "La lecture a été arrêtée, mais le réglage n’a pas pu être enregistré. Vérifiez Temps d’écran dans les réglages.")
-            }
         }
     }
 }
