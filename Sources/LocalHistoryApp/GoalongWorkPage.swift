@@ -34,7 +34,8 @@ import SwiftUI
                 if !work.definition.isEmpty {
                     agentCard
                     GoalongWorkReviewCard(review: review, focusTask: Self.reviewFocusTask,
-                                          loadsOnAppear: Self.reviewFocusTask != nil)
+                                          loadsOnAppear: Self.reviewFocusTask != nil,
+                                          earliestDay: model.snapshot.availableDays.min())
                 }
                 GoalongDisclosureGroup("Comment fonctionne le classement ?") { explanation.padding(.top, 10) }
                     .font(.system(size: 13))
@@ -89,18 +90,22 @@ import SwiftUI
                 VStack(alignment: .leading, spacing: 3) {
                     Text(statusTitle).font(.system(size: 13, weight: .semibold))
                     if let detail = statusDetail {
-                        Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
                 }
                 Spacer(minLength: 8)
                 statusAction
             }
-            Toggle("Classer automatiquement les nouveaux contextes", isOn: $work.automatic)
-                .toggleStyle(.goalongSwitch).disabled(agent.readiness == .noConsent)
+            // Without consent, or with the history off, the switch reads off whatever the stored preference says (UI-69, UI-9 C).
+            let canClassify = agent.readiness != .noConsent && agent.readiness != .historyOff
+            Toggle("Classer automatiquement les nouveaux contextes",
+                   isOn: Binding(get: { work.automatic && canClassify },
+                                 set: { work.automatic = $0 }))
+                .toggleStyle(.goalongSwitch).disabled(!canClassify)
                 .accessibilityIdentifier("work-automatic")
-            Text("Quand vous ouvrez Activité : la journée affichée, au plus toutes les 15 minutes pour aujourd’hui. Aucune minuterie en arrière-plan ; un contexte déjà classé n’est jamais renvoyé.")
-                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Le classement a lieu quand vous ouvrez Activité, au plus toutes les 15 minutes. Un contexte déjà classé n’est jamais renvoyé.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             if GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory),
                                         selection: GoalongAnalysisSelection.load()).withholdsTitles {
                 Label("Vos choix « Données pour ChatGPT » excluent les titres de fenêtre : le classement ne peut distinguer deux usages d’une même app que par le site.", systemImage: "info.circle")
@@ -125,7 +130,7 @@ import SwiftUI
     private var statusTitle: String {
         if agent.isRunning { return "Classement en cours" }
         switch agent.readiness {
-        case .ready: return "Prêt · votre compte ChatGPT"
+        case .ready: return "Prêt, votre compte ChatGPT"
         case .noConsent: return "Classement non autorisé"
         case .notConnected:
             if case .checking = runtime.connectionState { return "Vérification de ChatGPT…" }
@@ -192,7 +197,7 @@ import SwiftUI
             Text("3. Les verdicts sont gardés sur ce Mac et appliqués à tout l’historique, sans modifier les journaux. Un contexte déjà classé n’est jamais renvoyé ; changer la définition relance le classement. Vos corrections priment toujours et servent d’exemples à l’agent.")
             Text("4. Une tâche reste la même d’une app à l’autre : passer de l’éditeur au navigateur pour le même projet garde votre session de travail. Un détour de moins d’une minute entre deux moments de la même tâche lui est rattaché.")
             Text("Rien n’est envoyé pour les apps et sites exclus, ni pour les apps retirées de « Données pour ChatGPT ». Les contextes très courts (moins de 15 s) ne sont pas envoyés.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(LHTheme.secondaryText)
         }.font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -255,6 +260,8 @@ import SwiftUI
     @State private var expanded: Set<String>
     private let focusTask: String?
     private let loadsOnAppear: Bool
+    /// First day with history: the day selector stops there (M3, UI-17A).
+    private let earliestDay: Date?
     @State private var naming: GoalongWorkReviewModel.Row?
     @State private var renaming: String?
     @State private var renameRefusal: String?
@@ -270,12 +277,14 @@ import SwiftUI
 
     /// Opened from Activité, the review starts on the day shown there, already loaded,
     /// with the task the user clicked first and unfolded.
-    init(review: GoalongWorkReviewModel, day: Date = GoalongToday.now, focusTask: String? = nil, loadsOnAppear: Bool = false) {
+    init(review: GoalongWorkReviewModel, day: Date = GoalongToday.now, focusTask: String? = nil, loadsOnAppear: Bool = false,
+         earliestDay: Date? = nil) {
         _review = ObservedObject(wrappedValue: review)
         _day = State(initialValue: day)
         _expanded = State(initialValue: focusTask.map { ["task|" + $0] } ?? [])
         self.focusTask = focusTask
         self.loadsOnAppear = loadsOnAppear
+        self.earliestDay = earliestDay
     }
 
     private var groups: [ReviewGroup] {
@@ -303,14 +312,14 @@ import SwiftUI
     var body: some View {
         GoalongSettingsGroup(title: "Vérifier et corriger") {
             HStack(spacing: 12) {
-                DateSelectionControl(date: day, onChange: { day = $0 }, showsToday: false)
+                DateSelectionControl(date: day, onChange: { day = $0 }, showsToday: false, earliest: earliestDay)
                 Button(review.loadedDay == nil ? "Afficher le classement" : "Actualiser") { review.load(day: day) }
                     .buttonStyle(LHSecondaryButtonStyle()).disabled(review.loading).accessibilityIdentifier("work-review-load")
                 if review.loading { ProgressView().controlSize(.small) }
                 Spacer(minLength: 0)
             }
             Text("Lecture locale : les titres affichés ici ne quittent pas ce Mac. Une correction vaut pour ce contexte (même app, site et titre) dans tout l’historique, pas seulement ce jour-là. Elle sert aussi d’exemple à l’agent.")
-                .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             if let error = review.error {
                 Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
             } else if review.loadedDay != nil && review.rows.isEmpty && !review.loading {
@@ -362,7 +371,7 @@ import SwiftUI
                     .frame(width: 8, height: 8).accessibilityHidden(true)
                 Text(group.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                 Text(GoalongAnalyticsFormatting.duration(group.seconds)).font(.system(size: 12)).monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
                 Spacer(minLength: 8)
                 if let task = group.task {
                     Button("Renommer…") { name = task; renaming = task }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
@@ -371,7 +380,7 @@ import SwiftUI
             VStack(spacing: 0) {
                 ForEach(rows) { row in
                     rowView(row)
-                    if row.id != rows.last?.id { Divider().padding(.leading, 34) }
+                    if row.id != rows.last?.id { Divider().padding(.leading, 32) }
                 }
             }
             if group.rows.count > 6 {
@@ -390,12 +399,12 @@ import SwiftUI
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.label.title ?? row.label.application).font(.system(size: 12, weight: .medium)).lineLimit(1)
                     .help(row.label.title ?? row.label.application)
-                Text(([row.label.application, row.label.host].compactMap { $0 }).joined(separator: " · ")
-                     + (assignment?.byOwner == true ? " · corrigé par vous" : assignment?.verdict == .unclear ? " · indéterminé" : ""))
-                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(([row.label.application, row.label.host].compactMap { $0 }).joined(separator: ", ")
+                     + (assignment?.byOwner == true ? ", corrigé par vous" : assignment?.verdict == .unclear ? ", indéterminé" : ""))
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
             }
             Spacer(minLength: 8)
-            Text(GoalongAnalyticsFormatting.duration(row.seconds)).font(.system(size: 12)).monospacedDigit().foregroundStyle(.secondary)
+            Text(GoalongAnalyticsFormatting.duration(row.seconds)).font(.system(size: 12)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
             Menu {
                 Section("Travail") {
                     ForEach(work.knownTasks.prefix(12), id: \.self) { task in
@@ -412,8 +421,9 @@ import SwiftUI
                     Divider()
                     Button("Laisser l’agent décider") { correct(row, nil, task: nil) }
                 }
-            } label: { Text("Corriger").font(.system(size: 11)) }
-                .menuIndicator(.hidden).controlSize(.small).fixedSize()
+            } label: { Text("Corriger").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text) }
+                // DESIGN §9 rank 3: ink text, no chrome, like LHQuietButtonStyle.
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).tint(LHTheme.text).fixedSize()
                 .accessibilityLabel("Corriger le classement de \(row.label.title ?? row.label.application)")
         }.padding(.vertical, 6)
     }
@@ -446,7 +456,7 @@ struct GoalongWorkReviewRequest: Identifiable {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Corriger le classement").font(LHTheme.sheetTitleFont)
                     Text("Chaque contexte de la journée, rangé par tâche. Vos corrections priment sur l’agent.")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button("Terminé") { dismiss() }.keyboardShortcut(.defaultAction)
@@ -477,19 +487,19 @@ struct GoalongWorkReviewRequest: Identifiable {
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
                     if store.context.isEmpty {
-                        Text("Pas encore défini. Sans définition, la surveillance ne peut pas savoir ce qui sert votre travail.")
-                            .font(.system(size: 13)).foregroundStyle(.secondary)
+                        Text("Pas encore défini. Décrivez votre travail pour que Jev sache quoi surveiller.")
+                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     } else {
                         ForEach([store.context.summary, store.context.applications, store.context.content].filter { !$0.isEmpty }, id: \.self) {
                             Text($0).font(.system(size: 13)).lineLimit(2)
                         }
                         if !store.context.procrastination.isEmpty {
                             Text("Pas du travail : " + store.context.procrastination).font(.system(size: 12))
-                                .foregroundStyle(.secondary).lineLimit(2)
+                                .foregroundStyle(LHTheme.secondaryText).lineLimit(2)
                         }
                     }
                     Text("La même définition sert à Activité et à Jev.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer(minLength: 8)
                 Button(store.context.isEmpty ? "Définir mon travail" : "Modifier", action: onOpen)

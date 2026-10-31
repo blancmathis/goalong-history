@@ -28,7 +28,7 @@
             case .permissionAppearsEnabledButStaleForBuild:
                 return "macOS semble associer l’autorisation à une version précédente de Goalong. Réaccordez l’accès à cette version ; l’historique existant reste lisible."
             case .inputTapUnavailable:
-                return "Les clics et la frappe ne parviennent pas à Goalong. Vérifiez la Surveillance de l’entrée dans Réglages Système."
+                return "Les clics et la frappe ne parviennent pas à Goalong. Vérifiez la surveillance de l’entrée dans Réglages Système."
             case .accessibilityContextUnavailable:
                 return "L’accessibilité semble activée, mais Goalong ne parvient pas à lire l’app au premier plan."
             case .paused:

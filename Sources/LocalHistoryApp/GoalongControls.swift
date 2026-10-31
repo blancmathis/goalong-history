@@ -85,7 +85,8 @@
         }
     }
 
-    /// Third-rank actions ("Corriger", "Voir les 12 usages"): accent text, no chrome at rest.
+    /// Third-rank actions ("Corriger", "Voir les 12 usages"): ink text, no chrome at rest, so lime stays
+    /// the one action color of a screen.
     /// The hover fill bleeds outside the layout bounds so the label stays on the text column.
     struct LHQuietButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var isEnabled
@@ -98,7 +99,7 @@
             configuration.label
                 .fontWeight(.medium)
                 .foregroundStyle(!isEnabled ? LHTheme.secondaryText
-                                 : configuration.role == .destructive ? LHTheme.danger : LHTheme.accent)
+                                 : configuration.role == .destructive ? LHTheme.danger : LHTheme.text)
                 .padding(.horizontal, 7).padding(.vertical, 4)
                 .background(configuration.isPressed && isEnabled ? LHTheme.pressedBackground
                             : isHovered && isEnabled ? LHTheme.hoverBackground : .clear, in: shape)
@@ -305,9 +306,9 @@
         }
     }
 
-    /// Brand switch: the same corner family as buttons and fields, lime track and ink knob
-    /// when on, quiet forest track when off. A real Button underneath keeps keyboard focus
-    /// and Space activation.
+    /// Brand switch: the same corner family as buttons and fields, ink track and page-coloured knob
+    /// when on, an empty edged well when off. Lime stays for the one main action of the screen; a locked switch
+    /// is dashed with a padlock, never lime. A real Button underneath keeps keyboard focus and Space activation.
     struct GoalongSwitch: View {
         @Binding var isOn: Bool
         @Environment(\.isEnabled) private var isEnabled
@@ -331,6 +332,23 @@
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var hovered = false
 
+        private var trackFill: Color {
+            switch (isOn, isEnabled) {
+            case (true, true): return hovered ? LHTheme.text.opacity(0.82) : LHTheme.text
+            // Locked (UI-16A, 42/58): on = a full track (secondary text, ≥ 6:1 on groups), off = an empty dashed
+            // track. Full reads as on by itself, whatever the colour.
+            case (true, false): return LHTheme.secondaryText
+            case (false, true): return hovered ? LHTheme.switchTrackHover : LHTheme.switchTrack
+            case (false, false): return .clear
+            }
+        }
+
+        private var knobFill: Color {
+            if isOn { return LHTheme.pageBackground }
+            // Locked off: a solid secondary-text knob (≥ 5.5:1 on groups) on the empty track.
+            return isEnabled ? LHTheme.switchKnob : LHTheme.secondaryText
+        }
+
         func makeBody(configuration: Configuration) -> some View {
             let width: CGFloat = small ? 30 : 36, height: CGFloat = small ? 18 : 22
             let knob = height - 6
@@ -339,17 +357,32 @@
             // The knob stretches toward its destination while pressed, like a finger pushing it.
             let stretch: CGFloat = configuration.isPressed && !reduceMotion ? 4 : 0
             ZStack(alignment: isOn ? .trailing : .leading) {
-                track.fill(isOn ? (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground)
-                           : (hovered && isEnabled ? LHTheme.switchTrackHover : LHTheme.switchTrack))
-                    .opacity(isEnabled ? 1 : 0.6)
-                if !isOn || contrast == .increased {
-                    track.strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.controlBorder)
+                track.fill(trackFill)
+                if !isOn || !isEnabled || contrast == .increased {
+                    // The off track keeps a 3:1 edge (WCAG 1.4.11); a locked switch is dashed.
+                    track.strokeBorder(LHTheme.strongSeparator,
+                                       style: StrokeStyle(lineWidth: 1, dash: isEnabled ? [] : [3, 2]))
                 }
                 RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
-                    .fill(isOn ? LHTheme.onAccent : LHTheme.switchKnob)
+                    .fill(knobFill)
+                    .overlay {
+                        if !isOn && isEnabled {
+                            // The white off knob on the pale light well: a 1 pt edge, 4.2:1 (clear in dark, UI-17A).
+                            RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
+                                .strokeBorder(LHTheme.switchKnobEdge, lineWidth: 1)
+                        }
+                    }
                     .frame(width: knob + stretch, height: knob)
                     .padding(.horizontal, 3)
-                    .opacity(isEnabled ? 1 : 0.6)
+                    .overlay {
+                        if !isEnabled {
+                            // The padlock carries meaning, ≥ 5.5:1 in both modes and 10 pt on a 16 pt knob: ink on the
+                            // page-coloured on knob, page colour on the secondary-text off knob (UI-16A, 58; R7, 38/44).
+                            Image(systemName: "lock.fill").font(.system(size: small ? 8 : 10, weight: .bold))
+                                .foregroundStyle(isOn ? LHTheme.text : LHTheme.pageBackground)
+                                .accessibilityHidden(true)
+                        }
+                    }
             }
             .frame(width: width, height: height)
             .overlay { RoundedRectangle(cornerRadius: radius + 3, style: .continuous)
@@ -416,10 +449,12 @@
 
     /// Checkbox in the control family: a small sunken box, lime with an ink check when on.
     /// The whole label toggles it; assistive technologies see a native toggle.
+    /// `ink`: an ink box with a page-coloured check, for long lists of choices where lime would stop being rare.
     struct GoalongCheckboxStyle: ToggleStyle {
+        var ink = false
         func makeBody(configuration: Configuration) -> some View {
             Button { configuration.isOn.toggle() } label: { configuration.label }
-                .buttonStyle(GoalongCheckboxButtonStyle(isOn: configuration.isOn))
+                .buttonStyle(GoalongCheckboxButtonStyle(isOn: configuration.isOn, ink: ink))
                 .accessibilityRepresentation {
                     Toggle(isOn: configuration.$isOn) { configuration.label }
                 }
@@ -428,6 +463,7 @@
 
     private struct GoalongCheckboxButtonStyle: ButtonStyle {
         let isOn: Bool
+        var ink = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.isFocused) private var isFocused
         @Environment(\.colorSchemeContrast) private var contrast
@@ -438,12 +474,14 @@
             let box = RoundedRectangle(cornerRadius: 4.5, style: .continuous)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 ZStack {
-                    box.fill(isOn ? (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground) : LHTheme.fieldBackground)
+                    box.fill(!isOn ? LHTheme.fieldBackground
+                             : ink ? (hovered && isEnabled ? LHTheme.text.opacity(0.82) : LHTheme.text)
+                             : (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground))
                     if !isOn {
                         box.strokeBorder(contrast == .increased || hovered ? LHTheme.strongSeparator : LHTheme.controlBorder)
                     } else {
                         GoalongCheckShape()
-                            .stroke(LHTheme.onAccent, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                            .stroke(ink ? LHTheme.pageBackground : LHTheme.onAccent, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
                             .padding(4)
                     }
                 }
@@ -464,6 +502,7 @@
 
     extension ToggleStyle where Self == GoalongCheckboxStyle {
         static var goalongCheckbox: GoalongCheckboxStyle { GoalongCheckboxStyle() }
+        static var goalongCheckboxInk: GoalongCheckboxStyle { GoalongCheckboxStyle(ink: true) }
     }
 
     /// Segmented choice drawn in Goalong's surfaces; the selected segment is raised.
@@ -531,10 +570,10 @@
                 .font(.system(size: small ? 12 : 13, weight: selected ? .semibold : .medium))
                 .padding(.horizontal, small ? 10 : 14)
                 .frame(minHeight: small ? 22 : 26)
-                .foregroundStyle(selected ? LHTheme.text : hovered && isEnabled ? LHTheme.text.opacity(0.85) : LHTheme.secondaryText)
+                .foregroundStyle(selected && isEnabled ? LHTheme.text : hovered && isEnabled ? LHTheme.text.opacity(0.85) : LHTheme.secondaryText)
                 .background(!selected && hovered && isEnabled ? LHTheme.hoverBackground.opacity(0.6) : .clear, in: shape)
                 .overlay { shape.strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2) }
-                .opacity(isEnabled ? 1 : 0.5)
+                // Disabled: no extra fade. Every label, the selected one too, is secondary text (≥ 4.5:1); the raised pill marks the choice (UI-16A, 5).
                 .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
                 .contentShape(shape)
                 .onHover { hovered = $0 }
@@ -569,7 +608,8 @@
     }
 
     /// Secondary information (privacy, scope, limits) as one deliberate, quiet block
-    /// instead of loose paragraphs of fine print.
+    /// instead of loose paragraphs of fine print. A warning tints the glyph and the block, never the text
+    /// (DESIGN §9, UI-16A): the sentence stays in ink and readable.
     struct GoalongNote: View {
         enum Tone { case neutral, privacy, warning }
         let text: String
@@ -595,7 +635,7 @@
                 Image(systemName: symbol ?? (tone == .privacy ? "lock" : tone == .warning ? "exclamationmark.triangle" : "info.circle"))
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(tint)
                     .frame(width: 14).accessibilityHidden(true)
-                Text(text).font(.system(size: 12)).foregroundStyle(tone == .warning ? LHTheme.warning : LHTheme.secondaryText)
+                Text(text).font(.system(size: 12)).foregroundStyle(tone == .warning ? LHTheme.text : LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -608,14 +648,18 @@
     /// A standing explanation at the top of a tool page: neutral glyph, a title, one or two
     /// sentences and an optional trailing control. Same quiet block as `GoalongNote`.
     struct GoalongBanner<Trailing: View>: View {
+        /// Neutral or warning (DESIGN §9): a warning tints the glyph and the block, never the text.
+        enum Tone { case neutral, warning }
         let symbol: String
         let title: String
         let detail: String
+        var tone: Tone = .neutral
         @ViewBuilder var trailing: () -> Trailing
 
         var body: some View {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                Image(systemName: symbol).font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(tone == .warning ? LHTheme.warning : LHTheme.secondaryText)
                     .frame(width: 22, height: 18).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.system(size: 13, weight: .semibold))
@@ -626,13 +670,14 @@
                 trailing()
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
-            .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+            .background(tone == .warning ? LHTheme.warning.opacity(0.08) : LHTheme.insetBackground,
+                        in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
         }
     }
 
     extension GoalongBanner where Trailing == EmptyView {
-        init(symbol: String, title: String, detail: String) {
-            self.init(symbol: symbol, title: title, detail: detail) { EmptyView() }
+        init(symbol: String, title: String, detail: String, tone: Tone = .neutral) {
+            self.init(symbol: symbol, title: title, detail: detail, tone: tone) { EmptyView() }
         }
     }
 
@@ -643,6 +688,114 @@
                 .background(LHTheme.controlBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
                     .strokeBorder(contrast == .increased ? LHTheme.strongSeparator : LHTheme.controlBorder))
+        }
+    }
+
+    /// Date or time field: one Goalong frame. The AppKit picker inside loses its own bezel and background, so the
+    /// field never shows a grey AppKit box within the Goalong one.
+    private struct GoalongDateFieldModifier: ViewModifier {
+        let label: String?
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.colorSchemeContrast) private var contrast
+        @State private var hovered = false
+
+        func body(content: Content) -> some View {
+            let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+            HStack(spacing: 8) {
+                if let label { Text(label).font(.system(size: 13)) }
+                content.labelsHidden().datePickerStyle(.field).fixedSize()
+                    .background(BorderlessDatePickerProbe().allowsHitTesting(false))
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .frame(minHeight: 28)
+                    .background(LHTheme.fieldBackground, in: shape)
+                    .overlay(shape.strokeBorder(contrast == .increased || hovered ? LHTheme.strongSeparator
+                                                : LHTheme.controlBorder).allowsHitTesting(false))
+                    .opacity(isEnabled ? 1 : 0.55)
+                    .onHover { hovered = $0 }
+            }
+        }
+    }
+
+    /// Finds the AppKit date picker drawn under it and removes its bezel and background.
+    private struct BorderlessDatePickerProbe: NSViewRepresentable {
+        func makeNSView(context: Context) -> ProbeView { ProbeView() }
+        func updateNSView(_ view: ProbeView, context: Context) { view.strip() }
+
+        final class ProbeView: NSView {
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                strip()
+                DispatchQueue.main.async { [weak self] in self?.strip() }
+            }
+
+            override func layout() {
+                super.layout()
+                strip()
+            }
+
+            func strip() {
+                guard window != nil else { return }
+                let frame = convert(bounds, to: nil).insetBy(dx: -2, dy: -2)
+                var container = superview
+                for _ in 0..<4 where container != nil {
+                    if let parent = container, strip(in: parent, within: frame) { return }
+                    container = container?.superview
+                }
+            }
+
+            private func strip(in view: NSView, within frame: NSRect) -> Bool {
+                if let picker = view as? NSDatePicker, frame.intersects(picker.convert(picker.bounds, to: nil)) {
+                    if picker.isBezeled { picker.isBezeled = false }
+                    if picker.isBordered { picker.isBordered = false }
+                    if picker.drawsBackground { picker.drawsBackground = false }
+                    return true
+                }
+                return view.subviews.contains { strip(in: $0, within: frame) }
+            }
+        }
+    }
+
+    /// Pop-up menu for one choice among several, drawn on the Goalong control surface instead of the AppKit bezel.
+    /// VoiceOver reads the title as the label and the current choice as the value, like the native Picker.
+    struct GoalongMenuPicker<Value: Hashable>: View {
+        let title: String
+        @Binding var selection: Value
+        let options: [(Value, String)]
+        @Environment(\.isEnabled) private var isEnabled
+
+        init(_ title: String, selection: Binding<Value>, options: [(Value, String)]) {
+            self.title = title
+            self._selection = selection
+            self.options = options
+        }
+
+        var body: some View {
+            Menu {
+                ForEach(options.indices, id: \.self) { index in
+                    let option = options[index]
+                    Button { selection = option.0 } label: {
+                        if option.0 == selection { Label(option.1, systemImage: "checkmark") } else { Text(option.1) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    // Locked: the current value stays readable in secondary text (≥ 4.5:1), only the chevron fades (UI-14, 24/44).
+                    Text(Self.selectedLabel(selection, in: options) ?? title).font(.system(size: 13)).lineLimit(1)
+                        .foregroundStyle(isEnabled ? LHTheme.text : LHTheme.secondaryText)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(LHTheme.secondaryText).opacity(isEnabled ? 1 : 0.5).accessibilityHidden(true)
+                }
+                .padding(.horizontal, 10).frame(minHeight: 28)
+                .goalongControlSurface()
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .accessibilityLabel(title)
+            .accessibilityValue(Self.selectedLabel(selection, in: options) ?? "")
+        }
+
+        nonisolated static func selectedLabel(_ selection: Value, in options: [(Value, String)]) -> String? {
+            options.first { $0.0 == selection }?.1
         }
     }
 
@@ -683,11 +836,61 @@
         /// Raised surface shared by grouped controls (day stepper, segmented groups).
         func goalongControlSurface() -> some View { modifier(GoalongControlSurface()) }
 
+        /// Date or time field in the Goalong field surface. The label, when given, sits left of the field; without one the
+        /// picker keeps its title for VoiceOver only.
+        func goalongDateField(label: String? = nil) -> some View { modifier(GoalongDateFieldModifier(label: label)) }
+
         /// Goalong control chrome for a window, sheet or panel root. Explicit styles still win.
         func goalongControls() -> some View {
             buttonStyle(LHSecondaryButtonStyle())
+                .toggleStyle(.goalongCheckbox)
                 .textFieldStyle(GoalongFieldStyle())
                 .environment(\.locale, GoalongUIFormat.locale)
+        }
+    }
+
+    /// The bar under a sheet's content: full width, flush with the bottom edge, one hairline above.
+    /// Cancel sits first, the one primary action last; a short reason may sit between them (DESIGN §9).
+    struct GoalongSheetFooter<Content: View>: View {
+        var inset: CGFloat = 24
+        private let content: Content
+        init(inset: CGFloat = 24, @ViewBuilder content: () -> Content) {
+            self.inset = inset
+            self.content = content()
+        }
+
+        var body: some View {
+            VStack(spacing: 0) {
+                Rectangle().fill(LHTheme.separator).frame(height: 1)
+                HStack(spacing: 12) { content }
+                    .padding(.horizontal, inset).padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity)
+            .background(LHTheme.cardBackground)
+        }
+    }
+
+    /// The scrolling body of a sheet with a footer. A sheet opens at the content's height, at most `cap`;
+    /// given a taller frame, the body takes it all, so the footer stays at the bottom and nothing is cut early.
+    struct GoalongSheetScroll<Content: View>: View {
+        let cap: CGFloat
+        private let content: Content
+        @State private var contentHeight: CGFloat?
+        init(cap: CGFloat, @ViewBuilder content: () -> Content) {
+            self.cap = cap
+            self.content = content()
+        }
+
+        var body: some View {
+            ScrollView {
+                content.background(GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { contentHeight = proxy.size.height }
+                        .onChange(of: proxy.size.height) { contentHeight = $0 }
+                })
+            }
+            .frame(minHeight: min(cap, 120), idealHeight: min(contentHeight ?? cap, cap), maxHeight: .infinity)
         }
     }
 #endif

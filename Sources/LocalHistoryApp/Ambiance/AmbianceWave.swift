@@ -97,7 +97,8 @@ struct AmbianceWaveShape: Shape {
 /// A piece's line. Lime while it plays; dotted while its sounds are not on this Mac yet,
 /// filling from the left as they download.
 struct AmbianceWave: View {
-    enum Look: Equatable { case idle, active, waiting, progress(Double) }
+    /// `.playing` is the ink form of `.active`, for icon tiles where lime would be decoration.
+    enum Look: Equatable { case idle, active, playing, waiting, progress(Double) }
 
     let seed: String
     let character: AmbianceWaveCharacter
@@ -114,6 +115,8 @@ struct AmbianceWave: View {
                 shape.stroke(LHTheme.secondaryText, style: solid)
             case .active:
                 shape.stroke(LHTheme.accent, style: solid)
+            case .playing:
+                shape.stroke(LHTheme.text, style: solid)
             case .waiting:
                 shape.stroke(LHTheme.tertiaryText, style: dotted)
             case .progress(let fraction):

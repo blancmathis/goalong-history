@@ -128,11 +128,11 @@ import ServiceManagement
         if let end = preferences.pauseUntil { nextEvent = "En pause jusqu’à \(Self.clockText(end))" }
         else {
             switch preferences.mode {
-            case .on: nextEvent = "Activé manuellement · sans horaire de fin"
+            case .on: nextEvent = "Activé manuellement, sans horaire de fin"
             case .off: nextEvent = "Choisissez Auto pour suivre vos horaires."
             case .auto:
                 if let next { nextEvent = "\(next.active ? "Activation" : "Désactivation") \(Self.when(next.date))" }
-                else { nextEvent = active ? "Plages continues · filtre actif" : "Aucune plage active" }
+                else { nextEvent = active ? "Plages continues, filtre actif" : "Aucune plage active" }
             }
         }
         stateChanged?()

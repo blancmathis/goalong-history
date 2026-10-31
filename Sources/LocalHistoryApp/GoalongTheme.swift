@@ -33,13 +33,25 @@
         static let insetBackground = adaptive(light: 0xEFEEE4, dark: 0x18211B)
         static let segmentSelected = adaptive(light: 0xFFFFFF, dark: 0x2A3A2E)
         static let segmentSelectedBorder = adaptive(light: 0xC9D0BC, dark: 0x3D5141)
-        static let switchTrack = adaptive(light: 0xBDC4B0, dark: 0x3A4D40)
-        /// Hover of the off track: darker than the track in light, lighter in dark, so hover always reads as more visible.
-        static let switchTrackHover = adaptive(light: 0xAAB29B, dark: 0x4A6050)
-        static let switchKnob = adaptive(light: 0xFFFFFF, dark: 0xB4C2B7)
+        /// Off track: an empty well in both modes, so on (ink) and off read apart at a glance (R7, UI-17A). Light: a pale
+        /// well, 15:1 against the ink on track; its 1 pt strongSeparator edge is ≥ 3:1 on page, card and inset (WCAG
+        /// 1.4.11) and the white knob keeps a 4.2:1 edge on it (`switchKnobEdge`). Dark: a dark well, 12:1 against the on
+        /// track; the strongSeparator edge keeps it ≥ 4.2:1 on every background (UI-14, écran 27) and the knob is 12:1.
+        static let switchTrack = adaptive(light: 0xE4E7DB, dark: 0x1F2B23)
+        /// Hover of the off track: one step darker than the well in light, lighter in dark.
+        static let switchTrackHover = adaptive(light: 0xD9DDCE, dark: 0x26332A)
+        static let switchKnob = adaptive(light: 0xFFFFFF, dark: 0xE6EDE7)
+        /// Edge of the off knob: light only (tertiary text, 4.2:1 on the pale well); the dark knob is 12:1 on its well.
+        static let switchKnobEdge = Color(nsColor: NSColor(name: nil) { appearance in
+            switch appearance.name {
+            case .accessibilityHighContrastDarkAqua: return .clear
+            case .accessibilityHighContrastAqua: return LHTheme.rgb(0x566252)
+            default: return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .clear : LHTheme.rgb(0x646F5F)
+            }
+        })
         static let placeholder = adaptive(light: 0x8A9486, dark: 0x66766A, highLight: 0x5E6859, highDark: 0x93A396)
         /// Chart axes and the resting thread: quieter than secondary text, never body copy.
-        static let tertiaryText = adaptive(light: 0x7A8475, dark: 0x74857A, highLight: 0x566252, highDark: 0xA0B0A4)
+        static let tertiaryText = adaptive(light: 0x646F5F, dark: 0x7E9084, highLight: 0x566252, highDark: 0xA0B0A4)
 
         /// The three states of active time, always in this order. Lime is work as the person
         /// defined it; time outside work is a calm periwinkle, never a warning; what is not

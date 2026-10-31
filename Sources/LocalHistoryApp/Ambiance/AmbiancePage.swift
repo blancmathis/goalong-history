@@ -14,12 +14,12 @@ import UniformTypeIdentifiers
         if modules.isEnabled(.ambiance), let controller = model.ambianceModule.controller {
             AmbianceLivePage(controller: controller, settings: model.ambianceModule.settings)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
+            // UI-12A: the same off state as Blocage and Concentration, with its « Activer » button.
+            VStack(alignment: .leading, spacing: 0) {
                 Text("Ambiance").goalongPageTitle()
-                Text("Le module est désactivé. Activez-le dans Réglages › Modules.")
-                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 28)
+                GoalongModuleOffNote(module: .ambiance, text: "De la musique pour travailler ou souffler, téléchargée à la demande. Rien ne joue avant votre choix.")
             }
-            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(LHTheme.pageBackground)
         }
@@ -282,13 +282,14 @@ private struct AmbiancePlayer: View {
         LHCard(padding: 20) {
             VStack(alignment: .leading, spacing: 18) {
                 AmbianceWave(seed: source.id, character: AmbianceWaveCharacter(source),
-                             look: playing ? .active : .idle, lineWidth: 2)
+                             // UI-15C (30): the wave is drawn in ink; lime only marks the chosen tile.
+                             look: playing ? .playing : .idle, lineWidth: 2)
                     .frame(height: 64)
                     .id(source.id)
                 HStack(alignment: .center, spacing: 20) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(source.title).font(LHTheme.sheetTitleFont).tracking(-0.4).lineLimit(1)
-                        Text(playing ? "En cours · \(AmbiancePageContent.kindLabel(source.kind))"
+                        Text(playing ? "En cours, \(AmbiancePageContent.kindLabel(source.kind))"
                                      : AmbiancePageContent.kindLabel(source.kind))
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
@@ -339,7 +340,10 @@ private struct AmbianceOrchestraSetup: View {
                 AmbianceWave(seed: "ambre", character: .focus, look: look, lineWidth: 2).frame(height: 64)
                 HStack(alignment: .center, spacing: 20) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Téléchargez l’orchestre").font(LHTheme.sheetTitleFont).tracking(-0.4)
+                        // « Téléchargement… » only while bytes come down; before that, the orchestra waits to be installed.
+                        // UI-15C (30): says what the user gets (sounds), not the pack's internal name.
+                        Text(downloading ? "Téléchargement des sons…" : "Sons à installer")
+                            .font(LHTheme.sheetTitleFont).tracking(-0.4)
                         Group {
                             if case .downloading(let fraction) = pack.status {
                                 Text("\(GoalongUIFormat.percent(fraction * 100)) de \(size)")
@@ -372,6 +376,8 @@ private struct AmbianceOrchestraSetup: View {
         if case .downloading(let fraction) = pack.status { return .progress(fraction) }
         return .waiting
     }
+
+    private var downloading: Bool { if case .downloading = pack.status { return true } else { return false } }
 }
 
 // MARK: - Rows and tiles
@@ -387,19 +393,26 @@ private struct AmbianceTile: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
                 AmbianceWave(seed: source.id, character: AmbianceWaveCharacter(source),
-                             look: !source.isAvailable ? .waiting : playing ? .active : .idle)
+                             look: !source.isAvailable ? .waiting : playing ? .playing : .idle)
                     .frame(height: 28)
                 HStack(spacing: 6) {
+                    if current {
+                        // UI-15C (30): the chosen piece carries the lime « you are here » mark (DESIGN §3.2).
+                        Circle().fill(LHTheme.accent)
+                            .overlay(Circle().strokeBorder(LHTheme.text.opacity(0.35), lineWidth: 0.5))
+                            .frame(width: 8, height: 8)
+                            .accessibilityHidden(true)
+                    }
                     Text(source.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                         .minimumScaleFactor(0.85)
-                        .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.secondaryText)
+                        .foregroundStyle(LHTheme.text)
                     Spacer(minLength: 0)
                     if !source.isAvailable {
                         Image(systemName: "arrow.down.circle").font(.system(size: 12))
                             .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
                     }
                     if playing {
-                        Image(systemName: "speaker.wave.2.fill").font(.system(size: 11)).foregroundStyle(LHTheme.accent)
+                        Image(systemName: "speaker.wave.2.fill").font(.system(size: 11)).foregroundStyle(LHTheme.text)
                     }
                 }
             }
@@ -407,7 +420,8 @@ private struct AmbianceTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(background, in: RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous)
-                .strokeBorder(current ? LHTheme.accent : LHTheme.separator, lineWidth: current ? 1.5 : 1))
+                // A neutral tile, never a tinted fill (DESIGN §12): the chosen piece has the lime mark and a firmer edge.
+                .strokeBorder(current ? LHTheme.text.opacity(0.45) : LHTheme.separator, lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous))
         }
         .buttonStyle(AmbiancePressStyle())
@@ -416,12 +430,12 @@ private struct AmbianceTile: View {
         .animation(LHTheme.hover, value: hovering)
         .accessibilityLabel("\(source.title), \(AmbiancePageContent.kindLabel(source.kind))")
         .accessibilityValue(playing ? "En cours" : source.isAvailable ? "" : "À télécharger")
+        .accessibilityAddTraits(current ? .isSelected : [])
         .accessibilityHint(playing ? "Arrêter" : "Écouter")
         .accessibilityIdentifier("ambiance-source-\(source.id)")
     }
 
     private var background: Color {
-        if playing { return LHTheme.selectionBackground }
         if hovering { return LHTheme.hoverBackground }
         return LHTheme.cardBackground
     }
@@ -443,7 +457,7 @@ private struct AmbianceFileRow: View {
                         .frame(width: 22)
                     Text(source.title).font(.system(size: 13, weight: playing ? .semibold : .regular))
                         .lineLimit(1).truncationMode(.middle)
-                        .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.secondaryText)
+                        .foregroundStyle(LHTheme.text)
                     Spacer(minLength: 12)
                 }
                 .contentShape(Rectangle())

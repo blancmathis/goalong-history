@@ -10,14 +10,19 @@ import SwiftUI
     let now: Date
     @State private var dragging: (day: Int, start: Int, end: Int)?
     @State private var editing: BlockingRangeDraft?
+    @Environment(\.colorScheme) private var colorScheme
 
-    private static let rowHeight: CGFloat = 26
-    private static let laneHeight: CGFloat = 18
+    private static let rowHeight: CGFloat = 28
+    private static let laneHeight: CGFloat = 20
     private static let label: CGFloat = 52
     private static let gap: CGFloat = 10
     private static let spacing: CGFloat = 4
     /// A range without a lock: a light tint, so its name (in the text colour) stays readable in both themes.
     static let freeFill = 0.2
+    /// A locked range in dark mode: a muted tint, not a white bar that outshines the page (UI-15B, 1).
+    /// Its page-coloured label keeps more than 7:1 on it.
+    static let darkSolidFill = 0.78
+    private var solidFill: Double { colorScheme == .dark ? Self.darkSolidFill : 1 }
 
     /// A capsule is filled with the text colour only when its lock protects the lists and it does not slow down.
     /// Its label then takes the page colour; on every other capsule the label keeps the text colour.
@@ -146,23 +151,35 @@ import SwiftUI
                 Color.clear.frame(width: Self.label, height: 1)
                 GeometryReader { proxy in
                     ForEach([0, 6, 12, 18, 24], id: \.self) { hour in
-                        Text("\(hour) h").font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
+                        Text("\(hour) h").font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.tertiaryText)
                             .fixedSize()
                             .position(x: min(max(10, proxy.size.width * CGFloat(hour) / 24), proxy.size.width - 12), y: 7)
                     }
                 }
                 .frame(height: 14)
             }
+            // The legend names only the kinds of range drawn this week (UI-11C, screen 1).
+            let drawn = spans.values.flatMap { $0 }
             HStack(spacing: 16) {
-                legend(Capsule().fill(LHTheme.text), "Verrouillé")
-                legend(Capsule().fill(LHTheme.text.opacity(Self.freeFill)), "Libre ou difficile")
-                legend(Capsule().strokeBorder(LHTheme.text.opacity(0.7), lineWidth: 1.5), "Ralenti")
+                if drawn.contains(where: { !$0.slowed && Self.isSolid(lock: $0.lock, slowed: false) }) {
+                    legend(Capsule().fill(LHTheme.text.opacity(solidFill)), "Verrouillé")
+                }
+                // Free and difficult share the light tint; the difficult one carries its symbol, like its range.
+                if drawn.contains(where: { !$0.slowed && $0.lock == .free }) {
+                    legend(Capsule().fill(LHTheme.text.opacity(Self.freeFill)), "Libre")
+                }
+                if drawn.contains(where: { !$0.slowed && $0.lock == .typing }) {
+                    legend(Capsule().fill(LHTheme.text.opacity(Self.freeFill)), "Difficile", symbol: BlockLock.typing.symbol)
+                }
+                if drawn.contains(where: \.slowed) {
+                    legend(Capsule().strokeBorder(LHTheme.text.opacity(0.7), lineWidth: 1.5), "Ralenti")
+                }
                 HStack(spacing: 6) {
                     Circle().fill(LHTheme.accent).frame(width: 8, height: 8)
                     Text("Maintenant")
                 }
             }
-            .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             .padding(.leading, Self.label + Self.gap).padding(.top, 6)
         }
         .coordinateSpace(name: "blocking-week")
@@ -219,7 +236,7 @@ import SwiftUI
                     .frame(width: max(Self.laneHeight, x(high) - x(low)), height: Self.laneHeight)
                     .overlay(alignment: .top) {
                         Text("\(BlockingFormat.minuteOfDay(low)) → \(high == 1_440 ? "24:00" : BlockingFormat.minuteOfDay(high))")
-                            .font(.system(size: 11, weight: .medium).monospacedDigit()).fixedSize()
+                            .font(.system(size: 12, weight: .medium).monospacedDigit()).fixedSize()
                             .offset(y: -16)
                     }
                     .offset(x: x(low), y: (Self.rowHeight - Self.laneHeight) / 2)
@@ -238,7 +255,7 @@ import SwiftUI
 
     private func spanView(_ span: Span, day: Int, width: CGFloat) -> some View {
         let solid = Self.isSolid(lock: span.lock, slowed: span.slowed)
-        let ink = LHTheme.text.opacity(solid ? 1 : Self.freeFill)
+        let ink = LHTheme.text.opacity(solid ? solidFill : Self.freeFill)
         return ZStack(alignment: .leading) {
             if span.slowed {
                 Capsule().fill(LHTheme.pageBackground)
@@ -248,10 +265,11 @@ import SwiftUI
                 Capsule().fill(LHTheme.pageBackground)
                 Capsule().fill(ink)
             }
-            if width > CGFloat(span.name.count) * 6.5 + 26 {
+            if width > CGFloat(span.name.count) * 7.2 + 26 {
                 HStack(spacing: 4) {
-                    if span.lock != .free { Image(systemName: span.lock.symbol).font(.system(size: 8, weight: .bold)) }
-                    Text(span.name).font(.system(size: 10.5, weight: .semibold)).lineLimit(1)
+                    if span.lock != .free { Image(systemName: span.lock.symbol).font(.system(size: 9, weight: .bold)) }
+                    // 12 pt medium: the range name reads like the legend, not as a micro caption (UI-13A).
+                    Text(span.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 }
                 .foregroundStyle(solid ? LHTheme.pageBackground : LHTheme.text)
                 .padding(.horizontal, 9)
@@ -260,15 +278,16 @@ import SwiftUI
         .frame(width: width, height: Self.laneHeight - 3)
         .padding(.vertical, 1.5)
         .contentShape(Capsule())
-        .help("\(span.name) · \(BlockingFormat.minuteOfDay(span.start)) → \(BlockingFormat.rangeEnd(span.end))")
+        .help("\(span.name), \(BlockingFormat.minuteOfDay(span.start)) → \(BlockingFormat.rangeEnd(span.end))")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(BlockingFormat.rangeLabel(name: span.name, weekday: day, start: span.start, end: span.end, lock: span.lock))
         .accessibilityAddTraits(.isButton)
     }
 
-    private func legend(_ mark: some View, _ text: String) -> some View {
+    private func legend(_ mark: some View, _ text: String, symbol: String? = nil) -> some View {
         HStack(spacing: 6) {
             mark.frame(width: 18, height: 7)
+            if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .bold)).padding(.leading, -2) }
             Text(text)
         }
     }
@@ -323,7 +342,7 @@ struct BlockingRangeDraft: Identifiable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(list?.name ?? "Programmer un blocage").font(LHTheme.cardTitleFont)
+            Text(list?.name ?? "Programmer un blocage").font(LHTheme.sheetTitleFont)
             if draft.existing == nil {
                 BlockingFlow(spacing: 6) {
                     ForEach(controller.lists) { list in
@@ -342,9 +361,11 @@ struct BlockingRangeDraft: Identifiable {
                     } label: {
                         Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
                             .frame(width: 32, height: 28)
-                            .foregroundStyle(on ? LHTheme.onAccent : LHTheme.secondaryText)
-                            .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
+                            .foregroundStyle(on ? LHTheme.text : LHTheme.secondaryText)
+                            .background(on ? LHTheme.selectionBackground : LHTheme.insetBackground,
                                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(LHTheme.text, lineWidth: on ? 1 : 0))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(BlockingFormat.weekdayShort[day - 1])
@@ -358,11 +379,11 @@ struct BlockingRangeDraft: Identifiable {
             }
             HStack(spacing: 12) {
                 Text("De").font(.system(size: 13))
-                DatePicker("De", selection: $start, displayedComponents: .hourAndMinute).labelsHidden()
+                DatePicker("De", selection: $start, displayedComponents: .hourAndMinute).goalongDateField()
                     .fixedSize().padding(.trailing, 6)
                     .environment(\.locale, Locale(identifier: "fr_FR"))
                 Text("à").font(.system(size: 13))
-                DatePicker("à", selection: $end, displayedComponents: .hourAndMinute).labelsHidden()
+                DatePicker("à", selection: $end, displayedComponents: .hourAndMinute).goalongDateField()
                     .fixedSize().padding(.trailing, 6)
                     .environment(\.locale, Locale(identifier: "fr_FR"))
                 if minutes(end) <= minutes(start), minutes(end) != 0 {

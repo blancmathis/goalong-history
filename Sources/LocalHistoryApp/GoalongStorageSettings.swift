@@ -36,22 +36,19 @@ import Foundation
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Conservation")
-                        Text(retentionSummary).font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text(retentionSummary).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer()
                     Button("Choisir…") { retention = true }.buttonStyle(LHSecondaryButtonStyle())
                 }
             }
             GoalongSettingsGroup(title: "Gestion des données") {
-                Button("Effacer de l’historique…") { deletion = true }.buttonStyle(LHSecondaryButtonStyle())
-                Text("Les originaux Apple, les conversations et les données déjà envoyées restent conservés.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                Button("Effacer de l’historique…", role: .destructive) { deletion = true }.buttonStyle(LHSecondaryButtonStyle())
+                Text("Les originaux Apple, les conversations et les données déjà envoyées au site Goalong restent conservés.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                // UI-13C (40): one button needs no group of its own; it sits under the note.
+                Button("Ouvrir le dossier des données") { model.openDataFolder() }.buttonStyle(LHSecondaryButtonStyle())
             }
-            GoalongDisclosureGroup("Fichiers locaux") {
-                HStack {
-                    Button("Ouvrir le dossier") { model.openDataFolder() }
-                }.buttonStyle(LHSecondaryButtonStyle()).padding(.top, 12)
-            }.font(.system(size: 13))
         }
         .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls() }
         .onAppear(perform: refresh)
@@ -71,15 +68,33 @@ import Foundation
     @State private var siteAnalysis = false
     @State private var health = false
     var body: some View {
-        GoalongSettingsGroup(title: "Actions distinctes des envois quotidiens") {
-            Button("Exporter un fichier signé…") { model.selectSection(.share) }.buttonStyle(LHSecondaryButtonStyle())
-            Button("Partager un bilan relu…") { advancedShare = true }.buttonStyle(LHSecondaryButtonStyle())
-            Button("Comprendre mon travail") { model.profileStudio.show() }.buttonStyle(LHSecondaryButtonStyle())
-            Button("Analyser une demande du site…") { siteAnalysis = true }.buttonStyle(LHSecondaryButtonStyle())
-            Button("Importer Apple Santé…") { health = true }.buttonStyle(LHSecondaryButtonStyle())
+        // One row per tool, grouped by role, each with its one-line purpose (UI-41).
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Actions ponctuelles, à part des envois quotidiens. Rien ne part sans votre relecture.")
+                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            GoalongSettingsList(title: "Partager") {
+                GoalongSettingsLink(title: "Exporter un fichier signé…", value: "", symbol: "doc.badge.arrow.up",
+                                    detail: "Un fichier vérifiable de vos journées, à transmettre vous-même.") { model.selectSection(.share) }
+                GoalongRowDivider()
+                GoalongSettingsLink(title: "Partager un bilan relu…", value: "", symbol: "square.and.arrow.up",
+                                    detail: "Un bilan que vous relisez avant l’envoi.") { advancedShare = true }
+            }
+            GoalongSettingsList(title: "Analyser") {
+                GoalongSettingsLink(title: "Comprendre mon travail", value: "", symbol: "chart.bar.doc.horizontal",
+                                    detail: "Vos projets et vos tâches, sur une période choisie.") { model.profileStudio.show(earliestDay: model.snapshot.availableDays.min()) }
+                GoalongRowDivider()
+                GoalongSettingsLink(title: "Analyser une demande du site…", value: "", symbol: "magnifyingglass",
+                                    detail: "Une demande du site Goalong, traitée avec votre ChatGPT.") { siteAnalysis = true }
+                GoalongRowDivider()
+                GoalongSettingsLink(title: "Importer Apple Santé…", value: "", symbol: "heart",
+                                    detail: "Sommeil, récupération et activité, lus sur ce Mac.") { health = true }
+            }
         }
         .sheet(isPresented: $advancedShare) { GoalongWebsiteConnectionSheet().goalongControls() }
-        .sheet(isPresented: $siteAnalysis) { GoalongSiteAnalysisSheet().goalongControls() }
+        .sheet(isPresented: $siteAnalysis) {
+            GoalongSiteAnalysisSheet(onOpenSettings: { siteAnalysis = false; model.openSettingsPane(.chatGPT) }).goalongControls()
+        }
         .sheet(isPresented: $health) { GoalongHealthImportSheet().goalongControls() }
     }
 }

@@ -24,6 +24,16 @@
         }
     }
 
+    /// Figures and reports set on the page itself: same inset rhythm as `LHCard`, no frame (DESIGN §1, §3.1).
+    /// A frame stays for lists and for groups of controls.
+    struct GoalongPlainBlock<Content: View>: View {
+        private let content: Content
+        init(@ViewBuilder content: () -> Content) { self.content = content() }
+        var body: some View {
+            content.padding(.vertical, 4).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     /// Content that is read, set directly on the page: a title, an optional quiet action,
     /// then the content with no frame around it.
     struct GoalongSection<Trailing: View, Content: View>: View {
@@ -345,6 +355,10 @@
         var nextLabel = "Jour suivant"
         var identifierPrefix: String?
         var showsToday = true
+        /// Shown instead of the day when the control steps a whole period (« 23 oct. – 29 oct. »).
+        var dateLabel: String? = nil
+        /// First day with history (M3, UI-17A): the calendar and « Jour précédent » never go before it. Nil: no bound.
+        var earliest: Date? = nil
 
         var body: some View {
             HStack(spacing: 8) {
@@ -362,7 +376,8 @@
         private var stepper: some View {
             HStack(spacing: 2) {
                 stepButton(-1, symbol: "chevron.left", label: previousLabel, identifier: "previous-period")
-                GoalongCalendarButton(date: date, onChange: onChange)
+                    .disabled(Self.isAtEarliest(date, earliest: earliest))
+                GoalongCalendarButton(date: date, onChange: onChange, label: dateLabel, earliest: earliest)
                     .accessibilityIdentifier(identifierPrefix.map { "\($0)-date-picker" } ?? "")
                 stepButton(1, symbol: "chevron.right", label: nextLabel, identifier: "next-period")
                     .disabled(GoalongToday.isToday(date))
@@ -372,18 +387,26 @@
             .goalongControlSurface()
         }
 
-        /// The day one step away, or nil when it would be in the future. Compares the day's start:
-        /// `date` may carry a later hour than now (a page opened yesterday evening, viewed after midnight).
-        static func steppedDay(from date: Date, by direction: Int, now: Date, calendar: Calendar = .current) -> Date? {
+        /// The day one step away, or nil when it would be in the future or before `earliest` (M3, UI-17A). Compares
+        /// the day's start: `date` may carry a later hour than now (a page opened yesterday evening, viewed after midnight).
+        static func steppedDay(from date: Date, by direction: Int, now: Date, earliest: Date? = nil,
+                               calendar: Calendar = .current) -> Date? {
             guard let day = calendar.date(byAdding: .day, value: direction, to: date),
                   calendar.startOfDay(for: day) <= now else { return nil }
+            if let earliest, calendar.startOfDay(for: day) < calendar.startOfDay(for: earliest) { return nil }
             return day
+        }
+
+        /// True when the shown day is the first day with history: nothing older to step back to.
+        static func isAtEarliest(_ date: Date, earliest: Date?, calendar: Calendar = .current) -> Bool {
+            guard let earliest else { return false }
+            return calendar.startOfDay(for: date) <= calendar.startOfDay(for: earliest)
         }
 
         private func stepButton(_ direction: Int, symbol: String, label: String, identifier: String) -> some View {
             Button {
                 if let onStep { onStep(direction) }
-                else if let day = Self.steppedDay(from: date, by: direction, now: GoalongToday.now) { onChange(day) }
+                else if let day = Self.steppedDay(from: date, by: direction, now: GoalongToday.now, earliest: earliest) { onChange(day) }
             } label: {
                 Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 24)
                     .contentShape(Rectangle())
@@ -399,27 +422,44 @@
     struct GoalongCalendarButton: View {
         let date: Date
         let onChange: (Date) -> Void
+        var label: String? = nil
+        /// A chevron that says the button opens a calendar, when nothing around it does (UI-16A, 4).
+        var chevron = false
+        var accessibilityName = "Choisir un jour"
+        /// First day with history: older days are not offered (M3, UI-17A).
+        var earliest: Date? = nil
         @State private var showsCalendar = false
         @State private var calendarDate = GoalongToday.now
+
+        private var calendarRange: ClosedRange<Date> {
+            let now = GoalongToday.now
+            return min(earliest.map { Calendar.current.startOfDay(for: $0) } ?? .distantPast, now)...now
+        }
 
         var body: some View {
             Button {
                 calendarDate = date
                 showsCalendar.toggle()
             } label: {
-                Text(date.formatted(.dateTime.day().month(.abbreviated).year().locale(GoalongUIFormat.locale)))
-                    .font(.system(size: 13, weight: .medium)).monospacedDigit()
-                    .fixedSize()
-                    .padding(.horizontal, 8).frame(height: 24)
-                    .contentShape(Rectangle())
+                HStack(spacing: 6) {
+                    Text(label ?? date.formatted(.dateTime.day().month(.abbreviated).year().locale(GoalongUIFormat.locale)))
+                        .font(.system(size: 13, weight: .medium)).monospacedDigit()
+                    if chevron {
+                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
+                    }
+                }
+                .fixedSize()
+                .padding(.horizontal, 8).frame(height: 24)
+                .contentShape(Rectangle())
             }
             .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
-            .accessibilityLabel("Choisir un jour")
+            .accessibilityLabel(accessibilityName)
             .accessibilityValue(date.formatted(.dateTime.weekday(.wide).day().month(.wide).year().locale(GoalongUIFormat.locale)))
             .help("Choisir un jour dans le calendrier")
             .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {
                 VStack(alignment: .trailing, spacing: 12) {
-                    DatePicker("Jour", selection: $calendarDate, in: ...GoalongToday.now, displayedComponents: .date)
+                    DatePicker("Jour", selection: $calendarDate, in: calendarRange, displayedComponents: .date)
                         .labelsHidden()
                         .datePickerStyle(.graphical)
                         .environment(\.locale, GoalongUIFormat.locale)
@@ -449,7 +489,7 @@
                     if let subtitle {
                         Text(subtitle)
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
                 }
                 Spacer()
@@ -464,7 +504,7 @@
         var body: some View {
             let label = category.map(Self.prettyCategory) ?? "Non classé"
             Text(label)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(LHTheme.secondaryText)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -540,7 +580,7 @@
             case .permissionsMissing: return "Accès à configurer"
             case .inputTapUnavailable: return "Saisie non reçue"
             case .storageUnavailable(.diskFull): return "Disque plein"
-            case .storageUnavailable: return "Enregistrement arrêté"
+            case .storageUnavailable: return "Enregistrement interrompu"
             case .suppressed(let reason):
                 switch reason {
                 case .manualPause: return "Enregistrement en pause"
@@ -549,6 +589,24 @@
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:
                     return "Enregistrement actif"
                 }
+            }
+        }
+
+        /// UI-15A: the sidebar row holds one line (≤ 20 characters); the page says the rest.
+        func sidebarTitle(recordingEnabled: Bool, globallyPaused: Bool) -> String {
+            if globallyPaused { return "Tout est en pause" }
+            if !recordingEnabled { return "Enregistrement coupé" }
+            if isBackgroundPrivacyRule { return "Enregistrement actif" }
+            switch state {
+            case .recording: return "Enregistrement actif"
+            case .paused, .suppressed(.manualPause): return "En pause"
+            case .permissionsMissing: return "Accès à configurer"
+            case .inputTapUnavailable: return "Saisie non reçue"
+            case .storageUnavailable(.diskFull): return "Disque plein"
+            case .storageUnavailable: return "Écriture impossible"
+            case .suppressed(.sessionUnavailable): return "Session Mac inactive"
+            case .suppressed(.accessibilityUnavailable): return "Navigateur illisible"
+            case .suppressed: return "Enregistrement actif"
             }
         }
 
@@ -569,7 +627,7 @@
             case .storageUnavailable(.diskFull):
                 return "Le disque est plein : rien n’est enregistré pour l’instant. Libérez de l’espace, l’enregistrement reprendra tout seul et la coupure sera signalée dans l’historique."
             case .storageUnavailable(.permissionDenied):
-                return "macOS refuse l’écriture dans le dossier d’historique. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
+                return "Goalong ne peut plus écrire dans son dossier d’historique : macOS en refuse l’accès. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
             case .storageUnavailable:
                 return "L’historique ne peut pas être écrit pour l’instant. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
             case .suppressed(let reason):
@@ -593,7 +651,7 @@
             case .paused: return "pause.circle.fill"
             case .permissionsMissing: return "exclamationmark.triangle.fill"
             case .inputTapUnavailable: return "keyboard.badge.ellipsis"
-            case .storageUnavailable: return "externaldrive.badge.exclamationmark"
+            case .storageUnavailable: return "internaldrive"
             case .suppressed: return "eye.slash.fill"
             }
         }

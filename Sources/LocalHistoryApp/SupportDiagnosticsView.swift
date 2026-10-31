@@ -26,16 +26,22 @@ import SwiftUI
             VStack(alignment: .leading, spacing: 6) {
                 Text("Un problème ? Envoyez un rapport en un clic.").font(.system(size: 13, weight: .semibold))
                 Text("Goalong résume ce qu’il a détecté et prépare un fichier technique que vous relisez avant de l’envoyer. Il ne contient ni votre historique, ni les sites visités, ni aucun texte.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             SupportDiagnosticsExportButton()
             Divider()
             Toggle("Conserver les journaux techniques sur ce Mac", isOn: $enabled)
                 .toggleStyle(.goalongSwitch).onChange(of: enabled) { SupportDiagnostics.shared.setEnabled($0) }
-            Text("Recommandé : en le désactivant, plus aucun nouvel événement n’est conservé ; les journaux déjà enregistrés restent jusqu’à leur expiration ou jusqu’à « Effacer les journaux ». Conservation locale de 7 jours au plus, 5,3 Mo maximum, aucun envoi automatique.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+            // One sentence of help, the rest in a disclosure (DESIGN §12, UI-11C).
+            Text("Recommandé : 7 jours et 5,3 Mo au plus, sur ce Mac, jamais envoyés automatiquement.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            GoalongDisclosureGroup("En savoir plus") {
+                Text("Désactivé, plus aucun nouvel événement n’est conservé. Les journaux déjà enregistrés restent jusqu’à leur expiration ou jusqu’à « Effacer les journaux ».")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, 6)
+            }.font(.system(size: 12))
             HStack {
                 Button("Noter l’heure du problème") {
                     SupportDiagnostics.shared.record(.userMarkedIssue, component: .support)
@@ -44,7 +50,7 @@ import SwiftUI
                     .help("Marque l’instant où le problème se produit pour le retrouver dans le rapport.")
                 Button("Effacer les journaux…") { confirmClear = true }
             }.buttonStyle(LHSecondaryButtonStyle())
-            if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(.secondary) }
+            if let feedback { Text(feedback).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
         }
         .confirmationDialog("Effacer uniquement les journaux techniques ?", isPresented: $confirmClear) {
             Button("Effacer les journaux", role: .destructive) {

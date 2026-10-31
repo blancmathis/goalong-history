@@ -118,6 +118,8 @@ actor GoalongDeveloperReader {
     }
     #if DEBUG
     func setValueForTesting(_ value: GoalongDeveloperDay?) { self.value = value }
+    /// Followed projects shown without a store: nothing is read or written.
+    func setSelectedProjectsForTesting(_ projects: [GoalongDeveloperProject]) { selectedProjects = projects }
     #endif
     /// Followed roots never show up as suggestions, even before the next refresh.
     var suggestions: [GoalongDeveloperProject] {
