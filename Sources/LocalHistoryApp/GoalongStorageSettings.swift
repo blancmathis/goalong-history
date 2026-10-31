@@ -92,7 +92,9 @@ import Foundation
             }
         }
         .sheet(isPresented: $advancedShare) { GoalongWebsiteConnectionSheet().goalongControls() }
-        .sheet(isPresented: $siteAnalysis) { GoalongSiteAnalysisSheet().goalongControls() }
+        .sheet(isPresented: $siteAnalysis) {
+            GoalongSiteAnalysisSheet(onOpenSettings: { siteAnalysis = false; model.openSettingsPane(.chatGPT) }).goalongControls()
+        }
         .sheet(isPresented: $health) { GoalongHealthImportSheet().goalongControls() }
     }
 }
