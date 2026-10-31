@@ -48,11 +48,18 @@ struct RecordingChoicesView: View {
     /// Settings use one column so every switch sits on the shared right edge (UI-48).
     var columns = 2
     @Environment(\.isEnabled) private var isEnabled
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    /// Why the switches are locked. « Appels » is named only when it stays on (UI-12C, screens 24/44).
+    static func lockedReason(localRecordingOn: Bool, callsOn: Bool) -> String {
+        guard !localRecordingOn else { return "Ces choix restent verrouillés tant que le fichier de réglages est illisible." }
+        let reason = "Activez l’enregistrement de ce Mac pour modifier ces choix."
+        return callsOn ? reason + " « Appels » est une source à part : il reste allumé." : reason
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if !isEnabled {
-                // Locked switches say why, and why « Appels » may stay on (UI-11C, screens 24/44).
-                Label("Activez l’enregistrement pour modifier ces choix. « Appels » est une source à part et garde son réglage.",
+                Label(Self.lockedReason(localRecordingOn: consents.isEnabled(.localComputerHistory),
+                                        callsOn: draft.captureCallPresence),
                       systemImage: "lock")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
