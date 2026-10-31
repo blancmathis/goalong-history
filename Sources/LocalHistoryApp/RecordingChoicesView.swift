@@ -45,8 +45,27 @@ enum RecordingSignal: String, CaseIterable, Identifiable {
 
 struct RecordingChoicesView: View {
     @Binding var draft: DashboardSettingsDraft
+    /// Settings use one column so every switch sits on the shared right edge (UI-48).
+    var columns = 2
+    @Environment(\.isEnabled) private var isEnabled
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    /// Why the switches are locked. « Appels » is named only when it stays on (UI-12C, screens 24/44).
+    static func lockedReason(localRecordingOn: Bool, callsOn: Bool) -> String {
+        guard !localRecordingOn else { return "Ces choix restent verrouillés tant que le fichier de réglages est illisible." }
+        let reason = "Activez l’enregistrement de ce Mac pour modifier ces choix."
+        return callsOn ? reason + " « Appels » est une source à part : il reste allumé." : reason
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if !isEnabled {
+                // The shared warning banner (DESIGN §9), not loose fine print (UI-14, 24/44).
+                GoalongBanner(symbol: "lock", title: "Choix verrouillés",
+                              detail: Self.lockedReason(localRecordingOn: consents.isEnabled(.localComputerHistory),
+                                                        callsOn: draft.captureCallPresence),
+                              tone: .warning)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("recording-choices-locked-reason")
+            }
             HStack {
                 Text("Applications et durées").font(.system(size: 13, weight: .medium))
                 Spacer()
@@ -58,7 +77,7 @@ struct RecordingChoicesView: View {
             signalGroup("Titres et adresses", choices: choices([.windowTitles, .interfaceLabels, .browserURLs]))
             if (!draft.excludedDomainsText.isEmpty || !draft.includedDomainsText.isEmpty) && !draft.captureURLs {
                 Label("Les filtres web peuvent bloquer le navigateur. Vérifiez Apps et sites.", systemImage: "info.circle")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
     }
@@ -82,13 +101,17 @@ struct RecordingChoicesView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
             Grid(horizontalSpacing: 32, verticalSpacing: 0) {
-                ForEach(0..<((choices.count + 1) / 2), id: \.self) { row in
+                ForEach(0..<((choices.count + columns - 1) / columns), id: \.self) { row in
                     GridRow {
-                        ForEach(Array(choices[(row * 2)..<min(row * 2 + 2, choices.count)])) { choice in
+                        ForEach(Array(choices[(row * columns)..<min(row * columns + columns, choices.count)])) { choice in
                             HStack(spacing: 8) {
                                 Text(choice.title).font(.system(size: 13))
                                 GoalongHelpButton(text: choice.detail)
                                 Spacer(minLength: 8)
+                                if !isEnabled && choice.id == "calls" && choice.isOn.wrappedValue {
+                                    // Says on the row why this locked switch alone is on (UI-14, 24/44).
+                                    Text("Reste allumé").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                }
                                 Toggle(choice.title, isOn: choice.isOn)
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly)
                                     .accessibilityIdentifier("recording-\(choice.id)")
@@ -147,6 +170,7 @@ extension DashboardSettingsDraft {
 struct ApplicationScopePickerButton: View {
     @Binding var text: String
     @State private var error: String?
+    init(text: Binding<String>, error: String? = nil) { _text = text; _error = State(initialValue: error) }
     var body: some View {
         Button("Choisir des applications…", action: chooseApplications)
             .buttonStyle(LHSecondaryButtonStyle())

@@ -11,12 +11,14 @@ extension GalleryCatalog {
     }
 
     private static func supportPanel(_ id: String, note: String, phase: SupportRequestController.Phase,
-                                     feedback: String? = nil, kind: SupportRequestController.FeedbackKind = .success) -> GalleryEntry {
+                                     feedback: String? = nil, kind: SupportRequestController.FeedbackKind = .success,
+                                     emailUnavailable: Bool = false) -> GalleryEntry {
         panel(id, width: 580, height: 660, note: note) { ctx in
             let controller = ctx.keep(SupportRequestController())
             controller.phase = phase
             controller.feedback = feedback
             controller.feedbackKind = kind
+            controller.emailUnavailable = emailUnavailable
             return AnyView(SupportRequestView(controller: controller))
         }
     }
@@ -43,10 +45,10 @@ extension GalleryCatalog {
                                                              "Décrivez ce que vous avez fait et ce que vous attendiez dans votre message.")],
                                        byteCount: 52_480, eventCount: 38)),
             supportPanel("support/retour-repere", note: "retour d’information : repère ajouté", phase: supportReport(journalOff: false),
-                         feedback: "Repère ajouté à 09:41. Reproduisez le problème puis cliquez sur « Actualiser le rapport »."),
+                         feedback: "Repère ajouté à 09:41. Reproduisez le problème, puis choisissez « Autres options › Actualiser le rapport »."),
             supportPanel("support/retour-messagerie-absente", note: "retour d’information : aucune app de messagerie", phase: supportReport(journalOff: false),
                          feedback: "Aucune app de messagerie n’est configurée. Utilisez « Partager » ou « Enregistrer une copie ».",
-                         kind: .problem),
+                         kind: .problem, emailUnavailable: true),
             supportPanel("support/retour-journal-desactive", note: "retour d’information : journal technique désactivé", phase: supportReport(),
                          feedback: "Le journal technique est désactivé : activez « Conserver les journaux techniques sur ce Mac » dans Réglages › Avancé › Aide et diagnostic pour ajouter un repère.",
                          kind: .problem),

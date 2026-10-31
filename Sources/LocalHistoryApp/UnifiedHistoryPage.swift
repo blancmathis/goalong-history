@@ -8,6 +8,7 @@
         @ObservedObject private var agents: AgentActivityRuntime
         @StateObject private var screenTime: AppleScreenTimeDashboardModel
         @State private var source: HistorySource = .computer
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
         init(model: DashboardViewModel) {
             _model = ObservedObject(wrappedValue: model)
@@ -70,9 +71,15 @@
                 isRefreshing: model.isRefreshing || agents.isScanning || screenTime.isBusy,
                 onSelectDay: selectDay,
                 onShare: { model.showingWebsiteShare = true },
-                onRefresh: refresh
+                onRefresh: refresh,
+                // Same rule as Activité: an empty day greys the button instead of offering nothing.
+                // History off: nothing is recorded, so there is nothing to share either (UI-17C, écran 22).
+                sharingEnabled: historyEnabled && model.snapshot.eventCount > 0,
+                sharingDisabledReason: historyEnabled ? "Rien à partager ce jour-là" : "Historique de ce Mac désactivé"
             )
         }
+
+        private var historyEnabled: Bool { consents.isEnabled(.localComputerHistory) }
 
         @ViewBuilder private var sourceView: some View {
             switch source {

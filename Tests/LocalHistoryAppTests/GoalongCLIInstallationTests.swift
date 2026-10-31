@@ -49,9 +49,12 @@
             let report = GoalongCLIInstallation.inspect(linkURL: link, expectedExecutableURL: fixture.executable)
 
             XCTAssertEqual(report.state, .missing)
-            XCTAssertTrue(report.detail.contains("(DMG)"))
-            XCTAssertTrue(report.detail.contains("Sparkle ne créent pas"))
+            XCTAssertTrue(report.detail.contains("L’installation de l’app"))
+            XCTAssertTrue(report.detail.contains("ne créent pas la commande"))
             XCTAssertFalse(report.detail.contains("recrée"))
+            // UI-16C (36): CLIHelpPage hides this sentence when it ends with « : » (the Terminal line is shown
+            // under its own label). Changing the ending would print the « collez cette ligne » part twice.
+            XCTAssertTrue(report.detail.hasSuffix(":"))
             let command = try XCTUnwrap(report.linkCommand)
             XCTAssertEqual(
                 command,

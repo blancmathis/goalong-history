@@ -240,7 +240,7 @@ Dans `GoalongControls.swift`, sauf mention.
   écran ou par feuille.
 - **Bouton secondaire** (`LHSecondaryButtonStyle`) : surface relevée, filet. Rôle destructif en texte danger.
   C'est le style par défaut posé par `.goalongControls()`.
-- **Bouton discret** (`LHQuietButtonStyle`) : texte accent sans fond, pour les actions de troisième rang
+- **Bouton discret** (`LHQuietButtonStyle`) : texte encre sans fond (l’accent reste réservé à l’action principale), pour les actions de troisième rang
   (« Corriger », « Voir les 12 usages »). Le fond de survol déborde du texte pour garder l'alignement.
 
 **Saisie et choix**
@@ -248,14 +248,19 @@ Dans `GoalongControls.swift`, sauf mention.
   filet qui passe au lime et s'épaissit au focus. `GoalongFormField` : libellé, une ligne d'aide au plus, et
   l'explication longue derrière un bouton d'information.
 - **Interrupteur** (`.goalongSwitch`, `.goalongSwitchInline`, `.goalongSwitchOnly`) : piste à coins de contrôle
-  et curseur carré arrondi, la même famille d'angles que les boutons. Lime et encre quand il est actif. Le
+  et curseur carré arrondi, la même famille d'angles que les boutons. Piste encre et curseur couleur page quand il est actif, jamais lime (le lime reste rare). Verrouillé : contour pointillé et cadenas. Le
   curseur s'étire vers sa destination pendant l'appui. Taille réduite dans les longues listes.
 - **Case à cocher** (`.goalongCheckbox`) : boîte creusée, lime avec coche encre quand elle est cochée.
+  Dans une liste de plusieurs choix (grille de modules, longues listes), `.goalongCheckboxInk` : boîte encre et
+  coche couleur page, pour garder le lime rare. Une case seule ou décisive reste lime.
 - **Segmenté** (`GoalongSegmentedControl`) : piste creusée, pastille relevée qui glisse.
 - **Sélecteur de jour** (`DateSelectionControl`, `DashboardComponents.swift`) : ‹ jour ›, calendrier en popover.
-- **Restent natifs, volontairement** : menus déroulants (`Picker` en menu), calendriers et sélecteurs
-  d'heure, curseurs, pas-à-pas, alertes et dialogues de confirmation. Leur comportement clavier et VoiceOver
-  vaut plus qu'une peau maison.
+- **Menu déroulant** (`GoalongMenuPicker`) : un choix parmi plusieurs, sur la surface des contrôles Goalong
+  (pas le cadre AppKit), chevron ⌃⌄ gris. VoiceOver lit le titre comme libellé et le choix courant comme
+  valeur, comme le `Picker` natif. Les écrans redessinés l'utilisent ; ailleurs, le `Picker` en menu natif
+  reste admis.
+- **Restent natifs, volontairement** : calendriers et sélecteurs d'heure, curseurs, pas-à-pas, alertes et
+  dialogues de confirmation. Leur comportement clavier et VoiceOver vaut plus qu'une peau maison.
 
 **Structure**
 - **Section** (`GoalongSection`, `DashboardComponents.swift`) : titre posé sur la page, action discrète à
@@ -263,7 +268,9 @@ Dans `GoalongControls.swift`, sauf mention.
 - **Groupe** (`LHCard`, `GoalongSettingsGroup`) : la surface de niveau 2, pour ce qui se manipule.
 - **Liste** (`GoalongSettingsList`, `GoalongSettingsLink`, `GoalongRowDivider`, `SimpleSettingsComponents.swift`) :
   lignes pleine largeur dans un groupe, glyphe neutre sans tuile, libellé, valeur, chevron qui avance au survol.
-- **Dépliant** (`GoalongDisclosureGroup`) : ligne pleine largeur, chevron qui pivote.
+- **Dépliant** (`GoalongDisclosureGroup`) : ligne pleine largeur, chevron qui pivote. Le chevron est à gauche. Seule exception : le chevron seul, en fin de ligne, d’un tableau à colonnes fixes (règles d’usage).
+- **Aide dépliable** (`GoalongHelpText`, `GoalongDisclosureGroup.swift`) : une phrase d’aide visible, le détail
+  derrière « En savoir plus ». Pour garder une consigne courte sans perdre l’explication.
 - **Note** (`GoalongNote`) et **bandeau** (`GoalongBanner`) : information secondaire dans un bloc teinté sans
   filet ; ton neutre, confidentialité ou avertissement.
 - **En-tête de page** (`PageHeader`, `.goalongPageTitle()`) : un titre, une phrase. Jamais de sur-titre.

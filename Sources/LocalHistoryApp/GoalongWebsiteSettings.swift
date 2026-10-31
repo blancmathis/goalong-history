@@ -23,10 +23,10 @@ import LocalHistoryQueryCLI
                 if let plan = sender.savedConfiguration {
                     Divider()
                     Text(Self.planSummary(plan.options))
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     if let hour = plan.hour {
                         Text(GoalongWebsiteSettings.scheduleLabel(hour: hour, minute: plan.minute ?? 0, zone: plan.timeZoneIdentifier))
-                            .font(.system(size: 13)).foregroundStyle(.secondary)
+                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     }
                 }
             }
@@ -34,9 +34,9 @@ import LocalHistoryQueryCLI
                 HStack {
                     Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 14))
                     Spacer()
-                    Button("Choisir et voir l’aperçu") { presentation = .init(day: model.selectedDay) }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.large).accessibilityIdentifier("website-open-selected-day")
+                    Button("Choisir et voir l’aperçu") { presentation = .init(day: model.selectedDay) }.buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("website-open-selected-day")
                 }
-                Text("Tout est préparé localement. Seul le bouton d’envoi transmet les données.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Tout est préparé localement. Seul le bouton d’envoi transmet les données.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
         .sheet(item: $presentation) { request in GoalongWebsiteSharingSheet(initialDay: request.day).id(request.id).goalongControls() }
@@ -60,7 +60,7 @@ import LocalHistoryQueryCLI
             : options.selectedApplicationIDs.map { count($0.count, "application", "applications") } ?? "toutes les applications"
         let sites = !options.includeWebsites ? "sans sites"
             : options.selectedWebsiteDomains.map { count($0.count, "site", "sites") } ?? "tous les sites"
-        return [devices, apps, sites].joined(separator: " · ")
+        return [devices, apps, sites].joined(separator: ", ")
     }
 }
 #endif

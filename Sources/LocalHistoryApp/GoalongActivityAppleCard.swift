@@ -28,49 +28,17 @@ struct GoalongActivityAppleCard: View {
     }
 
     var body: some View {
-        LHCard(padding: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Temps d’écran Apple").font(.system(size: 13, weight: .semibold)).accessibilityAddTraits(.isHeader)
-                        Text(day.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.wide).year()))
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    }
-                    Spacer(minLength: 8)
-                    if screenTime.isBusy && consents.isEnabled(.appleScreenTime) {
-                        ProgressView().controlSize(.small).accessibilityLabel("Lecture du Temps d’écran Apple")
-                    } else if consents.isEnabled(.appleScreenTime), let value = summary {
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text(OverviewUsageProjection.durationLabel(seconds: value.totalScreenOnDuration))
-                                .font(.system(size: 23, weight: .semibold)).monospacedDigit()
-                            Text(GoalongScreenTimeSourcePresentation(provenance: value.provenance).durationTitle)
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
-                        }
-                    }
-                    Button(consents.isEnabled(.appleScreenTime) ? "Ouvrir" : "Configurer") {
-                        model.selectDay(day); model.selectSection(.screenTime)
-                    }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
+        Group {
+            if consents.isEnabled(.appleScreenTime) { card }
+            else {
+                // The same empty state and action as the « Temps d’écran Apple » page.
+                SourceActivationToggle(capability: .appleScreenTime, activateButtonTitle: "Activer…") {
+                    GoalongEmptyState(title: GoalongScreenTimeOffCopy.title,
+                                      message: GoalongScreenTimeOffCopy.message(accessRevoked: accessDenied))
+                        // « Activer… » follows the sentence at 24 pt, as on the « Temps d’écran Apple » page (UI-17C, écran 15).
+                        .padding(.bottom, -24)
                 }
-                if accessDenied || screenTime.needsFullDiskAccess {
-                    Label("Lecture Apple arrêtée : accès indisponible. Vérifiez les autorisations pour cette source.", systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
-                } else if !consents.isEnabled(.appleScreenTime) {
-                    Text("Source facultative désactivée. Les observations Goalong restent disponibles indépendamment.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                } else if !screenTime.isBusy, let value = summary {
-                    Text("Source Apple · \(FrenchCount.count(value.deviceSummaries.count, "appareil", "appareils"))")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                    if GoalongScreenTimeSourcePresentation(provenance: value.provenance).isPartial {
-                        Label("Données partielles · ce n’est pas le total officiel des Réglages Apple.", systemImage: "info.circle")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
-                    }
-                    Text("Source indépendante, jamais additionnée au temps actif Goalong. Consultez le détail pour vérifier le périmètre et les limites.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                } else if !screenTime.isBusy {
-                    Text("Pas de données Apple disponibles pour cette journée. Ce n’est pas un total à zéro.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-            }.fixedSize(horizontal: false, vertical: true)
+            }
         }
         .accessibilityIdentifier("activity-apple-source")
         .onAppear { screenTime.setActive(model.dashboardIsVisible) }
@@ -94,6 +62,53 @@ struct GoalongActivityAppleCard: View {
                 model.alert = DashboardAlert(kind: .error, title: "Accès Temps d’écran indisponible",
                     message: "La lecture a été arrêtée, mais le réglage n’a pas pu être enregistré. Vérifiez Temps d’écran dans les réglages.")
             }
+        }
+    }
+
+    private var card: some View {
+        LHCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Temps d’écran Apple").font(.system(size: 13, weight: .semibold)).accessibilityAddTraits(.isHeader)
+                        Text(day.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.wide).year()))
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    }
+                    Spacer(minLength: 8)
+                    if screenTime.isBusy && consents.isEnabled(.appleScreenTime) {
+                        ProgressView().controlSize(.small).accessibilityLabel("Lecture du Temps d’écran Apple")
+                    } else if consents.isEnabled(.appleScreenTime), let value = summary {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(OverviewUsageProjection.durationLabel(seconds: value.totalScreenOnDuration))
+                                .font(.system(size: 23, weight: .semibold)).monospacedDigit()
+                            Text(GoalongScreenTimeSourcePresentation(provenance: value.provenance).durationTitle)
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        }
+                    }
+                    Button(consents.isEnabled(.appleScreenTime) ? "Ouvrir" : "Configurer") {
+                        model.selectDay(day); model.selectSection(.screenTime)
+                    }.buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
+                }
+                if accessDenied || screenTime.needsFullDiskAccess {
+                    Label("Lecture Apple arrêtée : accès indisponible. Vérifiez les autorisations pour cette source.", systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                } else if !consents.isEnabled(.appleScreenTime) {
+                    Text("Source facultative désactivée. Les observations Goalong restent disponibles indépendamment.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                } else if !screenTime.isBusy, let value = summary {
+                    Text("Source Apple, \(FrenchCount.count(value.deviceSummaries.count, "appareil", "appareils"))")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    if GoalongScreenTimeSourcePresentation(provenance: value.provenance).isPartial {
+                        Label("Données partielles, ce n’est pas le total officiel des Réglages Apple.", systemImage: "info.circle")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                    }
+                    Text("Source indépendante, jamais additionnée au temps actif Goalong. Consultez le détail pour vérifier le périmètre et les limites.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                } else if !screenTime.isBusy {
+                    Text("Pas de données Apple disponibles pour cette journée. Ce n’est pas un total à zéro.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                }
+            }.fixedSize(horizontal: false, vertical: true)
         }
     }
 }

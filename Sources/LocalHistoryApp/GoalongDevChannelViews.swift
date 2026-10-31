@@ -57,7 +57,7 @@
                 HStack(spacing: 6) {
                     Circle().fill(Color.orange).frame(width: 7, height: 7)
                     Text(label)
-                        .font(.system(size: 11, weight: real ? .semibold : .medium))
+                        .font(.system(size: 12, weight: real ? .semibold : .medium))
                         .foregroundStyle(real ? Color.black : LHTheme.secondaryText)
                     Spacer(minLength: 0)
                 }

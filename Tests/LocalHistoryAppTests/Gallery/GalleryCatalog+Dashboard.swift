@@ -81,8 +81,9 @@ extension GalleryCatalog {
             dashboard("historique/journee-vide", section: .history, fixture: .recordingOn),
             dashboard("historique/chronologie", section: .history, sizes: [.window, .minimum, .full(1240)],
                       fixture: .realistic),
+            // UI-15C (22): one state keeps the .activity destination covered. The filled variant drew the same
+            // PNG as historique/, and « Ouvrir le journal » shows the file in the Finder, outside the app's window.
             dashboard("enregistrement/journal", section: .activity),
-            dashboard("enregistrement/journal-rempli", section: .activity, fixture: .realistic),
             dashboard("partage/avec-donnees", section: .share, fixture: .realistic),
             dashboard("temps-ecran/vide", section: .screenTime),
             dashboard("conversations-ia/vide", section: .agentActivity),
@@ -93,7 +94,12 @@ extension GalleryCatalog {
             dashboard("confidentialite/suivi-actif", section: .privacy, fixture: .realistic),
             // The page shows the install command with the home folder: a fixed displayed home, not the shard's
             // `/tmp/goalong-gallery-<run>/shard-N-…`, which changes every run.
-            dashboard("terminal/aide", section: .cli, configure: { _, ctx in showFixedHome(ctx) }),
+            // UI-9 (36): the installed app's executable, not the xctest runner's.
+            dashboard("terminal/aide", section: .cli, configure: { _, ctx in
+                showFixedHome(ctx)
+                GoalongCLIInstallation.galleryExecutableURL = URL(fileURLWithPath: "/Applications/Goalong History.app/Contents/MacOS/Goalong History")
+                ctx.cleanups.append { GoalongCLIInstallation.galleryExecutableURL = nil }
+            }),
             // Without a key but with history on and a work definition: not the same image as Réglages › Jev, which
             // the section opens (C2-couverture-01).
             dashboard("surveillance/a-configurer", section: .monitoring, fixture: .recordingOn, configure: { _, _ in

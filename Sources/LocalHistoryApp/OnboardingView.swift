@@ -23,6 +23,10 @@
         @AppStorage("goalongOnboardingPrivacyReviewedV1") var privacyReviewed = false
         @Environment(\.goalongDefaults) private var defaults
         @State var checkingSources: Set<GoalongCapability> = []
+        /// Bottom of the page content and top of the footer, in window space: the footer's hairline shows only
+        /// while content runs under it (UI-16C, screen 19).
+        @State private var contentBottom: CGFloat = 0
+        @State private var footerTop: CGFloat = .infinity
 
         var body: some View {
             HStack(spacing: 0) {
@@ -33,17 +37,32 @@
                     ScrollView {
                         page
                             .frame(maxWidth: 680, alignment: .leading)
-                            .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 32)
+                            .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 24)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .background(GeometryReader { proxy in
+                                Color.clear.preference(key: OnboardingContentBottomKey.self, value: proxy.frame(in: .global).maxY)
+                            })
                     }
-                    .overlay(alignment: .bottom) {
-                        // A soft fade tells the reader that the list goes on under the footer.
-                        LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground],
-                                       startPoint: .top, endPoint: .bottom)
-                            .frame(height: 56).allowsHitTesting(false).accessibilityHidden(true)
+                    .onPreferenceChange(OnboardingContentBottomKey.self) { contentBottom = $0 }
+                    // The visible scroller says « more below » (UI-11C), with the footer's hairline. No fade or
+                    // shadow: a faded last row read as a disabled switch (UI-12C), and DESIGN §8 has no gradient.
+                    .scrollIndicators(.visible)
+                    // The footer is the scroll view's bottom inset, not a block under it: the content runs under its
+                    // edge, and scrolled to the end it stops 24 pt above it, on a whole row (UI-12C, screen 19).
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        VStack(spacing: 0) {
+                            // UI-16C (19): the hairline marks the edge only while the page goes on under the footer;
+                            // scrolled to the end (or a short page) the footer sits flat on the page.
+                            Rectangle().fill(contentBottom > footerTop + 0.5 ? LHTheme.separator : Color.clear)
+                                .frame(height: 1)
+                            footer
+                        }
+                        .background(LHTheme.pageBackground)
+                        .background(GeometryReader { proxy in
+                            Color.clear.preference(key: OnboardingFooterTopKey.self, value: proxy.frame(in: .global).minY)
+                        })
+                        .onPreferenceChange(OnboardingFooterTopKey.self) { footerTop = $0 }
                     }
-                    Rectangle().fill(LHTheme.separator).frame(height: 1)
-                    footer
                 }
                 .background(LHTheme.pageBackground)
             }
@@ -213,5 +232,15 @@
             case .ready: return "Prêt"
             }
         }
+    }
+
+    private struct OnboardingContentBottomKey: PreferenceKey {
+        static let defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+    }
+
+    private struct OnboardingFooterTopKey: PreferenceKey {
+        static let defaultValue: CGFloat = .infinity
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = min(value, nextValue()) }
     }
 #endif
