@@ -93,7 +93,7 @@ import LocalHistoryCore
                   detail: "Des exemples clairs, pas une liste complète.", help: procrastinationText,
                   hint: "Ex. Faire défiler le fil « Pour vous » de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
                   text: $procrastination, identifier: "monitoring-procrastination")
-            GoalongNote("Ces critères restent sur ce Mac. Enregistrer autorise leur envoi à ChatGPT si le classement est activé, et à TypeSafe, fournisseur de Jev, si la surveillance l’est. N’y mettez aucune information sensible.",
+            GoalongNote("Ces critères restent sur ce Mac. Enregistrer autorise leur envoi à ChatGPT si le classement est activé, et celui de vos critères et exemples hors travail à TypeSafe, fournisseur de Jev, si la surveillance l’est. N’y mettez aucune information sensible.",
                         tone: .privacy)
             HStack(spacing: 10) {
                 if draftBytes > 0 { budget }
