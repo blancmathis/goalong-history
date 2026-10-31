@@ -293,7 +293,7 @@ struct GoalongCodeDay: Equatable {
         var parts: [String] = []
         if project.requests > 0 {
             parts.append(count(project.requests, "demande à T3", "demandes à T3"))
-            if project.parallel > 1 { parts.append("jusqu’à \(project.parallel) tours en même temps") }
+            if project.parallel > 1 { parts.append("jusqu’à \(project.parallel) demandes en même temps") }
         }
         if project.conversations > 0 {
             let who = project.providers.filter { $0 != "T3 Code" }.joined(separator: ", ")
@@ -390,7 +390,7 @@ struct GoalongCodeSection: View {
                             .disabled(isPreview)
                     }
                 }
-                Text("Un tour T3 compte du début à la fin de son exécution ; les tours qui se chevauchent comptent une fois. Les conversations des autres agents sont comptées, sans durée fiable. Commits et fichiers modifiés viennent des seuls projets suivis. Goalong ne lit ni les messages, ni le code, ni les messages de commit.")
+                Text("Une demande à T3 Code compte du début à la fin de son exécution ; les demandes qui se chevauchent comptent une fois. Les conversations des autres agents sont comptées, sans durée fiable. Commits et fichiers modifiés viennent des seuls projets suivis. Goalong ne lit ni les messages, ni le code, ni les messages de commit.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -404,7 +404,7 @@ struct GoalongCodeSection: View {
         if running >= 60 {
             let projects = code.projects.filter { $0.runningSeconds > 0 }.count
             let away = GoalongIntervals.seconds(code.running, outside: GoalongIntervals.presence(day))
-            var text = "T3 Code a exécuté des tours pendant \(GoalongAnalyticsFormatting.duration(running)) sur \(GoalongCodeDay.count(projects, "projet", "projets"))"
+            var text = "T3 Code a travaillé pendant \(GoalongAnalyticsFormatting.duration(running)) sur \(GoalongCodeDay.count(projects, "projet", "projets"))"
             if away >= 300 { text += ", dont \(GoalongAnalyticsFormatting.duration(away)) sans activité de votre part sur ce Mac" }
             return text + ". Ce temps ne s’ajoute jamais à votre temps actif."
         }
@@ -424,7 +424,7 @@ struct GoalongCodeSection: View {
 
     private func legend(_ shown: [GoalongCodeDay.Project]) -> [(mark: GoalongLaneMark, title: String)] {
         var items: [(mark: GoalongLaneMark, title: String)] = []
-        if shown.contains(where: { !$0.running.isEmpty }) { items.append((.solid, "Tour T3 en cours")) }
+        if shown.contains(where: { !$0.running.isEmpty }) { items.append((.solid, "T3 Code au travail")) }
         if shown.contains(where: { !$0.spans.isEmpty }) { items.append((.faint, "Conversation d’agent, du premier au dernier message")) }
         if shown.contains(where: { !$0.commits.isEmpty }) { items.append((.tick, "Commit")) }
         return items
@@ -459,7 +459,7 @@ struct GoalongCodeSection: View {
             if project.runningSeconds >= 60 {
                 Text(GoalongAnalyticsFormatting.duration(project.runningSeconds))
                     .font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                    .help("Tours T3 en cours, comptés une fois quand ils se chevauchent")
+                    .help("T3 Code au travail, compté une fois quand des demandes se chevauchent")
             }
         }
         .padding(.vertical, 9).padding(.horizontal, 6)

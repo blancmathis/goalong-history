@@ -76,9 +76,10 @@ struct GoalongAgendaDay: Equatable {
         }
         guard sentences.isEmpty else { return sentences.joined(separator: " ") }
         let when = isToday ? " aujourd’hui." : " ce jour-là."
-        // A refused agenda is the subject of the day: say it before what the calls show.
+        // The note under the section says why the agenda is unread: the lead claims only the calls.
         if calendarOn && calendarAccess != .granted {
-            return "Agenda non lu : macOS n’en donne pas l’accès." + (callsOn ? " Aucun appel observé" + when : "")
+            if callsOn { return "Aucun appel observé" + when }
+            return calendarAccess == .denied ? "Agenda non autorisé dans macOS." : "Agenda pas encore autorisé."
         }
         return nothingRead + when
     }

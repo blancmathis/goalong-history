@@ -635,9 +635,8 @@
             }
         }
 
-        static func tenMinuteSummary(count: Int) -> String {
-            "\(GoalongUIFormat.count(count, "période")) de dix minutes. Ouvrez une période pour voir ses détails."
-        }
+        /// The count already sits beside « Chronologie »: the banner only says what to do with a period.
+        static let openPeriodHint = "Ouvrez une période de dix minutes pour voir ses détails."
 
         static func retainedEpisodesLabel(_ count: Int) -> String {
             GoalongUIFormat.count(count, "épisode représentatif conservé", plural: "épisodes représentatifs conservés")
@@ -917,7 +916,7 @@
             case .available:
                 break
             }
-            let summary = ComputerHistoryPageCopy.tenMinuteSummary(count: tenMinuteGroups.count)
+            let summary = ComputerHistoryPageCopy.openPeriodHint
             return model.isAnalysisPartial ? partialAnalysisNotice + " " + summary : summary
         }
 
@@ -944,7 +943,7 @@
                         Text("Préparation…")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(LHTheme.secondaryText)
-                    } else {
+                    } else if !tenMinuteGroups.isEmpty {
                         Text(ComputerHistoryPageCopy.periodCountLabel(
                             visible: visibleTimelineGroups.count,
                             total: tenMinuteGroups.count,
@@ -973,7 +972,28 @@
             }
         }
 
-        private var timelineCard: some View {
+        /// An empty day is a page state, not a card: thread, title, sentence and one action.
+        @ViewBuilder private var timelineCard: some View {
+            if tenMinuteGroups.isEmpty && !isPreparingTimeline {
+                GoalongEmptyState(
+                    title: emptyTimelineTitle,
+                    message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
+                        ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.") {
+                    if !needsRetry {
+                        Button("Actualiser") { model.refresh(day: day) }
+                            .buttonStyle(LHSecondaryButtonStyle())
+                            .disabled(model.isLoading || isSnapshotLoading)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+                .accessibilityIdentifier("history-empty-day")
+            } else {
+                timelineList
+            }
+        }
+
+        private var timelineList: some View {
             LHCard(padding: 0) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     HStack {
@@ -1005,13 +1025,6 @@
                                 .foregroundStyle(LHTheme.secondaryText)
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
-                        .padding(24)
-                    } else if tenMinuteGroups.isEmpty {
-                        GoalongEmptyState(
-                            title: emptyTimelineTitle,
-                            message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
-                                ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
-                        .frame(minHeight: 240)
                         .padding(24)
                     } else if visibleTimelineGroups.isEmpty {
                         GoalongEmptyState(title: "Aucune activité correspondante",
