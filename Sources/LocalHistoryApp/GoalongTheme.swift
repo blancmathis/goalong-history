@@ -33,11 +33,12 @@
         static let insetBackground = adaptive(light: 0xEFEEE4, dark: 0x18211B)
         static let segmentSelected = adaptive(light: 0xFFFFFF, dark: 0x2A3A2E)
         static let segmentSelectedBorder = adaptive(light: 0xC9D0BC, dark: 0x3D5141)
-        /// Off track, ≥ 3:1 on every background (WCAG 1.4.11, UI-14, écran 27). Light: 3.5:1 on the page, 3.4:1 on inset,
-        /// 4:1 behind the white knob. Dark: 3.8:1 on the page, 3.5:1 on inset, 3.3:1 on controls, 4:1 behind the knob.
-        static let switchTrack = adaptive(light: 0x7A8370, dark: 0x627866)
+        /// Off track. Light: grey, 3.5:1 on the page, 3.4:1 on inset, 4:1 behind the white knob, 4.8:1 against the ink
+        /// on track. Dark: a dark well, so on (light ink) and off differ by 12:1 at a glance (R7); the 1 pt strongSeparator
+        /// edge keeps the off track ≥ 3:1 on every background (≥ 4.2:1, WCAG 1.4.11, UI-14, écran 27) and the knob is 12:1.
+        static let switchTrack = adaptive(light: 0x7A8370, dark: 0x1F2B23)
         /// Hover of the off track: darker than the track in light, lighter in dark, so hover always reads as more visible.
-        static let switchTrackHover = adaptive(light: 0x6B7462, dark: 0x6E8873)
+        static let switchTrackHover = adaptive(light: 0x6B7462, dark: 0x26332A)
         static let switchKnob = adaptive(light: 0xFFFFFF, dark: 0xE6EDE7)
         static let placeholder = adaptive(light: 0x8A9486, dark: 0x66766A, highLight: 0x5E6859, highDark: 0x93A396)
         /// Chart axes and the resting thread: quieter than secondary text, never body copy.

@@ -345,8 +345,8 @@
 
         private var knobFill: Color {
             if isOn { return LHTheme.pageBackground }
-            // Locked off: a solid grey knob (≥ 3.6:1 on groups) on the empty track.
-            return isEnabled ? LHTheme.switchKnob : LHTheme.switchTrack
+            // Locked off: a solid secondary-text knob (≥ 5.5:1 on groups) on the empty track.
+            return isEnabled ? LHTheme.switchKnob : LHTheme.secondaryText
         }
 
         func makeBody(configuration: Configuration) -> some View {
@@ -369,9 +369,9 @@
                     .padding(.horizontal, 3)
                     .overlay {
                         if !isEnabled {
-                            // The padlock carries meaning, ≥ 3:1 in both modes: ink on the page-coloured on knob,
-                            // page colour on the grey off knob (UI-16A, 58).
-                            Image(systemName: "lock.fill").font(.system(size: small ? 7 : 8, weight: .bold))
+                            // The padlock carries meaning, ≥ 5.5:1 in both modes and 10 pt on a 16 pt knob: ink on the
+                            // page-coloured on knob, page colour on the secondary-text off knob (UI-16A, 58; R7, 38/44).
+                            Image(systemName: "lock.fill").font(.system(size: small ? 8 : 10, weight: .bold))
                                 .foregroundStyle(isOn ? LHTheme.text : LHTheme.pageBackground)
                                 .accessibilityHidden(true)
                         }
