@@ -2,15 +2,13 @@ J-0745	S3	Braise :: nav:braise	AXCheckBox[label~"Lancer Goalong à l’ouverture
 J-0711	S1	Onboarding :: launch HOME neuf > onboarding-continue x3	AXButton[label~"Ouvrir Réglages Système"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
 J-0950	S2	Terminal (page CLI) :: nav:cli	AXButton[label~"Copier les instructions"]	click	le presse-papiers contient le texte attendu (pbpaste)	
 J-0758	S3	Braise :: nav:braise	id=goalong-braise	observe	l’élément de barre des menus goalong-braise existe (item de barre, pas une fenêtre) avec son titre	
-J-0463	S2	Activité :: nav:overview	AXButton[label~"Exporter"]	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
-J-0795	S2	Activité › Rythme :: pane:website > feuille Rythme (GoalongRhythmStudio)	AXButton[label~"Préparer pour mon autre agent…"]	click	le sélecteur d’enregistrement s’ouvre ; le fichier est écrit	
-J-0482	S2	Mon travail :: nav:work	AXButton[label~"Tout reclasser…"]	click	la confirmation exécute l’action ; Annuler la laisse intacte	
+J-0482	S2	Mon travail :: nav:work	AXButton[label~"Annuler"]	click	la confirmation exécute l’action ; Annuler la laisse intacte	
 J-0502	S2	Mon travail :: nav:work	AXMenuItem[label~"Hors travail"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
 J-0458	S2	Activité :: nav:overview	AXButton[label~"Examiner cette journée dans l’historique"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
-J-0834	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"Effacer les journaux"]	click	la confirmation exécute l’action ; Annuler la laisse intacte	
+J-0834	S3	Support / diagnostic :: nav:overview > Signaler un problème… (feuille Support)	AXButton[label~"Annuler"]	click	la confirmation exécute l’action ; Annuler la laisse intacte	
 J-0856	S3	Réglages › Applications :: pane:applications	AXTextField[label~"Ajouter un site"]	type	le texte saisi apparaît en AXValue ; champ vidable	
-J-0859	S3	Réglages › Conservation :: pane:storage > rétention	AXRadioButton[label~"La dernière heure"]	click	l’option choisie devient la valeur affichée	
+J-0859	S3	Réglages › Conservation :: pane:storage > rétention	AXRadioGroup[label~"Période"]	click	l’option choisie devient la valeur affichée	
 J-0935	S1	Pause globale :: si > mi:toggleGlobalPause / Réglages home settings-privacy-stop	AXButton[label~"Tout suspendre…"]	click	l’action du bouton s’exécute (feuille/page/état change), capture après presse	
 J-0704	S1	Réglages › Enregistrement :: pane:recording	id=recording-setup-confirm	shortcut	la touche équivalente déclenche la même action que le bouton	
-J-0505	S2	Analyses :: nav:analytics > Corriger	id=work-review-sheet	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
+J-0505	S2	Activité :: nav:overview > activity-tasks-review	id=work-review-sheet	observe	la feuille s’ouvre avec son contenu ; Esc la ferme	
 J-0780	S2	Réglages › Site :: pane:website > Calculer le rythme à partir de l’historique de ce Mac > Analyser le contexte d’une session… (feuille Rythme)	AXDatePicker[label~"Début"]	type	la date/heure saisie est acceptée ou refusée avec message	
