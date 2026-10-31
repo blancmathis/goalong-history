@@ -307,7 +307,13 @@ struct GoalongProfileStudio: View {
                                 DateSelectionControl(date: analyzedDay, onChange: selectDay, showsToday: false)
                             }
                             Toggle("Activité de ce Mac", isOn: $computer)
-                            if computer { DatePicker("Début de l’activité", selection: $start).goalongDateField(label: "Début de l’activité"); Toggle("Inclure les textes de fenêtres déjà autorisés", isOn: $rich) }
+                            if computer {
+                                // UI-12A: the same day selector as above, never the system DatePicker; at most the analysed day.
+                                HStack(spacing: 8) {
+                                    Text("Début de l’activité").font(.system(size: 13))
+                                    DateSelectionControl(date: start, onChange: { start = min(Calendar.current.startOfDay(for: $0), analyzedDay) }, showsToday: false)
+                                }
+                                Toggle("Inclure les textes de fenêtres déjà autorisés", isOn: $rich) }
                             Toggle("Conversations IA, comme contexte", isOn: $conversations)
                             if conversations {
                                 HStack(spacing: 8) {
