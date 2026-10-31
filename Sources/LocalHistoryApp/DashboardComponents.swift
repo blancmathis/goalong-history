@@ -412,6 +412,9 @@
         let date: Date
         let onChange: (Date) -> Void
         var label: String? = nil
+        /// A chevron that says the button opens a calendar, when nothing around it does (UI-16A, 4).
+        var chevron = false
+        var accessibilityName = "Choisir un jour"
         @State private var showsCalendar = false
         @State private var calendarDate = GoalongToday.now
 
@@ -420,14 +423,20 @@
                 calendarDate = date
                 showsCalendar.toggle()
             } label: {
-                Text(label ?? date.formatted(.dateTime.day().month(.abbreviated).year().locale(GoalongUIFormat.locale)))
-                    .font(.system(size: 13, weight: .medium)).monospacedDigit()
-                    .fixedSize()
-                    .padding(.horizontal, 8).frame(height: 24)
-                    .contentShape(Rectangle())
+                HStack(spacing: 6) {
+                    Text(label ?? date.formatted(.dateTime.day().month(.abbreviated).year().locale(GoalongUIFormat.locale)))
+                        .font(.system(size: 13, weight: .medium)).monospacedDigit()
+                    if chevron {
+                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
+                    }
+                }
+                .fixedSize()
+                .padding(.horizontal, 8).frame(height: 24)
+                .contentShape(Rectangle())
             }
             .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6))
-            .accessibilityLabel("Choisir un jour")
+            .accessibilityLabel(accessibilityName)
             .accessibilityValue(date.formatted(.dateTime.weekday(.wide).day().month(.wide).year().locale(GoalongUIFormat.locale)))
             .help("Choisir un jour dans le calendrier")
             .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {

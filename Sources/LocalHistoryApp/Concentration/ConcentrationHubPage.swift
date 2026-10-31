@@ -381,7 +381,7 @@ extension EnvironmentValues {
 @MainActor struct JevScopeControl: View {
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
-    /// UI-12A: GoalongSegmentedControl does not draw `.disabled`, so the row greys itself.
+    /// GoalongSegmentedControl draws `.disabled` itself, labels in secondary text (≥ 4.5:1, UI-16A, 5): no extra fade here.
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
@@ -395,7 +395,6 @@ extension EnvironmentValues {
                     $0 == .always ? "Toujours" : "Pendant mes séances"
                 }
                 .controlSize(.small)
-                .opacity(isEnabled ? 1 : 0.5)
                 .accessibilityIdentifier("jev-scope")
             }
             // Connected but off: only the activation is missing (UI-14, M2).
