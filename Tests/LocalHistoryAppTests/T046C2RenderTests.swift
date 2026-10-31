@@ -29,6 +29,8 @@ final class T046C2RenderTests: XCTestCase {
             NSApplication.shared.accessibilitySetValue(enhancedUIBefore ?? false, forAttribute: Self.enhancedUI)
         }
         try await super.tearDown()
+    }
+
     private var calendar: Calendar { .current }
 
     @MainActor func testRhythmStudioOffersToPickAProjectAndPrepareTheSelectionButNotBeforeAProjectIsNamed() throws {
