@@ -312,11 +312,15 @@ if [[ $SHARD == S4 ]]; then
     echo "== unified log (app process, 40 min)"; /usr/bin/log show --last 40m --style compact --predicate "process == \"$EXE\"" 2>/dev/null | tail -n 4000
     echo "== processes"; ps -axo pid,comm | grep -i goalong
   } > "$ev" 2>&1
+  # L3n: J-0557 (Ambiance playback) needs an audio output; the runner's devices are the proof either way.
+  system_profiler SPAudioDataType > "$OUT/cli/audio-devices.txt" 2>&1
   while IFS=$'\t' read -r -u 3 id rx; do
     grep -q "^$id"$'\t' "$OUT/plan.tsv" || continue
     { echo "$id — trace attendue : /$rx/ (insensible à la casse)"; grep -Eim 25 -- "$rx" "$ev"; } > "$OUT/cli/$id.txt"
     textproof "$OUT/cli/$id.txt" "$id"
     if [[ $(wc -l < "$OUT/cli/$id.txt") -gt 1 ]]; then record "$id" pass "rows/$id.png" "rows/ax/$id.txt" "" "trace /$rx/"
+    elif [[ $id == J-0557 ]] && ! grep -q "Output Channels\|Default Output Device: Yes" "$OUT/cli/audio-devices.txt"; then
+      record "$id" N/A "rows/$id.png" "cli/audio-devices.txt" no-audio-output "N/A justifié : le runner n’a aucune sortie audio (system_profiler SPAudioDataType, cli/audio-devices.txt)"
     else record "$id" N/A "rows/$id.png" "rows/ax/$id.txt" no-trace "aucune trace /$rx/ sur le runner (coupé en Dev ou non déclenché)"; fi
   done 3< "$HERE/t046-bg.tsv"
   quit_app
