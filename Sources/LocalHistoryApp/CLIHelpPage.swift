@@ -44,7 +44,14 @@
 
                     readinessBanner
                     if installationReport.canInstall || installOutcome != nil { installRow }
-                    if let command = installationReport.linkCommand { linkCommandRow(command) }
+                    if let command = installationReport.linkCommand {
+                        // UI-15A (36): the sentence ending with a colon sits right above its line.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(installationReport.canInstall ? "Ou collez cette ligne dans le Terminal :" : "Collez cette ligne dans le Terminal :")
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            linkCommandRow(command)
+                        }
+                    }
                     agentCard
                     quickCommandsCard
                     evidenceCard
@@ -106,14 +113,14 @@
         /// The DMG and Sparkle do not create the command: the exact line to paste, built from this app's path.
         private func linkCommandRow(_ command: String) -> some View {
             HStack(alignment: .center, spacing: 12) {
-                // UI-55: a path is never cut in the middle; the line scrolls instead of wrapping. The copied value is unchanged.
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(command)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize()
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // UI-15A (36): the whole line is in view and selectable, wrapped instead of cut at the edge.
+                // The copied value is unchanged.
+                Text(command)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button {
                     linkCommandCopied = GoalongClipboardWriter.copy(command)
                     announce(linkCommandCopied ? "Commande copiée" : "La commande n’a pas pu être copiée")
@@ -137,7 +144,7 @@
                             Text("Donner Goalong à un agent")
                                 .font(.title3.weight(.bold))
                             Text(
-                                "Copiez une consigne complète (commandes, traitement sûr des données, pagination, provenance, données manquantes) et collez-la telle quelle dans votre agent."
+                                "Copiez une consigne complète et collez-la telle quelle dans votre agent : les commandes, comment traiter vos données avec soin, lire les résultats page par page, citer leur origine et signaler ce qui manque."
                             )
                             .font(.subheadline)
                             .foregroundStyle(LHTheme.secondaryText)
@@ -200,7 +207,7 @@
                 }
                 Spacer(minLength: 16)
                 // A long command wraps instead of being cut (UI-12B, 36).
-                Text(item.command)
+                Text(Self.displayCommand(item))
                     .font(.system(.caption, design: .monospaced).weight(.medium))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -216,7 +223,7 @@
                     Image(systemName: copiedCommandID == item.id ? "checkmark" : "doc.on.doc")
                 }
                 .buttonStyle(LHQuietButtonStyle())
-                .help("Copier « \(item.command) »")
+                .help("Copier « \(Self.displayCommand(item)) »")
                 .accessibilityLabel("Copier la commande : \(Self.frenchTitle(item))")
             }
             .padding(.horizontal, 18)
@@ -274,7 +281,7 @@
         private var statusTitle: String {
             switch installationReport.state {
             case .ready: return "Commande prête"
-            case .missing: return "Commande absente"
+            case .missing: return "Commande non installée"
             case .conflict: return "Conflit de commande"
             case .development: return "Commande de Goalong installé"
             }
@@ -284,16 +291,17 @@
         private var statusTint: Color {
             switch installationReport.state {
             case .ready: return LHTheme.success
-            case .development: return LHTheme.secondaryText
-            case .missing, .conflict: return LHTheme.warning
+            // UI-15A (36): a command not installed yet is a normal first state, said in a neutral tone.
+            case .development, .missing: return LHTheme.secondaryText
+            case .conflict: return LHTheme.warning
             }
         }
 
         private var statusSymbol: String {
             switch installationReport.state {
             case .ready: return "checkmark.circle.fill"
-            case .development: return "info.circle.fill"
-            case .missing, .conflict: return "exclamationmark.triangle.fill"
+            case .development, .missing: return "info.circle.fill"
+            case .conflict: return "exclamationmark.triangle.fill"
             }
         }
 
@@ -313,7 +321,12 @@
             case .development:
                 guard let path = installationReport.developmentCLIPath else { return installationReport.detail }
                 return installationReport.detail + " Exécutable de Goalong Dev : " + path
-            case .missing, .conflict:
+            case .missing:
+                // The « … collez cette ligne dans le Terminal : » part is said right above the line.
+                return installationReport.detail.hasSuffix(":")
+                    ? "L’installation de l’app et ses mises à jour ne créent pas la commande goalong."
+                    : installationReport.detail
+            case .conflict:
                 return installationReport.detail
             }
         }
@@ -345,7 +358,7 @@
         }
 
         private func copyQuickCommand(_ item: GoalongCLIQuickStartCommand) {
-            if GoalongClipboardWriter.copy(item.command) {
+            if GoalongClipboardWriter.copy(Self.displayCommand(item)) {
                 copiedCommandID = item.id
                 announce("Commande copiée : \(Self.frenchTitle(item))")
             } else {
@@ -364,9 +377,17 @@
             }
         }
 
+        /// UI-15A (36): the example question is in French on the French page; the command and its options stay as is.
+        static func displayCommand(_ item: GoalongCLIQuickStartCommand) -> String {
+            item.command.hasPrefix("goalong ask")
+                ? item.command.replacingOccurrences(of: "\"Summarize what I worked on today\"",
+                                                    with: "\"Résume ce sur quoi j’ai travaillé aujourd’hui\"")
+                : item.command
+        }
+
         static func frenchDetail(_ item: GoalongCLIQuickStartCommand) -> String {
             switch item.command {
-            case "goalong status": return "Accord, fraîcheur, couverture et erreurs, sans ouvrir le contenu des conversations."
+            case "goalong status": return "Ce que vous avez autorisé, la date des dernières données, les jours couverts et les erreurs, sans ouvrir les conversations."
             case "goalong days": return "Liste les dates auxquelles Goalong peut répondre avec les données locales."
             case "goalong help": return "Aide lisible ; ajoutez --json pour donner à un agent la liste des commandes."
             default:

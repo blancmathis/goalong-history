@@ -78,8 +78,8 @@
                             subjectSection(title: "Sites web", symbol: "globe", items: websites)
                             subjectSection(title: "Applications", symbol: "square.grid.2x2", items: applications)
                         }
-                        // The last row clears the export bar's fade (UI-13B).
-                        .padding(.bottom, Self.exportBarHeight)
+                        // The export bar sits under the list, not over it: a small margin is enough (UI-15B, 32/55).
+                        .padding(.bottom, 12)
                     }
                 }
             }
@@ -146,6 +146,19 @@
 
                         Divider()
 
+                        // UI-15B (32/55): what all the sites share is said once here, not on every row.
+                        let sharedApp = title == "Sites web" ? Self.sharedAppName(items, summaries: websiteSummariesBySubjectID) : nil
+                        if title == "Sites web", let note = Self.websiteNote(items, sharedApp: sharedApp) {
+                            Text(note)
+                                .font(.system(size: 12))
+                                .foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                            Divider()
+                        }
+
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             let isExpanded = expandedWebsiteIDs.contains(item.id)
                             UsageSubjectRow(
@@ -163,13 +176,36 @@
                                             expandedWebsiteIDs.insert(item.id)
                                         }
                                     }
-                                }
+                                },
+                                sharedAppName: sharedApp
                             )
                             if index < items.count - 1 { Divider().padding(.leading, 58) }
                         }
                     }
                 }
             }
+        }
+
+        /// The app every site without details was seen in, when there is one for all of them.
+        static func sharedAppName(_ items: [TrackedUsageItem], summaries: [String: ActivitySiteSummary]) -> String? {
+            let plain = items.filter { summaries[$0.id] == nil }
+            guard plain.count > 1, plain.count == items.count else { return nil }
+            let names = Set(plain.map(\.appName))
+            guard names.count == 1, let name = names.first ?? nil else { return nil }
+            return name
+        }
+
+        /// One sentence for the sites section: where they were seen, and the older entries' limit.
+        static func websiteNote(_ items: [TrackedUsageItem], sharedApp: String?) -> String? {
+            var sentences: [String] = []
+            if let sharedApp { sentences.append("Sites vus dans \(sharedApp).") }
+            let older = items.filter { !$0.identityProofAvailable }.count
+            if older == items.count, older > 0 {
+                sentences.append("Leurs entrées plus anciennes ne partagent que la catégorie.")
+            } else if older > 0 {
+                sentences.append("Pour certains sites, les entrées plus anciennes ne partagent que la catégorie.")
+            }
+            return sentences.isEmpty ? nil : sentences.joined(separator: " ")
         }
     }
 
@@ -181,6 +217,8 @@
         let richContextEnabled: Bool
         let onEnableRichContext: (() -> Void)?
         let onToggleExpanded: () -> Void
+        /// Set when the section already says which app showed every site.
+        var sharedAppName: String? = nil
 
         var body: some View {
             VStack(spacing: 0) {
@@ -218,10 +256,12 @@
                             .scaleEffect(0.82, anchor: .leading)
                         }
                     }
-                    Text(secondaryLabel)
-                        .font(.system(size: 12))
-                        .foregroundStyle(LHTheme.secondaryText)
-                        .lineLimit(1)
+                    if !secondaryLabel.isEmpty {
+                        Text(secondaryLabel)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -596,13 +636,11 @@
                         parts.append("via \(detail.sourceApplications.joined(separator: ", "))")
                     }
                 } else if let appName = item.appName {
-                    parts.append("Vu dans \(appName)")
+                    if sharedAppName == nil { parts.append("Vu dans \(appName)") }
                 } else {
                     parts.append("Contexte web observé")
                 }
-                if !item.identityProofAvailable {
-                    parts.append("les entrées plus anciennes ne partagent que la catégorie")
-                }
+                // The older entries' limit is said once, at the head of the section (UI-15B, 32/55).
                 return parts.joined(separator: ", ")
             }
             // The bundle identifier (com.apple.…) is technical: plain words instead (UI-11C, screen 55).

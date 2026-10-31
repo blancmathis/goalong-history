@@ -92,6 +92,8 @@ struct GoalongHelpText: View {
                 Text(more).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // Reading help is never locked, even under a disabled setting (UI-14, 24/44).
+            .environment(\.isEnabled, true)
         }
     }
 }

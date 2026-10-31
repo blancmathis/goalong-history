@@ -237,7 +237,7 @@
                 )
             )
             XCTAssertTrue(screenTime.contains("LazyVStack(spacing: 0)"))
-            XCTAssertTrue(screenTime.contains("Usages reçus d’Apple"))
+            XCTAssertTrue(screenTime.contains("Temps par app et par site"))
             XCTAssertTrue(screenTime.contains("GoalongAppleUsageProjection.rows(screenTime.summary)"))
             XCTAssertFalse(screenTime.contains("UsageBreakdownProjection.build"))
             XCTAssertFalse(screenTime.contains("snapshot.trackedUsage"))

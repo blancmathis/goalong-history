@@ -40,13 +40,6 @@
                 UsageRulesList(model: model, showsDefaultRule: true,
                                recordingEnabled: consents.isEnabled(.localComputerHistory))
                     .frame(maxHeight: .infinity)
-                    // A row cut by the export bar fades out, so it reads as « more below » (UI-9 C).
-                    .mask {
-                        VStack(spacing: 0) {
-                            Color.black
-                            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 16)
-                        }
-                    }
 
                 exportBar
             }
@@ -116,23 +109,22 @@
                 }
                 .accessibilityIdentifier("share-proof-status")
                 Spacer()
-                // Lime goes to what can run: opening the settings when the file cannot be created yet (UI-9 C).
+                // « Créer le fichier » is always there and keeps the lime, held back until a minute is
+                // verified; reporting the gap is a secondary step (UI-15B, 32/55). With recording off,
+                // the settings are the only way forward and take the lime.
                 switch proof.action {
                 case .openRecordingSettings?:
                     Button("Ouvrir les réglages") { model.openRecordingSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                 case .reportProblem?:
-                    // No verified minute: reporting the gap is the one step forward, in lime,
-                    // instead of a greyed « Créer le fichier » (UI-13B, screen 55).
                     Button("Signaler l’écart…") { model.openDiagnostics() }
-                        .buttonStyle(LHPrimaryButtonStyle())
+                        .buttonStyle(LHSecondaryButtonStyle())
                 case nil:
                     EmptyView()
                 }
-                if proof.canExport {
-                    createButton.buttonStyle(LHPrimaryButtonStyle())
-                        .disabled(model.isExportingShare)
-                }
+                createButton
+                    .modifier(GoalongMainActionStyle(primary: proof.action != .openRecordingSettings))
+                    .disabled(!proof.canExport || model.isExportingShare)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -196,7 +188,7 @@
             return ShareProofStatus(
                 title: "\(observed), aucune vérifiée",
                 detail: recordingEnabled
-                    ? "Le fichier ne contient que les minutes vérifiées par ce Mac, et aucune ne l’a été. Signalez l’écart : le rapport joint l’état de ce Mac."
+                    ? "Ce Mac n’a pas signé ces minutes, et le fichier ne contient que les minutes vérifiées par ce Mac. Le partage reste possible dès qu’une minute est vérifiée ; signalez l’écart s’il dure."
                     : "Le fichier ne contient que les minutes vérifiées par ce Mac pendant l’enregistrement, qui est désactivé.",
                 action: recordingEnabled ? .reportProblem : .openRecordingSettings,
                 canExport: false)

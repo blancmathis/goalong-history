@@ -192,7 +192,8 @@
                 Button("Voir la journée", action: model.openDay).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
             } content: {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    WorkFigure(seconds: model.workSeconds, known: model.workKnown)
+                    // A running session owns the large figure: the day total steps down (UI-14, écran 7).
+                    WorkFigure(seconds: model.workSeconds, known: model.workKnown, compact: model.focusRun != nil)
                     Text(model.otherSeconds >= 60
                         ? "de travail, \(durationText(model.otherSeconds)) hors travail" : "de travail")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
@@ -207,21 +208,24 @@
     private struct WorkFigure: View {
         let seconds: TimeInterval
         let known: Bool
+        var compact = false
+        private var large: Font { .system(size: compact ? 20 : 28, weight: .bold) }
+        private var small: Font { .system(size: compact ? 13 : 17, weight: .semibold) }
         var body: some View {
             // Rounded like the Activity page, so both show the same figure for the same day.
             let minutes = Int((seconds / 60).rounded())
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 if !known {
-                    Text("—").font(.system(size: 28, weight: .bold)).tracking(-0.6)
+                    Text("—").font(large).tracking(-0.6)
                 } else if seconds > 0 && seconds < 60 {
-                    Text("< 1").font(.system(size: 28, weight: .bold)).tracking(-0.6)
-                    Text("min").font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                    Text("< 1").font(large).tracking(-0.6)
+                    Text("min").font(small).tracking(-0.2)
                 } else if minutes >= 60 {
-                    Text("\(minutes / 60) h").font(.system(size: 28, weight: .bold)).tracking(-0.6)
-                    Text(String(format: "%02d", minutes % 60)).font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                    Text("\(minutes / 60) h").font(large).tracking(-0.6)
+                    Text(String(format: "%02d", minutes % 60)).font(small).tracking(-0.2)
                 } else {
-                    Text("\(minutes)").font(.system(size: 28, weight: .bold)).tracking(-0.6)
-                    Text("min").font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                    Text("\(minutes)").font(large).tracking(-0.6)
+                    Text("min").font(small).tracking(-0.2)
                 }
             }
             .goalongNumericTransition()
@@ -412,6 +416,9 @@
         @State private var expanded = false
         @State private var tab: MenuBarPanelModel.AmbianceTab = .focus
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        /// The raised pill slides between tabs and between tiles, 240 ms (DESIGN §10, UI-14 M1).
+        @Namespace private var tabPill
+        @Namespace private var tilePill
 
         private func kind(of tab: MenuBarPanelModel.AmbianceTab) -> AmbianceSource.Kind {
             switch tab { case .focus: return .focus; case .relax: return .relax; case .texture: return .texture; case .ownFile: return .ownFile }
@@ -534,7 +541,7 @@
                 // UI-12A: the raised pill of GoalongSegmentedControl, kept here so long names may shrink.
                 HStack(spacing: 2) {
                     ForEach(tabs, id: \.self) { t in
-                        Button { tab = t } label: {
+                        Button { withAnimation(reduceMotion ? nil : LHTheme.settle) { tab = t } } label: {
                             Text(tabTitle(t)).font(.system(size: 12, weight: tab == t ? .semibold : .medium))
                                 .lineLimit(1).minimumScaleFactor(0.8)
                                 .foregroundStyle(tab == t ? LHTheme.text : LHTheme.secondaryText)
@@ -543,6 +550,7 @@
                                 .background {
                                     if tab == t {
                                         GoalongSurface(corner: LHTheme.controlRadius - 2, fill: LHTheme.segmentSelected, highlighted: true)
+                                            .matchedGeometryEffect(id: "tab", in: tabPill)
                                     }
                                 }
                                 .contentShape(Rectangle())
@@ -560,11 +568,14 @@
                 } else {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                         ForEach(sources) { source in
-                            SoundTile(source: source, selected: source.id == model.ambianceCurrent?.id && model.ambiancePlaying) {
+                            SoundTile(source: source, selected: source.id == model.ambianceCurrent?.id && model.ambiancePlaying,
+                                      pill: tilePill) {
                                 model.play(source)
                             }
                         }
                     }
+                    .animation(reduceMotion ? nil : LHTheme.settle,
+                               value: model.ambiancePlaying ? model.ambianceCurrent?.id : nil)
                 }
             }
         }
@@ -573,6 +584,7 @@
     private struct SoundTile: View {
         let source: AmbianceSource
         let selected: Bool
+        let pill: Namespace.ID
         let action: () -> Void
         @State private var hovered = false
 
@@ -588,11 +600,11 @@
                 .padding(.horizontal, 8).padding(.vertical, 7)
                 // UI-12A: the piece playing wears the raised pill of the panel's other selections, not a black ring.
                 .background {
+                    RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+                        .fill(hovered && !selected ? LHTheme.hoverBackground : LHTheme.insetBackground)
                     if selected {
                         GoalongSurface(corner: LHTheme.controlRadius, fill: LHTheme.segmentSelected, highlighted: true)
-                    } else {
-                        RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                            .fill(hovered ? LHTheme.hoverBackground : LHTheme.insetBackground)
+                            .matchedGeometryEffect(id: "tile", in: pill)
                     }
                 }
                 .contentShape(Rectangle())

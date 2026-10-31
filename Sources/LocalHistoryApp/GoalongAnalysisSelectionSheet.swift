@@ -71,8 +71,9 @@ import AgentActivity
                     .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("analysis-footer-note")
                 Spacer(minLength: 8)
                 if needsSourceSetup {
-                    // Nothing can be sent yet: the one useful action is the lime one (R4, screens 8 and 27).
-                    Button("Configurer les sources", action: configureSources).buttonStyle(LHPrimaryButtonStyle())
+                    // Nothing can be sent yet: the one useful action is the lime one (R4, screens 8 and 27),
+                    // on the Données tab only; elsewhere the tab's own content leads (UI-15B, 8).
+                    Button("Configurer les sources", action: configureSources).modifier(GoalongMainActionStyle(primary: tab == 0))
                         .accessibilityIdentifier("analysis-configure-sources")
                 } else {
                     if tab != 3 { Button("Vérifier l’aperçu") { tab = 3; preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(catalogLoading || installedApps.loading || !selection.hasSources) }
@@ -282,7 +283,10 @@ import AgentActivity
             }
             GoalongSettingsGroup(title: "Tester vos remplacements") {
                 TextField("Texte d’exemple", text: $sampleText, axis: .vertical).textFieldStyle(GoalongFieldStyle()).lineLimit(2...4)
-                if rules.wrappedValue.allSatisfy({ $0.search.isEmpty }) {
+                if !rules.wrappedValue.isEmpty && rules.wrappedValue.allSatisfy({ $0.search.isEmpty }) {
+                    // An empty rule is already on screen: it says it alone (UI-15B, 8).
+                    EmptyView()
+                } else if rules.wrappedValue.allSatisfy({ $0.search.isEmpty }) {
                     // No usable rule yet: an empty-state line, not a result (R4, screen 8).
                     Label(transformedExample, systemImage: "arrow.left.arrow.right")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)

@@ -7,6 +7,8 @@
         static let loginTitle = "Ouvrir Goalong à l’ouverture de session"
         static let unknownStateTitle = "État inconnu"
         static let needsAttentionText = "Le démarrage automatique demande votre attention. Goalong ne modifie jamais un choix fait dans Réglages Système."
+        /// UI-15A (59): the row already says « État inconnu »; the note says what to check, not the same fact again.
+        static var unknownStateText: String { "Vérifiez Goalong dans \(LoginItemsPanel.path)." }
 
         /// The one orange line under the login row (UI-43): a failed change first, then an unread state,
         /// then a consent macOS does not honour yet. Never two warnings together.
@@ -72,12 +74,12 @@
                             .accessibilityIdentifier("settings-login-unknown")
                         }
                         // UI-12B (43): under the switch it concerns, in plain words.
-                        Text("Ouvrir Goalong n’allume aucune source et ne reprend pas une pause.")
+                        Text("L’ouverture à la session n’allume aucune source et ne reprend pas une pause.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         switch loginWarning {
-                        case .failure(let message): GoalongNote(message, tone: .warning)
-                        case .unknownState: GoalongNote(login.statusDetail, tone: .warning)
-                        case .needsAttention: GoalongNote(Self.needsAttentionText, tone: .warning)
+                        case .failure(let message): WarningNote(text: message)
+                        case .unknownState: WarningNote(text: Self.unknownStateText)
+                        case .needsAttention: WarningNote(text: Self.needsAttentionText)
                         case nil: EmptyView()
                         }
                         if login.requiresApproval || login.state == .unavailable {
@@ -86,7 +88,7 @@
                         }
                         if let notice = continuity.interruptionNotice {
                             Divider()
-                            Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                            WarningNote(text: notice)
                             Button("Masquer") { continuity.dismissInterruptionNotice() }
                                 .buttonStyle(LHSecondaryButtonStyle())
                         }
@@ -97,6 +99,23 @@
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 login.refresh()
             }
+        }
+    }
+
+    /// UI-15A (20, 43, 59): the glyph carries the amber, the sentence stays in ink and readable (DESIGN §9).
+    private struct WarningNote: View {
+        let text: String
+        var body: some View {
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.warning)
+                    .frame(width: 14).accessibilityHidden(true)
+                Text(text).font(.system(size: 12)).foregroundStyle(LHTheme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(LHTheme.warning.opacity(0.08), in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
         }
     }
 #endif

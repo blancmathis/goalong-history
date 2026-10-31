@@ -94,6 +94,7 @@ struct JevActivationAvailability: Equatable {
                             set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
                             .toggleStyle(.goalongSwitchOnly).fixedSize()
                             .disabled(!availability.canToggle(isEnabled: enabled))
+                            .accessibilityHint(availability.canToggle(isEnabled: enabled) || availability.hasKey ? "" : "Connectez d’abord Jev, plus bas.")
                             .accessibilityIdentifier("jev-enabled")
                         // UI-56: a switch that cannot be turned on says so, instead of looking merely off.
                         if let reason = toggleBlockedReason {
@@ -143,7 +144,8 @@ struct JevActivationAvailability: Equatable {
 
     private var toggleBlockedReason: String? {
         guard !availability.canToggle(isEnabled: enabled) else { return nil }
-        return availability.hasKey ? "Activez d’abord l’historique" : "Connectez d’abord Jev"
+        // Without a key, the « Jev n’est pas connecté » row below says it once, with its action (UI-15B, 5).
+        return availability.hasKey ? "Activez d’abord l’historique" : nil
     }
 
     private var connectionRow: some View {

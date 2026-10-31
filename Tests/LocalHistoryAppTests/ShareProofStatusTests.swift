@@ -18,6 +18,9 @@
             XCTAssertFalse(status.canExport)
             XCTAssertEqual(status.title, "16 minutes observées, aucune vérifiée")
             XCTAssertTrue(status.detail.contains("vérifiées par ce Mac"))
+            // UI-15B (32/55): says why, and that sharing stays possible.
+            XCTAssertTrue(status.detail.hasPrefix("Ce Mac n’a pas signé ces minutes"))
+            XCTAssertTrue(status.detail.contains("Le partage reste possible"))
             XCTAssertEqual(status.action, .reportProblem)
         }
 

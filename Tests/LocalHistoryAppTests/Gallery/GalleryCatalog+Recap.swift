@@ -43,7 +43,7 @@ extension GalleryCatalog {
     }
 
     private struct RecapReadFailure: LocalizedError {
-        var errorDescription: String? { "La lecture des sources locales a été interrompue." }
+        var errorDescription: String? { "Le dossier des conversations Codex n’est plus lisible : accès refusé par macOS." }
     }
 
     /// One state of the page. `reader` replaces the day's local read; `ready` says the state is on screen.

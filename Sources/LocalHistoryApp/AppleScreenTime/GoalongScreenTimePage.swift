@@ -226,7 +226,7 @@ struct GoalongScreenTimePage: View {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text("Usages reçus d’Apple").font(LHTheme.cardTitleFont)
+                        Text("Temps par app et par site").font(LHTheme.cardTitleFont)
                         Spacer(minLength: 12)
                         GoalongSegmentedControl("Type d’usage Apple", selection: $filter,
                                                 options: GoalongAppleUsageFilter.allCases) { $0.title }

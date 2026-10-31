@@ -13,8 +13,11 @@ import SwiftUI
         VStack(alignment: .leading, spacing: 18) {
             Text("Connexion à Jev").font(LHTheme.sheetTitleFont)
                 .accessibilityAddTraits(.isHeader)
-            Text(monitor.hasKey ? "Une clé est enregistrée sur ce Mac. Vous pouvez la remplacer ou la supprimer." : "Ajoutez votre clé d’accès pour utiliser Jev.")
-                .font(.callout).foregroundStyle(LHTheme.secondaryText)
+            // UI-15B (5): the opening sentence says what Jev does before asking for its key.
+            Text(monitor.hasKey ? "Jev vous rappelle votre projet quand il repère une distraction. Une clé est enregistrée sur ce Mac : vous pouvez la remplacer ou la supprimer."
+                                : "Jev vous rappelle votre projet quand il repère une distraction. Ajoutez votre clé d’accès pour le connecter.")
+                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Clé d’accès Jev").font(.callout.weight(.medium))
             SecureField("", text: $key)
                 .labelsHidden()
@@ -26,7 +29,7 @@ import SwiftUI
                 .font(.callout).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             Label("Clé conservée dans un fichier privé de ce Mac, jamais dans l’historique ni les journaux de diagnostic.", systemImage: "lock")
-                .font(.caption).foregroundStyle(LHTheme.secondaryText)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             if let error = keyError {
                 Text(error).font(.callout).foregroundStyle(LHTheme.warning)

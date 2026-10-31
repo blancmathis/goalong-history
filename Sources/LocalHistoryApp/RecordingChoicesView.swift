@@ -58,11 +58,12 @@ struct RecordingChoicesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if !isEnabled {
-                Label(Self.lockedReason(localRecordingOn: consents.isEnabled(.localComputerHistory),
-                                        callsOn: draft.captureCallPresence),
-                      systemImage: "lock")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                // The shared warning banner (DESIGN §9), not loose fine print (UI-14, 24/44).
+                GoalongBanner(symbol: "lock", title: "Choix verrouillés",
+                              detail: Self.lockedReason(localRecordingOn: consents.isEnabled(.localComputerHistory),
+                                                        callsOn: draft.captureCallPresence),
+                              tone: .warning)
+                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("recording-choices-locked-reason")
             }
             HStack {
@@ -107,6 +108,10 @@ struct RecordingChoicesView: View {
                                 Text(choice.title).font(.system(size: 13))
                                 GoalongHelpButton(text: choice.detail)
                                 Spacer(minLength: 8)
+                                if !isEnabled && choice.id == "calls" && choice.isOn.wrappedValue {
+                                    // Says on the row why this locked switch alone is on (UI-14, 24/44).
+                                    Text("Reste allumé").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                }
                                 Toggle(choice.title, isOn: choice.isOn)
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly)
                                     .accessibilityIdentifier("recording-\(choice.id)")
