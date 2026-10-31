@@ -49,6 +49,8 @@ struct GoalongHealthImportSheet: View {
             _result = State(initialValue: result); _sourceChoices = State(initialValue: result.sources)
             _payload = State(initialValue: result.payload); _days = State(initialValue: rows)
             _previewDate = State(initialValue: rows.last?["date"] as? String ?? ""); _message = State(initialValue: message)
+            // The gallery's message says the days were kept: the state is « after Conserver ».
+            _savedLocally = State(initialValue: true)
         case let .failed(text):
             _error = State(initialValue: text); _fileRefused = State(initialValue: true)
         }
@@ -250,7 +252,9 @@ struct GoalongHealthImportSheet: View {
     }
 
     private var keepIsNextStep: Bool { result != nil && !savedLocally && !consent }
-    private var finished: Bool { message != nil && !consent }
+    /// Closing is the next step only when nothing else is: no preview left to keep, no send chosen,
+    /// and a preview still there (after « Mettre à la corbeille », preparing or choosing again leads).
+    private var finished: Bool { message != nil && !consent && !keepIsNextStep && payload != nil }
     private func invalidate() { savedLocally = false; payload = nil; previewPrivacyRevision = nil; result = nil; days = []; consent = false; message = nil; error = nil; fileRefused = false }
     private func setPayload(_ data: Data) throws {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]

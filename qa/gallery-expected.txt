@@ -923,7 +923,7 @@ concentration-maintenant/verrouille--   # UI-16B (écran 2 : point « Concentré
 fenetre/interactions-indisponibles--   # UI-16B (écran 17 : détail court « Une partie de votre activité peut manquer. » ; lignes « Explorer » de l’écran 49)
 fenetre/pause-globale--   # UI-16B (écran 17 : état vide « Suivi en pause » avec la reprise en secondaire (le bandeau garde le lime))
 menubar/permission-manquante--   # UI-16B (écran 7 : « Réparer… » en principal, « Commencer » en secondaire (un seul lime))
-sante/import-reussi--   # UI-16B (écran 14 : « Terminé » principal au pied, « Envoyer » secondaire ; sommeil « coupées à minuit, heure de ce Mac »)
+sante/import-reussi--   # UI-16B (écran 14 : état « après Conserver » : « Terminé » seul lime au pied, « Conserver » et « Envoyer » secondaires ; sommeil « coupées à minuit, heure de ce Mac »)
 sante/import-erreur--   # UI-16B (écran 14 : pied « Valeurs reprises telles quelles d’Apple Santé, sans note. » ; sommeil « coupées à minuit, heure de ce Mac »)
 sante/import-lecture--   # UI-16B (écran 14 : pied « Valeurs reprises telles quelles d’Apple Santé, sans note. » ; sommeil « coupées à minuit, heure de ce Mac »)
 sante/import-vide--   # UI-16B (écran 14 : pied « Valeurs reprises telles quelles d’Apple Santé, sans note. » ; sommeil « coupées à minuit, heure de ce Mac »)
