@@ -27,6 +27,7 @@ struct GoalongHealthImportSheet: View {
     @State private var sourceChoices: [GoalongHealthGroup: [String]] = [:]
     @State private var exactData = false
     @State private var consent = false
+    @State private var savedLocally = false
     @State private var confirmsForget = false
     @AppStorage("goalong.website.origin") private var origin = ""
     @AppStorage("goalong.website.tokenFilePath") private var tokenFilePath = ""
@@ -92,7 +93,7 @@ struct GoalongHealthImportSheet: View {
                 } else if let message {
                     Label(message, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                } else { Text("Données déclaratives, aucun score de productivité calculé").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
+                } else { Text("Données déclaratives, aucune note calculée").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
                 Spacer(minLength: 0)
             }
         }
@@ -113,7 +114,7 @@ struct GoalongHealthImportSheet: View {
             // UI-14: one sentence on the sheet, the rest in « En savoir plus » (DESIGN §12).
             GoalongHelpText(lead: "Dans Santé : Résumé → votre profil → Exporter toutes les données de santé.",
                             more: "Envoyez le fichier au Mac par AirDrop, décompressez-le puis sélectionnez export.xml.",
-                            font: .subheadline)
+                            font: .system(size: 13))
             HStack {
                 // Lime marks the current step only: choose, then prepare, then send (UI-59).
                 if file == nil { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
@@ -135,8 +136,11 @@ struct GoalongHealthImportSheet: View {
             Divider()
             Text("Choisir les dates et les données").font(.headline)
             HStack {
-                DatePicker("Du", selection: $from, displayedComponents: .date).goalongDateField(label: "Du")
-                DatePicker("Au", selection: $through, displayedComponents: .date).goalongDateField(label: "Au")
+                // The app's day control and date format, as in Activité (UI-12B).
+                Text("Du").font(.system(size: 13))
+                DateSelectionControl(date: from, onChange: { from = $0 }, previousLabel: "Début : jour précédent", nextLabel: "Début : jour suivant", showsToday: false)
+                Text("au").font(.system(size: 13))
+                DateSelectionControl(date: through, onChange: { through = $0 }, previousLabel: "Fin : jour précédent", nextLabel: "Fin : jour suivant", showsToday: false)
             }
             ForEach(GoalongHealthGroup.allCases) { group in
                 VStack(alignment: .leading, spacing: 5) {
@@ -201,8 +205,13 @@ struct GoalongHealthImportSheet: View {
                 GoalongDisclosureGroup("Voir les données exactes", isExpanded: $exactData) {
                     ScrollView([.vertical, .horizontal]) { Text(String(decoding: payload, as: UTF8.self)).font(.system(size: 12, design: .monospaced)).textSelection(.enabled).padding(10) }.frame(height: 220)
                 }
+                // One rule for lime: it sits on the next step only. After the preview, keeping on this Mac;
+                // once kept, or once the sending is allowed, « Envoyer » (UI-12B).
                 HStack {
-                    if result != nil { Button("Conserver sur ce Mac", action: saveLocally) }
+                    if result != nil {
+                        if keepIsNextStep { Button("Conserver sur ce Mac", action: saveLocally).buttonStyle(LHPrimaryButtonStyle()) }
+                        else { Button("Conserver sur ce Mac", action: saveLocally).buttonStyle(LHSecondaryButtonStyle()) }
+                    }
                     Button("Exporter pour Goalong…", action: exportFile)
                 }
                 Text("Conserver remplace uniquement les journées Santé de cette sélection. L’historique d’écran reste conservé.")
@@ -222,13 +231,16 @@ struct GoalongHealthImportSheet: View {
                 GoalongHelpText(lead: "Créez cet accès depuis Sources et connexions sur le site.",
                                 more: "Seules les mesures de cet aperçu seront transmises ; vos autorisations Santé explicites sur le site détermineront leur visibilité.")
                 Toggle("J’autorise l’envoi de ces données Santé au site indiqué.", isOn: $consent)
-                Button("Envoyer les données relues", action: sendReviewedHealth).buttonStyle(LHPrimaryButtonStyle())
-                    .disabled(!consent || origin.isEmpty || tokenFilePath.isEmpty)
+                Group {
+                    if keepIsNextStep { Button("Envoyer les données relues", action: sendReviewedHealth).buttonStyle(LHSecondaryButtonStyle()) }
+                    else { Button("Envoyer les données relues", action: sendReviewedHealth).buttonStyle(LHPrimaryButtonStyle()) }
+                }.disabled(!consent || origin.isEmpty || tokenFilePath.isEmpty)
             }
         }
     }
 
-    private func invalidate() { payload = nil; previewPrivacyRevision = nil; result = nil; days = []; consent = false; message = nil; error = nil }
+    private var keepIsNextStep: Bool { result != nil && !savedLocally && !consent }
+    private func invalidate() { savedLocally = false; payload = nil; previewPrivacyRevision = nil; result = nil; days = []; consent = false; message = nil; error = nil }
     private func setPayload(_ data: Data) throws {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard object?["source"] as? String == "apple-health", let rows = object?["days"] as? [[String: Any]] else { throw CocoaError(.fileReadCorruptFile) }
@@ -269,6 +281,7 @@ struct GoalongHealthImportSheet: View {
         do {
             try GoalongHealthArchive.save(result, root: AppPaths.applicationSupportDirectory)
             savedDates = try GoalongHealthArchive.dates(root: AppPaths.applicationSupportDirectory)
+            savedLocally = true
             message = "\(FrenchCount.count(result.dayCount, "journée", "journées")) Santé \(FrenchCount.word(result.dayCount, "conservée", "conservées")) sur ce Mac. Aucun envoi effectué."
         } catch { self.error = goalongUserMessage(error) }
     }

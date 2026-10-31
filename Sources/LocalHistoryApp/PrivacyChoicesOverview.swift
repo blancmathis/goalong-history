@@ -20,16 +20,21 @@ import LocalHistoryCore
                 VStack(alignment: .leading, spacing: 14) {
                     Label("Vos choix appliqués", systemImage: "slider.horizontal.3")
                         .font(LHTheme.cardTitleFont)
-                    ForEach([GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations]) { capability in
+                    ForEach(Self.sources) { capability in
                         HStack {
                             Text(capability.title).font(.system(size: 13))
                             Spacer()
-                            Text(consents.isEnabled(capability) ? "Source activée" : "Source désactivée")
-                                .font(.system(size: 12, weight: .medium))
+                            // UI-12B: the state as a pill, the glyph carries the colour (DESIGN §9).
+                            let enabled = consents.isEnabled(capability)
+                            StatusPill(title: enabled ? "Activée" : "Désactivée",
+                                       symbol: enabled ? "checkmark.circle.fill" : "minus.circle",
+                                       tint: enabled ? LHTheme.success : LHTheme.secondaryText)
                         }
                     }
                     Divider()
-                    Text(model.appliedSettings.recordingSummary).font(.system(size: 13))
+                    // With every source off, the recording summary would describe a capture that does not happen.
+                    Text(Self.sources.contains { consents.isEnabled($0) } ? model.appliedSettings.recordingSummary : "Aucune source activée.")
+                        .font(.system(size: 13))
                     Text(model.appliedSettings.capturePrivateBrowsing
                          ? "Fenêtres privées détectées : incluses selon votre choix."
                          : "Fenêtres privées détectées : exclues. La détection dépend du navigateur ; la pause reste le plus sûr pour une activité sensible.")
@@ -99,6 +104,7 @@ import LocalHistoryCore
             HistoryRetentionSettingsSheet(legacyRetentionDays: model.appliedSettings.retentionDays).goalongControls()
         }
     }
+    private static let sources: [GoalongCapability] = [.localComputerHistory, .appleScreenTime, .aiConversations]
     /// UI-54: the real state, never « désactivé ou en pause ».
     nonisolated static func dailySendingText(enabled: Bool, paused: Bool) -> String {
         enabled ? "L’envoi quotidien au site est activé."

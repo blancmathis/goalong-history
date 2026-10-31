@@ -11,7 +11,7 @@ final class GoalongSiteAnalysisModel: ObservableObject {
     @Published private(set) var request: GoalongSiteAnalysisRequest?
     @Published private(set) var busy = false
     @Published private(set) var connected = false
-    @Published private(set) var accountLabel = "Connexion locale non vérifiée"
+    @Published private(set) var accountLabel = "ChatGPT non connecté"
     @Published private(set) var hasDraft = false
     @Published var reviewed = false
     @Published var title = ""
@@ -253,18 +253,19 @@ struct GoalongSiteAnalysisSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Analyser une demande du site").font(.title2.weight(.semibold))
+                Text("Analyser une demande du site").font(LHTheme.sheetTitleFont)
                 Spacer()
                 Button("Fermer") { model.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(24)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("Votre abonnement ChatGPT est utilisé via Codex sur ce Mac. Cette connexion est propre aux demandes du site : vos identifiants restent gérés par Codex, sans être transmis à Goalong en ligne.")
-                        .font(.subheadline).foregroundStyle(LHTheme.secondaryText)
+                    // UI-12B (29): one plain sentence; the tool's name stays in « En savoir plus ».
+                    GoalongHelpText(lead: "Goalong utilise votre abonnement ChatGPT sur ce Mac. Vos identifiants ne sont pas transmis à Goalong en ligne.",
+                                    more: "La connexion passe par Codex, l’outil d’OpenAI qui relie ChatGPT à ce Mac. Elle sert seulement aux demandes du site.",
+                                    font: .system(size: 13))
                     if !consents.isEnabled(.chatGPTAnalysis) {
-                        Text("Avant de vous connecter, activez « Autoriser les analyses » dans Réglages › Analyse ChatGPT. Vous pourrez ensuite autoriser chaque analyse ici.")
-                            .font(.subheadline).foregroundStyle(LHTheme.warning)
+                        GoalongNote("Avant de vous connecter, activez « Autoriser les analyses » dans Réglages › Analyse ChatGPT. Vous pourrez ensuite autoriser chaque analyse ici.", tone: .warning)
                     }
                     HStack {
                         Text(model.accountLabel).font(.subheadline)
@@ -272,7 +273,7 @@ struct GoalongSiteAnalysisSheet: View {
                         if model.connected {
                             Button("Se déconnecter", action: model.disconnect)
                         } else {
-                            Button("Se connecter à ChatGPT", action: model.connect)
+                            Button("Se connecter à ChatGPT", action: model.connect).buttonStyle(LHSecondaryButtonStyle())
                                 .disabled(!consents.isEnabled(.chatGPTAnalysis))
                         }
                     }.disabled(model.busy)
@@ -283,16 +284,11 @@ struct GoalongSiteAnalysisSheet: View {
                             Button("Annuler l’opération", action: model.cancel)
                         }
                     }
-                    Button("Installer ou mettre à jour Codex") {
-                        if let url = URL(string: "https://developers.openai.com/codex/cli") {
-                            _ = GoalongWorkspaceOpenPolicy.open(url, purpose: .documentation)
-                        }
-                    }.buttonStyle(LHQuietButtonStyle())
-                    Text("1. Ouvrez le fichier téléchargé sur le site").font(.headline)
+                    Text("Ouvrez la demande téléchargée sur le site").font(.headline)
                     Button("Choisir la demande…", action: chooseRequest).disabled(model.busy)
                     if let selected = model.request {
                         Text("\(selected.date), \(selected.timezone)").font(.subheadline.weight(.medium))
-                        Text("2. Vérifiez les données qui seront envoyées").font(.headline)
+                        Text("Vérifiez les données qui seront envoyées").font(.headline)
                         Text("Ce fichier est la seule source de cette analyse. Les archives locales, conversations, notes et données Strava ne sont pas ajoutées.")
                             .font(.caption).foregroundStyle(LHTheme.secondaryText)
                         ScrollView([.vertical, .horizontal]) {
@@ -306,14 +302,15 @@ struct GoalongSiteAnalysisSheet: View {
                         Text("GPT-5.6 Luna, High, utilisation décomptée selon votre compte ChatGPT. La disponibilité et les limites dépendent de votre abonnement.")
                             .font(.caption).foregroundStyle(LHTheme.secondaryText)
                         HStack {
+                            // Lime once connected; before that, the footer's « Installer… » is the step (UI-12B).
                             Button("Analyser avec ChatGPT", action: model.analyze)
-                                .buttonStyle(LHPrimaryButtonStyle())
+                                .modifier(GoalongMainActionStyle(primary: model.connected))
                                 .disabled(model.busy || !model.reviewed || !model.connected || !consents.isEnabled(.chatGPTAnalysis))
                         }
                     }
                     if model.hasDraft {
                         Divider()
-                        Text("3. Relisez votre brouillon").font(.headline)
+                        Text("Relisez votre brouillon").font(.headline)
                         TextField("Titre", text: $model.title).textFieldStyle(GoalongFieldStyle())
                         GoalongTextArea(text: $model.summary, minHeight: 150)
                             .accessibilityLabel("Résumé du brouillon")
@@ -331,6 +328,18 @@ struct GoalongSiteAnalysisSheet: View {
                         Label(status, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success)
                     }
                 }.padding(24)
+            }
+            // UI-12B (29): before the connection, the tool it needs is the sheet's main action, in the footer.
+            if !model.connected {
+                GoalongSheetFooter {
+                    Text("La connexion demande Codex, à jour, sur ce Mac.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    Spacer(minLength: 0)
+                    Button("Installer ou mettre à jour Codex…") {
+                        if let url = URL(string: "https://developers.openai.com/codex/cli") {
+                            _ = GoalongWorkspaceOpenPolicy.open(url, purpose: .documentation)
+                        }
+                    }.buttonStyle(LHPrimaryButtonStyle())
+                }
             }
         }
         .frame(width: 700, height: 780)
