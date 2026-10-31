@@ -899,7 +899,7 @@ settings-sheets/analyse-donnees--   # UI-15C (écran 8 : nouveau nom de analyse-
 settings-sheets/analyse-remplacements   # UI-15C (écran 8 : nouveaux noms de analyse-sites et analyse-sites-regle-vide)
 settings-sheets/analyse-consignes--   # UI-15C (écran 8 : nouveau nom de analyse-categories)
 # UI-16C (T-046) « Textes et blocage » : écarts déclarés.
-onboarding/   # UI-16C (écran 19 : ombre douce au-dessus du pied, la page continue dessous)
+onboarding/   # UI-16C (écran 19 : filet du pied seulement quand la page continue dessous ; étape courte ou fin de page : pied sans filet)
 fenetre/stockage-refuse--   # UI-16C (écran 40/45 : « Rendez l’accès dans Réglages Système › Confidentialité et sécurité, puis actualisez. »)
 blocking-surfaces/voile-   # UI-16C (écran 47 : point lime de marque cerclé d’encre en clair comme en sombre)
 blocking-surfaces/gel-du-mac--   # UI-16C (écran 47 : point lime cerclé d’encre en clair comme en sombre ; « Mac gelé jusqu’à … » sans « Temps restant »)

@@ -47,7 +47,11 @@ final class BlockingAccessibilityIdentifierTests: XCTestCase {
         view.frame = NSRect(x: 0, y: 0, width: 900, height: 1500)
         view.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.35))
-        NSApplication.shared.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
+        // Enhanced UI builds the full AX tree; restored after, so later tests (gallery included) see the usual tree.
+        let enhanced = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previous = NSApplication.shared.accessibilityAttributeValue(enhanced)
+        NSApplication.shared.accessibilitySetValue(true, forAttribute: enhanced)
+        defer { NSApplication.shared.accessibilitySetValue(previous ?? false, forAttribute: enhanced) }
 
         var identifiers = Set<String>(), pending: [Any] = [view], seen = Set<ObjectIdentifier>()
         while let value = pending.popLast(), seen.count < 20_000 {
