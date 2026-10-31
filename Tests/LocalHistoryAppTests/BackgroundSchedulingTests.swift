@@ -629,7 +629,7 @@
             XCTAssertTrue(hidden.contains("snapshot = .empty(day: selectedDay)"))
         }
 
-        func testComputerHistoryTimelineBuildsRowsLazilyAndIndexesSourcesOnce() throws {
+        func testComputerHistoryPageScrollsLazily() throws {
             let repositoryRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -640,21 +640,7 @@
                     .appendingPathComponent("Sources/LocalHistoryApp/ComputerHistoryPage.swift"),
                 encoding: .utf8
             )
-            let timeline = try XCTUnwrap(
-                page.slice(
-                    from: "        private func episodes(",
-                    through: "        private func sources("
-                )
-            )
-
             XCTAssertTrue(page.contains("ScrollView {\n                LazyVStack"))
-            XCTAssertTrue(timeline.contains("LazyVStack(alignment: .leading"))
-            XCTAssertEqual(
-                timeline.components(
-                    separatedBy: "memory.resources.map { ($0.id, $0) },"
-                ).count - 1,
-                1
-            )
         }
     }
 

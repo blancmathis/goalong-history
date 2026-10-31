@@ -11,7 +11,6 @@
         var showsDefaultRule = false
         var websiteSummaries: [ActivitySiteSummary] = []
         var richContextEnabled = false
-        var onEnableRichContext: (() -> Void)?
         /// When recording is off, an empty list says so instead of « laissez Goalong actif ».
         var recordingEnabled = true
 
@@ -167,7 +166,6 @@
                                 websiteSummary: websiteSummariesBySubjectID[item.id],
                                 expanded: isExpanded,
                                 richContextEnabled: richContextEnabled,
-                                onEnableRichContext: onEnableRichContext,
                                 onToggleExpanded: {
                                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                                         if isExpanded {
@@ -215,7 +213,6 @@
         let websiteSummary: ActivitySiteSummary?
         let expanded: Bool
         let richContextEnabled: Bool
-        let onEnableRichContext: (() -> Void)?
         let onToggleExpanded: () -> Void
         /// Set when the section already says which app showed every site.
         var sharedAppName: String? = nil
@@ -401,13 +398,7 @@
 
                 Spacer()
 
-                if !richContextEnabled, let onEnableRichContext {
-                    Button("Activer la mémoire des pages") {
-                        onEnableRichContext()
-                    }
-                    .buttonStyle(LHSecondaryButtonStyle())
-                    .help("Nécessaire pour mémoriser les discussions et le texte visible des pages")
-                } else if richContextEnabled {
+                if richContextEnabled {
                     Label(
                         "\(detail.semanticSnapshotCount) instantané\(detail.semanticSnapshotCount > 1 ? "s" : "") de texte visible",
                         systemImage: "text.badge.checkmark"

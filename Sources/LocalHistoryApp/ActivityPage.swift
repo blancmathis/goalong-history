@@ -42,13 +42,7 @@
                             snapshotGeneration: model.snapshotGeneration,
                             isSnapshotLoading: model.isRefreshing,
                             fullContextEnabled: richContextEnabled,
-                            openSourceJSON: model.revealTodayJSON,
-                            deleteEpisode: { episode in
-                                model.deleteComputerHistoryEpisode(
-                                    episode,
-                                    day: model.selectedDay
-                                )
-                            }
+                            openSourceJSON: model.revealTodayJSON
                         )
                     }
                 }

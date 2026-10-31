@@ -65,9 +65,6 @@
                 encoding: .utf8
             )
 
-            XCTAssertTrue(computerHistory.contains("Supprimer cet élément…"))
-            XCTAssertTrue(computerHistory.contains("supprime ses événements exacts"))
-            XCTAssertTrue(computerHistory.contains("La note du jour, les sceaux"))
             XCTAssertTrue(computerHistory.contains("Ouvrir le journal"))
             XCTAssertTrue(computerHistory.contains("Enregistré sur ce Mac"))
             XCTAssertTrue(computerHistory.contains("Historique local conservé"))
