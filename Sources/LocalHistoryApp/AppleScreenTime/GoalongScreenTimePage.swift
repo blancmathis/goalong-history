@@ -231,12 +231,13 @@ struct GoalongScreenTimePage: View {
                         GoalongSegmentedControl("Type d’usage Apple", selection: $filter,
                                                 options: GoalongAppleUsageFilter.allCases) { $0.title }
                     }
-                    Text("Les durées ne sont ni remplacées ni réparties à partir de l’historique Goalong.")
+                    Text("Durées fournies par Apple, sans rien ajouter de l’historique Goalong.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     GoalongSearchField("Rechercher dans les données Apple", text: $search, identifier: "screen-time-search",
                                        trailing: FrenchCount.count(matching.count, "résultat", "résultats"))
                 }.padding(18)
-                Divider()
+                // Rules sit on the text's edges, not across the card (DESIGN §7, UI-17C écran 15).
+                Divider().padding(.horizontal, 18)
                 if visible.isEmpty && screenTime.isBusy {
                     ProgressView("Lecture des usages Apple…")
                         .frame(maxWidth: .infinity, minHeight: 120)
@@ -263,11 +264,11 @@ struct GoalongScreenTimePage: View {
                                 Spacer(minLength: 10)
                                 Text(duration(row.seconds)).font(.system(size: 14, weight: .semibold)).monospacedDigit()
                             }.padding(.horizontal, 18).padding(.vertical, 12).accessibilityElement(children: .combine)
-                            if row.id != visible.last?.id { Divider().padding(.leading, 68) }
+                            if row.id != visible.last?.id { Divider().padding(.leading, 68).padding(.trailing, 18) }
                         }
                     }
                 }
-                Divider()
+                Divider().padding(.horizontal, 18)
                 VStack(alignment: .leading, spacing: 12) {
                     if matching.count > 8 && search.isEmpty {
                         Button(showsAllUsage ? "Réduire la liste" : "Voir les \(matching.count) usages") { showsAllUsage.toggle() }

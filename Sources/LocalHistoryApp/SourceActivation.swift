@@ -717,18 +717,15 @@ import LocalHistoryCore
     struct ComputerHistoryActivationCard: View {
         @ObservedObject var model: DashboardViewModel
         var body: some View {
-            LHCard(padding: 20) {
-                // The explanation is the switch's own label: no second, floating title.
-                SourceActivationToggle(capability: .localComputerHistory, activateButtonTitle: "Activer…") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        GoalongThreadPlaceholder().padding(.bottom, 2)
-                        Text("L’historique de ce Mac est désactivé").font(LHTheme.sectionTitleFont).tracking(-0.2)
-                        Text("Activez l’enregistrement local pour afficher cette chronologie. Goalong vous explique et vérifie d’abord les accès macOS nécessaires.")
-                            .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+            // An empty state on the page, like the empty day of the same screen, not in a group (DESIGN §9, UI-17C écran 22).
+            // The explanation is the switch's own label: no second, floating title.
+            SourceActivationToggle(capability: .localComputerHistory, activateButtonTitle: "Activer…") {
+                GoalongEmptyState(title: "L’historique de ce Mac est désactivé",
+                    message: "Activez l’enregistrement local pour afficher cette chronologie. Goalong vous explique et vérifie d’abord les accès macOS nécessaires.")
+                    // « Activer… » follows the sentence at 24 pt, as on the « Temps d’écran Apple » page (UI-13B).
+                    .padding(.bottom, -24)
             }
+            .padding(.top, 8)
         }
     }
 #endif

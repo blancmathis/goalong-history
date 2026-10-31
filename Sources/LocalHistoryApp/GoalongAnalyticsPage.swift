@@ -67,20 +67,23 @@ struct GoalongAnalyticsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
-                shareBlockedReason: shareBlockedReason,
-                onDay: { day in updateSelection { $0.selectDay(day) } },
-                onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
-                onStep: { direction in updateSelection { $0.step(direction) } },
-                onToday: { updateSelection { $0.today() } },
-                onReturn: { updateSelection { $0.restorePeriod() } },
-                onRefresh: refresh,
-                onShare: {
-                    guard !previewActive else { return }
-                    model.selectDay(selection.day)
-                    model.showingWebsiteShare = true
-                })
-            Rectangle().fill(LHTheme.separator).frame(height: 1)
+            // The Apple sub-page is not driven by the period or the day: it keeps its own title and one way back (UI-17C, écran 15).
+            if detail != .screenTime {
+                GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
+                    shareBlockedReason: shareBlockedReason,
+                    onDay: { day in updateSelection { $0.selectDay(day) } },
+                    onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
+                    onStep: { direction in updateSelection { $0.step(direction) } },
+                    onToday: { updateSelection { $0.today() } },
+                    onReturn: { updateSelection { $0.restorePeriod() } },
+                    onRefresh: refresh,
+                    onShare: {
+                        guard !previewActive else { return }
+                        model.selectDay(selection.day)
+                        model.showingWebsiteShare = true
+                    })
+                Rectangle().fill(LHTheme.separator).frame(height: 1)
+            }
             ScrollViewReader { scroller in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {

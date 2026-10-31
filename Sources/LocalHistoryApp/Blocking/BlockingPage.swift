@@ -235,9 +235,14 @@ struct BlockingStopRequest: Identifiable {
                 allowanceLine(block, list: list)
             }
             attemptsLine
+            // A list already held by the leading block is named once (UI-17C, écran 1): a block it fully covers
+            // until later says only « Ensuite : … »; one that ends sooner adds nothing and is not shown.
             ForEach(Array(others)) { other in
-                Rectangle().fill(LHTheme.separator).frame(height: 1)
-                secondary(other)
+                let continues = continuation(of: block, other)
+                if !(continues && other.end <= block.end) {
+                    Rectangle().fill(LHTheme.separator).frame(height: 1)
+                    secondary(other, continuesLeading: continues)
+                }
             }
         }
         // `.contain`: the state id marks the group, and its buttons (blocking-stop, -take-break, -extra-break,
@@ -349,15 +354,24 @@ struct BlockingStopRequest: Identifiable {
         .font(.system(size: 12)).foregroundStyle(LHTheme.text)
     }
 
-    private func secondary(_ block: BlockingActiveBlock) -> some View {
+    /// Both blocks have an end and every list of `other` is already in `leading`.
+    private func continuation(of leading: BlockingActiveBlock, _ other: BlockingActiveBlock) -> Bool {
+        triggerNames(leading) == nil && triggerNames(other) == nil && Set(other.listIDs).isSubset(of: Set(leading.listIDs))
+    }
+
+    private func secondary(_ block: BlockingActiveBlock, continuesLeading: Bool = false) -> some View {
         let lists = block.listIDs.compactMap(controller.list)
+        let state = triggerNames(block).map { "\(BlockingFormat.verb(lists)) \(BlockingFormat.triggerPhrase($0))" }
+            ?? "\(block.lock == .free ? BlockingFormat.verb(lists) : block.lock.title) jusqu’à \(BlockingFormat.endTime(block.end))"
         return HStack(spacing: 12) {
-            BlockingIconCluster(lists: lists, size: 18, limit: 5)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(lists.map(\.name).joined(separator: ", ")).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text(triggerNames(block).map { "\(BlockingFormat.verb(lists)) \(BlockingFormat.triggerPhrase($0))" }
-                     ?? "\(block.lock == .free ? BlockingFormat.verb(lists) : block.lock.title) jusqu’à \(BlockingFormat.endTime(block.end))")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            if continuesLeading {
+                Text("Ensuite : " + state.prefix(1).lowercased() + state.dropFirst()).font(.system(size: 13, weight: .medium))
+            } else {
+                BlockingIconCluster(lists: lists, size: 18, limit: 5)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(lists.map(\.name).joined(separator: ", ")).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    Text(state).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                }
             }
             Spacer(minLength: 12)
             actions(block, lists: lists)
@@ -630,7 +644,8 @@ struct BlockingMeter: View {
                                 .accessibilityIdentifier("blocking-start-hint")
                         }
                         Button { confirm() } label: {
-                            Label(actionTitle, systemImage: wholeMac ? "snowflake" : (startsLater ? "calendar" : lock.symbol))
+                            // « Bloquer » without a lock reads as the section's closed lock, never an open one (UI-17C, écran 1).
+                            Label(actionTitle, systemImage: wholeMac ? "snowflake" : (startsLater ? "calendar" : lock == .free ? "lock" : lock.symbol))
                         }
                         .buttonStyle(LHPrimaryButtonStyle())
                         .disabled(wholeMac ? controller.freeze != nil
