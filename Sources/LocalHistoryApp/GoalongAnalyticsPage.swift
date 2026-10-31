@@ -170,7 +170,9 @@ struct GoalongAnalyticsPage: View {
                         }
                     }
                     .frame(maxWidth: 1080, alignment: .leading)
-                    .padding(.horizontal, LHTheme.pageInset).padding(.top, 24).padding(.bottom, LHTheme.pageBottomInset)
+                    // UI-9 (8): a named view starts 28 pt under the header, like other pages, not 56 pt: the
+                    // top anchor above already adds one spacing of 24 pt.
+                    .padding(.horizontal, LHTheme.pageInset).padding(.top, detail == nil ? 24 : 4).padding(.bottom, LHTheme.pageBottomInset)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .onChange(of: detail) { shown in
