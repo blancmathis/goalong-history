@@ -398,7 +398,9 @@ extension EnvironmentValues {
                 .opacity(isEnabled ? 1 : 0.5)
                 .accessibilityIdentifier("jev-scope")
             }
-            Text(!isEnabled ? "Connectez d’abord Jev, puis activez-le, pour choisir quand il agit."
+            // Connected but off: only the activation is missing (UI-14, M2).
+            Text(!isEnabled ? (monitor.hasKey ? "Activez Jev pour choisir quand il agit."
+                               : "Connectez d’abord Jev, puis activez-le, pour choisir quand il agit.")
                  : monitor.scope == .always
                  ? "Dès que les rappels Jev sont activés, toute la journée."
                  : "Seulement pendant une séance Concentration, pauses comprises. Hors séance : aucun envoi, rappel ni effet.")

@@ -112,8 +112,9 @@ struct GoalongHourlyClassChart: View {
             .chartPlotStyle { $0.clipped() }
             .chartXAxis {
                 // Each bar fills its hour: the hour's name sits under the bar, not on the edge between two bars.
-                AxisMarks(values: Self.hourTicks(dateRange, stride: hourStride)) { _ in
-                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour(), centered: hourStride == 1)
+                // Hourly ticks sit mid-hour: a `centered` label drops the last one, so the last bar had no hour (UI-14, écran 23).
+                AxisMarks(values: Self.hourTicks(dateRange, stride: hourStride).map { hourStride == 1 ? $0.addingTimeInterval(1800) : $0 }) { _ in
+                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour(), anchor: .top)
                         .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                 }
             }
