@@ -126,7 +126,7 @@ import XCTest
         c.refresh()
         XCTAssertEqual(c.protection.guardian, .awaitingApproval)
         XCTAssertEqual(c.protection.level, .standard, "only a running guard makes the protection strict")
-        XCTAssertEqual(BlockingProtectionDetails.levelLabel(c.protection), "À autoriser dans Réglages Système › Général › Ouverture")
+        XCTAssertEqual(BlockingProtectionDetails.levelLabel(c.protection), "À autoriser dans \(LoginItemsPanel.path)")
         XCTAssertNil(c.error, "the guard never raises an error message")
         clockNow = now.addingTimeInterval(3601)
         c.refresh()
@@ -646,7 +646,7 @@ import XCTest
     func testGuardCopyIsHonestAndActionable() {
         XCTAssertFalse(GuardConsent.text.contains("une fois"))
         XCTAssertTrue(GuardConsent.text.contains("peut l’annoncer de nouveau après une mise à jour"))
-        XCTAssertTrue(GuardEscalation.unreachable.contains("Réglages Système › Général › Ouverture"))
+        XCTAssertTrue(GuardEscalation.unreachable.hasSuffix("Réessayez dans \(LoginItemsPanel.path)."))
     }
 
     func testUnregisterIsRefusedDuringASevereBlockUnlessOverridden() {

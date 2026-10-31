@@ -78,4 +78,21 @@ struct GoalongDisclosureGroupStyle: DisclosureGroupStyle {
         }
     }
 }
+
+/// One help sentence on the page, the rest one click away in « En savoir plus » (DESIGN §12, UI-14).
+struct GoalongHelpText: View {
+    let lead: String
+    let more: String
+    var font: Font = .system(size: 12)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(lead).font(font).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            GoalongDisclosureGroup("En savoir plus") {
+                Text(more).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
 #endif
