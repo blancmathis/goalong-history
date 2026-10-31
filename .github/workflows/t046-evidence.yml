@@ -168,9 +168,9 @@ jobs:
         include:
           # L3n grouped run: my rows + the E-A/E-B/E-C side files (t046-only.d/); one build (e2e-build).
           - { shard: S1, slice: 1/1 }
-          - { shard: S2, slice: 1/1 }
-          - { shard: S3, slice: 1/2 }
-          - { shard: S3, slice: 2/2 }
+          - { shard: S2, slice: 1/2 }
+          - { shard: S2, slice: 2/2 }
+          - { shard: S3, slice: 1/1 }
           - { shard: SB, slice: 1/1 }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
