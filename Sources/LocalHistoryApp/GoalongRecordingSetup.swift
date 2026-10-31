@@ -187,32 +187,19 @@ struct GoalongRecordingStateNotice: View {
     var body: some View {
         Group {
             if let kind {
-                // A banner is a tinted block without a border (DESIGN §9).
-                Group {
-                    HStack(alignment: .center, spacing: 14) {
-                        Image(systemName: symbol(kind)).font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(kind == .permissions || kind == .input ? LHTheme.warning : LHTheme.secondaryText)
-                            .frame(width: 22).accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(title(kind)).font(.system(size: 13, weight: .semibold))
-                            Text(detail(kind)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 12)
-                        // One lime per screen: pending changes own the primary action (UI-42).
-                        if model.settingsHaveChanges {
-                            Button(actionTitle(kind)) { perform(kind) }
-                                .buttonStyle(LHSecondaryButtonStyle())
-                                .accessibilityIdentifier("activity-recording-action")
-                        } else {
-                            Button(actionTitle(kind)) { perform(kind) }
-                                .buttonStyle(LHPrimaryButtonStyle())
-                                .accessibilityIdentifier("activity-recording-action")
-                        }
+                // The shared banner (DESIGN §9): tinted block, no border, one action on the right (UI-12C, screens 24/44).
+                GoalongBanner(symbol: symbol(kind), title: title(kind), detail: detail(kind)) {
+                    // One lime per screen: pending changes own the primary action (UI-42).
+                    if model.settingsHaveChanges {
+                        Button(actionTitle(kind)) { perform(kind) }
+                            .buttonStyle(LHSecondaryButtonStyle())
+                            .accessibilityIdentifier("activity-recording-action")
+                    } else {
+                        Button(actionTitle(kind)) { perform(kind) }
+                            .buttonStyle(LHPrimaryButtonStyle())
+                            .accessibilityIdentifier("activity-recording-action")
                     }
                 }
-                .padding(16)
-                .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("activity-recording-state")
             }

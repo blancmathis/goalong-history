@@ -51,7 +51,12 @@ struct GoalongAgendaDay: Equatable {
         if callSeconds >= 60 { parts.append("\(GoalongAnalyticsFormatting.duration(callSeconds)) d’appels") }
         if plannedSeconds >= 60 { parts.append("\(GoalongAnalyticsFormatting.duration(plannedSeconds)) prévues") }
         if !reminders.isEmpty { parts.append(GoalongCodeDay.count(reminders.count, "rappel terminé", "rappels terminés")) }
-        if parts.isEmpty { return calendarOn && calendarAccess != .granted ? "Accès à l’agenda à autoriser" : nothingRead }
+        if parts.isEmpty, calendarOn {
+            // A refusal is not a question still to ask: the caption says which one (UI-12C, screen 53).
+            if calendarAccess == .denied { return "Accès à l’agenda refusé" }
+            if calendarAccess == .notAsked { return "Accès à l’agenda à autoriser" }
+        }
+        if parts.isEmpty { return nothingRead }
         return parts.joined(separator: ", ")
     }
 
@@ -110,7 +115,7 @@ struct GoalongAgendaSection: View {
             VStack(alignment: .leading, spacing: 22) {
                 if !agenda.events.isEmpty || !agenda.calls.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        GoalongLaneLegend(items: legend, showsThreadClasses: day.segments.contains(where: { $0.kind.isActive }))
+                        legendView
                         GoalongLaneMatrix(rows: rows, range: range, summary: agenda.caption)
                     }
                 }
@@ -156,6 +161,18 @@ struct GoalongAgendaSection: View {
             GoalongThreadPlaceholder()
             Button("Choisir les sources…", action: onSettings).buttonStyle(LHSecondaryButtonStyle())
                 .disabled(isPreview).accessibilityIdentifier("activity-agenda-empty-settings")
+        }
+    }
+
+    /// One line when it fits: « Événement prévu » never sits alone under the thread classes (UI-12C, screen 53).
+    private var legendView: some View {
+        let threads = day.segments.contains(where: { $0.kind.isActive })
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                if threads { GoalongActivityClassLegend(size: 12) }
+                GoalongLaneLegend(items: legend)
+            }
+            GoalongLaneLegend(items: legend, showsThreadClasses: threads)
         }
     }
 
