@@ -252,6 +252,11 @@ for i in 1 2; do
   tmo 60 "$GOALONG" --root "$DATA" session start --intent "T046 séance $i" --minutes 5 >> "$SUMMARY" 2>&1; sleep 2
   tmo 60 "$GOALONG" --root "$DATA" session stop --outcome done --note "note $i" >> "$SUMMARY" 2>&1 || log "session $i failed"
 done
+# L3l: `session stop` still opens the « C’est fait ? » review panel (L3k: it stayed over every row, S2 timed out).
+# Answer it here (its « Fermer sans répondre » button; the outcome is already given), then check none is left.
+sleep 2; drv dismiss-alerts "$BUNDLE" sheets >> "$SUMMARY" 2>&1
+drv dump "$BUNDLE" "$OUT/setup/after-sessions.txt" >/dev/null 2>&1
+grep -q concentration-review-panel "$OUT/setup/after-sessions.txt" && log "review panel still open after the session seed"
 tmo 60 "$GOALONG" --root "$DATA" braise schedule add 1,2,3,4,5,6,7 22:00 06:00 >> "$SUMMARY" 2>&1 || log "braise rule failed"
 # L3e: the work definition is seeded in jev/work-context.json before launch (the UI typing of L3d saved nothing).
 log "nav miss: $(navigate nav:history p:"Conversations locales" w:2 o:source-aiConversations w:3 o:"Détecter les dossiers courants" w:3)"; cleanup

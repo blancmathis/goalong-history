@@ -417,7 +417,8 @@ case "dismiss-alerts":
     // L3j: also an alert or sheet inside a window (AXSheet, « Détails locaux supprimés » after J-0863 blocked
     // J-0865…J-0983). Cancel button first, then a safe closing button, then the only button; never another default.
     var closed = 0
-    let safe = ["OK", "Annuler", "Fermer", "Terminé", "Plus tard", "Pas maintenant", "Cancel", "Close", "Done"]
+    let safe = ["OK", "Annuler", "Fermer", "Fermer sans répondre", "Terminé", "Plus tard", "Pas maintenant", "Cancel",
+                "Close", "Done"]
     func buttons(_ e: AXUIElement) -> [AXUIElement] {
         var out: [AXUIElement] = [], budget = 600
         _ = walk(e, budget: &budget) { x, d in if d <= 4 && text(x, kAXRoleAttribute) == "AXButton" { out.append(x) }; return false }
@@ -441,6 +442,15 @@ case "dismiss-alerts":
             // Sheets only with « sheets » (ui rows): the onboarding rows keep their sheet between twins (J-0807/J-0811).
             if args.count > 3 && args[3] == "sheets" {
                 for c in children(w) where text(c, kAXRoleAttribute) == "AXSheet" { if closeOne(c) { n += 1 } }
+                // L3l: an untitled floating panel (« C’est fait ? » review, id concentration-review-panel) left open
+                // broke a whole shard in L3k. Its safe button (« Fermer sans répondre »), else its close button.
+                if text(w, kAXTitleAttribute).isEmpty {
+                    if closeOne(w) { n += 1; continue }
+                    if let cb = attr(w, kAXCloseButtonAttribute) as! AXUIElement? {
+                        AXUIElementPerformAction(cb, kAXPressAction as CFString); usleep(500_000)
+                        print("closed panel \(describe(w)) with its close button"); n += 1
+                    }
+                }
             }
         }
         closed += n
