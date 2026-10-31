@@ -240,6 +240,9 @@ struct BlockingStopRequest: Identifiable {
                 secondary(other)
             }
         }
+        // `.contain`: the state id marks the group, and its buttons (blocking-stop, -take-break, -extra-break,
+        // -unlock) keep their own ids for VoiceOver and the e2e pilot (L3n J-0011, J-0012).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("blocking-state-active")
     }
 
