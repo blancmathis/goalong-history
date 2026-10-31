@@ -139,8 +139,8 @@ struct GoalongRhythmStudio: View {
                     HStack { DatePicker("Début", selection: $start, displayedComponents: .hourAndMinute).goalongDateField(label: "Début"); DatePicker("Fin", selection: $end, displayedComponents: .hourAndMinute).goalongDateField(label: "Fin") }
                     TextField("Projet", text: $project).textFieldStyle(GoalongFieldStyle())
                     TextField("Ce que vous souhaitiez faire pendant cette session", text: $intent).textFieldStyle(GoalongFieldStyle())
-                    Toggle("Inclure les extraits de contexte enrichi déjà autorisés", isOn: $rich)
-                    Text("Les titres et domaines disponibles servent de contexte. Le texte enrichi est facultatif et peut contenir des informations personnelles ; relisez les extraits avant analyse.").font(.caption).foregroundStyle(LHTheme.secondaryText)
+                    Toggle("Inclure les textes de fenêtres déjà autorisés", isOn: $rich)
+                    Text("Les titres et les sites servent de contexte. Les textes de fenêtres sont facultatifs et peuvent contenir des informations personnelles ; relisez-les avant analyse.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     Button("Préparer la sélection locale") { model.load(start: start, end: end, project: project, intent: intent, masks: masks, rich: rich) }.disabled(model.busy || project.isEmpty)
                     if let selected = model.selection {
                         Divider()

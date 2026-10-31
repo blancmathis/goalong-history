@@ -602,7 +602,8 @@
                 }
                 return parts.joined(separator: ", ")
             }
-            return item.bundleIdentifier ?? "Application observée localement"
+            // The bundle identifier (com.apple.…) is technical: plain words instead (UI-11C, screen 55).
+            return "Application observée sur ce Mac"
         }
 
         private var identityHelp: String {

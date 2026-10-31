@@ -13,17 +13,16 @@
         /// Why sharing is grey; nil keeps the preview wording.
         var sharingDisabledReason: String? = nil
 
+        /// Same order as Activité: Actualiser then Partager beside the title, the day on the line below.
         var body: some View {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 24) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
                     heading
                     Spacer(minLength: 8)
-                    actions.fixedSize(horizontal: true, vertical: false)
-                }
-                VStack(alignment: .leading, spacing: 16) {
-                    heading
                     actions
                 }
+                DateSelectionControl(date: day, onChange: onSelectDay)
+                    .controlSize(.regular)
             }
             .padding(.horizontal, LHTheme.pageInset)
             .padding(.top, 28).padding(.bottom, 16)
@@ -32,7 +31,7 @@
         }
 
         private var heading: some View {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title).goalongPageTitle()
                 Text(day.formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "fr_FR"))).capitalized(with: Locale(identifier: "fr_FR")))
                     .font(.system(size: 13))
@@ -43,25 +42,23 @@
 
         private var actions: some View {
             HStack(spacing: 8) {
-                DateSelectionControl(date: day, onChange: onSelectDay)
+                Button(action: onRefresh) {
+                    Group {
+                        if isRefreshing { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "arrow.clockwise") }
+                    }
+                    .frame(width: 16, height: 16)
+                }
+                .disabled(isRefreshing)
+                .accessibilityLabel("Actualiser la journée")
+                .help(isRefreshing ? "Actualisation…" : "Actualiser la journée")
                 Button(action: onShare) {
                     Label("Partager cette journée…", systemImage: "square.and.arrow.up")
                 }
                 .disabled(!sharingEnabled)
                 .help(sharingEnabled ? "Partager cette journée. Rien n’est envoyé sans votre validation."
                       : sharingDisabledReason ?? "Les données fictives ne peuvent pas être partagées")
-                Button(action: onRefresh) {
-                    Group {
-                        if isRefreshing { ProgressView().controlSize(.small) }
-                        else { Image(systemName: "arrow.clockwise") }
-                    }
-                    .frame(width: 20, height: 20)
-                }
-                .disabled(isRefreshing)
-                .accessibilityLabel("Actualiser la journée")
-                .help(isRefreshing ? "Actualisation…" : "Actualiser la journée")
             }
-            .buttonStyle(LHSecondaryButtonStyle())
             .controlSize(.regular)
         }
     }

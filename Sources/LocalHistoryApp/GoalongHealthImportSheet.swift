@@ -110,8 +110,10 @@ struct GoalongHealthImportSheet: View {
     private var inputSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Importer depuis votre iPhone").font(.headline)
-            Text("Dans Santé : Résumé → votre profil → Exporter toutes les données de santé. Envoyez le fichier au Mac par AirDrop, décompressez-le puis sélectionnez export.xml.")
-                .font(.subheadline).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            // UI-14: one sentence on the sheet, the rest in « En savoir plus » (DESIGN §12).
+            GoalongHelpText(lead: "Dans Santé : Résumé → votre profil → Exporter toutes les données de santé.",
+                            more: "Envoyez le fichier au Mac par AirDrop, décompressez-le puis sélectionnez export.xml.",
+                            font: .subheadline)
             HStack {
                 // Lime marks the current step only: choose, then prepare, then send (UI-59).
                 if file == nil { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
@@ -124,8 +126,8 @@ struct GoalongHealthImportSheet: View {
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("health-import-error")
             }
-            Text("Le fichier complet est lu sur ce Mac. Les dossiers médicaux, médicaments, trajets GPS et autres données non proposées ici sont exclus.")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            GoalongHelpText(lead: "Le fichier complet est lu sur ce Mac.",
+                            more: "Les dossiers médicaux, médicaments, trajets GPS et autres données non proposées ici sont exclus.")
         }
     }
     private var selectionSection: some View {
@@ -147,8 +149,8 @@ struct GoalongHealthImportSheet: View {
                     }
                 }
             }
-            Text("Les durées de sommeil sont réparties à minuit dans le fuseau \(TimeZone.current.identifier). Une nuit peut donc apparaître sur deux journées. Une valeur absente reste inconnue.")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            GoalongHelpText(lead: "Les durées de sommeil sont réparties à minuit dans le fuseau \(TimeZone.current.identifier).",
+                            more: "Une nuit peut donc apparaître sur deux journées. Une valeur absente reste inconnue.")
             if payload == nil { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHPrimaryButtonStyle()).disabled(selected.isEmpty) }
             else { Button("Préparer l’aperçu local", action: prepare).buttonStyle(LHSecondaryButtonStyle()).disabled(selected.isEmpty) }
         }
@@ -160,8 +162,8 @@ struct GoalongHealthImportSheet: View {
             if let result {
                 ForEach(result.warnings, id: \.self) { Text($0).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
             }
-            Text("Les moyennes cardiaques décrivent les échantillons disponibles. Les entraînements et l’activité quotidienne peuvent se recouper : leurs durées et calories ne s’additionnent pas.")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            GoalongHelpText(lead: "Les moyennes cardiaques décrivent les échantillons disponibles.",
+                            more: "Les entraînements et l’activité quotidienne peuvent se recouper : leurs durées et calories ne s’additionnent pas.")
             HStack(spacing: 8) {
                 Text("Journée").font(.system(size: 13))
                 GoalongMenuPicker("Journée", selection: $previewDate,
@@ -217,8 +219,8 @@ struct GoalongHealthImportSheet: View {
                             Button("Déconnecter") { GoalongWebsitePairingCoordinator.forgetStoredToken(path: tokenFilePath); tokenFilePath = "" }
                         } message: { Text(GoalongWebsiteConnectionCard.disconnectMessage(tokenPath: tokenFilePath)) } }
                 }
-                Text("Créez cet accès depuis Sources et connexions sur le site. Seules les mesures de cet aperçu seront transmises ; vos autorisations Santé explicites sur le site détermineront leur visibilité.")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                GoalongHelpText(lead: "Créez cet accès depuis Sources et connexions sur le site.",
+                                more: "Seules les mesures de cet aperçu seront transmises ; vos autorisations Santé explicites sur le site détermineront leur visibilité.")
                 Toggle("J’autorise l’envoi de ces données Santé au site indiqué.", isOn: $consent)
                 Button("Envoyer les données relues", action: sendReviewedHealth).buttonStyle(LHPrimaryButtonStyle())
                     .disabled(!consent || origin.isEmpty || tokenFilePath.isEmpty)

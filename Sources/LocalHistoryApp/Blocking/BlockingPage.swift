@@ -895,7 +895,7 @@ struct BlockingLockExplainer: View {
                           ok: Self.levelIsSettled(controller.protection),
                           value: Self.levelLabel(controller.protection))
                 if let help = Self.levelHelp(controller.protection) {
-                    // A failed service names where to repair it: its background item in Ouverture.
+                    // A failed service names where to repair it: its background item in LoginItemsPanel.
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -939,7 +939,7 @@ struct BlockingLockExplainer: View {
     static func levelLabel(_ protection: BlockingProtectionState) -> String {
         if protection.level == .strict { return "Renforcé" }
         switch protection.guardian {
-        case .awaitingApproval: return "À autoriser dans Réglages Système › Général › Ouverture"
+        case .awaitingApproval: return "À autoriser dans \(LoginItemsPanel.path)"
         case .failed: return "Indisponible"
         case .running, .notInstalled: return "Standard"
         }
@@ -1003,11 +1003,11 @@ struct BlockingLockExplainer: View {
         "Un autre compte utilisateur du Mac n’est pas bloqué.",
     ]
 
-    /// Réglages Système › Général › Ouverture, where macOS lets Goalong start and run in the background.
+    /// LoginItemsPanel.path, where macOS lets Goalong start and run in the background.
     private var loginItemsButton: AnyView {
         AnyView(Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
-            .help("Autorisez Goalong dans Réglages Système › Général › Ouverture.")
+            .help("Autorisez Goalong dans \(LoginItemsPanel.path).")
             .accessibilityIdentifier("blocking-open-login-items"))
     }
 

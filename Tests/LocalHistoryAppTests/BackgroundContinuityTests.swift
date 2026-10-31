@@ -67,6 +67,24 @@
             XCTAssertEqual(LaunchAtLoginManager.switchValue(for: .requiresApproval), true)
         }
 
+        /// UI-43: one orange line at most under the login row; a failed change wins, then an unread state.
+        func testLoginRowShowsOneWarningAtATime() {
+            typealias S = BackgroundContinuitySettings
+            XCTAssertEqual(S.loginWarning(message: "échec", state: .unavailable, consentEnabled: true), .failure("échec"))
+            XCTAssertEqual(S.loginWarning(message: nil, state: .unavailable, consentEnabled: true), .unknownState)
+            XCTAssertEqual(S.loginWarning(message: nil, state: .unavailable, consentEnabled: false), .unknownState)
+            XCTAssertEqual(S.loginWarning(message: nil, state: .requiresApproval, consentEnabled: true), .needsAttention)
+            XCTAssertEqual(S.loginWarning(message: nil, state: .disabled, consentEnabled: true), .needsAttention)
+            XCTAssertNil(S.loginWarning(message: nil, state: .disabled, consentEnabled: false))
+            XCTAssertNil(S.loginWarning(message: nil, state: .enabled, consentEnabled: true))
+        }
+
+        func testGoalongMenuPickerValueIsTheCurrentChoice() {
+            let options = [(1, "Codex"), (2, "Claude Code")]
+            XCTAssertEqual(GoalongMenuPicker<Int>.selectedLabel(2, in: options), "Claude Code")
+            XCTAssertNil(GoalongMenuPicker<Int>.selectedLabel(3, in: options))
+        }
+
         func testBackgroundOptOutSurvivesRecreation() {
             let defaults = isolatedDefaults()
             BackgroundContinuityPreferences(defaults: defaults).keepRunning = false
