@@ -339,7 +339,9 @@ private struct AmbianceOrchestraSetup: View {
                 AmbianceWave(seed: "ambre", character: .focus, look: look, lineWidth: 2).frame(height: 64)
                 HStack(alignment: .center, spacing: 20) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Téléchargement de l’orchestre…").font(LHTheme.sheetTitleFont).tracking(-0.4)
+                        // « Téléchargement… » only while bytes come down; before that, the orchestra waits to be installed.
+                        Text(downloading ? "Téléchargement de l’orchestre…" : "Orchestre à installer")
+                            .font(LHTheme.sheetTitleFont).tracking(-0.4)
                         Group {
                             if case .downloading(let fraction) = pack.status {
                                 Text("\(GoalongUIFormat.percent(fraction * 100)) de \(size)")
@@ -372,6 +374,8 @@ private struct AmbianceOrchestraSetup: View {
         if case .downloading(let fraction) = pack.status { return .progress(fraction) }
         return .waiting
     }
+
+    private var downloading: Bool { if case .downloading = pack.status { return true } else { return false } }
 }
 
 // MARK: - Rows and tiles
@@ -387,7 +391,7 @@ private struct AmbianceTile: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
                 AmbianceWave(seed: source.id, character: AmbianceWaveCharacter(source),
-                             look: !source.isAvailable ? .waiting : playing ? .active : .idle)
+                             look: !source.isAvailable ? .waiting : playing ? .playing : .idle)
                     .frame(height: 28)
                 HStack(spacing: 6) {
                     Text(source.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
@@ -399,7 +403,7 @@ private struct AmbianceTile: View {
                             .foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
                     }
                     if playing {
-                        Image(systemName: "speaker.wave.2.fill").font(.system(size: 11)).foregroundStyle(LHTheme.accent)
+                        Image(systemName: "speaker.wave.2.fill").font(.system(size: 11)).foregroundStyle(LHTheme.text)
                     }
                 }
             }
@@ -407,7 +411,8 @@ private struct AmbianceTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(background, in: RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous)
-                .strokeBorder(current ? LHTheme.accent : LHTheme.separator, lineWidth: current ? 1.5 : 1))
+                // A neutral tile: the chosen piece is marked by an ink edge, never a tinted fill (DESIGN §12).
+                .strokeBorder(current ? LHTheme.text : LHTheme.separator, lineWidth: current ? 1.5 : 1))
             .contentShape(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous))
         }
         .buttonStyle(AmbiancePressStyle())
@@ -421,7 +426,6 @@ private struct AmbianceTile: View {
     }
 
     private var background: Color {
-        if playing { return LHTheme.selectionBackground }
         if hovering { return LHTheme.hoverBackground }
         return LHTheme.cardBackground
     }
