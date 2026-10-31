@@ -60,30 +60,36 @@ import SwiftUI
                 VStack(alignment: .leading, spacing: 10) {
                     Text(controller.stateLabel).font(LHTheme.sectionTitleFont)
                     Text(controller.nextEvent).foregroundStyle(LHTheme.secondaryText)
+                    // One main action per state: « Reprendre » while paused, « Pause 15 min » while the filter is on.
+                    // With the filter off there is nothing to pause, so the pause button is not shown.
                     HStack(spacing: 8) {
+                        if controller.isPaused {
+                            Button("Reprendre") { controller.resume() }.buttonStyle(LHPrimaryButtonStyle())
+                        } else if controller.active {
+                            Button("Pause 15 min") { controller.pause() }.buttonStyle(LHPrimaryButtonStyle())
+                        }
                         Button("Rétablir les couleurs") { controller.emergencyOff() }.buttonStyle(LHSecondaryButtonStyle())
                             .accessibilityIdentifier("braise-emergency-off")
-                        if controller.isPaused {
-                            Button("Reprendre") { controller.resume() }.buttonStyle(LHSecondaryButtonStyle())
-                        } else {
-                            Button("Pause 15 min") { controller.pause() }.buttonStyle(LHSecondaryButtonStyle()).disabled(!controller.active)
-                        }
                     }
                 }
                 if let notice = controller.recoveryNotice { GoalongNote(notice, tone: .warning).accessibilityIdentifier("braise-recovery") }
                 if let error = controller.errorMessage { GoalongNote(error, tone: .warning).accessibilityIdentifier("braise-error") }
                 LHCard {
                     VStack(alignment: .leading, spacing: 18) {
-                        Picker("Mode", selection: Binding(get: { controller.preferences.mode }, set: { controller.setMode($0) })) {
-                            ForEach(FilterMode.allCases) { Text($0.label).tag($0) }
-                        }.pickerStyle(.menu).accessibilityIdentifier("braise-mode")
+                        HStack(spacing: 12) {
+                            Text("Mode")
+                            Spacer(minLength: 12)
+                            GoalongSegmentedControl("Mode", selection: Binding(get: { controller.preferences.mode }, set: { controller.setMode($0) }),
+                                                    options: FilterMode.allCases, title: \.label)
+                                .accessibilityIdentifier("braise-mode")
+                        }
                         slider("Intensité du rouge", value: Binding(get: { controller.preferences.intensity }, set: { n in controller.update { $0.intensity = n } }), range: 0...1)
                         slider("Luminosité du filtre", value: Binding(get: { controller.preferences.brightness }, set: { n in controller.update { $0.brightness = n } }), range: 0.2...1)
                         Text("À 100 %, les canaux vert et bleu passent à zéro. La luminosité est logicielle ; celle de l’écran ne change pas.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                GoalongSection(title: "Horaires", subtitle: "Les jours choisis sont ceux du début de la plage.") {
+                GoalongSection(title: "Horaires", subtitle: "Une plage qui passe minuit compte pour le jour où elle commence.") {
                     VStack(alignment: .leading, spacing: 12) {
                         if controller.preferences.rules.isEmpty { GoalongEmptyState(title: "Aucun horaire", message: "Ajoutez une plage pour le mode Auto.") }
                         ForEach(controller.preferences.rules) { rule in
@@ -98,7 +104,8 @@ import SwiftUI
                                     controller.update { p in if let i = p.rules.firstIndex(where: { $0.id == rule.id }) { p.rules[i].enabled = enabled } }
                                 })).toggleStyle(.goalongSwitchOnly).fixedSize().accessibilityLabel("Activer l’horaire \(rule.hours)")
                             }
-                            GoalongRowDivider()
+                            // Aligned on the text of the rows (DESIGN §7): these rows have no icon column.
+                            GoalongRowDivider(inset: 0)
                         }
                         Button("Ajouter un horaire") { editingRule = ScheduleRule(weekdays: Set(2...6)) }
                             .buttonStyle(LHSecondaryButtonStyle()).disabled(controller.preferences.rules.count >= 32)
@@ -163,11 +170,10 @@ import SwiftUI
                     })).toggleStyle(.goalongCheckbox)
                 }
             }
-            HStack {
-                Button("Tous les jours") { draft.weekdays = Set(1...7) }
-                Button("Semaine") { draft.weekdays = Set(2...6) }
-                Button("Week-end") { draft.weekdays = Set([1, 7]) }
-            }.buttonStyle(LHQuietButtonStyle())
+            // Shortcuts as the kit's segmented control: the matching preset shows selected, none for any other set of days.
+            GoalongSegmentedControl("Raccourcis de jours", selection: Binding(get: { BraiseDayPreset(weekdays: draft.weekdays) },
+                                                                             set: { if let preset = $0 { draft.weekdays = preset.weekdays } }),
+                                    options: BraiseDayPreset.allCases.map(Optional.some), title: { $0?.title ?? "" })
             HStack(spacing: 24) { time("Activation", minute: $draft.startMinute); time("Désactivation", minute: $draft.endMinute) }
             Text(!draft.isValid ? "Choisissez au moins un jour et deux heures différentes." : draft.crossesMidnight ? "La désactivation a lieu le lendemain." : "La plage commence et se termine le même jour.")
                 .foregroundStyle(LHTheme.secondaryText)
@@ -190,6 +196,29 @@ import SwiftUI
                 if valid { unreadableFields.remove(title) } else { unreadableFields.insert(title) }
             })
         }
+    }
+}
+
+/// Day shortcuts of the schedule editor.
+enum BraiseDayPreset: CaseIterable, Hashable {
+    case everyDay, weekdays, weekend
+    var weekdays: Set<Int> {
+        switch self {
+        case .everyDay: return Set(1...7)
+        case .weekdays: return Set(2...6)
+        case .weekend: return [1, 7]
+        }
+    }
+    var title: String {
+        switch self {
+        case .everyDay: return "Tous les jours"
+        case .weekdays: return "Semaine"
+        case .weekend: return "Week-end"
+        }
+    }
+    init?(weekdays: Set<Int>) {
+        guard let match = Self.allCases.first(where: { $0.weekdays == weekdays }) else { return nil }
+        self = match
     }
 }
 

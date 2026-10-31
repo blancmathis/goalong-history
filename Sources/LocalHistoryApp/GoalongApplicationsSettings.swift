@@ -190,7 +190,7 @@ enum GoalongKnownApplications {
                         if domains.isEmpty { empty }
                         ForEach(domains, id: \.self) { domain in
                             HStack(spacing: 12) {
-                                Image(systemName: "globe").font(.system(size: 13)).frame(width: 24).foregroundStyle(LHTheme.secondaryText)
+                                WebsiteIconView(host: domain, size: 22).frame(width: 24).accessibilityHidden(true)
                                 Text(domain).font(.system(size: 13, weight: .medium))
                                 Spacer()
                                 let parent = parentRule(for: domain)

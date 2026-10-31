@@ -248,7 +248,7 @@ Dans `GoalongControls.swift`, sauf mention.
   filet qui passe au lime et s'épaissit au focus. `GoalongFormField` : libellé, une ligne d'aide au plus, et
   l'explication longue derrière un bouton d'information.
 - **Interrupteur** (`.goalongSwitch`, `.goalongSwitchInline`, `.goalongSwitchOnly`) : piste à coins de contrôle
-  et curseur carré arrondi, la même famille d'angles que les boutons. Lime et encre quand il est actif. Le
+  et curseur carré arrondi, la même famille d'angles que les boutons. Piste encre et curseur couleur page quand il est actif, jamais lime (le lime reste rare). Verrouillé : contour pointillé et cadenas. Le
   curseur s'étire vers sa destination pendant l'appui. Taille réduite dans les longues listes.
 - **Case à cocher** (`.goalongCheckbox`) : boîte creusée, lime avec coche encre quand elle est cochée.
 - **Segmenté** (`GoalongSegmentedControl`) : piste creusée, pastille relevée qui glisse.

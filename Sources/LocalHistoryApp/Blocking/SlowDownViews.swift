@@ -156,7 +156,9 @@ struct SlowDownVeil: View {
                 }
                 SlowDownCountdown(presentation: presentation, now: now, ready: $ready).frame(width: 320)
                 SlowDownActions(presentation: presentation, now: now, ready: ready, onRenounce: onRenounce, onContinue: onContinue)
-                Text("Ce site est ralenti : attendez la fin de la barre, ou renoncez. \(FocusUIFormat.ordinal(presentation.occurrence)) fois aujourd’hui.")
+                // The wait hint goes once the bar is full; the count sits on its own line, so no word is left alone.
+                Text((ready ? "Ce site est ralenti." : "Ce site est ralenti : attendez la fin de la barre, ou renoncez.")
+                     + "\n\(FocusUIFormat.ordinal(presentation.occurrence)) fois aujourd’hui.")
                     .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                     .multilineTextAlignment(.center).frame(maxWidth: 420).fixedSize(horizontal: false, vertical: true)
             }

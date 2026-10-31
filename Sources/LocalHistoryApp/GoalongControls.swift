@@ -306,9 +306,9 @@
         }
     }
 
-    /// Brand switch: the same corner family as buttons and fields, lime track and ink knob
-    /// when on, quiet forest track when off. A real Button underneath keeps keyboard focus
-    /// and Space activation.
+    /// Brand switch: the same corner family as buttons and fields, ink track and page-coloured knob
+    /// when on, quiet forest track when off. Lime stays for the one main action of the screen; a locked switch
+    /// is dashed with a padlock, never lime. A real Button underneath keeps keyboard focus and Space activation.
     struct GoalongSwitch: View {
         @Binding var isOn: Bool
         @Environment(\.isEnabled) private var isEnabled
@@ -332,6 +332,16 @@
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var hovered = false
 
+        private var trackFill: Color {
+            switch (isOn, isEnabled) {
+            case (true, true): return hovered ? LHTheme.text.opacity(0.82) : LHTheme.text
+            // Locked on: a neutral track, darker than locked off so the position still reads.
+            case (true, false): return LHTheme.strongSeparator.opacity(0.55)
+            case (false, true): return hovered ? LHTheme.switchTrackHover : LHTheme.switchTrack
+            case (false, false): return LHTheme.switchTrack.opacity(0.6)
+            }
+        }
+
         func makeBody(configuration: Configuration) -> some View {
             let width: CGFloat = small ? 30 : 36, height: CGFloat = small ? 18 : 22
             let knob = height - 6
@@ -340,23 +350,21 @@
             // The knob stretches toward its destination while pressed, like a finger pushing it.
             let stretch: CGFloat = configuration.isPressed && !reduceMotion ? 4 : 0
             ZStack(alignment: isOn ? .trailing : .leading) {
-                track.fill(isOn ? (hovered && isEnabled ? LHTheme.actionHover : LHTheme.actionBackground)
-                           : (hovered && isEnabled ? LHTheme.switchTrackHover : LHTheme.switchTrack))
-                    .opacity(isEnabled ? 1 : 0.6)
-                if !isOn || contrast == .increased {
-                    // The off track keeps a 3:1 edge (WCAG 1.4.11); a disabled switch is dashed and locked.
+                track.fill(trackFill)
+                if !isOn || !isEnabled || contrast == .increased {
+                    // The off track keeps a 3:1 edge (WCAG 1.4.11); a locked switch is dashed.
                     track.strokeBorder(LHTheme.strongSeparator,
                                        style: StrokeStyle(lineWidth: 1, dash: isEnabled ? [] : [3, 2]))
                 }
                 RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
-                    .fill(isOn ? LHTheme.onAccent : LHTheme.switchKnob)
+                    .fill(isOn ? LHTheme.pageBackground : LHTheme.switchKnob.opacity(isEnabled ? 1 : 0.6))
                     .frame(width: knob + stretch, height: knob)
                     .padding(.horizontal, 3)
-                    .opacity(isEnabled ? 1 : 0.6)
                     .overlay {
                         if !isEnabled {
+                            // The padlock carries meaning: full ink on the on knob, secondary text on the off one.
                             Image(systemName: "lock.fill").font(.system(size: small ? 7 : 8, weight: .bold))
-                                .foregroundStyle(isOn ? LHTheme.actionBackground : LHTheme.secondaryText)
+                                .foregroundStyle(isOn ? LHTheme.text : LHTheme.secondaryText)
                                 .accessibilityHidden(true)
                         }
                     }
@@ -656,12 +664,66 @@
         }
     }
 
+    /// Date or time field: one Goalong frame. The AppKit picker inside loses its own bezel and background, so the
+    /// field never shows a grey AppKit box within the Goalong one.
     private struct GoalongDateFieldModifier: ViewModifier {
         let label: String?
+        @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.colorSchemeContrast) private var contrast
+        @State private var hovered = false
+
         func body(content: Content) -> some View {
+            let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
             HStack(spacing: 8) {
                 if let label { Text(label).font(.system(size: 13)) }
-                content.labelsHidden().datePickerStyle(.field).fixedSize().modifier(GoalongFieldSurface())
+                content.labelsHidden().datePickerStyle(.field).fixedSize()
+                    .background(BorderlessDatePickerProbe().allowsHitTesting(false))
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .frame(minHeight: 28)
+                    .background(LHTheme.fieldBackground, in: shape)
+                    .overlay(shape.strokeBorder(contrast == .increased || hovered ? LHTheme.strongSeparator
+                                                : LHTheme.controlBorder).allowsHitTesting(false))
+                    .opacity(isEnabled ? 1 : 0.55)
+                    .onHover { hovered = $0 }
+            }
+        }
+    }
+
+    /// Finds the AppKit date picker drawn under it and removes its bezel and background.
+    private struct BorderlessDatePickerProbe: NSViewRepresentable {
+        func makeNSView(context: Context) -> ProbeView { ProbeView() }
+        func updateNSView(_ view: ProbeView, context: Context) { view.strip() }
+
+        final class ProbeView: NSView {
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                strip()
+                DispatchQueue.main.async { [weak self] in self?.strip() }
+            }
+
+            override func layout() {
+                super.layout()
+                strip()
+            }
+
+            func strip() {
+                guard window != nil else { return }
+                let frame = convert(bounds, to: nil).insetBy(dx: -2, dy: -2)
+                var container = superview
+                for _ in 0..<4 where container != nil {
+                    if let parent = container, strip(in: parent, within: frame) { return }
+                    container = container?.superview
+                }
+            }
+
+            private func strip(in view: NSView, within frame: NSRect) -> Bool {
+                if let picker = view as? NSDatePicker, frame.intersects(picker.convert(picker.bounds, to: nil)) {
+                    if picker.isBezeled { picker.isBezeled = false }
+                    if picker.isBordered { picker.isBordered = false }
+                    if picker.drawsBackground { picker.drawsBackground = false }
+                    return true
+                }
+                return view.subviews.contains { strip(in: $0, within: frame) }
             }
         }
     }

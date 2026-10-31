@@ -159,6 +159,8 @@
                             if let fix = model.attentionFix {
                                 Button(fix.label) { model.perform(fix) }
                                     .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
+                                    // 8 pt under the message: the repair reads as its own step, apart from the pause button.
+                                    .padding(.top, 7)
                                     .accessibilityIdentifier("menubar-attention-fix")
                             }
                         }
@@ -503,7 +505,8 @@
                     RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous).strokeBorder(LHTheme.separator)
                     if let current = model.ambianceCurrent {
                         AmbianceWave(seed: current.id, character: AmbianceWaveCharacter(current),
-                                     look: model.ambianceLoading ? .waiting : (model.ambiancePlaying ? .active : .idle))
+                                     // A neutral tile: ink while playing, never lime (DESIGN §12, no tinted icon tile).
+                                     look: model.ambianceLoading ? .waiting : (model.ambiancePlaying ? .playing : .idle))
                             .padding(.horizontal, 6).padding(.vertical, 10)
                     }
                 }
