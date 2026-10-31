@@ -24,7 +24,7 @@ import LocalHistoryQueryCLI
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Envoyer à Goalong").font(LHTheme.sheetTitleFont)
+                    Text("Envoi à Goalong").font(LHTheme.sheetTitleFont)
                     Text(model.preview == nil ? "1. Choisir les données" : "2. Vérifier l’envoi")
                         .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
@@ -57,7 +57,8 @@ import LocalHistoryQueryCLI
                             .accessibilityIdentifier("sharing-success")
                         Button("Voir la journée sur le site") { openSite(fragment: "history") }.buttonStyle(LHSecondaryButtonStyle())
                     }
-                    if let error = model.error {
+                    // UI-11A (4): without a day to read, the error is the one note of the selection.
+                    if let error = model.error, model.catalog != nil || model.preview != nil {
                         Label(error, systemImage: "exclamationmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                             .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("sharing-error")
                     }
@@ -100,8 +101,9 @@ import LocalHistoryQueryCLI
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
+                // UI-11A (4): « Relier mon Mac » keeps the rank it has on the page: the main action until linked.
                 Button(connected ? "Règles du site" : "Relier mon Mac") { openSite(fragment: connected ? "privacy" : "settings") }
-                    .buttonStyle(LHSecondaryButtonStyle())
+                    .modifier(GoalongMainActionStyle(primary: !connected))
             }
             if connected {
                 Text("Visibilité : vos règles du site s’appliquent après l’envoi.")
@@ -135,10 +137,13 @@ import LocalHistoryQueryCLI
     }
     private var selection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            DatePicker(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer", selection: $model.draft.date,
-                       in: ...GoalongToday.now, displayedComponents: .date)
-                .goalongDateField(label: model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer")
-                .accessibilityIdentifier("sharing-selected-date")
+            // UI-11A (4): the day reads « 23 octobre 2026 », as on the page, not « 23/10/2026 ».
+            HStack(spacing: 8) {
+                Text(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer").font(.system(size: 13))
+                GoalongCalendarButton(date: model.draft.date, onChange: { model.draft.date = $0 },
+                                      label: GoalongUIFormat.day(model.draft.date))
+                    .accessibilityIdentifier("sharing-selected-date")
+            }
             if model.loading {
                 ProgressView("Lecture sur ce Mac…").font(.system(size: 13))
             } else if let catalog = model.catalog {
@@ -174,7 +179,10 @@ import LocalHistoryQueryCLI
                 Text("Les textes ne sont pas inclus. Les adresses locales ou non valides sont ignorées.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             } else {
-                Text("Aucune donnée disponible pour cette journée.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                // UI-11A (4): one note says why nothing can be chosen; the footer stays silent.
+                GoalongNote(model.error ?? "Aucune donnée disponible pour cette journée. Choisissez une autre date.",
+                            tone: model.error == nil ? .neutral : .warning)
+                    .accessibilityIdentifier("sharing-error")
                 Button("Réessayer") { Task { await model.loadCatalog() } }.buttonStyle(LHSecondaryButtonStyle())
             }
         }
@@ -260,12 +268,13 @@ import LocalHistoryQueryCLI
     private var footer: some View {
         HStack {
             if model.busy { ProgressView().controlSize(.small) }
-            Text(model.preview == nil ? (model.selectionHint ?? "Aperçu local, rien n’est envoyé.") : "La confirmation autorise l’envoi.")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            if let hint = footerHint {
+                Text(hint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            }
             Spacer()
             if model.preview == nil {
                 Button("Voir l’aperçu") { Task { await model.prepare(origin: origin, tokenPath: tokenPath) } }
-                    .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("sharing-preview")
+                    .modifier(GoalongMainActionStyle(primary: connected)).accessibilityIdentifier("sharing-preview")
                     .disabled(model.busy || model.loading || model.catalog == nil || model.draft.validationMessage != nil )
             } else if !connected || model.preview?.credentialFingerprint.isEmpty == true {
                 Button("Relier mon Mac") { openSite(fragment: "settings") }.buttonStyle(LHPrimaryButtonStyle())
@@ -277,6 +286,12 @@ import LocalHistoryQueryCLI
                     .disabled(model.busy || (model.draft.delivery == .daily && !model.reviewed) || (model.preview.flatMap { try? GoalongReadableShareData(payload: $0.payload) } == nil))
             }
         }.padding(20).background(LHTheme.cardBackground)
+    }
+    /// Nothing while the selection's note already says there is no day to read.
+    private var footerHint: String? {
+        if model.preview != nil { return "La confirmation autorise l’envoi." }
+        if model.catalog == nil && !model.loading { return nil }
+        return model.selectionHint ?? "Aperçu local, rien n’est envoyé."
     }
     private func openSite(fragment: String) {
         let site = origin.isEmpty ? "https://goalong.spry-crumb-3668.chatgpt.site" : origin
