@@ -115,10 +115,11 @@ import LocalHistoryQueryCLI
     private var connected: Bool { !tokenPath.isEmpty && !origin.isEmpty }
     private var delivery: some View {
         VStack(alignment: .leading, spacing: 14) {
+            // Two short choices: the control keeps its own width, like the other segmented controls (UI-13B).
             GoalongSegmentedControl("Fréquence", selection: $model.draft.delivery,
-                                    options: [GoalongWebsiteShareDraft.Delivery.once, .daily], fills: true) {
+                                    options: [GoalongWebsiteShareDraft.Delivery.once, .daily]) {
                 $0 == .once ? "Une fois" : "Chaque jour"
-            }.accessibilityIdentifier("sharing-delivery")
+            }.fixedSize().accessibilityIdentifier("sharing-delivery")
             if model.draft.delivery == .daily {
                 HStack {
                     DatePicker("La veille, après", selection: scheduleTime, displayedComponents: .hourAndMinute).goalongDateField(label: "La veille, après")
@@ -145,6 +146,11 @@ import LocalHistoryQueryCLI
                                       label: GoalongUIFormat.day(model.draft.date))
                     .accessibilityLabel(dayLabel)
                     .accessibilityIdentifier("sharing-selected-date")
+            }
+            // Same default day as the page (plan UI-13B), but today is not over: say what is sent.
+            if model.draft.delivery == .once && GoalongToday.isToday(model.draft.date) {
+                GoalongNote("Journée en cours : seules les heures déjà passées seront envoyées.", symbol: "clock")
+                    .accessibilityIdentifier("sharing-day-in-progress")
             }
             if model.loading {
                 ProgressView("Lecture sur ce Mac…").font(.system(size: 13))
@@ -185,7 +191,17 @@ import LocalHistoryQueryCLI
                 GoalongNote(model.error ?? "Aucune donnée disponible pour cette journée. Choisissez une autre date.",
                             tone: model.error == nil ? .neutral : .warning)
                     .accessibilityIdentifier("sharing-error")
-                Button("Réessayer") { Task { await model.loadCatalog() } }.buttonStyle(LHSecondaryButtonStyle())
+                if model.error == GoalongWebsiteSharingModel.screenTimeOffMessage {
+                    // A retry cannot succeed while the source is off: the action goes where it is turned on.
+                    Button("Ouvrir Enregistrement…") {
+                        dismiss()
+                        NotificationCenter.default.post(name: .goalongOpenRecordingSettings, object: nil)
+                    }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .accessibilityIdentifier("sharing-open-recording")
+                } else {
+                    Button("Réessayer") { Task { await model.loadCatalog() } }.buttonStyle(LHSecondaryButtonStyle())
+                }
             }
         }
     }

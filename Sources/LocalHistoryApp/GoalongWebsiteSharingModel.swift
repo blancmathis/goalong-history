@@ -7,7 +7,8 @@ import LocalHistoryQueryCLI
 struct GoalongWebsiteShareDraft: Equatable, Codable {
     enum Delivery: String, CaseIterable, Codable { case once, daily }
     var delivery: Delivery = .once
-    var date = Calendar.current.date(byAdding: .day, value: -1, to: GoalongToday.now) ?? GoalongToday.now
+    /// Today, like the page's « Envoyer une journée » and a remembered selection (UI-13B: one default day).
+    var date = GoalongToday.now
     var deviceIDs = Set<String>()
     var applicationIDs = Set<String>()
     var anonymousApplicationIDs = Set<String>()
@@ -172,12 +173,14 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     }
     private func readableError(_ error: Error) -> String {
         let message = String(describing: error)
-        if message.contains("Apple Screen Time is off") { return "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer." }
+        if message.contains("Apple Screen Time is off") { return Self.screenTimeOffMessage }
         if message.contains("No saved Screen Time") { return "Aucune donnée Apple enregistrée pour cette journée. Choisissez une autre date ou actualisez l’historique." }
         if message.contains("Computer History is off") { return "Activez l’historique de ce Mac pour inclure les sites, ou désactivez Sites web." }
         if message.contains("Website details are unavailable") { return "Les sites ne sont pas disponibles pour cette date. Les applications restent utilisables sans les sites." }
         return "Lecture locale indisponible : " + goalongUserMessage(error)
     }
+    /// The one cause a retry cannot fix: the sheet offers « Ouvrir Enregistrement… » instead of « Réessayer ».
+    static let screenTimeOffMessage = "Activez Temps d’écran Apple dans Enregistrement pour lire les données à envoyer."
     var selectionHint: String? {
         if loading { return "Lecture de la journée…" }
         if catalog == nil { return "Aucune journée disponible. Réessayez ou choisissez une autre date." }

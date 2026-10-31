@@ -301,6 +301,9 @@ struct GoalongScreenTimePage: View {
         SourceActivationToggle(capability: .appleScreenTime, activateButtonTitle: "Activer…") {
             GoalongEmptyState(title: GoalongScreenTimeOffCopy.title,
                 message: GoalongScreenTimeOffCopy.message(accessRevoked: accessRevoked))
+                // The empty state reserves room for actions it does not have here: « Activer… »
+                // follows the sentence at 24 pt, not 48 (UI-13B).
+                .padding(.bottom, -24)
         }
     }
     private var screenTimeConsentCard: some View {
