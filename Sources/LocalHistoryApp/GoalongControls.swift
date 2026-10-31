@@ -335,11 +335,18 @@
         private var trackFill: Color {
             switch (isOn, isEnabled) {
             case (true, true): return hovered ? LHTheme.text.opacity(0.82) : LHTheme.text
-            // Locked on: a neutral track, darker than locked off so the position still reads.
-            case (true, false): return LHTheme.strongSeparator.opacity(0.55)
+            // Locked (UI-16A, 42/58): on = a full track (secondary text, ≥ 6:1 on groups), off = an empty dashed
+            // track. Full reads as on by itself, whatever the colour.
+            case (true, false): return LHTheme.secondaryText
             case (false, true): return hovered ? LHTheme.switchTrackHover : LHTheme.switchTrack
-            case (false, false): return LHTheme.switchTrack.opacity(0.6)
+            case (false, false): return .clear
             }
+        }
+
+        private var knobFill: Color {
+            if isOn { return LHTheme.pageBackground }
+            // Locked off: a solid secondary-text knob (≥ 5.5:1 on groups) on the empty track.
+            return isEnabled ? LHTheme.switchKnob : LHTheme.secondaryText
         }
 
         func makeBody(configuration: Configuration) -> some View {
@@ -357,14 +364,15 @@
                                        style: StrokeStyle(lineWidth: 1, dash: isEnabled ? [] : [3, 2]))
                 }
                 RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
-                    .fill(isOn ? LHTheme.pageBackground : LHTheme.switchKnob.opacity(isEnabled ? 1 : 0.6))
+                    .fill(knobFill)
                     .frame(width: knob + stretch, height: knob)
                     .padding(.horizontal, 3)
                     .overlay {
                         if !isEnabled {
-                            // The padlock carries meaning: full ink on the on knob, secondary text on the off one.
-                            Image(systemName: "lock.fill").font(.system(size: small ? 7 : 8, weight: .bold))
-                                .foregroundStyle(isOn ? LHTheme.text : LHTheme.secondaryText)
+                            // The padlock carries meaning, ≥ 5.5:1 in both modes and 10 pt on a 16 pt knob: ink on the
+                            // page-coloured on knob, page colour on the secondary-text off knob (UI-16A, 58; R7, 38/44).
+                            Image(systemName: "lock.fill").font(.system(size: small ? 8 : 10, weight: .bold))
+                                .foregroundStyle(isOn ? LHTheme.text : LHTheme.pageBackground)
                                 .accessibilityHidden(true)
                         }
                     }
@@ -555,10 +563,10 @@
                 .font(.system(size: small ? 12 : 13, weight: selected ? .semibold : .medium))
                 .padding(.horizontal, small ? 10 : 14)
                 .frame(minHeight: small ? 22 : 26)
-                .foregroundStyle(selected ? LHTheme.text : hovered && isEnabled ? LHTheme.text.opacity(0.85) : LHTheme.secondaryText)
+                .foregroundStyle(selected && isEnabled ? LHTheme.text : hovered && isEnabled ? LHTheme.text.opacity(0.85) : LHTheme.secondaryText)
                 .background(!selected && hovered && isEnabled ? LHTheme.hoverBackground.opacity(0.6) : .clear, in: shape)
                 .overlay { shape.strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2) }
-                .opacity(isEnabled ? 1 : 0.5)
+                // Disabled: no extra fade. Every label, the selected one too, is secondary text (≥ 4.5:1); the raised pill marks the choice (UI-16A, 5).
                 .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
                 .contentShape(shape)
                 .onHover { hovered = $0 }
@@ -593,7 +601,8 @@
     }
 
     /// Secondary information (privacy, scope, limits) as one deliberate, quiet block
-    /// instead of loose paragraphs of fine print.
+    /// instead of loose paragraphs of fine print. A warning tints the glyph and the block, never the text
+    /// (DESIGN §9, UI-16A): the sentence stays in ink and readable.
     struct GoalongNote: View {
         enum Tone { case neutral, privacy, warning }
         let text: String
@@ -619,7 +628,7 @@
                 Image(systemName: symbol ?? (tone == .privacy ? "lock" : tone == .warning ? "exclamationmark.triangle" : "info.circle"))
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(tint)
                     .frame(width: 14).accessibilityHidden(true)
-                Text(text).font(.system(size: 12)).foregroundStyle(tone == .warning ? LHTheme.warning : LHTheme.secondaryText)
+                Text(text).font(.system(size: 12)).foregroundStyle(tone == .warning ? LHTheme.text : LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
