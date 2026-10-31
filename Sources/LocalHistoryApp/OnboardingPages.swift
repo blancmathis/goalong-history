@@ -62,7 +62,7 @@
                         }
                         Divider()
                         HStack {
-                            Text("Détails enregistrés, tous proposés, modifiables à tout moment")
+                            Text("Ce que Goalong enregistre")
                                 .font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
                         }
@@ -165,7 +165,7 @@
                             HStack {
                                 Text(capability.title).font(.system(size: 13, weight: .medium))
                                 Spacer()
-                                Label(consents.isEnabled(capability) ? "Activée" : "Plus tard", systemImage: consents.isEnabled(capability) ? "checkmark" : "minus")
+                                Label(consents.isEnabled(capability) ? PrivacyChoicesOverview.sourceStateTitle(capability, enabled: true, paused: false) : "Plus tard", systemImage: consents.isEnabled(capability) ? "checkmark" : "minus")
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(consents.isEnabled(capability) ? LHTheme.success : LHTheme.secondaryText)
                             }
