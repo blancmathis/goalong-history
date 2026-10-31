@@ -651,3 +651,4 @@ settings/non-enregistre   # UI-12C (écrans 24/44 : bandeau d’enregistrement =
 activite/   # UI-12C (écrans 24/44 : bandeau d’enregistrement = GoalongBanner)
 fenetre/   # UI-12C (écrans 24/44 : bandeau d’enregistrement = GoalongBanner)
 agenda/   # UI-12C (écran 53 : « Accès à l’agenda refusé », légende sur une ligne)
+onboarding/   # UI-12C (écran 19 : plus de fondu sur la dernière ligne visible, le défileur visible suffit)
