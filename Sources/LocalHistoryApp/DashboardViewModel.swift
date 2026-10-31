@@ -536,7 +536,8 @@
             case .settings: return "Retour aux réglages"
             case .history: return "Retour à l’historique"
             case .monitoring: return "Retour à la surveillance"
-            default: return "Retour à Activité"
+            // Same « ‹ Activité » as the return inside Activity's own detail views (UI-13B).
+            default: return "Activité"
             }
         }
 

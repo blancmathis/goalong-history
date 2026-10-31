@@ -68,7 +68,7 @@
             XCTAssertTrue(computerHistory.contains("Supprimer cet élément…"))
             XCTAssertTrue(computerHistory.contains("supprime ses événements exacts"))
             XCTAssertTrue(computerHistory.contains("La note du jour, les sceaux"))
-            XCTAssertTrue(computerHistory.contains("Voir le fichier brut"))
+            XCTAssertTrue(computerHistory.contains("Ouvrir le journal"))
             XCTAssertTrue(computerHistory.contains("Enregistré sur ce Mac"))
             XCTAssertTrue(computerHistory.contains("Historique local conservé"))
             XCTAssertTrue(computerHistory.contains("Détails de la journée indisponibles"))
@@ -155,7 +155,9 @@
             XCTAssertTrue(agentActivity.contains("case history"))
             XCTAssertTrue(agentActivity.contains("conversationHistoryList"))
             XCTAssertFalse(agentActivity.contains("Text(\"Conversations\")"))
-            XCTAssertTrue(agentActivity.contains("Sources d’origine"))
+            // UI-13B: an unreadable source is said once, in the empty state, with no token line or count above it.
+            XCTAssertTrue(agentActivity.contains("unreadableSourcesState"))
+            XCTAssertFalse(agentActivity.contains("Text(\"·\")"))
             XCTAssertTrue(agentActivity.contains("réponse\\(replies > 1 ? \"s\" : \"\") finale"))
             XCTAssertTrue(agentActivity.contains("availableProviders.count > 1"))
 
