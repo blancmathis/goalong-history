@@ -5,6 +5,8 @@
     struct UsageRulesList: View {
         /// Wide enough for « Catégorie seulement » without truncation.
         static let ruleColumnWidth: CGFloat = 176
+        /// Height of SharePage's export bar under the list.
+        static let exportBarHeight: CGFloat = 56
         @ObservedObject var model: DashboardViewModel
         var showsDefaultRule = false
         var websiteSummaries: [ActivitySiteSummary] = []
@@ -59,25 +61,25 @@
             VStack(alignment: .leading, spacing: 12) {
                 controls
                 if filteredItems.isEmpty {
-                    LHCard {
-                        EmptyStateView(
-                            symbol: "app.dashed",
-                            title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
-                            message: model.snapshot.trackedUsage.isEmpty
-                                ? (recordingEnabled
-                                    ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
-                                    : "L’enregistrement est désactivé : aucune app ni aucun site n’est observé.")
-                                : "Essayez une autre app, un autre site ou une autre catégorie."
-                        )
-                        .frame(minHeight: 320)
-                    }
+                    // Read-only state on the page, not in a card; the sentence adds to the title (UI-13B).
+                    EmptyStateView(
+                        symbol: "app.dashed",
+                        title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
+                        message: model.snapshot.trackedUsage.isEmpty
+                            ? (recordingEnabled
+                                ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
+                                : "Activez l’enregistrement pour régler ici ce que chaque partage montre.")
+                            : "Essayez une autre app, un autre site ou une autre catégorie."
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 240)
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 16) {
                             subjectSection(title: "Sites web", symbol: "globe", items: websites)
                             subjectSection(title: "Applications", symbol: "square.grid.2x2", items: applications)
                         }
-                        .padding(.bottom, 8)
+                        // The last row clears the export bar's fade (UI-13B).
+                        .padding(.bottom, Self.exportBarHeight)
                     }
                 }
             }
@@ -130,7 +132,7 @@
                             Text("Saisie active")
                                 .help("Minutes distinctes avec des clics, frappes ou défilements observés.")
                                 .frame(width: 82, alignment: .trailing)
-                            Text("Toujours lors du partage")
+                            Text("Règle de partage")
                                 .frame(width: UsageRulesList.ruleColumnWidth, alignment: .trailing)
                             // Same trailing column in both sections so the rule pickers line up.
                             Text(title == "Sites web" && !websiteSummaries.isEmpty ? "Détails" : "")
@@ -232,18 +234,15 @@
                     .foregroundStyle(LHTheme.secondaryText)
                     .frame(width: 82, alignment: .trailing)
 
-                Picker(
+                // Same Goalong menu as « Par défaut », in both themes (UI-13B).
+                GoalongMenuPicker(
                     "Visibilité de \(item.name)",
                     selection: Binding(
                         get: { model.sharingVisibility(for: item.id) },
                         set: { model.setSharingVisibility($0, for: item.id) }
-                    )
-                ) {
-                    ForEach(SharingVisibility.allCases) { visibility in
-                        Text(visibility.title).tag(visibility)
-                    }
-                }
-                .labelsHidden()
+                    ),
+                    options: SharingVisibility.allCases.map { ($0, $0.title) }
+                )
                 .frame(width: UsageRulesList.ruleColumnWidth)
 
                 if item.kind == .website {
@@ -303,6 +302,10 @@
                     .frame(width: 19, height: 22)
             }
             .menuStyle(.borderlessButton)
+            // A repeated side action: secondary ink, no lime and no extra chevron (UI-13B).
+            .menuIndicator(.hidden)
+            .tint(LHTheme.secondaryText)
+            .foregroundStyle(LHTheme.secondaryText)
             .fixedSize()
             .help("Règles permanentes du site")
             .accessibilityLabel("Règles du site")
@@ -602,7 +605,8 @@
                 }
                 return parts.joined(separator: ", ")
             }
-            return item.bundleIdentifier ?? "Application observée localement"
+            // The bundle identifier (com.apple.…) is technical: plain words instead (UI-11C, screen 55).
+            return "Application observée sur ce Mac"
         }
 
         private var identityHelp: String {

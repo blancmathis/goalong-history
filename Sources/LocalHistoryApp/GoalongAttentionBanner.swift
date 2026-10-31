@@ -40,6 +40,7 @@ struct GoalongAttentionBanner: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title(notice)).font(.system(size: 13, weight: .semibold))
+                        // Short details fit one line at the window's width: the three banners keep one height (UI-13C, 45).
                         Text(detail(notice)).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -83,24 +84,24 @@ struct GoalongAttentionBanner: View {
     private func detail(_ notice: Notice) -> String {
         switch notice {
         case .storage(.diskFull):
-            return "Libérez un peu d’espace : l’enregistrement reprendra tout seul et la coupure sera indiquée dans votre historique."
+            return "Libérez de l’espace : l’enregistrement reprendra seul, la coupure restera visible."
         case .storage:
-            return "Goalong réessaie automatiquement. Si cela dure, envoyez-nous un rapport : il contient la cause technique, pas votre activité."
+            return "Goalong réessaie seul. Si cela dure, signalez-le : le rapport contient la cause, pas votre activité."
         case .lowSpace(let free):
-            return "Il reste \(StorageHealth.formatted(free)). En dessous d’environ \(StorageHealth.lowSpaceThresholdText), macOS peut empêcher Goalong d’enregistrer."
+            return "Il reste \(StorageHealth.formatted(free)) : macOS peut bientôt empêcher Goalong d’enregistrer."
         case .updated(let previous, _):
             return "La mise à jour depuis la version \(previous) s’est bien déroulée. Vos réglages et votre historique sont conservés."
         }
     }
 
+    // UI-13C (45): one action per storage banner, same place; the report only when the disk refused a write.
     @ViewBuilder private func actions(_ notice: Notice) -> some View {
         switch notice {
-        case .storage(let kind):
-            HStack(spacing: 8) {
-                if kind == .diskFull { manageStorageButton(primary: true) }
-                Button("Signaler le problème…") { SupportRequestController.shared.present() }
-                    .buttonStyle(LHSecondaryButtonStyle())
-            }
+        case .storage(.diskFull):
+            manageStorageButton(primary: true)
+        case .storage:
+            Button("Signaler le problème…") { SupportRequestController.shared.present() }
+                .buttonStyle(LHSecondaryButtonStyle())
         case .lowSpace:
             manageStorageButton(primary: false)
         case .updated:

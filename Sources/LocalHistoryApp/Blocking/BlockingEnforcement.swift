@@ -170,7 +170,7 @@ enum BlockingAppQuit {
         let status = currentLoginStatus()
         result.launchAtLogin = status == .enabled
         if locked && !result.launchAtLogin {
-            result.component = status == .requiresApproval ? .awaitingApproval : .failed(loginError ?? "Activez Goalong dans Ouverture de session.")
+            result.component = status == .requiresApproval ? .awaitingApproval : .failed(loginError ?? "Activez Goalong dans \(LoginItemsPanel.path).")
         }
         return result
     }

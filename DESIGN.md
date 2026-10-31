@@ -253,9 +253,12 @@ Dans `GoalongControls.swift`, sauf mention.
 - **Case à cocher** (`.goalongCheckbox`) : boîte creusée, lime avec coche encre quand elle est cochée.
 - **Segmenté** (`GoalongSegmentedControl`) : piste creusée, pastille relevée qui glisse.
 - **Sélecteur de jour** (`DateSelectionControl`, `DashboardComponents.swift`) : ‹ jour ›, calendrier en popover.
-- **Restent natifs, volontairement** : menus déroulants (`Picker` en menu), calendriers et sélecteurs
-  d'heure, curseurs, pas-à-pas, alertes et dialogues de confirmation. Leur comportement clavier et VoiceOver
-  vaut plus qu'une peau maison.
+- **Menu déroulant** (`GoalongMenuPicker`) : un choix parmi plusieurs, sur la surface des contrôles Goalong
+  (pas le cadre AppKit), chevron ⌃⌄ gris. VoiceOver lit le titre comme libellé et le choix courant comme
+  valeur, comme le `Picker` natif. Les écrans redessinés l'utilisent ; ailleurs, le `Picker` en menu natif
+  reste admis.
+- **Restent natifs, volontairement** : calendriers et sélecteurs d'heure, curseurs, pas-à-pas, alertes et
+  dialogues de confirmation. Leur comportement clavier et VoiceOver vaut plus qu'une peau maison.
 
 **Structure**
 - **Section** (`GoalongSection`, `DashboardComponents.swift`) : titre posé sur la page, action discrète à
@@ -264,6 +267,8 @@ Dans `GoalongControls.swift`, sauf mention.
 - **Liste** (`GoalongSettingsList`, `GoalongSettingsLink`, `GoalongRowDivider`, `SimpleSettingsComponents.swift`) :
   lignes pleine largeur dans un groupe, glyphe neutre sans tuile, libellé, valeur, chevron qui avance au survol.
 - **Dépliant** (`GoalongDisclosureGroup`) : ligne pleine largeur, chevron qui pivote. Le chevron est à gauche. Seule exception : le chevron seul, en fin de ligne, d’un tableau à colonnes fixes (règles d’usage).
+- **Aide dépliable** (`GoalongHelpText`, `GoalongDisclosureGroup.swift`) : une phrase d’aide visible, le détail
+  derrière « En savoir plus ». Pour garder une consigne courte sans perdre l’explication.
 - **Note** (`GoalongNote`) et **bandeau** (`GoalongBanner`) : information secondaire dans un bloc teinté sans
   filet ; ton neutre, confidentialité ou avertissement.
 - **En-tête de page** (`PageHeader`, `.goalongPageTitle()`) : un titre, une phrase. Jamais de sur-titre.

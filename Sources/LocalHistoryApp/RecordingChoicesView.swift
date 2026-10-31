@@ -47,8 +47,24 @@ struct RecordingChoicesView: View {
     @Binding var draft: DashboardSettingsDraft
     /// Settings use one column so every switch sits on the shared right edge (UI-48).
     var columns = 2
+    @Environment(\.isEnabled) private var isEnabled
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    /// Why the switches are locked. « Appels » is named only when it stays on (UI-12C, screens 24/44).
+    static func lockedReason(localRecordingOn: Bool, callsOn: Bool) -> String {
+        guard !localRecordingOn else { return "Ces choix restent verrouillés tant que le fichier de réglages est illisible." }
+        let reason = "Activez l’enregistrement de ce Mac pour modifier ces choix."
+        return callsOn ? reason + " « Appels » est une source à part : il reste allumé." : reason
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if !isEnabled {
+                Label(Self.lockedReason(localRecordingOn: consents.isEnabled(.localComputerHistory),
+                                        callsOn: draft.captureCallPresence),
+                      systemImage: "lock")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("recording-choices-locked-reason")
+            }
             HStack {
                 Text("Applications et durées").font(.system(size: 13, weight: .medium))
                 Spacer()
@@ -149,6 +165,7 @@ extension DashboardSettingsDraft {
 struct ApplicationScopePickerButton: View {
     @Binding var text: String
     @State private var error: String?
+    init(text: Binding<String>, error: String? = nil) { _text = text; _error = State(initialValue: error) }
     var body: some View {
         Button("Choisir des applications…", action: chooseApplications)
             .buttonStyle(LHSecondaryButtonStyle())

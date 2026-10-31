@@ -6,16 +6,23 @@ import SwiftUI
 /// « Choisir les projets… »: the repositories whose Git history and file counts Goalong reads.
 @MainActor struct GoalongDeveloperProjectsSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var developer = GoalongDeveloperModel()
+    @StateObject private var developer: GoalongDeveloperModel
     @State private var problem: String?
     @State private var revision = 0
+    /// A model given by a test or the gallery is shown as is: it never reads the real data nor the agents.
+    private let readsAgents: Bool
+
+    init(developer: GoalongDeveloperModel? = nil) {
+        _developer = StateObject(wrappedValue: developer ?? GoalongDeveloperModel())
+        readsAgents = developer == nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Projets suivis").font(LHTheme.sheetTitleFont)
-                    Text("Pour chaque projet, Goalong lit l’heure et le type des actions Git, et compte les fichiers modifiés. Le code, les messages de commit et les noms de fichiers ne sont ni lus ni enregistrés.")
+                    Text("Goalong lit l’heure et le type des actions Git et compte les fichiers modifiés, jamais le code, les messages ni les noms de fichiers.")
                         .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -25,17 +32,22 @@ import SwiftUI
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    GoalongSettingsGroup(title: "Suivis") {
-                        if developer.selectedProjects.isEmpty {
-                            Text("Aucun projet suivi.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    // UI-13C (48): no project yet is an empty state with its one next step, in lime.
+                    if developer.selectedProjects.isEmpty {
+                        GoalongEmptyState(title: "Aucun projet suivi",
+                                          message: "Ajoutez le dossier d’un projet Git pour voir ses commits et ses fichiers modifiés.") {
+                            Button("Ajouter un dossier…", action: choose).buttonStyle(LHPrimaryButtonStyle())
                         }
-                        ForEach(Array(developer.selectedProjects.enumerated()), id: \.element.id) { index, project in
-                            if index > 0 { Divider() }
-                            row(project, action: "Retirer") { remove(project) }
+                    } else {
+                        GoalongSettingsGroup(title: "Suivis") {
+                            ForEach(Array(developer.selectedProjects.enumerated()), id: \.element.id) { index, project in
+                                if index > 0 { Divider() }
+                                row(project, action: "Retirer") { remove(project) }
+                            }
                         }
                     }
                     if !developer.suggestions.isEmpty {
-                        GoalongSettingsGroup(title: "Vus dans vos agents") {
+                        GoalongSettingsGroup(title: "Projets vus par vos agents") {
                             ForEach(Array(developer.suggestions.enumerated()), id: \.element.id) { index, project in
                                 if index > 0 { Divider() }
                                 row(project, action: "Suivre") { add(project) }
@@ -43,7 +55,9 @@ import SwiftUI
                         }
                     }
                     HStack(spacing: 12) {
-                        Button("Ajouter un dossier…", action: choose).buttonStyle(LHSecondaryButtonStyle())
+                        if !developer.selectedProjects.isEmpty {
+                            Button("Ajouter un dossier…", action: choose).buttonStyle(LHSecondaryButtonStyle())
+                        }
                         if let problem {
                             Label(problem, systemImage: "exclamationmark.triangle")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.warning)
@@ -54,7 +68,7 @@ import SwiftUI
         }
         .frame(minWidth: 560, idealWidth: 620, minHeight: 380, idealHeight: 480)
         .background(Button("") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
-        .task(id: revision) { await developer.refresh(day: GoalongToday.now) }
+        .task(id: revision) { if readsAgents { await developer.refresh(day: GoalongToday.now) } }
         .accessibilityIdentifier("developer-projects-sheet")
     }
 

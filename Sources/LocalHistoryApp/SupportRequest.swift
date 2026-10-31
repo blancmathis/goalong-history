@@ -145,7 +145,7 @@ enum SupportReportStore {
             data = try SupportDiagnostics.readPrivateFile(url, maximum: Self.maximumReportBytes)
         } catch {
             SupportDiagnostics.shared.failure(error, component: .support)
-            report("Le rapport n’est plus disponible. Cliquez sur « Actualiser le rapport » puis réessayez.", .problem)
+            report("Le rapport n’est plus disponible. Choisissez « Autres options › Actualiser le rapport », puis réessayez.", .problem)
             return
         }
         do {
@@ -171,7 +171,7 @@ enum SupportReportStore {
             return
         }
         journal.record(.userMarkedIssue, component: .support)
-        report("Repère ajouté à \(GoalongUIFormat.time(Date())). Reproduisez le problème puis cliquez sur « Actualiser le rapport ».", .success)
+        report("Repère ajouté à \(GoalongUIFormat.time(Date())). Reproduisez le problème, puis choisissez « Autres options › Actualiser le rapport ».", .success)
     }
 
     func close() { window?.close() }
@@ -245,9 +245,15 @@ struct SupportRequestView: View {
         }
     }
 
+    private var reportFailed: Bool {
+        if case .failed = controller.phase { return true } else { return false }
+    }
+
     @ViewBuilder private var detected: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Ce que Goalong a détecté").font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+            // A report that could not be prepared is not a finding about the Mac: it gets its own title (UI-13C, 26).
+            Text(reportFailed ? "Rapport non préparé" : "Ce que Goalong a détecté")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
             LHCard(padding: 16) {
                 VStack(alignment: .leading, spacing: 0) {
                 switch controller.phase {
@@ -329,7 +335,21 @@ struct SupportRequestView: View {
     private var actions: some View {
         let ready: URL? = { if case .ready(let url, _, _, _) = controller.phase { return url }; return nil }()
         let canEmail = ready != nil && !controller.emailUnavailable
-        return HStack(spacing: 10) {
+        // The hint sits under the buttons, full width; no mail app is already said once in the message above.
+        return VStack(alignment: .trailing, spacing: 8) {
+            actionButtons(ready: ready, canEmail: canEmail)
+            if !canEmail && !controller.emailUnavailable {
+                Text(emailHint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .accessibilityIdentifier("support-email-hint")
+            }
+        }
+    }
+
+    private func actionButtons(ready: URL?, canEmail: Bool) -> some View {
+        HStack(spacing: 10) {
             Menu {
                 Button("Noter l’heure du problème") { controller.markIssue() }
                     .disabled(!SupportDiagnostics.shared.isEnabled)
@@ -354,13 +374,6 @@ struct SupportRequestView: View {
                 }
                 .fixedSize()
                 .accessibilityIdentifier("support-share")
-            }
-            if !canEmail {
-                // The hint wraps instead of squeezing the button label (UI-9 C).
-                Text(emailHint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("support-email-hint")
             }
             Group {
                 if canEmail {

@@ -56,7 +56,7 @@ final class GoalongSystemLaneBuilderTests: XCTestCase {
             day.calendarAccess = access
             XCTAssertEqual(day.lead, "Aucun appel observé ce jour-là.", "\(access)")
             XCTAssertEqual(day.lead(isToday: true), "Aucun appel observé aujourd’hui.")
-            XCTAssertEqual(day.caption, "Accès à l’agenda à autoriser", "\(access)")
+            XCTAssertEqual(day.caption, access == .denied ? "Accès à l’agenda refusé" : "Accès à l’agenda à autoriser", "\(access)")
         }
         day = GoalongAgendaDay(callsOn: true, calendarOn: false)
         XCTAssertEqual(day.lead, "Aucun appel observé ce jour-là.")

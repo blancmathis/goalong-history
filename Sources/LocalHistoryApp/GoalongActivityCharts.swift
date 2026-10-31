@@ -80,12 +80,14 @@ enum GoalongStackedBars {
 /// Hour by hour, split into work, other and still-to-classify time.
 struct GoalongHourlyClassChart: View {
     let day: GoalongLocalAnalytics.Day
+    /// The page's focus threshold: the bars, the « Heures et valeurs » list and the range read the same hours.
+    let minimumMinutes: Int
     let dateRange: ClosedRange<Date>
     let hourStride: Int
     private let height: CGFloat = 180
 
     var body: some View {
-        let hours = day.hours(minimumMinutes: 25).filter { $0.seconds > 0 }
+        let hours = day.hours(minimumMinutes: minimumMinutes).filter { $0.seconds > 0 }
         let scale = GoalongAnalyticsChartScale(maximumSeconds: hours.map(\.seconds).max() ?? 0, hourly: true)
         let span = dateRange.upperBound.timeIntervalSince(dateRange.lowerBound) / 3600
         VStack(alignment: .leading, spacing: 10) {
@@ -109,8 +111,9 @@ struct GoalongHourlyClassChart: View {
             .chartLegend(.hidden).chartXScale(domain: dateRange).chartYScale(domain: 0...scale.upperBound)
             .chartPlotStyle { $0.clipped() }
             .chartXAxis {
-                AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
-                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
+                // Each bar fills its hour: the hour's name sits under the bar, not on the edge between two bars.
+                AxisMarks(values: Self.hourTicks(dateRange, stride: hourStride)) { _ in
+                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour(), centered: hourStride == 1)
                         .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                 }
             }
@@ -125,6 +128,19 @@ struct GoalongHourlyClassChart: View {
             .accessibilityIdentifier("activity-hourly-class-chart")
             GoalongActivityClassLegend()
         }
+    }
+
+    /// Hour starts inside the range, the closing edge excluded (a centred label there would fall outside).
+    static func hourTicks(_ range: ClosedRange<Date>, stride: Int, calendar: Calendar = .current) -> [Date] {
+        var tick = calendar.dateInterval(of: .hour, for: range.lowerBound)?.start ?? range.lowerBound
+        if tick < range.lowerBound { tick = calendar.date(byAdding: .hour, value: 1, to: tick) ?? range.lowerBound }
+        var ticks: [Date] = []
+        while tick < range.upperBound, ticks.count < 25 {
+            ticks.append(tick)
+            guard let next = calendar.date(byAdding: .hour, value: max(1, stride), to: tick) else { break }
+            tick = next
+        }
+        return ticks
     }
 }
 

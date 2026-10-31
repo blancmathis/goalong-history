@@ -33,7 +33,7 @@
                     PageHeader(
                         title: "Commande goalong",
                         subtitle:
-                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre. Données et erreurs dans un format lisible par les programmes ; aide en texte."
+                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre."
                     ) {
                         StatusPill(
                             title: statusTitle,
@@ -49,7 +49,8 @@
                     quickCommandsCard
                     evidenceCard
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // UI-12B (36): a reading width, as in Activité, instead of the whole window.
+                .frame(maxWidth: 760, alignment: .leading)
                 .padding(.horizontal, LHTheme.pageInset)
                 .padding(.top, 28)
                 .padding(.bottom, 32)
@@ -198,9 +199,11 @@
                         .foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer(minLength: 16)
+                // A long command wraps instead of being cut (UI-12B, 36).
                 Text(item.command)
                     .font(.system(.caption, design: .monospaced).weight(.medium))
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
                     .background(
@@ -227,14 +230,15 @@
                         .font(.system(size: 15, weight: .semibold))
                     evidenceRow(
                         symbol: "curlybraces",
-                        title: "Format lisible par les programmes",
-                        detail: "Les données et les erreurs sont structurées. L’aide est en texte ; « goalong help --json » décrit le format."
+                        title: "Des réponses faciles à lire pour l’agent",
+                        detail: "Les données et les erreurs arrivent dans une forme que l’agent sait lire.",
+                        more: "L’aide est en texte ; « goalong help --json » décrit le format."
                     )
                     evidenceRow(
                         symbol: "lock.shield",
                         title: "Les originaux restent en lecture seule",
-                        detail:
-                            "Les sources d’origine ne sont jamais modifiées. Le Temps d’écran du jour peut mettre à jour un enregistrement Goalong ; seul un export de preuve explicite crée un fichier."
+                        detail: "Les sources d’origine ne sont jamais modifiées.",
+                        more: "Le Temps d’écran du jour peut mettre à jour un enregistrement Goalong ; seul un export de preuve explicite crée un fichier."
                     )
                     evidenceRow(
                         symbol: "externaldrive",
@@ -247,7 +251,7 @@
             }
         }
 
-        private func evidenceRow(symbol: String, title: String, detail: String) -> some View {
+        private func evidenceRow(symbol: String, title: String, detail: String, more: String? = nil) -> some View {
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
@@ -256,10 +260,13 @@
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
-                    Text(detail)
-                        .font(.system(size: 12))
-                        .foregroundStyle(LHTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // UI-14: one sentence on the page, the rest in « En savoir plus » (DESIGN §12).
+                    if let more { GoalongHelpText(lead: detail, more: more) } else {
+                        Text(detail)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -361,7 +368,7 @@
             switch item.command {
             case "goalong status": return "Accord, fraîcheur, couverture et erreurs, sans ouvrir le contenu des conversations."
             case "goalong days": return "Liste les dates auxquelles Goalong peut répondre avec les données locales."
-            case "goalong help": return "Aide lisible ; ajoutez --json quand un agent a besoin du contrat des commandes."
+            case "goalong help": return "Aide lisible ; ajoutez --json pour donner à un agent la liste des commandes."
             default:
                 return item.command.hasPrefix("goalong ask")
                     ? "Goalong choisit le plus petit ensemble de données locales utiles." : item.detail

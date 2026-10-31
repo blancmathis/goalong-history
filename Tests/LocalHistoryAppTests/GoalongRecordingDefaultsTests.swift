@@ -237,5 +237,16 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         XCTAssertEqual(MenuBarController.statusDisplay(health: .permissionRequired, localEnabled: true, globalPaused: false,
             recording: true, suppression: nil).title, "Autorisation macOS à vérifier")
     }
+
+    /// The lock says its cause, and names « Appels » only when that switch stays on (UI-12C, screens 24/44).
+    func testLockedRecordingChoicesSayTheirCause() {
+        let off = RecordingChoicesView.lockedReason(localRecordingOn: false, callsOn: false)
+        XCTAssertTrue(off.hasPrefix("Activez l’enregistrement"))
+        XCTAssertFalse(off.contains("Appels"))
+        XCTAssertTrue(RecordingChoicesView.lockedReason(localRecordingOn: false, callsOn: true).contains("« Appels »"))
+        let config = RecordingChoicesView.lockedReason(localRecordingOn: true, callsOn: true)
+        XCTAssertFalse(config.contains("Activez"))
+        XCTAssertFalse(config.contains("Appels"))
+    }
 }
 #endif

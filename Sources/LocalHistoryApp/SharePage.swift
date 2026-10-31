@@ -53,6 +53,8 @@
             .padding(.horizontal, LHTheme.pageInset)
             .padding(.top, 28)
             .padding(.bottom, 20)
+            // Pinned to the top: an empty list never pushes the header (and « Retour ») up (UI-13B).
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(LHTheme.pageBackground)
         }
 
@@ -114,29 +116,27 @@
                 }
                 .accessibilityIdentifier("share-proof-status")
                 Spacer()
-                // Lime goes to what can run: the relay when the file cannot be created yet (UI-9 C).
+                // Lime goes to what can run: opening the settings when the file cannot be created yet (UI-9 C).
                 switch proof.action {
                 case .openRecordingSettings?:
                     Button("Ouvrir les réglages") { model.openRecordingSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                 case .reportProblem?:
-                    Button("Signaler le problème…") { model.openDiagnostics() }
+                    // No verified minute: reporting the gap is the one step forward, in lime,
+                    // instead of a greyed « Créer le fichier » (UI-13B, screen 55).
+                    Button("Signaler l’écart…") { model.openDiagnostics() }
                         .buttonStyle(LHPrimaryButtonStyle())
                 case nil:
                     EmptyView()
                 }
-                Group {
-                    if proof.canExport {
-                        createButton.buttonStyle(LHPrimaryButtonStyle())
-                    } else {
-                        createButton.buttonStyle(LHSecondaryButtonStyle())
-                    }
+                if proof.canExport {
+                    createButton.buttonStyle(LHPrimaryButtonStyle())
+                        .disabled(model.isExportingShare)
                 }
-                .disabled(!proof.canExport || model.isExportingShare)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .frame(minHeight: 56)
+            .frame(minHeight: UsageRulesList.exportBarHeight)
             .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -196,7 +196,7 @@
             return ShareProofStatus(
                 title: "\(observed), aucune vérifiée",
                 detail: recordingEnabled
-                    ? "Le fichier ne contient que les minutes vérifiées par ce Mac. Celles-ci n’ont pas pu l’être : signalez le problème."
+                    ? "Le fichier ne contient que les minutes vérifiées par ce Mac, et aucune ne l’a été. Signalez l’écart : le rapport joint l’état de ce Mac."
                     : "Le fichier ne contient que les minutes vérifiées par ce Mac pendant l’enregistrement, qui est désactivé.",
                 action: recordingEnabled ? .reportProblem : .openRecordingSettings,
                 canExport: false)

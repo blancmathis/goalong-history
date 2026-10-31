@@ -233,7 +233,7 @@ struct BlockingStruckIcon: View {
     static func fallbackInitial(for item: BlockingItem) -> String? {
         switch item {
         case .app(let app): return AppIconView.icon(bundleIdentifier: app.bundleIdentifier) == nil ? AppIconView.initial(for: app.name) : nil
-        // A site without an icon shows a globe (BlockingSiteTile), never a letter.
+        // A site shows its monogram tile (BlockingSiteTile → WebsiteIconView), never a letter here.
         case .site, .symbol: return nil
         }
     }

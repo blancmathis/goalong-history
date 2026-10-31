@@ -553,7 +553,7 @@
             case .permissionsMissing: return "Accès à configurer"
             case .inputTapUnavailable: return "Saisie non reçue"
             case .storageUnavailable(.diskFull): return "Disque plein"
-            case .storageUnavailable: return "Enregistrement arrêté"
+            case .storageUnavailable: return "Enregistrement interrompu"
             case .suppressed(let reason):
                 switch reason {
                 case .manualPause: return "Enregistrement en pause"

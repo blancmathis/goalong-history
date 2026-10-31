@@ -13,10 +13,10 @@ extension HistoryDataClass {
         case .detailedEvents: return "Activité détaillée"
         case .semanticSnapshots: return "Texte affiché"
         case .memories: return "Historique et résumés locaux"
-        case .analysisCaches: return "Fichiers temporaires d’analyse"
-        case .minuteSeals: return "Preuves de chaque minute"
+        case .analysisCaches: return "Fichiers temporaires"
+        case .minuteSeals: return "Preuves d’activité"
         case .activitySummaries: return "Résumés de journée"
-        case .anchorReceipts: return "Reçus d’horodatage"
+        case .anchorReceipts: return "Reçus de date"
         }
     }
 }
@@ -33,7 +33,7 @@ extension HistoryRetentionPolicy {
         }
     }
     /// Shared labels so every entry point names the same policy the same way.
-    static let noLimitLabel = "Jusqu’à ce que je supprime"
+    static let noLimitLabel = "Jusqu’à suppression"
     static let automaticCleanupLabel = "Supprimer automatiquement les données expirées"
     static func automaticCleanupSummary(enabled: Bool) -> String {
         enabled ? "Suppression automatique activée" : "Jusqu’à suppression manuelle"
@@ -41,7 +41,7 @@ extension HistoryRetentionPolicy {
     var includesProofExpiry: Bool { minuteSeals.days != nil || anchorReceipts.days != nil }
     var retentionDescription: String {
         HistoryDataClass.allCases.map { kind in
-            let duration = duration(for: kind).days.map { GoalongUIFormat.count($0, "jour") } ?? "jusqu’à ce que je supprime"
+            let duration = duration(for: kind).days.map { GoalongUIFormat.count($0, "jour") } ?? "jusqu’à suppression"
             return "\(kind.retentionTitle) : \(duration)"
         }.joined(separator: "\n")
     }
@@ -116,8 +116,9 @@ extension HistoryRetentionPolicy {
                         VStack(spacing: 0) {
                             ForEach(HistoryDataClass.allCases, id: \.self) { kind in
                                 HStack(alignment: .center, spacing: 16) {
+                                    // The title stays in ink: only the value says the row is inactive (UI-12B, 28).
                                     Text(kind.retentionTitle).font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(model.automaticCleanup ? LHTheme.text : LHTheme.secondaryText)
+                                        .foregroundStyle(LHTheme.text)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     // A duration only counts once automatic cleanup is on (UI-44). Off, the value
                                     // reads as plain text instead of a greyed menu (UI-9 C).
@@ -128,7 +129,8 @@ extension HistoryRetentionPolicy {
                                         }.labelsHidden().frame(width: 230)
                                             .accessibilityIdentifier("retention-\(kind.rawValue)")
                                     } else {
-                                        Text(model.draft.duration(for: kind).days.map { GoalongUIFormat.count($0, "jour") } ?? HistoryRetentionPolicy.noLimitLabel)
+                                        // Off, nothing expires: every row says what really happens, not a dormant duration (UI-11C).
+                                        Text(HistoryRetentionPolicy.noLimitLabel)
                                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                                             .frame(width: 230, alignment: .trailing)
                                             .accessibilityIdentifier("retention-\(kind.rawValue)")
@@ -138,6 +140,9 @@ extension HistoryRetentionPolicy {
                             }
                         }
                     }
+                    // Plain titles above; what the proofs and receipts are stays one click away (UI-12B, 28).
+                    GoalongHelpText(lead: "Les preuves et les reçus montrent que l’historique n’a pas été modifié.",
+                                    more: "Goalong signe chaque minute enregistrée : ce sont les preuves d’activité. Un service d’horodatage date ces signatures : ce sont les reçus de date. Les fichiers temporaires sont des calculs d’analyse que Goalong peut refaire.")
                     if model.automaticCleanup && model.draft.includesProofExpiry {
                         Toggle("J’autorise aussi la suppression des preuves et reçus expirés. La vérification de ces périodes peut devenir impossible.", isOn: $proofDeletionConfirmed)
                             .toggleStyle(.goalongCheckbox)

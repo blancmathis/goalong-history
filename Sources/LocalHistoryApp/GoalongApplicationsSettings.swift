@@ -166,13 +166,12 @@ enum GoalongKnownApplications {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 4) {
-                Text("Désactivez une app ou un site pour l’exclure du suivi détaillé et des prochains envois.")
-                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+            // UI-13C (27): the sentence is the page lead (SettingsPane.lead); a compact segmented control, its help beside it.
+            HStack(spacing: 8) {
+                GoalongSegmentedControl("Type", selection: $sites, options: [false, true]) { $0 ? "Sites web" : "Applications" }
+                    .fixedSize()
                 GoalongHelpButton(text: "Le suivi détaillé et les prochains envois respectent ces exclusions. Les historiques locaux d’Apple et des outils IA restent séparés ; ils ne sont pas effacés. Les textes et totaux impossibles à filtrer sont bloqués. Une ancienne exclusion limitée au suivi détaillé est indiquée comme telle.")
             }
-            GoalongSegmentedControl("Type", selection: $sites, options: [false, true], fills: true) { $0 ? "Sites web" : "Applications" }
             HStack {
                 GoalongSearchField("Rechercher par nom…", text: $search)
                 Toggle("Exclusions seulement", isOn: $excludedOnly).toggleStyle(.goalongCheckbox).fixedSize()
