@@ -668,3 +668,4 @@ mon-travail/   # UI-13B (barre latérale et version ; boutons d’en-tête lisib
 programme/   # UI-13B (barre latérale et version)
 surveillance/   # UI-13B (barre latérale et version)
 terminal/   # UI-13B (barre latérale et version)
+agenda/   # UI-13B (boutons d’en-tête désactivés lisibles, barre latérale « Enregistrement désactivé », version secondaire)
