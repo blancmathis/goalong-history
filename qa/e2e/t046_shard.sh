@@ -34,7 +34,7 @@ log "Sources/ Tests/ vs 973ff6a: $(git -C "$HERE" diff --stat 973ff6a -- Sources
 xcrun swiftc -O "$HERE/ax_driver.swift" -o "$DRIVER" || { log "driver build failed"; exit 1; }
 # L3m: Blocage rows (screen Blocage…, or a nav through the Blocage page) run in their own job SB, the only one with
 # the Blocage seed (an active block and a locked list changed other pages, and the AX tree went mute in L3l).
-blk='$9 ~ /^Blocage/ || ($3 ~ /blocking/ && $1 !~ /^J-(0228|0858)$/)'  # L3n: J-0228/J-0858 need the Distractions suggestions, which the Blocage seed removes
+blk='$9 ~ /^Blocage/ || ($3 ~ /blocking/ && $1 !~ /^J-(0228|0858)$/) || $1 ~ /^J-(0108|0980)$/'  # L3n: J-0228/J-0858 need the Distractions suggestions, which the Blocage seed removes
 if [[ $SHARD == SB ]]; then
   : > "$OUT/plan-all.tsv"
   for s in S1 S2 S3; do

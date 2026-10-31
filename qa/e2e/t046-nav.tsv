@@ -489,3 +489,10 @@ J-0143	nav:concentration o:concentration-open-review w:2
 J-0144	nav:concentration o:concentration-open-review w:2
 J-0145	nav:concentration o:concentration-open-review w:2
 J-0146	nav:concentration o:concentration-open-review w:2
+J-0491	nav:work p:"Renommer…" w:2
+J-0292	nav:monitoring p:"Gérer la connexion" w:2 p:"Supprimer la clé" w:2
+J-0487	nav:work w:2 "pk:Corriger|Nouvelle tâche…" w:2
+J-0329	nav:monitoring w:2 o:monitoring-edit-goals w:1 "ty:monitoring-work-goals=T046 nouvelle définition du travail" p:monitoring-save-goals w:2
+J-0329	nav:monitoring w:2 o:monitoring-edit-goals w:1 "tk:monitoring-work-goals= T046 nouvelle définition" w:1 p:monitoring-save-goals w:2
+J-0108	nav:concentration "o:Préparer une séance sur" w:1 "p:T046 Réseaux" w:1 "ck:Verrouiller=1" w:1 p:concentration-start w:2
+J-0980	"mi:Goalong Dev,Goalong History Dev|Quitter Goalong" w:2
