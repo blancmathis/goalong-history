@@ -33,19 +33,26 @@
                     ScrollView {
                         page
                             .frame(maxWidth: 680, alignment: .leading)
-                            .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 72)
+                            .padding(.horizontal, LHTheme.pageInset).padding(.top, 40).padding(.bottom, 24)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                     // The scroller stays visible: a row cut by the footer reads as « more below » (UI-11C).
                     .scrollIndicators(.visible)
-                    .overlay(alignment: .bottom) {
-                        // A soft fade tells the reader that the list goes on under the footer.
-                        LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground],
-                                       startPoint: .top, endPoint: .bottom)
-                            .frame(height: 32).allowsHitTesting(false).accessibilityHidden(true)
+                    // The footer is the scroll view's bottom inset, not a block under it: the content runs under its
+                    // edge, and scrolled to the end it stops 24 pt above it, on a whole row (UI-12C, screen 19).
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        VStack(spacing: 0) {
+                            Rectangle().fill(LHTheme.separator).frame(height: 1)
+                            footer
+                        }
+                        .background(LHTheme.pageBackground)
+                        .overlay(alignment: .top) {
+                            // A soft fade tells the reader that the list goes on under the footer.
+                            LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground],
+                                           startPoint: .top, endPoint: .bottom)
+                                .frame(height: 32).offset(y: -32).allowsHitTesting(false).accessibilityHidden(true)
+                        }
                     }
-                    Rectangle().fill(LHTheme.separator).frame(height: 1)
-                    footer
                 }
                 .background(LHTheme.pageBackground)
             }
