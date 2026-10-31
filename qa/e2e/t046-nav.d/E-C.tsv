@@ -1,0 +1,22 @@
+# T-046 lot E-C. Checked: J-0937 (same opener as J-0936/J-0939, which pass; the row clicks Annuler in the dialog).
+J-0937	pane:home "t:Confidentialité, tout suspendre|Tout suspendre…" w:2
+# J-0943 checked: same nav as J-0942 (seed:data-ro is in L3n's 16 seeds; chmod 500 makes setPaused fail -> alert "Pause non modifiée", button Fermer: GoalongGlobalPauseControl.swift:54-56).
+J-0943	pane:home w:2 seed:data-ro "t:Confidentialité, tout suspendre|Tout suspendre…" w:2 "pb:Tout suspendre" w:2
+# CLI page: nav:cli does not exist (no sidebar-cli; the old dumps show Réglages). Path = pane:advanced p:"Terminal et agents" (SettingsPage.swift:274). No dump shows the CLI page, so all five stay commented.
+# J-0945 depends on state: "Installer la commande" exists only if installationReport.canInstall (CLIHelpPage.swift:82); absent when ready/development.
+# J-0946 J-0947 J-0951: "Commande copiée" exists only AFTER pressing "Copier la commande" (linkCommandRow, shown only if linkCommand != nil, i.e. missing/conflict; CLIHelpPage.swift:126). Would need: pane:advanced p:"Terminal et agents" w:2 p:"Copier la commande" w:1
+# J-0950: "Instructions pour l’agent copiées" is only an announce() string, not a button label; the button reads "Copier les instructions" then "Instructions copiées" (CLIHelpPage.swift:322-336). The row target in t046_plan.py must change.
+# J-0945	pane:advanced p:"Terminal et agents" w:2
+# J-0946	pane:advanced p:"Terminal et agents" w:2 p:"Copier la commande" w:1
+# J-0947	pane:advanced p:"Terminal et agents" w:2 p:"Copier la commande" w:1
+# J-0950	pane:advanced p:"Terminal et agents" w:2
+# J-0951	pane:advanced p:"Terminal et agents" w:2 p:"Copier la commande" w:1
+# Menu bar panel (si opens the NSPopover; verified in dumps J-0381/J-0385/J-0401 and MenuBarPanelView.swift)
+J-0381	si
+J-0385	si p:"Choisir un son" w:1
+J-0393	si
+J-0401	si
+# Braise sheet (BraisePage.swift: braise-add-rule opens BraiseRuleEditor; Annuler, TextField HH:mm)
+J-0753	nav:braise w:2 p:braise-add-rule w:2
+J-0756	nav:braise w:2 p:braise-add-rule w:2
+J-0713	@onboarding "pu:onboarding-continue|Retour" pb:"Plus tard" w:2
