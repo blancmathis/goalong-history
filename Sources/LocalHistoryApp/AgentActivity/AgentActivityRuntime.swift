@@ -439,7 +439,7 @@
 
         /// Shown instead of changing the agents' shared hook files from Goalong Dev.
         static let devHookChangeRefused = (
-            title: "Hooks gérés par Goalong installé",
+            title: "Détection immédiate gérée par Goalong installé",
             message: "Goalong Dev ne modifie pas la détection immédiate : elle est partagée avec Goalong installé. Activez-la ou retirez-la depuis Goalong installé."
         )
 

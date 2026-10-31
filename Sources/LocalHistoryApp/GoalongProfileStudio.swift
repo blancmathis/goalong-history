@@ -310,7 +310,10 @@ struct GoalongProfileStudio: View {
                             if computer { DatePicker("Début de l’activité", selection: $start).goalongDateField(label: "Début de l’activité"); Toggle("Inclure les textes de fenêtres déjà autorisés", isOn: $rich) }
                             Toggle("Conversations IA, comme contexte", isOn: $conversations)
                             if conversations {
-                                DatePicker("Conversations actives depuis", selection: $conversationsFrom, displayedComponents: .date).goalongDateField(label: "Conversations actives depuis")
+                                HStack(spacing: 8) {
+                                    Text("Conversations actives depuis").font(.system(size: 13))
+                                    DateSelectionControl(date: conversationsFrom, onChange: { conversationsFrom = Calendar.current.startOfDay(for: $0) }, showsToday: false)
+                                }
                                 Text("La journée analysée et jusqu’à 31 jours avant. Seules les sources déjà autorisées sont lues. Les échanges éclairent vos projets et décisions, même si « Usage de l’IA » est décochée. Certains messages plus anciens peuvent venir sans heure précise.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             }
                             Text("Goalong lit les applications, fenêtres, sites et interactions, avec leurs heures. Les champs protégés et les éléments supprimés sont exclus. Les textes longs sont coupés, et un moment sans données reste inconnu.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -393,7 +396,8 @@ struct GoalongProfileStudio: View {
         .onChange(of: rich) { _ in resetSources() }
         .onChange(of: computer) { _ in resetSources() }
         .onChange(of: conversationsFrom) { _ in resetSources() }
-        .onChange(of: conversations) { _ in if model.request == nil { model.cancel() } else { settingsChanged() } }
+        // Before a request exists, a source change drops loaded data so the footer offers « Charger les données » again.
+        .onChange(of: conversations) { _ in if model.request == nil { resetSources() } else { settingsChanged() } }
         .onChange(of: exclusions) { _ in settingsChanged() }.onChange(of: aliases) { _ in settingsChanged() }.onChange(of: instructions) { _ in settingsChanged() }
         .onDisappear { model.cancel() }
     }

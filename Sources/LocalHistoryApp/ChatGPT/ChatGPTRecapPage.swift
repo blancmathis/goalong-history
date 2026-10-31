@@ -82,6 +82,11 @@
                                 .buttonStyle(LHQuietButtonStyle())
                                 .font(.system(size: 12))
                         }
+                    } else {
+                        // Analysis off and nothing to show: say why the day stays empty, in one plain line.
+                        Text("L’analyse ChatGPT est désactivée : aucune activité de la journée n’est lue ici.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
                     }
 
                     if consents.isEnabled(.chatGPTAnalysis), isConnected {
