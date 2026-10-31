@@ -50,7 +50,7 @@ NAV = {
     "Blocage › Écran de blocage": "nav:concentration p:\"Programme\" w:2",
     "Braise": "nav:braise",
     "Concentration": "nav:concentration",
-    "Confidentialité et sécurité": "pane:home o:\"Diagnostic et preuves\" w:2",
+    "Confidentialité et sécurité": "pane:advanced p:\"Diagnostic et preuves\" w:2",  # L3n E-B: under Avancé (SettingsPage.swift:252-276)
     "Jev (surveillance)": "pane:jev",
     "Partager": "pane:advanced p:\"Outils de partage et analyses\" w:2 o:\"Exporter un fichier signé…\" w:2",
     "Réglages": "pane:home",

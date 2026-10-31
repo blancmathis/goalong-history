@@ -9,3 +9,6 @@ J-0523	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon tra
 J-0525	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les données" w:4 dump:loaded
 J-0527	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les données" w:4 dump:loaded
 J-0529	pane:advanced p:"Outils de partage et analyses" w:2 p:"Comprendre mon travail" w:3 p:"Charger les données" w:4 dump:loaded
+# E-B review of L3n recipes (E-B.md l.23-25): Temps d’écran is under Historique; the Modules delete button label (GoalongModulesSettings.swift:72).
+J-0633	nav:history p:"Temps d’écran Apple" w:2
+J-0983	pane:modules w:2 "p:Supprimer les données de Concentration…" w:2
