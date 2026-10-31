@@ -786,7 +786,7 @@ struct FocusThreadModel: Equatable {
                         .foregroundStyle(closed ? LHTheme.secondaryText : LHTheme.text)
                     // The task of the running session: a tag, so it is not read as a second copy of the session title.
                     if running {
-                        Text("En cours").font(.system(size: 11, weight: .semibold)).foregroundStyle(LHTheme.text)
+                        Text("En cours").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.text)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(LHTheme.selectionBackground, in: Capsule())
                             .fixedSize()
