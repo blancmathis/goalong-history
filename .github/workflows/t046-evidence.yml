@@ -115,7 +115,7 @@ jobs:
     # L3: the 1027 rows of qa/e2e/t046-rows.tsv in shards S1-S4 (S2 and S3 cut in slices), one runner each.
     # A pull_request run (workflow_dispatch cannot run a file that is not on main). App = the PR head,
     # whose Sources/ is 973ff6a = t046/ui-int (checked in summary.txt).
-    if: github.event_name == 'pull_request' && github.head_ref == 't046/evidence'
+    if: github.event_name == 'pull_request' && (github.head_ref == 't046/evidence' || github.head_ref == 't046/evidence-ui')
     runs-on: macos-15
     timeout-minutes: ${{ matrix.shard == 'S4' && 330 || 150 }}
     strategy:
