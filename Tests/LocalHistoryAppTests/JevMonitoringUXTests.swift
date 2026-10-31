@@ -66,7 +66,7 @@ final class JevMonitoringUXTests: XCTestCase {
         let history = try source("ComputerHistoryPage.swift")
         XCTAssertFalse(history.contains("\"Aucune activité enregistrée\""))
         XCTAssertTrue(history.contains("|| model.isAnalysisPartial\n"), "A partial analysis keeps its summary")
-        XCTAssertTrue(history.contains(".frame(width: 190)"))
+        XCTAssertTrue(history.contains("GoalongMenuPicker(\"Ordre de la chronologie\""))
         let rules = try source("UsageRulesList.swift")
         XCTAssertTrue(rules.contains("DashboardFormatters.duration"))
         XCTAssertTrue(rules.contains("ruleColumnWidth: CGFloat = 176"))
@@ -83,7 +83,7 @@ final class JevMonitoringUXTests: XCTestCase {
         XCTAssertFalse(focus.contains("Crédit Jev"))
         XCTAssertTrue(focus.contains("Rechargez le compte TypeSafe"))
         XCTAssertTrue(try source("SupportReport.swift").contains("Rechargez le compte TypeSafe"))
-        XCTAssertTrue(try source("JevConnectionSheet.swift").contains("Text(\"Clé API\")"))
+        XCTAssertTrue(try source("JevConnectionSheet.swift").contains("Text(\"Clé d’accès Jev\")"))
     }
 
     private func source(_ name: String) throws -> String {

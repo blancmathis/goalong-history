@@ -90,6 +90,11 @@ extension GalleryCatalog {
 
     /// Installs the state in the page's runtime and gives the consent the page needs to show conversations.
     static func installConversations(_ state: Conversations, _ model: DashboardViewModel) {
+        installConversations(state, runtime: model.agentActivityRuntime)
+    }
+
+    /// The same state on a runtime alone (unit tests that render the page without a dashboard model).
+    static func installConversations(_ state: Conversations, runtime: AgentActivityRuntime) {
         GoalongCapabilityConsentStore.shared.set(.aiConversations, enabled: true, surface: .settings)
         let records = conversationRecords(state)
         let overview = AgentActivityOverview(
@@ -111,7 +116,7 @@ extension GalleryCatalog {
                              ".claude/projects/atlas/session-2.jsonl : lecture refusée"]
         case .loading: break
         }
-        model.agentActivityRuntime.galleryInstall(
+        runtime.galleryInstall(
             overview: overview, tokenUsage: usage, analyzedAt: usage == nil ? nil : GalleryClock.at(9, 40), scan: scan,
             isScanning: state == .loading,
             codexFolder: state == .filled

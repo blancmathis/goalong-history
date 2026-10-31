@@ -126,8 +126,8 @@ struct GoalongActivityTextureSection: View {
                        subtitle: "Le même temps actif, réparti selon ce que le Mac observait à chaque minute") {
             VStack(alignment: .leading, spacing: 14) {
                 if rows.isEmpty {
-                    Text("Aucune minute active sur cette période.")
-                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    GoalongEmptyState(title: "Aucune minute active",
+                                      message: "Le détail apparaîtra dès que le Mac aura mesuré du temps actif sur cette période.")
                 }
                 ForEach(rows, id: \.0) { mode, seconds in
                     row(mode, seconds: seconds, total: total)

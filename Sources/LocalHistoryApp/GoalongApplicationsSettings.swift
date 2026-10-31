@@ -166,20 +166,19 @@ enum GoalongKnownApplications {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 4) {
-                Text("Désactivez une app ou un site pour l’exclure du suivi détaillé et des prochains envois.")
-                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+            // UI-13C (27): the sentence is the page lead (SettingsPane.lead); a compact segmented control, its help beside it.
+            HStack(spacing: 8) {
+                GoalongSegmentedControl("Type", selection: $sites, options: [false, true]) { $0 ? "Sites web" : "Applications" }
+                    .fixedSize()
                 GoalongHelpButton(text: "Le suivi détaillé et les prochains envois respectent ces exclusions. Les historiques locaux d’Apple et des outils IA restent séparés ; ils ne sont pas effacés. Les textes et totaux impossibles à filtrer sont bloqués. Une ancienne exclusion limitée au suivi détaillé est indiquée comme telle.")
             }
-            GoalongSegmentedControl("Type", selection: $sites, options: [false, true], fills: true) { $0 ? "Sites web" : "Applications" }
             HStack {
                 GoalongSearchField("Rechercher par nom…", text: $search)
                 Toggle("Exclusions seulement", isOn: $excludedOnly).toggleStyle(.goalongCheckbox).fixedSize()
             }
             if sites {
                 HStack {
-                    TextField("Ajouter un site · exemple.fr", text: $newDomain).textFieldStyle(GoalongFieldStyle()).onSubmit(addDomain)
+                    TextField("Ajouter un site, exemple.fr", text: $newDomain).textFieldStyle(GoalongFieldStyle()).onSubmit(addDomain)
                     Button("Exclure", action: addDomain).disabled(newDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 if let domainError { Text(domainError).font(.system(size: 12)).foregroundStyle(LHTheme.warning) }
@@ -190,12 +189,16 @@ enum GoalongKnownApplications {
                         if domains.isEmpty { empty }
                         ForEach(domains, id: \.self) { domain in
                             HStack(spacing: 12) {
-                                Image(systemName: "globe").font(.system(size: 13)).frame(width: 24).foregroundStyle(LHTheme.secondaryText)
+                                WebsiteIconView(host: domain, size: 22).frame(width: 24).accessibilityHidden(true)
                                 Text(domain).font(.system(size: 13, weight: .medium))
                                 Spacer()
                                 let parent = parentRule(for: domain)
-                                Text(parent.map { "Exclu par \($0)" } ?? (domainExcluded(domain) ? "Exclu" : "Autorisé"))
-                                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                if parent != nil || domainExcluded(domain) {
+                                    Label(parent.map { "Exclu par \($0)" } ?? "Exclu", systemImage: "eye.slash")
+                                        .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
+                                } else {
+                                    Text("Autorisé").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                }
                                 Toggle("Autoriser \(domain)", isOn: Binding(get: { !domainExcluded(domain) }, set: { setDomain(domain, enabled: $0) }))
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly).controlSize(.small)
                                     .disabled(parent != nil)
@@ -213,14 +216,17 @@ enum GoalongKnownApplications {
                                     Text(app.name).font(.system(size: 13, weight: .medium))
                                     if !app.installed {
                                         Text(GoalongKnownApplications.isDefaultExclusion(app.id)
-                                             ? "Non installée · protégée par défaut" : "Non installée sur ce Mac")
-                                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                                             ? "Non installée, protégée par défaut" : "Non installée sur ce Mac")
+                                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     } else if model.isApplicationExcludedFromCapture(app.id) && !exclusions.policy.excludes(appID: app.id) {
-                                        Text("Exclue de l’enregistrement").font(.system(size: 12)).foregroundStyle(.secondary)
+                                        Text("Exclue de l’enregistrement").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     }
                                 }
                                 Spacer()
-                                if exclusions.policy.excludes(appID: app.id) { Text("Exclue").font(.system(size: 12)).foregroundStyle(.secondary) }
+                                // The exception must stand out among the allowed rows (UI-47): glyph and ink, not grey.
+                                if exclusions.policy.excludes(appID: app.id) {
+                                    Label("Exclue", systemImage: "eye.slash").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text)
+                                }
                                 Toggle("Autoriser \(app.name)", isOn: Binding(get: { !isExcluded(app) }, set: { setApp(app, enabled: $0) }))
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly).controlSize(.small)
                                     .disabled(ProductIdentity.isGoalong(app.id))
@@ -230,10 +236,10 @@ enum GoalongKnownApplications {
                     }
                 }
             }
-            if let notice { Text(notice).font(.system(size: 12)).foregroundStyle(.secondary) }
+            if let notice { Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
             GoalongDisclosureGroup("Règles avancées d’enregistrement") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Les anciennes listes « autoriser uniquement » restent conservées.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("Les anciennes listes « autoriser uniquement » restent conservées.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     Button("Ouvrir la configuration") { model.openConfiguration() }.buttonStyle(LHSecondaryButtonStyle())
                 }.padding(.top, 10)
             }.font(.system(size: 13))
@@ -252,7 +258,7 @@ enum GoalongKnownApplications {
             Button("Fermer", role: .cancel) {}
         } message: { Text(exclusions.error ?? "") }
     }
-    private var empty: some View { Text("Aucun résultat").font(.system(size: 13)).foregroundStyle(.secondary).padding(24) }
+    private var empty: some View { GoalongEmptyState(title: "Aucun résultat", message: "Essayez un autre nom d’application.").padding(24) }
     private func isExcluded(_ app: GoalongApplicationChoice) -> Bool { exclusions.policy.excludes(appID: app.id) || model.isApplicationExcludedFromCapture(app.id) }
     /// The rule, other than the host itself, that excludes this host (« example.fr » for docs.example.fr).
     /// Same matching as `URLRedactor.domain`: lowercase, surrounding dots and spaces trimmed, suffix after a dot.
@@ -354,7 +360,7 @@ enum GoalongOnboardingExclusionEdit {
                     announce("Application ajoutée à la liste d’exclusion.")
                 }
             HStack {
-                TextField("Site à exclure · exemple.fr", text: $website).textFieldStyle(GoalongFieldStyle())
+                TextField("Site à exclure, exemple.fr", text: $website).textFieldStyle(GoalongFieldStyle())
                     .onSubmit { add() }
                 Button("Ajouter") { add() }.disabled(website.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -366,7 +372,7 @@ enum GoalongOnboardingExclusionEdit {
                         .accessibilityLabel("Retirer \(item) des exclusions")
                 }
             }
-            if let message { Text(message).font(.system(size: 12)).foregroundStyle(.secondary) }
+            if let message { Text(message).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
         }
     }
     private func announce(_ text: String) {

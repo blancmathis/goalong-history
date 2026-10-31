@@ -24,9 +24,9 @@ import LocalHistoryQueryCLI
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Envoyer à Goalong").font(LHTheme.sheetTitleFont)
+                    Text("Envoi à Goalong").font(LHTheme.sheetTitleFont)
                     Text(model.preview == nil ? "1. Choisir les données" : "2. Vérifier l’envoi")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction).disabled(model.busy).accessibilityIdentifier("sharing-close")
@@ -45,7 +45,7 @@ import LocalHistoryQueryCLI
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(autoSender.enabled ? "Envoi quotidien activé" : "Envoi quotidien en pause").font(.system(size: 13, weight: .medium))
-                                if let day = autoSender.lastSuccess { Text("Dernière journée reçue : \(GoalongUIFormat.day(key: day))").font(.system(size: 12)).foregroundStyle(.secondary) }
+                                if let day = autoSender.lastSuccess { Text("Dernière journée reçue : \(GoalongUIFormat.day(key: day))").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
                             }
                             Spacer()
                             if autoSender.enabled { Button("Mettre en pause") { autoSender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
@@ -57,7 +57,8 @@ import LocalHistoryQueryCLI
                             .accessibilityIdentifier("sharing-success")
                         Button("Voir la journée sur le site") { openSite(fragment: "history") }.buttonStyle(LHSecondaryButtonStyle())
                     }
-                    if let error = model.error {
+                    // UI-11A (4): without a day to read, the error is the one note of the selection.
+                    if let error = model.error, model.catalog != nil || model.preview != nil {
                         Label(error, systemImage: "exclamationmark.circle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
                             .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("sharing-error")
                     }
@@ -97,32 +98,35 @@ import LocalHistoryQueryCLI
                 VStack(alignment: .leading, spacing: 4) {
                     Text(connected ? "Votre compte Goalong" : "Compte non relié").font(.system(size: 14, weight: .medium))
                     Text(connected ? (URL(string: origin)?.host ?? "Connexion enregistrée") : "La connexion du compte ne transmet aucune activité.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
+                // UI-11A (4): « Relier mon Mac » keeps the rank it has on the page: the main action until linked.
+                // At step 2 the footer carries it, so this one steps back: one lime button per sheet.
                 Button(connected ? "Règles du site" : "Relier mon Mac") { openSite(fragment: connected ? "privacy" : "settings") }
-                    .buttonStyle(LHSecondaryButtonStyle())
+                    .modifier(GoalongMainActionStyle(primary: !connected && model.preview == nil))
             }
             if connected {
                 Text("Visibilité : vos règles du site s’appliquent après l’envoi.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
     }
     private var connected: Bool { !tokenPath.isEmpty && !origin.isEmpty }
     private var delivery: some View {
         VStack(alignment: .leading, spacing: 14) {
+            // Two short choices: the control keeps its own width, like the other segmented controls (UI-13B).
             GoalongSegmentedControl("Fréquence", selection: $model.draft.delivery,
-                                    options: [GoalongWebsiteShareDraft.Delivery.once, .daily], fills: true) {
+                                    options: [GoalongWebsiteShareDraft.Delivery.once, .daily]) {
                 $0 == .once ? "Une fois" : "Chaque jour"
-            }.accessibilityIdentifier("sharing-delivery")
+            }.fixedSize().accessibilityIdentifier("sharing-delivery")
             if model.draft.delivery == .daily {
                 HStack {
-                    DatePicker("La veille, après", selection: scheduleTime, displayedComponents: .hourAndMinute).datePickerStyle(.field)
+                    DatePicker("La veille, après", selection: scheduleTime, displayedComponents: .hourAndMinute).goalongDateField(label: "La veille, après")
                     Spacer()
                     GoalongHelpButton(text: "Fuseau : \(model.draft.timezone). L’envoi se fait lorsque Goalong est ouvert et le Mac connecté. Seule la veille est envoyée. Les journées plus anciennes ne sont pas rattrapées. La sélection ne s’élargit jamais automatiquement.")
                 }
-                Text("Nouvelles applications, nouveaux sites et textes exclus.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("Nouvelles applications, nouveaux sites et textes exclus.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
     }
@@ -135,9 +139,20 @@ import LocalHistoryQueryCLI
     }
     private var selection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            DatePicker(model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer", selection: $model.draft.date,
-                       in: ...GoalongToday.now, displayedComponents: .date).datePickerStyle(.field)
-                .accessibilityIdentifier("sharing-selected-date")
+            // UI-11A (4): the day reads « 23 octobre 2026 », as on the page, not « 23/10/2026 ».
+            HStack(spacing: 8) {
+                Text(dayLabel).font(.system(size: 13)).accessibilityHidden(true)
+                // UI-16A (4): the shared calendar button, with a chevron that says it opens a calendar.
+                GoalongCalendarButton(date: model.draft.date, onChange: { model.draft.date = $0 },
+                                      label: GoalongUIFormat.day(model.draft.date), chevron: true,
+                                      accessibilityName: dayLabel)
+                    .accessibilityIdentifier("sharing-selected-date")
+            }
+            // Same default day as the page (plan UI-13B), but today is not over: say what is sent.
+            if model.draft.delivery == .once && GoalongToday.isToday(model.draft.date) {
+                GoalongNote("Journée en cours : seules les heures déjà passées seront envoyées.", symbol: "clock")
+                    .accessibilityIdentifier("sharing-day-in-progress")
+            }
             if model.loading {
                 ProgressView("Lecture sur ce Mac…").font(.system(size: 13))
             } else if let catalog = model.catalog {
@@ -157,24 +172,38 @@ import LocalHistoryQueryCLI
                     if model.draft.includeWebsites {
                         if catalog.websites.isEmpty && !model.draft.applicationIDs.isEmpty {
                             Text("Aucun site pour cette journée. L’aperçu des applications reste disponible.")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         }
                         GoalongSharingSelector(title: "Domaines uniquement", symbol: "globe", items: catalog.websites.map {
                             .init(id: $0.domain, title: $0.domain, detail: GoalongReadableSharePreview.duration($0.seconds))
                         }, selection: $model.draft.websiteDomains)
                     }
                     if !model.draft.anonymousApplicationIDs.intersection(model.draft.applicationIDs).isEmpty {
-                        Text("Les domaines sont retirés pour préserver le masquage des applications.").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Les domaines sont retirés pour préserver le masquage des applications.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                 }
                 GoalongDisclosureGroup("Nom des appareils") {
                     Toggle("Inclure leurs noms personnels", isOn: $model.draft.includeDeviceNames).toggleStyle(.goalongCheckbox).padding(.top, 10)
                 }.font(.system(size: 13))
                 Text("Les textes ne sont pas inclus. Les adresses locales ou non valides sont ignorées.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             } else {
-                Text("Aucune donnée disponible pour cette journée.").font(.system(size: 13)).foregroundStyle(.secondary)
-                Button("Réessayer") { Task { await model.loadCatalog() } }.buttonStyle(LHSecondaryButtonStyle())
+                // UI-11A (4): one note says why nothing can be chosen; the footer stays silent.
+                // UI-15B (4): the glyph carries the warning colour, the sentence stays in ink (GoalongNote, UI-16A).
+                GoalongNote(model.error ?? "Aucune donnée disponible pour cette journée. Choisissez une autre date.",
+                            tone: model.error != nil ? .warning : .neutral)
+                    .accessibilityIdentifier("sharing-error")
+                if model.error == GoalongWebsiteSharingModel.screenTimeOffMessage {
+                    // A retry cannot succeed while the source is off: the action goes where it is turned on.
+                    Button("Ouvrir Enregistrement…") {
+                        dismiss()
+                        NotificationCenter.default.post(name: .goalongOpenRecordingSettings, object: nil)
+                    }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .accessibilityIdentifier("sharing-open-recording")
+                } else {
+                    Button("Réessayer") { Task { await model.loadCatalog() } }.buttonStyle(LHSecondaryButtonStyle())
+                }
             }
         }
     }
@@ -188,7 +217,7 @@ import LocalHistoryQueryCLI
     private var applicationChoices: some View {
         VStack(alignment: .leading, spacing: 10) {
             if availableApps.count > 5 { GoalongSearchField("Rechercher une application…", text: $appSearch) }
-            if availableApps.isEmpty { Text("Choisissez un appareil disposant de données.").font(.system(size: 12)).foregroundStyle(.secondary) }
+            if availableApps.isEmpty { Text("Choisissez un appareil disposant de données.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
             HStack {
                 Button("Sélectionner les résultats") {
                     model.draft.applicationIDs.formUnion(availableApps.filter { appSearch.isEmpty || $0.name.localizedStandardContains(appSearch) }.map(\.id))
@@ -223,7 +252,7 @@ import LocalHistoryQueryCLI
             let absent = model.draft.applicationIDs.subtracting(Set(availableApps.map(\.id)))
             if !absent.isEmpty {
                 HStack {
-                    Text("\(absent.count) choix d’autres journées conservés").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("\(absent.count) choix d’autres journées conservés").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     Spacer()
                     Button("Retirer") { model.draft.applicationIDs.subtract(absent); model.draft.anonymousApplicationIDs.subtract(absent) }
                         .buttonStyle(LHQuietButtonStyle())
@@ -253,18 +282,19 @@ import LocalHistoryQueryCLI
                         .textSelection(.enabled).padding(12)
                 }.frame(height: 180)
             }.font(.system(size: 13))
-            Text("Mettre en pause n’efface pas les données déjà reçues.").font(.system(size: 12)).foregroundStyle(.secondary)
+            Text("Mettre en pause n’efface pas les données déjà reçues.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
     private var footer: some View {
         HStack {
             if model.busy { ProgressView().controlSize(.small) }
-            Text(model.preview == nil ? (model.selectionHint ?? "Aperçu local · rien n’est envoyé.") : "La confirmation autorise l’envoi.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+            if let hint = footerHint {
+                Text(hint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            }
             Spacer()
             if model.preview == nil {
                 Button("Voir l’aperçu") { Task { await model.prepare(origin: origin, tokenPath: tokenPath) } }
-                    .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("sharing-preview")
+                    .modifier(GoalongMainActionStyle(primary: connected)).accessibilityIdentifier("sharing-preview")
                     .disabled(model.busy || model.loading || model.catalog == nil || model.draft.validationMessage != nil )
             } else if !connected || model.preview?.credentialFingerprint.isEmpty == true {
                 Button("Relier mon Mac") { openSite(fragment: "settings") }.buttonStyle(LHPrimaryButtonStyle())
@@ -276,6 +306,13 @@ import LocalHistoryQueryCLI
                     .disabled(model.busy || (model.draft.delivery == .daily && !model.reviewed) || (model.preview.flatMap { try? GoalongReadableShareData(payload: $0.payload) } == nil))
             }
         }.padding(20).background(LHTheme.cardBackground)
+    }
+    private var dayLabel: String { model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer" }
+    /// Nothing while the selection's note already says there is no day to read.
+    private var footerHint: String? {
+        if model.preview != nil { return "La confirmation autorise l’envoi." }
+        if model.catalog == nil && !model.loading { return nil }
+        return model.selectionHint ?? "Aperçu local, rien n’est envoyé."
     }
     private func openSite(fragment: String) {
         let site = origin.isEmpty ? "https://goalong.spry-crumb-3668.chatgpt.site" : origin
@@ -311,7 +348,7 @@ struct GoalongSharingSelector: View {
             HStack {
                 Text(title).font(.callout.weight(.semibold))
                 Spacer()
-                Text("\(present.count) / \(items.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                Text("\(present.count) / \(items.count)").font(.caption).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
             }
             if items.count > 4 {
                 GoalongSearchField("Rechercher…", text: $search, accessibilityLabel: "Rechercher dans \(title)")
@@ -325,13 +362,13 @@ struct GoalongSharingSelector: View {
             if uncheckedResults.count > roomLeft {
                 let left = uncheckedResults.count - roomLeft
                 Text("\(Self.selectionCap) éléments au plus par envoi : \(left) \(left > 1 ? "résultats ne pourront pas être cochés" : "résultat ne pourra pas être coché").")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(LHTheme.secondaryText)
             }
             if !absent.isEmpty {
                 GoalongDisclosureGroup("\(absent.count) choix enregistrés absents de cette journée") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Ils restent autorisés pour les prochains envois s’ils réapparaissent. Retirez ceux que vous ne souhaitez plus autoriser.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(LHTheme.secondaryText)
                         ForEach(absent, id: \.self) { id in
                             HStack {
                                 Text(id).font(.caption).lineLimit(2).textSelection(.enabled)
@@ -345,7 +382,7 @@ struct GoalongSharingSelector: View {
             }
             if visible.isEmpty {
                 Text(items.isEmpty ? "Aucun élément enregistré pour cette sélection." : "Aucun résultat. Essayez un autre nom.")
-                    .font(.callout).foregroundStyle(.secondary).padding(.vertical, 8)
+                    .font(.callout).foregroundStyle(LHTheme.secondaryText).padding(.vertical, 8)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -354,10 +391,10 @@ struct GoalongSharingSelector: View {
                                 if !$0 { selection.remove(item.id) } else if roomLeft > 0 { selection.insert(item.id) }
                             })) {
                                 HStack(spacing: 10) {
-                                    Image(systemName: item.symbol ?? symbol).foregroundStyle(.secondary).frame(width: 20)
+                                    Image(systemName: item.symbol ?? symbol).foregroundStyle(LHTheme.secondaryText).frame(width: 20)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(item.title).font(.callout).lineLimit(1)
-                                        Text(item.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        Text(item.detail).font(.caption).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                                     }
                                     Spacer(minLength: 0)
                                 }
@@ -373,4 +410,5 @@ struct GoalongSharingSelector: View {
         }
     }
 }
+
 #endif
