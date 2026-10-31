@@ -953,7 +953,7 @@
                             .foregroundStyle(LHTheme.secondaryText)
                     }
                     Button(action: openSourceJSON) {
-                        Label("Voir le fichier brut", systemImage: "doc.text")
+                        Label("Ouvrir le journal", systemImage: "doc.text")
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
                     .controlSize(.regular)
@@ -1567,18 +1567,17 @@
             }
         }
 
+        /// Nothing to list yet: the state sits on the page, not in a card (DESIGN §8, UI-13B).
         private var emptyState: some View {
-            LHCard {
-                EmptyStateView(
-                    symbol: "point.3.connected.trianglepath.dotted",
-                    title: "Pas encore d’historique détaillé",
-                    message: model.errorMessage
-                        ?? "Laissez Goalong actif et utilisez vos apps : cet historique se construit automatiquement au fil des événements.",
-                    buttonTitle: "Reconstruire",
-                    action: { model.refresh(day: day) }
-                )
-                .frame(minHeight: 320)
-            }
+            EmptyStateView(
+                symbol: "point.3.connected.trianglepath.dotted",
+                title: "Pas encore d’historique détaillé",
+                message: model.errorMessage
+                    ?? "Laissez Goalong actif et utilisez vos apps : cet historique se construit automatiquement au fil des événements.",
+                buttonTitle: "Reconstruire",
+                action: { model.refresh(day: day) }
+            )
+            .frame(maxWidth: .infinity, minHeight: 320)
         }
 
         private func compactEmpty(_ title: String) -> some View {

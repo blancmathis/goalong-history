@@ -63,6 +63,7 @@
             .overlay { GoalongToastHost() }
             .environment(\.goalongRecordingModel, model)
             .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay).goalongControls() }
+            .onReceive(NotificationCenter.default.publisher(for: .goalongOpenRecordingSettings)) { _ in model.openRecordingSettings() }
             .background(GoalongProfileShareHost(host: model.profileStudio))
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)
@@ -267,7 +268,9 @@
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : LHTheme.tertiaryText)
                         .frame(width: 7, height: 7)
                     // UI-9 (13, 17, 40): the state is read in full, on two lines if needed (« Enregistrement arrêté »).
-                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Suivi en pause")
+                    // UI-13B: one word for one thing, the runtime's « Enregistrement … », never « Suivi »;
+                    // switched off is not a pause (as SharePage and UsageRulesList).
+                    Text(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTitle : "Enregistrement désactivé")
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Spacer()
@@ -320,23 +323,25 @@
 
         private var footer: some View {
             HStack {
-                Button {
-                    updates.checkForUpdates()
-                } label: {
-                    if updates.isPreparingAvailableUpdate {
-                        ProgressView()
-                            .controlSize(.mini)
-                    } else {
-                        Text("Version \(Self.version.dropFirst())")
+                if updates.isConfigured {
+                    Button {
+                        updates.checkForUpdates()
+                    } label: {
+                        if updates.isPreparingAvailableUpdate {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Text("Version \(Self.version.dropFirst())")
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(updates.isPreparingAvailableUpdate)
+                    .help("Rechercher les mises à jour")
+                } else {
+                    // UI-13B (13): plain secondary text (≥ 4,5:1), not a dimmed disabled button.
+                    Text("Version \(Self.version.dropFirst())")
+                        .help("Mises à jour désactivées dans cette version compilée localement")
                 }
-                .buttonStyle(.plain)
-                .disabled(!updates.isConfigured || updates.isPreparingAvailableUpdate)
-                .help(
-                    updates.isConfigured
-                        ? "Rechercher les mises à jour"
-                        : "Mises à jour désactivées dans cette version compilée localement"
-                )
                 Spacer()
             }
             .font(.system(size: 12, weight: .medium))
