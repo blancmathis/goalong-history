@@ -1,0 +1,27 @@
+J-0224	seed:site pane:website w:2 pb:Déconnecter w:2
+J-0227	seed:site-unmanaged pane:website w:2 pb:Déconnecter w:2 pb:Déconnecter w:2
+J-0235	seed:site pane:website w:2 p:"Choisir les données…" w:2 "o:Connexion manuelle et options avancées" w:1 "p:Oublier le fichier" w:2
+J-0588	nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2
+J-0599	seed:health nav:overview p:activity-explore-coverage w:2 p:"Importer…" w:2 pk:Déjà sur ce Mac|2026 w:1 p:Afficher w:2
+J-0641	pane:advanced w:1 p:"Diagnostic et preuves" w:2
+J-0650	pane:advanced w:1 p:"Diagnostic et preuves" w:2
+J-0653	pane:advanced w:1 p:"Diagnostic et preuves" w:2
+J-0655	pane:advanced w:1 p:"Diagnostic et preuves" w:2 pkc:Supprimer les détails…| w:1
+J-0656	pane:advanced w:1 p:"Diagnostic et preuves" w:2 pkc:Supprimer les détails…| w:1
+J-0643	pane:advanced w:1 p:"Diagnostic et preuves" w:2 pkc:Supprimer les détails…|10 dernières minutes w:2
+J-0658	pane:advanced w:1 p:"Diagnostic et preuves" w:2 pkc:Supprimer les détails…|Dernière session d’application w:2
+J-0972	pane:storage w:2 app:com.apple.finder
+J-0842	pane:home p:settings-report-problem w:3 p:support-more w:2
+J-0724	pane:recording "t:Confidentialité avancée|Inclure les fenêtres privées détectées" w:2
+J-0727	pane:recording "t:Confidentialité avancée|Masquer les valeurs des paramètres d’URL" w:2
+J-0852	pane:applications px:"Sites web" w:1 "tk:Ajouter un site, exemple.fr=t046-exemple.fr" w:1 pb:Exclure w:2 "o:Reconnaître ce site pour l’exclure" w:1
+J-0855	pane:applications w:2 "o:Sites web" w:1 "tk:Ajouter un site, exemple.fr=alerte-t046.fr" w:1 seed:data-ro pb:Exclure w:2 "o:Exclure le site" w:2
+J-0860	pane:storage p:"Effacer de l’historique…" w:2
+J-0862	pane:storage p:"Effacer de l’historique…" w:2 p:"Effacer…" w:2
+J-0864	pane:storage p:"Effacer de l’historique…" w:2 p:"Effacer…" w:2
+J-0867	pane:storage p:"Choisir…" w:2 "set:retention-automatic 1" w:1 "pkc:retention-minuteSeals|30 jours" w:1
+J-0870	pane:storage p:"Choisir…" w:2 "set:retention-automatic 1" w:1 "pkc:retention-detailedEvents|7 jours" w:1 p:retention-apply w:2
+J-0651	pane:advanced w:1 p:"Diagnostic et preuves" w:2
+J-0871	pane:storage p:"Choisir…" w:2 "set:retention-automatic 1" w:1 "pkc:retention-detailedEvents|7 jours" w:1 p:retention-apply w:2
+J-0984	pane:modules p:"Supprimer les données de Concentration…" w:2
+J-0994	pane:recording "set:recording-visible-text 0" w:1 p:recording-visible-text w:2
