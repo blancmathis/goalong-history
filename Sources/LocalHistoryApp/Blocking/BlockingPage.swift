@@ -396,8 +396,12 @@ struct BlockingSessionThread: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(LHTheme.text.opacity(0.16)).frame(height: 8)
                     Capsule().fill(LHTheme.text).frame(width: max(8, x), height: 8)
-                    Circle().fill(LHTheme.accent)
-                        .overlay(Circle().strokeBorder(LHTheme.pageBackground, lineWidth: 3))
+                    // UI-16C (47): the brand lime with an ink ring in both themes. The adaptive accent turned olive
+                    // in light and the point vanished into the ink fill: light and dark now draw the same thread.
+                    Circle().fill(LHTheme.pageBackground)
+                        .overlay(Circle().fill(LHTheme.actionBackground)
+                            .overlay(Circle().strokeBorder(LHTheme.text, lineWidth: 1.5))
+                            .padding(3))
                         .frame(width: 18, height: 18)
                         .offset(x: min(max(0, x - 9), width - 18))
                 }

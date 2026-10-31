@@ -37,7 +37,7 @@
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                     // The visible scroller alone says « more below » (UI-11C). No fade: a faded last row read as a
-                    // disabled switch (UI-12C, screen 19).
+                    // disabled switch (UI-12C, screen 19); only a shadow above the footer remains (UI-16C).
                     .scrollIndicators(.visible)
                     // The footer is the scroll view's bottom inset, not a block under it: the content runs under its
                     // edge, and scrolled to the end it stops 24 pt above it, on a whole row (UI-12C, screen 19).
@@ -47,6 +47,16 @@
                             footer
                         }
                         .background(LHTheme.pageBackground)
+                        // UI-16C (19): a soft shadow above the footer says the page goes on under it. It lies on
+                        // the 24 pt bottom margin once scrolled to the end, so it never dims a row.
+                        .overlay(alignment: .top) {
+                            LinearGradient(colors: [LHTheme.text.opacity(0), LHTheme.text.opacity(0.10)],
+                                startPoint: .top, endPoint: .bottom)
+                                .frame(height: 10)
+                                .offset(y: -10)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
                     }
                 }
                 .background(LHTheme.pageBackground)
