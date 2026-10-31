@@ -231,10 +231,10 @@ struct GoalongHealthImportSheet: View {
                 GoalongHelpText(lead: "Créez cet accès depuis Sources et connexions sur le site.",
                                 more: "Seules les mesures de cet aperçu seront transmises ; vos autorisations Santé explicites sur le site détermineront leur visibilité.")
                 Toggle("J’autorise l’envoi de ces données Santé au site indiqué.", isOn: $consent)
-                Group {
-                    if keepIsNextStep { Button("Envoyer les données relues", action: sendReviewedHealth).buttonStyle(LHSecondaryButtonStyle()) }
-                    else { Button("Envoyer les données relues", action: sendReviewedHealth).buttonStyle(LHPrimaryButtonStyle()) }
-                }.disabled(!consent || origin.isEmpty || tokenFilePath.isEmpty)
+                // One caller of the send action (scripts/audit_site_submission.py): the style varies, not the button.
+                Button("Envoyer les données relues", action: sendReviewedHealth)
+                    .modifier(GoalongMainActionStyle(primary: !keepIsNextStep))
+                    .disabled(!consent || origin.isEmpty || tokenFilePath.isEmpty)
             }
         }
     }
