@@ -444,3 +444,7 @@ settings/enregistrement--   # UI-9 UI9-01 (interrupteur actif encre, verrouillé
 settings/enregistrement-actif--   # UI-9 UI9-01 (interrupteur actif encre, verrouillé pointillé + cadenas)
 settings/jev--   # UI-9 UI9-01 (interrupteur actif encre, verrouillé pointillé + cadenas)
 surveillance/a-configurer--   # UI-9 UI9-01 (interrupteur actif encre, verrouillé pointillé + cadenas)
+menubar/permission-manquante--   # UI-9 UI9-06 (espace au-dessus de « Réparer… » : +7 px de haut)
+programme/composer-plus-tard--   # UI-9 UI9-02 (champ date à un seul cadre : −5 px de haut)
+programme/selecteur-de-plage--   # UI-9 UI9-02 (champ date à un seul cadre : −2 px de haut)
+programme/selecteur-mot-de-passe--   # UI-9 UI9-02 (champ date à un seul cadre : −2 px de haut)
