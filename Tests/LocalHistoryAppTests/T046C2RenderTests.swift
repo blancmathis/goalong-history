@@ -168,7 +168,7 @@ final class T046C2RenderTests: XCTestCase {
         let unreadableSeen = strings(of: unreadable)
         XCTAssertFalse(unreadableSeen.contains("Aucune conversation ce jour-là"), "Unreadable sources are not an empty day")
         XCTAssertTrue(unreadableSeen.contains("Certaines sources de conversations sont illisibles"), "saw \(unreadableSeen.sorted())")
-        XCTAssertTrue(unreadableSeen.contains { $0.contains("de lecture. Les conversations lisibles restent disponibles.") }, "The unreadable state says what to do; saw \(unreadableSeen.sorted())")
+        XCTAssertTrue(unreadableSeen.contains { $0.contains("de lecture. Réessayez, ou vérifiez les dossiers concernés et leurs accès.") }, "The unreadable state says what to do; saw \(unreadableSeen.sorted())")
         XCTAssertTrue(press("Vérifier les sources", in: unreadable))
         XCTAssertEqual(checked, 1)
         let partial = strings(of: host(AgentActivityPage(agents: try makeRuntime(.partial), presentation: .history, onManageSources: {})))
