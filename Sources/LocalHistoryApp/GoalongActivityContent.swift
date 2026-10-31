@@ -660,10 +660,10 @@ struct GoalongAnalyticsContent: View {
         // Aggregate outside the search view: typing only filters the small usage list.
         VStack(alignment: .leading, spacing: 8) {
             GoalongActivityUsageList(items: items, totalSeconds: current.activeSeconds, grouping: $grouping,
-                isPreview: payload.isPreview, comparedTo: summary.previousLabel,
+                isPreview: payload.isPreview,
                 onExport: {
                     exportMessage = GoalongActivityExport.save(period: current, grouping: grouping)
-                }) { selectedUsage = $0 }
+                }, comparedTo: summary.previousLabel) { selectedUsage = $0 }
             if let exportMessage {
                 Label(exportMessage, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
             }
