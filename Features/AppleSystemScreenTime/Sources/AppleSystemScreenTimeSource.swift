@@ -127,7 +127,34 @@
             self.screenTimeAdminCloudDatabase = screenTimeAdminCloudDatabase
         }
 
+        /// Paths inside an empty per-process folder of the temporary directory (nothing exists there).
+        static func sandboxedForTests() -> AppleSystemScreenTimePaths {
+            let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                .appendingPathComponent("goalong-no-system-paths-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+            func file(_ name: String) -> URL { root.appendingPathComponent(name, isDirectory: false) }
+            func dir(_ name: String) -> URL { root.appendingPathComponent(name, isDirectory: true) }
+            return AppleSystemScreenTimePaths(
+                knowledgeDatabase: file("knowledgeC.db"),
+                biomeSyncDatabase: file("sync.db"),
+                biomeLocalDirectory: dir("biome-local"),
+                biomeRemoteDirectory: dir("biome-remote"),
+                appleAccountDeviceDatabase: file("devicelist.db"),
+                biomeScreenTimeAppUsageDirectory: dir("usage-local"),
+                biomeRemoteScreenTimeAppUsageDirectory: dir("usage-remote"),
+                screenTimeAdminLocalDatabase: file("RMAdminStore-Local.sqlite"),
+                screenTimeAdminCloudDatabase: file("RMAdminStore-Cloud.sqlite")
+            )
+        }
+
         static let `default`: AppleSystemScreenTimePaths = {
+            // Test guard: under XCTest, never point at the real Screen Time store, knowledgeC.db or Biome.
+            // Every path sits in a fresh, empty, per-process folder, so a test that forgot to inject paths
+            // sees « no data » instead of probing this Mac's protected files (result then depends on TCC).
+            if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+                || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+                || NSClassFromString("XCTestCase") != nil {
+                return AppleSystemScreenTimePaths.sandboxedForTests()
+            }
             let home = FileManager.default.homeDirectoryForCurrentUser
             let library = home.appendingPathComponent("Library", isDirectory: true)
             let biome = library.appendingPathComponent("Biome", isDirectory: true)
