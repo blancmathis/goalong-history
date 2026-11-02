@@ -169,6 +169,7 @@ enum SupportSourceAllowlist {
         "GoalongSystemLaneBuilders.swift",
         "GoalongSystemRecapSections.swift",
         "GoalongSystemSourcesReader.swift",
+        "GoalongTestEnvironment.swift",
         "GoalongTheme.swift",
         "GoalongThread.swift",
         "GoalongToday.swift",

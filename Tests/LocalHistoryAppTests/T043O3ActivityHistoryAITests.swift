@@ -19,13 +19,13 @@ final class T043O3ActivityHistoryAITests: XCTestCase {
     /// DEF-07: a history day with traces names the storage stop and its cause; nothing on other days.
     func testHistoryNamesTheStorageStopAboveTraces() {
         let since = date(23, 9, 40)
-        let full = ComputerHistoryPageCopy.storageStopNote(isToday: true, failure: .diskFull, since: since)
+        let full = ComputerHistoryPageCopy.storageStopNote(isToday: true, failure: .diskFull, since: since, bannerNamesStorage: false)
         XCTAssertEqual(full?.hasPrefix("Enregistrement interrompu depuis \(GoalongUIFormat.time(since))"), true)
         XCTAssertEqual(full?.contains("le disque est plein"), true)
-        XCTAssertEqual(ComputerHistoryPageCopy.storageStopNote(isToday: true, failure: .permissionDenied, since: nil)?
+        XCTAssertEqual(ComputerHistoryPageCopy.storageStopNote(isToday: true, failure: .permissionDenied, since: nil, bannerNamesStorage: false)?
             .contains("refuse l’écriture"), true)
-        XCTAssertNil(ComputerHistoryPageCopy.storageStopNote(isToday: false, failure: .diskFull, since: since))
-        XCTAssertNil(ComputerHistoryPageCopy.storageStopNote(isToday: true, failure: nil, since: nil))
+        XCTAssertNil(ComputerHistoryPageCopy.storageStopNote(isToday: false, failure: .diskFull, since: since, bannerNamesStorage: false))
+        XCTAssertNil(ComputerHistoryPageCopy.storageStopNote(isToday: true, failure: nil, since: nil, bannerNamesStorage: false))
     }
 
     /// UI16-23 (écran 23): the hourly axis covers whole hours; the current hour (ending « now ») is not cut.
@@ -70,7 +70,7 @@ final class T043O3ActivityHistoryAITests: XCTestCase {
         XCTAssertEqual(navigation.day, date(7), "the last step back shows 1–7, not 28 sept. – 3 oct.")
         navigation.step(-1, earliest: date(1), now: now, calendar: calendar)
         XCTAssertEqual(navigation.day, date(7), "nothing older to show")
-        navigation.step(-1, now: now, calendar: calendar)
+        navigation.step(-1, earliest: nil, now: now, calendar: calendar)
         XCTAssertEqual(navigation.day, date(0), "no bound: a full period back")
         XCTAssertTrue(DateSelectionControl.isAtEarliest(date(7), earliest: date(1), periodDays: 7, calendar: calendar))
         XCTAssertFalse(DateSelectionControl.isAtEarliest(date(8), earliest: date(1), periodDays: 7, calendar: calendar))

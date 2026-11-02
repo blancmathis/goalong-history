@@ -69,7 +69,7 @@ enum BlockingAppQuit {
 
 /// In-process, user-session enforcement only. No system service or network access.
 @MainActor final class StandardBlockingBackend: BlockingEnforcementBackend {
-    var accessibilityAvailable: Bool { AXIsProcessTrusted() }
+    var accessibilityAvailable: Bool { GoalongAccessibilityTrust.isTrusted }
     var canLockScreen: Bool { accessibilityAvailable }
     var appStillBlocked: ((BlockingObservation) -> Bool)?
     var siteActionStillRequired: ((BlockingObservation) -> Bool)?
@@ -398,7 +398,7 @@ enum BlockingAppQuit {
         tabLane.request(target, permit: permit, rulePermit: rulePermit, stillCurrent: {
             !application.isTerminated && application.bundleIdentifier == target.bundleIdentifier
                 && NSWorkspace.shared.frontmostApplication?.processIdentifier == target.pid
-                && ForegroundSessionAvailability.isAvailable() && AXIsProcessTrusted()
+                && ForegroundSessionAvailability.isAvailable() && GoalongAccessibilityTrust.isTrusted
         }, revalidate: { [weak self] completion in
             guard let self, permit.isValid else { completion(false); return }
             let veiled = self.veilTarget.map {

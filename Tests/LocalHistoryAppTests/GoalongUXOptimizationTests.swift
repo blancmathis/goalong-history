@@ -120,13 +120,14 @@ final class GoalongUXOptimizationTests: XCTestCase {
         let since = Date(timeIntervalSince1970: 1_800_000_000)
         let full = Empty.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
                               storage: .init(kind: .diskFull, since: since))
-        XCTAssertEqual(full.title, "Enregistrement interrompu depuis \(GoalongUIFormat.time(since))", "UI-21: the stop and its time")
-        XCTAssertTrue(full.message.contains("disque est plein"))
+        XCTAssertEqual(full.title, "Aucune donnée depuis \(GoalongUIFormat.time(since))", "UI-21: the stop and its time")
+        // R8-6: the top banner names the cause and holds the action; the page says only the effect.
+        XCTAssertFalse(full.message.contains("disque est plein"), full.message)
         XCTAssertFalse(full.message.contains("premières minutes"), "UI-21: no promise while nothing is recorded")
         XCTAssertFalse(full.offersHistory)
         let refused = Empty.copy(isDay: true, isToday: true, eventCount: 4, incompleteDays: 0, purged: false, recording: nil,
                                  storage: .init(kind: .permissionDenied, since: nil))
-        XCTAssertEqual(refused.title, "Enregistrement interrompu")
+        XCTAssertEqual(refused.title, "Aucune nouvelle donnée")
         // P-1: a stopped recording comes before the storage failure, as in the top banner.
         let offFirst = Empty.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 0, purged: false, recording: .off,
                                   storage: .init(kind: .permissionDenied, since: nil))
@@ -136,18 +137,24 @@ final class GoalongUXOptimizationTests: XCTestCase {
         let unread = Empty.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 1, purged: false, recording: nil,
                                 storage: .init(kind: .diskFull, since: since))
         XCTAssertEqual(unread.title, "Lecture incomplète")
-        XCTAssertTrue(unread.message.contains("disque est plein"))
-        XCTAssertTrue(unread.message.hasPrefix("Enregistrement interrompu depuis"))
+        XCTAssertFalse(unread.message.contains("disque est plein"), unread.message)
+        XCTAssertTrue(unread.message.hasPrefix("Aucune donnée depuis"))
         // P-4: an unavailable storage cannot write; it refuses nothing.
         let unavailable = Empty.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
                                      storage: .init(kind: .unavailable, since: nil))
-        XCTAssertTrue(unavailable.message.contains("ne peut pas écrire"))
         XCTAssertFalse(unavailable.message.contains("refuse"))
+        XCTAssertEqual(GoalongActivityEmptyCopy.storageCause(.unavailable), "Goalong ne peut pas écrire dans son dossier d’historique")
         let fullWithTraces = Empty.copy(isDay: true, isToday: true, eventCount: 2, incompleteDays: 0, purged: false, recording: nil,
                                         storage: .init(kind: .diskFull, since: since))
         XCTAssertNotEqual(fullWithTraces.title, "Les premières traces sont reçues", "DEF-06: disk full, no promise")
-        XCTAssertTrue(fullWithTraces.message.contains("disque est plein"))
-        XCTAssertTrue(refused.message.contains("refuse l’écriture"))
+        // R8-6: one announcement of the cause per screen, the banner's; never repeated by the page.
+        for copy in [full, refused, unread, unavailable, fullWithTraces] {
+            for kind in [CaptureStorageFailureKind.diskFull, .permissionDenied, .unavailable] {
+                XCTAssertFalse(copy.title.contains(GoalongActivityEmptyCopy.storageCause(kind))
+                    || copy.message.contains(GoalongActivityEmptyCopy.storageCause(kind)), "\(copy.title) / \(copy.message)")
+            }
+            XCTAssertFalse(copy.title.contains("interrompu"), "the banner says « interrompu », the page says the effect")
+        }
         let past = Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
                               storage: .init(kind: .diskFull, since: since))
         XCTAssertEqual(past.title, "Pas encore d’enregistrement", "a past day keeps its own state")

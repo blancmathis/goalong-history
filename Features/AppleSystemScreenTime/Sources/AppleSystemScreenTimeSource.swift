@@ -150,9 +150,7 @@
             // Test guard: under XCTest, never point at the real Screen Time store, knowledgeC.db or Biome.
             // Every path sits in a fresh, empty, per-process folder, so a test that forgot to inject paths
             // sees « no data » instead of probing this Mac's protected files (result then depends on TCC).
-            if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-                || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
-                || NSClassFromString("XCTestCase") != nil {
+            if GoalongTestEnvironment.isXCTest {
                 return AppleSystemScreenTimePaths.sandboxedForTests()
             }
             let home = FileManager.default.homeDirectoryForCurrentUser

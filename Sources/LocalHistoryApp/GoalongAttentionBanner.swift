@@ -22,11 +22,8 @@ struct GoalongAttentionBanner: View {
     }
 
     private var notice: Notice? {
-        let slot = Self.storageSlot(globallyPaused: globalPause.blocksActivity,
-            recording: GoalongRecordingStateNotice.kind(localEnabled: consents.isEnabled(.localComputerHistory),
-                globallyPaused: globalPause.blocksActivity, dashboardVisible: model.recordingStatusIsLive,
-                runtime: model.runtime.state, captureHealth: model.runtime.captureHealth?.state),
-            recordingNoticeOnPage: Self.pagesWithRecordingNotice.contains(model.selectedSection))
+        let slot = Self.currentStorageSlot(model: model, localEnabled: consents.isEnabled(.localComputerHistory),
+            globallyPaused: globalPause.blocksActivity, section: model.selectedSection)
         let storageProblem = model.runtime.storageFailure != nil || model.freeDiskBytes.map(StorageHealth.isLow) == true
         if storageProblem, slot == .recordingCause { return .recordingCause }
         if slot == .storage, let kind = model.runtime.storageFailure { return .storage(kind) }
@@ -50,6 +47,16 @@ struct GoalongAttentionBanner: View {
         case .off?, .paused?, .permissions?: return recordingNoticeOnPage ? .none : .recordingCause
         case .input?, nil: return .storage
         }
+    }
+
+    /// The one reading of the slot, for the banner and for the pages that must not repeat it (R8-6).
+    static func currentStorageSlot(model: DashboardViewModel, localEnabled: Bool, globallyPaused: Bool,
+                                   section: DashboardSection) -> StorageSlot {
+        storageSlot(globallyPaused: globallyPaused,
+            recording: GoalongRecordingStateNotice.kind(localEnabled: localEnabled, globallyPaused: globallyPaused,
+                dashboardVisible: model.recordingStatusIsLive, runtime: model.runtime.state,
+                captureHealth: model.runtime.captureHealth?.state),
+            recordingNoticeOnPage: pagesWithRecordingNotice.contains(section))
     }
 
     var body: some View {
