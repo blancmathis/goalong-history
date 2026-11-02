@@ -39,7 +39,6 @@ import LocalHistoryQueryCLI
     init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) { // wall: the raw clock of the controller
         self.storeFactory = storeFactory; self.factory = factory; self.blockingProvider = blockingProvider; self.presentsPanels = presentsPanels
         self.clock = clock; self.calendar = calendar
-        refreshHasData()
     }
     func start(modules: GoalongModuleStore = .shared, monitor: ContextMonitor? = nil) {
         self.modules = modules; self.monitor = monitor
