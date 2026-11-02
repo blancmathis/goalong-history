@@ -70,7 +70,7 @@ extension GalleryCatalog {
         })
     }
     private static func agendaSettings(_ id: String, _ state: Agenda, note: String) -> GalleryEntry {
-        dashboard(id, section: .settings, pane: .recording, sizes: [.fixed(1240, 1560)], fixture: .recordingOn, note: note,
+        dashboard(id, section: .settings, pane: .recording, sizes: [.full(1240)], fixture: .recordingOn, note: note,
                   prepare: { ctx in _ = installCalendar(state, ctx) })
     }
 

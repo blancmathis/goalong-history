@@ -1635,3 +1635,47 @@ ambiance/a-installer--   # R281-8 (tour 2 R1) : seul « Télécharger » visible
 modules/actifs-verrouille--   # R281-6 (tour 2 R1) : cadenas dans le bouton de l'interrupteur, « Ouvrir » ne bouge plus
 activite/enregistrement-desactive--   # R281-3 (tour 2 R1) : désactivé sans bord ni pointillé, remplissage léger
 settings/chatgpt-consentement--   # T-043 R4a R282-1 (état ajouté : consentement donné, version sans connexion ; « Autoriser les analyses » actif reste en encre pleine, utilisable pour retirer le consentement)
+activite/mode-developpeur--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+activite/mode-developpeur--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+activite/traces-isolees--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+activite/traces-isolees--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+agenda/reglages-acces-non-demande--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+agenda/reglages-acces-non-demande--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+agenda/reglages-acces-refuse--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+agenda/reglages-acces-refuse--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+ambiance/etroit--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/etroit--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/lecture--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/lecture--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/prete--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/prete--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/telechargement--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/telechargement--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+bilan/non-connecte--dark--full.png   # T-043 R3 R-61 : montre « Non connecté » (compte non connecté), cohérent avec bilan/rapport (1 h 28 / 1 h 07, apps = 88 min)
+bilan/non-connecte--light--full.png   # T-043 R3 R-61 : montre « Non connecté » (compte non connecté), cohérent avec bilan/rapport (1 h 28 / 1 h 07, apps = 88 min)
+confidentialite/choix-par-defaut--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/choix-par-defaut--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/pause-globale--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/pause-globale--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/suivi-actif--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/suivi-actif--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+fenetre/espace-faible--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+fenetre/espace-faible--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+programme/feuille-liste--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+programme/feuille-liste--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+programme/feuille-liste-verrouillee--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+programme/feuille-liste-verrouillee--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ralentissement/app--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ralentissement/app--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+settings/avance-developpeur--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/avance-developpeur--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/permissions--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/permissions--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/stockage--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/stockage--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+temps-ecran/importe--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+temps-ecran/importe--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+temps-ecran/vide--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+temps-ecran/vide--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+terminal/aide--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+terminal/aide--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
