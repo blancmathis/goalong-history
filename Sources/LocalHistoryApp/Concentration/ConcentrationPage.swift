@@ -1207,47 +1207,47 @@ struct FocusThreadModel: Equatable {
             Spacer(minLength: 12)
             // R-94: « Jours » and « Heure » are named above their controls, the chosen days are outlined.
             HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-            Text("Jours").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-            HStack(spacing: 3) {
-                ForEach(1...7, id: \.self) { day in
-                    let on = weekdays.contains(day)
-                    Button {
-                        guard controller.settings.limits.endMinute != nil else { return }
-                        let change = FocusLimitsEditing.toggled(controller.settings, day: day)
-                        if let message = change.error { limitError = message; return }
-                        save(change.settings)
-                    } label: {
-                        // « Lun » … « Dim » (HL-31): wide enough for three letters; an unchosen day stays readable.
-                        Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
-                            .frame(width: 32, height: 22)
-                            .foregroundStyle(on ? LHTheme.onAccent : LHTheme.text)
-                            .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
-                                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(on ? LHTheme.text.opacity(0.6) : LHTheme.separator, lineWidth: on ? 1.5 : 1))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Jours").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    HStack(spacing: 3) {
+                        ForEach(1...7, id: \.self) { day in
+                            let on = weekdays.contains(day)
+                            Button {
+                                guard controller.settings.limits.endMinute != nil else { return }
+                                let change = FocusLimitsEditing.toggled(controller.settings, day: day)
+                                if let message = change.error { limitError = message; return }
+                                save(change.settings)
+                            } label: {
+                                // « Lun » … « Dim » (HL-31): wide enough for three letters; an unchosen day stays readable.
+                                Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
+                                    .frame(width: 32, height: 22)
+                                    .foregroundStyle(on ? LHTheme.onAccent : LHTheme.text)
+                                    .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
+                                                in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(on ? LHTheme.text.opacity(0.6) : LHTheme.separator, lineWidth: on ? 1.5 : 1))
+                            }
+                            .buttonStyle(.plain)
+                            // Not `.disabled`: the system dims a disabled letter until it cannot be read.
+                            .help(controller.settings.limits.endMinute == nil ? "Choisissez d’abord une heure de fin." : "")
+                            .accessibilityLabel(BlockingFormat.weekdayShort[day - 1])
+                            .accessibilityAddTraits(on ? .isSelected : [])
+                        }
                     }
-                    .buttonStyle(.plain)
-                    // Not `.disabled`: the system dims a disabled letter until it cannot be read.
-                    .help(controller.settings.limits.endMinute == nil ? "Choisissez d’abord une heure de fin." : "")
-                    .accessibilityLabel(BlockingFormat.weekdayShort[day - 1])
-                    .accessibilityAddTraits(on ? .isSelected : [])
+                    .opacity(controller.settings.limits.endMinute == nil ? 0.85 : 1)
+                    .accessibilityHint(controller.settings.limits.endMinute == nil ? "Indisponible : choisissez d’abord une heure de fin." : "")
                 }
-            }
-            .opacity(controller.settings.limits.endMinute == nil ? 0.85 : 1)
-            .accessibilityHint(controller.settings.limits.endMinute == nil ? "Indisponible : choisissez d’abord une heure de fin." : "")
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Heure de fin").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                TextField("", text: $end)
-                    .textFieldStyle(GoalongFieldStyle())
-                    .goalongPlaceholder("hh:mm", isEmpty: end.isEmpty, alignment: .trailing)
-                    .frame(width: 72)
-                    .multilineTextAlignment(.trailing)
-                    .onSubmit(commitLimits)
-                    .onChange(of: end) { _ in commitLimits() }
-                    .accessibilityLabel("Heure de fin")
-            }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Heure de fin").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    TextField("", text: $end)
+                        .textFieldStyle(GoalongFieldStyle())
+                        .goalongPlaceholder("hh:mm", isEmpty: end.isEmpty, alignment: .trailing)
+                        .frame(width: 72)
+                        .multilineTextAlignment(.trailing)
+                        .onSubmit(commitLimits)
+                        .onChange(of: end) { _ in commitLimits() }
+                        .accessibilityLabel("Heure de fin")
+                }
             }
         }
         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10).frame(minHeight: 52)

@@ -621,11 +621,12 @@
         }
 
         /// R4e-2: the glyph of an empty day follows its state: a stopped recording or an unreadable source is not « pas encore ».
-        static func emptyTimelineKind(storageStopped: Bool, status: ComputerHistorySourceStatus) -> GoalongStateKind {
+        /// R4e-suite B: a past day with no data is « vide » (nothing will come); today or a future day may still fill.
+        static func emptyTimelineKind(storageStopped: Bool, status: ComputerHistorySourceStatus, dayIsPast: Bool = false) -> GoalongStateKind {
             if storageStopped { return .unavailable }
             switch status {
             case .inaccessible, .unverified: return .unavailable
-            case .available, .absent, .checking: return .notYet
+            case .available, .absent, .checking: return dayIsPast ? .empty : .notYet
             }
         }
 
@@ -945,7 +946,8 @@
             if tenMinuteGroups.isEmpty && !isPreparingTimeline {
                 GoalongEmptyState(
                     title: emptyTimelineTitle,
-                    kind: ComputerHistoryPageCopy.emptyTimelineKind(storageStopped: storageStopTitle != nil, status: model.sourceStatus),
+                    kind: ComputerHistoryPageCopy.emptyTimelineKind(storageStopped: storageStopTitle != nil, status: model.sourceStatus,
+                                                                    dayIsPast: !GoalongToday.isToday(day) && day < Date()),
                     message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
                         ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
                 // R-86: no « Actualiser » here; the day header above already holds the refresh button.
