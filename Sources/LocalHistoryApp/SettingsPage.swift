@@ -361,6 +361,8 @@ enum SettingsPane: Hashable {
         case .recording: return "Choisissez ce que Goalong enregistre sur ce Mac. Rien n’est envoyé sans un autre choix."
         case .chatGPT: return "Avec votre compte ChatGPT, Goalong rédige le bilan d’une journée à partir des seules données que vous choisissez."
         case .modules: return "Activez seulement les fonctions dont vous avez besoin."
+        // R-76 (T-043 R2c): Jev's sentence sat inside the page, 29 pt under the title; it is the pane's lead like the others.
+        case .jev: return "Des rappels pour rester sur vos projets de travail."
         // UI-13C (27, 40): the page's sentence sits under its title, as on ChatGPT and Modules.
         case .applications: return "Désactivez une app ou un site pour l’exclure du suivi détaillé et des prochains envois."
         case .storage: return "Votre historique reste sur ce Mac. Choisissez combien de temps le garder et ce qu’il faut effacer."

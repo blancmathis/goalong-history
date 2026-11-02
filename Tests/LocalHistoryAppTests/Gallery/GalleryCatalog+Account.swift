@@ -43,7 +43,7 @@ extension GalleryCatalog {
                         message: "La vérification n’a pas abouti : le serveur n’a pas répondu à temps. "
                             + "Votre version actuelle continue de fonctionner.", checkedAt: GalleryClock.at(9, 12)),
             updateEntry("non-configure", note: "copie sans mises à jour intégrées", isConfigured: false,
-                        message: "Cette copie n’a pas de mises à jour intégrées : installez la version publiée pour les recevoir.", // UI-9 (54): the app's real text.
+                        message: "Version de test : pas de mises à jour.", // R-46: the manager's own text (SoftwareUpdateManager.swift).
                         automatic: false),
             dashboard("compte/relie", section: .settings, pane: .website, note: "Mac relié au compte du site",
                       configure: { _, ctx in
