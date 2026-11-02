@@ -361,7 +361,7 @@ private struct AmbianceOrchestraSetup: View {
                         Button { actions.download(pack.id) } label: {
                             Label(pack.status == .notInstalled ? "Télécharger" : "Réessayer", systemImage: "arrow.down")
                         }
-                        .buttonStyle(LHPrimaryButtonStyle())
+                        .buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("ambiance-download-\(pack.id)")
                     }
                 }

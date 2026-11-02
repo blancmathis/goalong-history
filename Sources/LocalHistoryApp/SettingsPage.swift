@@ -476,7 +476,7 @@ enum SettingsPane: Hashable {
                 // It names the real work, as the sidebar does: preparing an update is not a search.
                 Button {} label: {
                     HStack(spacing: 6) {
-                        ProgressView().controlSize(.mini); Text(updates.isChecking ? "Recherche…" : "Préparation…")
+                        ProgressView().controlSize(.mini).progressViewStyle(GoalongSpinnerStyle()); Text(updates.isChecking ? "Recherche…" : "Préparation…")
                     }
                 }
                 .buttonStyle(LHSecondaryButtonStyle()).disabled(true)

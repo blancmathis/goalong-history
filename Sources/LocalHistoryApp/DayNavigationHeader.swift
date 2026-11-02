@@ -64,7 +64,7 @@
     }
 
     /// UI-13B (13, 17): a header button that is off must still read (≥ 3:1, DESIGN §12). The secondary
-    /// style halves its opacity when disabled; here the label keeps full secondary ink on a flat surface.
+    /// buttons share one disabled look (T-043 R-5): disabledText at full opacity on a dashed outline.
     struct GoalongHeaderButtonState: ViewModifier {
         let enabled: Bool
 
@@ -79,19 +79,15 @@
 
     private struct GoalongReadableDisabledButtonStyle: ButtonStyle {
         @Environment(\.controlSize) private var controlSize
-        @Environment(\.colorSchemeContrast) private var contrast
-
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
                 .font(.system(size: GoalongControlMetrics.font(controlSize), weight: .medium))
                 .lineLimit(1)
                 .padding(.horizontal, GoalongControlMetrics.inset(controlSize))
                 .frame(minHeight: GoalongControlMetrics.height(controlSize))
-                .foregroundStyle(LHTheme.secondaryText)
-                .background {
-                    GoalongSurface(corner: LHTheme.controlRadius, fill: LHTheme.pageBackground,
-                                   increased: contrast == .increased)
-                }
+                // The shared disabled look of every button style (T-043 R-5).
+                .foregroundStyle(LHTheme.disabledText)
+                .background { GoalongDisabledControlSurface() }
         }
     }
 #endif

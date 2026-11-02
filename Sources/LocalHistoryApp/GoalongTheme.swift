@@ -10,29 +10,35 @@
         static let actionHover = Color(nsColor: rgb(0xE2FF7A))
         static let actionPressed = Color(nsColor: rgb(0xBDD94F))
         static let onAccent = Color(nsColor: rgb(0x18210D))
-        static let text = adaptive(light: 0x0D100E, dark: 0xF2F6EF)
-        static let secondaryText = adaptive(light: 0x566252, dark: 0xA0B0A4, highLight: 0x35422F, highDark: 0xC0CCC2)
-        static let success = adaptive(light: 0x286A3B, dark: 0x98D7A5)
-        static let warning = adaptive(light: 0x80601A, dark: 0xEED08C)
-        static let danger = adaptive(light: 0xAB3F34, dark: 0xFFADA0)
-        static let privateTint = adaptive(light: 0x6E52A0, dark: 0xC7B4E8)
-        static let teal = adaptive(light: 0x256C68, dark: 0x87CCC1)
+        static let text = adaptive(light: 0x0D100E, dark: 0xF2F6EF, highLight: 0x000000, highDark: 0xFFFFFF)
+        /// T-043 R-1: ≥ 5:1 on every surface (page, card, group, sidebar, hover, selection) in both modes; dark 6:1.
+        static let secondaryText = adaptive(light: 0x566252, dark: 0xAEBBB1, highLight: 0x35422F, highDark: 0xCCD6CE)
+        static let success = adaptive(light: 0x286A3B, dark: 0x98D7A5, highLight: 0x1D5530, highDark: 0xB0E6BB)
+        static let warning = adaptive(light: 0x80601A, dark: 0xEED08C, highLight: 0x654A10, highDark: 0xF7DFA6)
+        /// T-043 R-13: 4.7:1 (light) and 6.7:1 (dark) on every surface; stronger with Increase Contrast.
+        static let danger = adaptive(light: 0xAB3F34, dark: 0xFFADA0, highLight: 0x8E2A22, highDark: 0xFFC2B8)
+        static let privateTint = adaptive(light: 0x6E52A0, dark: 0xC7B4E8, highLight: 0x563E85, highDark: 0xD8CAF0)
+        static let teal = adaptive(light: 0x256C68, dark: 0x87CCC1, highLight: 0x1A5552, highDark: 0xA1DDD3)
         static let sidebarBackground = adaptive(light: 0xEAE7DC, dark: 0x0B100D)
         static let pageBackground = adaptive(light: 0xF4F2EA, dark: 0x101712)
         static let cardBackground = adaptive(light: 0xFAF9F4, dark: 0x131B16)
         static let elevatedBackground = adaptive(light: 0xFFFFFF, dark: 0x1B251E)
-        static let separator = adaptive(light: 0xDCDFD3, dark: 0x26332A, highLight: 0x828B76, highDark: 0x718A75)
-        static let strongSeparator = adaptive(light: 0x828B76, dark: 0x718A75)
+        /// Decorative hairline between rows and around groups (not a control edge, WCAG 1.4.11 does not apply):
+        /// one step stronger so dark groups read apart from the page (T-043 R-4).
+        static let separator = adaptive(light: 0xCFD3C5, dark: 0x36443A, highLight: 0x828B76, highDark: 0x718A75)
+        /// ≥ 3:1 on every surface, sidebar and selection included (T-043 R-4).
+        static let strongSeparator = adaptive(light: 0x7D8571, dark: 0x718A75, highLight: 0x5E6655, highDark: 0x8FA592)
         static let hoverBackground = adaptive(light: 0xE7EADB, dark: 0x1F2B23)
         static let selectionBackground = adaptive(light: 0xE0E8CA, dark: 0x2C3B22, highLight: 0xCFDDAA, highDark: 0x3B502C)
         static let pressedBackground = adaptive(light: 0xD6DFC2, dark: 0x2A3A2E)
         /// Controls and inputs: raised buttons, sunken fields, quiet inset notes.
         static let controlBackground = adaptive(light: 0xFFFFFF, dark: 0x1B251E)
-        static let controlBorder = adaptive(light: 0xCDD3C2, dark: 0x2F3F33, highLight: 0x828B76, highDark: 0x718A75)
+        /// Edge of fields, checkboxes and raised buttons: ≥ 3:1 on the field, page, card and group (déc. 3, T-043 R-4).
+        static let controlBorder = adaptive(light: 0x7D8571, dark: 0x64746A, highLight: 0x666E5C, highDark: 0x8AA08E)
         static let fieldBackground = adaptive(light: 0xFFFFFF, dark: 0x0C120E)
         static let insetBackground = adaptive(light: 0xEFEEE4, dark: 0x18211B)
         static let segmentSelected = adaptive(light: 0xFFFFFF, dark: 0x2A3A2E)
-        static let segmentSelectedBorder = adaptive(light: 0xC9D0BC, dark: 0x3D5141)
+        static let segmentSelectedBorder = adaptive(light: 0xC9D0BC, dark: 0x3D5141, highLight: 0x666E5C, highDark: 0x8AA08E)
         /// Off track: an empty well in both modes, so on (ink) and off read apart at a glance (R7, UI-17A). Light: a pale
         /// well, 15:1 against the ink on track; its 1 pt strongSeparator edge is ≥ 3:1 on page, card and inset (WCAG
         /// 1.4.11) and the white knob keeps a 4.2:1 edge on it (`switchKnobEdge`). Dark: a dark well, 12:1 against the on
@@ -41,17 +47,24 @@
         /// Hover of the off track: one step darker than the well in light, lighter in dark.
         static let switchTrackHover = adaptive(light: 0xD9DDCE, dark: 0x26332A)
         static let switchKnob = adaptive(light: 0xFFFFFF, dark: 0xE6EDE7)
-        /// Edge of the off knob: light only (tertiary text, 4.2:1 on the pale well); the dark knob is 12:1 on its well.
+        /// Edge of the off knob: light only (tertiary text, 4.6:1 on the pale well); the dark knob is 12:1 on its well.
         static let switchKnobEdge = Color(nsColor: NSColor(name: nil) { appearance in
             switch appearance.name {
             case .accessibilityHighContrastDarkAqua: return .clear
-            case .accessibilityHighContrastAqua: return LHTheme.rgb(0x566252)
-            default: return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .clear : LHTheme.rgb(0x646F5F)
+            case .accessibilityHighContrastAqua: return LHTheme.rgb(0x4C5747)
+            default: return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .clear : LHTheme.rgb(0x5E6859)
             }
         })
-        static let placeholder = adaptive(light: 0x8A9486, dark: 0x66766A, highLight: 0x5E6859, highDark: 0x93A396)
-        /// Chart axes and the resting thread: quieter than secondary text, never body copy.
-        static let tertiaryText = adaptive(light: 0x646F5F, dark: 0x7E9084, highLight: 0x566252, highDark: 0xA0B0A4)
+        /// T-043 R-3: ≥ 4.6:1 on the field (and page/card), still clearly paler than typed text (text is 15:1 / 11:1).
+        static let placeholder = adaptive(light: 0x666F61, dark: 0x828F85, highLight: 0x535D4F, highDark: 0xA3B1A6)
+        /// Chart axes and the resting thread: quieter than secondary text, never body copy. T-043 R-1: ≥ 4.6:1 on
+        /// every surface in both modes (it was 3.5:1 on dark selection).
+        static let tertiaryText = adaptive(light: 0x5E6859, dark: 0x96A59B, highLight: 0x4C5747, highDark: 0xB1BEB4)
+        /// The label of a disabled control (déc. 3, T-043 R-5): ≥ 3.3:1 on page, card, group and control fill, and
+        /// clearly weaker than an active label (ink, 11–15:1). Drawn at full opacity, never faded.
+        static let disabledText = adaptive(light: 0x7A8475, dark: 0x728378, highLight: 0x5E6859, highDark: 0x9AAA9E)
+        /// A loading indicator (T-043 R-6): tinted like secondary text, ≥ 3:1 on every surface.
+        static let progressTint = secondaryText
 
         /// The three states of active time, always in this order. Lime is work as the person
         /// defined it; time outside work is a calm periwinkle, never a warning; what is not

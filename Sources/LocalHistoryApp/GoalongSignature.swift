@@ -6,16 +6,64 @@
     // itself (GoalongThread.swift), where Goalong speaks in its own voice. Everything here
     // answers a person's action or appears once; nothing loops.
 
-    /// An empty screen is a thread that has not started: what is missing and the one step
-    /// that fixes it. Set directly on the page, or inside a group when it replaces a list.
+    /// The sort of thing an empty or state view reports (déc. 9 et 14, T-043 R-10): one distinct glyph per sort, so
+    /// « pas encore », « à autoriser » and « indisponible » never look alike. Shared by `GoalongEmptyState`,
+    /// `EmptyStateView` and `StatusPill`.
+    enum GoalongStateKind: Equatable {
+        /// Nothing yet: data will come by itself.
+        case notYet
+        /// Needs an access or a setting the person must give.
+        case needsPermission
+        /// Cannot work here (missing app, unsupported, failed).
+        case unavailable
+        /// The list is simply empty (nothing matches, nothing added).
+        case empty
+
+        var symbol: String {
+            switch self {
+            case .notYet: return "clock"
+            case .needsPermission: return "lock.shield"
+            case .unavailable: return "nosign"
+            case .empty: return "tray"
+            }
+        }
+    }
+
+    /// An empty screen: one sentence that says what is missing and, at most, one named action (déc. 9, T-043 R-11).
+    /// No dotted thread, no decorative mark: an optional state glyph only. Set directly on the page, or inside a
+    /// group when it replaces a list.
     struct GoalongEmptyState<Actions: View>: View {
         let title: String
         let message: String
+        var kind: GoalongStateKind?
         @ViewBuilder var actions: () -> Actions
+
+        /// Several free actions. Kept for the existing callers; new code names its one action with
+        /// `init(title:message:kind:actionTitle:prominent:action:)`.
+        @available(*, deprecated, message: "Une seule action nommée : init(title:message:kind:actionTitle:prominent:action:) (T-043 R-11)")
+        init(title: String, message: String, kind: GoalongStateKind? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+            self.title = title
+            self.message = message
+            self.kind = kind
+            self.actions = actions
+        }
+
+        fileprivate init(uncheckedTitle title: String, message: String, kind: GoalongStateKind?,
+                         @ViewBuilder actions: @escaping () -> Actions) {
+            self.title = title
+            self.message = message
+            self.kind = kind
+            self.actions = actions
+        }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
-                GoalongThreadPlaceholder().padding(.bottom, 4)
+                if let kind {
+                    Image(systemName: kind.symbol).font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText)
+                        .padding(.bottom, 2)
+                        .accessibilityHidden(true)
+                }
                 Text(title).font(LHTheme.sectionTitleFont).tracking(-0.2)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
@@ -30,8 +78,35 @@
     }
 
     extension GoalongEmptyState where Actions == EmptyView {
-        init(title: String, message: String) {
-            self.init(title: title, message: message) { EmptyView() }
+        init(title: String, message: String, kind: GoalongStateKind? = nil) {
+            self.init(uncheckedTitle: title, message: message, kind: kind) { EmptyView() }
+        }
+    }
+
+    /// The one named action of an empty state: primary (lime) when it is the screen's recommended step, otherwise
+    /// secondary (déc. 7).
+    struct GoalongEmptyStateAction: View {
+        let title: String
+        var prominent = true
+        let action: () -> Void
+
+        var body: some View {
+            if prominent {
+                Button(title, action: action).buttonStyle(LHPrimaryButtonStyle())
+            } else {
+                Button(title, action: action).buttonStyle(LHSecondaryButtonStyle())
+            }
+        }
+    }
+
+    extension GoalongEmptyState where Actions == GoalongEmptyStateAction {
+        /// One sentence and one named action (« Ouvrir les réglages d’enregistrement », never « Ouvrir »).
+        init(title: String, message: String, kind: GoalongStateKind? = nil, actionTitle: String,
+             prominent: Bool = true, action: @escaping () -> Void) {
+            assert(!actionTitle.trimmingCharacters(in: .whitespaces).isEmpty, "An empty-state action needs a title")
+            self.init(uncheckedTitle: title, message: message, kind: kind) {
+                GoalongEmptyStateAction(title: actionTitle, prominent: prominent, action: action)
+            }
         }
     }
 

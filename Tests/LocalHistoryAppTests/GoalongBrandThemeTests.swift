@@ -59,5 +59,33 @@ final class GoalongBrandThemeTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(ratio(color(LHTheme.accent, appearance), color(LHTheme.selectionBackground, appearance)), 3)
         }
     }
+    /// T-043 R1 (R-1, R-3, R-4, R-5, R-13): every text, placeholder, border and disabled token in the four appearances.
+    func testR1TokensMeetWCAGAcrossAppearances() {
+        let appearances: [NSAppearance.Name] = [.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua]
+        for appearance in appearances {
+            for background in [LHTheme.pageBackground, LHTheme.cardBackground, LHTheme.sidebarBackground] {
+                let bg = color(background, appearance)
+                XCTAssertGreaterThanOrEqual(ratio(color(LHTheme.tertiaryText, appearance), bg), 4.5, "tertiaryText \(appearance.rawValue)")
+                XCTAssertGreaterThanOrEqual(ratio(color(LHTheme.disabledText, appearance), bg), 3, "disabledText \(appearance.rawValue)")
+                XCTAssertGreaterThanOrEqual(ratio(color(LHTheme.controlBorder, appearance), bg), 3, "controlBorder \(appearance.rawValue)")
+                XCTAssertGreaterThanOrEqual(ratio(color(LHTheme.progressTint, appearance), bg), 3, "progressTint \(appearance.rawValue)")
+            }
+            for background in [LHTheme.pageBackground, LHTheme.cardBackground, LHTheme.fieldBackground] {
+                XCTAssertGreaterThanOrEqual(ratio(color(LHTheme.placeholder, appearance), color(background, appearance)), 4.5,
+                    "placeholder \(appearance.rawValue)")
+            }
+            // The placeholder stays clearly paler than typed text.
+            let field = color(LHTheme.fieldBackground, appearance)
+            XCTAssertGreaterThan(ratio(color(LHTheme.text, appearance), field), ratio(color(LHTheme.placeholder, appearance), field) * 1.5)
+            // Off switch: the light knob is drawn by its edge; the dark knob (no edge) stands on its own.
+            let isDark = appearance == .darkAqua || appearance == .accessibilityHighContrastDarkAqua
+            let knob = isDark ? LHTheme.switchKnob : LHTheme.switchKnobEdge
+            XCTAssertGreaterThanOrEqual(ratio(color(knob, appearance), color(LHTheme.switchTrack, appearance)), 3, "knob \(appearance.rawValue)")
+        }
+    }
+    func testLockedSwitchSpeaksItsPosition() {
+        XCTAssertEqual(GoalongSwitch.lockedAccessibilityValue(isOn: true), "Activé, verrouillé")
+        XCTAssertEqual(GoalongSwitch.lockedAccessibilityValue(isOn: false), "Désactivé, verrouillé")
+    }
 }
 #endif
