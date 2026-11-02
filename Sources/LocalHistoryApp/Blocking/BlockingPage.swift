@@ -950,6 +950,12 @@ struct BlockingLockExplainer: View {
                         Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        if Self.showsRetry(controller.protection) {
+                            // A failed service gets a way to try again, next to its cause (R-89).
+                            Button("Réessayer") { controller.retryGuardService() }
+                                .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
+                                .accessibilityIdentifier("blocking-guard-retry")
+                        }
                         // UI-9 (1): one « Ouvrir Réglages Système… » per group; « Relance » already shows it when off.
                         if controller.protection.launchAtLogin { loginItemsButton }
                     }
@@ -1004,6 +1010,12 @@ struct BlockingLockExplainer: View {
         case .awaitingApproval: return "Autorisez Goalong dans \(LoginItemsPanel.path)."
         case .running, .notInstalled: return nil
         }
+    }
+
+    /// A failed service shows « Réessayer » (R-89); a waiting one only needs the member's approval.
+    static func showsRetry(_ protection: BlockingProtectionState) -> Bool {
+        guard protection.level != .strict, case .failed = protection.guardian else { return false }
+        return true
     }
 
     /// « Standard » is a normal level, not something missing: only a guard waiting or failed keeps the dashed circle.

@@ -223,6 +223,11 @@ import LocalHistoryQueryCLI
         guardClient?.canRemove == true && lockedUntil == nil
             && !lists.contains { $0.program.ranges.contains { effectiveLock($0.effectiveLock).protectsLists } }
     }
+    /// « Réessayer » under a failed protection level (R-89).
+    func retryGuardService() {
+        guardClient?.retry()
+        refresh(enforceLast: false)
+    }
     func removeGuardService() {
         refresh(enforceLast: false)
         guard canRemoveGuard else { return }

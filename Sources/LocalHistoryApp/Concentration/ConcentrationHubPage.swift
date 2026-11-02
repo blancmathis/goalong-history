@@ -152,17 +152,21 @@ struct ConcentrationHubHeader: View {
                             .accessibilityIdentifier("distractions-words-save")
                     }
                 } else {
-                    HStack(alignment: .top, spacing: 14) {
+                    // The action sits under its text, in the same style as « Nouvelle liste » (R-99).
+                    VStack(alignment: .leading, spacing: 10) {
                         Text(store.context.procrastination.isEmpty
                              ? "Aucun exemple pour l’instant. Essayez : « faire défiler le fil de X », « regarder des vidéos de divertissement »."
                              : store.context.procrastination)
                             .foregroundStyle(store.context.procrastination.isEmpty ? LHTheme.secondaryText : LHTheme.text)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                             .accessibilityIdentifier("distractions-words")
-                        Spacer(minLength: 8)
-                        Button(store.context.procrastination.isEmpty ? "Ajouter" : "Modifier") {
+                        Button {
                             text = store.context.procrastination; editing = true
+                        } label: {
+                            Label(store.context.procrastination.isEmpty ? "Ajouter" : "Modifier",
+                                  systemImage: store.context.procrastination.isEmpty ? "plus" : "pencil")
                         }
+                        .buttonStyle(LHQuietButtonStyle())
                         .accessibilityIdentifier("distractions-words-edit")
                     }
                 }

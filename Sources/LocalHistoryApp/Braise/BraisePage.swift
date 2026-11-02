@@ -6,6 +6,11 @@ import ServiceManagement
 import SwiftUI
 
 @MainActor struct BraisePage: View {
+    /// Each schedule switch names its rule: two rules at the same hours differ by their days (R-93).
+    nonisolated static func ruleSwitchLabel(_ rule: ScheduleRule) -> String {
+        "Activer l’horaire \(rule.hours), \(rule.dayLabel)"
+    }
+
     @ObservedObject private var runtime = BraiseRuntime.shared
     var onOpenModules: () -> Void = {}
     /// Turns the module on right here; the module switch in Réglages › Modules does the same.
@@ -102,7 +107,7 @@ import SwiftUI
                                 }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Modifier l’horaire \(rule.hours), \(rule.dayLabel)")
                                 Toggle("Activer l’horaire", isOn: Binding(get: { rule.enabled }, set: { enabled in
                                     controller.update { p in if let i = p.rules.firstIndex(where: { $0.id == rule.id }) { p.rules[i].enabled = enabled } }
-                                })).toggleStyle(.goalongSwitchOnly).fixedSize().accessibilityLabel("Activer l’horaire \(rule.hours)")
+                                })).toggleStyle(.goalongSwitchOnly).fixedSize().accessibilityLabel(BraisePage.ruleSwitchLabel(rule))
                             }
                             // Aligned on the text of the rows (DESIGN §7): these rows have no icon column.
                             GoalongRowDivider(inset: 0)

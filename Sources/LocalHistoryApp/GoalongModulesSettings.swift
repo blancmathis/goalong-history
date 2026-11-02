@@ -73,7 +73,10 @@ import SwiftUI
                         // UI-13C (42): the link says what it deletes.
                         Button("Supprimer les données de Concentration…", role: .destructive) { confirmingDelete = true }
                             .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
-                            .disabled(concentration.controller?.hasLockedBlock == true)
+                            // R-77 (R9C-54): held back, with the reason, when there is nothing to delete.
+                            .disabled(concentration.controller?.hasLockedBlock == true || !concentration.hasStoredData)
+                            .help(concentration.hasStoredData ? "" : "Aucune donnée de Concentration sur ce Mac.")
+                            .onAppear { concentration.refreshHasData() }
                     }.padding(.top, 2).padding(.bottom, 6) // The red link keeps clear of the row's divider (UI-11C).
                 }
             }

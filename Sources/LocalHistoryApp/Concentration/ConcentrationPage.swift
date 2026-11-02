@@ -477,6 +477,9 @@ struct FocusPlanChip: View {
     var live = true
 
     private var phase: FocusPhase { controller.phase ?? FocusPhases.phase(session, at: now) }
+    /// The end time shows once, on the thread under the figure (R-85).
+    static let lockedLine = "Verrouillé"
+    static func freeLine(endsAt: Date?) -> String { endsAt == nil ? "Séance libre, sans fin" : "Séance libre" }
     /// Only a block owned by this session locks its card; a commitment stake does not (R1-011).
     var locked: Bool { controller.hasLockedSessionBlock }
     private var lists: [BlockList] { session.blockListIds.compactMap { id in controller.blockLists.first { $0.id == id } } }
@@ -504,7 +507,7 @@ struct FocusPlanChip: View {
                 }
                 Spacer(minLength: 12)
                 if locked {
-                    Label("Verrouillé jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "la fin")", systemImage: "lock.fill")
+                    Label(Self.lockedLine, systemImage: "lock.fill")
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 } else {
                     if session.mode.kind == .pomodoro {
@@ -524,7 +527,7 @@ struct FocusPlanChip: View {
         switch (session.mode.kind, phase.kind) {
         case (.free, _):
             symbol = "scope"
-            words = phase.endsAt.map { "Séance libre jusqu’à \(BlockingFormat.time($0))" } ?? "Séance libre, sans fin"
+            words = Self.freeLine(endsAt: phase.endsAt)
         case (_, .work):
             symbol = "scope"
             words = "Travail, cycle \(phase.cycle)\(session.mode.cycles.map { " sur \($0)" } ?? "")"
