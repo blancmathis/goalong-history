@@ -1176,6 +1176,7 @@ conversations-ia/vide--   # T-043 R4a R-72 (pas de dossiers surveillés quand le
 activite/enregistrement-desactive--   # T-043 R4a R-74 (le bandeau seul dit la journée arrêtée : pas d’état vide ni « Explorer »)
 activite/permission-manquante--   # T-043 R4a R-74 (idem)
 historique/journee-vide--   # T-043 R4a R-86 (plus de 2e « Actualiser » dans l’état vide)
+fenetre/stockage-refuse--   # T-043 R4a R-86 (idem : plus de 2e « Actualiser » sous le bandeau, boîte 241,469 89×30)
 fenetre/pause-globale--   # T-043 R4a R-74 (note « Vos durées reviennent ici dès que le suivi reprend. » à la place de l’état vide)
 fenetre/stockage-plein--   # T-043 R4a R-74 (message : « Une absence de données n’est pas une journée à zéro. »)
 mon-travail/classement-avec-donnees--   # T-043 R4a R-83 (pastille « Corrigé » et menu « Modifier » sur les lignes corrigées)
