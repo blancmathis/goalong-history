@@ -66,5 +66,53 @@ import XCTest
         for _ in 0..<3 { model.step(&preview, -1, macDays: mac, preview: true, now: now, calendar: calendar) }
         XCTAssertLessThan(preview.day, date(3), "the developer preview is not bounded by the real data")
     }
+
+    /// R8-6: one announcement of the storage cause per screen. When the banner holds the storage slot, no string of the
+    /// History page (note, empty title, empty message) says the cause; when the banner shows a stopped recording,
+    /// the page keeps it.
+    func testHistoryDoesNotRepeatTheCauseTheBannerNames() {
+        let since = date(23, 9)
+        let kinds: [CaptureStorageFailureKind] = [.diskFull, .permissionDenied, .unavailable]
+        for kind in kinds {
+            let cause = GoalongActivityEmptyCopy.storageCause(kind)
+            let strings = [
+                ComputerHistoryPageCopy.storageStopNote(isToday: true, failure: kind, since: since, bannerNamesStorage: true),
+                ComputerHistoryPageCopy.storageStopNote(isToday: true, failure: kind, since: nil, bannerNamesStorage: true),
+                ComputerHistoryPageCopy.storageEmptyTitle(since: since, bannerNamesStorage: true),
+                ComputerHistoryPageCopy.storageEmptyMessage(failure: kind, bannerNamesStorage: true),
+            ].compactMap { $0 }
+            XCTAssertEqual(strings.count, 4)
+            for text in strings {
+                XCTAssertFalse(text.contains(cause), text)
+                XCTAssertFalse(text.contains("disque est plein") || text.contains("interrompu"), text)
+                XCTAssertFalse(text.contains("reprendra") || text.contains("reprise"), "the promise is the banner's: \(text)")
+            }
+            XCTAssertEqual(ComputerHistoryPageCopy.storageEmptyTitle(since: since, bannerNamesStorage: true),
+                           "Aucune donnée depuis \(GoalongUIFormat.time(since))")
+            // Another cause in the banner: the page is the only place that says the storage stop.
+            XCTAssertEqual(ComputerHistoryPageCopy.storageStopNote(isToday: true, failure: kind, since: since,
+                                                                   bannerNamesStorage: false)?.contains(cause), true)
+            XCTAssertTrue(ComputerHistoryPageCopy.storageEmptyMessage(failure: kind, bannerNamesStorage: false).contains(cause))
+        }
+        // The page reads the banner's own slot rule.
+        typealias Banner = GoalongAttentionBanner
+        XCTAssertEqual(Banner.storageSlot(globallyPaused: false, recording: nil, recordingNoticeOnPage: false), .storage)
+        XCTAssertEqual(Banner.storageSlot(globallyPaused: false, recording: .input, recordingNoticeOnPage: false), .storage)
+        XCTAssertEqual(Banner.storageSlot(globallyPaused: false, recording: .off, recordingNoticeOnPage: false), .recordingCause)
+    }
+
+    /// Remarque 2 de R-276: the model publishes only when the value changes.
+    func testImportedFirstDayPublishesOnlyOnChange() async throws {
+        let root = try folder(healthDays: ["2026-10-03.json"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = GoalongAnalyticsModel(reader: GoalongAnalyticsReader(root: root))
+        var changes = 0
+        let sub = model.objectWillChange.sink { changes += 1 }
+        await model.refreshImportedFirstDay(calendar: calendar)
+        XCTAssertEqual(changes, 1)
+        await model.refreshImportedFirstDay(calendar: calendar)
+        XCTAssertEqual(changes, 1, "same value: no publish")
+        sub.cancel()
+    }
 }
 #endif

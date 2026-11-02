@@ -341,7 +341,7 @@ actor GoalongAnalyticsReader {
             GoalongActivityFirstDay.importedEarliest(root: root, calendar: calendar)
         }.value
         guard !Task.isCancelled else { return }
-        importedFirstDay = value
+        if importedFirstDay != value { importedFirstDay = value }
     }
 
     /// R-265, UI-17A M3: the one bound of Activité (calendar, « précédent », every period's step). Nil in the preview.
