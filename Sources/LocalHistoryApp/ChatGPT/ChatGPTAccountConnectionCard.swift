@@ -21,14 +21,23 @@ struct ChatGPTAccountConnectionCard: View {
                     Spacer()
                     actions
                 }
-                Text("La connexion seule ne lance aucune analyse.")
-                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                // UI-17B (34, 38): said only where a connection is possible; nothing next to an unavailable one.
+                if connectionIsPossible {
+                    Text("La connexion seule ne lance aucune analyse.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                }
             }
         }
         .onAppear { runtime.refreshAccount(userInitiated: true) }
     }
     private var updateButton: some View {
         Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }
+    }
+    private var connectionIsPossible: Bool {
+        switch runtime.connectionState {
+        case .connected, .signedOut, .failed: return true
+        case .checking, .codexUnavailable, .unsupportedCredentialMode: return false
+        }
     }
     private var status: String {
         switch runtime.connectionState {

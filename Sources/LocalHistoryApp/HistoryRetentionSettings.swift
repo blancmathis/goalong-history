@@ -14,9 +14,9 @@ extension HistoryDataClass {
         case .semanticSnapshots: return "Texte affiché"
         case .memories: return "Historique et résumés locaux"
         case .analysisCaches: return "Fichiers temporaires"
-        case .minuteSeals: return "Preuves d’activité"
+        case .minuteSeals: return "Sceaux des minutes"
         case .activitySummaries: return "Résumés de journée"
-        case .anchorReceipts: return "Reçus de date"
+        case .anchorReceipts: return "Horodatages"
         }
     }
 }
@@ -32,8 +32,8 @@ extension HistoryRetentionPolicy {
         case .anchorReceipts: anchorReceipts = duration
         }
     }
-    /// What « Preuves d’activité » and « Reçus de date » are, in one sentence under the list (UI-15A, 28).
-    static let proofExplanation = "Les preuves d’activité signent chaque minute enregistrée et les reçus de date datent ces signatures : ensemble, ils montrent que l’historique n’a pas été modifié."
+    /// What « Sceaux des minutes » and « Horodatages » are, in one sentence under the list (UI-15A, 28).
+    static let proofExplanation = "Les sceaux des minutes signent chaque minute enregistrée et les horodatages en fixent la date, pour montrer que l’historique n’a pas été modifié."
     /// Shared labels so every entry point names the same policy the same way.
     static let noLimitLabel = "Jusqu’à suppression"
     static let automaticCleanupLabel = "Supprimer automatiquement les données expirées"

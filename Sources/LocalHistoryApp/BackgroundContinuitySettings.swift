@@ -74,7 +74,7 @@
                             .accessibilityIdentifier("settings-login-unknown")
                         }
                         // UI-12B (43): under the switch it concerns, in plain words.
-                        Text("L’ouverture à la session n’allume aucune source et ne reprend pas une pause.")
+                        Text("À l’ouverture de session, Goalong n’allume aucune source et garde la pause.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         switch loginWarning {
                         case .failure(let message): GoalongNote(message, tone: .warning)
