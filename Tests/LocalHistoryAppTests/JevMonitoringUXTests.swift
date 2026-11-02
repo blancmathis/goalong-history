@@ -75,7 +75,7 @@ final class JevMonitoringUXTests: XCTestCase {
         XCTAssertFalse(controls.contains("LHTheme.pressedBackground : LHTheme.switchTrack"))
         XCTAssertTrue(controls.contains(".opacity(isEnabled ? 1 : 0.6)"), "R7-C-01: a disabled track, on or off, is faded")
         let share = try source("SharePage.swift")
-        XCTAssertTrue(share.contains("avant de créer le fichier."))
+        XCTAssertTrue(share.contains("Choisissez ce que le fichier montre de chaque app et site."), "R275-3: a short subtitle keeps three rows of the list in view")
         XCTAssertFalse(share.contains("paquet") || share.contains("chaîne d’intégrité"))
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
