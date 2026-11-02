@@ -117,11 +117,12 @@
                     }
                     if !consents.isEnabled(.aiConversations) {
                         disabledSourceExplanation
-                        if presentation == .management { watchedFoldersCard }
+                        // R-72 (R9A-39): reading off, one message; the folders card would say the same thing again.
                     } else if presentation == .history {
                         conversationHistoryList
                         // The token figures come after the list they describe, and not at all when no source is readable.
-                        if !sourcesUnreadable {
+                        if Self.showsTokenCard(sourcesUnreadable: sourcesUnreadable, scanning: agents.isScanning,
+                                               capturesEmpty: filteredCaptures.isEmpty) {
                             AgentTokenUsageCard(usage: agents.tokenUsageSnapshot, scanning: agents.isScanning, analyzedAt: agents.tokenUsageAnalyzedAt)
                         }
                         GoalongDisclosureGroup("Source et confidentialité") {
@@ -260,6 +261,18 @@
             hasSourceIssue && agents.overview.captures.isEmpty && !agents.isScanning
         }
 
+        /// R-72 (R9A-40): one reading indicator. No conversation yet: the empty state says it; otherwise the header line.
+        enum ScanIndicator: Equatable { case none, header, emptyState }
+        static func scanIndicator(scanning: Bool, capturesEmpty: Bool) -> ScanIndicator {
+            guard scanning else { return .none }
+            return capturesEmpty ? .emptyState : .header
+        }
+
+        /// The token card waits for the read when there is nothing yet: its own « en cours » would be a third indicator.
+        static func showsTokenCard(sourcesUnreadable: Bool, scanning: Bool, capturesEmpty: Bool) -> Bool {
+            !sourcesUnreadable && !(scanning && capturesEmpty)
+        }
+
         private var conversationHistoryList: some View {
             let captures = filteredCaptures
             return VStack(alignment: .leading, spacing: 12) {
@@ -271,11 +284,15 @@
                             Text(GoalongUIFormat.count(agents.overview.captures.count, "conversation"))
                             .font(.system(size: 20, weight: .semibold))
                             HStack(spacing: 7) {
-                                if agents.isScanning {
+                                switch Self.scanIndicator(scanning: agents.isScanning, capturesEmpty: captures.isEmpty) {
+                                case .header:
                                     ProgressView()
                                         .controlSize(.mini)
                                     Text("Mise à jour des sources modifiées…")
-                                } else {
+                                case .emptyState:
+                                    // R-72: the empty state below is the one reading indicator.
+                                    EmptyView()
+                                case .none:
                                     Text(conversationSummaryDetail + ".")
                                 }
                             }
@@ -332,6 +349,7 @@
                                 if search.isEmpty, providerFilter == nil, !hasSourceIssue, let onManageSources {
                                     Button("Vérifier les sources", action: onManageSources)
                                         .buttonStyle(LHSecondaryButtonStyle()).frame(maxWidth: .infinity).padding(.bottom, 20)
+                                        .disabled(agents.isScanning)
                                 }
                                 if !search.isEmpty || providerFilter != nil {
                                     Button("Effacer les filtres") { search = ""; providerFilter = nil }

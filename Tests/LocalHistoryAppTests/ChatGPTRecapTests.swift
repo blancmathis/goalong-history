@@ -2833,3 +2833,20 @@
         }
     }
 #endif
+
+#if os(macOS)
+@MainActor final class ChatGPTRecapR4aTests: XCTestCase {
+    func testReadInProgressIsOneStateInTheReportCard() {
+        // R-71: no « Lecture… » card under « Aucun rapport »; the report card itself shows the read.
+        XCTAssertFalse(ChatGPTRecapPage.showsSeparateLoadingCard(hasRecap: false, loadingOverview: true))
+        XCTAssertTrue(ChatGPTRecapPage.showsSeparateLoadingCard(hasRecap: true, loadingOverview: true))
+        XCTAssertFalse(ChatGPTRecapPage.showsSeparateLoadingCard(hasRecap: true, loadingOverview: false))
+    }
+
+    func testSettingsBelowTheAccountCardAreGreyedUntilTheUpdate() {
+        XCTAssertTrue(GoalongChatGPTSettings.analysisLocked(.codexUnavailable))
+        XCTAssertFalse(GoalongChatGPTSettings.analysisLocked(.signedOut))
+        XCTAssertFalse(GoalongChatGPTSettings.analysisLocked(.connected(email: nil, plan: nil)))
+    }
+}
+#endif

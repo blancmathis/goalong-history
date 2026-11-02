@@ -269,6 +269,8 @@ import SwiftUI
 @MainActor struct GoalongWorkReviewCard: View {
     @ObservedObject var review: GoalongWorkReviewModel
     @ObservedObject private var work = GoalongWorkStore.shared
+    @ObservedObject private var agent = GoalongWorkAgent.shared
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @State private var day: Date
     @State private var expanded: Set<String>
     private let focusTask: String?
@@ -327,7 +329,8 @@ import SwiftUI
             HStack(spacing: 12) {
                 DateSelectionControl(date: day, onChange: { day = $0 }, showsToday: false, earliest: earliestDay)
                 Button(review.loadedDay == nil ? "Afficher le classement" : "Actualiser") { review.load(day: day) }
-                    .buttonStyle(LHSecondaryButtonStyle()).disabled(review.loading).accessibilityIdentifier("work-review-load")
+                    .buttonStyle(LHSecondaryButtonStyle()).disabled(!canLoad).accessibilityIdentifier("work-review-load")
+                    .help(canLoad || review.loading ? "" : Self.historyOffReason)
                 if review.loading { ProgressView().controlSize(.small) }
                 Spacer(minLength: 0)
             }
@@ -404,6 +407,20 @@ import SwiftUI
         }.padding(.top, 4)
     }
 
+    /// R-83 (déc. 11): without the Mac's history there is nothing to classify, so the button is greyed with its reason.
+    nonisolated static func canLoadReview(historyConsent: Bool, historyOff: Bool, loading: Bool) -> Bool {
+        historyConsent && !historyOff && !loading
+    }
+    static let historyOffReason = "Historique de ce Mac désactivé : rien à classer."
+
+    private var canLoad: Bool {
+        Self.canLoadReview(historyConsent: consents.isEnabled(.localComputerHistory),
+                           historyOff: agent.readiness == .historyOff, loading: review.loading)
+    }
+
+    /// R-83: a row the owner already corrected says so once, in a pill, and its menu reads « Modifier ».
+    nonisolated static func correctionMenuTitle(byOwner: Bool) -> String { byOwner ? "Modifier" : "Corriger" }
+
     private func rowView(_ row: GoalongWorkReviewModel.Row) -> some View {
         let assignment = work.verdicts.assignment(for: row.id)
         return HStack(spacing: 10) {
@@ -413,10 +430,14 @@ import SwiftUI
                 Text(row.label.title ?? row.label.application).font(.system(size: 12, weight: .medium)).lineLimit(1)
                     .help(row.label.title ?? row.label.application)
                 Text(([row.label.application, row.label.host].compactMap { $0 }).joined(separator: ", ")
-                     + (assignment?.byOwner == true ? ", corrigé par vous" : assignment?.verdict == .unclear ? ", indéterminé" : ""))
+                     + (assignment?.byOwner != true && assignment?.verdict == .unclear ? ", indéterminé" : ""))
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
             }
             Spacer(minLength: 8)
+            if assignment?.byOwner == true {
+                StatusPill(title: "Corrigé", symbol: "checkmark", tint: LHTheme.success)
+                    .accessibilityLabel("Corrigé par vous")
+            }
             Text(GoalongAnalyticsFormatting.duration(row.seconds)).font(.system(size: 12)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
             Menu {
                 Section("Travail") {
@@ -434,7 +455,7 @@ import SwiftUI
                     Divider()
                     Button("Laisser l’agent décider") { correct(row, nil, task: nil) }
                 }
-            } label: { Text("Corriger").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text) }
+            } label: { Text(Self.correctionMenuTitle(byOwner: assignment?.byOwner == true)).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text) }
                 // DESIGN §9 rank 3: ink text, no chrome, like LHQuietButtonStyle.
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).tint(LHTheme.text).fixedSize()
                 .accessibilityLabel("Corriger le classement de \(row.label.title ?? row.label.application)")

@@ -95,14 +95,14 @@ final class MenuBarPanelModelTests: XCTestCase {
         f.globallyPaused.paused = true; f.globallyPaused.changedAt = f.now
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .paused(since: f.now))
         f.globallyPaused.paused = false; f.consent = false
-        model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention("Suivi en pause"))
+        model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention("Enregistrement désactivé"))
         f.consent = true; f.health = .storageUnavailable
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention(f.health.frenchTitle))
         f.health = .permissionRequired
         model.refreshRuntimeState(); XCTAssertEqual(model.tracking, .attention(f.health.frenchTitle))
         XCTAssertEqual(model.attentionTitle, f.health.frenchTitle)
         f.health = .ready; f.consent = false
-        model.refreshRuntimeState(); XCTAssertEqual(model.attentionTitle, "Suivi en pause")
+        model.refreshRuntimeState(); XCTAssertEqual(model.attentionTitle, "Enregistrement désactivé")
         f.consent = true
         model.refreshRuntimeState(); XCTAssertNil(model.attentionTitle)
     }
@@ -131,12 +131,31 @@ final class MenuBarPanelModelTests: XCTestCase {
         XCTAssertEqual(model.focusUnavailableFix, .recording)
     }
 
+    @MainActor func testFocusStartIsGreyedWhilePermissionOrRecordingIsMissing() {
+        let f = fixture(), model = f.model()
+        f.modules.setEnabled(.concentration, true)
+        model.refreshRuntimeState()
+        // A missing permission: the header repair is the one action, « Commencer » is greyed with its reason.
+        model.focusAvailable = true; model.attentionFix = .permissions
+        XCTAssertTrue(model.focusStartBlocked)
+        XCTAssertEqual(model.focusBlockedReason, "Accès à rétablir avant de commencer.")
+        XCTAssertNil(model.focusBlockedFix)
+        model.attentionFix = nil
+        XCTAssertFalse(model.focusStartBlocked); XCTAssertNil(model.focusBlockedReason)
+        // Recording off: the header gear opens the settings, so the focus block adds no second button.
+        f.consent = false; model.refreshRuntimeState()
+        XCTAssertTrue(model.focusStartBlocked)
+        XCTAssertEqual(model.tracking, .attention("Enregistrement désactivé"))
+        XCTAssertEqual(model.focusBlockedReason, "Activez l’enregistrement dans Réglages.")
+        XCTAssertNil(model.focusBlockedFix)
+    }
+
     @MainActor func testConsentOffWinsOverTheManualPauseSetByProduction() {
         let f = fixture(), model = f.model()
         // applyCapabilityConsents sets the manual pause whenever consent is off.
         f.consent = false; f.state.setManualPaused(true)
         model.refreshRuntimeState()
-        XCTAssertEqual(model.tracking, .attention("Suivi en pause"))
+        XCTAssertEqual(model.tracking, .attention("Enregistrement désactivé"))
         XCTAssertEqual(model.trackingDetail, "Activez l’enregistrement dans Réglages")
         f.globallyPaused.paused = true; f.globallyPaused.changedAt = f.now
         model.refreshRuntimeState()

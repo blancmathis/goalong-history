@@ -349,12 +349,12 @@
                             .keyboardShortcut(.defaultAction)
                     }
                 }
-                .disabled(!model.focusAvailable)
-                if !model.focusAvailable, let reason = model.focusUnavailableReason {
+                .disabled(model.focusStartBlocked)
+                if let reason = model.focusBlockedReason {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let fix = model.focusUnavailableFix {
+                        if let fix = model.focusBlockedFix {
                             Spacer(minLength: 8)
                             Button(fix.label) { model.perform(fix) }
                                 .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
@@ -502,7 +502,7 @@
                     if let current = model.ambianceCurrent {
                         AmbianceWave(seed: current.id, character: AmbianceWaveCharacter(current),
                                      // A neutral tile: ink while playing, never lime (DESIGN §12, no tinted icon tile).
-                                     look: model.ambianceLoading ? .waiting : (model.ambiancePlaying ? .playing : .idle))
+                                     look: model.ambiancePlaying && !model.ambianceLoading ? .playing : .idle)  // R-73: same vignette while loading
                             .padding(.horizontal, 6).padding(.vertical, 10)
                     }
                 }
@@ -536,7 +536,7 @@
 
         private var subtitle: String {
             guard let current = model.ambianceCurrent else { return "Choisissez un son ci-dessous" }
-            if model.ambianceLoading { return "\(kindTitle(current.kind)), chargement…" }
+            if model.ambianceLoading { return "Chargement du son…" }  // R-73 (R9A-24)
             return model.ambiancePlaying ? "\(kindTitle(current.kind)), en cours" : "\(kindTitle(current.kind)), écouté en dernier"
         }
 
@@ -737,3 +737,21 @@
         }
     }
 #endif
+
+// R-70 (déc. 11): « Commencer » stays greyed while a prerequisite is missing, and the panel keeps one call to action.
+extension MenuBarPanelModel {
+    /// A missing macOS permission stops recording: a session could not observe anything, so it cannot start.
+    var focusStartBlocked: Bool { !focusAvailable || attentionFix == .permissions }
+
+    var focusBlockedReason: String? {
+        if !focusAvailable { return focusUnavailableReason }
+        return attentionFix == .permissions ? "Accès à rétablir avant de commencer." : nil
+    }
+
+    /// The header already offers the repair (permission) or the recording settings (gear): no second button below.
+    var focusBlockedFix: PanelFix? {
+        guard !focusAvailable else { return nil }
+        if consentOff && focusUnavailableFix == .recording { return nil }
+        return focusUnavailableFix
+    }
+}

@@ -98,6 +98,14 @@ struct GoalongAnalyticsContent: View {
                     GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
                 }
                 exploreSection
+            } else if GoalongActivityEmptyCopy.bannerHoldsEmptyDay(isDay: isDay, isToday: isEmptyTodayCandidate,
+                        eventCount: current.eventCount, incompleteDays: current.incompleteDays,
+                        purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording) {
+                // R-74: recording stopped today with nothing read; the banner above says it and holds the one action.
+                // No second block, no empty « Explorer » list (R-80).
+                if isDay && lanes.noteAvailable {
+                    GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
+                }
             } else {
                 // The note belongs to the empty day: 16 pt under it (8 + the empty state's own 8), not a section gap (UI-14, écran 13/17).
                 VStack(alignment: .leading, spacing: 8) {
@@ -897,6 +905,13 @@ enum GoalongActivityEmptyCopy {
         let since: Date?
     }
 
+    /// R-74 (déc. 1): today, recording off, paused or missing a permission, and nothing read: the recording banner
+    /// already says it with its action, so the page shows no empty state repeating it.
+    static func bannerHoldsEmptyDay(isDay: Bool, isToday: Bool, eventCount: Int, incompleteDays: Int, purged: Bool,
+                                    recording: GoalongRecordingStateNotice.Kind?) -> Bool {
+        !purged && isDay && isToday && eventCount == 0 && incompleteDays == 0 && recording.flatMap(stoppedReason) != nil
+    }
+
     static func copy(isDay: Bool, isToday: Bool, eventCount: Int, incompleteDays: Int, purged: Bool,
                      recording: GoalongRecordingStateNotice.Kind?, storage: StorageStop? = nil) -> Copy {
         if purged {
@@ -926,7 +941,8 @@ enum GoalongActivityEmptyCopy {
         // P-1: a stopped recording comes first (above): only then can the banner show the storage alert, so it always does here.
         if isDay && isToday, let storage {
             let stop = storage.since.map { "Aucune donnée depuis \(GoalongUIFormat.time($0))" } ?? "Aucune nouvelle donnée"
-            let message = "L’enregistrement reprendra seul. Cette coupure restera indiquée dans votre historique."
+            // R-74 (R9C-40): the banner says it resumes on its own and stays visible; this says what it means for the day.
+            let message = "Une absence de données n’est pas une journée à zéro."
             // P-2: an unreadable day still says so, with the stop.
             if incompleteDays > 0 {
                 return Copy(title: "Lecture incomplète",

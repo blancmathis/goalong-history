@@ -180,7 +180,7 @@
         /// The « aujourd’hui » this model last saw; `followToday` compares it with the clock.
         private var seenToday: GoalongCalendarDay
         private var clockObservers: [NSObjectProtocol] = []
-        private var savedSettingsDraft: DashboardSettingsDraft
+        private(set) var savedSettingsDraft: DashboardSettingsDraft
 
         private let state: CaptureState
         private let permissions: PermissionManager

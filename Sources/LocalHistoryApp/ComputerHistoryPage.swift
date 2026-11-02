@@ -937,13 +937,8 @@
                 GoalongEmptyState(
                     title: emptyTimelineTitle,
                     message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
-                        ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.") {
-                    if !needsRetry {
-                        Button("Actualiser") { model.refresh(day: day) }
-                            .buttonStyle(LHSecondaryButtonStyle())
-                            .disabled(model.isLoading || isSnapshotLoading)
-                    }
-                }
+                        ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
+                // R-86: no « Actualiser » here; the day header above already holds the refresh button.
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 8)
                 .accessibilityIdentifier("history-empty-day")

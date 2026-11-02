@@ -76,8 +76,12 @@
 
                         agentCollaborationCard(overview)
                         coverageCard(overview)
-                    } else if recapRuntime.isLoadingDayOverview {
+                    } else if Self.showsSeparateLoadingCard(hasRecap: recapRuntime.recap != nil,
+                                                            loadingOverview: recapRuntime.isLoadingDayOverview) {
                         loadingDataCard
+                    } else if recapRuntime.isLoadingDayOverview {
+                        // R-71: the report card already shows the read in progress, not « Aucun rapport » above a spinner.
+                        EmptyView()
                     } else if recapRuntime.dayOverviewError != nil {
                         // Already shown above the ChatGPT card (readErrorLeads).
                         EmptyView()
@@ -299,13 +303,15 @@
                         .disabled(!canGenerate || recapRuntime.isGenerating)
                         .help(generationBlockedReason ?? "")
                         .accessibilityHint(generationBlockedReason ?? "")
-                    }
-                    // Analyses off: the report's empty state already says it (one message, UI-13C).
-                    // Not connected and no report: the report's empty state says it too, so it is said once (UI-17C, 34).
-                    if let reason = generationBlockedReason, !recapRuntime.isGenerating, consents.isEnabled(.chatGPTAnalysis),
-                       isConnected || recapRuntime.recap != nil {
-                        Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                            .fixedSize().accessibilityHidden(true)
+                        // R-71: the reason sits beside the greyed button it explains.
+                        // Analyses off: the report's empty state already says it (one message, UI-13C).
+                        // Not connected and no report: the report's empty state says it too, so it is said once (UI-17C, 34).
+                        if let reason = generationBlockedReason, !recapRuntime.isGenerating, consents.isEnabled(.chatGPTAnalysis),
+                           isConnected || recapRuntime.recap != nil {
+                            Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 180, alignment: .leading).accessibilityHidden(true)
+                        }
                     }
                 }
             }
@@ -418,6 +424,15 @@
                             .lineSpacing(3)
                             .textSelection(.enabled)
                     }
+                } else if recapRuntime.isLoadingDayOverview {
+                    // R-71 (déc. 1): one state at a time; while the day is read, the report card says so.
+                    HStack(spacing: 12) {
+                        ProgressView().controlSize(.small)
+                        Text("Lecture de la journée dans les sources locales…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
                 } else {
                     GoalongEmptyState(title: "Aucun rapport pour ce jour", message: emptyReportMessage)
                 }
@@ -672,6 +687,9 @@
             if hasMeaningfulData == false { return "Aucune activité à analyser ce jour." }
             return nil
         }
+
+        /// R-71: the separate « Lecture… » card only shows under an existing report; without one, the report card holds it.
+        static func showsSeparateLoadingCard(hasRecap: Bool, loadingOverview: Bool) -> Bool { loadingOverview && hasRecap }
 
         static func emptyReportMessage(analysesEnabled: Bool, connected: Bool, needsUpdate: Bool) -> String {
             if !analysesEnabled {
