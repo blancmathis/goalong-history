@@ -12,6 +12,9 @@ final class T046L5dRenderTests: XCTestCase {
     private let day = Calendar.current.date(from: .init(year: 2026, month: 9, day: 18, hour: 12))!
     private static let enhancedUI = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
     private var enhancedUIBefore: Any?
+    /// Another test may leave a saved access file in the shared defaults: these sheets must start without one.
+    private static let isolatedKeys = ["goalong.website.tokenFilePath", "goalong.website.origin"]
+    private var defaultsBefore: [String: Any] = [:]
 
     override func setUp() async throws {
         try await super.setUp()
@@ -19,12 +22,17 @@ final class T046L5dRenderTests: XCTestCase {
             enhancedUIBefore = NSApplication.shared.accessibilityAttributeValue(Self.enhancedUI)
             NSApplication.shared.accessibilitySetValue(true, forAttribute: Self.enhancedUI)
         }
+        for key in Self.isolatedKeys {
+            if let value = UserDefaults.standard.object(forKey: key) { defaultsBefore[key] = value }
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 
     override func tearDown() async throws {
         await MainActor.run {
             NSApplication.shared.accessibilitySetValue(enhancedUIBefore ?? false, forAttribute: Self.enhancedUI)
         }
+        for key in Self.isolatedKeys { UserDefaults.standard.set(defaultsBefore[key], forKey: key) }
         try await super.tearDown()
     }
 
@@ -36,9 +44,10 @@ final class T046L5dRenderTests: XCTestCase {
         XCTAssertTrue(seen.contains("Choisir export.xml…"))
         XCTAssertTrue(seen.contains("Oublier ce fichier"), "A chosen file can be forgotten")
         XCTAssertTrue(seen.contains("Choisir les dates et les données"))
-        XCTAssertTrue(seen.contains("Du") && seen.contains("Au"), "The two dates of the range; saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Du") && seen.contains("au"), "The two dates of the range; saw \(seen.sorted())")
         for group in GoalongHealthGroup.allCases { XCTAssertTrue(seen.contains(group.title), "A switch for \(group.title)") }
-        XCTAssertEqual(isEnabled("Préparer l’aperçu local", in: rendered), true, "Every group is chosen, so the preview can be prepared")
+        XCTAssertEqual(isEnabled("Préparer l’aperçu local", in: rendered), false,
+                       "UI-14: after a refused file, preparing again would read the same file; change the file, dates or data")
         XCTAssertEqual(isEnabled("Fermer", in: rendered), true, "Nothing is running, so the sheet can be closed")
     }
 
@@ -56,7 +65,7 @@ final class T046L5dRenderTests: XCTestCase {
         XCTAssertTrue(seen.contains("Choisir export.xml…"), "saw \(seen.sorted())")
         XCTAssertFalse(seen.contains("Oublier ce fichier"))
         XCTAssertFalse(seen.contains("Choisir les dates et les données"), "Dates and groups appear once a file is chosen")
-        XCTAssertTrue(seen.contains("Données déclaratives · aucun score de productivité calculé"))
+        XCTAssertFalse(seen.contains("Données déclaratives · aucun score de productivité calculé"), "UI-14: the footer note is gone")
     }
 
     @MainActor func testRhythmStudioAsksForAProjectAndARange() {
@@ -66,7 +75,7 @@ final class T046L5dRenderTests: XCTestCase {
         XCTAssertTrue(seen.contains("Fermer"))
         XCTAssertTrue(seen.contains("Préparer la sélection locale"), "saw \(seen.sorted())")
         // The two text fields are empty, so their placeholders are not in the accessibility tree.
-        for label in ["Début", "Fin", "Inclure les extraits de contexte enrichi déjà autorisés", "Vous choisirez ensuite les champs transmis au site."] {
+        for label in ["Début", "Fin", "Inclure les textes de fenêtres déjà autorisés", "Vous choisirez ensuite les champs transmis au site."] {
             XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
         }
         XCTAssertEqual(isEnabled("Préparer la sélection locale", in: rendered), false, "No project is typed yet, so nothing can be prepared")
@@ -78,7 +87,7 @@ final class T046L5dRenderTests: XCTestCase {
         XCTAssertTrue(seen.contains("Comprendre mon travail"), "saw \(seen.sorted())")
         XCTAssertTrue(seen.contains("Fermer"))
         XCTAssertTrue(seen.contains("Ouvrir une analyse ou une sélection enregistrée…"))
-        XCTAssertTrue(seen.contains("Activité depuis"), "The computer history is on by default; saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Activité depuis le"), "The computer history is on by default; saw \(seen.sorted())")
         for key in GoalongProfileAnalysis.modules where key != "ai" {
             XCTAssertTrue(seen.contains(GoalongProfileAnalysis.labels[key] ?? key), "A switch for the module \(key); saw \(seen.sorted())")
         }
@@ -146,7 +155,7 @@ final class T046L5dRenderTests: XCTestCase {
     /// Click without a window: the accessibility action of the off-screen view, nothing is shown.
     @MainActor func testProfileStudioConversationSwitchRevealsTheConversationStartDate() {
         let rendered = host(GoalongProfileStudio(onSend: { _ in }, onClose: {}, localOnly: true, initialDay: day))
-        let label = "Historique des conversations — utiliser les conversations IA comme contexte"
+        let label = "Conversations IA, comme contexte"
         XCTAssertFalse(strings(of: rendered).contains("Conversations actives depuis"))
         XCTAssertTrue(press(label, in: rendered), "The switch answers to the accessibility press; saw \(strings(of: rendered).sorted())")
         settle()
