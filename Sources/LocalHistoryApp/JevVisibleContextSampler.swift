@@ -139,7 +139,7 @@ enum JevVisibleTextPolicy {
 /// Browser text is restricted to the focused window's current web area.
 enum JevVisibleTextReader {
     static func capture(processIdentifier pid: pid_t, browser: Bool) -> String? {
-        guard AXIsProcessTrusted(), !IsSecureEventInputEnabled(), !GoalongGlobalPause.isPaused(),
+        guard GoalongAccessibilityTrust.isTrusted, !IsSecureEventInputEnabled(), !GoalongGlobalPause.isPaused(),
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return nil }
         let deadline = ProcessInfo.processInfo.systemUptime + 0.20
         let app = AXAccess.application(pid)
