@@ -99,7 +99,7 @@ struct ConcentrationHubHeader: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Les listes de sites et d’apps à bloquer viennent du module Blocage.")
                                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                            Button("Activer le blocage") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
+                            Button("Activer Blocage") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
                                 .buttonStyle(LHPrimaryButtonStyle())
                                 .accessibilityIdentifier("module-enable-blocking")
                         }
