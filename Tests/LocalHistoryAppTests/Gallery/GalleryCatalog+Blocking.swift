@@ -52,7 +52,7 @@ extension GalleryCatalog {
                 AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.awaitingApproval)).padding(18))
             },
             panel("programme/protection-indisponible", width: 440, clock: .injected) { _ in
-                AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.failed("Service de protection indisponible."))).padding(18))
+                AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.failed(GuardFailure.registrationRefused))).padding(18))
             },
             panel("programme/protection-renforcee", width: 440, clock: .injected) { _ in
                 AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.running)).padding(18))

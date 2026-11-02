@@ -4,7 +4,7 @@
 
     struct SharePage: View {
         @ObservedObject var model: DashboardViewModel
-        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+        @ObservedObject var consents = GoalongCapabilityConsentStore.shared
 
         /// VoiceOver says which settings open; it starts with the visible « Ouvrir ».
         static let openRecordingSettingsAccessibilityLabel = "Ouvrir les réglages d’enregistrement"
@@ -23,8 +23,11 @@
                         "Choisissez ce que le fichier montre de chaque app et site."
                 ) {
                     HStack(spacing: 10) {
-                        StatusPill(title: "Enregistré sur ce Mac", symbol: "internaldrive", tint: LHTheme.secondaryText)
-                            .padding(.trailing, 6)
+                        // R-87 (R9C-50): the pill never says « Enregistré » while recording is off.
+                        if consents.isEnabled(.localComputerHistory) {
+                            StatusPill(title: "Enregistré sur ce Mac", symbol: "internaldrive", tint: LHTheme.secondaryText)
+                                .padding(.trailing, 6)
+                        }
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay,
                                              earliest: model.snapshot.availableDays.min())
                         Button {
@@ -139,6 +142,8 @@
                 createButton
                     .modifier(GoalongMainActionStyle(primary: proof.action != .openRecordingSettings))
                     .disabled(!proof.canExport || model.isExportingShare)
+                    // R-87 (R9C-48): the held-back button says why when hovered, as the line next to it does.
+                    .help(proof.canExport ? "" : proof.detail)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
