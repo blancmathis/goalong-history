@@ -79,7 +79,7 @@ enum GoalongAnalyticsPreview {
             stages: [.init(id: "Sommeil léger", seconds: 4.0 * 3600 + 5.0 * 60), .init(id: "Sommeil paradoxal", seconds: 100.0 * 60),
                      .init(id: "Sommeil profond", seconds: 70.0 * 60), .init(id: "Éveillé", seconds: 25.0 * 60)],
             steps: 8_420, workouts: 1, workoutSeconds: 45.0 * 60,
-            label: "Sommeil compté sur ce jour, coupé à minuit dans le fuseau horaire de l’import")
+            label: "Sommeil compté sur ce jour, réparti à minuit dans le fuseau horaire de l’import")
         let devices = GoalongOtherDevicesDay(devices: [
             .init(id: "phone", name: "iPhone", screenOnSeconds: 2.0 * 3600 + 10.0 * 60, duringGapsSeconds: 50.0 * 60, estimated: true),
             .init(id: "tablet", name: "iPad", screenOnSeconds: 35.0 * 60, duringGapsSeconds: 15.0 * 60, estimated: false),
@@ -91,7 +91,7 @@ enum GoalongAnalyticsPreview {
             .init(id: "health", title: "Apple Santé (import)", state: .ready, detail: "Import du 17 septembre."),
         ]
         return GoalongActivityLanes(agenda: agenda, code: code, sleep: sleep, otherDevices: devices,
-                                    note: "Journée coupée par la revue client ; maquettes validées en fin d’après-midi.",
+                                    note: "Journée raccourcie par la revue client ; maquettes validées en fin d’après-midi.",
                                     noteAvailable: true, sources: sources + systemSources)
     }
 
