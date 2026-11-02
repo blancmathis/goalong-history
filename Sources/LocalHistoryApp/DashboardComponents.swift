@@ -229,9 +229,11 @@
         let tint: Color
         var accessibilityLabel: String?
 
+        /// Shown when a caller passes an empty title: a pill always has words, and never stops the app (R281-10).
+        static let fallbackTitle = "Statut"
+
         init(title: String, symbol: String, tint: Color, accessibilityLabel: String? = nil) {
-            assert(!title.trimmingCharacters(in: .whitespaces).isEmpty, "A status pill always says what it signals")
-            self.title = title
+            self.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.fallbackTitle : title
             self.symbol = symbol
             self.tint = tint
             self.accessibilityLabel = accessibilityLabel

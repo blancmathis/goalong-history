@@ -22,8 +22,8 @@
                 .lineLimit(1)
                 .padding(.horizontal, GoalongControlMetrics.inset(controlSize) + 2)
                 .frame(minHeight: GoalongControlMetrics.height(controlSize))
-                // Disabled (déc. 3, T-043 R-5): the one shared disabled look, a flat outline with disabledText at full
-                // opacity (≥ 3.3:1), never a faded lime.
+                // Disabled (déc. 3, T-043 R-5): the one shared disabled look, a faint fill without edge and disabledText
+                // at full opacity (≥ 3:1), never a faded lime.
                 .foregroundStyle(!isEnabled ? LHTheme.disabledText : destructive ? .white : LHTheme.onAccent)
                 .background {
                     if isEnabled {

@@ -82,7 +82,8 @@ struct AmbiancePageContent: View {
                         AmbiancePlayer(source: current, state: state, volume: $volume, actions: actions)
                     }
                     if let orchestra = pack("orchestra"), orchestra.status != .installed {
-                        AmbianceOrchestraSetup(pack: orchestra, pieces: pieces.count, actions: actions)
+                        // Déc. 7 (R281-8): lime only when no player offers « Écouter », one lime per screen.
+                        AmbianceOrchestraSetup(pack: orchestra, pieces: pieces.count, prominent: current == nil, actions: actions)
                     }
                     if case .error(let message) = state {
                         GoalongNote(message, symbol: "exclamationmark.triangle", tone: .warning)
@@ -331,6 +332,8 @@ private struct AmbiancePlayer: View {
 private struct AmbianceOrchestraSetup: View {
     let pack: AmbiancePackState
     let pieces: Int
+    /// The screen's one lime action: downloading is then the only useful step.
+    var prominent = false
     let actions: AmbianceActions
 
     var body: some View {
@@ -357,12 +360,10 @@ private struct AmbianceOrchestraSetup: View {
                     if case .downloading = pack.status {
                         Button("Annuler") { actions.cancel(pack.id) }.buttonStyle(LHQuietButtonStyle())
                             .accessibilityIdentifier("ambiance-cancel-\(pack.id)")
+                    } else if prominent {
+                        downloadButton.buttonStyle(LHPrimaryButtonStyle())
                     } else {
-                        Button { actions.download(pack.id) } label: {
-                            Label(pack.status == .notInstalled ? "Télécharger" : "Réessayer", systemImage: "arrow.down")
-                        }
-                        .buttonStyle(LHSecondaryButtonStyle())
-                        .accessibilityIdentifier("ambiance-download-\(pack.id)")
+                        downloadButton.buttonStyle(LHSecondaryButtonStyle())
                     }
                 }
             }
@@ -378,6 +379,13 @@ private struct AmbianceOrchestraSetup: View {
     }
 
     private var downloading: Bool { if case .downloading = pack.status { return true } else { return false } }
+
+    private var downloadButton: some View {
+        Button { actions.download(pack.id) } label: {
+            Label(pack.status == .notInstalled ? "Télécharger" : "Réessayer", systemImage: "arrow.down")
+        }
+        .accessibilityIdentifier("ambiance-download-\(pack.id)")
+    }
 }
 
 // MARK: - Rows and tiles

@@ -21,13 +21,13 @@
         }
     }
 
-    /// The one disabled look of every button style (déc. 3, T-043 R-5): no fill, a dashed hairline, so it reads as
-    /// off next to a raised secondary button or a lime primary one; its label is `LHTheme.disabledText`.
+    /// The one disabled look of every button style (déc. 3, T-043 R-5, R281-3): a faint flat fill, no edge, so it reads
+    /// as off next to a raised, edged secondary button or a lime primary one; its label is `LHTheme.disabledText`
+    /// (≥ 3:1). A dashed edge stays for « add » chips only (« Tout le Mac + »), never for a disabled control.
     struct GoalongDisabledControlSurface: View {
         var corner: CGFloat = LHTheme.controlRadius
         var body: some View {
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .strokeBorder(LHTheme.controlBorder, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+            RoundedRectangle(cornerRadius: corner, style: .continuous).fill(LHTheme.text.opacity(0.05))
         }
     }
 
@@ -364,21 +364,19 @@
             isOn ? "Activé, verrouillé" : "Désactivé, verrouillé"
         }
 
+        /// Off when a `GoalongSwitchStyle` toggle already says « verrouillé » in its own representation: the value is
+        /// set once (R281-6).
+        var speaksLockedValue = true
+
         var body: some View {
             let small = controlSize == .small || controlSize == .mini
-            HStack(spacing: 5) {
-                if !isEnabled {
-                    // The padlock sits beside the switch, secondary ink (≥ 5:1 on every surface).
-                    Image(systemName: "lock.fill").font(.system(size: small ? 9 : 10, weight: .semibold))
-                        .foregroundStyle(LHTheme.secondaryText)
-                        .accessibilityHidden(true)
-                }
-                Button {
-                    withAnimation(reduceMotion ? nil : LHTheme.press) { isOn.toggle() }
-                } label: { EmptyView() }
-                    .buttonStyle(GoalongSwitchButtonStyle(isOn: isOn, small: small))
-            }
-            .modifier(GoalongLockedSwitchAccessibility(locked: !isEnabled, isOn: isOn))
+            // The padlock sits in the knob (`GoalongSwitchButtonStyle`): same size locked or not, so the controls beside
+            // it never move (R281-6).
+            Button {
+                withAnimation(reduceMotion ? nil : LHTheme.press) { isOn.toggle() }
+            } label: { EmptyView() }
+                .buttonStyle(GoalongSwitchButtonStyle(isOn: isOn, small: small))
+                .modifier(GoalongLockedSwitchAccessibility(locked: !isEnabled && speaksLockedValue, isOn: isOn))
         }
     }
 
@@ -441,6 +439,15 @@
                                 .strokeBorder(LHTheme.switchKnobEdge, lineWidth: 1)
                         }
                     }
+                    .overlay {
+                        if !isEnabled {
+                            // Locked (déc. 13): a padlock in the knob, the switch keeps its size and position. On the
+                            // on knob (page colour) secondary ink ≥ 5:1; on the pale off knob a fixed dark ink ≥ 4.5:1.
+                            Image(systemName: "lock.fill").font(.system(size: small ? 7 : 8, weight: .bold))
+                                .foregroundStyle(isOn ? LHTheme.secondaryText : Color(nsColor: LHTheme.rgb(0x4C5747)))
+                                .accessibilityHidden(true)
+                        }
+                    }
                     .frame(width: knob + stretch, height: knob)
                     .padding(.horizontal, 3)
             }
@@ -474,16 +481,16 @@
             Group {
                 switch layout {
                 case .switchOnly:
-                    GoalongSwitch(isOn: configuration.$isOn)
+                    GoalongSwitch(isOn: configuration.$isOn, speaksLockedValue: false)
                 case .inline:
                     HStack(spacing: 8) {
                         label
-                        GoalongSwitch(isOn: configuration.$isOn)
+                        GoalongSwitch(isOn: configuration.$isOn, speaksLockedValue: false)
                     }
                 case .row:
                     HStack(alignment: .center, spacing: 16) {
                         label.frame(maxWidth: .infinity, alignment: .leading)
-                        GoalongSwitch(isOn: configuration.$isOn)
+                        GoalongSwitch(isOn: configuration.$isOn, speaksLockedValue: false)
                     }
                 }
             }

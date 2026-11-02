@@ -86,9 +86,17 @@
     /// The one named action of an empty state: primary (lime) when it is the screen's recommended step, otherwise
     /// secondary (déc. 7).
     struct GoalongEmptyStateAction: View {
+        /// Shown when a caller passes an empty title, never a crash (R281-10).
+        static let fallbackTitle = "Continuer"
         let title: String
         var prominent = true
         let action: () -> Void
+
+        init(title: String, prominent: Bool = true, action: @escaping () -> Void) {
+            self.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.fallbackTitle : title
+            self.prominent = prominent
+            self.action = action
+        }
 
         var body: some View {
             if prominent {
@@ -103,7 +111,6 @@
         /// One sentence and one named action (« Ouvrir les réglages d’enregistrement », never « Ouvrir »).
         init(title: String, message: String, kind: GoalongStateKind? = nil, actionTitle: String,
              prominent: Bool = true, action: @escaping () -> Void) {
-            assert(!actionTitle.trimmingCharacters(in: .whitespaces).isEmpty, "An empty-state action needs a title")
             self.init(uncheckedTitle: title, message: message, kind: kind) {
                 GoalongEmptyStateAction(title: actionTitle, prominent: prominent, action: action)
             }

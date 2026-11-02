@@ -16,7 +16,7 @@ struct GoalongHelpButton: View {
             Image(systemName: "info.circle").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 24, height: 24).contentShape(Rectangle())
         }
-            .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6, readableWhenDisabled: true)).accessibilityLabel("En savoir plus")
+            .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6)).accessibilityLabel("En savoir plus")
             .popover(isPresented: $presented) {
                 Text(text).font(.system(size: 13)).padding(18).frame(width: 320, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
