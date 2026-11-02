@@ -112,6 +112,38 @@ final class GoalongUXOptimizationTests: XCTestCase {
                        "Détail effacé")
     }
 
+    /// DEF-03 (T-046): with the « disque plein » banner on, the empty day never promises minutes to come.
+    func testEmptyTodayNamesAnInterruptedStorageInsteadOfPromisingMinutes() {
+        typealias Empty = GoalongActivityEmptyCopy
+        func today(_ recording: GoalongRecordingStateNotice.Kind?, storage: CaptureStorageFailureKind?, events: Int = 0) -> Empty.Copy {
+            Empty.copy(isDay: true, isToday: true, eventCount: events, incompleteDays: 0, purged: false,
+                       recording: recording, storage: storage)
+        }
+        let full = today(nil, storage: .diskFull)
+        XCTAssertEqual(full.title, "Aucune activité enregistrée aujourd’hui")
+        XCTAssertTrue(full.message.contains("disque est plein"), full.message)
+        XCTAssertFalse(full.message.contains("premières minutes"))
+        XCTAssertFalse(full.offersHistory)
+        for kind in [CaptureStorageFailureKind.permissionDenied, .unavailable] {
+            let copy = today(nil, storage: kind)
+            XCTAssertEqual(copy.title, "Aucune activité enregistrée aujourd’hui", "\(kind)")
+            XCTAssertFalse(copy.message.contains("premières minutes"), "\(kind)")
+        }
+        XCTAssertTrue(today(.off, storage: .diskFull).message.contains("désactivé"), "A stopped recording stays the first cause")
+        XCTAssertEqual(today(nil, storage: .diskFull, events: 3).title, "Les premières traces sont reçues")
+        XCTAssertEqual(Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false,
+                                  recording: nil, storage: .diskFull).title, "Pas encore d’enregistrement",
+                       "A past day is not explained by today's storage")
+    }
+
+    /// DEF-02 (T-046): « Classement non autorisé » never sits next to a switch shown on. Consent is read
+    /// directly: an empty definition or history off must not hide a missing consent (review of PR #205).
+    func testAutomaticClassificationSwitchIsOffWhileNotAllowed() {
+        XCTAssertFalse(GoalongWorkPage.automaticSwitchShowsOn(automatic: true, consented: false))
+        XCTAssertTrue(GoalongWorkPage.automaticSwitchShowsOn(automatic: true, consented: true))
+        XCTAssertFalse(GoalongWorkPage.automaticSwitchShowsOn(automatic: false, consented: true))
+    }
+
     func testUnknownWorkIsSaidInWordsNotAsADash() {
         XCTAssertNil(GoalongActivityHeadline.workFigure(known: false, seconds: 0), "UI-clair-02: no giant « — »")
         XCTAssertNil(GoalongActivityHeadline.workFigure(known: true, seconds: nil))

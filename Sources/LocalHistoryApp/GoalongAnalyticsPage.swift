@@ -118,6 +118,7 @@ struct GoalongAnalyticsPage: View {
                                 lanes: lanes,
                                 workStatus: previewActive ? .preview : workStatus,
                                 recording: previewActive ? nil : recordingKind,
+                                storage: previewActive ? nil : model.runtime.storageFailure,
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { model.selectSection(.work) },
                                 onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },

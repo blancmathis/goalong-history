@@ -48,6 +48,8 @@ struct GoalongAnalyticsContent: View {
     var workStatus = GoalongWorkStatus.preview
     /// Why nothing new is recorded right now, as the banner above the page says; nil when recording runs.
     var recording: GoalongRecordingStateNotice.Kind? = nil
+    /// Disk full or unwritable, as the attention banner at the top of the window says.
+    var storage: CaptureStorageFailureKind? = nil
     var onDay: (Date) -> Void = { _ in }
     var onWork: () -> Void = {}
     /// Opens the correction of the day on screen; the task is the one clicked, if any.
@@ -781,7 +783,7 @@ struct GoalongAnalyticsContent: View {
     @ViewBuilder private var emptyState: some View {
         let copy = GoalongActivityEmptyCopy.copy(isDay: isDay, isToday: isEmptyTodayCandidate,
             eventCount: current.eventCount, incompleteDays: current.incompleteDays,
-            purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording)
+            purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording, storage: storage)
         VStack(alignment: .leading, spacing: 12) {
             GoalongEmptyState(title: copy.title, message: copy.message) {
                 if copy.offersHistory {
@@ -864,14 +866,15 @@ enum GoalongActivityEmptyCopy {
     }
 
     static func copy(isDay: Bool, isToday: Bool, eventCount: Int, incompleteDays: Int, purged: Bool,
-                     recording: GoalongRecordingStateNotice.Kind?) -> Copy {
+                     recording: GoalongRecordingStateNotice.Kind?, storage: CaptureStorageFailureKind? = nil) -> Copy {
         if purged {
             return Copy(title: "Détail effacé",
                 message: "Ce jour a été effacé après la durée de conservation, avant que Goalong garde un résumé de chaque journée. Une absence de données n’est pas une journée à zéro.",
                 offersHistory: false)
         }
         // Today, a stopped recording is the known cause, never a promise of minutes to come; a real read error still shows.
-        if isDay && isToday && eventCount == 0, let recording, let reason = stoppedReason(recording) {
+        if isDay && isToday && eventCount == 0,
+           let reason = recording.flatMap(stoppedReason) ?? storage.map(storageReason) {
             // An unreadable day must not read as "nothing recorded": keep the cause, say the reading is incomplete.
             if incompleteDays > 0 {
                 return Copy(title: "Lecture incomplète",
@@ -897,6 +900,15 @@ enum GoalongActivityEmptyCopy {
         }
         return Copy(title: "Pas encore d’enregistrement",
             message: "Choisissez une autre date ou consultez les sources dans l’historique. Une absence de données n’est pas une journée à zéro.")
+    }
+
+    /// The same cause as the « Enregistrement interrompu » banner at the top of the window.
+    private static func storageReason(_ kind: CaptureStorageFailureKind) -> String {
+        switch kind {
+        case .diskFull: return "Le disque est plein : rien de nouveau n’est enregistré avant que de l’espace soit libéré."
+        case .permissionDenied, .unavailable:
+            return "L’enregistrement est interrompu : rien de nouveau n’est enregistré tant que Goalong ne peut pas écrire son historique."
+        }
     }
 
     private static func stoppedReason(_ kind: GoalongRecordingStateNotice.Kind) -> String? {
