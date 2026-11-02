@@ -79,6 +79,11 @@ extension GalleryCatalog {
             }),
             dashboard("historique/vide", section: .history, sizes: [.window, .full(1240)]),
             dashboard("historique/journee-vide", section: .history, sizes: [.window, .full(1240)], fixture: .recordingOn),
+            // R4e-suite B: the gallery clock is 23 Oct, so the entry above shows today (« pas encore »); this one shows the day before.
+            dashboard("historique/journee-passee-vide", section: .history, fixture: .recordingOn,
+                      configure: { model, _ in
+                          model.selectedDay = GalleryClock.calendar.date(byAdding: .day, value: -1, to: GalleryClock.today) ?? GalleryClock.today
+                      }),
             dashboard("historique/chronologie", section: .history, sizes: [.window, .minimum, .full(1240)],
                       fixture: .realistic),
             // R-61 (T-043 R2c, décision 1): « enregistrement/journal » drew the same PNG as historique/vide (section
