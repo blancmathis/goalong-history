@@ -13,7 +13,8 @@ final class GoalongDefaultsIsolationTests: XCTestCase {
 
     /// The account's real preference folder (cfprefsd ignores CFFIXED_USER_HOME).
     private var realPreferences: URL {
-        URL(fileURLWithPath: GoalongHeadlessSuitePlistPath("probe") ?? "/nonexistent/probe.plist").deletingLastPathComponent()
+        let home = getpwuid(getuid()).flatMap { $0.pointee.pw_dir.map { String(cString: $0) } } ?? NSHomeDirectory()
+        return URL(fileURLWithPath: home).appendingPathComponent("Library/Preferences", isDirectory: true)
     }
 
     private func isolatedSuite() throws -> (name: String, suite: UserDefaults) {
@@ -76,12 +77,49 @@ final class GoalongDefaultsIsolationTests: XCTestCase {
         let legacy = try make("\(Self.prefix)\(UUID().uuidString)", age: 3600)
         let recentLegacy = try make("\(Self.prefix)\(UUID().uuidString)")
         let live = try make("\(Self.prefix)\(getpid())-\(UUID().uuidString)")
-        defer { for url in [dead, legacy, recentLegacy, live] { try? FileManager.default.removeItem(at: url) } }
-        XCTAssertGreaterThanOrEqual(GoalongHeadlessSweepOrphanedTestPreferences(), 2)
+        // Tour 3: names are parsed strictly. A recent legacy UUID whose first block is all digits is not `<pid>-…`
+        // (here a dead "pid" 12345678); a tagged `<pid>-gallery-<UUID>` of a dead process is.
+        let digitLegacy = try make("\(Self.prefix)12345678-\(UUID().uuidString.dropFirst(9))")
+        let deadGallery = try make("\(Self.prefix)99999-gallery-\(UUID().uuidString)")
+        defer { for url in [dead, legacy, recentLegacy, live, digitLegacy, deadGallery] { try? FileManager.default.removeItem(at: url) } }
+        XCTAssertGreaterThanOrEqual(GoalongHeadlessSweepOrphanedTestPreferences(), 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: digitLegacy.path), "a recent legacy UUID was read as a dead pid")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: deadGallery.path), "a dead process's gallery file stays")
         XCTAssertFalse(FileManager.default.fileExists(atPath: dead.path), "a dead process's file stays")
         XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path), "an old UUID-only file stays")
         XCTAssertTrue(FileManager.default.fileExists(atPath: recentLegacy.path), "a recent UUID-only file may be live")
         XCTAssertTrue(FileManager.default.fileExists(atPath: live.path), "a live process's file was removed")
+    }
+
+    /// Tour 3: a suite opened with a bare name (as the 83 test call sites do) never reaches the account's
+    /// ~/Library/Preferences, not even after `removePersistentDomain` and cfprefsd's late write: its file lives only in
+    /// the throwaway HOME. The name is `goalong-tests-defaults-<pid>-bare-<UUID>` so that, on code without the
+    /// isolation, the next run's sweep removes the file this red test leaks.
+    func testBareSuiteNameNeverReachesTheRealPreferences() throws {
+        let home = try XCTUnwrap(ProcessInfo.processInfo.environment["GOALONG_TEST_HOME"]
+            ?? getenv("GOALONG_TEST_HOME").map { String(cString: $0) })
+        let name = "\(Self.prefix)\(getpid())-bare-\(UUID().uuidString)"
+        let real = realPreferences.appendingPathComponent(name + ".plist")
+        let isolated = URL(fileURLWithPath: home).appendingPathComponent("goalong-test-preferences/\(name).plist")
+        let suite = try XCTUnwrap(UserDefaults(suiteName: name))
+        suite.set("bare", forKey: "t043.t1.tour3")
+        XCTAssertTrue(suite.synchronize())
+        XCTAssertEqual(UserDefaults(suiteName: name)?.string(forKey: "t043.t1.tour3"), "bare")
+        XCTAssertEqual(suite.persistentDomain(forName: name)?["t043.t1.tour3"] as? String, "bare")
+        let written = Date().addingTimeInterval(15)
+        while !FileManager.default.fileExists(atPath: isolated.path), Date() < written {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: isolated.path), "no plist in the throwaway HOME: \(isolated.path)")
+        suite.removePersistentDomain(forName: name)
+        XCTAssertNil(suite.persistentDomain(forName: name)?["t043.t1.tour3"])
+        // cfprefsd writes seconds later: watch the real folder for 15 s.
+        let deadline = Date().addingTimeInterval(15)
+        repeat {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: real.path), "leaked into the real Preferences: \(real.path)")
+            if FileManager.default.fileExists(atPath: real.path) { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        } while Date() < deadline
     }
 
     /// R-286 F2: in a gallery session a `GoalongDefaults.standard` read is counted (the picture becomes `.leaky`)

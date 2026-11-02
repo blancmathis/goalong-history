@@ -705,9 +705,44 @@ fi
 # string literals kept intact ("https://…" no longer hides the rest of the line). Allowed on purpose: `@AppStorage`
 # without `store:`. In the app it is the standard domain as before; in a test process the headless hook routes
 # +standardUserDefaults (which @AppStorage uses) to the throwaway suite, and every test target links that hook.
+# T-043 T1 tour 3: the hook also keeps every bare suite name (`UserDefaults(suiteName: "x-<UUID>")`) in the throwaway
+# HOME. So `UserDefaults(suiteName:` / `initWithSuiteName:` is refused outside the test targets that link the hook (and
+# GoalongDefaults.swift), and every .testTarget in Package.swift must depend on GoalongHeadlessTestSupport.
 if ! python3 - "$ROOT_DIR" <<'PY'
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
+hook = "GoalongHeadlessTestSupport"
+
+def test_targets(package):
+    """(name, path, dependencies text) of each .testTarget( … ) call, parentheses balanced, strings skipped."""
+    found, start = [], 0
+    while (start := package.find(".testTarget(", start)) >= 0:
+        i, depth, string = start + len(".testTarget("), 1, False
+        while i < len(package) and depth:
+            c = package[i]
+            if string:
+                if c == "\\": i += 1
+                elif c == '"': string = False
+            elif c == '"': string = True
+            elif c == "(": depth += 1
+            elif c == ")": depth -= 1
+            i += 1
+        body = package[start:i]
+        name = re.search(r'name\s*:\s*"([^"]+)"', body)
+        path = re.search(r'path\s*:\s*"([^"]+)"', body)
+        deps = re.search(r'dependencies\s*:\s*\[([^\]]*)\]', body)
+        name = name.group(1) if name else "?"
+        found.append((name, (path.group(1) if path else f"Tests/{name}").rstrip("/"), deps.group(1) if deps else ""))
+        start = i
+    return found
+
+hooked, unhooked = [], []
+for name, path, deps in test_targets((root / "Package.swift").read_text(encoding="utf-8")):
+    (hooked if f'"{hook}"' in deps else unhooked).append(path)
+    if f'"{hook}"' not in deps:
+        print(f"Package.swift: testTarget {name} does not depend on {hook} (its tests would reach this Mac's preferences)", file=sys.stderr)
+hooked.append(f"Tests/{hook}")
+suite_pattern = re.compile(r"\bUserDefaults\s*\(\s*suiteName\s*:|\binitWithSuiteName\s*:")
 allowed = {"Features/AppleScreenTime/Sources/GoalongDefaults.swift",
            "Tests/LocalHistoryAppTests/GoalongDefaultsIsolationTests.swift",
            "Tests/GoalongHeadlessTestSupport/GoalongHeadlessTestSupport.m"}
@@ -757,9 +792,22 @@ for folder in ("Sources", "Features", "Tests"):
         for match in pattern.finditer(code):
             number = code.count("\n", 0, match.start()) + 1
             bad.append(f"{relative}:{number}: {lines[number - 1].strip() if number <= len(lines) else match.group(0)}")
+for folder in ("Sources", "Features", "Tests"):
+    for path in sorted(p for p in (root / folder).rglob("*") if p.suffix in (".swift", ".m", ".h")):
+        relative = path.relative_to(root).as_posix()
+        if relative == "Features/AppleScreenTime/Sources/GoalongDefaults.swift":
+            continue
+        if any(relative.startswith(target + "/") for target in hooked):
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        code = without_comments(text)
+        lines = text.splitlines()
+        for match in suite_pattern.finditer(code):
+            number = code.count("\n", 0, match.start()) + 1
+            bad.append(f"{relative}:{number}: suite outside the hooked test targets: {lines[number - 1].strip() if number <= len(lines) else match.group(0)}")
 for entry in bad:
     print(entry, file=sys.stderr)
-sys.exit(1 if bad else 0)
+sys.exit(1 if bad or unhooked else 0)
 PY
 then
   echo "Preferences outside GoalongDefaults (use GoalongDefaults.standard: tests must never reach this Mac's settings)." >&2

@@ -9,7 +9,9 @@ FOUNDATION_EXPORT void GoalongHeadlessCleanLeakedDefaultSuites(void);
 // Same, for one suite name, and only when this process created it (other suites stay tracked).
 FOUNDATION_EXPORT void GoalongHeadlessCleanLeakedDefaultSuite(NSString * _Nonnull name);
 
-// Real path of the plist cfprefsd writes for a suite (the account home, not CFFIXED_USER_HOME).
+// Path of the plist cfprefsd writes for a suite. A bare test suite name lives in the throwaway HOME
+// (`<HOME>/goalong-test-preferences/<name>.plist`, T-043 T1 tour 3); `com.apple.*` and the global
+// domains stay in the account's real ~/Library/Preferences (not CFFIXED_USER_HOME).
 FOUNDATION_EXPORT NSString * _Nullable GoalongHeadlessSuitePlistPath(NSString * _Nonnull name);
 
 // Deletes ~/Library/Preferences/goalong-tests-defaults-*.plist left by test processes that are gone:

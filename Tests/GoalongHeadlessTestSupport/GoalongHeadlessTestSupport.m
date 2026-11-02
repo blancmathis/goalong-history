@@ -354,13 +354,44 @@ static NSString *realHomeDirectory(void) {
     return entry && entry->pw_dir ? [NSString stringWithUTF8String:entry->pw_dir] : NSHomeDirectory();
 }
 
+// T-043 T1 tour 3: every suite a test names (`UserDefaults(suiteName: "goalong-permission-tests-<UUID>")`, the
+// gallery's `goalong-gallery-<UUID>`, …) lives in the throwaway HOME, never in ~/Library/Preferences, where cfprefsd
+// writes the plist seconds after the process exits, out of reach of any cleanup. A bare name becomes
+// `<throwaway HOME>/goalong-test-preferences/<name>` in initWithSuiteName: and in the persistent-domain methods, so
+// `removePersistentDomain(forName:)` with the bare name reaches the same file. Absolute names, NSGlobalDomain, the
+// other NS*Domain names, `com.apple.*`, `kCFPreferences*` and `.GlobalPreferences` stay as they are.
+static NSString *testPreferencesFolder;
+
+static NSString *throwawayPreferencesFolder(void) {
+    const char *home = getenv("GOALONG_TEST_HOME");
+    if (!home || !*home) home = getenv("CFFIXED_USER_HOME");
+    NSString *base = (home && *home) ? [NSString stringWithUTF8String:home] : NSTemporaryDirectory();
+    return [base stringByAppendingPathComponent:@"goalong-test-preferences"];
+}
+
+static BOOL keepsItsDomain(NSString *name) {
+    if (![name isKindOfClass:NSString.class] || name.length == 0) return YES;
+    if ([name hasPrefix:@"/"] || [name hasPrefix:@"~"] || [name hasPrefix:@"."] || [name containsString:@"/"]) return YES;
+    return [name isEqualToString:NSGlobalDomain] || [name isEqualToString:NSArgumentDomain]
+        || [name isEqualToString:NSRegistrationDomain] || [name hasPrefix:@"com.apple."] || [name hasPrefix:@"kCFPreferences"];
+}
+
+static NSString *isolatedDomainName(NSString *name) {
+    if (!testPreferencesFolder || keepsItsDomain(name)) return name;
+    return [testPreferencesFolder stringByAppendingPathComponent:name];
+}
+
 static NSString *suitePlistPath(NSString *name) {
     if ([name containsString:@"/"] || name.length == 0) return nil;
+    NSString *isolated = isolatedDomainName(name);
+    if (isolated != name) return [isolated stringByAppendingString:@".plist"];
     return [[realHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences"]
         stringByAppendingPathComponent:[name stringByAppendingString:@".plist"]];
 }
 
 static void trackSuites(void) {
+    testPreferencesFolder = throwawayPreferencesFolder();
+    [NSFileManager.defaultManager createDirectoryAtPath:testPreferencesFolder withIntermediateDirectories:YES attributes:nil error:nil];
     createdSuites = [NSMutableSet set];
     suiteLock = [[NSLock alloc] init];
     static id (*initSuite)(id, SEL, NSString *);
@@ -376,7 +407,27 @@ static void trackSuites(void) {
             }
             [suiteLock unlock];
         }
-        return initSuite(d, @selector(initWithSuiteName:), name);
+        return initSuite(d, @selector(initWithSuiteName:), isolatedDomainName(name));
+    });
+    static NSDictionary *(*getDomain)(id, SEL, NSString *);
+    getDomain = (void *)replace(NSUserDefaults.class, @selector(persistentDomainForName:), ^NSDictionary *(NSUserDefaults *d, NSString *name) {
+        return getDomain(d, @selector(persistentDomainForName:), isolatedDomainName(name));
+    });
+    static void (*setDomain)(id, SEL, NSDictionary *, NSString *);
+    setDomain = (void *)replace(NSUserDefaults.class, @selector(setPersistentDomain:forName:), ^(NSUserDefaults *d, NSDictionary *domain, NSString *name) {
+        setDomain(d, @selector(setPersistentDomain:forName:), domain, isolatedDomainName(name));
+    });
+    static void (*removeDomain)(id, SEL, NSString *);
+    removeDomain = (void *)replace(NSUserDefaults.class, @selector(removePersistentDomainForName:), ^(NSUserDefaults *d, NSString *name) {
+        removeDomain(d, @selector(removePersistentDomainForName:), isolatedDomainName(name));
+    });
+    static void (*addSuite)(id, SEL, NSString *);
+    addSuite = (void *)replace(NSUserDefaults.class, @selector(addSuiteNamed:), ^(NSUserDefaults *d, NSString *name) {
+        addSuite(d, @selector(addSuiteNamed:), isolatedDomainName(name));
+    });
+    static void (*removeSuite)(id, SEL, NSString *);
+    removeSuite = (void *)replace(NSUserDefaults.class, @selector(removeSuiteNamed:), ^(NSUserDefaults *d, NSString *name) {
+        removeSuite(d, @selector(removeSuiteNamed:), isolatedDomainName(name));
     });
 }
 
@@ -391,7 +442,9 @@ NSInteger GoalongHeadlessSweepOrphanedTestPreferences(void) {
     static NSRegularExpression *withPid, *uuidOnly;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        withPid = [NSRegularExpression regularExpressionWithPattern:@"^goalong-tests-defaults-([0-9]{1,9})-[A-Za-z0-9-]+\\.plist$" options:0 error:nil];
+        // Strict (tour 3): `<pid>-[<tag>-]<UUID>` or the legacy `<UUID>`, nothing else. The legacy name is tried
+        // first, so a UUID whose first block is all digits (`12345678-…`) is never read as a pid.
+        withPid = [NSRegularExpression regularExpressionWithPattern:@"^goalong-tests-defaults-([0-9]{1,9})-(?:[A-Za-z]+-)?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\.plist$" options:0 error:nil];
         uuidOnly = [NSRegularExpression regularExpressionWithPattern:@"^goalong-tests-defaults-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\.plist$" options:0 error:nil];
     });
     NSFileManager *files = NSFileManager.defaultManager;
@@ -404,14 +457,14 @@ NSInteger GoalongHeadlessSweepOrphanedTestPreferences(void) {
         if (![attributes.fileType isEqualToString:NSFileTypeRegular]) continue;
         NSRange all = NSMakeRange(0, file.length);
         BOOL orphan = NO;
-        NSTextCheckingResult *match = [withPid firstMatchInString:file options:0 range:all];
-        if (match) {
+        NSTextCheckingResult *match = nil;
+        if ([uuidOnly firstMatchInString:file options:0 range:all]) {
+            NSDate *modified = attributes.fileModificationDate;
+            orphan = modified && -modified.timeIntervalSinceNow > 120;
+        } else if ((match = [withPid firstMatchInString:file options:0 range:all])) {
             long long pid = [[file substringWithRange:[match rangeAtIndex:1]] longLongValue];
             // pid 0 would signal the whole process group: never call kill() with it.
             orphan = pid <= 0 || pid > INT_MAX || (kill((pid_t)pid, 0) != 0 && errno == ESRCH);
-        } else if ([uuidOnly firstMatchInString:file options:0 range:all]) {
-            NSDate *modified = attributes.fileModificationDate;
-            orphan = modified && -modified.timeIntervalSinceNow > 120;
         }
         if (orphan && unlink(path.fileSystemRepresentation) == 0) removed++;
     }
@@ -479,11 +532,8 @@ static IMP replaceClassMethod(Class cls, SEL sel, id block);
 // Never `…/Library/Preferences/<name>`: when that path lies under the account's home (CI puts the throwaway HOME in
 // /Users/runner/work/_temp), cfprefsd maps it to the plain domain `<name>` in ~/Library/Preferences.
 static NSString *throwawaySuiteName(NSString *tag) {
-    const char *home = getenv("GOALONG_TEST_HOME");
-    if (!home || !*home) home = getenv("CFFIXED_USER_HOME");
-    NSString *base = (home && *home) ? [NSString stringWithUTF8String:home] : NSTemporaryDirectory();
     NSString *file = [NSString stringWithFormat:@"goalong-tests-defaults-%d-%@%@", getpid(), tag, NSUUID.UUID.UUIDString];
-    return [[base stringByAppendingPathComponent:@"goalong-test-preferences"] stringByAppendingPathComponent:file];
+    return [throwawayPreferencesFolder() stringByAppendingPathComponent:file];
 }
 
 static void isolateStandardDefaults(void) {

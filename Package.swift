@@ -75,7 +75,7 @@ let package = Package(
         .executableTarget(name: "GoalongGuardTestHost", path: "Sources/GoalongGuardTestHost"),
         .testTarget(
             name: "GoalongGuardCoreTests",
-            dependencies: ["GoalongGuardCore", "LocalHistoryCore"],
+            dependencies: ["GoalongGuardCore", "LocalHistoryCore", "GoalongHeadlessTestSupport"],
             path: "Tests/GoalongGuardCoreTests"
         ),
         .target(
