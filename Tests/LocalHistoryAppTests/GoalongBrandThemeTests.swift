@@ -115,6 +115,24 @@ final class GoalongBrandThemeTests: XCTestCase {
             }
         }
     }
+    /// T-043 R4d-B tour 2 (n° 18): the label of a disabled button sits on the faint disabled fill laid over each surface,
+    /// not on the bare surface; that mix must keep 3:1 too.
+    func testDisabledLabelKeepsContrastOnItsFill() {
+        for increased in [false, true] {
+            for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+                func c(_ value: Color) -> NSColor { color(value, appearance, increased: increased) }
+                let ink = c(LHTheme.text), a = GoalongDisabledControlSurface.fillOpacity
+                for (surface, background) in Self.surfaces {
+                    let base = c(background)
+                    let mixed = NSColor(srgbRed: base.redComponent * (1 - a) + ink.redComponent * a,
+                                        green: base.greenComponent * (1 - a) + ink.greenComponent * a,
+                                        blue: base.blueComponent * (1 - a) + ink.blueComponent * a, alpha: 1)
+                    XCTAssertGreaterThanOrEqual(ratio(c(LHTheme.disabledText), mixed), 3,
+                                                "disabled label on its fill over \(surface), \(appearance.rawValue), increased \(increased)")
+                }
+            }
+        }
+    }
     /// R281-1: the high* values reach the app. Under Increase Contrast SwiftUI hands the colour a plain Aqua or Dark
     /// Aqua appearance (and `NSAppearance(named: .accessibilityHighContrastAqua)` is itself plain Aqua on macOS 13+),
     /// so the Mac's setting picks them.
@@ -123,7 +141,7 @@ final class GoalongBrandThemeTests: XCTestCase {
             ("text", LHTheme.text, 0x0D100E, 0xF2F6EF, 0x000000, 0xFFFFFF),
             ("secondaryText", LHTheme.secondaryText, 0x566252, 0xAEBBB1, 0x35422F, 0xCCD6CE),
             ("tertiaryText", LHTheme.tertiaryText, 0x5A6355, 0x96A59B, 0x4C5747, 0xB1BEB4),
-            ("disabledText", LHTheme.disabledText, 0x757E70, 0x74857A, 0x5E6859, 0x9AAA9E),
+            ("disabledText", LHTheme.disabledText, 0x6A7366, 0x839489, 0x5E6859, 0x9AAA9E),
             ("controlBorder", LHTheme.controlBorder, 0x777E6B, 0x76887B, 0x666E5C, 0x8AA08E),
             ("danger", LHTheme.danger, 0xA63D32, 0xFFADA0, 0x8E2A22, 0xFFC2B8),
         ]

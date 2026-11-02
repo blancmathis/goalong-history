@@ -115,9 +115,7 @@
                         HStack {
                             Label(title, systemImage: symbol)
                                 .font(.system(size: 14, weight: .semibold))
-                            Text(GoalongUIFormat.number(items.count))
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(LHTheme.secondaryText)
+                            GoalongRuleCount(items.count)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())

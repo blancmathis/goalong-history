@@ -25,9 +25,22 @@
     /// as off next to a raised, edged secondary button or a lime primary one; its label is `LHTheme.disabledText`
     /// (≥ 3:1). A dashed edge stays for « add » chips only (« Tout le Mac + »), never for a disabled control.
     struct GoalongDisabledControlSurface: View {
+        /// Share of `LHTheme.text` laid over the surface; the contrast test blends the same amount.
+        static let fillOpacity = 0.05
         var corner: CGFloat = LHTheme.controlRadius
         var body: some View {
-            RoundedRectangle(cornerRadius: corner, style: .continuous).fill(LHTheme.text.opacity(0.05))
+            RoundedRectangle(cornerRadius: corner, style: .continuous).fill(LHTheme.text.opacity(Self.fillOpacity))
+        }
+    }
+
+    /// A count next to a title (« 1 284 »): always the French grouping, never a bare interpolation (R4d-20).
+    struct GoalongRuleCount: View {
+        let count: Int
+        init(_ count: Int) { self.count = count }
+        var body: some View {
+            Text(GoalongUIFormat.number(count))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(LHTheme.secondaryText)
         }
     }
 

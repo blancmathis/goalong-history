@@ -91,7 +91,10 @@ import SwiftUI
     }
 
     static func behaviour(_ list: BlockList) -> String {
-        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) secondes" : "Bloque l’accès \(blockedSubject(list))"]
+        // R4d-26 (tour 2): a block list with nothing in it blocks nothing yet; it must not claim « ces sites et apps ».
+        let empty = list.sites.isEmpty && list.apps.isEmpty && (list.keywords?.isEmpty ?? true)
+        let blocks = empty && list.mode != .allowOnly ? "Ne bloque encore rien" : "Bloque l’accès \(blockedSubject(list))"
+        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) secondes" : blocks]
         if let quota = list.quotaMinutesPerDay { parts.append("\(BlockingFormat.duration(minutes: quota)) libres par jour") }
         if let breaks = list.breaks { parts.append("\(breaks.count) pause\(breaks.count > 1 ? "s" : "")") }
         return parts.joined(separator: ", ")
