@@ -48,6 +48,13 @@ enum BlockingFormat {
         return "\(left) min \(left > 1 ? "restantes" : "restante") sur \(totalMinutes) min"
     }
 
+    /// The whole gauge sentence, shown and read alike: « Réseaux : 24 min restantes sur 60 min. Pause gagnée… ».
+    static func quotaGaugeLine(name: String, secondsLeft left: TimeInterval, quotaMinutes: Int, earnedMinutes earned: Int) -> String {
+        (left > 0 ? "\(name) : \(quotaLeft(seconds: left, totalMinutes: quotaMinutes + earned))"
+                  : "\(name) : vos \(duration(minutes: quotaMinutes + earned)) du jour sont passées")
+            + (earned > 0 ? ". \(earnedBreak(minutes: earned))" : "")
+    }
+
     static func duration(minutes: Int) -> String {
         DashboardFormatters.duration(minutes: minutes)
     }

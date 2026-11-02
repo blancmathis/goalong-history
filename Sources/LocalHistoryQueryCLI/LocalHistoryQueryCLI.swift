@@ -562,7 +562,7 @@ enum CLIError: Error, CustomStringConvertible, LocalizedError {
             if value.hasPrefix("No saved recap exists") { return "Aucun récap enregistré pour cette journée. Décochez le récap ou choisissez une autre date." }
             if value.hasPrefix("The saved recap belongs") || value.hasPrefix("The saved record does not match") { return "Les données enregistrées ne correspondent pas à la journée demandée. Choisissez une autre date." }
             if value.hasPrefix("The saved day uses a different timezone") { return "Cette journée a été enregistrée dans un autre fuseau horaire. Exportez sans les sites." }
-            if value.hasPrefix("Enable Computer History and use its current timezone") { return "Activez l’enregistrement avec son fuseau horaire actuel pour exporter le rythme." }
+            if value.hasPrefix("Enable Computer History and use its current timezone") { return "Activez l’enregistrement avec le fuseau horaire actuel du Mac pour exporter le rythme." }
             if value.hasPrefix("Rhythm is not calculable") { return "Le rythme n’est pas calculable. Sélectionnez des applications de projet ou décochez le rythme." }
             if value.hasPrefix("Rename the project") { return "Renommez le projet avant l’export : son nom contient une application masquée." }
             if value.hasPrefix("Select fewer details") { return "L’export dépasse 2 Mio. Sélectionnez moins de détails." }

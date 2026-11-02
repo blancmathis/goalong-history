@@ -37,7 +37,7 @@ import SwiftUI
                     Button("Ouvrir Réglages › Modules › Braise", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
                 }
             } else {
-                GoalongEmptyState(title: "Braise est désactivée", kind: .notYet,
+                GoalongEmptyState(title: "Braise est désactivée", kind: .needsPermission,
                                   message: "Le filtre rouge du soir s’active ici, ou dans Réglages › Modules.") {
                     Button("Activer Braise", action: onEnable).buttonStyle(LHPrimaryButtonStyle())
                         .accessibilityIdentifier("braise-enable")

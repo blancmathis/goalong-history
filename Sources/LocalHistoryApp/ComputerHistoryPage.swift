@@ -620,6 +620,15 @@
                 + "confiance \(GoalongUIFormat.percent(confidence))"
         }
 
+        /// R4e-2: the glyph of an empty day follows its state: a stopped recording or an unreadable source is not « pas encore ».
+        static func emptyTimelineKind(storageStopped: Bool, status: ComputerHistorySourceStatus) -> GoalongStateKind {
+            if storageStopped { return .unavailable }
+            switch status {
+            case .inaccessible, .unverified: return .unavailable
+            case .available, .absent, .checking: return .notYet
+            }
+        }
+
         /// With an empty timeline, one place explains why. The timeline card does it for a day without
         /// data; the status card does it when it also offers « Réessayer ».
         static func timelineExplainsEmptyDay(_ status: ComputerHistorySourceStatus) -> Bool {
@@ -935,7 +944,8 @@
         @ViewBuilder private var timelineCard: some View {
             if tenMinuteGroups.isEmpty && !isPreparingTimeline {
                 GoalongEmptyState(
-                    title: emptyTimelineTitle, kind: .notYet,
+                    title: emptyTimelineTitle,
+                    kind: ComputerHistoryPageCopy.emptyTimelineKind(storageStopped: storageStopTitle != nil, status: model.sourceStatus),
                     message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
                         ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
                 // R-86: no « Actualiser » here; the day header above already holds the refresh button.

@@ -349,9 +349,7 @@ struct BlockingStopRequest: Identifiable {
             } else if let left = block.quotaSecondsLeft[list.id], let quota = list.quotaMinutesPerDay {
                 let earned = Int(controller.earnedMinutesToday[list.id] ?? 0)
                 Image(systemName: "hourglass").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
-                Text((left > 0 ? "\(list.name) : \(BlockingFormat.quotaLeft(seconds: left, totalMinutes: quota + earned))"
-                               : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota + earned)) du jour sont passées")
-                     + (earned > 0 ? ". \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
+                Text(BlockingFormat.quotaGaugeLine(name: list.name, secondsLeft: left, quotaMinutes: quota, earnedMinutes: earned))
                 Spacer(minLength: 8)
                 BlockingMeter(fraction: 1 - left / Double(max(1, (quota + earned) * 60))).frame(width: 120)
             }

@@ -891,14 +891,14 @@ struct FocusThreadModel: Equatable {
                         .onSubmit(add)
                         .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
                 }
-                addField("Durée (min)") {
+                addField("Durée estimée (min)") {
                     TextField("", text: $newEstimate)
                         .textFieldStyle(GoalongFieldStyle())
                         .planPlaceholder("min", isEmpty: newEstimate.isEmpty)
                         .frame(width: 64)
                         .onSubmit(add)
                         .help("Estimation, facultative : de 5 à 600 minutes.")
-                        .accessibilityLabel("Estimation en minutes")
+                        .accessibilityLabel("Durée estimée (min)")
                 }
                 if let ratio = controller.estimateRatio {
                     Text("×\(FocusUIFormat.decimal(ratio))")
@@ -1206,6 +1206,7 @@ struct FocusThreadModel: Equatable {
                    ? "Prévient à cette heure, ces jours-là." : "Choisissez d’abord une heure de fin.")
             Spacer(minLength: 12)
             // R-94: « Jours » and « Heure » are named above their controls, the chosen days are outlined.
+            HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
             Text("Jours").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             HStack(spacing: 3) {
@@ -1237,7 +1238,7 @@ struct FocusThreadModel: Equatable {
             .accessibilityHint(controller.settings.limits.endMinute == nil ? "Indisponible : choisissez d’abord une heure de fin." : "")
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text("Heure").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                Text("Heure de fin").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 TextField("", text: $end)
                     .textFieldStyle(GoalongFieldStyle())
                     .goalongPlaceholder("hh:mm", isEmpty: end.isEmpty, alignment: .trailing)
@@ -1245,7 +1246,8 @@ struct FocusThreadModel: Equatable {
                     .multilineTextAlignment(.trailing)
                     .onSubmit(commitLimits)
                     .onChange(of: end) { _ in commitLimits() }
-                    .accessibilityLabel("Heure de fin de journée")
+                    .accessibilityLabel("Heure de fin")
+            }
             }
         }
         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10).frame(minHeight: 52)
