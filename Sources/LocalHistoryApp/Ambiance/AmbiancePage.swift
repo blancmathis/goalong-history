@@ -1,6 +1,7 @@
 #if os(macOS)
 import Ambiance
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -45,7 +46,34 @@ import UniformTypeIdentifiers
                 removeFile: { controller.removeOwnFile($0) }
             )
         )
-        .onAppear { controller.refresh() }
+        .onAppear { controller.refresh(); AmbianceDownloadSignal.shared.follow(controller) }
+    }
+}
+
+/// R-73 (R4d-9): whether a sound pack is coming down, for the sidebar's « Téléchargement… » pill. It keeps
+/// following the controller after the page is left, so the pill goes away when the download ends elsewhere.
+@MainActor final class AmbianceDownloadSignal: ObservableObject {
+    static let shared = AmbianceDownloadSignal()
+    @Published private(set) var downloading = false
+    private var following: ObjectIdentifier?
+    private var subscription: AnyCancellable?
+
+    nonisolated static func isDownloading(_ packs: [AmbiancePackState]) -> Bool {
+        packs.contains { if case .downloading = $0.status { return true } else { return false } }
+    }
+
+    #if DEBUG
+    /// Gallery and tests: the signal reads `value`, and no controller is followed (so a page cannot reset it).
+    func setForTesting(_ value: Bool) {
+        subscription = nil; following = nil; downloading = value
+    }
+    #endif
+
+    func follow(_ controller: AmbianceController) {
+        guard following != ObjectIdentifier(controller) else { return }
+        following = ObjectIdentifier(controller)
+        subscription = controller.$packs.map(Self.isDownloading).removeDuplicates()
+            .sink { [weak self] value in self?.downloading = value }
     }
 }
 
@@ -186,7 +214,8 @@ struct AmbiancePageContent: View {
                     VStack(spacing: 0) {
                         ForEach(files) { file in
                             AmbianceFileRow(source: file, playing: playingID == file.id,
-                                            onPlay: { toggle(file) }, onRemove: { actions.removeFile(file) })
+                                            onPlay: { toggle(file) }, onLocate: { locate(file) },
+                                            onRemove: { actions.removeFile(file) })
                             if file.id != files.last?.id { GoalongRowDivider() }
                         }
                     }
@@ -253,6 +282,26 @@ struct AmbiancePageContent: View {
         panel.message = "Choisissez des fichiers audio ou un dossier. Goalong les lit là où ils sont."
         guard panel.runModal() == .OK else { return }
         actions.addFiles(panel.urls)
+    }
+
+    /// R-36 (R4d-24): a file moved away is found again from its row; the old line gives way to the new one.
+    private func locate(_ file: AmbianceSource) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.audio]
+        panel.prompt = "Localiser"
+        panel.message = "Où se trouve « \(Self.fileTitle(file.title)) » ? Goalong le lit là où il est."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        actions.addFiles([url])
+        actions.removeFile(file)
+    }
+
+    /// R-36 (R4d-24): a file reads by its name, without « .m4a » or « .wav ».
+    nonisolated static func fileTitle(_ title: String) -> String {
+        let bare = (title as NSString).deletingPathExtension
+        return bare.isEmpty ? title : bare
     }
 
     /// Packs the member can remove. A pack still downloading is not on this Mac yet: it has no size to show.
@@ -453,17 +502,19 @@ private struct AmbianceFileRow: View {
     let source: AmbianceSource
     let playing: Bool
     let onPlay: () -> Void
+    var onLocate: () -> Void = {}
     let onRemove: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        let title = AmbiancePageContent.fileTitle(source.title)
+        return HStack(spacing: 12) {
             Button(action: onPlay) {
                 HStack(spacing: 12) {
                     Image(systemName: playing ? "speaker.wave.2.fill" : "music.note")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(playing ? LHTheme.accent : LHTheme.secondaryText)
                         .frame(width: 22)
-                    Text(source.title).font(.system(size: 13, weight: playing ? .semibold : .regular))
+                    Text(title).font(.system(size: 13, weight: playing ? .semibold : .regular))
                         .lineLimit(1).truncationMode(.middle)
                         .foregroundStyle(LHTheme.text)
                     Spacer(minLength: 12)
@@ -472,12 +523,18 @@ private struct AmbianceFileRow: View {
             }
             .buttonStyle(.plain)
             .disabled(!source.isAvailable)
-            .accessibilityLabel(source.title)
+            .help(source.title)
+            .accessibilityLabel(title)
             .accessibilityValue(playing ? "En cours" : source.isAvailable ? "" : "Introuvable")
             .accessibilityIdentifier("ambiance-file-\(source.id)")
             if !source.isAvailable {
                 Label("Fichier introuvable", systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.warning)
+                    .fixedSize()
+                Button("Localiser…", action: onLocate).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                    .fixedSize()
+                    .help("Choisir le nouvel emplacement de « \(title) »")
+                    .accessibilityIdentifier("ambiance-locate-\(source.id)")
             }
             Button(action: onRemove) {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
@@ -485,7 +542,7 @@ private struct AmbianceFileRow: View {
                     .frame(width: 28, height: 28).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Retirer \(source.title)")
+            .accessibilityLabel("Retirer \(title)")
         }
         .padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
         .background(playing ? LHTheme.selectionBackground : Color.clear)
