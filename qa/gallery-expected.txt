@@ -1160,3 +1160,15 @@ braise/page-fenetre--   # R8-5 : élément Braise sélectionné dans la barre la
 permissions/temps-ecran-a-configurer--   # R8-7 : étape 2 « Activer Temps d’écran »
 # T-043 P « constats mineurs » : un état de galerie pour la ligne « Ensuite » fusionnée.
 programme/blocage-ensuite--   # T-043 P-15 (état ajouté : un blocage sur « Réseaux sociaux » avec le programme de la semaine de la même liste dessous ; ce programme devient la ligne « Ensuite : bloqué jusqu’à 18:00 » sans noms de listes, avec son bouton « Arrêter » ; rendu vu : runs/20261102-053552-6a46d900/png/programme/blocage-ensuite--light--900x1500.png)
+# T-043 R4b : concentration, blocage, support, partage (S/R9/lot-R4b.md).
+blocking-surfaces/voile-   # T-043 R4b R-84 (icône lisible, marque « interdit » en coin, plus de trait en travers) ; R-98 (tentatives et pause gagnée sur une ligne, jointes par une virgule)
+blocking-surfaces/avis-app   # T-043 R4b R-84 (marque « interdit » en coin de l’icône d’app)
+blocking-surfaces/voile-quota--   # T-043 R4b R-85 (état « Quota du jour atteint » au lieu de « Verrouillé jusqu’à » ; l’heure de fin sur le fil seulement)
+blocking-surfaces/voile-pauses-prises--   # T-043 R4b R-85 (« Pauses du jour prises. » sans répéter l’heure de fin)
+blocking-surfaces/gel-du-mac--   # T-043 R4b R-85 (« restant » sous le compte à rebours, déc. 15 ; « Apps autorisées » au-dessus des icônes)
+programme/protection-indisponible--   # T-043 R4b R-89 (bouton secondaire « Réessayer » à côté de la cause, sous « Niveau »)
+support/   # T-043 R4b R-81 (retour d’action sous l’en-tête, visible sans défiler ; « Actualiser le rapport » à côté de « Afficher le fichier » ; « Partager… » grisé tant que le rapport n’est pas prêt)
+support/constats-multiples--   # T-043 R4b R-81 (« Ouvrir Réglages Système… » sous l’autorisation manquante, « Gérer le stockage… » sous l’espace disque faible)
+partage/avec-donnees--   # T-043 R4b R-87 (pastille « Enregistré sur ce Mac » seulement si l’enregistrement est actif ; plus de « Application observée sur ce Mac » sous chaque app)
+partage/vide--   # T-043 R4b R-87 (sans élément suivi : ni recherche ni règle « Par défaut »)
+concentration-distractions/listes--   # T-043 R4b R-99 (« Ajouter » sous son texte, style discret avec « + » comme « Nouvelle liste »)

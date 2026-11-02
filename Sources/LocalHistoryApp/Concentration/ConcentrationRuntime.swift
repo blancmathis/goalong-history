@@ -116,6 +116,9 @@ import LocalHistoryQueryCLI
         RunLoop.main.add(timer, forMode: .common)
         menuBarTimer = timer
     }
+    /// R-77 (R9C-54): whether the store holds anything « Supprimer les données… » would remove.
+    func hasData() -> Bool { storeFactory().hasData }
+
     func deleteData() throws {
         error = nil
         controller?.refresh()

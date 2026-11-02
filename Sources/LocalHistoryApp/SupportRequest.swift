@@ -55,7 +55,8 @@ enum SupportReportStore {
         case success, problem
 
         var symbol: String { self == .success ? "checkmark.circle" : "exclamationmark.triangle.fill" }
-        var tint: Color { self == .success ? LHTheme.secondaryText : LHTheme.warning }
+        /// R-81 (R9B-45): a success reads as one, with a green glyph; the sentence keeps the text colour.
+        var tint: Color { self == .success ? LHTheme.success : LHTheme.warning }
     }
 
     private func report(_ message: String, _ kind: FeedbackKind) {
@@ -145,7 +146,7 @@ enum SupportReportStore {
             data = try SupportDiagnostics.readPrivateFile(url, maximum: Self.maximumReportBytes)
         } catch {
             SupportDiagnostics.shared.failure(error, component: .support)
-            report("Le rapport n’est plus disponible. Choisissez « Autres options › Actualiser le rapport », puis réessayez.", .problem)
+            report("Le rapport n’est plus disponible. Actualisez le rapport, puis réessayez.", .problem)
             return
         }
         do {
@@ -171,7 +172,7 @@ enum SupportReportStore {
             return
         }
         journal.record(.userMarkedIssue, component: .support)
-        report("Repère ajouté à \(GoalongUIFormat.time(Date())). Reproduisez le problème, puis choisissez « Autres options › Actualiser le rapport ».", .success)
+        report("Repère ajouté à \(GoalongUIFormat.time(Date())). Reproduisez le problème, puis actualisez le rapport.", .success)
     }
 
     func close() { window?.close() }
@@ -211,14 +212,19 @@ struct SupportRequestView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     header
+                    // The answer to the last action sits under the header, in view without scrolling (R-81).
+                    if let feedback = controller.feedback {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: controller.feedbackKind.symbol).foregroundStyle(controller.feedbackKind.tint)
+                            Text(feedback).foregroundStyle(LHTheme.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.system(size: 12))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("support-feedback")
+                    }
                     detected
                     contents
-                    if let feedback = controller.feedback {
-                        Label(feedback, systemImage: controller.feedbackKind.symbol)
-                            .font(.system(size: 12)).foregroundStyle(controller.feedbackKind.tint)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("support-feedback")
-                    }
                 }
                 .padding(.horizontal, 28).padding(.top, 34).padding(.bottom, 20)
             }
@@ -301,6 +307,10 @@ struct SupportRequestView: View {
                             Text("\(GoalongUIFormat.count(events, "événement")) technique\(events > 1 ? "s" : ""), \(GoalongUIFormat.bytes(Int64(bytes)))")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
+                            // R-81 (R9B-45): refreshing is a direct action, not hidden in « Autres options ».
+                            Button("Actualiser le rapport") { controller.prepare() }
+                                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                                .accessibilityIdentifier("support-refresh")
                             Button("Afficher le fichier") { controller.revealReport() }
                                 .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
                                 .accessibilityIdentifier("support-reveal")
@@ -354,6 +364,7 @@ struct SupportRequestView: View {
                 Button("Noter l’heure du problème") { controller.markIssue() }
                     .disabled(!SupportDiagnostics.shared.isEnabled)
                 Button("Actualiser le rapport") { controller.prepare() }
+                    .disabled(controller.isPreparing)
                 Divider()
                 Button("Enregistrer une copie…") { controller.saveCopy() }.disabled(ready == nil)
             } label: { Text("Autres options") }
@@ -361,33 +372,49 @@ struct SupportRequestView: View {
             .tint(LHTheme.text) // Lime stays on the main action.
             .accessibilityIdentifier("support-more")
             Spacer()
-            if let ready {
-                let share = ShareLink(item: ready, subject: Text("Goalong History — rapport de diagnostic")) {
-                    Label("Partager…", systemImage: "square.and.arrow.up")
-                }
-                Group {
+            // R-81 (R9B-41): the bar keeps the same buttons in every state; held back rather than removed.
+            Group {
+                if let ready {
+                    let share = ShareLink(item: ready, subject: Text("Goalong History — rapport de diagnostic")) {
+                        Label("Partager…", systemImage: "square.and.arrow.up")
+                    }
                     if controller.emailUnavailable {
                         share.buttonStyle(LHPrimaryButtonStyle())
                     } else {
                         share.buttonStyle(LHSecondaryButtonStyle())
                     }
-                }
-                .fixedSize()
-                .accessibilityIdentifier("support-share")
-            }
-            Group {
-                if canEmail {
-                    emailButton.buttonStyle(LHPrimaryButtonStyle())
                 } else {
-                    emailButton.buttonStyle(LHSecondaryButtonStyle())
+                    Button {} label: { Label("Partager…", systemImage: "square.and.arrow.up") }
+                        .buttonStyle(LHSecondaryButtonStyle())
+                        .disabled(true)
                 }
             }
             .fixedSize()
-            .disabled(!canEmail)
-            .keyboardShortcut(.defaultAction)
-            .accessibilityIdentifier("support-email")
+            .accessibilityIdentifier("support-share")
+            if Self.showsSaveCopyInBar(emailUnavailable: controller.emailUnavailable) {
+                // R-81 (R9B-44): with no mail app, the copy the message points to takes the e-mail button's place.
+                Button("Enregistrer une copie…") { controller.saveCopy() }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .fixedSize()
+                    .disabled(ready == nil)
+                    .accessibilityIdentifier("support-save-copy")
+            } else {
+                Group {
+                    if canEmail {
+                        emailButton.buttonStyle(LHPrimaryButtonStyle())
+                    } else {
+                        emailButton.buttonStyle(LHSecondaryButtonStyle())
+                    }
+                }
+                .fixedSize()
+                .disabled(!canEmail)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("support-email")
+            }
         }
     }
+
+    static func showsSaveCopyInBar(emailUnavailable: Bool) -> Bool { emailUnavailable }
 
     private var emailButton: some View {
         Button {
@@ -409,8 +436,32 @@ struct SupportFindingRow: View {
                 Text(finding.title).font(.system(size: 13, weight: .semibold))
                 Text(finding.detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+                // R-81 (R9B-37): a finding the user can fix leads to the place that fixes it.
+                if let action = Self.action(for: finding.code) {
+                    Button(action.title) { _ = GoalongWorkspaceOpenPolicy.open(action.url, purpose: .systemSettings) }
+                        .buttonStyle(LHSecondaryButtonStyle()).font(.system(size: 12))
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("support-finding-action-\(finding.code.rawValue)")
+                }
             }
             Spacer(minLength: 0)
+        }
+    }
+
+    struct Action: Equatable {
+        let title: String
+        let url: URL
+    }
+
+    static func action(for code: SupportFinding.Code) -> Action? {
+        switch code {
+        case .permissionMissing:
+            return Action(title: "Ouvrir Réglages Système…",
+                          url: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        case .lowDiskSpace:
+            return Action(title: "Gérer le stockage…", url: URL(string: "x-apple.systempreferences:com.apple.settings.Storage")!)
+        default:
+            return nil
         }
     }
 
