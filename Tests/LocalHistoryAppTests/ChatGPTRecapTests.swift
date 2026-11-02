@@ -2843,7 +2843,7 @@
         XCTAssertFalse(ChatGPTRecapPage.showsSeparateLoadingCard(hasRecap: true, loadingOverview: false))
     }
 
-    func testSettingsBelowTheAccountCardAreGreyedUntilTheUpdate() {
+    func testAnalysisScheduleIsGreyedUntilTheUpdate() {
         XCTAssertTrue(GoalongChatGPTSettings.analysisLocked(.codexUnavailable))
         XCTAssertFalse(GoalongChatGPTSettings.analysisLocked(.signedOut))
         XCTAssertFalse(GoalongChatGPTSettings.analysisLocked(.connected(email: nil, plan: nil)))

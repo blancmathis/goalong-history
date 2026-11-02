@@ -1170,7 +1170,7 @@ menubar/ambiance-chargement--   # T-043 R4a R-73 (vignette au repos et « Charge
 bilan/chargement--   # T-043 R4a R-71 (une seule ligne de lecture dans la carte rapport, plus de « Aucun rapport »)
 bilan/erreur--   # T-043 R4a R-71 (raison du blocage à côté du bouton grisé ; statut ChatGPT « Mettez Goalong à jour »)
 bilan/rapport--   # T-043 R4a R-71 (idem : raison à côté de « Analyser à nouveau » grisé)
-settings/chatgpt--   # T-043 R4a R-71 (« Votre analyse » et « Quand analyser » grisés sans connexion possible)
+settings/chatgpt--   # T-043 R4a R-71 (« Quand analyser » grisé tant que cette version ne peut pas se connecter ; « Votre analyse » reste modifiable)
 conversations-ia/lecture-en-cours--   # T-043 R4a R-72 (un seul indicateur de lecture, « Vérifier les sources » grisé pendant la lecture, pas de carte jetons)
 conversations-ia/vide--   # T-043 R4a R-72 (pas de dossiers surveillés quand le consentement est désactivé)
 activite/enregistrement-desactive--   # T-043 R4a R-74 (le bandeau seul dit la journée arrêtée : pas d’état vide ni « Explorer »)

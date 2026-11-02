@@ -15,8 +15,6 @@ import LocalHistoryCore
         VStack(alignment: .leading, spacing: 22) {
             // Its sentence is under the pane title (SettingsPane.lead), close to it.
             ChatGPTAccountConnectionCard(runtime: runtime, updateIsPrimary: true)
-            // R-71 (déc. 11): this version cannot reach ChatGPT, so nothing below can be used until the update.
-            VStack(alignment: .leading, spacing: 22) {
             GoalongSettingsList(title: "Votre analyse") {
                 GoalongSettingsLink(title: "Données pour ChatGPT", value: sourceSummary, symbol: "line.3.horizontal.decrease.circle") { open(0) }.accessibilityIdentifier("analysis-open-data")
                 GoalongRowDivider()
@@ -24,6 +22,8 @@ import LocalHistoryCore
                 GoalongRowDivider()
                 GoalongSettingsLink(title: "Personnaliser le bilan", value: selection.outputGuidance?.isEmpty == false ? "Consignes ajoutées" : "Ton et informations à omettre", symbol: "text.bubble") { open(2) }.accessibilityIdentifier("analysis-open-guidance")
             }
+            // R-71 (déc. 11): this version cannot reach ChatGPT, so no analysis can be allowed or started
+            // until the update. The local choices above stay editable: they need no connection.
             GoalongSettingsGroup(title: "Quand analyser") {
                 Toggle("Autoriser les analyses", isOn: Binding(get: { selection.allowsAnalysis(consented: consents.isEnabled(.chatGPTAnalysis), policy: exclusions.policy) }, set: { value in
                     if value { open(0) }
@@ -56,7 +56,6 @@ import LocalHistoryCore
                 Text("ChatGPT reçoit uniquement votre sélection. Le bilan n’est pas envoyé au site automatiquement.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
-            }
             .disabled(Self.analysisLocked(runtime.connectionState))
             .opacity(Self.analysisLocked(runtime.connectionState) ? 0.5 : 1)
         }
@@ -70,7 +69,7 @@ import LocalHistoryCore
         } message: { Text(error ?? "") }
         .alert(item: $runtime.alert) { item in Alert(title: Text(item.title), message: Text(item.message), dismissButton: .default(Text("Fermer"))) }
     }
-    /// R-71: an app version that cannot connect greys the whole analysis setup under the account card.
+    /// R-71: an app version that cannot connect greys « Quand analyser » (allow, automatic, analyse).
     static func analysisLocked(_ state: ChatGPTConnectionState) -> Bool { state == .codexUnavailable }
 
     private var analyzeButton: some View {
