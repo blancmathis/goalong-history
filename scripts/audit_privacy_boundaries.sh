@@ -699,23 +699,64 @@ fi
 
 # T-043 T1 (R282-8): preferences go through GoalongDefaults only. The app gets UserDefaults.standard there; a test or
 # gallery process gets one throwaway suite, so no test reads or writes this Mac's real settings.
+# R-286 F3: also refused: UserDefaults() and UserDefaults(suiteName: nil) (both the standard domain), `.standard`
+# passed as a `defaults:`/`userDefaults:` argument or as `@AppStorage(…, store: .standard)`, any CFPreferences call,
+# [[NSUserDefaults alloc] init], in .swift and Objective-C (.m/.h) files. Comments are removed before matching, with
+# string literals kept intact ("https://…" no longer hides the rest of the line). Allowed on purpose: `@AppStorage`
+# without `store:`. In the app it is the standard domain as before; in a test process the headless hook routes
+# +standardUserDefaults (which @AppStorage uses) to the throwaway suite, and every test target links that hook.
 if ! python3 - "$ROOT_DIR" <<'PY'
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 allowed = {"Features/AppleScreenTime/Sources/GoalongDefaults.swift",
-           "Tests/LocalHistoryAppTests/GoalongDefaultsIsolationTests.swift"}
+           "Tests/LocalHistoryAppTests/GoalongDefaultsIsolationTests.swift",
+           "Tests/GoalongHeadlessTestSupport/GoalongHeadlessTestSupport.m"}
 pattern = re.compile(r"UserDefaults\s*\.\s*standard\b|UserDefaults\??\s*=\s*\.standard\b|standardUserDefaults"
-                     r"|UserDefaults\(\s*suiteName:\s*(GoalongBundleIdentity|Bundle\.main|\"ai\.goalong)")
+                     r"|UserDefaults\(\s*suiteName:\s*(GoalongBundleIdentity|Bundle\.main|\"ai\.goalong)"
+                     r"|\bUserDefaults\s*\(\s*(suiteName\s*:\s*nil\s*)?\)"
+                     r"|\b(defaults|userDefaults)\s*:\s*\.standard\b|@AppStorage\s*\([^)]*\bstore\s*:\s*\.standard\b"
+                     r"|\bCFPreferences\w*|\[\s*\[\s*NSUserDefaults\s+alloc\s*\]\s*init\s*\]")
+
+def without_comments(text):
+    """Blanks // and /* */ comments, keeps string literals and newlines (line numbers stay right)."""
+    out, i, n, string = [], 0, len(text), None
+    while i < n:
+        c = text[i]
+        if string:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1]); i += 2; continue
+            if string == '"' and c == "\n":
+                string = None; i += 1; continue   # a one-line literal never spans lines (keeps a stray quote local)
+            if text.startswith(string, i):
+                out.append(text[i + 1:i + len(string)]); i += len(string); string = None; continue
+            i += 1
+        elif text.startswith('"""', i):
+            out.append('"""'); i += 3; string = '"""'
+        elif c == '"':
+            out.append(c); i += 1; string = '"'
+        elif text.startswith("//", i):
+            while i < n and text[i] != "\n": i += 1
+        elif text.startswith("/*", i):
+            close = text.find("*/", i + 2)
+            close = n if close < 0 else close + 2
+            out.append("\n" * text.count("\n", i, close)); i = close
+        else:
+            out.append(c); i += 1
+    return "".join(out)
+
 bad = []
 for folder in ("Sources", "Features", "Tests"):
-    for path in sorted((root / folder).rglob("*.swift")):
+    for path in sorted(p for p in (root / folder).rglob("*") if p.suffix in (".swift", ".m", ".h")):
         relative = path.relative_to(root).as_posix()
         if relative in allowed:
             continue
-        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            code = line.split("//", 1)[0]
-            if pattern.search(code):
-                bad.append(f"{relative}:{number}: {line.strip()}")
+        text = path.read_text(encoding="utf-8", errors="replace")
+        code = without_comments(text)
+        lines = text.splitlines()
+        for match in pattern.finditer(code):
+            number = code.count("\n", 0, match.start()) + 1
+            bad.append(f"{relative}:{number}: {lines[number - 1].strip() if number <= len(lines) else match.group(0)}")
 for entry in bad:
     print(entry, file=sys.stderr)
 sys.exit(1 if bad else 0)

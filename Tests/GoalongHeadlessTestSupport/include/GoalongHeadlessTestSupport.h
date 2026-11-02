@@ -12,6 +12,12 @@ FOUNDATION_EXPORT void GoalongHeadlessCleanLeakedDefaultSuite(NSString * _Nonnul
 // Real path of the plist cfprefsd writes for a suite (the account home, not CFFIXED_USER_HOME).
 FOUNDATION_EXPORT NSString * _Nullable GoalongHeadlessSuitePlistPath(NSString * _Nonnull name);
 
+// Deletes ~/Library/Preferences/goalong-tests-defaults-*.plist left by test processes that are gone:
+// `goalong-tests-defaults-<pid>-…` whose pid is dead, and the older UUID-only names (untouched for 2 minutes).
+// Runs once at load. Unlinks the file only: emptying the domain through cfprefsd re-creates it seconds later.
+// Returns the number of files removed.
+FOUNDATION_EXPORT NSInteger GoalongHeadlessSweepOrphanedTestPreferences(void);
+
 // Gallery guards: from Begin to Take, ordering windows on screen, sheets, modals, status items,
 // URL requests, NSTask launches and +standardUserDefaults from the test bundle are refused and
 // counted. Take ends the session and returns {violations: [String], network, tasks,
