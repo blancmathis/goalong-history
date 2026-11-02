@@ -168,7 +168,7 @@ enum GoalongKnownApplications {
         VStack(alignment: .leading, spacing: 16) {
             // UI-13C (27): the sentence is the page lead (SettingsPane.lead); a compact segmented control, its help beside it.
             HStack(spacing: 8) {
-                GoalongSegmentedControl("Type", selection: $sites, options: [false, true]) { $0 ? "Sites web" : "Applications" }
+                GoalongSegmentedControl("Type", selection: $sites, options: [false, true]) { $0 ? "Sites web" : "Apps" }
                     .fixedSize()
                 GoalongHelpButton(text: "Le suivi détaillé et les prochains envois respectent ces exclusions. Les historiques locaux d’Apple et des outils IA restent séparés ; ils ne sont pas effacés. Les textes et totaux impossibles à filtrer sont bloqués. Une ancienne exclusion limitée au suivi détaillé est indiquée comme telle.")
             }

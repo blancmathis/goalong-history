@@ -62,7 +62,7 @@
         static let tertiaryText = adaptive(light: 0x5A6355, dark: 0x96A59B, highLight: 0x4C5747, highDark: 0xB1BEB4)
         /// The label of a disabled control (déc. 3, T-043 R-5): ≥ 3:1 on every surface (selection and pressed included), and
         /// clearly weaker than an active label (ink, 11–15:1). Drawn at full opacity, never faded.
-        static let disabledText = adaptive(light: 0x757E70, dark: 0x74857A, highLight: 0x5E6859, highDark: 0x9AAA9E)
+        static let disabledText = adaptive(light: 0x6A7366, dark: 0x839489, highLight: 0x5E6859, highDark: 0x9AAA9E)
         /// A loading indicator (T-043 R-6): tinted like secondary text, ≥ 3:1 on every surface.
         static let progressTint = secondaryText
 

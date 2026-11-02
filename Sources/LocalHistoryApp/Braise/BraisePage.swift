@@ -134,6 +134,7 @@ import SwiftUI
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }.fixedSize(horizontal: false, vertical: true).padding(.top, 12)
                 }
+                .collapsedSummary("Secours : ⌃ ⌥ ⌘ R")
             }
             .font(.system(size: 13)).frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
             .padding(.horizontal, compact ? 24 : LHTheme.pageInset).padding(.top, 28).padding(.bottom, 32)
