@@ -219,7 +219,7 @@
             confirm: () -> Bool = {
                 let alert = NSAlert()
                 alert.alertStyle = .informational
-                alert.messageText = "Goalong History est déjà ouvert"
+                alert.messageText = "Goalong est déjà ouvert"
                 alert.informativeText = "Pour installer cette version, l’autre copie doit d’abord se fermer. La fermer maintenant ?"
                 alert.addButton(withTitle: "Fermer et continuer")
                 alert.addButton(withTitle: "Quitter")
@@ -273,7 +273,7 @@
             case .couldNotRelaunch:
                 return "La copie de l’application n’a pas pu être ouverte."
             case .otherInstanceStillRunning:
-                return "Goalong History est encore ouvert et ne s’est pas fermé."
+                return "Goalong est encore ouvert et ne s’est pas fermé."
             }
         }
     }

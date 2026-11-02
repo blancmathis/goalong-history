@@ -55,8 +55,7 @@ struct BlockedSiteVeil: View {
                     }
                 } else if presentation.breakMinutes != nil {
                     // No break left and no extra one: say it, instead of a veil that silently lost its way out.
-                    Text(BlockingFormat.isOpenEnded(presentation.end) ? "Pauses du jour prises."
-                         : "Pauses du jour prises. Le blocage s’arrête à \(BlockingFormat.endTime(presentation.end)).")
+                    Text("Plus de pause aujourd’hui.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .accessibilityIdentifier("blocking-veil-no-break")
                 }

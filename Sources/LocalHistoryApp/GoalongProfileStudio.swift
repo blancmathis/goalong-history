@@ -139,7 +139,7 @@ extension Notification.Name {
             else { bytes = try request.encoded() }
             let url = folder.appendingPathComponent(request.request_id + (result == nil ? ".request.json" : ".analysis.json"))
             try ChatGPTSecureStorage.writeFileAtomically(bytes, to: url)
-            status = "Enregistré dans Goalong History. Aucun envoi au site."
+            status = "Enregistré dans Goalong. Aucun envoi au site Goalong."
             NotificationCenter.default.post(name: .goalongProfileAnalysisDidSave, object: nil)
         } catch { self.error = goalongUserMessage(error) }
     }
@@ -202,7 +202,7 @@ extension Notification.Name {
             studioWindow.makeKeyAndOrderFront(nil); return
         }
         let window = NSWindow(contentViewController: content(localOnly: localOnly, initialDay: initialDay, earliestDay: earliestDay, onSend: onSend))
-        window.title = ProductIdentity.windowTitle("Comprendre mon travail — Goalong History")
+        window.title = ProductIdentity.windowTitle("Comprendre mon travail")
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(LHTheme.pageBackground)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -318,7 +318,7 @@ struct GoalongProfileStudio: View {
                             if computer {
                                 // UI-12A: the same day selector as above, never the system DatePicker; at most the analysed day.
                                 HStack(spacing: 8) {
-                                    Text("Activité depuis le").font(.system(size: 13)).frame(width: Self.dayLabelWidth, alignment: .leading)
+                                    Text("Activité à partir du").font(.system(size: 13)).frame(width: Self.dayLabelWidth, alignment: .leading)
                                     DateSelectionControl(date: start, onChange: { day in
                                         let picked = Calendar.current.startOfDay(for: day)
                                         startCapped = picked > analyzedDay
@@ -359,9 +359,9 @@ struct GoalongProfileStudio: View {
                             Text("Exclure des applications, projets ou termes — un par ligne").font(.system(size: 13, weight: .medium))
                             GoalongTextArea(text: $exclusions, minHeight: 60).accessibilityLabel("Termes à exclure")
                             Text("Les événements contenant ces termes sont retirés avant analyse. Toute réapparition littérale dans un résultat est masquée.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                            Text("Remplacer des noms — une ligne « nom privé => alias »").font(.system(size: 13, weight: .medium))
+                            Text("Remplacements — une ligne « nom privé → alias »").font(.system(size: 13, weight: .medium))
                             GoalongTextArea(text: $aliases, minHeight: 60).accessibilityLabel("Règles de remplacement")
-                            Text("Exemple : Projet Atlas => Projet secret. Les remplacements s’appliquent avant analyse et avant export.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            Text("Exemple : Projet Atlas → Projet secret. Les remplacements s’appliquent avant analyse et avant export.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Text("Ce que l’agent ne doit pas aborder — complément personnel").font(.system(size: 13, weight: .medium))
                             GoalongTextArea(text: $instructions, minHeight: 80).accessibilityLabel("Consignes personnelles de confidentialité")
                             Text("Pour masquer un nom précis, ajoutez-le aussi aux règles ci-dessus. Les consignes libres guident l’agent ; elles ne garantissent pas à elles seules qu’un sujet ne sera jamais évoqué. Relisez les résultats.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -454,7 +454,7 @@ struct GoalongProfileStudio: View {
         do {
             let split: (String) -> [String] = { $0.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
             let replacements = try split(aliases).map { line -> GoalongProfileAnalysis.Replacement in
-                let parts = line.components(separatedBy: "=>"); guard parts.count == 2 else { throw GoalongProfileAnalysis.invalid("Chaque remplacement doit suivre : nom privé => alias.") }
+                let parts = line.replacingOccurrences(of: "=>", with: "→").components(separatedBy: "→"); guard parts.count == 2 else { throw GoalongProfileAnalysis.invalid("Chaque remplacement doit suivre : nom privé → alias.") }
                 return .init(term: parts[0].trimmingCharacters(in: .whitespaces), replacement: parts[1].trimmingCharacters(in: .whitespaces))
             }
             model.prepare(day: end.addingTimeInterval(-0.001), modules: modules, policy: .init(excluded_terms: split(exclusions), replacements: replacements, additional_instructions: instructions), includeConversations: conversations)
@@ -477,15 +477,15 @@ struct GoalongProfileStudio: View {
         model.open(url)
         if let request = model.request, let c = try? request.context() {
             exclusions = request.policy.excluded_terms.joined(separator: "\n")
-            aliases = request.policy.replacements.map { $0.term + " => " + $0.replacement }.joined(separator: "\n")
+            aliases = request.policy.replacements.map { $0.term + " → " + $0.replacement }.joined(separator: "\n")
             instructions = request.policy.additional_instructions; modules = Set(c.modules)
             conversations = c.include_conversations ?? c.modules.contains("ai")
         }
     }, directory: AppPaths.chatGPTDirectory.appendingPathComponent("profile-analyses")) }
     private func settingsChanged() {
         guard let request = model.request, let c = try? request.context() else { return }
-        let expectedAliases = request.policy.replacements.map { $0.term + " => " + $0.replacement }.joined(separator: "\n")
-        if exclusions != request.policy.excluded_terms.joined(separator: "\n") || aliases != expectedAliases || instructions != request.policy.additional_instructions || modules != Set(c.modules) || conversations != (c.include_conversations ?? c.modules.contains("ai")) { model.invalidate() }
+        let expectedAliases = request.policy.replacements.map { $0.term + " → " + $0.replacement }.joined(separator: "\n")
+        if exclusions != request.policy.excluded_terms.joined(separator: "\n") || aliases.replacingOccurrences(of: "=>", with: "→") != expectedAliases || instructions != request.policy.additional_instructions || modules != Set(c.modules) || conversations != (c.include_conversations ?? c.modules.contains("ai")) { model.invalidate() }
     }
     private func resetSources() { model.invalidate(); model.evidence = []; model.selectedEvidence = [] }
     private func importEvidence() {

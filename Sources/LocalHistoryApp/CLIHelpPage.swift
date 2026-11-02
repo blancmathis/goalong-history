@@ -33,7 +33,7 @@
                     PageHeader(
                         title: "Commande goalong",
                         subtitle:
-                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent une consigne sûre."
+                            "Interrogez votre historique depuis le Terminal, ou donnez à un agent des instructions prêtes à coller."
                     )
 
                     // UI-17B (36): the state pill sits here in every state, not beside the title in one and under it in another.
@@ -304,8 +304,8 @@
 
         private var readinessTitle: String {
             switch installationReport.state {
-            case .ready: return "Prête dans le Terminal"
-            case .missing: return "Installez la commande goalong"
+            case .ready: return "Tapez « goalong » dans le Terminal"
+            case .missing: return "Un clic suffit pour l’utiliser dans le Terminal"
             case .conflict: return "Le lien de la commande n’est pas fiable"
             case .development: return "La commande goalong sert Goalong installé"
             }
@@ -314,7 +314,7 @@
         private var readinessDetail: String {
             switch installationReport.state {
             case .ready:
-                return "Le lien pointe vers cette version installée de Goalong. Chaque requête se termine après sa réponse, sans processus supplémentaire."
+                return "La commande utilise cette version de Goalong et s’arrête après chaque réponse."
             case .development:
                 guard let path = installationReport.developmentCLIPath else { return installationReport.detail }
                 return installationReport.detail + " Exécutable de Goalong Dev : " + path
@@ -370,7 +370,7 @@
             switch item.command {
             case "goalong status": return "Vérifier chaque source"
             case "goalong days": return "Trouver les jours disponibles"
-            case "goalong help": return "Consulter les commandes exactes"
+            case "goalong help": return "Afficher l’aide"
             default: return item.command.hasPrefix("goalong ask") ? "Poser une question sur votre journée" : item.title
             }
         }
@@ -387,7 +387,7 @@
             switch item.command {
             case "goalong status": return "Ce que vous avez autorisé, la date des dernières données, les jours couverts et les erreurs, sans ouvrir les conversations."
             case "goalong days": return "Liste les dates auxquelles Goalong peut répondre avec les données locales."
-            case "goalong help": return "Aide lisible ; ajoutez --json pour donner à un agent la liste des commandes."
+            case "goalong help": return "Aide en clair ; ajoutez --json pour donner à un agent la liste des commandes."
             default:
                 return item.command.hasPrefix("goalong ask")
                     ? "Goalong choisit le plus petit ensemble de données locales utiles." : item.detail

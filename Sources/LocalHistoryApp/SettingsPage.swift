@@ -221,7 +221,7 @@ import AppKit
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
                     // UI-12B (20): the description under the title, the value column for the state only.
-                    GoalongSettingsLink(title: "Envoi à Goalong", value: "", symbol: "arrow.up.circle", detail: detail(.website)) { pane = .website }
+                    GoalongSettingsLink(title: "Envoyer au site Goalong", value: "", symbol: "arrow.up.circle", detail: detail(.website)) { pane = .website }
                     GoalongRowDivider()
                     GoalongSettingsLink(title: "Analyse ChatGPT", value: "", symbol: "sparkles", detail: detail(.chatGPT)) { pane = .chatGPT }
                     GoalongRowDivider()
@@ -263,12 +263,7 @@ import AppKit
                 Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.goalongSwitch)
                     .disabled(!updates.isConfigured)
-                // UI-12B (58): the locked switch says why, right under it.
-                if !updates.isConfigured {
-                    Text("Indisponible dans cette copie : seule la version publiée reçoit les mises à jour.")
-                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                // R-82: the status row above already says why the switch is locked (one message, not two).
                 Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -316,7 +311,7 @@ import AppKit
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
-        case .jev: return "Surveillance de vos séances"
+        case .jev: return "Repère les distractions pendant vos séances"
         case .permissions: return "Accès accordés à Goalong"
         case .storage: return "Conservation et effacement"
         case .advanced: return "Outils et diagnostics"
@@ -348,7 +343,7 @@ enum SettingsPane: Hashable {
         case .recording: return "Enregistrement"
         case .applications: return "Apps et sites"
         case .connections: return "Connexions"
-        case .website: return "Envoi à Goalong"
+        case .website: return "Envoyer au site Goalong"
         case .chatGPT: return "Analyse ChatGPT"
         case .jev: return "Jev" // UI-10 (M3): one name with the sidebar and the card; the row's value and the card say what it does.
         case .modules: return "Modules"
@@ -468,7 +463,7 @@ enum SettingsPane: Hashable {
             Image(systemName: symbol).foregroundStyle(tint).font(.system(size: 14, weight: .medium)).frame(width: 22)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Goalong History \(updates.currentVersion)").font(.system(size: 13, weight: .medium))
+                Text("Goalong \(updates.currentVersion)").font(.system(size: 13, weight: .medium))
                 Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -490,7 +485,7 @@ enum SettingsPane: Hashable {
                 Button("Voir les versions") { updates.openRollingReleasePage() }.buttonStyle(LHSecondaryButtonStyle())
             } else {
                 // UI-51: greyed when this build has no update configuration; the detail line says why.
-                Button(updates.lastCheckResult == .failed ? "Réessayer" : "Rechercher") { updates.checkForUpdates() }.buttonStyle(LHSecondaryButtonStyle())
+                Button(updates.lastCheckResult == .failed ? "Réessayer" : "Rechercher une mise à jour") { updates.checkForUpdates() }.buttonStyle(LHSecondaryButtonStyle())
                     .disabled(!updates.isConfigured)
             }
         }
@@ -519,11 +514,14 @@ enum SettingsPane: Hashable {
     private var detail: String {
         if updates.requiresSignedBuild { return "Cette version ne se met pas à jour toute seule." }
         if !updates.isConfigured { return updates.statusMessage }
-        if updates.isChecking { return "Recherche en cours…" }
+        // R-82: while checking, the button already says « Recherche… »; the row keeps the last state.
         if let version = updates.availableVersion { return "La version \(version) est prête à être installée." }
         let when = updates.lastCheckedAt.map { ", vérifié " + Self.relative($0) } ?? ""
         switch updates.lastCheckResult {
-        case .failed: return updates.statusMessage
+        case .failed:
+            return updates.automaticallyChecksForUpdates
+                ? updates.statusMessage + " Goalong réessaiera automatiquement à la prochaine vérification."
+                : updates.statusMessage
         case .upToDate: return "À jour" + when
         default: return updates.automaticallyChecksForUpdates ? "Vérification automatique activée" + when : "Vérification automatique désactivée" + when
         }

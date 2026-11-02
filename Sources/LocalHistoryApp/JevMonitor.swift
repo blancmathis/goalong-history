@@ -16,7 +16,7 @@ struct JevRecentCheck: Identifiable {
 @MainActor final class JevMonitor: ObservableObject {
     static let shared = JevMonitor()
     static let excerptKey = "goalong.jev.visibleExcerpt.v1"
-    @Published private(set) var status = "Surveillance désactivée"
+    @Published private(set) var status = "Jev désactivé"
     @Published private(set) var hasKey = false
     @Published private(set) var timedBreak: JevTimedBreak?
     @Published private(set) var remainingSeconds = 0
@@ -62,7 +62,7 @@ struct JevRecentCheck: Identifiable {
             && UserDefaults.standard.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey)
     }
     /// One name for an unreadable break.json, in the monitor error and in the pause controls.
-    static let unreadableBreakNotice = "Minuterie illisible : surveillance suspendue, historique inchangé."
+    static let unreadableBreakNotice = "Minuterie illisible : Jev suspendu, historique inchangé."
     init(scopePreferences: JevMonitoringPreferences? = nil, consents: GoalongCapabilityConsentStore? = nil,
          sessionProvider: (() -> UUID?)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true,
          localRoot: URL? = nil) {
@@ -87,7 +87,7 @@ struct JevRecentCheck: Identifiable {
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
             keyStorageInvalid = true
-            messages.append("Clé d’accès Jev illisible : surveillance suspendue. Enregistrez-la à nouveau dans Gérer la connexion.")
+            messages.append("Clé d’accès Jev illisible : Jev suspendu. Enregistrez-la à nouveau dans Gérer la connexion.")
         }
         do {
             if let data = try JevLocalFiles.read("break.json", root: localRoot) {
@@ -123,7 +123,7 @@ struct JevRecentCheck: Identifiable {
         }
         observers.append(center.addObserver(forName: .jevBoundaryChanged, object: nil, queue: nil) { [weak self] _ in
             Task { @MainActor in
-                self?.cancelPending(); self?.status = "Contexte protégé : surveillance suspendue"
+                self?.cancelPending(); self?.status = "Contexte protégé : Jev suspendu"
             }
         })
         observers.append(center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -153,16 +153,16 @@ struct JevRecentCheck: Identifiable {
     }
     private var focusSessionID: UUID? { sessionProvider() }
     private var gate: String? {
-        if timedBreak != nil || breakStorageInvalid { return "Surveillance en pause : aucun appel ni rappel" }
-        if !enabled { return "Surveillance désactivée" }
+        if timedBreak != nil || breakStorageInvalid { return "Jev en pause : aucun appel ni rappel" }
+        if !enabled { return "Jev désactivé" }
         if let issue = scopePreferences.error { return issue }
         if !scopePreferences.scope.permits(sessionActive: focusSessionID != nil) { return "En attente d’une séance" }
         if let issue = JevWorkContextStore.shared.error { return issue }
-        if keyStorageInvalid { return "Clé d’accès Jev illisible : surveillance suspendue" }
-        if !hasKey { return "Configurez la connexion à Jev pour activer la surveillance" }
-        if circuitOpen { return circuitReason?.errorDescription ?? "Surveillance suspendue après erreur : vérifiez la connexion" }
-        if GoalongGlobalPause.isPaused() { return "Arrêt de confidentialité : historique et surveillance suspendus" }
-        if !consents.isEnabled(.localComputerHistory) { return "Activez l’historique de ce Mac pour utiliser la surveillance" }
+        if keyStorageInvalid { return "Clé d’accès Jev illisible : Jev suspendu" }
+        if !hasKey { return "Configurez la connexion à Jev pour l’activer" }
+        if circuitOpen { return circuitReason?.errorDescription ?? "Jev suspendu après erreur : vérifiez la connexion" }
+        if GoalongGlobalPause.isPaused() { return "Arrêt de confidentialité : enregistrement et Jev suspendus" }
+        if !consents.isEnabled(.localComputerHistory) { return "Activez l’enregistrement pour utiliser Jev" }
         if BackgroundContinuityPreferences().manuallyPaused { return "Enregistrement en pause : aucune analyse temps réel" }
         if !sessionAvailable { return "Mac inactif ou verrouillé : aucune analyse temps réel" }
         if GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).blocked { return "Exclusions illisibles : aucune analyse temps réel" }
@@ -171,7 +171,7 @@ struct JevRecentCheck: Identifiable {
     func setEnabled(_ value: Bool) {
         if !value { JevWarningPanel.shared.hide(resetPosition: true) }
         if !consents.set(.jevMonitoring, enabled: value, surface: .settings) {
-            error = "Le choix de surveillance n’a pas pu être enregistré."; errorIsTransient = false
+            error = "Le réglage de Jev n’a pas pu être enregistré."; errorIsTransient = false
         }
         reconfigure()
     }
@@ -356,8 +356,8 @@ struct JevRecentCheck: Identifiable {
                 SupportDiagnostics.shared.failure(error, component: .monitoring)
                 guard self.epoch == token, !Task.isCancelled else { return }
                 self.request = nil; self.resetInterventions()
-                self.error = (error as? JevError)?.errorDescription ?? "Connexion de surveillance indisponible. Aucun classement inventé."
-                self.status = self.error ?? "Service de surveillance indisponible"
+                self.error = (error as? JevError)?.errorDescription ?? "Connexion à Jev indisponible. Aucun classement inventé."
+                self.status = self.error ?? "Service Jev indisponible"
                 self.consecutiveFailures += 1
                 self.errorIsTransient = true
                 // 30 s, 1 min, 2 min… up to 10 min: a failing service is not called every cycle.

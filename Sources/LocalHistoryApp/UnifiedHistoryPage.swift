@@ -75,7 +75,7 @@
                 // Same rule as Activité: an empty day greys the button instead of offering nothing.
                 // History off: nothing is recorded, so there is nothing to share either (UI-17C, écran 22).
                 sharingEnabled: historyEnabled && model.snapshot.eventCount > 0,
-                sharingDisabledReason: historyEnabled ? "Rien à partager ce jour-là" : "Historique de ce Mac désactivé"
+                sharingDisabledReason: historyEnabled ? "Rien à partager ce jour-là" : "Enregistrement désactivé"
             )
         }
 

@@ -267,7 +267,7 @@ struct FocusComposerDraft: Equatable {
                     TextField("", text: $draft.intent)
                         // 17 pt medium text is 20 pt high: 8 + 20 + 8 makes the field 36 pt, 2 pt taller than a standard one.
                         .textFieldStyle(GoalongFieldStyle(textFont: .medium17))
-                        .goalongPlaceholder("Je fais…", isEmpty: draft.intent.isEmpty, textFont: .medium17)
+                        .goalongPlaceholder("Sur quoi travaillez-vous ?", isEmpty: draft.intent.isEmpty, textFont: .medium17)
                         .onSubmit { if !intent.isEmpty { begin() } }
                         .accessibilityLabel("Ce que vous faites pendant la séance")
                         .accessibilityIdentifier("concentration-intent")
@@ -555,8 +555,9 @@ struct FocusPlanChip: View {
 
     private var blockingWords: String {
         let names = lists.map(\.name).joined(separator: ", ")
-        if !phase.isWork && !session.blockDuringBreaks { return "\(names) : libre pendant la pause" }
-        return lists.allSatisfy { $0.effectiveAction == .slowDown } ? "\(names) : \(lists.count > 1 ? "ralentis" : "ralenti")" : "\(names) : \(lists.count > 1 ? "bloqués" : "bloqué")"
+        // R-84: the state first, then the group (« Bloqué : Réseaux sociaux, Vidéo »).
+        if !phase.isWork && !session.blockDuringBreaks { return "Libre pendant la pause : \(names)" }
+        return lists.allSatisfy { $0.effectiveAction == .slowDown } ? "Ralenti : \(names)" : "Bloqué : \(names)"
     }
 
     private func act(_ action: () throws -> Void) {
@@ -1055,7 +1056,7 @@ struct FocusThreadModel: Equatable {
                 LHCard(padding: 0) {
                     VStack(spacing: 0) {
                         switchRow("Détecter la concentration",
-                                  detail: "Hors séance, le statut passe à « concentré » après 16 minutes actives sur 20, sans l’étiquette « hors travail ».",
+                                  detail: "Hors séance, le statut passe à « concentré » après 16 minutes actives sur les 20 dernières, sans l’étiquette « hors travail ».",
                                   isOn: setting(\.detectionEnabled))
                         GoalongRowDivider(inset: LHTheme.cardInset)
                         switchRow("Son au changement de phase", detail: nil, isOn: setting(\.phaseSound))
@@ -1084,7 +1085,7 @@ struct FocusThreadModel: Equatable {
                     if let limitError {
                         Text(limitError).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                     }
-                    Text("Sans valeur, pas de limite. Goalong prévient une fois, sans jamais bloquer le travail. Le travail suit votre définition ; sans définition, le temps actif.")
+                    Text("Sans valeur, pas de limite. Goalong prévient une fois, sans jamais bloquer le travail. Le travail compté suit votre définition dans Mon travail ; sans définition, Goalong compte tout le temps actif.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1095,15 +1096,15 @@ struct FocusThreadModel: Equatable {
                         HStack(alignment: .center, spacing: 12) {
                             labels("Jokers par mois", "Un joker garde la série et lève l’enjeu d’une période non tenue.")
                             Spacer(minLength: 12)
-                            Stepper(value: joker(\.day), in: 0...5) { Text("\(controller.settings.jokerSettings.day) pour les jours").monospacedDigit() }
+                            Stepper(value: joker(\.day), in: 0...5) { Text("Jour : \(controller.settings.jokerSettings.day)").monospacedDigit() }
                                 .fixedSize()
-                            Stepper(value: joker(\.week), in: 0...2) { Text("\(controller.settings.jokerSettings.week) pour les semaines").monospacedDigit() }
+                            Stepper(value: joker(\.week), in: 0...2) { Text("Semaine : \(controller.settings.jokerSettings.week)").monospacedDigit() }
                                 .fixedSize()
                         }
                         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10).frame(minHeight: 52)
                     }
                 }
-                GoalongNote("Tout se pilote aussi avec la commande goalong : session, plan, review, commitment, focus watch. Voir la page Terminal.",
+                GoalongNote("Tout se pilote aussi avec la commande goalong : séances, plan, bilan, engagements et suivi. Voir la page Terminal.",
                             symbol: "terminal")
             }
             .padding(.top, 14)

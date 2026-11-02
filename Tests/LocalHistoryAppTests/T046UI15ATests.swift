@@ -32,7 +32,7 @@ final class T046UI15ATests: XCTestCase {
     }
 
     func testSidebarStatusSaysOffPauseAndRefusedWrite() {
-        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: false), "Enregistrement coupé")
+        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: false), "Désactivé")
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: true), "Tout est en pause")
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: true), "Tout est en pause")
         XCTAssertEqual(runtime(.storageUnavailable(.permissionDenied)).sidebarTitle(recordingEnabled: true, globallyPaused: false),

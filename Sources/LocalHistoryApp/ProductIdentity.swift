@@ -4,6 +4,9 @@
 
     enum ProductIdentity {
         static let canonicalDisplayName = "Goalong History"
+        /// Name in interface text (menus, messages): « Goalong ». The bundle name « Goalong History »
+        /// stays for the .app file and the macOS privacy list.
+        static let interfaceName = "Goalong"
         static let fallbackDisplayName = canonicalDisplayName
         static let internalBundleName = "LocalHistory"
         /// This copy's own bundle ID: the release, or `ai.goalong.localhistory.dev` in Goalong Dev.
@@ -21,7 +24,7 @@
         /// Test gallery only: a fixed name, version and bundle path, so renders do not show "xctest".
         struct GalleryIdentity: Equatable {
             var displayName = "Goalong"
-            var version = "0.6.82 (galerie)"
+            var version = "0.6.82"
             var bundlePath = "/Applications/Goalong.app"
         }
         static var galleryOverride: GalleryIdentity?
@@ -35,16 +38,17 @@
                 Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
                 Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String,
             ]
-            return candidates
+            let name = candidates
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .first(where: { !$0.isEmpty && !legacyOrTechnicalNames.contains($0) })
                 ?? canonicalDisplayName
+            return name == canonicalDisplayName ? interfaceName : name
         }
 
         /// Window titles end with " — Dev" in the `make dev` copy only.
         static func windowTitle(_ title: String) -> String { GoalongBuildChannel.current.windowTitle(title) }
         static var mainWindowTitle: String {
-            GoalongBuildChannel.current.isDevelopment ? windowTitle(canonicalDisplayName) : displayName
+            GoalongBuildChannel.current.isDevelopment ? windowTitle(interfaceName) : displayName
         }
 
         static let rollingReleaseTag = "latest-main"

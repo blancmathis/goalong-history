@@ -109,8 +109,8 @@ final class T046C3RenderTests: XCTestCase {
         JevMenuController.shared.menuNeedsUpdate(menu)
         var titles = menu.items.map(\.title)
         XCTAssertTrue(titles.contains("Pause de 5 min (historique inchangé)"), "saw \(titles)")
-        XCTAssertTrue(titles.contains("Désactiver la surveillance"), "saw \(titles)")
-        XCTAssertFalse(titles.contains("Reprendre la surveillance"), "No break yet; saw \(titles)")
+        XCTAssertTrue(titles.contains("Désactiver Jev"), "saw \(titles)")
+        XCTAssertFalse(titles.contains("Reprendre Jev"), "No break yet; saw \(titles)")
 
         let quick = strings(of: host(JevQuickPauseControl()))
         XCTAssertTrue(quick.contains("jev-quick-pause"), "saw \(quick.sorted())")
@@ -124,20 +124,20 @@ final class T046C3RenderTests: XCTestCase {
         XCTAssertNotNil(monitor.timedBreak, "Pressing a duration starts the break")
         spin(until: { strings(of: breaks).contains("jev-end-break") })
         seen = strings(of: breaks)
-        XCTAssertTrue(seen.contains("Reprendre la surveillance"), "saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Reprendre Jev"), "saw \(seen.sorted())")
         XCTAssertTrue(seen.contains("jev-break-countdown"), "saw \(seen.sorted())")
         XCTAssertFalse(seen.contains("5 min"), "No new break during a break; saw \(seen.sorted())")
 
         JevMenuController.shared.menuNeedsUpdate(menu)
         titles = menu.items.map(\.title)
-        XCTAssertTrue(titles.contains("Reprendre la surveillance"), "saw \(titles)")
-        XCTAssertTrue(titles.contains { $0.hasPrefix("Surveillance en pause : ") && $0.hasSuffix(" restantes") }, "saw \(titles)")
+        XCTAssertTrue(titles.contains("Reprendre Jev"), "saw \(titles)")
+        XCTAssertTrue(titles.contains { $0.hasPrefix("Jev en pause · ") && $0.hasSuffix(" restantes") }, "saw \(titles)")
         XCTAssertFalse(titles.contains("Pause de 5 min (historique inchangé)"), "saw \(titles)")
 
         let quickBreak = strings(of: host(JevQuickPauseControl()))
-        XCTAssertTrue(quickBreak.contains { $0.hasPrefix("Pause, ") }, "The quick control shows the countdown; saw \(quickBreak.sorted())")
+        XCTAssertTrue(quickBreak.contains { $0.hasPrefix("Pause · ") }, "The quick control shows the countdown; saw \(quickBreak.sorted())")
 
-        XCTAssertTrue(press("Reprendre la surveillance", in: breaks))
+        XCTAssertTrue(press("Reprendre Jev", in: breaks))
         XCTAssertNil(monitor.timedBreak, "Resuming ends the break")
         XCTAssertNil(try JevLocalFiles.read("break.json"), "No break file is left")
         assertNoVisibleWindow()
@@ -277,7 +277,7 @@ final class T046C3RenderTests: XCTestCase {
         let sheet = host(GoalongWebsiteConnectionSheet())
         var seen = strings(of: sheet)
         XCTAssertTrue(seen.contains("Rapport structuré de productivité"), "saw \(seen.sorted())")
-        XCTAssertTrue(seen.contains("Calculer le rythme à partir de l’historique de ce Mac"), "saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Calculer le rythme à partir de l’enregistrement de ce Mac"), "saw \(seen.sorted())")
         XCTAssertFalse(seen.contains("Inclure l’heure de début précise"), "Rhythm off; saw \(seen.sorted())")
         // The disclosure and the switch are pressed through accessibility; a style that does not answer the press is
         // reported, not failed (the coverage run says what was reached).
@@ -288,7 +288,7 @@ final class T046C3RenderTests: XCTestCase {
         } else {
             print("[t046-c3] advanced options not pressable; saw \(seen.sorted())")
         }
-        if press("Calculer le rythme à partir de l’historique de ce Mac", in: sheet) {
+        if press("Calculer le rythme à partir de l’enregistrement de ce Mac", in: sheet) {
             spin(until: { strings(of: sheet).contains("Inclure l’heure de début précise") })
             seen = strings(of: sheet)
             XCTAssertTrue(seen.contains("Inclure les épisodes simplifiés"), "saw \(seen.sorted())")

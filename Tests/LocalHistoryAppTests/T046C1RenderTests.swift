@@ -255,7 +255,7 @@ final class T046C1RenderTests: XCTestCase {
         model.setValueForTesting(value)
         let rendered = host(GoalongDeveloperProjectsSheet(developer: model))
         let seen = strings(of: rendered)
-        for label in ["suivi-fixe", "vu-fixe", "Projets vus par vos agents", "Retirer", "Suivre", "Ajouter un dossier…", "OK", "developer-projects-sheet"] {
+        for label in ["suivi-fixe", "vu-fixe", "Projets vus par vos agents", "Retirer", "Suivre", "Ajouter un dossier…", "Fermer", "developer-projects-sheet"] {
             XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
         }
         XCTAssertFalse(seen.contains("Aucun projet suivi"))

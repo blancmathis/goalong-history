@@ -390,7 +390,7 @@
                                     )
                                     .help("Ce rapport est antérieur aux analyses signées. Régénérez-le pour détecter toute modification.")
                                 }
-                                Text(recap.generatedAt.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(GoalongUIFormat.locale)))
+                                Text("\(GoalongUIFormat.dayAbbreviated(recap.generatedAt)) à \(GoalongUIFormat.time(recap.generatedAt))")
                                     .font(.system(size: 12))
                                     .foregroundStyle(LHTheme.secondaryText)
                             }
@@ -449,7 +449,7 @@
                     )
                     bandDivider
                     metric(
-                        title: "Classé travail",
+                        title: "Classé comme travail",
                         value: duration(overview.workSeconds),
                         detail: "D’après Mon travail"
                     )

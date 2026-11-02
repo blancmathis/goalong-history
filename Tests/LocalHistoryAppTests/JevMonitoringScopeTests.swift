@@ -37,7 +37,7 @@ final class JevMonitoringScopeTests: XCTestCase {
                                  inbox: inbox, loadLocalSettings: false)
         monitor.setScope(.sessionsOnly)
         XCTAssertFalse(consents.isEnabled(.jevMonitoring)); XCTAssertFalse(consents.isEnabled(.localComputerHistory))
-        XCTAssertEqual(monitor.status, "Surveillance désactivée")
+        XCTAssertEqual(monitor.status, "Jev désactivé")
         XCTAssertTrue(consents.set(.jevMonitoring, enabled: true, surface: .settings))
         monitor.start()
         XCTAssertEqual(monitor.status, "En attente d’une séance"); XCTAssertFalse(inbox.isEnabled)

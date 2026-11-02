@@ -345,7 +345,7 @@
                             ProgressView()
                                 .controlSize(.mini)
                         } else {
-                            Text("Version \(Self.version.dropFirst())")
+                            Text(Self.version)
                         }
                     }
                     .buttonStyle(.plain)
@@ -353,7 +353,7 @@
                     .help("Rechercher les mises à jour")
                 } else {
                     // UI-13B (13): plain secondary text (≥ 4,5:1), not a dimmed disabled button.
-                    Text("Version \(Self.version.dropFirst())")
+                    Text(Self.version)
                         .help("Mises à jour désactivées dans cette version compilée localement")
                 }
                 Spacer()
@@ -363,7 +363,7 @@
         }
 
         private static var version: String {
-            "v\(ProductIdentity.shortVersion ?? "0.6.0-dev")"
+            "\(ProductIdentity.interfaceName) \(ProductIdentity.shortVersion ?? "0.6.0-dev")"
         }
     }
 
@@ -412,7 +412,7 @@
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"
             case .braise: return "Braise"
-            case .activity: return "Historique de ce Mac"
+            case .activity: return "Enregistrement"
             case .screenTime: return "Temps d’écran"
             case .agentActivity: return "Conversations IA"
             case .chatGPTRecap: return "Activité"

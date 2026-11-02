@@ -19,11 +19,11 @@ import LocalHistoryCore
             Toggle("Joindre un bref extrait du texte affiché", isOn: Binding(
                 get: { excerpts }, set: { if $0 { confirmingText = true } else { monitor.setIncludeText(false) } }))
                 .toggleStyle(.goalongSwitch).disabled(!richText)
-            Text(richText ? "Les extraits visibles sont rafraîchis pendant la surveillance, séparés du titre et filtrés. Les champs de saisie et le texte hors de la zone visible sont exclus." : "Cette option nécessite d’abord le choix local « Texte affiché ». Celui-ci n’est jamais activé par la surveillance.")
+            Text(richText ? "Les extraits visibles sont rafraîchis quand Jev est activé, séparés du titre et filtrés. Les champs de saisie et le texte hors de la zone visible sont exclus." : "Cette option nécessite d’abord le choix local « Texte affiché ». Celui-ci n’est jamais activé par Jev.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             Text("Le service ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. La lecture au premier plan reste suivie pendant le délai d’inactivité choisi. Une lecture vidéo explicitement détectée peut continuer sans clavier ; un onglet d’arrière-plan ne suffit pas.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
-            Text("Chaque envoi est limité à 1 600 octets. La surveillance se met en pause si le service signale un usage trop élevé.")
+            Text("Chaque envoi est limité à 1 600 octets. Jev se met en pause si le service signale un usage trop élevé.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             if let tokens = monitor.lastInputTokens {
                 Text("Dernier appel : \(monitor.lastRequestBytes) octets envoyés.")
@@ -34,7 +34,7 @@ import LocalHistoryCore
                     .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
             }
-            Text("Désactiver la surveillance efface les échantillons d’activité et la dernière requête en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et l’arrêt de confidentialité restent prioritaires.")
+            Text("Désactiver Jev efface les échantillons d’activité et la dernière requête en mémoire et annule la requête en cours. Un envoi déjà commencé peut avoir atteint TypeSafe. Les exclusions et l’arrêt de confidentialité restent prioritaires.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
         }
         .alert("Transmettre un extrait du texte affiché ?", isPresented: $confirmingText) {
@@ -82,10 +82,10 @@ struct JevRecentChecksView: View {
                 Button("Réinitialiser la pause") { monitor.endBreak() }
             } else if monitor.timedBreak != nil {
                 HStack {
-                    Label(String(format: "Surveillance en pause, %02d:%02d restantes", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60), systemImage: "pause.circle.fill")
+                    Label("Jev en pause · " + GoalongUIFormat.remaining(TimeInterval(monitor.remainingSeconds)), systemImage: "pause.circle.fill")
                         .monospacedDigit().accessibilityIdentifier("jev-break-countdown")
                     Spacer()
-                    Button("Reprendre la surveillance") { monitor.endBreak() }
+                    Button("Reprendre Jev") { monitor.endBreak() }
                         .accessibilityIdentifier("jev-end-break")
                 }
             } else if monitor.enabled {
@@ -103,10 +103,10 @@ struct JevRecentChecksView: View {
                 }
             }
             Text(monitor.timedBreak != nil
-                 ? "La surveillance et ses rappels sont en pause. L’historique continue s’il est activé. Reprise automatique à la fin."
+                 ? "Jev et ses rappels sont en pause. L’historique continue s’il est activé. Reprise automatique à la fin."
                  : monitor.enabled
-                 ? "Une pause arrête la surveillance et ses rappels pendant la durée choisie. L’historique continue s’il est activé."
-                 : "La surveillance est désactivée : il n’y a aucun rappel à mettre en pause.")
+                 ? "Une pause arrête Jev et ses rappels pendant la durée choisie. L’historique continue s’il est activé."
+                 : "Jev est désactivé : il n’y a aucun rappel à mettre en pause.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
@@ -128,8 +128,8 @@ struct JevRecentChecksView: View {
         status.isEnabled = false; menu.addItem(status); menu.addItem(.separator())
         if monitor.timedBreak != nil {
             let seconds = monitor.timedBreak?.remaining(at: Date()) ?? 0
-            menu.addItem(NSMenuItem(title: String(format: "Surveillance en pause : %02d:%02d restantes", seconds / 60, seconds % 60), action: nil, keyEquivalent: ""))
-            let item = NSMenuItem(title: "Reprendre la surveillance", action: #selector(endBreak), keyEquivalent: "")
+            menu.addItem(NSMenuItem(title: "Jev en pause · " + GoalongUIFormat.remaining(TimeInterval(seconds)), action: nil, keyEquivalent: ""))
+            let item = NSMenuItem(title: "Reprendre Jev", action: #selector(endBreak), keyEquivalent: "")
             item.target = self; menu.addItem(item)
             menu.addItem(.separator())
         } else if monitor.enabled {
@@ -140,10 +140,10 @@ struct JevRecentChecksView: View {
             }
             menu.addItem(.separator())
         }
-        let open = NSMenuItem(title: "Ouvrir la surveillance…", action: #selector(openMonitoring), keyEquivalent: "")
+        let open = NSMenuItem(title: "Ouvrir Jev…", action: #selector(openMonitoring), keyEquivalent: "")
         open.target = self; menu.addItem(open)
         if monitor.enabled {
-            let item = NSMenuItem(title: "Désactiver la surveillance", action: #selector(disable), keyEquivalent: "")
+            let item = NSMenuItem(title: "Désactiver Jev", action: #selector(disable), keyEquivalent: "")
             item.target = self; menu.addItem(item)
         }
     }

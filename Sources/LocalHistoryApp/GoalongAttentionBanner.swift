@@ -116,8 +116,8 @@ struct GoalongAttentionBanner: View {
     private func title(_ notice: Notice) -> String {
         switch notice {
         case .recordingCause: return ""
-        case .storage(.diskFull): return "Enregistrement interrompu : le disque est plein"
-        case .storage: return "Enregistrement interrompu"
+        case .storage(.diskFull): return "Enregistrement interrompu : disque plein"
+        case .storage: return "Enregistrement interrompu : écriture impossible"
         case .lowSpace: return "Espace disque presque plein"
         case .updated(_, let version): return "Goalong est à jour, version \(version)"
         }

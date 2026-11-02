@@ -99,7 +99,7 @@ struct ConcentrationHubHeader: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Les listes de sites et d’apps à couper viennent du module Blocage.")
                                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                            Button("Activer Blocage") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
+                            Button("Activer le blocage") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
                                 .buttonStyle(LHPrimaryButtonStyle())
                                 .accessibilityIdentifier("module-enable-blocking")
                         }
@@ -133,7 +133,7 @@ struct ConcentrationHubHeader: View {
 
     var body: some View {
         GoalongSection(title: "Distractions en mots",
-                       subtitle: "Des exemples clairs. La surveillance s’en sert pour reconnaître une distraction qu’aucune liste ne contient.") {
+                       subtitle: "Des exemples clairs. Jev s’en sert pour reconnaître une distraction qu’aucune liste ne contient.") {
             VStack(alignment: .leading, spacing: 12) {
                 if editing {
                     TextEditor(text: $text)
@@ -143,7 +143,7 @@ struct ConcentrationHubHeader: View {
                         .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous).strokeBorder(LHTheme.controlBorder))
                         .accessibilityLabel("Ce qui n’est pas du travail")
                         .accessibilityIdentifier("distractions-words-editor")
-                    GoalongNote("Ces exemples restent sur ce Mac. Ils partent avec chaque analyse quand la surveillance ou le classement est activé.",
+                    GoalongNote("Ces exemples restent sur ce Mac. Ils partent avec chaque analyse quand Jev ou le classement est activé.",
                                 tone: .privacy)
                     HStack {
                         Spacer()
@@ -154,7 +154,7 @@ struct ConcentrationHubHeader: View {
                 } else {
                     HStack(alignment: .top, spacing: 14) {
                         Text(store.context.procrastination.isEmpty
-                             ? "Aucun exemple. Par exemple : « faire défiler le fil de X », « regarder des vidéos de divertissement »."
+                             ? "Aucun exemple pour l’instant. Essayez : « faire défiler le fil de X », « regarder des vidéos de divertissement »."
                              : store.context.procrastination)
                             .foregroundStyle(store.context.procrastination.isEmpty ? LHTheme.secondaryText : LHTheme.text)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -242,7 +242,7 @@ struct ConcentrationHubHeader: View {
         Group {
             if let current = latest() {
                 GoalongSection(title: "Après « \(current.session.intent) »",
-                               subtitle: "La surveillance a vu ces distractions pendant la séance. Rien n’est ajouté sans votre clic.") {
+                               subtitle: "Jev a vu ces distractions pendant la séance. Rien n’est ajouté sans votre clic.") {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(current.items.enumerated()), id: \.element.id) { index, item in
                             if index > 0 { Rectangle().fill(LHTheme.separator).frame(height: 1) }

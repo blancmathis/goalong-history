@@ -230,7 +230,7 @@ struct AmbiancePageContent: View {
     private var promises: some View {
         HStack(alignment: .top, spacing: 24) {
             fact("hand.tap", "Rien ne joue sans vous")
-            fact("mic.slash", "Goalong n’écoute jamais")
+            fact("mic.slash", "Goalong n’enregistre pas le micro")
             fact("arrow.down.circle", "Sons téléchargés à la demande")
         }
         .accessibilityElement(children: .combine)

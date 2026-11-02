@@ -130,7 +130,7 @@ struct GoalongHealthImportSheet: View {
                 // Lime marks the current step only: choose, then prepare, then send (UI-59).
                 // A refused file sends the member back to this step (R33 F1); a send or save failure does not (UI-14).
                 if file == nil || fileRefused { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
-                else { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHSecondaryButtonStyle()) }
+                else { Button("Choisir un autre fichier…", action: chooseFile).buttonStyle(LHSecondaryButtonStyle()) }
                 if let file { Text(file.lastPathComponent).font(.system(size: 12)); Button("Oublier ce fichier") { self.file = nil; sourceChoices = [:]; preferred = [:]; invalidate() } }
             }
             // The error sits under the file it concerns, not in the footer far from it.

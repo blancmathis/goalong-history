@@ -217,8 +217,8 @@ enum SupportFindings {
             let diskFull = interruptions.contains { state($0.values, .state) == .diskFull }
             findings.append(SupportFinding(severity: .warning, code: .recordingWasInterrupted,
                 title: "Enregistrement interrompu \(interruptions.count) fois",
-                detail: (diskFull ? "Au moins une coupure venait d’un disque plein. " : "")
-                    + (lost > 1 ? "\(lost) observations n’ont pas pu être enregistrées" : "\(lost) observation n’a pas pu être enregistrée") + " ; chaque coupure est marquée dans l’historique."))
+                detail: (diskFull ? "Au moins une interruption venait d’un disque plein. " : "")
+                    + (lost > 1 ? "\(lost) observations n’ont pas pu être enregistrées" : "\(lost) observation n’a pas pu être enregistrée") + " ; chaque interruption est marquée dans l’historique."))
         }
         if let storage, storage.lowSpace, let free = storage.freeMB {
             findings.append(SupportFinding(severity: .warning, code: .lowDiskSpace,
@@ -247,7 +247,7 @@ enum SupportFindings {
         if statuses.contains(402) {
             findings.append(SupportFinding(severity: .warning, code: .monitoringPaymentRequired,
                 title: "Jev : crédit épuisé",
-                detail: "Le service d’analyse a répondu 402 (paiement requis) : la surveillance s’est mise en pause. Rechargez le compte TypeSafe puis cliquez sur Réessayer."))
+                detail: "Le service d’analyse a répondu 402 (paiement requis) : Jev s’est mis en pause. Rechargez le compte TypeSafe puis cliquez sur Réessayer."))
         } else if statuses.contains(where: { $0 == 401 || $0 == 403 }) {
             findings.append(SupportFinding(severity: .warning, code: .monitoringAuthentication,
                 title: "Jev : clé refusée", detail: "Le service d’analyse refuse la clé configurée."))

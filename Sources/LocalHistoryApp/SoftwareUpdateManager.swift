@@ -98,7 +98,7 @@
         @Published private(set) var presentationState = SoftwareUpdatePresentationState()
         @Published private(set) var automaticallyChecksForUpdates = false
         @Published private(set) var requiresSignedBuild = false
-        @Published private(set) var statusMessage = "Cette copie n’a pas de mises à jour intégrées : installez la version publiée pour les recevoir."
+        @Published private(set) var statusMessage = "Version de test : pas de mises à jour."
         @Published private(set) var lastCheckResult: SupportState = .unknown
         @Published private(set) var lastCheckedAt: Date? = UserDefaults.standard.object(forKey: SoftwareUpdateManager.lastCheckedKey) as? Date
         /// Set on the first launch after an update so the app can confirm it worked.

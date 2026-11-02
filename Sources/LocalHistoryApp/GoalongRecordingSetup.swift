@@ -221,7 +221,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "L’enregistrement de ce Mac est désactivé"
         case .paused: return "Enregistrement en pause"
         case .permissions: return "Autorisation macOS à rétablir"
-        case .input: return "Clics et frappe non reçus"
+        case .input: return "Interactions non reçues"
         }
     }
     private func detail(_ kind: Kind) -> String {
@@ -237,7 +237,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "Activer…"
         case .paused: return "Reprendre"
         case .permissions: return "Rétablir l’accès…"
-        case .input: return "Vérifier les accès…"
+        case .input: return "Vérifier l’accès…"
         }
     }
     private func perform(_ kind: Kind) {

@@ -411,7 +411,7 @@ import SwiftUI
     nonisolated static func canLoadReview(historyConsent: Bool, historyOff: Bool, loading: Bool) -> Bool {
         historyConsent && !historyOff && !loading
     }
-    static let historyOffReason = "Historique de ce Mac désactivé : rien à classer."
+    static let historyOffReason = "Enregistrement désactivé : rien à classer."
 
     private var canLoad: Bool {
         Self.canLoadReview(historyConsent: consents.isEnabled(.localComputerHistory),

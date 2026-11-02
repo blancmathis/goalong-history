@@ -21,7 +21,7 @@ struct GoalongActivityHeader: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(isPreview ? "Activité, aperçu" : "Activité").goalongPageTitle()
+                    Text(isPreview ? "Aperçu de l’activité" : "Activité").goalongPageTitle()
                     Text(rangeLabel).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                         .accessibilityIdentifier("activity-date-range")
                 }

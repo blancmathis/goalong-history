@@ -144,7 +144,7 @@ import ServiceManagement
         let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: now),
                                                    to: Calendar.current.startOfDay(for: date)).day ?? 0
         let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR")
-        f.dateFormat = days >= 7 ? "EEEE d MMMM 'à' HH:mm" : "EEEE 'à' HH:mm"; return f.string(from: date)
+        f.dateFormat = days >= 7 ? "EEEE d MMMM" : "EEEE"; return "\(f.string(from: date)) à \(GoalongUIFormat.time(date))"
     }
     private func saveSoon() {
         saveTask?.cancel()

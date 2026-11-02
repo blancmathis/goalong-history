@@ -883,7 +883,7 @@
                             tint: LHTheme.success,
                             title: "Index léger des sources",
                             subtitle:
-                                "Seules des métadonnées limitées sont conservées dans le dossier privé de Goalong History."
+                                "Seules des métadonnées limitées sont conservées dans le dossier privé de Goalong."
                         )
                         detailLine("Espace total utilisé", value: formatBytes(agents.storageBytes))
                         detailLine("Fichier d’index", value: formatBytes(agents.overview.indexBytes))

@@ -53,7 +53,7 @@ import LocalHistoryCore
                     GoalongDisclosureGroup("En savoir plus") {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Ce résumé montre les réglages enregistrés. Votre accord par source, les accès macOS et la disponibilité réelle des données sont distincts.")
-                            Text("Les filtres d’enregistrement s’appliquent à l’historique de ce Mac, pas au Temps d’écran d’Apple ni aux conversations IA d’origine. Chaque source et chaque envoi a ses propres réglages.")
+                            Text("Les filtres d’enregistrement s’appliquent à l’enregistrement de ce Mac, pas au Temps d’écran d’Apple ni aux conversations IA d’origine. Chaque source et chaque envoi a ses propres réglages.")
                         }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                     }
                 }.fixedSize(horizontal: false, vertical: true)

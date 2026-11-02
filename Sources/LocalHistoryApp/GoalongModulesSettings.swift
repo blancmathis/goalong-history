@@ -16,7 +16,7 @@ import SwiftUI
     /// Commitments live in the same folder: open ones go too, without a result (T-045 H5-01).
     /// VoiceOver names the module on each « Ouvrir » button; the label starts with the visible word (Voice Control).
     nonisolated static func openAccessibilityLabel(_ module: GoalongModule) -> String { "Ouvrir \(module.title)" }
-    static let concentrationKeptData = "Ses séances, plans et engagements restent sur ce Mac, même désactivé."
+    static let concentrationKeptData = "Ses séances, plans et engagements restent sur ce Mac, même si le module est désactivé."
     static let concentrationDeleteMessage = "Séances, plans, bilans, engagements (en cours compris) et réglages de ce module. Le reste de Goalong ne change pas."
 
     var body: some View {

@@ -47,7 +47,7 @@ struct GoalongGlobalPauseControl: View {
             Button("Annuler", role: .cancel) {}
             Button("Tout suspendre", role: .destructive) { changePause(true) }
         } message: {
-            Text("L’historique, les analyses et les envois seront suspendus jusqu’à votre reprise. Pour une pause détente sans trou dans l’historique, utilisez la pause de surveillance.")
+            Text("L’historique, les analyses et les envois seront suspendus jusqu’à votre reprise. Pour une pause détente sans trou dans l’historique, utilisez la pause de Jev.")
         }
         .alert(GoalongGlobalPauseText.repairTitle, isPresented: $confirmingRepair) {
             Button("Annuler", role: .cancel) {}
@@ -84,7 +84,7 @@ struct GoalongGlobalPauseBanner: View {
                     Image(systemName: "pause.circle.fill").foregroundStyle(LHTheme.secondaryText)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Suivi en pause").font(.system(size: 13, weight: .semibold))
-                        Text(pause.invalid ? GoalongGlobalPauseText.damagedNotice : "Tout le suivi est arrêté, y compris la surveillance Jev. Reprenez-le pour enregistrer à nouveau.")
+                        Text(pause.invalid ? GoalongGlobalPauseText.damagedNotice : "Tout le suivi est arrêté : rien n’est enregistré et Jev ne repère rien. Reprenez le suivi pour enregistrer à nouveau.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }

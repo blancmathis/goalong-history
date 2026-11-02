@@ -85,7 +85,7 @@
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                             )
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Goalong History, une seule app publique")
+                            Text("Goalong, une seule app publique")
                                 .font(.system(size: 13, weight: .semibold))
                             Text(capabilities.summary)
                                 .font(.system(size: 12))

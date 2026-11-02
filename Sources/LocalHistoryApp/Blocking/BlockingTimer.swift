@@ -37,9 +37,15 @@ struct BlockingVisibleTimer: Equatable {
     /// Long list names are shortened so the capsule never grows toward the centre of the screen.
     var prefix: String {
         let name = listName.count > 28 ? listName.prefix(27) + "…" : listName
-        return kind == .breakTime ? "Pause, \(name), " : "\(name), "
+        return kind == .breakTime ? "Pause · \(name) · " : "\(name) · "
     }
-    var text: String { prefix + clock }
+    /// Decision 15: the time always says what it counts (« Échecs · 28 min restantes », « Vidéo · dans 5 min »).
+    var text: String { prefix + meaningText }
+    var meaningText: String { Self.meaning(kind, seconds: seconds) }
+    static func meaning(_ kind: Kind, seconds: Int) -> String {
+        let length = seconds < 60 ? "\(max(0, seconds)) s" : GoalongUIFormat.timerLength(TimeInterval(seconds))
+        return kind == .upcomingStart ? "dans \(length)" : "\(length) restantes"
+    }
     var accessibilityLabel: String {
         let left = Self.spoken(seconds)
         switch kind {

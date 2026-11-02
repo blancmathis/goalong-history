@@ -579,8 +579,8 @@
         }
 
         static func storageEmptyMessage(failure: CaptureStorageFailureKind, bannerNamesStorage: Bool) -> String {
-            bannerNamesStorage ? "Cette coupure restera indiquée ici."
-                : "Rien n’est enregistré tant que \(GoalongActivityEmptyCopy.storageCause(failure)). La reprise est automatique et la coupure restera indiquée ici."
+            bannerNamesStorage ? "Cette interruption restera indiquée ici."
+                : "Rien n’est enregistré tant que \(GoalongActivityEmptyCopy.storageCause(failure)). La reprise est automatique et l’interruption restera indiquée ici."
         }
 
         /// "12 périodes", or "3 sur 12 périodes" while a search filters the timeline.

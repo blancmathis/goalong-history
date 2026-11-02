@@ -50,8 +50,8 @@ struct GoalongHourlyFocusChart: View {
         .chartLegend(.hidden).chartXScale(domain: dateRange).chartYScale(domain: 0...scale.upperBound)
         .chartPlotStyle { $0.clipped() }
         .chartXAxis {
-            AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
-                AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
+            AxisMarks(values: .stride(by: .hour, count: hourStride)) { value in
+                AxisValueLabel { if let date = value.as(Date.self) { Text(GoalongUIFormat.hour(date)) } }
                 AxisTick()
             }
         }

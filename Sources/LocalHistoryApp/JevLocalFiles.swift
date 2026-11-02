@@ -59,7 +59,7 @@ enum JevLocalFiles {
     }
     private static func failure() -> NSError {
         NSError(domain: "GoalongJev", code: 1, userInfo: [NSLocalizedDescriptionKey:
-            "Le stockage privé de la surveillance n’est pas accessible. Aucun envoi n’est effectué."])
+            "Le stockage privé de Jev n’est pas accessible. Aucun envoi n’est effectué."])
     }
 }
 #endif

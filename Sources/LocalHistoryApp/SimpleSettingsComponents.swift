@@ -95,7 +95,7 @@ enum GoalongHomeRows {
     static let recordingSymbol = SettingsPane.recording.symbol
     static let sendSymbol = "arrow.up.circle"
     static let chatGPTSymbol = "sparkles"
-    static func jevSummary(enabled: Bool) -> String { enabled ? "Activé" : "Surveillance de vos séances" }
+    static func jevSummary(enabled: Bool) -> String { enabled ? "Activé" : "Repère les distractions pendant vos séances" }
     /// One glyph per permission row, shared with the activation sheet.
     static func permissionSymbol(_ capability: GoalongCapability) -> String {
         PermissionSetupCopy(capability: capability, status: .ready).symbol
@@ -118,7 +118,7 @@ enum GoalongHomeRows {
                 row("Enregistrement", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
                     detail: "Ce que Goalong conserve sur ce Mac", symbol: GoalongHomeRows.recordingSymbol, pane: .recording)
                 GoalongRowDivider()
-                row("Envoi à Goalong", status: Self.websiteStatus(enabled: sender.enabled, hasPlan: sender.savedConfiguration != nil, pauseReason: sender.pauseReason),
+                row("Envoyer au site Goalong", status: Self.websiteStatus(enabled: sender.enabled, hasPlan: sender.savedConfiguration != nil, pauseReason: sender.pauseReason),
                     detail: "Compte, données et fréquence des envois",
                     symbol: GoalongHomeRows.sendSymbol, pane: .website, tint: !sender.enabled && sender.pauseReason != nil ? LHTheme.warning : nil)
                 GoalongRowDivider()

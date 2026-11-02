@@ -325,7 +325,7 @@ struct BlockingStopRequest: Identifiable {
                         .accessibilityIdentifier("blocking-stop")
                 }
             case .typing:
-                Button("Arrêter…") { onStop(block) }
+                Button("Arrêter le blocage…") { onStop(block) }
                     .accessibilityLabel(Self.actionAccessibilityLabel("Arrêter", lists: lists, named: !breaks))
                     .accessibilityIdentifier("blocking-stop")
             case .password:
@@ -926,12 +926,12 @@ struct BlockingLockExplainer: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Protection").font(LHTheme.cardTitleFont)
             VStack(spacing: 0) {
-                statusRow(symbol: "arrow.clockwise", title: "Relance à l’ouverture de session",
+                statusRow(symbol: "arrow.clockwise", title: "Lancer Goalong à l’ouverture de session",
                           ok: controller.protection.launchAtLogin,
                           value: controller.protection.launchAtLogin ? "Active" : "Pas encore",
                           action: controller.protection.launchAtLogin ? nil : loginItemsButton)
                 GoalongRowDivider()
-                statusRow(symbol: "globe", title: "Lecture des adresses",
+                statusRow(symbol: "globe", title: "Lecture des adresses web (navigateurs)",
                           ok: controller.siteBlockingAvailable,
                           value: controller.siteBlockingAvailable ? "Autorisée" : "Nécessaire pour les sites")
                 if !controller.browsers.isEmpty {

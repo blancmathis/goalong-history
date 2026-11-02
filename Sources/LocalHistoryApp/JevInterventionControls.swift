@@ -120,13 +120,13 @@ import LocalHistoryCore
             Text("Jev").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
             Menu {
                 if items.resume {
-                    Button("Reprendre la surveillance") { monitor.endBreak() }
+                    Button("Reprendre Jev") { monitor.endBreak() }
                 }
                 ForEach(items.durations, id: \.self) { minutes in
                     Button("Pause de \(minutes) min") { monitor.startBreak(minutes: minutes) }
                 }
             } label: {
-                Label(monitor.timedBreak == nil ? "Faire une pause" : String(format: "Pause, %02d:%02d", monitor.remainingSeconds / 60, monitor.remainingSeconds % 60),
+                Label(monitor.timedBreak == nil ? "Faire une pause" : "Pause · " + GoalongUIFormat.remaining(TimeInterval(monitor.remainingSeconds)),
                       systemImage: "cup.and.saucer")
                     .font(.system(size: 12, weight: .medium))
             }.menuStyle(.borderlessButton)
