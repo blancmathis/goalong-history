@@ -77,7 +77,8 @@ import SwiftUI
             }
             Spacer(minLength: 12)
             if on {
-                Button("Ouvrir") { onOpen(section(module)) }.buttonStyle(LHQuietButtonStyle())
+                // R7 (42): a bordered secondary button, so « Ouvrir » reads as clickable (UI-17A).
+                Button("Ouvrir") { onOpen(section(module)) }.buttonStyle(LHSecondaryButtonStyle())
                     .accessibilityIdentifier("settings-module-open-\(module.rawValue)")
             }
             Toggle(module.title, isOn: Binding(get: { on }, set: { value in

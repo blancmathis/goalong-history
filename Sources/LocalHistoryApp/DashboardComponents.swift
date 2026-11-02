@@ -357,6 +357,8 @@
         var showsToday = true
         /// Shown instead of the day when the control steps a whole period (« 23 oct. – 29 oct. »).
         var dateLabel: String? = nil
+        /// First day with history (M3, UI-17A): the calendar and « Jour précédent » never go before it. Nil: no bound.
+        var earliest: Date? = nil
 
         var body: some View {
             HStack(spacing: 8) {
@@ -374,7 +376,8 @@
         private var stepper: some View {
             HStack(spacing: 2) {
                 stepButton(-1, symbol: "chevron.left", label: previousLabel, identifier: "previous-period")
-                GoalongCalendarButton(date: date, onChange: onChange, label: dateLabel)
+                    .disabled(Self.isAtEarliest(date, earliest: earliest))
+                GoalongCalendarButton(date: date, onChange: onChange, label: dateLabel, earliest: earliest)
                     .accessibilityIdentifier(identifierPrefix.map { "\($0)-date-picker" } ?? "")
                 stepButton(1, symbol: "chevron.right", label: nextLabel, identifier: "next-period")
                     .disabled(GoalongToday.isToday(date))
@@ -384,18 +387,26 @@
             .goalongControlSurface()
         }
 
-        /// The day one step away, or nil when it would be in the future. Compares the day's start:
-        /// `date` may carry a later hour than now (a page opened yesterday evening, viewed after midnight).
-        static func steppedDay(from date: Date, by direction: Int, now: Date, calendar: Calendar = .current) -> Date? {
+        /// The day one step away, or nil when it would be in the future or before `earliest` (M3, UI-17A). Compares
+        /// the day's start: `date` may carry a later hour than now (a page opened yesterday evening, viewed after midnight).
+        static func steppedDay(from date: Date, by direction: Int, now: Date, earliest: Date? = nil,
+                               calendar: Calendar = .current) -> Date? {
             guard let day = calendar.date(byAdding: .day, value: direction, to: date),
                   calendar.startOfDay(for: day) <= now else { return nil }
+            if let earliest, calendar.startOfDay(for: day) < calendar.startOfDay(for: earliest) { return nil }
             return day
+        }
+
+        /// True when the shown day is the first day with history: nothing older to step back to.
+        static func isAtEarliest(_ date: Date, earliest: Date?, calendar: Calendar = .current) -> Bool {
+            guard let earliest else { return false }
+            return calendar.startOfDay(for: date) <= calendar.startOfDay(for: earliest)
         }
 
         private func stepButton(_ direction: Int, symbol: String, label: String, identifier: String) -> some View {
             Button {
                 if let onStep { onStep(direction) }
-                else if let day = Self.steppedDay(from: date, by: direction, now: GoalongToday.now) { onChange(day) }
+                else if let day = Self.steppedDay(from: date, by: direction, now: GoalongToday.now, earliest: earliest) { onChange(day) }
             } label: {
                 Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 24)
                     .contentShape(Rectangle())
@@ -415,8 +426,15 @@
         /// A chevron that says the button opens a calendar, when nothing around it does (UI-16A, 4).
         var chevron = false
         var accessibilityName = "Choisir un jour"
+        /// First day with history: older days are not offered (M3, UI-17A).
+        var earliest: Date? = nil
         @State private var showsCalendar = false
         @State private var calendarDate = GoalongToday.now
+
+        private var calendarRange: ClosedRange<Date> {
+            let now = GoalongToday.now
+            return min(earliest.map { Calendar.current.startOfDay(for: $0) } ?? .distantPast, now)...now
+        }
 
         var body: some View {
             Button {
@@ -441,7 +459,7 @@
             .help("Choisir un jour dans le calendrier")
             .popover(isPresented: $showsCalendar, arrowEdge: .bottom) {
                 VStack(alignment: .trailing, spacing: 12) {
-                    DatePicker("Jour", selection: $calendarDate, in: ...GoalongToday.now, displayedComponents: .date)
+                    DatePicker("Jour", selection: $calendarDate, in: calendarRange, displayedComponents: .date)
                         .labelsHidden()
                         .datePickerStyle(.graphical)
                         .environment(\.locale, GoalongUIFormat.locale)

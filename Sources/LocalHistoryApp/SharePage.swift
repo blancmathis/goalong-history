@@ -20,7 +20,8 @@
                         "Choisissez ce que le fichier montre de chaque app et site. Goalong vérifie l’historique sur ce Mac avant de créer le fichier."
                 ) {
                     HStack(spacing: 10) {
-                        DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
+                        DateSelectionControl(date: model.selectedDay, onChange: model.selectDay,
+                                             earliest: model.snapshot.availableDays.min())
                         Button {
                             model.refreshEverything()
                         } label: {
@@ -117,7 +118,7 @@
                     Button("Ouvrir les réglages") { model.openRecordingSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                 case .reportProblem?:
-                    Button("Signaler l’écart…") { model.openDiagnostics() }
+                    Button("Signaler un problème…") { model.openDiagnostics() }
                         .buttonStyle(LHSecondaryButtonStyle())
                 case nil:
                     EmptyView()
@@ -167,10 +168,10 @@
 
         static func make(observedMinutes: Int, sealedMinutes: Int, recordingEnabled: Bool) -> ShareProofStatus {
             if sealedMinutes > 0 {
-                let checked = FrenchCount.count(sealedMinutes, "minute vérifiée", "minutes vérifiées")
+                let checked = FrenchCount.count(sealedMinutes, "minute confirmée", "minutes confirmées")
                 return ShareProofStatus(
                     title: "Prêt à créer un fichier selon vos règles",
-                    detail: "\(checked) sur \(max(observedMinutes, sealedMinutes)). La vérification se fait sur ce Mac, sans connexion. Rien n’est envoyé.",
+                    detail: "\(checked) sur \(max(observedMinutes, sealedMinutes)). Ce Mac les confirme lui-même, sans connexion. Rien n’est envoyé.",
                     action: nil, canExport: true)
             }
             if observedMinutes == 0 {
@@ -184,12 +185,15 @@
                         detail: "Goalong n’observe aucune minute. Activez l’enregistrement pour partager.",
                         action: .openRecordingSettings, canExport: false)
             }
-            let observed = FrenchCount.count(observedMinutes, "minute observée", "minutes observées")
+            // R7 (32/55, UI-17A): plain words, no « signé » or « écart »; the line next to the held-back button says
+            // what unblocks it.
+            let observed = FrenchCount.count(observedMinutes, "minute", "minutes")
+            let pending = FrenchCount.word(observedMinutes, "confirmée", "confirmées")
             return ShareProofStatus(
-                title: "\(observed), aucune vérifiée",
+                title: "\(observed), pas encore \(pending) par ce Mac",
                 detail: recordingEnabled
-                    ? "Ce Mac n’a pas signé ces minutes, et le fichier ne contient que les minutes vérifiées par ce Mac. Le partage reste possible dès qu’une minute est vérifiée ; signalez l’écart s’il dure."
-                    : "Le fichier ne contient que les minutes vérifiées par ce Mac pendant l’enregistrement, qui est désactivé.",
+                    ? "Le fichier contiendra seulement les minutes confirmées. Vous pourrez le créer dès la première ; si rien ne change, signalez un problème."
+                    : "Le fichier contiendra seulement les minutes confirmées. Activez l’enregistrement pour en avoir.",
                 action: recordingEnabled ? .reportProblem : .openRecordingSettings,
                 canExport: false)
         }
