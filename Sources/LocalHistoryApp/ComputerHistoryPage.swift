@@ -26,23 +26,16 @@
 
     final class ComputerHistoryPageModel: ObservableObject {
         @Published private(set) var memory: ComputerHistoryDayMemory?
-        @Published private(set) var answer: ComputerHistoryAnswer?
         @Published private(set) var isLoading = false
-        @Published private(set) var isAnswering = false
         @Published private(set) var errorMessage: String?
         @Published private(set) var sourceStatus: ComputerHistorySourceStatus = .unverified
         /// The journal is readable but the day outgrew the analysis ceiling: the memory
         /// shown is the last one that fitted, so it stops before the end of the day.
         @Published private(set) var isAnalysisPartial = false
-        @Published var question = ""
 
         private let store: ComputerHistoryStore
         private let refreshRuntime: ActivityAnalysisRefreshServing
         private let storedMemoryLoader: (Date) -> ComputerHistoryDayMemory?
-        private let queue = DispatchQueue(
-            label: "ai.goalong.localhistory.computer-history-page",
-            qos: .userInitiated
-        )
         /// Serial: a retained view is always published before its verified successor.
         private let loadQueue = DispatchQueue(
             label: "ai.goalong.localhistory.computer-history-page.load",
@@ -168,50 +161,6 @@
                 return true
             case .runtimeUnavailable:
                 return false
-            }
-        }
-
-        func ask() {
-            let query = question.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !query.isEmpty, !isAnswering else { return }
-            isAnswering = true
-            errorMessage = nil
-            queue.async { [weak self] in
-                guard let self else { return }
-                let answer = self.store.answer(query, maximumDays: 30)
-                DispatchQueue.main.async {
-                    self.answer = answer
-                    self.isAnswering = false
-                }
-            }
-        }
-
-        func clearAnswer() {
-            answer = nil
-        }
-
-        func open(_ resource: ComputerHistoryResourceReference) {
-            if let localPath = resource.localPath {
-                GoalongWorkspaceOpenPolicy.open(
-                    URL(fileURLWithPath: localPath),
-                    purpose: .localFile
-                )
-                return
-            }
-            if let raw = resource.canonicalURI, let url = URL(string: raw) {
-                GoalongWorkspaceOpenPolicy.open(url, purpose: .observedWebsite)
-            }
-        }
-
-        func revealMemoryFiles(for day: Date) {
-            let directory = AppPaths.applicationSupportDirectory
-                .appendingPathComponent("computer-history", isDirectory: true)
-            let files = store.memoryFileURLs(for: day)
-                .filter { FileManager.default.fileExists(atPath: $0.path) }
-            if files.isEmpty {
-                GoalongWorkspaceOpenPolicy.open(directory, purpose: .localFile)
-            } else {
-                NSWorkspace.shared.activateFileViewerSelecting(files)
             }
         }
     }
@@ -607,6 +556,14 @@
 
     /// Pure display strings of the Computer History page, kept testable.
     enum ComputerHistoryPageCopy {
+        /// DEF-07: today, writes refused → the cause and its time, above a timeline that stops there. Nil otherwise.
+        static func storageStopNote(isToday: Bool, failure: CaptureStorageFailureKind?, since: Date?) -> String? {
+            guard isToday, let failure else { return nil }
+            let cause = failure == .diskFull ? "le disque est plein" : "le dossier de l’historique refuse l’écriture"
+            let start = since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
+            return "\(start) : \(cause). Rien de plus n’est enregistré avant la reprise, qui est automatique."
+        }
+
         /// "12 périodes", or "3 sur 12 périodes" while a search filters the timeline.
         static func periodCountLabel(visible: Int, total: Int, searching: Bool) -> String {
             let totalLabel = total <= 1 ? "\(total) période" : "\(total) périodes"
@@ -963,6 +920,13 @@
                 .padding(.top, 8)
                 .accessibilityIdentifier("history-empty-day")
             } else {
+                // DEF-07: a day with traces still names the stop and its cause above the timeline.
+                if let stop = ComputerHistoryPageCopy.storageStopNote(
+                    isToday: GoalongToday.isToday(day), failure: recordingModel?.runtime.storageFailure,
+                    since: recordingModel?.runtime.storageInterruptedSince) {
+                    GoalongNote(stop, tone: .warning)
+                        .accessibilityIdentifier("history-storage-stop")
+                }
                 timelineList
             }
         }

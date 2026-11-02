@@ -131,6 +131,16 @@ struct GoalongHourlyClassChart: View {
         }
     }
 
+    /// UI16-23 (écran 23): the range covers whole hours. The current hour ends « now » (09:41): ending the axis
+    /// there put the last bar on the right edge and its hour out of place. Nil when there is no bar.
+    static func wholeHours(starts: [Date], ends: [Date], calendar: Calendar = .current) -> ClosedRange<Date>? {
+        guard let first = starts.min(), let last = ends.max() else { return nil }
+        let lower = calendar.dateInterval(of: .hour, for: first)?.start ?? first
+        var upper = calendar.dateInterval(of: .hour, for: last)?.start ?? last
+        if upper < last { upper = calendar.date(byAdding: .hour, value: 1, to: upper) ?? last }
+        return lower...max(upper, lower.addingTimeInterval(3600))
+    }
+
     /// Hour starts inside the range, the closing edge excluded (a centred label there would fall outside).
     static func hourTicks(_ range: ClosedRange<Date>, stride: Int, calendar: Calendar = .current) -> [Date] {
         var tick = calendar.dateInterval(of: .hour, for: range.lowerBound)?.start ?? range.lowerBound

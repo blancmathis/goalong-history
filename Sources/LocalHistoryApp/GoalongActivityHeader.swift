@@ -63,7 +63,8 @@ struct GoalongActivityHeader: View {
                                  previousLabel: selection.period == 1 ? "Jour précédent" : "Période précédente",
                                  nextLabel: selection.period == 1 ? "Jour suivant" : "Période suivante",
                                  identifierPrefix: "activity", showsToday: false,
-                                 dateLabel: selection.period == 1 ? nil : periodLabel, earliest: earliestDay)
+                                 dateLabel: selection.period == 1 ? nil : periodLabel, earliest: earliestDay,
+                                 periodDays: selection.period)
             // A period ending today already shows today: the button goes grey, as for the day itself.
             Button("Aujourd’hui", action: onToday)
                 .modifier(GoalongHeaderButtonState(enabled: !GoalongToday.isToday(selection.day)))

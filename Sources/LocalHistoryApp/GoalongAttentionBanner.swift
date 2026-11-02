@@ -20,11 +20,26 @@ struct GoalongAttentionBanner: View {
     }
 
     private var notice: Notice? {
-        let recordingExpected = consents.isEnabled(.localComputerHistory) && !globalPause.blocksActivity
+        let recordingExpected = Self.storageAlertsShown(
+            localEnabled: consents.isEnabled(.localComputerHistory), globallyPaused: globalPause.blocksActivity,
+            recording: GoalongRecordingStateNotice.kind(localEnabled: consents.isEnabled(.localComputerHistory),
+                globallyPaused: globalPause.blocksActivity, dashboardVisible: model.recordingStatusIsLive,
+                runtime: model.runtime.state, captureHealth: model.runtime.captureHealth?.state))
         if recordingExpected, let kind = model.runtime.storageFailure { return .storage(kind) }
         if recordingExpected, let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
         if let previous = updates.updatedFromVersion { return .updated(from: previous, to: updates.currentVersion) }
         return nil
+    }
+
+    /// HL-45 (écran 45): one banner at a time. A stopped recording (off, paused, permission) is the first
+    /// cause, as in Activité's empty day (DEF-03): its own banner shows, the storage one waits.
+    static func storageAlertsShown(localEnabled: Bool, globallyPaused: Bool,
+                                   recording: GoalongRecordingStateNotice.Kind?) -> Bool {
+        guard localEnabled, !globallyPaused else { return false }
+        switch recording {
+        case .off?, .paused?, .permissions?: return false
+        case .input?, nil: return true
+        }
     }
 
     var body: some View {

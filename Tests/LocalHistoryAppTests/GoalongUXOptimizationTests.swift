@@ -103,7 +103,10 @@ final class GoalongUXOptimizationTests: XCTestCase {
         XCTAssertEqual(today(nil).title, "Pas encore d’activité aujourd’hui")
         XCTAssertEqual(today(.input).title, "Pas encore d’activité aujourd’hui", "Input loss alone does not stop recording")
         XCTAssertEqual(today(nil, incomplete: 1).title, "Lecture incomplète")
-        XCTAssertEqual(today(.off, events: 3).title, "Les premières traces sont reçues")
+        // DEF-06: traces before a stop never promise more; the stop stays named.
+        XCTAssertEqual(today(.off, events: 3).title, "Aucune durée mesurable aujourd’hui")
+        XCTAssertTrue(today(.off, events: 3).message.contains("désactivé"))
+        XCTAssertEqual(today(nil, events: 3).title, "Les premières traces sont reçues", "recording on: more traces will come")
         let past = Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 1, purged: false, recording: .off)
         XCTAssertEqual(past.title, "Lecture incomplète", "A past day keeps its own reading state")
         XCTAssertEqual(Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false, recording: nil).title,
@@ -124,6 +127,10 @@ final class GoalongUXOptimizationTests: XCTestCase {
         let refused = Empty.copy(isDay: true, isToday: true, eventCount: 4, incompleteDays: 0, purged: false, recording: .off,
                                  storage: .init(kind: .permissionDenied, since: nil))
         XCTAssertEqual(refused.title, "Enregistrement interrompu")
+        let fullWithTraces = Empty.copy(isDay: true, isToday: true, eventCount: 2, incompleteDays: 0, purged: false, recording: nil,
+                                        storage: .init(kind: .diskFull, since: since))
+        XCTAssertNotEqual(fullWithTraces.title, "Les premières traces sont reçues", "DEF-06: disk full, no promise")
+        XCTAssertTrue(fullWithTraces.message.contains("disque est plein"))
         XCTAssertTrue(refused.message.contains("refuse l’écriture"))
         let past = Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
                               storage: .init(kind: .diskFull, since: since))

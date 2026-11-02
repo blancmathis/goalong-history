@@ -359,6 +359,8 @@
         var dateLabel: String? = nil
         /// First day with history (M3, UI-17A): the calendar and « Jour précédent » never go before it. Nil: no bound.
         var earliest: Date? = nil
+        /// Days shown at once (7 or 28 in Activité): « précédent » stops when the period starts on `earliest` (R-265).
+        var periodDays: Int = 1
 
         var body: some View {
             HStack(spacing: 8) {
@@ -376,7 +378,7 @@
         private var stepper: some View {
             HStack(spacing: 2) {
                 stepButton(-1, symbol: "chevron.left", label: previousLabel, identifier: "previous-period")
-                    .disabled(Self.isAtEarliest(date, earliest: earliest))
+                    .disabled(Self.isAtEarliest(date, earliest: earliest, periodDays: periodDays))
                 GoalongCalendarButton(date: date, onChange: onChange, label: dateLabel, earliest: earliest)
                     .accessibilityIdentifier(identifierPrefix.map { "\($0)-date-picker" } ?? "")
                 stepButton(1, symbol: "chevron.right", label: nextLabel, identifier: "next-period")
@@ -398,9 +400,10 @@
         }
 
         /// True when the shown day is the first day with history: nothing older to step back to.
-        static func isAtEarliest(_ date: Date, earliest: Date?, calendar: Calendar = .current) -> Bool {
+        static func isAtEarliest(_ date: Date, earliest: Date?, periodDays: Int = 1, calendar: Calendar = .current) -> Bool {
             guard let earliest else { return false }
-            return calendar.startOfDay(for: date) <= calendar.startOfDay(for: earliest)
+            let start = calendar.date(byAdding: .day, value: 1 - max(1, periodDays), to: date) ?? date
+            return calendar.startOfDay(for: start) <= calendar.startOfDay(for: earliest)
         }
 
         private func stepButton(_ direction: Int, symbol: String, label: String, identifier: String) -> some View {

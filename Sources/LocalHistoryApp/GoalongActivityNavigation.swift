@@ -53,9 +53,17 @@ struct GoalongActivityNavigation: Equatable {
         returnContext = nil
     }
 
-    mutating func step(_ direction: Int, now: Date = GoalongToday.now, calendar: Calendar = .current) {
+    /// R-265: with `earliest`, « précédent » never shows a period mostly before the first day: the step stops
+    /// once the period starts on that day, and the last step back ends `period` days after it.
+    mutating func step(_ direction: Int, earliest: Date? = nil, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         guard direction == -1 || direction == 1,
-              let next = calendar.date(byAdding: .day, value: direction * period, to: day) else { return }
+              var next = calendar.date(byAdding: .day, value: direction * period, to: day) else { return }
+        if direction == -1, let earliest {
+            let first = calendar.startOfDay(for: earliest)
+            guard let start = calendar.date(byAdding: .day, value: 1 - period, to: day), start > first,
+                  let lowest = calendar.date(byAdding: .day, value: period - 1, to: first) else { return }
+            next = max(next, lowest)
+        }
         selectDay(next, now: now, calendar: calendar)
     }
 

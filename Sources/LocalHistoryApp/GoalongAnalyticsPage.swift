@@ -71,7 +71,9 @@ struct GoalongAnalyticsPage: View {
             if detail != .screenTime {
                 GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
                     shareBlockedReason: shareBlockedReason,
-                    earliestDay: previewActive ? nil : model.snapshot.availableDays.min(),
+                    // R-265: imported days (Temps d’écran, Santé) can be older than this Mac's first day: no bound
+                    // from the Mac history alone. A bound given here is honoured by every period (see DateSelectionControl).
+                    earliestDay: nil,
                     onDay: { day in updateSelection { $0.selectDay(day) } },
                     onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
                     onStep: { direction in updateSelection { $0.step(direction) } },

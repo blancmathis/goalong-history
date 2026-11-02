@@ -847,8 +847,8 @@ struct GoalongAnalyticsContent: View {
     /// Same threshold as the chart and the list, so the range never cuts a bar (UI-12C, screen 23).
     private func hourlyRange(_ day: GoalongLocalAnalytics.Day) -> ClosedRange<Date> {
         let hours = day.hours(minimumMinutes: focusMinutes).filter { $0.seconds > 0 }
-        guard !fullDay, let first = hours.map(\.start).min(), let last = hours.map(\.end).max() else { return chartDateRange }
-        return first...max(last, first.addingTimeInterval(3600))
+        guard !fullDay else { return chartDateRange }
+        return GoalongHourlyClassChart.wholeHours(starts: hours.map(\.start), ends: hours.map(\.end)) ?? chartDateRange
     }
     private var chartDateRange: ClosedRange<Date> {
         guard isDay, let day = current.days.first else { return dateRange }
@@ -913,13 +913,19 @@ enum GoalongActivityEmptyCopy {
                 offersHistory: false)
         }
         // Today, a stopped recording is the known cause, never a promise of minutes to come; a real read error still shows.
-        if isDay && isToday && eventCount == 0,
+        if isDay && isToday,
            let reason = recording.flatMap(stoppedReason) {
             // An unreadable day must not read as "nothing recorded": keep the cause, say the reading is incomplete.
             if incompleteDays > 0 {
                 return Copy(title: "Lecture incomplète",
                     message: reason + " Certaines sources n’ont pas pu être lues : cela ne signifie pas une absence d’activité.",
                     offersHistory: false)
+            }
+            // DEF-06: a few traces before the stop never read as « premières traces » (no more minutes are coming).
+            if eventCount > 0 {
+                return Copy(title: "Aucune durée mesurable aujourd’hui",
+                    message: reason + " Les traces reçues avant l’arrêt sont trop isolées pour mesurer une durée.",
+                    offersHistory: false, showsObservationCount: true)
             }
             return Copy(title: "Aucune activité enregistrée aujourd’hui", message: reason, offersHistory: false)
         }
