@@ -320,12 +320,17 @@ struct BlockingStopRequest: Identifiable {
             switch block.lock {
             case .free:
                 if block.origin.stopsFromPage {
-                    Button("Arrêter") { controller.stop(block.id) }.accessibilityIdentifier("blocking-stop")
+                    Button("Arrêter") { controller.stop(block.id) }
+                        .accessibilityLabel(Self.actionAccessibilityLabel("Arrêter", lists: lists, named: !breaks))
+                        .accessibilityIdentifier("blocking-stop")
                 }
             case .typing:
-                Button("Arrêter…") { onStop(block) }.accessibilityIdentifier("blocking-stop")
+                Button("Arrêter…") { onStop(block) }
+                    .accessibilityLabel(Self.actionAccessibilityLabel("Arrêter", lists: lists, named: !breaks))
+                    .accessibilityIdentifier("blocking-stop")
             case .password:
                 Button { onUnlock(block) } label: { Label("Débloquer…", systemImage: "key") }
+                    .accessibilityLabel(Self.actionAccessibilityLabel("Débloquer", lists: lists, named: !breaks))
                     .accessibilityIdentifier("blocking-unlock")
             case .locked:
                 EmptyView()
@@ -364,6 +369,15 @@ struct BlockingStopRequest: Identifiable {
     /// never says that every list goes on when only some do (R-266).
     nonisolated static func folds(_ other: BlockingActiveBlock, into leading: BlockingActiveBlock) -> Bool {
         Set(other.listIDs) == Set(leading.listIDs) && other.lock.strength <= leading.lock.strength
+    }
+
+    /// What VoiceOver reads for a stop or unlock button. A secondary row names its lists (« Arrêter le blocage de … »),
+    /// because the row's text is read before the button and two rows would sound the same (R-270, P-14).
+    /// The label starts with the visible word, so Voice Control still answers « cliquer Arrêter ».
+    nonisolated static func actionAccessibilityLabel(_ verb: String, lists: [BlockList], named: Bool) -> String {
+        guard named, !lists.isEmpty else { return verb }
+        return verb == "Débloquer" ? "Débloquer \(lists.map(\.name).joined(separator: ", "))"
+            : "\(verb) le blocage de \(lists.map(\.name).joined(separator: ", "))"
     }
 
     /// What VoiceOver reads for a folded « Ensuite » line: the lists it holds, then its state.

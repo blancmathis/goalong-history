@@ -21,6 +21,7 @@ extension GalleryCatalog {
             page("programme/vide", height: 900, themes: GalleryTheme.withContrast) { F.blockingEmpty() },
             page("programme/pret", height: 1_500, at: { F.sunday }) { F.blockingIdle() },
             page("programme/blocage-actif", height: 1_500) { F.blockingActive() },
+            page("programme/blocage-ensuite", height: 1_500) { F.blockingContinued() },
             page("programme/declenche", height: 1_500) { F.blockingTriggered() },
             page("programme/mot-de-passe", height: 1_500) { F.blockingGuarded() },
             panel("programme/feuille-liste", width: 600, height: 900, clock: .injected) { _ in

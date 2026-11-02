@@ -128,6 +128,9 @@
         let agentToolCalls: Int
         let agentErrors: Int
         let analyzedAgentSessions: Int
+        /// A source allowed but never read (access refused, tool absent, nothing stored) is absent, not a zero.
+        var screenTimeRead = true
+        var agentActivityRead = true
 
         var hasMeaningfulData: Bool {
             sourceEventCount > 0 || screenTimeSeconds > 0 || agentSessions > 0
@@ -149,7 +152,9 @@
                 agentMessages: max(0, counts.agentMessages),
                 agentToolCalls: max(0, counts.agentToolCalls),
                 agentErrors: max(0, counts.agentErrors),
-                analyzedAgentSessions: max(0, counts.analyzedAgentCaptures)
+                analyzedAgentSessions: max(0, counts.analyzedAgentCaptures),
+                screenTimeRead: screenTimeRead,
+                agentActivityRead: agentActivityRead
             )
         }
     }
@@ -627,7 +632,10 @@
                 agentMessages: max(0, context.agentActivity.messageCount),
                 agentToolCalls: max(0, context.agentActivity.toolCallCount),
                 agentErrors: max(0, context.agentActivity.errorCount),
-                analyzedAgentSessions: max(0, context.agentActivity.analyzedSessionCount)
+                analyzedAgentSessions: max(0, context.agentActivity.analyzedSessionCount),
+                // Read: a stored Temps d’écran day; an AI index written by at least one scan.
+                screenTimeRead: context.screenTime != nil,
+                agentActivityRead: context.agentActivity.indexBytes > 0 || context.agentActivity.sessionCount > 0
             )
         }
 

@@ -53,9 +53,17 @@ struct GoalongActivityNavigation: Equatable {
         returnContext = nil
     }
 
-    mutating func step(_ direction: Int, now: Date = GoalongToday.now, calendar: Calendar = .current) {
+    /// R-265: with `earliest`, « précédent » never shows a period mostly before the first day: the step stops
+    /// once the period starts on that day, and the last step back ends `period` days after it.
+    mutating func step(_ direction: Int, earliest: Date? = nil, now: Date = GoalongToday.now, calendar: Calendar = .current) {
         guard direction == -1 || direction == 1,
-              let next = calendar.date(byAdding: .day, value: direction * period, to: day) else { return }
+              var next = calendar.date(byAdding: .day, value: direction * period, to: day) else { return }
+        if direction == -1, let earliest {
+            let first = calendar.startOfDay(for: earliest)
+            guard let start = calendar.date(byAdding: .day, value: 1 - period, to: day), start > first,
+                  let lowest = calendar.date(byAdding: .day, value: period - 1, to: first) else { return }
+            next = max(next, lowest)
+        }
         selectDay(next, now: now, calendar: calendar)
     }
 
@@ -114,6 +122,28 @@ struct GoalongActivityNavigation: Equatable {
     func matches(_ payload: GoalongAnalyticsPayload, preview: Bool, calendar: Calendar = .current) -> Bool {
         payload.isPreview == preview && payload.current.days.count == period
             && payload.current.days.last.map { calendar.isDate($0.date, inSameDayAs: day) } == true
+    }
+}
+
+/// R-265: the first day Activité can show, all sources together: this Mac's history (events, seals) and the
+/// days imported from Temps d’écran and Santé, which can be older. Nil when no source holds a day.
+enum GoalongActivityFirstDay {
+    static func earliest(macDays: [Date], imported: Date?, calendar: Calendar = .current) -> Date? {
+        (macDays + [imported].compactMap { $0 }).map { calendar.startOfDay(for: $0) }.min()
+    }
+
+    /// The oldest day file (`yyyy-MM-dd.json`) of the Temps d’écran archive and of the Santé imports.
+    /// Lists two folders, reads no file: call it off the main thread.
+    static func importedEarliest(root: URL, calendar: Calendar = .current) -> Date? {
+        let folders = [root.appendingPathComponent("apple-screen-time/days", isDirectory: true),
+                       root.appendingPathComponent("health", isDirectory: true)]
+        return folders.flatMap { (try? FileManager.default.contentsOfDirectory(atPath: $0.path)) ?? [] }
+            .compactMap { name -> Date? in
+                guard name.count == 15, name.hasSuffix(".json") else { return nil }
+                // GoalongDayParser: a day without midnight (America/Santiago) still parses (C044R2).
+                return GoalongDayParser.date(String(name.dropLast(5)), timeZone: calendar.timeZone)
+            }
+            .min()
     }
 }
 

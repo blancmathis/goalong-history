@@ -439,26 +439,15 @@
                         detail: "D’après Mon travail"
                     )
                     bandDivider
-                    // A source with nothing read is absent, not a zero (PRODUCT.md, UI-17C 34).
-                    if overview.screenTimeDevices.isEmpty && overview.screenTimeSeconds == 0 {
-                        metric(title: "Temps d’écran", value: "—", detail: "Non lu")
-                    } else {
-                        metric(
-                            title: "Temps d’écran",
-                            value: duration(overview.screenTimeSeconds),
-                            detail: "\(overview.screenTimeDevices.count) appareil\(overview.screenTimeDevices.count > 1 ? "s" : "") Apple"
-                        )
-                    }
+                    // A source with nothing read is absent, not a zero (PRODUCT.md, UI-17C 34). R-266: « absent » when the
+                    // source is not allowed or was never read; a source read with nothing that day is a real zero.
+                    let screen = ChatGPTRecapMetricCopy.screenTime(enabled: consents.isEnabled(.appleScreenTime), read: overview.screenTimeRead,
+                        seconds: overview.screenTimeSeconds, devices: overview.screenTimeDevices.count, duration: duration)
+                    metric(title: "Temps d’écran", value: screen.value, detail: screen.detail)
                     bandDivider
-                    if overview.agentSessions == 0 && overview.agentMessages == 0 {
-                        metric(title: "Conversations IA", value: "—", detail: "Non lues")
-                    } else {
-                        metric(
-                            title: "Conversations IA",
-                            value: "\(overview.agentSessions)",
-                            detail: GoalongUIFormat.count(overview.agentMessages, "message")
-                        )
-                    }
+                    let ai = ChatGPTRecapMetricCopy.aiConversations(enabled: consents.isEnabled(.aiConversations), read: overview.agentActivityRead,
+                        sessions: overview.agentSessions, messages: overview.agentMessages)
+                    metric(title: "Conversations IA", value: ai.value, detail: ai.detail)
                 }
             }
         }
@@ -480,6 +469,9 @@
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14)
+            // VoiceOver reads one sentence, never « tiret » for an unread source (R-266).
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(ChatGPTRecapMetricCopy.spoken(title: title, value: value, detail: detail))
         }
 
         private func usagePanel(
@@ -703,4 +695,22 @@
             DashboardFormatters.duration(seconds: TimeInterval(seconds))
         }
     }
+/// The recap band's figures: « — » for a source not allowed or never read; a source read with nothing that day says 0.
+enum ChatGPTRecapMetricCopy {
+    struct Figure: Equatable { let value: String; let detail: String }
+
+    static func screenTime(enabled: Bool, read: Bool = true, seconds: Int, devices: Int, duration: (Int) -> String) -> Figure {
+        guard enabled, read else { return Figure(value: "—", detail: "Non lu") }
+        return Figure(value: duration(seconds), detail: "\(devices) appareil\(devices > 1 ? "s" : "") Apple")
+    }
+
+    static func aiConversations(enabled: Bool, read: Bool = true, sessions: Int, messages: Int) -> Figure {
+        guard enabled, read else { return Figure(value: "—", detail: "Non lues") }
+        return Figure(value: "\(sessions)", detail: GoalongUIFormat.count(messages, "message"))
+    }
+
+    static func spoken(title: String, value: String, detail: String) -> String {
+        value == "—" ? "\(title) : \(detail.lowercased())" : "\(title) : \(value), \(detail)"
+    }
+}
 #endif

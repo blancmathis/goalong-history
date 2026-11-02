@@ -14,6 +14,8 @@ import SwiftUI
     @State private var confirmingDelete = false
     @State private var deleteMessage: String?
     /// Commitments live in the same folder: open ones go too, without a result (T-045 H5-01).
+    /// VoiceOver names the module on each « Ouvrir » button; the label starts with the visible word (Voice Control).
+    nonisolated static func openAccessibilityLabel(_ module: GoalongModule) -> String { "Ouvrir \(module.title)" }
     static let concentrationKeptData = "Ses séances, plans et engagements restent sur ce Mac, même désactivé."
     static let concentrationDeleteMessage = "Séances, plans, bilans, engagements (en cours compris) et réglages de ce module. Le reste de Goalong ne change pas."
 
@@ -80,7 +82,7 @@ import SwiftUI
                 // R7 (42): a bordered secondary button, so « Ouvrir » reads as clickable (UI-17A).
                 Button("Ouvrir") { onOpen(section(module)) }.buttonStyle(LHSecondaryButtonStyle())
                     // R-265: VoiceOver names the module, not five bare « Ouvrir ».
-                    .accessibilityLabel("Ouvrir \(module.title)")
+                    .accessibilityLabel(Self.openAccessibilityLabel(module))
                     .accessibilityIdentifier("settings-module-open-\(module.rawValue)")
             }
             Toggle(module.title, isOn: Binding(get: { on }, set: { value in

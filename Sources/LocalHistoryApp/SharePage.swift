@@ -6,6 +6,9 @@
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
+        /// VoiceOver says which settings open; it starts with the visible « Ouvrir ».
+        static let openRecordingSettingsAccessibilityLabel = "Ouvrir les réglages d’enregistrement"
+
         private var proof: ShareProofStatus {
             ShareProofStatus.make(observedMinutes: model.snapshot.activeMinutes,
                                   sealedMinutes: model.snapshot.sealedMinutes,
@@ -13,13 +16,15 @@
         }
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 PageHeader(
                     title: "Partager",
                     subtitle:
-                        "Choisissez ce que le fichier montre de chaque app et site. Goalong vérifie l’historique sur ce Mac avant de créer le fichier."
+                        "Choisissez ce que le fichier montre de chaque app et site."
                 ) {
                     HStack(spacing: 10) {
+                        StatusPill(title: "Enregistré sur ce Mac", symbol: "internaldrive", tint: LHTheme.secondaryText)
+                            .padding(.trailing, 6)
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay,
                                              earliest: model.snapshot.availableDays.min())
                         Button {
@@ -36,7 +41,6 @@
                 }
 
                 disclosureBanner
-                ruleSummary
 
                 UsageRulesList(model: model, showsDefaultRule: true,
                                recordingEnabled: consents.isEnabled(.localComputerHistory))
@@ -45,7 +49,7 @@
                     .overlay(alignment: .bottom) {
                         LinearGradient(colors: [LHTheme.cardBackground.opacity(0), LHTheme.cardBackground],
                                        startPoint: .top, endPoint: .bottom)
-                            .frame(height: 36)
+                            .frame(height: 44)
                             .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 13, bottomTrailingRadius: 13, style: .continuous))
                             .allowsHitTesting(false)
                     }
@@ -54,7 +58,7 @@
             }
             .padding(.horizontal, LHTheme.pageInset)
             .padding(.top, 28)
-            .padding(.bottom, 20)
+            .padding(.bottom, 16)
             // Pinned to the top: an empty list never pushes the header (and « Retour ») up (UI-13B).
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(LHTheme.pageBackground)
@@ -63,7 +67,7 @@
         private var disclosureBanner: some View {
             GoalongBanner(symbol: "lock.shield", title: "Vos règles valent pour les prochains partages",
                           detail: "La règle d’un site prime sur celle du navigateur. « Afficher le nom » ne révèle que le nom du site, pas le titre de la page ni l’adresse complète.") {
-                StatusPill(title: "Enregistré sur ce Mac", symbol: "internaldrive", tint: LHTheme.secondaryText)
+                ruleSummary
             }
         }
 
@@ -87,7 +91,6 @@
                     symbol: "eye.slash",
                     tint: LHTheme.privateTint
                 )
-                Spacer()
             }
         }
 
@@ -123,10 +126,10 @@
                 // the settings are the only way forward and take the lime.
                 switch proof.action {
                 case .openRecordingSettings?:
-                    Button("Ouvrir les réglages d’enregistrement") { model.openRecordingSettings() }
+                    Button(Self.openRecordingSettingsAccessibilityLabel) { model.openRecordingSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                         // R-265: VoiceOver says which settings open.
-                        .accessibilityLabel("Ouvrir les réglages d’enregistrement")
+                        .accessibilityLabel(Self.openRecordingSettingsAccessibilityLabel)
                 case .reportProblem?:
                     Button("Signaler un problème…") { model.openDiagnostics() }
                         .buttonStyle(LHSecondaryButtonStyle())

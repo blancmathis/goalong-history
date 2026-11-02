@@ -3,7 +3,7 @@
 #   agenda/detail-   # texte « exclusion » → « exclusion globale »
 # Only the lines a branch adds (diff from its merge-base) count: older lines never hide a later change.
 # Anyone may empty this file at any time.
-fenetre/stockage-plein-   # DEF-03 : jour vide + disque plein nomme l'arrêt au lieu de promettre des minutes
+fenetre/stockage-plein-   # DEF-03 + UI-21 : jour vide + disque plein nomme l'arrêt au lieu de promettre des minutes
 mon-travail/classement-avec-donnees-   # DEF-02 : interrupteur « Classer automatiquement » éteint tant que le classement n'est pas autorisé
 mon-travail/definition-et-donnees-   # DEF-02 : idem
 mon-travail/definition-enregistree-   # DEF-05 (revue PR #205) : sans consentement ChatGPT, interrupteur éteint et grisé même historique coupé
@@ -1081,6 +1081,10 @@ programme/pret--   # UI-17C (écran 1 : « Bloquer jusqu’à … » avec le cad
 programme/page--   # UI-17C (écran 1 : « Bloquer jusqu’à … » avec le cadenas fermé de la section, plus le cadenas ouvert)
 programme/vide--   # UI-17C (écran 1 : « Bloquer … » avec le cadenas fermé de la section, plus le cadenas ouvert)
 programme/blocage-actif--   # UI-17C (écran 1 : « Réseaux sociaux » nommé une fois, « Ensuite : bloqué jusqu’à 18:00 » ; cadenas fermé sur « Bloquer »)
+activite/detail-rhythm--   # UI16-23 (O3) : axe « Heure par heure » en heures pleines (08 h–10 h), la barre de 9 h n'est plus collée au bord droit
+activite/28-jours--   # R-265 (O3) : « Période précédente » grisé, la période de 28 j touche déjà le premier jour (toutes sources) ; boîte 926,107 6×10
+conversations-ia/gestion-remplie--   # 6-CODEX (O3) : une seule ligne Codex, l'état du dossier des sessions en une ligne
+conversations-ia/indexees--   # 6-CODEX (O3) : une seule ligne Codex, l'état du dossier des sessions en une ligne
 # UI-17A (T-046, #265) : écarts déclarés à l’intégration T-043 lot 3 (la PR n’avait pas de bloc ; mode clair seul pour les interrupteurs).
 menubar/ambiance-chargement--light   # UI-17A (interrupteur éteint : puits pâle E4E7DB à bord, curseur cerclé 4,2:1)
 menubar/ambiance-erreur--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
@@ -1109,10 +1113,10 @@ agenda/reglages-acces-refuse--   # UI-17B (écrans 24/44 : Réglages › Enregis
 onboarding/etape-0--   # UI-17B (écran 44 : lignes d’interactions à 44 pt)
 # UI-17C (T-046, #266) : écarts non couverts par le bloc UI-17C.
 enregistrement/journal--   # UI-17C (écran 22 : état vide « historique désactivé » posé sur la page, sans carte)
-programme/mot-de-passe--   # UI-17C (écran 1 : liste déjà bloquée nommée une fois, « Ensuite : … » ; cadenas fermé sur « Bloquer »)
+programme/mot-de-passe--   # UI-17C (écran 1 : bloc protégé par mot de passe nommé une fois ; la ligne « Ensuite : bloqué jusqu’à 18:00 » est le programme de la semaine de la même liste, verrou plus faible, donc fusionné (BlockingPage.folds) ; le bloc « Vidéo, Écriture » est programmé pour demain, sous « Programmés une fois »)
 # T-043 O1 « Réglages et partage » : écarts déclarés, une raison par état.
-settings-sheets/conservation--   # T-043 O1 CUT-28 (écran 28 : défileur visible, la fin de la liste sous le pied se voit)
-partage/avec-donnees--   # T-043 O1 CUT-55 (écran 55 : défileur visible, la ligne coupée par la barre d’export se voit)
+settings-sheets/conservation--   # T-043 O1 CUT-28 (écran 28 : feuille plus haute, 560 à 860 pt au lieu de 670 fixe ; la fin de la liste sous le pied se voit ; défileur non affiché, mesuré)
+partage/avec-donnees--   # T-043 O1 CUT-55 (écran 55 : fondu bas de 16 pt sur la liste, la ligne coupée par la barre d’export s’estompe ; défileur non affiché, mesuré)
 settings-sheets/partage-site--   # T-043 O1 UI16-4 (écran 4 : « Aperçu indisponible : aucune donnée lue pour cette journée. » à côté de « Voir l’aperçu » grisé)
 settings/chatgpt--   # T-043 O1 20-367 (écrans 20/38 : « Avec votre compte ChatGPT, Goalong rédige le bilan d’une journée… »)
 concentration-distractions/listes--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
@@ -1121,7 +1125,7 @@ concentration-engagements/nouvel-engagement--   # T-043 O2 HL-TUILES (lettre des
 concentration-maintenant/pomodoro-en-cours--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
 concentration-maintenant/reglages--   # T-043 O2 HL-31 (jours « Lun … Dim », pastilles 32 pt, jour non choisi lisible)
 concentration-maintenant/verrouille--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
-programme/blocage-actif--   # T-043 O2 R-266 (bloc à moins de listes : ligne complète, plus « Ensuite ») ; HL-TUILES
+programme/blocage-actif--   # T-043 O2 R-266 (bloc à moins de listes : ligne complète, sans « Ensuite ») ; HL-TUILES
 programme/composer-plus-tard--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
 programme/declenche--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
 programme/feuille-liste--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
@@ -1138,13 +1142,19 @@ sante/import-lecture--   # O5 CUT-GAL : idem
 sante/import-reussi--   # O5 CUT-GAL : la feuille n'est plus coupée à 720 pt (contenu entier)
 sante/import-erreur--   # O5 CUT-GAL : idem
 settings-sheets/comprendre-mon-travail--   # O5 CUT-GAL : capture en hauteur du contenu (écran 11), plus fitWidth coupé
-settings-sheets/conservation-   # R8-1 : cadre 700x780 (hauteur de la feuille), « En savoir plus » entier
-partage/avec-donnees-   # R8-2 : fondu sous la liste « Applications »
-partage/vide-   # R8-8 : un seul « Activez… », bouton « Ouvrir les réglages d’enregistrement »
-settings/accueil-   # R8-3 : état connu (ouverture à la session activée) ; R8-4 : cadre ≥ contenu avec barre de retour
-settings/applications-   # R8-4 : cadre ≥ contenu (barre de retour comptée)
-settings/enregistrement-   # R8-4 : cadre ≥ contenu (barre de retour comptée)
+settings-sheets/conservation--   # R8-1 : cadre 700x780 (hauteur de la feuille), « En savoir plus » entier
+partage/avec-donnees--   # R8-2 + R275-3 : fondu de 44 pt sous la liste « Applications », 3 lignes visibles à 1240×790 (pastille « Enregistré sur ce Mac » dans l’en-tête, compteurs dans la bannière, sous-titre court) ; état 1600x1000
+partage/vide--   # R8-8 : un seul « Activez… », bouton « Ouvrir les réglages d’enregistrement »
+settings/accueil--   # R8-3 : état connu (ouverture à la session activée) ; R8-4 : cadre ≥ contenu avec barre de retour (pleine page 2588 → 2472 px)
+settings/applications--   # R8-4 : cadre ≥ contenu (barre de retour comptée)
+settings/enregistrement--   # R8-4 : cadre ≥ contenu (barre de retour comptée)
 settings/accueil-ouverture-activee-   # R8-3 : retiré, doublon de settings/accueil
-mises-a-jour/   # R8-4 : cadre ≥ contenu, dernière carte entière
-braise/page-fenetre-   # R8-5 : élément Braise sélectionné dans la barre latérale
-permissions/temps-ecran-a-configurer-   # R8-7 : étape 2 « Activer Temps d’écran »
+mises-a-jour/a-jour--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+mises-a-jour/disponible--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+mises-a-jour/erreur--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+mises-a-jour/non-configure--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+mises-a-jour/recherche--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+braise/page-fenetre--   # R8-5 : élément Braise sélectionné dans la barre latérale
+permissions/temps-ecran-a-configurer--   # R8-7 : étape 2 « Activer Temps d’écran »
+# T-043 P « constats mineurs » : un état de galerie pour la ligne « Ensuite » fusionnée.
+programme/blocage-ensuite--   # T-043 P-15 (état ajouté : un blocage sur « Réseaux sociaux » avec le programme de la semaine de la même liste dessous ; ce programme devient la ligne « Ensuite : bloqué jusqu’à 18:00 » sans noms de listes, avec son bouton « Arrêter » ; rendu vu : runs/20261102-053552-6a46d900/png/programme/blocage-ensuite--light--900x1500.png)
