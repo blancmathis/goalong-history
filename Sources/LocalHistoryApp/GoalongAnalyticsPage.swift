@@ -49,11 +49,10 @@ struct GoalongAnalyticsPage: View {
     @State private var lastAutomaticRefresh = Date.distantPast
 
     private var previewActive: Bool { developerMode && showingPreview }
-    /// Oldest day imported from Temps d’écran or Santé (R-265); listed off the main thread.
-    @State private var importedFirstDay: Date?
     /// First day of every source: this Mac's history and the imported days, which can be older (R-265).
+    /// The model owns the bound and the step, so the page cannot drop it (R272b-1).
     private var earliestDay: Date? {
-        previewActive ? nil : GoalongActivityFirstDay.earliest(macDays: model.snapshot.availableDays, imported: importedFirstDay)
+        analytics.earliestDay(macDays: model.snapshot.availableDays, preview: previewActive)
     }
     /// Disk full or unwritable: « Gérer le stockage… » in the top banner stays the only action.
     private var recordingInterrupted: Bool { !previewActive && model.runtime.storageFailure != nil }
@@ -81,7 +80,9 @@ struct GoalongAnalyticsPage: View {
                     earliestDay: earliestDay,
                     onDay: { day in updateSelection { $0.selectDay(day) } },
                     onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
-                    onStep: { direction in updateSelection { $0.step(direction, earliest: earliestDay) } },
+                    onStep: { direction in
+                        updateSelection { analytics.step(&$0, direction, macDays: model.snapshot.availableDays, preview: previewActive) }
+                    },
                     onToday: { updateSelection { $0.today() } },
                     onReturn: { updateSelection { $0.restorePeriod() } },
                     onRefresh: refresh,
@@ -226,9 +227,9 @@ struct GoalongAnalyticsPage: View {
             model.selectDay(navigation.day)
         }
         .task(id: "\(revision)|\(laneRevision)") {
-            // A Santé import or a new Temps d’écran day can move the first day back (R-265).
-            let root = AppPaths.applicationSupportDirectory
-            importedFirstDay = await Task.detached(priority: .utility) { GoalongActivityFirstDay.importedEarliest(root: root) }.value
+            // A Santé import or a new Temps d’écran day can move the first day back (R-265), read in the
+            // model's own data folder, never AppPaths directly (R272b-2).
+            await analytics.refreshImportedFirstDay()
         }
         .task(id: loadRequest) {
             let request = loadRequest

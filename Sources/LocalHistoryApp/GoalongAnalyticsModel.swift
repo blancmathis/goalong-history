@@ -81,7 +81,8 @@ actor GoalongAnalyticsReader {
     private var today: (date: Date, revision: String, state: GoalongLocalAnalytics.ResumableDayState)?
     private(set) var todayCheckpointBytesHashed: Int64 = 0
     private(set) var todayEventBytesRead: Int64 = 0
-    private let root: URL
+    /// The data folder this reader was given; the page lists the imported days here, never in the real folder (R272b-2).
+    let root: URL
     /// The real clock in the app; a fixed one in tests and the gallery.
     private let now: @Sendable () -> Date
     init(root: URL, now: @escaping @Sendable () -> Date = { GoalongToday.now }) { self.root = root; self.now = now }
@@ -328,6 +329,32 @@ actor GoalongAnalyticsReader {
     }
     init(root: URL) { reader = GoalongAnalyticsReader(root: root) }
     init(reader: GoalongAnalyticsReader) { self.reader = reader }
+
+    /// Oldest day imported from Temps d’écran or Santé (R-265), listed in the reader's own folder (R272b-2):
+    /// the gallery and the tests never list the real data folder.
+    @Published private(set) var importedFirstDay: Date?
+
+    /// Lists the imported days off the main thread. Called when a revision may have added one (import, refresh).
+    func refreshImportedFirstDay(calendar: Calendar = .current) async {
+        let root = reader.root
+        let value = await Task.detached(priority: .utility) {
+            GoalongActivityFirstDay.importedEarliest(root: root, calendar: calendar)
+        }.value
+        guard !Task.isCancelled else { return }
+        importedFirstDay = value
+    }
+
+    /// R-265, UI-17A M3: the one bound of Activité (calendar, « précédent », every period's step). Nil in the preview.
+    func earliestDay(macDays: [Date], preview: Bool, calendar: Calendar = .current) -> Date? {
+        preview ? nil : GoalongActivityFirstDay.earliest(macDays: macDays, imported: importedFirstDay, calendar: calendar)
+    }
+
+    /// « Précédent » / « suivant » of the page: the step always stops at `earliestDay` (R272b-1).
+    func step(_ navigation: inout GoalongActivityNavigation, _ direction: Int, macDays: [Date], preview: Bool,
+              now: Date = GoalongToday.now, calendar: Calendar = .current) {
+        navigation.step(direction, earliest: earliestDay(macDays: macDays, preview: preview, calendar: calendar),
+                        now: now, calendar: calendar)
+    }
     func load(_ request: GoalongAnalyticsLoadRequest, force: Bool = false,
               verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) async {
         guard request.permitsLoading, !Task.isCancelled else { return }

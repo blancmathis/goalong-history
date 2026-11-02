@@ -1142,3 +1142,4 @@ sante/import-lecture--   # O5 CUT-GAL : idem
 sante/import-reussi--   # O5 CUT-GAL : la feuille n'est plus coupée à 720 pt (contenu entier)
 sante/import-erreur--   # O5 CUT-GAL : idem
 settings-sheets/comprendre-mon-travail--   # O5 CUT-GAL : capture en hauteur du contenu (écran 11), plus fitWidth coupé
+fenetre/stockage-plein--   # R8-6 (écran 17) : une seule annonce de la cause, le bandeau ; la page dit l’effet « Aucune donnée depuis 09:40 » sans « disque plein »

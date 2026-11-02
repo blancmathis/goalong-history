@@ -75,7 +75,7 @@ final class GoalongActivityTests: XCTestCase {
     func testPeriodArrowsUseCalendarDaysAcrossDaylightSavingTime() {
         var selection = GoalongActivityNavigation(day: date(31, month: 3), period: 7, calendar: calendar)
         let original = selection.day
-        selection.step(-1, now: date(20), calendar: calendar)
+        selection.step(-1, earliest: nil, now: date(20), calendar: calendar)
         XCTAssertEqual(selection.day, date(24, month: 3))
         XCTAssertEqual(original.timeIntervalSince(selection.day), 7 * 86400 - 3600, accuracy: 0.001)
         let interval = GoalongActivityNavigation(day: date(31, month: 3), period: 7, calendar: calendar).interval(calendar: calendar)
@@ -84,7 +84,7 @@ final class GoalongActivityTests: XCTestCase {
 
     func testFutureNavigationIsClampedAndTodayResetsPeriod() {
         var selection = GoalongActivityNavigation(day: date(20), period: 7, calendar: calendar)
-        selection.step(1, now: date(20), calendar: calendar)
+        selection.step(1, earliest: nil, now: date(20), calendar: calendar)
         XCTAssertEqual(selection.day, date(20))
         selection.today(now: date(20, hour: 15), calendar: calendar)
         XCTAssertEqual(selection.period, 1)
