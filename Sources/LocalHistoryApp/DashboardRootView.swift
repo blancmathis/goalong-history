@@ -44,11 +44,15 @@
                             .safeAreaInset(edge: .bottom, spacing: 0) {
                                 if model.settingsHaveChanges && model.selectedSection != .settings {
                                     HStack(spacing: 12) {
-                                        Label("Modifications d’enregistrement non appliquées", systemImage: "pencil.circle")
-                                            .font(.system(size: 13, weight: .medium))
+                                        // R-80: say what is pending and apply it here; the settings stay one click away.
+                                        Label(DashboardSection.pendingChangeSummary(saved: model.savedSettingsDraft, draft: model.settingsDraft),
+                                              systemImage: "pencil.circle")
+                                            .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.tail)
                                         Spacer()
+                                        Button("Voir dans Réglages") { model.openRecordingSettings() }
+                                            .buttonStyle(LHQuietButtonStyle())
                                         Button("Abandonner") { model.discardSettingsChanges() }
-                                        Button("Vérifier les modifications") { model.openRecordingSettings() }
+                                        Button("Appliquer") { model.saveSettings() }
                                             .buttonStyle(LHPrimaryButtonStyle())
                                     }
                                     .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12)
@@ -138,7 +142,7 @@
 
         @ObservedObject private var modules = GoalongModuleStore.shared
         @State private var globalPause = GoalongGlobalPause.load()
-        private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled) }
+        private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled, showing: model.selectedSection) }
         @Namespace private var selection
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -366,12 +370,34 @@
     extension DashboardSection {
         static let primarySections: [DashboardSection] = [.overview, .work, .history, .concentration, .settings]
 
+        /// R-80: « 1 modification en attente : clics » or « 3 modifications en attente : clics, défilement… ».
+        static func pendingChangeSummary(saved: DashboardSettingsDraft, draft: DashboardSettingsDraft) -> String {
+            var names: [String] = []
+            func check<T: Equatable>(_ path: KeyPath<DashboardSettingsDraft, T>, _ name: String) {
+                if saved[keyPath: path] != draft[keyPath: path], !names.contains(name) { names.append(name) }
+            }
+            check(\.captureClicks, "clics"); check(\.captureScroll, "défilement")
+            check(\.captureKeyboardActivity, "activité du clavier"); check(\.captureShortcuts, "raccourcis")
+            check(\.captureWindowTitles, "titres de fenêtre"); check(\.captureElementLabels, "libellés des éléments")
+            check(\.captureURLs, "adresses des sites"); check(\.captureCallPresence, "appels")
+            check(\.capturePrivateBrowsing, "navigation privée"); check(\.redactAllURLQueryValues, "paramètres des adresses")
+            check(\.foregroundIdleSeconds, "délai d’inactivité"); check(\.retentionDays, "durée de conservation")
+            check(\.verificationEnabled, "vérification"); check(\.verificationServerURL, "vérification")
+            check(\.enableAppAttest, "vérification")
+            check(\.excludedDomainsText, "exclusions"); check(\.excludedApplicationsText, "exclusions")
+            check(\.includedDomainsText, "inclusions"); check(\.includedApplicationsText, "inclusions")
+            guard !names.isEmpty else { return "Modifications en attente" }
+            let count = names.count == 1 ? "1 modification en attente" : "\(names.count) modifications en attente"
+            return count + " : " + names.joined(separator: ", ")
+        }
+
         /// An enabled module's page joins the sidebar before Réglages; a disabled one has no entry.
         /// Blocage and Surveillance live in Concentration's tabs, which is always there.
-        static func sidebarSections(modules: Set<GoalongModule>) -> [DashboardSection] {
+        /// R-73 (R9A-33): a disabled module's page that is open keeps its entry, selected, until the user leaves it.
+        static func sidebarSections(modules: Set<GoalongModule>, showing: DashboardSection? = nil) -> [DashboardSection] {
             var sections = primarySections
-            if modules.contains(.ambiance) { sections.insert(.ambiance, at: sections.count - 1) }
-            if modules.contains(.braise) { sections.insert(.braise, at: sections.count - 1) }
+            if modules.contains(.ambiance) || showing == .ambiance { sections.insert(.ambiance, at: sections.count - 1) }
+            if modules.contains(.braise) || showing == .braise { sections.insert(.braise, at: sections.count - 1) }
             return sections
         }
 

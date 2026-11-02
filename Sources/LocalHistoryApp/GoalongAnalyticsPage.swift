@@ -104,14 +104,11 @@ struct GoalongAnalyticsPage: View {
                         if developerMode && !previewActive { previewControl }
                         if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
                         if analytics.paused {
-                            // An empty state is title, sentence, action: the resume sits here too, in secondary,
-                            // since the window's pause banner holds the lime one (UI-16B, écran 17).
+                            // R-74 (R9C-39): the window's pause banner holds the title and the one resume button;
+                            // the page only says what the pause means for these figures.
                             if analytics.payload == nil {
-                                GoalongEmptyState(title: "Suivi en pause",
-                                    message: "Vos durées reviennent ici dès que le suivi reprend.") {
-                                    GoalongGlobalPauseControl(model: model, compact: true, prominent: false).fixedSize()
-                                }
-                                .accessibilityIdentifier("activity-read-paused")
+                                GoalongNote("Vos durées reviennent ici dès que le suivi reprend.", symbol: "pause.circle")
+                                    .accessibilityIdentifier("activity-read-paused")
                             } else {
                                 GoalongNote("Chiffres figés pendant la pause : ils seront actualisés dès la reprise.", symbol: "pause.circle")
                                     .accessibilityIdentifier("activity-read-paused")
