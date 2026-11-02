@@ -180,7 +180,7 @@ struct GoalongRecordingStateNotice: View {
     private var kind: Kind? {
         Self.kind(localEnabled: consents.isEnabled(.localComputerHistory),
                   globallyPaused: globalPause.blocksActivity,
-                  dashboardVisible: model.dashboardIsVisible, runtime: model.runtime.state,
+                  dashboardVisible: model.recordingStatusIsLive, runtime: model.runtime.state,
                   captureHealth: model.runtime.captureHealth?.state)
     }
 
