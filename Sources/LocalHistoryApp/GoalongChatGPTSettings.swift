@@ -34,11 +34,13 @@ import LocalHistoryCore
                         }
                     }
                 })).toggleStyle(.goalongSwitch)
+                    .accessibilityIdentifier("analysis-allow")
                     .disabled(Self.switchDisabled(isOn: selection.allowsAnalysis(consented: consents.isEnabled(.chatGPTAnalysis), policy: exclusions.policy), locked: locked, otherwiseBlocked: false))
                 Toggle("Analyser automatiquement la journée d’hier", isOn: Binding(
                     get: { runtime.automaticRecapsEnabled && selection.isValid(for: exclusions.policy) },
                     set: { runtime.automaticRecapsEnabled = $0; if $0 { runtime.start() } }))
                     .toggleStyle(.goalongSwitch)
+                    .accessibilityIdentifier("analysis-automatic")
                     .disabled(Self.switchDisabled(isOn: runtime.automaticRecapsEnabled, locked: locked,
                                                   otherwiseBlocked: !selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis)))
                 HStack {

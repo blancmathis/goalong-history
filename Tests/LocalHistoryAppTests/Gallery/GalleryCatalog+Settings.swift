@@ -14,6 +14,17 @@ extension GalleryCatalog {
             ("stockage", .storage), ("avance", .advanced), ("outils", .tools),
         ]
         var entries: [GalleryEntry] = [
+            // R282-1: consent given, version without sign-in: the active switches must stay usable (to withdraw).
+            dashboard("settings/chatgpt-consentement", section: .settings, pane: .chatGPT, prepare: { _ in
+                var selection = GoalongAnalysisSelection(); selection.version = 1; selection.reviewed = true; selection.computer = true
+                selection.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                // The secure writer refuses the symlinked /tmp ancestor of a shard HOME: plain write.
+                let support = AppPaths.applicationSupportDirectory
+                try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+                try JSONEncoder().encode(selection).write(to: support.appendingPathComponent("chatgpt-analysis-selection.json"))
+                GoalongCapabilityConsentStore.shared.set(.chatGPTAnalysis, enabled: true, surface: .settings)
+                ChatGPTRecapRuntime.shared.setConnectionStateForTesting(.codexUnavailable)
+            }),
             // R8-3: the normal state (open at login known and on); « État inconnu » has its own entry.
             dashboard("settings/accueil", section: .settings, pane: .home, sizes: [.window, .full(1240)],
                       themes: GalleryTheme.withContrast, prepare: { ctx in
