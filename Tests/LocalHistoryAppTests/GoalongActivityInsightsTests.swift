@@ -127,7 +127,7 @@ final class GoalongActivityInsightsTests: XCTestCase {
         XCTAssertTrue(classified.workIsMeasurable)
         XCTAssertEqual(classified.workShare, 1, accuracy: 0.001)
         let insights = classified.insights(topUsage: nil, biggestChange: nil)
-        XCTAssertTrue(insights.contains { $0.id == "work" && $0.text.contains("plus longue session sur une même tâche") })
+        XCTAssertTrue(insights.contains { $0.id == "work" && $0.text.contains("plus longue séance sur une même tâche") })
         XCTAssertFalse(insights.contains { $0.id == "classify" })
     }
 

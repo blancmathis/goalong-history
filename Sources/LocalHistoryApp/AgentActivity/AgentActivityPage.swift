@@ -2,6 +2,7 @@
     import AgentActivity
     import AppKit
     import SwiftUI
+    import LocalHistoryCore
 
     enum AgentActivityPresentation {
         case history
@@ -316,6 +317,7 @@
                                 Text(sourceHealth.message(hasReadableConversations: !agents.overview.captures.isEmpty))
                                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     .fixedSize(horizontal: false, vertical: true)
+                                failedSourcesList
                             }
                             Spacer()
                             if let title = sourceHealth.actionTitle {
@@ -382,6 +384,30 @@
             }
         }
 
+        /// R-72 (R4d-8): the sources that failed, one per line, so « Vérifier les sources » says which ones.
+        static let failedSourcesShown = 5
+        static func failedSourceLines(_ failures: [String]) -> [String] {
+            let shown = Array(failures.prefix(failedSourcesShown))
+            let rest = failures.count - shown.count
+            return rest > 0 ? shown + ["et \(FrenchCount.count(rest, "autre source", "autres sources"))"] : shown
+        }
+
+        @ViewBuilder private var failedSourcesList: some View {
+            let lines = sourceHealth.hasReadFailure ? Self.failedSourceLines(agents.lastScanResult.failures) : []
+            if !lines.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                    }
+                }
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .frame(maxWidth: 520, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Sources en erreur : " + lines.joined(separator: " ; "))
+                .accessibilityIdentifier("conversation-failed-sources")
+            }
+        }
+
         /// One message for one problem: what failed, what to do (no count, no token line, no card).
         /// UI-15C (6): aligned on the page's left edge, one lime action (retry), the other secondary.
         private var unreadableSourcesState: some View {
@@ -395,6 +421,7 @@
                     .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 520, alignment: .leading)
+                failedSourcesList
                 HStack(spacing: 10) {
                     if let title = sourceHealth.actionTitle {
                         Button(title) { agents.scanNow(analyzeSelectedDay: true) }

@@ -7,7 +7,8 @@ import SwiftUI
     /// Lets a module stop at once when it is turned off (Ambiance stops its music).
     var onChange: (GoalongModule, Bool) -> Void = { _, _ in }
     @ObservedObject var modules = GoalongModuleStore.shared
-    @ObservedObject private var concentration = ConcentrationRuntime.shared
+    /// M3 (R4d-19): injectable so a test can render the delete link's state; the app keeps the shared runtime.
+    @ObservedObject var concentration: ConcentrationRuntime = .shared
     @ObservedObject private var blocking = BlockingRuntime.shared
     /// The gallery shows a running locked block without starting the Blocage runtime.
     var blockingController: BlockingController?
@@ -57,6 +58,8 @@ import SwiftUI
         let on = modules.isEnabled(module)
         let locked = (module == .blocking && (blockingController ?? blocking.controller)?.moduleOffRefusal != nil) || (module == .concentration && concentration.controller?.hasLockedBlock == true)
         return HStack(alignment: .center, spacing: 12) {
+            // R-98 (R4d-13): the icon sits on the title's line in every row, also in the taller Concentration row.
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
             Image(systemName: module.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 22).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -79,6 +82,7 @@ import SwiftUI
                             .onAppear { concentration.refreshHasData() }
                     }.padding(.top, 2).padding(.bottom, 6) // The red link keeps clear of the row's divider (UI-11C).
                 }
+            }
             }
             Spacer(minLength: 12)
             if on {

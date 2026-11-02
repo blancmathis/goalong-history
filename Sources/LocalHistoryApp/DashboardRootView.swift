@@ -141,6 +141,7 @@
         @ObservedObject private var monitor = JevMonitor.shared
 
         @ObservedObject private var modules = GoalongModuleStore.shared
+        @ObservedObject private var ambianceDownload = AmbianceDownloadSignal.shared
         @State private var globalPause = GoalongGlobalPause.load()
         private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled, showing: model.selectedSection) }
         @Namespace private var selection
@@ -214,7 +215,8 @@
                 navigationLabel(
                     title: section.simpleTitle,
                     symbol: section == .overview ? "chart.bar.xaxis" : section.symbol,
-                    selected: model.highlightedSidebarSection == section
+                    selected: model.highlightedSidebarSection == section,
+                    pill: section.sidebarPill(ambianceDownloading: ambianceDownload.downloading && modules.enabled.contains(.ambiance))
                 )
             }
             .buttonStyle(LHNavigationButtonStyle())
@@ -232,14 +234,16 @@
                 }
             }
             .accessibilityIdentifier("sidebar-\(section.rawValue)")
-            .accessibilityLabel(section.simpleTitle)
+            .accessibilityLabel([section.simpleTitle, section.sidebarPill(ambianceDownloading: ambianceDownload.downloading
+                && modules.enabled.contains(.ambiance))].compactMap { $0 }.joined(separator: ", "))
             .accessibilityAddTraits(model.highlightedSidebarSection == section ? .isSelected : [])
         }
 
         private func navigationLabel(
             title: String,
             symbol: String,
-            selected: Bool
+            selected: Bool,
+            pill: String? = nil
         ) -> some View {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
@@ -252,6 +256,12 @@
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
+                if let pill {
+                    Text(pill).font(.system(size: 10, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                        .lineLimit(1).fixedSize()
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(LHTheme.selectionBackground))
+                }
             }
             .foregroundStyle(selected ? LHTheme.text : LHTheme.secondaryText)
             .padding(.leading, 16).padding(.trailing, 10)
@@ -373,6 +383,12 @@
         static let primarySections: [DashboardSection] = [.overview, .work, .history, .concentration, .settings]
 
         /// R-80: « 1 modification en attente : clics » or « 3 modifications en attente : clics, défilement… ».
+        /// R-73 (R4d-9): the one global sign of a sound download, on Ambiance's row; the page keeps its own text.
+        static let ambianceDownloadPill = "Téléchargement…"
+        func sidebarPill(ambianceDownloading: Bool) -> String? {
+            self == .ambiance && ambianceDownloading ? Self.ambianceDownloadPill : nil
+        }
+
         static func pendingChangeSummary(saved: DashboardSettingsDraft, draft: DashboardSettingsDraft) -> String {
             var names: [String] = []
             func check<T: Equatable>(_ path: KeyPath<DashboardSettingsDraft, T>, _ name: String) {
