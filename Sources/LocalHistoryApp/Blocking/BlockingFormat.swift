@@ -130,9 +130,10 @@ enum BlockingFormat {
         return formatter.string(from: date)
     }
 
-    /// Two letters, so Tuesday and Wednesday no longer both read « M ».
-    static let weekdayLetters = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"]
     static let weekdayShort = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+    /// Day chips use the same French abbreviations as every summary (« Lun–ven », « Sam, dim »):
+    /// « Sa Di » read as English, and Tuesday and Wednesday never both read « M » (HL-31).
+    static let weekdayLetters = weekdayShort
 
     /// « Tous les jours », « Lun–ven », « Sam, dim », « Lun, mer, ven ».
     static func weekdays(_ days: Set<Int>) -> String {

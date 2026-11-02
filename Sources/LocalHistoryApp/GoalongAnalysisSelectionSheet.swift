@@ -270,7 +270,7 @@ import AgentActivity
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Remplacer avant l’envoi").font(.system(size: 17, weight: .semibold)).accessibilityIdentifier("analysis-replacements-title")
+                    Text("Remplacer avant l’envoi").font(LHTheme.sectionTitleFont).tracking(-0.2).accessibilityIdentifier("analysis-replacements-title")
                     Text("Appliqué sur le Mac. L’historique original reste inchangé.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
@@ -307,7 +307,7 @@ import AgentActivity
     private var instructions: some View {
         // One title, in the same style as the other tabs (UI-62).
         VStack(alignment: .leading, spacing: 18) {
-            Text("Comment rédiger le bilan").font(.system(size: 17, weight: .semibold)).accessibilityIdentifier("analysis-guidance-title")
+            Text("Comment rédiger le bilan").font(LHTheme.sectionTitleFont).tracking(-0.2).accessibilityIdentifier("analysis-guidance-title")
             GoalongSettingsGroup(title: "") {
                 GoalongTextArea(text: Binding(get: { selection.outputGuidance ?? "" }, set: { selection.outputGuidance = String($0.prefix(4000)) }),
                                 placeholder: "Concentre-toi sur les progrès de mes projets…", minHeight: 190)
@@ -326,7 +326,7 @@ import AgentActivity
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Ce que ChatGPT recevra").font(.system(size: 17, weight: .semibold))
+                    Text("Ce que ChatGPT recevra").font(LHTheme.sectionTitleFont).tracking(-0.2)
                     Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
