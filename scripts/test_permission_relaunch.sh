@@ -10,8 +10,8 @@ import os, pathlib, plistlib, re
 root=pathlib.Path(os.environ['ROOT']); target=pathlib.Path(os.environ['TEST_ROOT'])
 identifier='ai.goalong.relaunch-fixture.'+target.name.split('.')[-1]
 for source,name in [('Sources/LocalHistoryApp/PermissionRecovery.swift','PermissionRecovery.swift'),('Sources/GoalongRelauncher/main.swift','helper.swift')]:
- # The guard module is not linked: main.swift stubs the few guard calls.
- text=re.sub(r'(?m)^[ \t]*import GoalongGuardCore\n','',(root/source).read_text())
+ # The guard and AppleScreenTime modules are not linked: main.swift stubs the few calls.
+ text=re.sub(r'(?m)^[ \t]*import (GoalongGuardCore|AppleScreenTime)\n','',(root/source).read_text())
  (target/name).write_text(text.replace('ai.goalong.localhistory',identifier))
 app=target/'Goalong Relaunch Fixture.app'; (app/'Contents/MacOS').mkdir(parents=True)
 (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':identifier,'CFBundleName':'Goalong Relaunch Fixture','CFBundleExecutable':'fixture','CFBundlePackageType':'APPL','LSUIElement':True,'NSPrincipalClass':'NSApplication'}))
@@ -19,6 +19,8 @@ app=target/'Goalong Relaunch Fixture.app'; (app/'Contents/MacOS').mkdir(parents=
 import Foundation
 import Darwin
 
+// The fixture is its own app (own bundle id), not a test: its standard domain is the fixture's, as before T-043 T1.
+enum GoalongDefaults { static let standard = UserDefaults.standard }
 enum GoalongCapability: String { case localComputerHistory, appleScreenTime, aiConversations, chatGPTAnalysis }
 // The recovery ledger has deterministic unit coverage. This isolated executable
 // exercises the unchanged real handshake without touching the app's defaults.
