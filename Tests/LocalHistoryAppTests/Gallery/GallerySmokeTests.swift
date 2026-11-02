@@ -244,7 +244,8 @@ final class GallerySmokeTests: XCTestCase {
     @MainActor func testCatalogCoversEveryDestinationWithUniqueIDs() {
         let entries = GalleryCatalog.all
         let sections = Set(entries.compactMap(\.section))
-        for section in DashboardSection.allCases where section != .settings {
+        // .activity opens the same page as .history (same PNG): historique/ covers it, NOT_COVERED says so (R-61).
+        for section in DashboardSection.allCases where section != .settings && section != .activity {
             XCTAssertTrue(sections.contains(section), "no gallery entry for DashboardSection.\(section)")
         }
         let panes = Set(entries.compactMap(\.pane))

@@ -171,11 +171,11 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         } catch { /* Delivery succeeded; failure to remember must not duplicate a send. */ }
     }
-    private func readableError(_ error: Error) -> String {
+    static func readableError(_ error: Error) -> String {
         let message = String(describing: error)
         if message.contains("Apple Screen Time is off") { return Self.screenTimeOffMessage }
         if message.contains("No saved Screen Time") { return "Aucune donnée Apple enregistrée pour cette journée. Choisissez une autre date ou actualisez l’historique." }
-        if message.contains("Computer History is off") { return "Activez l’historique de ce Mac pour inclure les sites, ou désactivez Sites web." }
+        if message.contains("Computer History is off") { return "Activez l’enregistrement pour inclure les sites, ou désactivez Sites web." }
         if message.contains("Website details are unavailable") { return "Les sites ne sont pas disponibles pour cette date. Les applications restent utilisables sans les sites." }
         return "Lecture locale indisponible : " + goalongUserMessage(error)
     }
@@ -241,10 +241,10 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
                 configuringPresentation = true
                 draft.includeWebsites = false
                 configuringPresentation = false
-                self.error = readableError(error)
+                self.error = Self.readableError(error)
             } else {
                 catalog = nil
-                self.error = readableError(error)
+                self.error = Self.readableError(error)
             }
         }
         if generation == ticket { loading = false }

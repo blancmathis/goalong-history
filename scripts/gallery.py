@@ -63,6 +63,7 @@ NOT_COVERED = (
     "Compte et site : non lié, appairage, lié, envoi auto, erreur, hors ligne ; carte ChatGPT (3 états) ; studio de profil",
     "Terminal : lien cassé",
     "Support : demande",
+    "Enregistrement : « journal activé, vide » (la section .activity ouvre la même page que Historique ; entrée retirée, 6bc0d8ad)",
 )
 # R-63 (T-043 R3): entries renamed when their name stopped matching what they show. The old keys show as « disparu »
 # in a diff; they are not lost. Proof: commit 6bc0d8ad (« analyse-* au nom des onglets »).
