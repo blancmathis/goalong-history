@@ -86,7 +86,7 @@ struct GoalongAttentionBanner: View {
                     actions(notice)
                 }
                 .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12)
-                .background(tint(notice).opacity(0.08))
+                .goalongAlertSurface(tint: tint(notice), corner: nil)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("attention-banner")
                 Divider()
@@ -103,9 +103,10 @@ struct GoalongAttentionBanner: View {
         }
     }
 
+    /// One alert style in the whole app (T-043 R-7): every problem is yellow; only the update confirmation is green.
     private func tint(_ notice: Notice) -> Color {
         switch notice {
-        case .storage: return LHTheme.danger
+        case .storage: return LHTheme.warning
         case .recordingCause: return LHTheme.warning
         case .lowSpace: return LHTheme.warning
         case .updated: return LHTheme.success
@@ -126,7 +127,7 @@ struct GoalongAttentionBanner: View {
         switch notice {
         case .recordingCause: return ""
         case .storage(.diskFull):
-            return "Libérez de l’espace : l’enregistrement reprendra seul, la coupure restera visible."
+            return "Libérez de l’espace : l’enregistrement reprendra seul, l’interruption restera visible."
         // UI-15A (40, 45): the refused write says its cause and how to repair it; UI-16C: and where.
         case .storage(.permissionDenied):
             return "Goalong ne peut plus écrire dans son dossier : macOS en refuse l’accès. Rendez l’accès dans Réglages Système › Confidentialité et sécurité, puis actualisez."

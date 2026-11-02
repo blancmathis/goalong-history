@@ -22,19 +22,20 @@
                 .lineLimit(1)
                 .padding(.horizontal, GoalongControlMetrics.inset(controlSize) + 2)
                 .frame(minHeight: GoalongControlMetrics.height(controlSize))
-                .foregroundStyle(!isEnabled ? LHTheme.secondaryText : destructive ? .white : LHTheme.onAccent)
+                // Disabled (déc. 3, T-043 R-5): the one shared disabled look, a faint fill without edge and disabledText
+                // at full opacity (≥ 3:1), never a faded lime.
+                .foregroundStyle(!isEnabled ? LHTheme.disabledText : destructive ? .white : LHTheme.onAccent)
                 .background {
                     if isEnabled {
                         shape.fill(base)
                     } else {
-                        GoalongSurface(corner: LHTheme.controlRadius, fill: LHTheme.controlBackground, highlighted: true)
+                        GoalongDisabledControlSurface()
                     }
                 }
                 .overlay {
                     shape.strokeBorder(isFocused ? LHTheme.text : .clear, lineWidth: 2)
                         .padding(-3)
                 }
-                .opacity(isEnabled ? 1 : 0.5)
                 .scaleEffect(configuration.isPressed && isEnabled && !reduceMotion ? 0.97 : 1)
                 .contentShape(shape)
                 .onHover { isHovered = $0 }
