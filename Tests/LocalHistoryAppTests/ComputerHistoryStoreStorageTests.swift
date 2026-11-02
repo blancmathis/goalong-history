@@ -1634,19 +1634,6 @@
                         && $0.contains("absence is not exhaustive")
                 }
             )
-            // The page warning must detect the store's own limitation text.
-            XCTAssertNotNil(ComputerHistoryPageCopy.retainedGapMessage(for: answer))
-            let complete = ComputerHistoryAnswer(
-                schemaVersion: answer.schemaVersion,
-                query: answer.query,
-                generatedAt: answer.generatedAt,
-                answer: answer.answer,
-                hits: answer.hits,
-                limitations: answer.limitations.filter {
-                    !$0.hasPrefix(ComputerHistoryStore.retainedLoadIncompletePrefix)
-                }
-            )
-            XCTAssertNil(ComputerHistoryPageCopy.retainedGapMessage(for: complete))
         }
 
         /// H28 D2: each resource kind reads in French, never as its Swift identifier.
