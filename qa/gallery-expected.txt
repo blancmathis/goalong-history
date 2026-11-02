@@ -1115,3 +1115,21 @@ settings-sheets/conservation--   # T-043 O1 CUT-28 (écran 28 : défileur visibl
 partage/avec-donnees--   # T-043 O1 CUT-55 (écran 55 : défileur visible, la ligne coupée par la barre d’export se voit)
 settings-sheets/partage-site--   # T-043 O1 UI16-4 (écran 4 : « Aperçu indisponible : aucune donnée lue pour cette journée. » à côté de « Voir l’aperçu » grisé)
 settings/chatgpt--   # T-043 O1 20-367 (écrans 20/38 : « Avec votre compte ChatGPT, Goalong rédige le bilan d’une journée… »)
+concentration-distractions/listes--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+concentration-distractions/vide--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+concentration-engagements/nouvel-engagement--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+concentration-maintenant/pomodoro-en-cours--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+concentration-maintenant/reglages--   # T-043 O2 HL-31 (jours « Lun … Dim », pastilles 32 pt, jour non choisi lisible)
+concentration-maintenant/verrouille--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/blocage-actif--   # T-043 O2 R-266 (bloc à moins de listes : ligne complète, plus « Ensuite ») ; HL-TUILES
+programme/composer-plus-tard--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/declenche--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/feuille-liste--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/feuille-liste-verrouillee--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/mot-de-passe--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/pret--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/selecteur-de-plage--   # T-043 O2 HL-31 (jours « Lun … Dim », jour non choisi lisible) ; HL-TUILES
+programme/selecteur-mot-de-passe--   # T-043 O2 HL-31 (jours « Lun … Dim », jour non choisi lisible) ; HL-TUILES
+settings-sheets/analyse-consignes--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
+settings-sheets/analyse-remplacements--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
+settings-sheets/analyse-remplacements-regle-vide--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
