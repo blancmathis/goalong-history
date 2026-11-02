@@ -58,7 +58,10 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
-                controls
+                // R-87 (R9C-50): no search or default rule over a list that has nothing to filter.
+                if !model.snapshot.trackedUsage.isEmpty {
+                    controls
+                }
                 if filteredItems.isEmpty {
                     // Read-only state on the page, not in a card; the sentence adds to the title (UI-13B). The thread
                     // alone, on the leading edge like every other empty state (R7, UI-17A, 55: no dashed square).
@@ -641,8 +644,9 @@
                 // The older entries' limit is said once, at the head of the section (UI-15B, 32/55).
                 return parts.joined(separator: ", ")
             }
-            // The bundle identifier (com.apple.…) is technical: plain words instead (UI-11C, screen 55).
-            return "Application observée sur ce Mac"
+            // R-87 (R9C-48): the same « Application observée sur ce Mac » on every row was noise; the section
+            // title already says « Applications ». No bundle identifier either (UI-11C, screen 55).
+            return ""
         }
 
         private var identityHelp: String {
