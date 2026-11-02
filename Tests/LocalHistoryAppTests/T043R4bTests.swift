@@ -68,8 +68,15 @@ final class T043R4bTests: XCTestCase {
         let end = BlockingFormat.endTime(now.addingTimeInterval(3600))
         let quota = BlockedSiteVeil.stateLine(veil(.quotaUsed("instagram.com", minutes: 30)))
         XCTAssertEqual(quota, "Quota du jour atteint", "the thread under it already shows the end")
-        XCTAssertEqual(BlockedSiteVeil.stateLine(veil(.site("youtube.com"))), "Verrouillé jusqu’à \(end)")
-        XCTAssertEqual(BlockedSiteVeil.stateLine(veil(.site("youtube.com"), lock: .free)), "Bloqué jusqu’à \(end)")
+        XCTAssertEqual(BlockedSiteVeil.stateLine(veil(.site("youtube.com"))), "Verrouillé")
+        XCTAssertEqual(BlockedSiteVeil.stateLine(veil(.site("youtube.com"), lock: .free)), "Bloqué")
+        for reason in [BlockingVeilPresentation.Reason.site("youtube.com"), .quotaUsed("instagram.com", minutes: 30)] {
+            XCTAssertFalse(BlockedSiteVeil.stateLine(veil(reason)).contains(end), "the thread already shows \(end)")
+        }
+        XCTAssertFalse(FrozenMacShield.stateLine.contains(end))
+        XCTAssertFalse(FocusActiveSession.lockedLine.contains("jusqu"), "the locked session shows its end on the thread only")
+        XCTAssertEqual(FocusActiveSession.freeLine(endsAt: now), "Séance libre")
+        XCTAssertEqual(FocusActiveSession.freeLine(endsAt: nil), "Séance libre, sans fin")
         let feedback = BlockingListFeedback(listID: UUID(), reason: nil, attemptsToday: 3, earnedMinutesToday: 10)
         let counts = BlockedSiteVeil.countsLine(feedback)
         XCTAssertNotNil(counts)

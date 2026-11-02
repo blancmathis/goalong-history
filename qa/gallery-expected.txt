@@ -1177,3 +1177,4 @@ partage/vide--   # T-043 R4b R-87 (sans élément suivi : ni recherche ni règle
 concentration-distractions/listes--   # T-043 R4b R-99 (« Ajouter » sous son texte, style discret avec « + » comme « Nouvelle liste »)
 concentration-distractions/vide--   # T-043 R4b R-99 (même ligne « Distractions en mots » : « Ajouter » sous son texte)
 distractions/page--   # T-043 R4b R-99 (même ligne « Distractions en mots » : « Ajouter » sous son texte)
+concentration-maintenant/verrouille--   # T-043 R4b R-85 tour 3 (séance verrouillée : « Verrouillé » sans heure, la fin n’est que sur le fil)

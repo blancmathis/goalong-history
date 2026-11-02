@@ -96,9 +96,9 @@ struct BlockedSiteVeil: View {
     static func stateLine(_ presentation: BlockingVeilPresentation) -> String {
         // A used quota is the state; its end shows on the thread under it.
         if case .quotaUsed = presentation.reason { return "Quota du jour atteint" }
-        let end = BlockingFormat.isOpenEnded(presentation.end) ? nil : BlockingFormat.endTime(presentation.end)
-        guard let end else { return "Bloqué pendant que vous travaillez" }
-        return "\(presentation.lock == .locked ? "Verrouillé" : "Bloqué") jusqu’à \(end)"
+        // A timed block shows its end on the thread under the line, never twice (R-85).
+        if BlockingFormat.isOpenEnded(presentation.end) { return "Bloqué pendant que vous travaillez" }
+        return presentation.lock == .locked ? "Verrouillé" : "Bloqué"
     }
 
     /// The attempt count and the earned break, on one line (R-98).
@@ -178,6 +178,9 @@ struct FrozenMacShield: View {
     var now: Date?
     var onOpen: (BlockAppRule) -> Void = { _ in }
 
+    /// The end time shows once, on the thread under it (R-85).
+    static let stateLine = "Mac gelé"
+
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 1)) { context in // wall: display tick
             let now = self.now ?? GoalongToday.timeline(context.date)
@@ -197,7 +200,7 @@ struct FrozenMacShield: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Temps restant : \(BlockingFormat.remaining(freeze.end.timeIntervalSince(now)))")
                         // The figure is the time left (said to VoiceOver); the line under it says when it ends (UI-16C, 47).
-                        Label("Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
+                        Label(Self.stateLine, systemImage: "snowflake")
                             .font(.system(size: 17, weight: .semibold))
                     }
                     BlockingSessionThread(start: freeze.start, end: freeze.end, now: now, locked: true).frame(width: 440)
