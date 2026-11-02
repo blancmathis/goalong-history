@@ -255,7 +255,7 @@
                         RoundedRectangle(cornerRadius: size * 0.23, style: .continuous)
                             .strokeBorder(LHTheme.separator)
                         Text(Self.initial(for: appName))
-                            .font(.system(size: size * 0.45, weight: .semibold))
+                            .font(.system(size: WebsiteIconView.letterSize(for: size), weight: .semibold))
                             .foregroundStyle(LHTheme.secondaryText)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }

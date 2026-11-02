@@ -1063,7 +1063,9 @@ terminal/aide--   # UI-17B (écran 36 : pastille d’état sous l’en-tête dan
 terminal/installe--   # UI-17B (écran 36 : pastille d’état sous l’en-tête, « Prête dans le Terminal »)
 onboarding/etape-1--   # UI-17B (écran 19 : « Sans source, Activité reste vide. »)
 settings/applications--   # UI-17B (écran 32 : phrase des entrées plus anciennes des sites)
-confidentialite/   # UI-17B (écran 44 : « Texte affiché » sans fondu, ligne de 44 pt)
+confidentialite/choix-par-defaut--   # UI-17B (écran 44 : « Texte affiché » sans fondu, ligne de 44 pt)
+confidentialite/pause-globale--   # UI-17B (écran 44 : « Texte affiché » sans fondu, ligne de 44 pt)
+confidentialite/suivi-actif--   # UI-17B (écran 44 : « Texte affiché » sans fondu, ligne de 44 pt)
 # UI-17C (T-046) « Pages : états et hiérarchie » : écarts déclarés, une raison par état.
 settings-sheets/analyse-donnees--   # UI-17C (écran 8 : « Configurer les sources » secondaire comme sur les autres onglets)
 settings-sheets/analyse-remplacements--   # UI-17C (écran 8 : titre « Remplacer avant l’envoi » à 17 pt, section)
@@ -1082,3 +1084,60 @@ programme/blocage-actif--   # UI-17C (écran 1 : « Réseaux sociaux » nommé u
 activite/detail-rhythm--   # UI16-23 (O3) : axe « Heure par heure » en heures pleines (08 h–10 h), la barre de 9 h n'est plus collée au bord droit
 conversations-ia/gestion-remplie--   # 6-CODEX (O3) : une seule ligne Codex, l'état du dossier des sessions en une ligne
 conversations-ia/indexees--   # 6-CODEX (O3) : une seule ligne Codex, l'état du dossier des sessions en une ligne
+# UI-17A (T-046, #265) : écarts déclarés à l’intégration T-043 lot 3 (la PR n’avait pas de bloc ; mode clair seul pour les interrupteurs).
+menubar/ambiance-chargement--light   # UI-17A (interrupteur éteint : puits pâle E4E7DB à bord, curseur cerclé 4,2:1)
+menubar/ambiance-erreur--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+menubar/blocage-verrouille--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+menubar/focus-indisponible--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+menubar/permission-manquante--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+menubar/repos--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé ; aussi --light-contrast)
+menubar/seance--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+mises-a-jour/a-jour--light   # UI-17A (interrupteur éteint de la page : puits pâle à bord, curseur cerclé)
+mises-a-jour/disponible--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+mises-a-jour/erreur--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+mises-a-jour/non-configure--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+mises-a-jour/recherche--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+settings/avance--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+settings/modules--light   # UI-17A (interrupteurs éteints : puits pâle à bord, curseur cerclé)
+modules/reglages--light   # UI-17A (interrupteurs éteints : puits pâle à bord, curseur cerclé)
+settings-sheets/interrupteurs-etats--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)
+modules/actifs-verrouille--   # UI-17A (écran 42 : « Ouvrir » en bouton secondaire bordé)
+partage/avec-donnees--   # UI-17A (Partager : pied de page et état de la page revus)
+partage/vide--   # UI-17A (écran 55 : état vide sans carré pointillé, fil seul, aligné à gauche)
+activite/traces-isolees--   # UI-17A (M3 : « Jour précédent » grisé au premier jour d’historique)
+# UI-17B (T-046, #264) : écarts non couverts par le bloc UI-17B.
+conversations-ia/indexees--   # UI-17B (écran 6 : « actions d’agents », « Dossier des sessions Codex », « Installer le relais … »)
+agenda/reglages-acces-non-demande--   # UI-17B (écrans 24/44 : Réglages › Enregistrement, groupe « Activité », une phrase d’aide, lignes 44 pt)
+agenda/reglages-acces-refuse--   # UI-17B (écrans 24/44 : Réglages › Enregistrement, groupe « Activité », une phrase d’aide, lignes 44 pt)
+onboarding/etape-0--   # UI-17B (écran 44 : lignes d’interactions à 44 pt)
+# UI-17C (T-046, #266) : écarts non couverts par le bloc UI-17C.
+enregistrement/journal--   # UI-17C (écran 22 : état vide « historique désactivé » posé sur la page, sans carte)
+programme/mot-de-passe--   # UI-17C (écran 1 : liste déjà bloquée nommée une fois, « Ensuite : … » ; cadenas fermé sur « Bloquer »)
+# T-043 O1 « Réglages et partage » : écarts déclarés, une raison par état.
+settings-sheets/conservation--   # T-043 O1 CUT-28 (écran 28 : défileur visible, la fin de la liste sous le pied se voit)
+partage/avec-donnees--   # T-043 O1 CUT-55 (écran 55 : défileur visible, la ligne coupée par la barre d’export se voit)
+settings-sheets/partage-site--   # T-043 O1 UI16-4 (écran 4 : « Aperçu indisponible : aucune donnée lue pour cette journée. » à côté de « Voir l’aperçu » grisé)
+settings/chatgpt--   # T-043 O1 20-367 (écrans 20/38 : « Avec votre compte ChatGPT, Goalong rédige le bilan d’une journée… »)
+concentration-distractions/listes--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+concentration-distractions/vide--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+concentration-engagements/nouvel-engagement--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+concentration-maintenant/pomodoro-en-cours--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+concentration-maintenant/reglages--   # T-043 O2 HL-31 (jours « Lun … Dim », pastilles 32 pt, jour non choisi lisible)
+concentration-maintenant/verrouille--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/blocage-actif--   # T-043 O2 R-266 (bloc à moins de listes : ligne complète, plus « Ensuite ») ; HL-TUILES
+programme/composer-plus-tard--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/declenche--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/feuille-liste--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/feuille-liste-verrouillee--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/mot-de-passe--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/pret--   # T-043 O2 HL-TUILES (lettre des tuiles-monogrammes ≥ 11 pt)
+programme/selecteur-de-plage--   # T-043 O2 HL-31 (jours « Lun … Dim », jour non choisi lisible) ; HL-TUILES
+programme/selecteur-mot-de-passe--   # T-043 O2 HL-31 (jours « Lun … Dim », jour non choisi lisible) ; HL-TUILES
+settings-sheets/analyse-consignes--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
+settings-sheets/analyse-remplacements--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
+settings-sheets/analyse-remplacements-regle-vide--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
+sante/import-vide--   # O5 CUT-GAL : capture en hauteur du contenu (écran 14), plus 800x720 fixe ; nom d'image --full
+sante/import-lecture--   # O5 CUT-GAL : idem
+sante/import-reussi--   # O5 CUT-GAL : la feuille n'est plus coupée à 720 pt (contenu entier)
+sante/import-erreur--   # O5 CUT-GAL : idem
+settings-sheets/comprendre-mon-travail--   # O5 CUT-GAL : capture en hauteur du contenu (écran 11), plus fitWidth coupé
