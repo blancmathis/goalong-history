@@ -191,19 +191,46 @@
             let selection: TargetedHistoryDeletionSelection
         }
 
+        /// One lock for the whole process: every read-modify-write of the journal (commit,
+        /// « Tout effacer », « Effacer depuis », retention, expiry) runs under it, so two
+        /// writers never overwrite each other's entries. It is a leaf lock: nothing under it
+        /// waits for `DerivedHistoryWriteBarrier` or any other lock, so it cannot deadlock
+        /// with it. Recursive, because the expiry purge inside `entries()` writes too.
+        private static let lock = NSRecursiveLock()
+
         let fileURL: URL
         private let now: () -> Date
+        /// Test seam: runs between the read and the write of a rewrite.
+        private let beforeWrite: (() -> Void)?
 
-        init(rootDirectory: URL, now: @escaping () -> Date = Date.init) {
+        init(
+            rootDirectory: URL,
+            now: @escaping () -> Date = Date.init,
+            beforeWrite: (() -> Void)? = nil
+        ) {
             fileURL = rootDirectory.appendingPathComponent(Self.fileName)
             self.now = now
+            self.beforeWrite = beforeWrite
+        }
+
+        private func locked<T>(_ body: () throws -> T) rethrows -> T {
+            Self.lock.lock()
+            defer { Self.lock.unlock() }
+            return try body()
         }
 
         func pendingSelection(for key: String) -> TargetedHistoryDeletionSelection? {
-            entries()[key]?.selection
+            locked { entries()[key]?.selection }
         }
 
         func record(_ selection: TargetedHistoryDeletionSelection, for key: String) throws {
+            try locked { try recordLocked(selection, for: key) }
+        }
+
+        private func recordLocked(
+            _ selection: TargetedHistoryDeletionSelection,
+            for key: String
+        ) throws {
             var all = entries()
             all[key] = Entry(recordedAt: now(), selection: selection)
             if all.count > Self.maximumEntries {
@@ -222,6 +249,10 @@
 
         /// « Tout effacer »: the whole journal goes with the history.
         func removeAll() throws {
+            try locked { try removeAllLocked() }
+        }
+
+        private func removeAllLocked() throws {
             do { try FileManager.default.removeItem(at: fileURL) } catch CocoaError.fileNoSuchFile {}
         }
 
@@ -238,10 +269,12 @@
         private func removeEntries(
             where shouldRemove: (String, TargetedHistoryDeletionSelection) -> Bool
         ) throws {
-            let all = entries()
-            let kept = all.filter { !shouldRemove($0.key, $0.value.selection) }
-            guard kept.count != all.count else { return }
-            if kept.isEmpty { try removeAll() } else { try write(kept) }
+            try locked {
+                let all = entries()
+                let kept = all.filter { !shouldRemove($0.key, $0.value.selection) }
+                guard kept.count != all.count else { return }
+                if kept.isEmpty { try removeAllLocked() } else { try write(kept) }
+            }
         }
 
         /// Live entries only. Expired ones are dropped from disk on the way.
@@ -251,7 +284,7 @@
             let live = stored.filter { $0.value.recordedAt >= oldest }
             if live.count != stored.count {
                 do {
-                    if live.isEmpty { try removeAll() } else { try write(live) }
+                    if live.isEmpty { try removeAllLocked() } else { try write(live) }
                 } catch {
                     Diagnostics.write("Expired targeted deletion journal entries not removed: \(error)")
                 }
@@ -271,6 +304,7 @@
         }
 
         private func write(_ all: [String: Entry]) throws {
+            beforeWrite?()
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.sortedKeys]

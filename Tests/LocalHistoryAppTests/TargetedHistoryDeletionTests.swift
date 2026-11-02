@@ -360,54 +360,8 @@
         }
 
         func testSecondDayEventFileFailureIsCompletedByRetry() throws {
-            let root = try makeRoot()
-            let codex = root.appendingPathComponent("codex-memory", isDirectory: true)
-            try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(
-                at: root.appendingPathComponent("computer-history", isDirectory: true),
-                withIntermediateDirectories: true
-            )
-            let app = AppSnapshot(name: "TextEdit", bundleIdentifier: "com.apple.TextEdit", processIdentifier: 42)
-            let other = AppSnapshot(name: "Safari", bundleIdentifier: "com.apple.Safari", processIdentifier: 43)
-            let window = WindowSnapshot(title: "Midnight work", role: nil, subrole: nil)
-            let late = makeDate(hour: 23).addingTimeInterval(50 * 60)
-            let early = late.addingTimeInterval(20 * 60)
-            let latePayload = semanticPayload(id: "midnight-late", timestamp: late)
-            let earlyPayload = semanticPayload(id: "midnight-early", timestamp: early)
-            let lateEvent = HistoryEvent(
-                id: "midnight-late-event", sessionID: "midnight", timestamp: late, kind: .mouseClick,
-                app: app, window: window,
-                pointer: PointerSnapshot(button: "left", x: 10, y: 10, clickCount: 1),
-                semanticContext: latePayload.reference
-            )
-            let earlyEvent = HistoryEvent(
-                id: "midnight-early-event", sessionID: "midnight", timestamp: early, kind: .mouseClick,
-                app: app, window: window,
-                pointer: PointerSnapshot(button: "left", x: 10, y: 10, clickCount: 1),
-                semanticContext: earlyPayload.reference
-            )
-            let unrelated = HistoryEvent(
-                id: "midnight-unrelated", sessionID: "midnight", timestamp: early, kind: .mouseClick,
-                app: other, window: WindowSnapshot(title: "Other", role: nil, subrole: nil),
-                pointer: PointerSnapshot(button: "left", x: 20, y: 20, clickCount: 1)
-            )
-            try write(
-                events: [lateEvent, earlyEvent, unrelated],
-                payloads: [latePayload, earlyPayload],
-                root: root
-            )
-            let session = ActivitySession(
-                id: "midnight-session", start: late, end: early, appName: app.name,
-                bundleIdentifier: app.bundleIdentifier, windowTitle: window.title, host: nil,
-                category: nil, isWork: nil, confidence: nil, suppressionReason: nil,
-                eventCount: 2, inputEventCount: 2, softwareAttributedEventCount: 0,
-                kindCounts: [EventKind.mouseClick.rawValue: 2], latestMessage: nil
-            )
-            let fixture = EpisodeFixture(
-                root: root, codex: codex, request: .activitySession(session),
-                keptEventIDs: [unrelated.id], keptSnapshotIDs: [],
-                deletedEventIDs: [lateEvent.id, earlyEvent.id]
-            )
+            let fixture = try makeMidnightSessionFixture()
+            let root = fixture.root
             let secondDay = root.appendingPathComponent("events/2026-08-24.jsonl")
             try setImmutable(secondDay, true)
             defer { try? setImmutable(secondDay, false) }
@@ -512,9 +466,10 @@
             let key = fixture.request.journalKey
             XCTAssertNotNil(TargetedHistoryDeletionJournal(rootDirectory: fixture.root).pendingSelection(for: key))
 
-            let later = TargetedHistoryDeletionJournal(rootDirectory: fixture.root) {
-                Date().addingTimeInterval(TargetedHistoryDeletionJournal.maximumAge + 3_600)
-            }
+            let later = TargetedHistoryDeletionJournal(
+                rootDirectory: fixture.root,
+                now: { Date().addingTimeInterval(TargetedHistoryDeletionJournal.maximumAge + 3_600) }
+            )
             XCTAssertNil(later.pendingSelection(for: key))
             XCTAssertFalse(FileManager.default.fileExists(atPath: later.fileURL.path), "expired entry left on disk")
             assertNothingDeletedOrRetryCompletes(fixture)
@@ -548,6 +503,156 @@
 
         /// The rule: after a reported failure, either nothing was deleted, or a retry of the
         /// same request succeeds and leaves no event, snapshot, or derived file of the item.
+        /// A second writer starts between the first one's read and write. Without the
+        /// process-wide lock it finishes inside that window and the first write overwrites its
+        /// entry. With the lock it waits, then reads the first entry and adds its own.
+        func testConcurrentJournalWritersNeverLoseAnEntry() throws {
+            let root = try makeRoot()
+            let second = DispatchSemaphore(value: 0)
+            var injected = false
+            let first = TargetedHistoryDeletionJournal(rootDirectory: root, beforeWrite: {
+                guard !injected else { return }
+                injected = true
+                DispatchQueue.global().async {
+                    try? TargetedHistoryDeletionJournal(rootDirectory: root)
+                        .record(self.journalSelection(hour: 14), for: "second")
+                    second.signal()
+                }
+                _ = second.wait(timeout: .now() + 0.5)
+            })
+
+            try first.record(journalSelection(hour: 12), for: "first")
+            XCTAssertEqual(second.wait(timeout: .now() + 10), .success)
+
+            let journal = TargetedHistoryDeletionJournal(rootDirectory: root)
+            XCTAssertEqual(journal.pendingSelection(for: "first"), journalSelection(hour: 12))
+            XCTAssertEqual(journal.pendingSelection(for: "second"), journalSelection(hour: 14))
+        }
+
+        /// The cutoff is the most recent of the two retentions, the stricter one for privacy:
+        /// an entry whose snapshots expired goes even while the raw events are still kept.
+        func testRetentionJournalCutoffIsTheMostRecentOfTheDetailedAndSemanticCutoffs() throws {
+            let fixture = try makeEpisodeFixture()
+            let journal = TargetedHistoryDeletionJournal(rootDirectory: fixture.root)
+            try journal.record(journalSelection(hour: -120), for: "snapshotsExpired")
+            try journal.record(journalSelection(hour: -12), for: "kept")
+            let store = HistoryRetentionStore(
+                legacyRetentionDays: 0,
+                storage: HistoryRetentionStorage(
+                    policyFile: fixture.root.appendingPathComponent("retention-policy.json"),
+                    activationFile: fixture.root.appendingPathComponent("retention-policy-activated"),
+                    artifactDirectories: [],
+                    prepare: {},
+                    targetedDeletionJournalRoot: fixture.root
+                )
+            )
+            var policy = store.policy
+            policy.detailedEvents = RetentionDuration(days: 7)
+            policy.semanticSnapshots = RetentionDuration(days: 2)
+            try store.activate(policy)
+
+            store.applyCleanup(now: makeDate(hour: 12))
+
+            XCTAssertNil(journal.pendingSelection(for: "snapshotsExpired"))
+            XCTAssertEqual(journal.pendingSelection(for: "kept"), journalSelection(hour: -12))
+        }
+
+        /// The raw step fails midway (the second day stays), then the entry is purged: the old
+        /// request no longer resolves, and the item shown again resolves on what is left and
+        /// is erased entirely.
+        func testEntryPurgedAfterRawFailureLeavesTheOldKeyUnresolvableAndTheRedisplayedItemErasable() throws {
+            let fixture = try makeMidnightSessionFixture()
+            guard case .activitySession(let session) = fixture.request else { return XCTFail("session") }
+            let secondDay = fixture.root.appendingPathComponent("events/2026-08-24.jsonl")
+            try setImmutable(secondDay, true)
+            defer { try? setImmutable(secondDay, false) }
+            XCTAssertThrowsError(try commit(fixture.request, fixture: fixture).get())
+            try setImmutable(secondDay, false)
+            let journal = TargetedHistoryDeletionJournal(rootDirectory: fixture.root)
+            XCTAssertNotNil(journal.pendingSelection(for: fixture.request.journalKey))
+
+            try journal.removeEntries(before: makeDate(hour: 23).addingTimeInterval(3_600 * 2))
+
+            XCTAssertNil(journal.pendingSelection(for: fixture.request.journalKey))
+            XCTAssertThrowsError(try commit(fixture.request, fixture: fixture).get()) { error in
+                guard case TargetedHistoryDeletionError.selectionNoLongerExists = error else {
+                    return XCTFail("expected selectionNoLongerExists, got \(error)")
+                }
+            }
+            let loaded = HistoryLocalStoreReader(rootDirectory: fixture.root).load()
+            let leftover = loaded.events.filter { fixture.deletedEventIDs.contains($0.id) }
+            XCTAssertEqual(leftover.count, 1, "raw rows of the second day are left")
+            let shown = ActivitySession(
+                id: session.id, start: session.start, end: session.end, appName: session.appName,
+                bundleIdentifier: session.bundleIdentifier, windowTitle: session.windowTitle, host: nil,
+                category: nil, isWork: nil, confidence: nil, suppressionReason: nil,
+                eventCount: leftover.count, inputEventCount: leftover.count,
+                softwareAttributedEventCount: 0,
+                kindCounts: [EventKind.mouseClick.rawValue: leftover.count], latestMessage: nil
+            )
+            let redisplayed = TargetedHistoryDeletionRequest.activitySession(shown)
+            XCTAssertNotEqual(redisplayed.journalKey, fixture.request.journalKey)
+
+            XCTAssertNoThrow(try commit(redisplayed, fixture: fixture).get())
+
+            let after = HistoryLocalStoreReader(rootDirectory: fixture.root).load()
+            XCTAssertEqual(after.events.map(\.id).sorted(), fixture.keptEventIDs.sorted())
+            XCTAssertFalse(FileManager.default.fileExists(atPath: journal.fileURL.path))
+        }
+
+        /// A two-day session (23:50 and 00:10) plus an unrelated event of another app.
+        private func makeMidnightSessionFixture() throws -> EpisodeFixture {
+            let root = try makeRoot()
+            let codex = root.appendingPathComponent("codex-memory", isDirectory: true)
+            try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("computer-history", isDirectory: true),
+                withIntermediateDirectories: true
+            )
+            let app = AppSnapshot(name: "TextEdit", bundleIdentifier: "com.apple.TextEdit", processIdentifier: 42)
+            let other = AppSnapshot(name: "Safari", bundleIdentifier: "com.apple.Safari", processIdentifier: 43)
+            let window = WindowSnapshot(title: "Midnight work", role: nil, subrole: nil)
+            let late = makeDate(hour: 23).addingTimeInterval(50 * 60)
+            let early = late.addingTimeInterval(20 * 60)
+            let latePayload = semanticPayload(id: "midnight-late", timestamp: late)
+            let earlyPayload = semanticPayload(id: "midnight-early", timestamp: early)
+            let lateEvent = HistoryEvent(
+                id: "midnight-late-event", sessionID: "midnight", timestamp: late, kind: .mouseClick,
+                app: app, window: window,
+                pointer: PointerSnapshot(button: "left", x: 10, y: 10, clickCount: 1),
+                semanticContext: latePayload.reference
+            )
+            let earlyEvent = HistoryEvent(
+                id: "midnight-early-event", sessionID: "midnight", timestamp: early, kind: .mouseClick,
+                app: app, window: window,
+                pointer: PointerSnapshot(button: "left", x: 10, y: 10, clickCount: 1),
+                semanticContext: earlyPayload.reference
+            )
+            let unrelated = HistoryEvent(
+                id: "midnight-unrelated", sessionID: "midnight", timestamp: early, kind: .mouseClick,
+                app: other, window: WindowSnapshot(title: "Other", role: nil, subrole: nil),
+                pointer: PointerSnapshot(button: "left", x: 20, y: 20, clickCount: 1)
+            )
+            try write(
+                events: [lateEvent, earlyEvent, unrelated],
+                payloads: [latePayload, earlyPayload],
+                root: root
+            )
+            let session = ActivitySession(
+                id: "midnight-session", start: late, end: early, appName: app.name,
+                bundleIdentifier: app.bundleIdentifier, windowTitle: window.title, host: nil,
+                category: nil, isWork: nil, confidence: nil, suppressionReason: nil,
+                eventCount: 2, inputEventCount: 2, softwareAttributedEventCount: 0,
+                kindCounts: [EventKind.mouseClick.rawValue: 2], latestMessage: nil
+            )
+            let fixture = EpisodeFixture(
+                root: root, codex: codex, request: .activitySession(session),
+                keptEventIDs: [unrelated.id], keptSnapshotIDs: [],
+                deletedEventIDs: [lateEvent.id, earlyEvent.id]
+            )
+            return fixture
+        }
+
         private func assertNothingDeletedOrRetryCompletes(
             _ fixture: EpisodeFixture,
             file: StaticString = #filePath,
