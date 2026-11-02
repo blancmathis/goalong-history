@@ -46,6 +46,7 @@ jobs:
           bash scripts/test_uninstall_and_quit.sh
           bash scripts/test_release_signing_policy.sh
           bash scripts/test_verify_published_update_feed.sh
+          bash scripts/test_build_number_policy.sh
           xcrun swiftc -typecheck scripts/verify_update_archive.swift
           python3 scripts/test_update_policy.py
           python3 scripts/test_permission_requirement_policy.py

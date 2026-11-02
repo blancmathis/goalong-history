@@ -107,7 +107,9 @@ if [[ ! "$PUBLISH_RUN_ID" =~ ^[1-9][0-9]*$ || ! "$ATTEMPT" =~ ^[1-9][0-9]?$ ]]; 
   echo "A positive numeric run ID and attempt in 1...99 are required." >&2
   exit 1
 fi
-BUILD_NUMBER="30000000.$((PUBLISH_RUN_ID / 10000)).$(((PUBLISH_RUN_ID % 10000) * 100 + ATTEMPT))"
+# shellcheck source=build_number_policy.sh
+source "$ROOT_DIR/scripts/build_number_policy.sh"
+BUILD_NUMBER="$(localhistory_release_build_number "$PUBLISH_RUN_ID" "$ATTEMPT")"
 
 printf 'value=%s\n' "$NEXT_VERSION"
 printf 'build=%s\n' "$BUILD_NUMBER"
