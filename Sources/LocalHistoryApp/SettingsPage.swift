@@ -362,7 +362,7 @@ enum SettingsPane: Hashable {
         // UI-15A (20, 24): every main pane says what it is for under its title.
         case .home: return "Choisissez ce que Goalong enregistre, ce qu’il envoie et comment il démarre."
         case .recording: return "Choisissez ce que Goalong enregistre sur ce Mac. Rien n’est envoyé sans un autre choix."
-        case .chatGPT: return "Votre ChatGPT résume une journée à partir des seules données que vous choisissez."
+        case .chatGPT: return "Avec votre compte ChatGPT, Goalong rédige le bilan d’une journée à partir des seules données que vous choisissez."
         case .modules: return "Activez seulement les fonctions dont vous avez besoin."
         // UI-13C (27, 40): the page's sentence sits under its title, as on ChatGPT and Modules.
         case .applications: return "Désactivez une app ou un site pour l’exclure du suivi détaillé et des prochains envois."

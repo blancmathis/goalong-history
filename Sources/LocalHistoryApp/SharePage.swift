@@ -117,6 +117,8 @@
                 case .openRecordingSettings?:
                     Button("Ouvrir les réglages") { model.openRecordingSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
+                        // R-265: VoiceOver says which settings open.
+                        .accessibilityLabel("Ouvrir les réglages d’enregistrement")
                 case .reportProblem?:
                     Button("Signaler un problème…") { model.openDiagnostics() }
                         .buttonStyle(LHSecondaryButtonStyle())
@@ -193,7 +195,7 @@
                 title: "\(observed), pas encore \(pending) par ce Mac",
                 detail: recordingEnabled
                     ? "Le fichier contiendra seulement les minutes confirmées. Vous pourrez le créer dès la première ; si rien ne change, signalez un problème."
-                    : "Le fichier contiendra seulement les minutes confirmées. Activez l’enregistrement pour en avoir.",
+                    : "Le fichier contiendra seulement les minutes confirmées. Activez l’enregistrement : ce Mac confirmera les minutes suivantes.",
                 action: recordingEnabled ? .reportProblem : .openRecordingSettings,
                 canExport: false)
         }

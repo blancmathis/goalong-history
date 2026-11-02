@@ -20,6 +20,8 @@ struct VisibleContextControl: View {
                         if value { confirming = true } else { enabled = false }
                     }))
                     .labelsHidden().toggleStyle(.goalongSwitchOnly).accessibilityIdentifier("recording-visible-text")
+                    // R-264: the warning under the title is not read with the switch.
+                    .accessibilityHint("Facultatif, sur ce Mac. Peut contenir des messages et documents personnels.")
                 }.frame(minHeight: 44)
                 if enabled {
                     Text("Activé, les anciennes données sont conservées après arrêt.")

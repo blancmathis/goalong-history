@@ -1063,7 +1063,9 @@ terminal/aide--   # UI-17B (écran 36 : pastille d’état sous l’en-tête dan
 terminal/installe--   # UI-17B (écran 36 : pastille d’état sous l’en-tête, « Prête dans le Terminal »)
 onboarding/etape-1--   # UI-17B (écran 19 : « Sans source, Activité reste vide. »)
 settings/applications--   # UI-17B (écran 32 : phrase des entrées plus anciennes des sites)
-confidentialite/   # UI-17B (écran 44 : « Texte affiché » sans fondu, ligne de 44 pt)
+confidentialite/choix-par-defaut--   # UI-17B (écran 44 : « Texte affiché » sans fondu, ligne de 44 pt)
+confidentialite/pause-globale--   # UI-17B (écran 44 : « Texte affiché » sans fondu, ligne de 44 pt)
+confidentialite/suivi-actif--   # UI-17B (écran 44 : « Texte affiché » sans fondu, ligne de 44 pt)
 # UI-17C (T-046) « Pages : états et hiérarchie » : écarts déclarés, une raison par état.
 settings-sheets/analyse-donnees--   # UI-17C (écran 8 : « Configurer les sources » secondaire comme sur les autres onglets)
 settings-sheets/analyse-remplacements--   # UI-17C (écran 8 : titre « Remplacer avant l’envoi » à 17 pt, section)
@@ -1108,3 +1110,8 @@ onboarding/etape-0--   # UI-17B (écran 44 : lignes d’interactions à 44 pt)
 # UI-17C (T-046, #266) : écarts non couverts par le bloc UI-17C.
 enregistrement/journal--   # UI-17C (écran 22 : état vide « historique désactivé » posé sur la page, sans carte)
 programme/mot-de-passe--   # UI-17C (écran 1 : liste déjà bloquée nommée une fois, « Ensuite : … » ; cadenas fermé sur « Bloquer »)
+# T-043 O1 « Réglages et partage » : écarts déclarés, une raison par état.
+settings-sheets/conservation--   # T-043 O1 CUT-28 (écran 28 : défileur visible, la fin de la liste sous le pied se voit)
+partage/avec-donnees--   # T-043 O1 CUT-55 (écran 55 : défileur visible, la ligne coupée par la barre d’export se voit)
+settings-sheets/partage-site--   # T-043 O1 UI16-4 (écran 4 : « Aperçu indisponible : aucune donnée lue pour cette journée. » à côté de « Voir l’aperçu » grisé)
+settings/chatgpt--   # T-043 O1 20-367 (écrans 20/38 : « Avec votre compte ChatGPT, Goalong rédige le bilan d’une journée… »)

@@ -92,6 +92,9 @@ extension HistoryRetentionPolicy {
     @State private var proofDeletionConfirmed = false
     @State private var showingConfirmation = false
 
+    /// Height at which nothing of the default state sits under the footer (CUT-28).
+    static let idealHeight: CGFloat = 780
+
     init(model: HistoryRetentionSettingsModel? = nil, legacyRetentionDays: Int = 30) {
         _model = StateObject(wrappedValue: model ?? HistoryRetentionSettingsModel(legacyRetentionDays: legacyRetentionDays))
     }
@@ -158,6 +161,8 @@ extension HistoryRetentionPolicy {
                     }
                 }.fixedSize(horizontal: false, vertical: true).padding(24)
             }
+            // CUT-28 (28): the footer covers the end of the list; a visible scroller says « more below ».
+            .scrollIndicators(.visible)
             // A soft fade shows that the list continues under the footer.
             .overlay(alignment: .bottom) {
                 LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground], startPoint: .top, endPoint: .bottom)
@@ -178,7 +183,10 @@ extension HistoryRetentionPolicy {
                     .accessibilityIdentifier("retention-apply")
             }.padding(20)
         }
-        .frame(width: 700, height: 670).background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
+        // CUT-28 (28): tall enough for the whole list, its notes and « En savoir plus » above the footer; on a short
+        // screen the sheet may shrink and the list scrolls.
+        .frame(width: 700).frame(minHeight: 560, idealHeight: Self.idealHeight, maxHeight: 860)
+        .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .onChange(of: model.draft) { _ in proofDeletionConfirmed = false }
         .alert("Appliquer la suppression automatique ?", isPresented: $showingConfirmation) {
             Button("Annuler", role: .cancel) {}
