@@ -135,18 +135,13 @@ enum GoalongActivityFirstDay {
     /// The oldest day file (`yyyy-MM-dd.json`) of the Temps d’écran archive and of the Santé imports.
     /// Lists two folders, reads no file: call it off the main thread.
     static func importedEarliest(root: URL, calendar: Calendar = .current) -> Date? {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.isLenient = false
         let folders = [root.appendingPathComponent("apple-screen-time/days", isDirectory: true),
                        root.appendingPathComponent("health", isDirectory: true)]
         return folders.flatMap { (try? FileManager.default.contentsOfDirectory(atPath: $0.path)) ?? [] }
             .compactMap { name -> Date? in
                 guard name.count == 15, name.hasSuffix(".json") else { return nil }
-                return formatter.date(from: String(name.dropLast(5))).map { calendar.startOfDay(for: $0) }
+                // GoalongDayParser: a day without midnight (America/Santiago) still parses (C044R2).
+                return GoalongDayParser.date(String(name.dropLast(5)), timeZone: calendar.timeZone)
             }
             .min()
     }
