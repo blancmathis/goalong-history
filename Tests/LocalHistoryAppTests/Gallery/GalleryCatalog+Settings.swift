@@ -66,7 +66,7 @@ extension GalleryCatalog {
             panel("settings-sheets/conservation", width: 700, height: 670) { _ in AnyView(HistoryRetentionSettingsSheet()) },
             panel("settings-sheets/partage-site", width: 740, clock: .injected) { _ in AnyView(GoalongWebsiteSharingSheet()) },
             // UI-9 (11, 29): the two analysis windows opened from Réglages › Stockage; both inits are inert until a button is pressed.
-            panel("settings-sheets/comprendre-mon-travail", width: 760, clock: .injected) { _ in
+            panel("settings-sheets/comprendre-mon-travail", width: 760, scrolling: true, clock: .injected) { _ in
                 AnyView(GoalongProfileStudio(onSend: { _ in }, localOnly: true))
             },
             panel("settings-sheets/analyse-demande-site", width: 700, clock: .injected) { _ in AnyView(GoalongSiteAnalysisSheet()) },
