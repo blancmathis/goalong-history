@@ -24,6 +24,15 @@ reject localhistory_validate_build_number 99999999
 reject localhistory_validate_build_number 1.2.3.4
 reject localhistory_validate_build_number abc
 
+# make dev: a development bundle (debug, updates off) shows the installed release's number.
+accept localhistory_validate_build_number 30000000.3655750.331501 1
+reject localhistory_validate_build_number 30000000.3655750.331501 0
+reject localhistory_validate_build_number abc 1
+# build_app_core.sh checks after its development-bundle guard, which enforces debug + updates off.
+# shellcheck disable=SC2016 # literal source text, not an expansion
+grep -q 'localhistory_validate_build_number "$BUILD_NUMBER" "$DEVELOPMENT_BUILD"' \
+  "$ROOT_DIR/scripts/build_app_core.sh"
+
 # CI may use exactly its own run's number, nothing else.
 export GITHUB_ACTIONS=true GITHUB_RUN_ID=36557503315 GITHUB_RUN_ATTEMPT=1
 accept localhistory_validate_build_number 30000000.3655750.331501

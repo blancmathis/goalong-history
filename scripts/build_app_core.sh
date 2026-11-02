@@ -20,7 +20,6 @@ source "$CODESIGN_POLICY"
 source "$ROOT_DIR/scripts/build_number_policy.sh"
 VERSION="${LOCALHISTORY_VERSION:-0.6.0}"
 BUILD_NUMBER="${LOCALHISTORY_BUILD_NUMBER:-1}"
-localhistory_validate_build_number "$BUILD_NUMBER"
 # The git TREE, not the commit: a PR candidate and its merge commit share it.
 # The exact main commit is bound by the publisher attestation instead.
 SOURCE_REVISION="$(git -C "$ROOT_DIR" rev-parse 'HEAD^{tree}' 2>/dev/null || printf unknown)"
@@ -47,6 +46,8 @@ case "$DEVELOPMENT_BUILD" in
     ;;
   *) echo "LOCALHISTORY_DEVELOPMENT_BUILD must be 0 or 1." >&2; exit 1 ;;
 esac
+# After the guard above: make dev reuses the installed release's number (display only).
+localhistory_validate_build_number "$BUILD_NUMBER" "$DEVELOPMENT_BUILD"
 # The make dev channel (Goalong Dev: data mode, source, DEV icon) exists only in development
 # bundles; releases carry no key.
 DEV_DATA_MODE="${LOCALHISTORY_DEV_DATA_MODE:-}"

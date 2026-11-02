@@ -17,12 +17,18 @@ localhistory_release_build_number() {
 
 localhistory_validate_build_number() {
   local build="$1"
+  local development="${2:-0}"
   if [[ ! "$build" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
     echo "Build number must be one to three numeric components; got: $build" >&2
     return 1
   fi
   local first="${build%%.*}"
   if (( 10#$first < LOCALHISTORY_RELEASE_BUILD_EPOCH )); then
+    return 0
+  fi
+  # A development bundle (make dev: debug, updates disabled, enforced by build_app_core.sh)
+  # only displays the installed release's number and never asks Sparkle, so it may carry it.
+  if [[ "$development" == 1 ]]; then
     return 0
   fi
   local run_id="${GITHUB_RUN_ID:-}"
