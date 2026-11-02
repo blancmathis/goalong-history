@@ -11,7 +11,6 @@
         var showsDefaultRule = false
         var websiteSummaries: [ActivitySiteSummary] = []
         var richContextEnabled = false
-        var onEnableRichContext: (() -> Void)?
         /// When recording is off, an empty list says so instead of « laissez Goalong actif ».
         var recordingEnabled = true
 
@@ -61,17 +60,18 @@
             VStack(alignment: .leading, spacing: 12) {
                 controls
                 if filteredItems.isEmpty {
-                    // Read-only state on the page, not in a card; the sentence adds to the title (UI-13B).
-                    EmptyStateView(
-                        symbol: "app.dashed",
+                    // Read-only state on the page, not in a card; the sentence adds to the title (UI-13B). The thread
+                    // alone, on the leading edge like every other empty state (R7, UI-17A, 55: no dashed square).
+                    GoalongEmptyState(
                         title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
                         message: model.snapshot.trackedUsage.isEmpty
                             ? (recordingEnabled
                                 ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
                                 : "Activez l’enregistrement pour régler ici ce que chaque partage montre.")
                             : "Essayez une autre app, un autre site ou une autre catégorie."
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 240)
+                    ) { EmptyView() }
+                    .padding(.top, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 16) {
@@ -80,6 +80,12 @@
                         }
                         // The export bar sits under the list, not over it: a small margin is enough (UI-15B, 32/55).
                         .padding(.bottom, 12)
+                    }
+                    // CUT-55 (55): the export bar cuts the last row; a visible scroller and a soft fade say « more below ».
+                    .scrollIndicators(.visible)
+                    .overlay(alignment: .bottom) {
+                        LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 16).allowsHitTesting(false)
                     }
                 }
             }
@@ -167,7 +173,6 @@
                                 websiteSummary: websiteSummariesBySubjectID[item.id],
                                 expanded: isExpanded,
                                 richContextEnabled: richContextEnabled,
-                                onEnableRichContext: onEnableRichContext,
                                 onToggleExpanded: {
                                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                                         if isExpanded {
@@ -201,9 +206,9 @@
             if let sharedApp { sentences.append("Sites vus dans \(sharedApp).") }
             let older = items.filter { !$0.identityProofAvailable }.count
             if older == items.count, older > 0 {
-                sentences.append("Leurs entrées plus anciennes ne partagent que la catégorie.")
+                sentences.append("Pour ces sites, les entrées plus anciennes n’indiquent que la catégorie.")
             } else if older > 0 {
-                sentences.append("Pour certains sites, les entrées plus anciennes ne partagent que la catégorie.")
+                sentences.append("Pour certains sites, les entrées plus anciennes n’indiquent que la catégorie.")
             }
             return sentences.isEmpty ? nil : sentences.joined(separator: " ")
         }
@@ -215,7 +220,6 @@
         let websiteSummary: ActivitySiteSummary?
         let expanded: Bool
         let richContextEnabled: Bool
-        let onEnableRichContext: (() -> Void)?
         let onToggleExpanded: () -> Void
         /// Set when the section already says which app showed every site.
         var sharedAppName: String? = nil
@@ -401,13 +405,7 @@
 
                 Spacer()
 
-                if !richContextEnabled, let onEnableRichContext {
-                    Button("Activer la mémoire des pages") {
-                        onEnableRichContext()
-                    }
-                    .buttonStyle(LHSecondaryButtonStyle())
-                    .help("Nécessaire pour mémoriser les discussions et le texte visible des pages")
-                } else if richContextEnabled {
+                if richContextEnabled {
                     Label(
                         "\(detail.semanticSnapshotCount) instantané\(detail.semanticSnapshotCount > 1 ? "s" : "") de texte visible",
                         systemImage: "text.badge.checkmark"

@@ -288,9 +288,8 @@ import LocalHistoryQueryCLI
     private var footer: some View {
         HStack {
             if model.busy { ProgressView().controlSize(.small) }
-            if let hint = footerHint {
-                Text(hint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-            }
+            Text(footerHint).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .accessibilityIdentifier("sharing-footer-hint")
             Spacer()
             if model.preview == nil {
                 Button("Voir l’aperçu") { Task { await model.prepare(origin: origin, tokenPath: tokenPath) } }
@@ -308,11 +307,16 @@ import LocalHistoryQueryCLI
         }.padding(20).background(LHTheme.cardBackground)
     }
     private var dayLabel: String { model.draft.delivery == .daily ? "Journée d’exemple" : "Journée à envoyer" }
-    /// Nothing while the selection's note already says there is no day to read.
-    private var footerHint: String? {
-        if model.preview != nil { return "La confirmation autorise l’envoi." }
-        if model.catalog == nil && !model.loading { return nil }
-        return model.selectionHint ?? "Aperçu local, rien n’est envoyé."
+    private var footerHint: String {
+        Self.footerHint(previewReady: model.preview != nil, catalogLoaded: model.catalog != nil,
+                        loading: model.loading, selectionHint: model.selectionHint)
+    }
+    /// The line next to the footer's action. Without a day to read, « Voir l’aperçu » is held back: the line says
+    /// why in a few words, the note above gives the cause and its fix (UI16-4, 4).
+    static func footerHint(previewReady: Bool, catalogLoaded: Bool, loading: Bool, selectionHint: String?) -> String {
+        if previewReady { return "La confirmation autorise l’envoi." }
+        if !catalogLoaded && !loading { return "Aperçu indisponible : aucune donnée lue pour cette journée." }
+        return selectionHint ?? "Aperçu local, rien n’est envoyé."
     }
     private func openSite(fragment: String) {
         let site = origin.isEmpty ? "https://goalong.spry-crumb-3668.chatgpt.site" : origin

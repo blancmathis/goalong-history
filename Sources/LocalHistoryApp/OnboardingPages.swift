@@ -118,7 +118,7 @@
                 }
                 // Warn here, not only on the last step: with every source off, Activité stays empty.
                 if ![GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations].contains(where: { consents.isEnabled($0) }) {
-                    GoalongNote("Aucune source : Activité restera vide.", symbol: "exclamationmark.circle")
+                    GoalongNote("Sans source, Activité reste vide.", symbol: "exclamationmark.circle")
                         .accessibilityIdentifier("onboarding-no-source-note")
                 }
             }

@@ -10,23 +10,25 @@
             XCTAssertTrue(status.canExport)
             XCTAssertNil(status.action)
             XCTAssertEqual(status.title, "Prêt à créer un fichier selon vos règles")
-            XCTAssertTrue(status.detail.hasPrefix("20 minutes vérifiées sur 32."))
+            XCTAssertTrue(status.detail.hasPrefix("20 minutes confirmées sur 32."))
         }
 
         func testObservedButUnsealedMinutesExplainWhyAndOfferSupport() {
             let status = ShareProofStatus.make(observedMinutes: 16, sealedMinutes: 0, recordingEnabled: true)
             XCTAssertFalse(status.canExport)
-            XCTAssertEqual(status.title, "16 minutes observées, aucune vérifiée")
-            XCTAssertTrue(status.detail.contains("vérifiées par ce Mac"))
-            // UI-15B (32/55): says why, and that sharing stays possible.
-            XCTAssertTrue(status.detail.hasPrefix("Ce Mac n’a pas signé ces minutes"))
-            XCTAssertTrue(status.detail.contains("Le partage reste possible"))
+            // UI-17A (32/55, R7): plain words, what the file holds, and what unblocks it.
+            XCTAssertEqual(status.title, "16 minutes, pas encore confirmées par ce Mac")
+            XCTAssertTrue(status.detail.hasPrefix("Le fichier contiendra seulement les minutes confirmées."))
+            XCTAssertTrue(status.detail.contains("dès la première"))
+            XCTAssertTrue(status.detail.contains("signalez un problème"))
+            XCTAssertFalse(status.detail.contains("signé"))
             XCTAssertEqual(status.action, .reportProblem)
         }
 
         func testRecordingOffPointsToSettings() {
             let observed = ShareProofStatus.make(observedMinutes: 1, sealedMinutes: 0, recordingEnabled: false)
-            XCTAssertEqual(observed.title, "1 minute observée, aucune vérifiée")
+            XCTAssertEqual(observed.title, "1 minute, pas encore confirmée par ce Mac")
+            XCTAssertTrue(observed.detail.contains("Activez l’enregistrement"))
             XCTAssertEqual(observed.action, .openRecordingSettings)
             XCTAssertFalse(observed.canExport)
 

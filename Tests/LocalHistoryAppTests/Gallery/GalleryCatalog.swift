@@ -51,10 +51,12 @@ import SwiftUI
     }
 
     /// A content panel (sheet, popover, card) rendered alone at a width, its height fitted.
-    static func panel(_ id: String, width: CGFloat, height: CGFloat? = nil, themes: [GalleryTheme] = GalleryTheme.standard,
+    /// `scrolling`: the panel scrolls inside a frame of its own (a sheet with a fixed or ideal height): the capture is
+    /// as tall as the scrolled content, never shorter (CUT-GAL), instead of a fixed height that cuts it.
+    static func panel(_ id: String, width: CGFloat, height: CGFloat? = nil, scrolling: Bool = false, themes: [GalleryTheme] = GalleryTheme.standard,
                       clock: GalleryClockUse = .none, note: String? = nil, file: String = #fileID,
                       _ view: @escaping @MainActor (GalleryContext) throws -> AnyView) -> GalleryEntry {
-        GalleryEntry(id, sizes: [height.map { .fixed(width, $0) } ?? .fitWidth(width)], themes: themes, clock: clock,
+        GalleryEntry(id, sizes: [scrolling ? .full(width) : height.map { .fixed(width, $0) } ?? .fitWidth(width)], themes: themes, clock: clock,
                      note: note, file: file, view: view)
     }
 }

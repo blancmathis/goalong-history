@@ -110,12 +110,12 @@ struct RecordingChoicesView: View {
                                 Spacer(minLength: 8)
                                 if !isEnabled && choice.id == "calls" && choice.isOn.wrappedValue {
                                     // Says on the row why this locked switch alone is on (UI-14, 24/44).
-                                    Text("Reste allumé").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                    Text("Réglé à part, dans Appels").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 }
                                 Toggle(choice.title, isOn: choice.isOn)
                                     .labelsHidden().toggleStyle(.goalongSwitchOnly)
                                     .accessibilityIdentifier("recording-\(choice.id)")
-                            }.frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                            }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         }
                     }
                 }

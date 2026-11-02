@@ -10,6 +10,11 @@
         let host: String
         var size: CGFloat = 34
 
+        /// The letter of a monogram tile (site or app without icon): never under 11 pt, so it reads on
+        /// the smallest tiles of the blocking page and the shield (HL-TUILES).
+        static let minimumLetterSize: CGFloat = 11
+        static func letterSize(for side: CGFloat) -> CGFloat { max(minimumLetterSize, side * 0.5) }
+
         static func initial(for host: String) -> String {
             let normalized = SharingSubjectKey.normalizedHost(host)
             guard let first = normalized.first(where: { $0.isLetter || $0.isNumber }) else { return "•" }
@@ -20,7 +25,7 @@
             let side = max(size, Self.minimumSize)
             let shape = RoundedRectangle(cornerRadius: side * 0.24, style: .continuous)
             Text(Self.initial(for: host))
-                .font(.system(size: max(10, side * 0.5), weight: .semibold, design: .rounded))
+                .font(.system(size: Self.letterSize(for: side), weight: .semibold, design: .rounded))
                 .foregroundStyle(LHTheme.text)
                 .frame(width: side, height: side)
                 .background(shape.fill(LHTheme.insetBackground))

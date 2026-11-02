@@ -1192,9 +1192,10 @@ struct FocusThreadModel: Equatable {
                         if let message = change.error { limitError = message; return }
                         save(change.settings)
                     } label: {
+                        // « Lun » … « Dim » (HL-31): wide enough for three letters; an unchosen day stays readable.
                         Text(BlockingFormat.weekdayLetters[day - 1]).font(.system(size: 12, weight: .semibold))
-                            .frame(width: 22, height: 22)
-                            .foregroundStyle(on ? LHTheme.onAccent : LHTheme.secondaryText)
+                            .frame(width: 32, height: 22)
+                            .foregroundStyle(on ? LHTheme.onAccent : LHTheme.text)
                             .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
                                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }

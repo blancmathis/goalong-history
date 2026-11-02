@@ -240,7 +240,7 @@
                     Label("Aucune source n’est analysée", systemImage: "pause.circle.fill")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
-                        "Les événements et preuves existants restent disponibles. Activez cette source seulement si vous voulez que Goalong lise Codex, Claude Code, OpenCode ou un dossier que vous ajoutez."
+                        "Les événements et preuves existants restent disponibles. Activez « Conversations locales » seulement si vous voulez que Goalong lise Codex, Claude Code, OpenCode ou un dossier que vous ajoutez."
                     )
                     .font(.system(size: 12))
                     .foregroundStyle(LHTheme.secondaryText)
@@ -539,7 +539,7 @@
             let day = DashboardFormatters.dayTitle.string(from: agents.selectedDay)
             let sessions = GoalongUIFormat.count(Int(agents.overview.sessionCount), "session")
             let messages = GoalongUIFormat.count(Int(agents.overview.messageCount), "message")
-            let actions = GoalongUIFormat.count(Int(agents.overview.toolCallCount), "action des agents", plural: "actions des agents")
+            let actions = GoalongUIFormat.count(Int(agents.overview.toolCallCount), "action d’agent", plural: "actions d’agents")
             return "\(day) : \(sessions), \(messages) et \(actions)."
         }
 
@@ -590,7 +590,7 @@
             HStack(spacing: 12) {
                 providerIcon(.codex)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Historique local de Codex")
+                    Text("Dossier des sessions Codex")
                         .font(.system(size: 12, weight: .semibold))
                     Text(
                         "Goalong suit les sessions et l’historique de Codex quand Codex est installé sur ce Mac."
@@ -674,7 +674,7 @@
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
                 } else {
-                    Button("Installer") {
+                    Button("Installer le relais \(kind.frenchName)") {
                         agents.installIntegration(kind)
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
@@ -693,7 +693,7 @@
                             tint: LHTheme.teal,
                             title: "Dossiers de conversations",
                             subtitle:
-                                "Une source arrêtée le reste après un redémarrage ; ajoutez-la de nouveau pour l’autoriser. Goalong ne conserve que des références légères."
+                                "Un dossier retiré le reste après un redémarrage ; ajoutez-le de nouveau pour l’autoriser. Goalong ne conserve que des références légères."
                         )
                         Spacer()
                         Button("Détecter les dossiers courants") {
