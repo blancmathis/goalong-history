@@ -171,6 +171,10 @@ struct GalleryImage {
     /// One render. Never orders the window; the window is closed and released before returning.
     private static func renderOnce(_ entry: GalleryEntry, theme: GalleryTheme, size: GallerySize, ctx: GalleryContext) throws -> GalleryImage {
         ctx.theme = theme
+        // The window's high-contrast appearance is plain Aqua or Dark Aqua to the theme colours, so it alone never
+        // reaches the high* tokens (R281-1); a plain theme ignores the Mac's own setting.
+        LHTheme.increasedContrastOverride = theme.isContrast
+        defer { LHTheme.increasedContrastOverride = nil }
         let start: NSSize
         switch size {
         case let .fixed(width, height): start = NSSize(width: width, height: height)

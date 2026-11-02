@@ -368,7 +368,7 @@ enum GoalongOnboardingExclusionEdit {
                 HStack {
                     Text(item).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Button("Retirer") { remove(item) }.buttonStyle(.plain).foregroundStyle(LHTheme.secondaryText)
+                    Button("Retirer") { remove(item) }.buttonStyle(LHQuietButtonStyle())
                         .accessibilityLabel("Retirer \(item) des exclusions")
                 }
             }

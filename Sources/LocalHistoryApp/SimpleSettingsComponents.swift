@@ -67,7 +67,7 @@ struct GoalongSettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !title.isEmpty {
-                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+                Text(title).font(LHTheme.cardTitleFont).foregroundStyle(LHTheme.text)
                     .accessibilityAddTraits(.isHeader)
             }
             LHCard { VStack(alignment: .leading, spacing: 14, content: content).frame(maxWidth: .infinity, alignment: .leading) }
@@ -82,7 +82,7 @@ struct GoalongSettingsList<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !title.isEmpty {
-                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+                Text(title).font(LHTheme.cardTitleFont).foregroundStyle(LHTheme.text)
                     .accessibilityAddTraits(.isHeader)
             }
             LHCard(padding: 0) { VStack(spacing: 0, content: content) }
