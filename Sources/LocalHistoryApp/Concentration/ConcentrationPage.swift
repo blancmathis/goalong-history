@@ -480,8 +480,6 @@ struct FocusPlanChip: View {
     /// The end time shows once, on the thread under the figure (R-85).
     static let lockedLine = "Verrouillé"
     static func freeLine(endsAt: Date?) -> String { endsAt == nil ? "Séance libre, sans fin" : "Séance libre" }
-    /// One padlock per card: a locked session says so once, beside « Verrouillé »; the phase line keeps its own glyph.
-    static func phaseSymbol(_ symbol: String, locked: Bool) -> String { symbol }
     /// Only a block owned by this session locks its card; a commitment stake does not (R1-011).
     var locked: Bool { controller.hasLockedSessionBlock }
     private var lists: [BlockList] { session.blockListIds.compactMap { id in controller.blockLists.first { $0.id == id } } }
@@ -524,7 +522,7 @@ struct FocusPlanChip: View {
         .accessibilityIdentifier("concentration-session")
     }
 
-    private var phaseLine: some View {
+    var phaseLine: some View {
         let symbol: String, words: String
         switch (session.mode.kind, phase.kind) {
         case (.free, _):
@@ -538,7 +536,8 @@ struct FocusPlanChip: View {
         default:
             symbol = "cup.and.saucer"; words = "Pause jusqu’à \(phase.endsAt.map(BlockingFormat.time) ?? "")"
         }
-        return Label(words, systemImage: Self.phaseSymbol(symbol, locked: locked))
+        // One padlock per card: a locked session says so once, beside « Verrouillé »; this line keeps its own glyph.
+        return Label(words, systemImage: symbol)
             .font(.system(size: 13, weight: .medium))
             .accessibilityIdentifier("concentration-phase")
     }

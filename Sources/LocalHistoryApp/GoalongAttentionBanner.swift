@@ -13,7 +13,7 @@ struct GoalongAttentionBanner: View {
     /// The global pause banner already says nothing is recorded: storage alerts wait for the resume.
     @State private var globalPause = GoalongGlobalPause.load()
 
-    private enum Notice: Equatable {
+    enum Notice: Equatable {
         /// The cause that stops all recording, shown in place of a storage alert (HL-45).
         case recordingCause
         case storage(CaptureStorageFailureKind)
@@ -21,7 +21,16 @@ struct GoalongAttentionBanner: View {
         case updated(from: String, to: String)
     }
 
+    /// Tests show one notice without the slot rules (the slot reads the shared consent store).
+    private let forcedNotice: Notice?
+
+    init(model: DashboardViewModel, showing forcedNotice: Notice? = nil) {
+        self.model = model
+        self.forcedNotice = forcedNotice
+    }
+
     private var notice: Notice? {
+        if let forcedNotice { return forcedNotice }
         let slot = Self.currentStorageSlot(model: model, localEnabled: consents.isEnabled(.localComputerHistory),
             globallyPaused: globalPause.blocksActivity, section: model.selectedSection)
         let storageProblem = model.runtime.storageFailure != nil || model.freeDiskBytes.map(StorageHealth.isLow) == true
@@ -109,10 +118,12 @@ struct GoalongAttentionBanner: View {
         kind == .permissionDenied ? "lock.fill" : "internaldrive"
     }
 
-    /// R-90: the same name as the sidebar state, the full path, and a button that opens it.
-    static let storageRefusedTitle = "Enregistrement interrompu : écriture impossible"
-    static let storageRefusedDetail = "macOS refuse à Goalong l’accès à son dossier. Dans Réglages Système › Confidentialité et sécurité › Accès complet au disque, autorisez Goalong, puis actualisez."
-    static let storageRefusedOpenTitle = "Ouvrir Réglages Système…"
+    /// R-90: the folder refuses the write (EACCES, EPERM, read-only volume). Full Disk Access fixes none of these
+    /// for an app that is not sandboxed, so the way out is the folder's own permissions, opened in the Finder.
+    static let storageRefusedTitle = "Enregistrement interrompu : le dossier refuse l’écriture"
+    static let storageRefusedDetail = "macOS refuse à Goalong l’écriture dans son dossier d’historique : ses droits ont changé, ou le disque est en lecture seule. Dans le Finder, sélectionnez ce dossier, choisissez Fichier › Lire les informations › Partage et permissions, donnez « Lecture et écriture » à votre compte, puis actualisez."
+    static let storageRefusedOpenTitle = "Afficher le dossier dans le Finder"
+    static let storageRefusedRefreshTitle = "Actualiser"
 
     /// One alert style in the whole app (T-043 R-7): every problem is yellow; only the update confirmation is green.
     private func tint(_ notice: Notice) -> Color {
@@ -160,9 +171,11 @@ struct GoalongAttentionBanner: View {
             manageStorageButton(primary: true)
         case .storage(.permissionDenied):
             HStack(spacing: 8) {
-                Button(Self.storageRefusedOpenTitle) { PermissionManager.shared.openFullDiskAccessSettings() }
-                    .buttonStyle(LHSecondaryButtonStyle())
-                Button("Actualiser") { model.refreshEverything() }
+                Button(Self.storageRefusedOpenTitle) {
+                    NSWorkspace.shared.activateFileViewerSelecting([AppPaths.applicationSupportDirectory])
+                }
+                .buttonStyle(LHSecondaryButtonStyle())
+                Button(Self.storageRefusedRefreshTitle) { model.refreshEverything() }
                     .buttonStyle(LHQuietButtonStyle())
             }
         case .storage:
