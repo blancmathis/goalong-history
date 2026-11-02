@@ -475,13 +475,15 @@ static void cleanOnSignal(int sig) {
 static NSUserDefaults *isolatedStandardSuite;
 static IMP replaceClassMethod(Class cls, SEL sel, id block);
 
-// `<throwaway HOME>/Library/Preferences/goalong-tests-defaults-<pid>-<tag><UUID>` (cfprefsd adds `.plist`).
+// `<throwaway HOME>/goalong-test-preferences/goalong-tests-defaults-<pid>-<tag><UUID>` (cfprefsd adds `.plist`).
+// Never `…/Library/Preferences/<name>`: when that path lies under the account's home (CI puts the throwaway HOME in
+// /Users/runner/work/_temp), cfprefsd maps it to the plain domain `<name>` in ~/Library/Preferences.
 static NSString *throwawaySuiteName(NSString *tag) {
     const char *home = getenv("GOALONG_TEST_HOME");
     if (!home || !*home) home = getenv("CFFIXED_USER_HOME");
     NSString *base = (home && *home) ? [NSString stringWithUTF8String:home] : NSTemporaryDirectory();
     NSString *file = [NSString stringWithFormat:@"goalong-tests-defaults-%d-%@%@", getpid(), tag, NSUUID.UUID.UUIDString];
-    return [[base stringByAppendingPathComponent:@"Library/Preferences"] stringByAppendingPathComponent:file];
+    return [[base stringByAppendingPathComponent:@"goalong-test-preferences"] stringByAppendingPathComponent:file];
 }
 
 static void isolateStandardDefaults(void) {
