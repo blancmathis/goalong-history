@@ -1606,3 +1606,6 @@ terminal/installe--dark.png   # T-043 R1 : jetons de contraste, désactivé, lie
 terminal/installe--light.png   # T-043 R1 : jetons de contraste, désactivé, liens accent, interrupteur verrouillé, états vides, alertes, titres de section
 toast/exemple--dark--460x120.png   # T-043 R1 : jetons de contraste, désactivé, liens accent, interrupteur verrouillé, états vides, alertes, titres de section
 toast/exemple--light--460x120.png   # T-043 R1 : jetons de contraste, désactivé, liens accent, interrupteur verrouillé, états vides, alertes, titres de section
+ambiance/a-installer--   # R281-8 (tour 2 R1) : seul « Télécharger » visible → citron (déc. 7)
+modules/actifs-verrouille--   # R281-6 (tour 2 R1) : cadenas dans le bouton de l'interrupteur, « Ouvrir » ne bouge plus
+activite/enregistrement-desactive--   # R281-3 (tour 2 R1) : désactivé sans bord ni pointillé, remplissage léger
