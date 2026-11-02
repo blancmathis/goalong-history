@@ -32,8 +32,8 @@
         func testReadinessMessages() {
             XCTAssertEqual(GoalongWorkAgent.Readiness.ready.message, "")
             XCTAssertEqual(GoalongWorkAgent.Readiness.noDefinition.message, "Décrivez d’abord ce qui compte comme travail pour vous.")
-            XCTAssertEqual(GoalongWorkAgent.Readiness.historyOff.message, "L’historique de ce Mac est désactivé : il n’y a rien à classer.")
-            XCTAssertEqual(GoalongWorkAgent.Readiness.noConsent.message, "Autorisez ChatGPT à classer votre temps.")
+            XCTAssertEqual(GoalongWorkAgent.Readiness.historyOff.message, "L’enregistrement est désactivé : il n’y a rien à classer.")
+            XCTAssertEqual(GoalongWorkAgent.Readiness.noConsent.message, "Autorisez l’agent à classer votre temps.")
             XCTAssertEqual(GoalongWorkAgent.Readiness.notConnected.message, "Connectez votre compte ChatGPT pour lancer le classement.")
             XCTAssertEqual(GoalongWorkAgent.Readiness.paused.message, "Goalong est en pause : le classement reprendra ensuite.")
         }
@@ -59,7 +59,7 @@
             let agent = agent(definition: GoalongWorkDefinition(goals: "Écrire"))
             XCTAssertEqual(agent.readiness, .historyOff)
             agent.classify(day: day)
-            XCTAssertEqual(agent.lastError, "L’historique de ce Mac est désactivé : il n’y a rien à classer.")
+            XCTAssertEqual(agent.lastError, "L’enregistrement est désactivé : il n’y a rien à classer.")
             XCTAssertNil(agent.runningDay)
         }
 

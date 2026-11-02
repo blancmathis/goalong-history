@@ -279,13 +279,15 @@
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : LHTheme.tertiaryText)
                         .frame(width: 7, height: 7)
-                    // UI-15A: one short line (≤ 20 characters), never two; switched off is not a pause
-                    // (as SharePage and UsageRulesList), and the global pause says so.
+                    // UI-15A / T-043 R-24: short state (≤ 24 characters); switched off is not a pause, and the
+                    // global pause says so. « Enregistrement désactivé » is wider than the 208 pt sidebar:
+                    // it wraps to a second line instead of losing its end.
                     Text(model.runtime.sidebarTitle(recordingEnabled: consents.isEnabled(.localComputerHistory),
                                                     globallyPaused: globalPause.blocksActivity,
                                                     storageNamedByBanner: storageNamedByBanner))
                         .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     if model.runtime.needsAttention {
                         Image(systemName: "chevron.right")
@@ -345,7 +347,7 @@
                             ProgressView()
                                 .controlSize(.mini)
                         } else {
-                            Text("Version \(Self.version.dropFirst())")
+                            Text(Self.version)
                         }
                     }
                     .buttonStyle(.plain)
@@ -353,7 +355,7 @@
                     .help("Rechercher les mises à jour")
                 } else {
                     // UI-13B (13): plain secondary text (≥ 4,5:1), not a dimmed disabled button.
-                    Text("Version \(Self.version.dropFirst())")
+                    Text(Self.version)
                         .help("Mises à jour désactivées dans cette version compilée localement")
                 }
                 Spacer()
@@ -363,7 +365,7 @@
         }
 
         private static var version: String {
-            "v\(ProductIdentity.shortVersion ?? "0.6.0-dev")"
+            "\(ProductIdentity.interfaceName) \(ProductIdentity.shortVersion ?? "0.6.0-dev")"
         }
     }
 
@@ -412,7 +414,7 @@
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"
             case .braise: return "Braise"
-            case .activity: return "Historique de ce Mac"
+            case .activity: return "Enregistrement"
             case .screenTime: return "Temps d’écran"
             case .agentActivity: return "Conversations IA"
             case .chatGPTRecap: return "Activité"

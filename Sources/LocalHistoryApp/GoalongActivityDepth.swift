@@ -122,7 +122,7 @@ struct GoalongActivityTextureSection: View {
         let total = breakdown.totalSeconds
         let rows = GoalongActivityTexture.order.map { ($0, breakdown.seconds($0)) }
             .filter { $0.1 >= 1 }.sorted { $0.1 > $1.1 }
-        GoalongSection(title: "Écriture, lecture et appels",
+        GoalongSection(title: "Présence au clavier",
                        subtitle: "Le même temps actif, réparti selon ce que le Mac observait à chaque minute") {
             VStack(alignment: .leading, spacing: 14) {
                 if rows.isEmpty {
@@ -283,7 +283,7 @@ struct GoalongActivityCoverageSection: View {
         let total = isDay ? "\(observed) observées" : "\(observed) observées sur \(days) jour\(days > 1 ? "s" : "")"
         let span = isDay ? "entre la première et la dernière activité" : "entre la première et la dernière activité de chaque jour"
         return missing >= 60
-            ? "\(total), dont \(GoalongAnalyticsFormatting.duration(missing)) sans observation \(span)."
+            ? "\(total), dont \(GoalongAnalyticsFormatting.duration(missing)) non observées \(span)."
             : "\(total), sans trou \(span)."
     }
 

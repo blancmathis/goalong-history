@@ -35,7 +35,7 @@ final class T045H4Tests: XCTestCase {
         let sources = root.appendingPathComponent("Sources/LocalHistoryApp")
         let blocking = try String(contentsOf: sources.appendingPathComponent("Blocking/BlockingPage.swift"), encoding: .utf8)
         XCTAssertFalse(blocking.contains("dans Réglages › Général › Ouverture"), "chemin macOS : Réglages Système › Général › Ouverture")
-        XCTAssertTrue(blocking.contains("Autorisez Goalong dans \\(LoginItemsPanel.path)."), "le panneau vient de la constante unique (UI-13)")
+        XCTAssertTrue(blocking.contains("Autorisez \\(PermissionSetupCopy.macOSListName()) dans \\(LoginItemsPanel.path)."), "le panneau vient de la constante unique (UI-13)")
         // macOS 15 renamed the pane; before it, « Ouverture » (never « Ouverture de session »).
         if #available(macOS 15, *) {
             XCTAssertEqual(LoginItemsPanel.path, "Réglages Système › Général › Ouverture et extensions")

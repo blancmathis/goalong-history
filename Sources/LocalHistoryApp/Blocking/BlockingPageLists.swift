@@ -12,7 +12,7 @@ import SwiftUI
     @Binding var editing: UUID?
 
     var body: some View {
-        GoalongSection(title: "Listes", subtitle: controller.lists.isEmpty ? "Ce que vous voulez couper. Choisissez un point de départ, vous pourrez tout modifier." : nil) {
+        GoalongSection(title: "Listes", subtitle: controller.lists.isEmpty ? "Ce que vous voulez bloquer. Choisissez un point de départ, vous pourrez tout modifier." : nil) {
             if !controller.lists.isEmpty {
                 Button { create(from: nil) } label: { Label("Nouvelle liste", systemImage: "plus") }
                     .buttonStyle(LHQuietButtonStyle())
@@ -82,8 +82,8 @@ import SwiftUI
     }
 
     static func behaviour(_ list: BlockList) -> String {
-        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) s" : "Bloque l’accès"]
-        if let quota = list.quotaMinutesPerDay { parts.append("\(BlockingFormat.duration(minutes: quota)) libres/jour") }
+        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) secondes" : "Bloque l’accès"]
+        if let quota = list.quotaMinutesPerDay { parts.append("\(BlockingFormat.duration(minutes: quota)) libres par jour") }
         if let breaks = list.breaks { parts.append("\(breaks.count) pause\(breaks.count > 1 ? "s" : "")") }
         return parts.joined(separator: ", ")
     }
@@ -391,7 +391,7 @@ import SwiftUI
         ruleRow(label: "Mots-clés", symbol: "textformat", empty: "Bloquer des mots…",
                 detail: "Bloque toute page dont l’adresse ou le titre contient ce mot. Mot entier, accents ignorés.",
                 items: list.keywords ?? [], adding: $addingKeyword, text: $newKeyword,
-                placeholder: "ex. match en direct", canAdd: (list.keywords?.count ?? 0) < 50, canRemove: !stricterOnly,
+                placeholder: "ex. résumé du match", canAdd: (list.keywords?.count ?? 0) < 50, canRemove: !stricterOnly,
                 identifier: "keyword") { value in
             ruleError = message(controller.addKeyword(value, to: list.id), input: value, kind: "un mot-clé de 2 à 40 caractères")
         } remove: { keyword in
@@ -423,7 +423,7 @@ import SwiftUI
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     BlockingFlow(spacing: 6) {
-                        Text("Démarre avec").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                        Text("Démarre quand j’ouvre").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                             .frame(height: 26)
                         ForEach(apps) { app in
                             BlockingItemChip(item: .app(app), removable: !stricterOnly) {

@@ -20,12 +20,11 @@ enum BlockingFormat {
 
     /// Quota bonus earned by focusing: « +1 min de pause gagnée pendant vos séances de concentration ».
     static func earnedBreak(minutes: Int) -> String {
-        "+\(minutes) min de pause \(minutes > 1 ? "gagnées" : "gagnée") pendant vos séances de concentration"
+        "+\(minutes) min de pause \(minutes > 1 ? "gagnées" : "gagnée") en séance"
     }
 
     static func minuteOfDay(_ minute: Int) -> String {
-        let value = ((minute % 1_440) + 1_440) % 1_440
-        return String(format: "%02d:%02d", value / 60, value % 60)
+        GoalongUIFormat.time(minuteOfDay: ((minute % 1_440) + 1_440) % 1_440)
     }
 
     /// « 1 h 24 », « 24 min », « moins d’une minute ».
@@ -107,7 +106,7 @@ enum BlockingFormat {
     }
 
     /// The end of a week range: 1 440 reads « 24:00 », as in the range's tooltip.
-    static func rangeEnd(_ minute: Int) -> String { minute == 1_440 ? "24:00" : minuteOfDay(minute) }
+    static func rangeEnd(_ minute: Int) -> String { minute == 1_440 ? GoalongUIFormat.time(minuteOfDay: 1_440) : minuteOfDay(minute) }
 
     /// VoiceOver label of a range in the week: « Vidéo, lundi, 22:00 à 24:00, verrouillé ».
     static func rangeLabel(name: String, weekday: Int, start: Int, end: Int, lock: BlockLock) -> String {

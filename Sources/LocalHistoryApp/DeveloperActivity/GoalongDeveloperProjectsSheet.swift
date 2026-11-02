@@ -27,7 +27,7 @@ import SwiftUI
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 16)
-                Button("OK") { dismiss() }.keyboardShortcut(.defaultAction)
+                Button("Fermer") { dismiss() }.keyboardShortcut(.defaultAction)
             }.padding(24)
             Divider()
             // UI-15A (48): the sheet opens at its content's height, at most 520 pt, instead of a fixed 480.

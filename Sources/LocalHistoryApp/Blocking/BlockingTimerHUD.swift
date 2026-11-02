@@ -132,7 +132,7 @@ struct BlockingTimerCapsule: View {
             Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(tint)
             HStack(spacing: 0) {
                 Text(timer.prefix).foregroundStyle(Color.white.opacity(0.86))
-                Text(timer.clock).foregroundStyle(tint)
+                Text(timer.meaningText).foregroundStyle(tint)
             }
             .font(.system(size: 13, weight: .semibold).monospacedDigit())
             .lineLimit(1)

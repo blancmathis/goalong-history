@@ -39,9 +39,9 @@ final class T043O3ActivityHistoryAITests: XCTestCase {
 
     /// 6-CODEX: Codex has one row; its folder state is one line of it.
     func testCodexFolderStateIsOneLine() {
-        XCTAssertEqual(AgentActivityCodexFolder.label(found: false, enabled: false), "Dossier des sessions non détecté")
-        XCTAssertEqual(AgentActivityCodexFolder.label(found: true, enabled: true), "Dossier des sessions suivi")
-        XCTAssertEqual(AgentActivityCodexFolder.label(found: true, enabled: false), "Dossier des sessions détecté, désactivé")
+        XCTAssertEqual(AgentActivityCodexFolder.label(found: false, enabled: false), "Dossier des conversations non détecté")
+        XCTAssertEqual(AgentActivityCodexFolder.label(found: true, enabled: true), "Dossier des conversations lu")
+        XCTAssertEqual(AgentActivityCodexFolder.label(found: true, enabled: false), "Dossier des conversations détecté, désactivé")
     }
 
     /// R-266: « — / Non lues » only for a source not allowed; a read source with nothing that day says 0.

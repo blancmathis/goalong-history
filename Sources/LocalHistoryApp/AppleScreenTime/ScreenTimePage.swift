@@ -86,7 +86,7 @@
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     if screenTime.status.kind == .ready || screenTime.status.kind == .localOnly {
-                        Text("La fraîcheur dépend de la synchronisation locale/iCloud d’Apple, pas d’un serveur Goalong.")
+                        Text("La fraîcheur dépend de la synchronisation locale/iCloud d’Apple, pas du site Goalong.")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.tertiary)
                     }

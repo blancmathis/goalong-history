@@ -39,7 +39,7 @@ struct VisibleContextControl: View {
             Button("Annuler", role: .cancel) {}
             Button("Autoriser le texte affiché") { enabled = true }
         } message: {
-            Text("Des messages et documents personnels pourront être conservés sur ce Mac. Cela n’autorise aucun envoi à ChatGPT ou à Goalong.")
+            Text("Des messages et documents personnels pourront être conservés sur ce Mac. Cela n’autorise aucun envoi à ChatGPT ni au site Goalong.")
         }
     }
 }

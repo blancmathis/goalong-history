@@ -24,7 +24,7 @@ import SwiftUI
     var body: some View {
         GoalongSettingsGroup(title: "Aide et diagnostic") {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Un problème ? Envoyez un rapport en un clic.").font(.system(size: 13, weight: .semibold))
+                Text("Un problème ? Préparez un rapport.").font(.system(size: 13, weight: .semibold))
                 Text("Goalong résume ce qu’il a détecté et prépare un fichier technique que vous relisez avant de l’envoyer. Il ne contient ni votre historique, ni les sites visités, ni aucun texte.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)

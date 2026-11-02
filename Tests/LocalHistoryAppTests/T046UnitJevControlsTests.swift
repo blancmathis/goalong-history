@@ -75,7 +75,7 @@ import XCTest
         let (m, consents) = try monitor(enabled: true, root: root)
         m.setEnabled(false)
         XCTAssertFalse(consents.isEnabled(.jevMonitoring)); XCTAssertFalse(m.enabled)
-        XCTAssertEqual(m.status, "Surveillance désactivée")
+        XCTAssertEqual(m.status, "Jev désactivé")
     }
     /// A running break is not cancelled by disabling: its record stays, and turning monitoring on again does not erase it.
     func testDisablingDuringABreakKeepsTheBreakRecord() throws {

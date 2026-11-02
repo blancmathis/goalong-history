@@ -59,7 +59,7 @@ final class JevMonitoringUXTests: XCTestCase {
         XCTAssertTrue(root.contains("case .settings, .monitoring:\n                SettingsPage(model: model)"))
         XCTAssertTrue(try source("Concentration/ConcentrationHubPage.swift").contains(".environment(\\.openJevSettings) { model.selectSection(.monitoring) }"))
         XCTAssertTrue(try source("AppDelegate.swift").contains("onOpenMonitoring: { [weak self] in self?.dashboardWindowController.show(section: .monitoring) }"))
-        XCTAssertTrue(try source("JevControls.swift").contains("Ouvrir la surveillance…"))
+        XCTAssertTrue(try source("JevControls.swift").contains("Ouvrir Jev…"))
     }
 
     func testBatchU07CopyAndControlsStayInTheViews() throws {

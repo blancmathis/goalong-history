@@ -290,7 +290,7 @@ struct GoalongWebsiteConnectionSheet: View {
                             Text("Leurs noms et identifiants sont neutralisés ; leurs durées sont conservées. Les domaines et le récap sont exclus pour éviter de réintroduire ces noms.").font(.caption)
                         }
                         Toggle("Rapport structuré de productivité", isOn: $structuredReport)
-                        Toggle("Calculer le rythme à partir de l’historique de ce Mac", isOn: $includeRhythm)
+                        Toggle("Calculer le rythme à partir de l’enregistrement de ce Mac", isOn: $includeRhythm)
                         if includeRhythm {
                             Button(contextualRhythm == nil ? "Analyser le contexte d’une session…" : "Choisir une autre session…") { showsRhythmStudio = true }
                             if let rhythm = contextualRhythm {
@@ -332,7 +332,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Partage ponctuel avancé").font(.headline)
-                        Text("Les récaps et analyses sont envoyés uniquement après votre relecture. Configurez l’envoi quotidien dans Réglages › Envoi à Goalong › Configurer les envois.").font(.caption)
+                        Text("Les récaps et analyses sont envoyés uniquement après votre relecture. Configurez l’envoi quotidien dans Réglages › Envoyer au site Goalong › Configurer les envois.").font(.caption)
                         if autoSender.enabled { Button("Mettre la synchronisation en pause") { autoSender.stop() } }
                     }
                     Divider()

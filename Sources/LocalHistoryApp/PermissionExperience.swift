@@ -51,8 +51,8 @@ struct PermissionSetupCopy {
         }
     }
     /// The macOS list shows the app under its bundle name, not under the capability name.
-    var title: String { capability == .localComputerHistory ? "Autoriser l’historique de ce Mac" : "Autoriser \(capability.title)" }
-    var activateTitle: String { capability == .localComputerHistory ? "Activer l’historique de ce Mac" : "Activer \(capability.title)" }
+    var title: String { capability == .localComputerHistory ? "Autoriser l’enregistrement" : "Autoriser \(capability.title)" }
+    var activateTitle: String { capability == .localComputerHistory ? "Activer l’enregistrement" : "Activer \(capability.title)" }
     /// Name shown in the macOS privacy list: the dev copy is "Goalong Dev", the gallery rewrites ProductIdentity.displayName.
     static func macOSListName(isDevelopment: Bool = GoalongBuildChannel.current.isDevelopment) -> String {
         isDevelopment ? "Goalong Dev" : ProductIdentity.canonicalDisplayName
@@ -73,7 +73,7 @@ struct PermissionSetupHeader: View {
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
-                Text(ready ? "Accès disponible" : copy.title)
+                Text(ready ? "Accès autorisé — dernière étape" : copy.title)
                     .font(LHTheme.sheetTitleFont).tracking(-0.4)
                     .foregroundStyle(LHTheme.text)
                     .accessibilityAddTraits(.isHeader)
@@ -136,7 +136,7 @@ struct PermissionSetupSteps: View {
             step(2, title: copy.status == .screenTimeSetup ? "Activer Temps d’écran" : "Autoriser Goalong",
                  detail: copy.status == .screenTimeSetup ? "Apple commencera à mesurer votre usage." : "Dans la liste de macOS, l’app s’appelle « \(PermissionSetupCopy.macOSListName()) ». Activez-la.",
                  done: ready, active: openedSettings && !ready)
-            step(3, title: "Revenir dans Goalong", detail: "Vérification automatique au retour. Relancez Goalong si macOS le demande.", done: ready, active: false)
+            step(3, title: "Revenir dans Goalong", detail: "Vérification automatique au retour. Relancez Goalong si macOS affiche une demande de relance.", done: ready, active: false)
         }
         .padding(.horizontal, 4).padding(.vertical, 2)
     }
@@ -228,7 +228,7 @@ extension Notification.Name {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(ProductIdentity.bundleURL.path).font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                    Text("Une autorisation macOS et votre choix d’enregistrer sont deux contrôles distincts. La réparation ne change ni l’historique, ni les sources, ni les envois.")
+                    Text("Une autorisation macOS et votre choix d’enregistrer sont deux contrôles distincts. Le rétablissement ne change ni l’historique, ni les sources, ni les envois.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }.padding(.top, 8)
@@ -260,9 +260,9 @@ extension Notification.Name {
         case .closeOtherCopy: return "Plusieurs copies de Goalong sont ouvertes"
         case .grant: return "Autoriser cette application"
         case .relaunch: return "Appliquer l’autorisation au processus actuel"
-        case .repair: return "Réparer l’autorisation de cette copie"
+        case .repair: return "Rétablir l’autorisation de cette copie"
         case .reauthorize: return "Réautoriser après la réinitialisation"
-        case .manualRepair: return "Le refus persiste après la réparation"
+        case .manualRepair: return "Le refus persiste après le rétablissement"
         }
     }
     private var detail: String {

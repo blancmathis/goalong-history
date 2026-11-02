@@ -209,7 +209,7 @@ struct GoalongScreenTimePage: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Dernière lecture").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                    Text(screenTime.lastRefreshAt.map { $0.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) } ?? "—")
+                    Text(screenTime.lastRefreshAt.map(GoalongUIFormat.time) ?? "—")
                         .font(LHTheme.figureFont(22)).monospacedDigit().accessibilityIdentifier("screen-time-day-update")
                     Text(screenTime.selectedDayIsToday ? "Actualisation locale \(AppleScreenTimeDashboardModel.refreshCadenceLabel(screenTime.refreshInterval))" : "Archive locale, Apple non relu")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)

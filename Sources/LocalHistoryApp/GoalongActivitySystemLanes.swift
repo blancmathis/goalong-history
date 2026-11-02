@@ -266,8 +266,8 @@ struct GoalongAgendaSection: View {
             if agenda.openDueReminders > 0 {
                 // Their titles are not read: the count says they are not among the lines above.
                 Text(GoalongCodeDay.count(agenda.openDueReminders,
-                        "autre rappel prévu ce jour-là reste ouvert, sans être listé ici.",
-                        "autres rappels prévus ce jour-là restent ouverts, sans être listés ici."))
+                        "autre rappel prévu ce jour reste ouvert, sans être listé ici.",
+                        "autres rappels prévus ce jour restent ouverts, sans être listés ici."))
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }

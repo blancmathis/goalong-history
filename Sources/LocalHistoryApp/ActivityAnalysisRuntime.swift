@@ -1312,7 +1312,7 @@
             case .reentrantCycle:
                 return "Analyse déjà en cours sur cette source : nouvelle lecture refusée."
             case .retainedEvidenceBudgetExceeded(let rows, let bytes):
-                return "La journée dépasse la mémoire prévue pour l’analyse (\(rows) lignes ou \(bytes) octets estimés). Les dernières vues valides sont conservées."
+                return "La journée dépasse la mémoire prévue pour l’analyse (\(GoalongUIFormat.number(rows)) lignes ou \(GoalongUIFormat.number(bytes)) octets estimés). Les dernières vues valides sont conservées."
             }
         }
     }

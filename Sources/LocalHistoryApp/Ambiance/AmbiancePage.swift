@@ -230,7 +230,7 @@ struct AmbiancePageContent: View {
     private var promises: some View {
         HStack(alignment: .top, spacing: 24) {
             fact("hand.tap", "Rien ne joue sans vous")
-            fact("mic.slash", "Goalong n’écoute jamais")
+            fact("mic.slash", "Goalong n’enregistre pas le micro")
             fact("arrow.down.circle", "Sons téléchargés à la demande")
         }
         .accessibilityElement(children: .combine)
@@ -345,13 +345,13 @@ private struct AmbianceOrchestraSetup: View {
                     VStack(alignment: .leading, spacing: 3) {
                         // « Téléchargement… » only while bytes come down; before that, the orchestra waits to be installed.
                         // UI-15C (30): says what the user gets (sounds), not the pack's internal name.
-                        Text(downloading ? "Téléchargement des sons…" : "Sons à installer")
+                        Text(downloading ? "Téléchargement des sons…" : "Sons à télécharger")
                             .font(LHTheme.sheetTitleFont).tracking(-0.4)
                         Group {
                             if case .downloading(let fraction) = pack.status {
                                 Text("\(GoalongUIFormat.percent(fraction * 100)) de \(size)")
                             } else {
-                                Text("\(size), une seule fois. Les \(pieces) morceaux en ont besoin.")
+                                Text("\(size), une seule fois, pour les \(pieces) sons.")
                             }
                         }
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).monospacedDigit()

@@ -17,7 +17,7 @@ final class SettingsHomeIconsTests: XCTestCase {
         XCTAssertEqual(GoalongHomeRows.recordingSymbol, SettingsPane.recording.symbol)
         XCTAssertNotEqual(GoalongHomeRows.recordingSymbol, "internaldrive")
         XCTAssertNotEqual(GoalongHomeRows.recordingSymbol, SettingsPane.storage.symbol)
-        XCTAssertEqual(GoalongHomeRows.jevSummary(enabled: false), "Surveillance de vos séances")
+        XCTAssertEqual(GoalongHomeRows.jevSummary(enabled: false), "Repère les distractions pendant vos séances")
         XCTAssertEqual(GoalongHomeRows.jevSummary(enabled: true), "Activé")
     }
 
@@ -32,10 +32,12 @@ final class SettingsHomeIconsTests: XCTestCase {
 
     func testReplacementExampleIgnoresEmptyRules() {
         let sample = "Bonjour Charlie — travail sur le projet"
-        XCTAssertEqual(GoalongAnalysisSelectionSheet.exampleResult(rules: [], sample: sample), "Aucun remplacement défini.")
-        XCTAssertEqual(GoalongAnalysisSelectionSheet.exampleResult(rules: [GoalongTextReplacement()], sample: sample), "Aucun remplacement défini.")
+        XCTAssertEqual(GoalongAnalysisSelectionSheet.exampleResult(rules: [], sample: sample), "Aucun remplacement défini : indiquez un texte à remplacer.")
+        XCTAssertEqual(GoalongAnalysisSelectionSheet.exampleResult(rules: [GoalongTextReplacement()], sample: sample), "Aucun remplacement défini : indiquez un texte à remplacer.")
         XCTAssertEqual(GoalongAnalysisSelectionSheet.exampleResult(rules: [GoalongTextReplacement(search: "Zoé", replacement: "X")], sample: sample), "Aucun texte remplacé dans cet exemple.")
         XCTAssertEqual(GoalongAnalysisSelectionSheet.exampleResult(rules: [GoalongTextReplacement(search: "Bonjour Charlie", replacement: "Projet A")], sample: sample), "Projet A — travail sur le projet")
+        // An empty replacement deletes the text (R-89).
+        XCTAssertEqual(GoalongAnalysisSelectionSheet.exampleResult(rules: [GoalongTextReplacement(search: "Bonjour Charlie ", replacement: "")], sample: sample), "— travail sur le projet")
     }
 }
 #endif

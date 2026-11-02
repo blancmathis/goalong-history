@@ -24,7 +24,7 @@ import LocalHistoryCore
     }
 
     var body: some View {
-        GoalongSettingsGroup(title: purpose == .workDefinition ? "" : "Mes repères de surveillance") {
+        GoalongSettingsGroup(title: purpose == .workDefinition ? "" : "Mes repères pour Jev") {
             VStack(alignment: .leading, spacing: 20) {
                 if store.context.isEmpty || editing || store.error != nil {
                     editor
@@ -93,7 +93,7 @@ import LocalHistoryCore
                   detail: "Des exemples clairs, pas une liste complète.", help: procrastinationText,
                   hint: "Ex. Faire défiler le fil « Pour vous » de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
                   text: $procrastination, identifier: "monitoring-procrastination")
-            GoalongNote("Ces critères restent sur ce Mac. Enregistrer autorise leur envoi à ChatGPT si le classement est activé, et celui de vos critères et exemples hors travail à TypeSafe, fournisseur de Jev, si la surveillance l’est. N’y mettez aucune information sensible.",
+            GoalongNote("Ces critères restent sur ce Mac. Si le classement est activé, Enregistrer autorise leur envoi à l’agent (ChatGPT). Si Jev est activé, Enregistrer envoie aussi vos critères et exemples hors travail à TypeSafe, son fournisseur. N’y mettez aucune information sensible.",
                         tone: .privacy)
             HStack(spacing: 10) {
                 if draftBytes > 0 { budget }
@@ -144,7 +144,7 @@ import LocalHistoryCore
                 summaryRow("Hors travail") {
                     if store.context.procrastination.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Aucun exemple ajouté. Sans exemple, l’agent s’appuie sur votre définition du travail ; la détection générale de la surveillance reste active.")
+                            Text("Aucun exemple ajouté. Sans exemple, l’agent s’appuie sur votre définition du travail ; Jev repère toujours les autres distractions.")
                                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                             Button("Ajouter mes exemples") { loadDraft(); editing = true }
                                 .controlSize(.small).accessibilityIdentifier("monitoring-add-procrastination")
@@ -169,7 +169,7 @@ import LocalHistoryCore
         .accessibilityAddTraits(.isHeader)
     }
     private var procrastinationText: String {
-        "Des exemples clairs, pas une liste complète. La surveillance continue de repérer les autres distractions. Un usage qui correspond clairement à un exemple prime sur une autorisation générale ; précisez l’usage plutôt que seulement le site."
+        "Des exemples clairs, pas une liste complète. Jev continue de repérer les autres distractions. Un usage qui correspond clairement à un exemple prime sur une autorisation générale ; précisez l’usage plutôt que seulement le site."
     }
     private func saveDraft() {
         do {

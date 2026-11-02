@@ -312,7 +312,7 @@ struct GoalongSiteAnalysisSheet: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Goalong utilise votre abonnement ChatGPT sur ce Mac pour expliquer une demande du site. Vos identifiants ne sont pas transmis à Goalong en ligne.")
+            Text("Goalong utilise votre abonnement ChatGPT sur ce Mac pour expliquer une demande du site. Vos identifiants ne sont pas transmis au site Goalong.")
                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             // UI-15B (29): the prerequisites are three numbered steps, each with its own action.

@@ -960,7 +960,7 @@ import LocalHistoryQueryCLI
             if !storeFailed {
                 let message: String?
                 switch protection.component {
-                case .awaitingApproval: message = "Autorisez Goalong dans \(LoginItemsPanel.path) pour reprendre les verrous à l’ouverture de session."
+                case .awaitingApproval: message = "Autorisez \(PermissionSetupCopy.macOSListName()) dans \(LoginItemsPanel.path) pour reprendre les verrous à l’ouverture de session."
                 case .failed(let reason): message = reason
                 default: message = nil
                 }

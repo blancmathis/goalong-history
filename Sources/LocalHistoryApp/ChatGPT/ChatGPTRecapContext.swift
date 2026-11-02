@@ -479,7 +479,7 @@
                 """
             guard prompt.count <= maximumPromptCharacters else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "la consigne complète du bilan dépasse \(maximumPromptCharacters) caractères."
+                    "la consigne complète du bilan dépasse \(GoalongUIFormat.number(maximumPromptCharacters)) caractères."
                 )
             }
             return prompt
@@ -752,7 +752,7 @@
                 redacted.count <= maximumRenderedDataCharacters
             else {
                 throw CodexAppServerError.protocolLimitExceeded(
-                    "les données du bilan dépassent \(maximumRenderedDataCharacters) caractères."
+                    "les données du bilan dépassent \(GoalongUIFormat.number(maximumRenderedDataCharacters)) caractères."
                 )
             }
             return redacted

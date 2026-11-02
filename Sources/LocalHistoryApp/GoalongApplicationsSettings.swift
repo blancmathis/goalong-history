@@ -174,7 +174,7 @@ enum GoalongKnownApplications {
             }
             HStack {
                 GoalongSearchField("Rechercher par nom…", text: $search)
-                Toggle("Exclusions seulement", isOn: $excludedOnly).toggleStyle(.goalongCheckbox).fixedSize()
+                Toggle("Afficher seulement les exclues", isOn: $excludedOnly).toggleStyle(.goalongCheckbox).fixedSize()
             }
             if sites {
                 HStack {

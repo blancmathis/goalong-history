@@ -39,11 +39,11 @@ import Foundation
                         Text(retentionSummary).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer()
-                    Button("Choisir…") { retention = true }.buttonStyle(LHSecondaryButtonStyle())
+                    Button("Modifier la durée…") { retention = true }.buttonStyle(LHSecondaryButtonStyle())
                 }
             }
             GoalongSettingsGroup(title: "Gestion des données") {
-                Button("Effacer de l’historique…", role: .destructive) { deletion = true }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Effacer l’historique…", role: .destructive) { deletion = true }.buttonStyle(LHSecondaryButtonStyle())
                 Text("Les originaux Apple, les conversations et les données déjà envoyées au site Goalong restent conservés.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 // UI-13C (40): one button needs no group of its own; it sits under the note.

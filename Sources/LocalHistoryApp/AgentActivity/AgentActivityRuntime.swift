@@ -263,8 +263,8 @@
                 alert = AgentActivityAlert(
                     title: "Détection indisponible",
                     message: GoalongGlobalPause.isPaused(in: pauseRoot)
-                        ? "Suivi en pause — reprenez le suivi pour détecter des sources."
-                        : "Le suivi des agents n’est pas actif — activez la lecture des conversations locales pour détecter des sources."
+                        ? "Tout le suivi en pause. Reprenez tout le suivi pour détecter des sources."
+                        : "La lecture des conversations locales est désactivée. Activez-la pour détecter des sources."
                 )
                 return
             }
@@ -295,7 +295,7 @@
             panel.canChooseDirectories = true
             panel.allowsMultipleSelection = true
             panel.canCreateDirectories = false
-            panel.message = "Choisissez des dossiers contenant des conversations, sessions ou journaux d’agents."
+            panel.message = "Choisissez des dossiers contenant des conversations ou des journaux d’agents."
             panel.prompt = "Surveiller"
             guard panel.runModal() == .OK else { return }
             addFolders(panel.urls)

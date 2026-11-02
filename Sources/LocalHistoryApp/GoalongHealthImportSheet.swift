@@ -130,7 +130,7 @@ struct GoalongHealthImportSheet: View {
                 // Lime marks the current step only: choose, then prepare, then send (UI-59).
                 // A refused file sends the member back to this step (R33 F1); a send or save failure does not (UI-14).
                 if file == nil || fileRefused { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
-                else { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHSecondaryButtonStyle()) }
+                else { Button("Choisir un autre fichier…", action: chooseFile).buttonStyle(LHSecondaryButtonStyle()) }
                 if let file { Text(file.lastPathComponent).font(.system(size: 12)); Button("Oublier ce fichier") { self.file = nil; sourceChoices = [:]; preferred = [:]; invalidate() } }
             }
             // The error sits under the file it concerns, not in the footer far from it.
@@ -415,7 +415,7 @@ struct GoalongHealthImportSheet: View {
         guard let value = metric["value"] as? Double, let unit = metric["unit"] as? String else { return "Non disponible" }
         if unit == "s" { return duration(value) }
         if unit == "m" { return kilometres(value) }
-        let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "fr_FR"); formatter.maximumFractionDigits = 1
+        let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "fr_FR"); formatter.numberStyle = .decimal; formatter.maximumFractionDigits = 1
         // French units, bound to the number by a no-break space: « 16 resp./min », « 97 % ».
         let shown = unit == "count/min" ? "resp./min" : unit
         return (formatter.string(from: NSNumber(value: value)) ?? "—") + (unit == "count" ? "" : "\u{00A0}\(shown)")

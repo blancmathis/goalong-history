@@ -619,9 +619,10 @@
             switch state {
             case .recording: return "Enregistrement actif"
             case .paused: return "Enregistrement en pause"
-            case .permissionsMissing: return "Accès à configurer"
-            case .inputTapUnavailable: return "Saisie non reçue"
-            case .storageUnavailable(.diskFull): return "Disque plein"
+            case .permissionsMissing: return "Accès à rétablir"
+            case .inputTapUnavailable: return "Pas d’interactions"
+            case .storageUnavailable(.diskFull): return "Enregistrement interrompu : le disque est plein"
+            case .storageUnavailable(.permissionDenied): return GoalongAttentionBanner.storageRefusedTitle
             case .storageUnavailable: return "Enregistrement interrompu"
             case .suppressed(let reason):
                 switch reason {
@@ -634,21 +635,22 @@
             }
         }
 
-        /// UI-15A: the sidebar row holds one line (≤ 20 characters); the page says the rest.
+        /// UI-15A: the sidebar row holds one line (≤ 24 characters, « Enregistrement désactivé »); the page says the rest.
         /// `storageNamedByBanner`: the banner already says the storage cause (GoalongAttentionBanner.storageSlot == .storage),
         /// so the row only says the state, short (« Interrompu »), never the cause nor « Voir le bandeau » (R8-6).
         func sidebarTitle(recordingEnabled: Bool, globallyPaused: Bool, storageNamedByBanner: Bool = false) -> String {
-            if globallyPaused { return "Tout est en pause" }
-            if !recordingEnabled { return "Enregistrement coupé" }
+            if globallyPaused { return "Tout le suivi en pause" }
+            if !recordingEnabled { return "Enregistrement désactivé" }
             if isBackgroundPrivacyRule { return "Enregistrement actif" }
             if storageNamedByBanner, storageFailure != nil { return "Interrompu" }
             switch state {
             case .recording: return "Enregistrement actif"
             case .paused, .suppressed(.manualPause): return "En pause"
-            case .permissionsMissing: return "Accès à configurer"
-            case .inputTapUnavailable: return "Saisie non reçue"
+            case .permissionsMissing: return "Accès à rétablir"
+            case .inputTapUnavailable: return "Pas d’interactions"
             case .storageUnavailable(.diskFull): return "Disque plein"
-            case .storageUnavailable: return "Écriture impossible"
+            case .storageUnavailable(.permissionDenied): return "Écriture refusée"
+            case .storageUnavailable: return "Interrompu"
             case .suppressed(.sessionUnavailable): return "Session Mac inactive"
             case .suppressed(.accessibilityUnavailable): return "Navigateur illisible"
             case .suppressed: return "Enregistrement actif"
@@ -657,7 +659,7 @@
 
         var displayDetail: String {
             if isBackgroundPrivacyRule {
-                return "Le suivi respecte vos exclusions. Modifiez-les dans Réglages › Apps et sites."
+                return "L’enregistrement respecte vos exclusions. Modifiez-les dans Réglages › Apps et sites."
             }
             switch state {
             case .recording:
@@ -670,7 +672,7 @@
             case .inputTapUnavailable:
                 return "Les interactions clavier et souris ne sont pas encore disponibles."
             case .storageUnavailable(.diskFull):
-                return "Le disque est plein : rien n’est enregistré pour l’instant. Libérez de l’espace, l’enregistrement reprendra tout seul et la coupure sera signalée dans l’historique."
+                return "Le disque est plein : rien n’est enregistré pour l’instant. Libérez de l’espace, l’enregistrement reprendra tout seul et l’interruption sera signalée dans l’historique."
             case .storageUnavailable(.permissionDenied):
                 return "Goalong ne peut plus écrire dans son dossier d’historique : macOS en refuse l’accès. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
             case .storageUnavailable:

@@ -24,7 +24,7 @@ import LocalHistoryQueryCLI
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Envoi à Goalong").font(LHTheme.sheetTitleFont)
+                    Text("Envoyer au site Goalong").font(LHTheme.sheetTitleFont)
                     Text(model.preview == nil ? "1. Choisir les données" : "2. Vérifier l’envoi")
                         .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }

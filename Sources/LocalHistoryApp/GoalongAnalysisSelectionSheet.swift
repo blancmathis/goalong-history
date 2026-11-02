@@ -102,7 +102,7 @@ import AgentActivity
     }
     private var footerNote: String {
         if catalogLoading || installedApps.loading { return "Lecture des applications et des appareils…" }
-        if needsSourceSetup { return "Aucune source n’est encore activée sur ce Mac." }
+        if needsSourceSetup { return "Configurez une source pour pouvoir enregistrer." }
         if !selection.hasSources { return "Activez au moins une source pour enregistrer." }
         return "Aucun envoi en configurant ces choix."
     }
@@ -300,7 +300,7 @@ import AgentActivity
     }
     /// A rule with an empty search is ignored by the transformer, so it counts as no rule.
     nonisolated static func exampleResult(rules: [GoalongTextReplacement], sample: String) -> String {
-        if rules.allSatisfy({ $0.search.isEmpty }) { return "Aucun remplacement défini." }
+        if rules.allSatisfy({ $0.search.isEmpty }) { return "Aucun remplacement défini : indiquez un texte à remplacer." }
         guard let result = try? GoalongTextTransformer(rules).apply(sample) else { return "Vérifiez les règles de remplacement." }
         return result == sample ? "Aucun texte remplacé dans cet exemple." : result
     }
@@ -437,7 +437,7 @@ import AgentActivity
             NotificationCenter.default.post(name: .goalongAnalysisSelectionDidChange, object: nil)
             if wasAutomatic { ChatGPTRecapRuntime.shared.automaticRecapsEnabled = true; ChatGPTRecapRuntime.shared.start(checkPreviousDayImmediately: false) }
             onSave(next); dismiss()
-            GoalongToastCenter.shared.show("Choix d’analyse enregistrés")
+            GoalongToastCenter.shared.show("Données à analyser enregistrées")
         } catch { self.error = GoalongUserFacingError.message(error) }
     }
     private func runtimeStop() {

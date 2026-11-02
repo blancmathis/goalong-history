@@ -22,7 +22,7 @@ extension Notification.Name {
             }
         } catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
-                self.error = "Critères illisibles : surveillance suspendue. Enregistrez à nouveau vos repères de surveillance." }
+                self.error = "Critères illisibles : Jev suspendu. Enregistrez à nouveau vos repères." }
     }
     /// The saved definition, readable off the main actor (daily report).
     nonisolated static func savedContext(root: URL = AppPaths.applicationSupportDirectory) -> JevWorkContext? {

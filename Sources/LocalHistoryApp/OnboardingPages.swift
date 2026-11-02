@@ -118,7 +118,7 @@
                 }
                 // Warn here, not only on the last step: with every source off, Activité stays empty.
                 if ![GoalongCapability.localComputerHistory, .appleScreenTime, .aiConversations].contains(where: { consents.isEnabled($0) }) {
-                    GoalongNote("Sans source, Activité reste vide.", symbol: "exclamationmark.circle")
+                    GoalongNote("Sans source, l’écran Activité restera vide.", symbol: "exclamationmark.circle")
                         .accessibilityIdentifier("onboarding-no-source-note")
                 }
             }
@@ -159,7 +159,7 @@
                                          paused: pauseRevision >= 0 && GoalongGlobalPause.load().blocksActivity,
                                          permissionMissing: !GoalongAccessibilityTrust.isTrusted)).goalongPageTitle()
                     Text(pauseRevision >= 0 && GoalongGlobalPause.load().blocksActivity
-                         ? "Tout le suivi est suspendu : rien n’est enregistré pour l’instant. Reprenez-le pour que votre fil apparaisse dans Activité."
+                         ? "Tout le suivi est suspendu : rien n’est enregistré pour l’instant. Reprenez le suivi pour que votre fil apparaisse dans Activité."
                          : consents.isEnabled(.localComputerHistory)
                          ? "Votre fil apparaîtra dans Activité dès les premières minutes d’utilisation de ce Mac."
                          : "L’enregistrement local est désactivé : rien n’apparaîtra dans Activité. Vous pourrez l’activer dans Réglages › Enregistrement.")
@@ -172,7 +172,7 @@
                             HStack {
                                 Text(capability.title).font(.system(size: 13, weight: .medium))
                                 Spacer()
-                                Label(consents.isEnabled(capability) ? PrivacyChoicesOverview.sourceStateTitle(capability, enabled: true, paused: false) : "Plus tard", systemImage: consents.isEnabled(capability) ? "checkmark" : "minus")
+                                Label(consents.isEnabled(capability) ? PrivacyChoicesOverview.sourceStateTitle(capability, enabled: true, paused: false) : "Non activé", systemImage: consents.isEnabled(capability) ? "checkmark" : "minus")
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(consents.isEnabled(capability) ? LHTheme.success : LHTheme.secondaryText)
                             }
@@ -185,13 +185,13 @@
                             Text("Lancer Goalong à l’ouverture de session").font(.system(size: 13, weight: .medium))
                             Text(launchAtLogin.heldByBlocking
                                  ? LaunchAtLoginManager.heldMessage
-                                 : "Conseillé et sélectionné par défaut. Seules les sources que vous avez activées démarrent.")
+                                 : "Conseillé. Seules les sources que vous avez activées démarrent.")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }.toggleStyle(.goalongSwitch)
                 }
-                Text("Les envois à Goalong et les analyses ChatGPT se règlent séparément, dans Réglages.")
+                Text("Les envois au site Goalong et les analyses ChatGPT se règlent séparément, dans Réglages.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 if let note { GoalongNote(note, tone: .warning) }
                 if launchAtLoginPreference && launchAtLogin.requiresApproval {

@@ -82,7 +82,7 @@ final class GoalongGranularAnalysisTests: XCTestCase {
     }
     func testDirectionsAreSeparateAndPromptLengthRemainsBounded() {
         XCTAssertNotEqual(SettingsPane.website, SettingsPane.chatGPT)
-        XCTAssertEqual(SettingsPane.website.title, "Envoi à Goalong")
+        XCTAssertEqual(SettingsPane.website.title, "Envoyer au site Goalong")
         XCTAssertEqual(SettingsPane.chatGPT.title, "Analyse ChatGPT")
     }
     func testNewGranularConsentCannotContainImplicitUnboundedLists() {
