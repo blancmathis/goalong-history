@@ -62,6 +62,11 @@ import UniformTypeIdentifiers
         packs.contains { if case .downloading = $0.status { return true } else { return false } }
     }
 
+    /// Gallery and tests: the signal reads `value`, and no controller is followed (so a page cannot reset it).
+    func setForTesting(_ value: Bool) {
+        subscription = nil; following = nil; downloading = value
+    }
+
     func follow(_ controller: AmbianceController) {
         guard following != ObjectIdentifier(controller) else { return }
         following = ObjectIdentifier(controller)

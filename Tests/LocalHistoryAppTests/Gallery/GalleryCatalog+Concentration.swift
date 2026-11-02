@@ -147,6 +147,18 @@ extension GalleryCatalog {
                  state: { .playing($0[0]) }),
             page("ambiance/etroit", width: 640, sources: all, packs: GalleryFixtures.ambiancePacks(.installed, .installed),
                  state: { .playing($0[0]) }),
+            // R4d-9: a pack comes down, and the sidebar says so on the Ambiance row (the module is on; another page is open,
+            // so the page does not follow its own controller and keep the signal).
+            dashboard("ambiance/barre-telechargement", section: .concentration, sizes: [.window, .minimum],
+                      reached: { AmbianceDownloadSignal.shared.downloading }, prepare: { ctx in
+                let wasOn = GoalongModuleStore.shared.isEnabled(.ambiance)
+                GoalongModuleStore.shared.setEnabled(.ambiance, true)
+                AmbianceDownloadSignal.shared.setForTesting(true)
+                ctx.cleanups.append {
+                    GoalongModuleStore.shared.setEnabled(.ambiance, wasOn)
+                    AmbianceDownloadSignal.shared.setForTesting(false)
+                }
+            }),
             panel("braise/page", width: 900, height: 1_050) { ctx in AnyView(BraisePageContent(controller: try braise(ctx))) },
             panel("braise/panneau-compact", width: 480, height: 820) { ctx in
                 AnyView(BraisePageContent(controller: try braise(ctx), compact: true))

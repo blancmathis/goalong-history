@@ -250,18 +250,21 @@
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(selected ? LHTheme.accent : LHTheme.secondaryText)
                     .frame(width: 20)
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                if let pill {
-                    Text(pill).font(.system(size: 10, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                        .lineLimit(1).fixedSize()
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(LHTheme.selectionBackground))
+                // R4d-9: the pill sits under the title; beside it, the narrow bar cut « Ambiance » to « … ».
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let pill {
+                        Text(pill).font(.system(size: 10, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                            .lineLimit(1).fixedSize()
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(LHTheme.selectionBackground))
+                    }
                 }
+                Spacer(minLength: 0)
             }
             .foregroundStyle(selected ? LHTheme.text : LHTheme.secondaryText)
             .padding(.leading, 16).padding(.trailing, 10)

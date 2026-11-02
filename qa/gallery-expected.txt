@@ -2266,3 +2266,7 @@ onboarding/etape-2--dark--1080x680.png   # T-043 R4d-A : repère d’étape 11 p
 onboarding/etape-2--light--1080x680.png   # T-043 R4d-A : repère d’étape 11 pt (R4d-21)
 settings/modules--dark.png   # T-043 R4d-A : icônes de Modules alignées en haut (R4d-13)
 settings/modules--light.png   # T-043 R4d-A : icônes de Modules alignées en haut (R4d-13)
+ambiance/barre-telechargement--dark.png   # T-043 R4d-A tour 2 : barre latérale avec la pastille « Téléchargement… » (R4d-9)
+ambiance/barre-telechargement--light.png   # T-043 R4d-A tour 2 : barre latérale avec la pastille « Téléchargement… » (R4d-9)
+ambiance/barre-telechargement--dark--900x620.png   # T-043 R4d-A tour 2 : barre latérale avec la pastille « Téléchargement… » (R4d-9)
+ambiance/barre-telechargement--light--900x620.png   # T-043 R4d-A tour 2 : barre latérale avec la pastille « Téléchargement… » (R4d-9)

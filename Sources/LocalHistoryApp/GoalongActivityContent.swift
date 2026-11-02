@@ -810,11 +810,11 @@ struct GoalongAnalyticsContent: View {
                 let blocks = current.workBlocks(minimumMinutes: 25)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Séances de travail").font(.system(size: 13, weight: .semibold))
-                    Text("Au moins 25 minutes sur une même tâche, même en changeant d’application ; un détour de deux minutes au plus (message, recherche, courte pause) ne coupe pas la session.")
+                    Text("Au moins 25 minutes sur une même tâche, même en changeant d’application ; un détour de deux minutes au plus (message, recherche, courte pause) ne coupe pas la séance.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                     if blocks.isEmpty {
                         Text(current.workSeconds > 0 ? "Aucune séance de 25 minutes ou plus sur cette période."
-                             : "Décrivez votre travail dans Mon travail pour voir apparaître vos sessions.")
+                             : "Décrivez votre travail dans Mon travail pour voir apparaître vos séances.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     ForEach(blocks.sorted { $0.workSeconds > $1.workSeconds }.prefix(5)) { block in

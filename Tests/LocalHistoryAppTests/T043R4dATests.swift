@@ -98,6 +98,7 @@ final class T043R4dATests: XCTestCase {
         XCTAssertNil(GoalongActivityHeadline.noComparisonReason(isDay: false, hasComparison: true, pending: false, days: 7))
         XCTAssertNil(GoalongActivityHeadline.noComparisonReason(isDay: true, hasComparison: false, pending: false, days: 1))
         XCTAssertEqual(GoalongSleepSection.share(1800, of: 7200), "25\u{00A0}%")
+        XCTAssertEqual(GoalongSleepSection.share(2000, of: 3000), "67\u{00A0}%", "rounded, not cut")
         XCTAssertTrue(GoalongAnalyticsContent.fullDayChangesRange(day(10, from: 9 * 3600, minutes: 90), calendar: calendar))
         XCTAssertFalse(GoalongAnalyticsContent.fullDayChangesRange(nil, calendar: calendar))
         XCTAssertFalse(GoalongAnalyticsContent.fullDayChangesRange(day(11, from: 0, minutes: -1), calendar: calendar),
@@ -114,14 +115,52 @@ final class T043R4dATests: XCTestCase {
         XCTAssertEqual(GoalongWorkPage.statusSymbol(running: false, failed: true, readiness: .ready, checking: false), "exclamationmark.triangle")
     }
 
-    // R4d-19: Modules renders the delete state of the runtime it is given.
+    // R4d-19: Modules renders the delete state of the runtime it is given. The two runtimes differ from `.shared`
+    // (empty under the isolated HOME) on one side each, so ignoring `concentration:` fails the second check.
     func testModulesShowsTheInjectedConcentrationState() throws {
         try requireIsolatedHome()
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("r4da-focus-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let runtime = ConcentrationRuntime(storeFactory: { FocusStore(directory: folder) }, presentsPanels: false)
-        let texts = visibleText(GoalongModulesSettings(onOpen: { _ in }, concentration: runtime), width: 640, height: 900)
-        XCTAssertTrue(texts.contains("Aucune donnée de Concentration sur ce Mac."), "\(texts.sorted())")
+        let empty = FileManager.default.temporaryDirectory.appendingPathComponent("r4da-focus-\(UUID().uuidString)")
+        let full = FileManager.default.temporaryDirectory.appendingPathComponent("r4da-focus-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: empty); try? FileManager.default.removeItem(at: full) }
+        try FileManager.default.createDirectory(at: full, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: full.appendingPathComponent("pending-stop.json"))
+        let help = "Aucune donnée de Concentration sur ce Mac."
+        let withoutData = ConcentrationRuntime(storeFactory: { FocusStore(directory: empty) }, presentsPanels: false)
+        withoutData.refreshHasData()
+        XCTAssertTrue(visibleText(GoalongModulesSettings(onOpen: { _ in }, concentration: withoutData), width: 640, height: 900).contains(help))
+        let withData = ConcentrationRuntime(storeFactory: { FocusStore(directory: full) }, presentsPanels: false)
+        withData.refreshHasData()
+        XCTAssertTrue(withData.hasStoredData)
+        let texts = visibleText(GoalongModulesSettings(onOpen: { _ in }, concentration: withData), width: 640, height: 900)
+        XCTAssertFalse(texts.contains(help), "the runtime given holds data: the button is not explained as empty; \(texts.sorted())")
+    }
+
+    // R4d-9 (view side): the sidebar reads the signal. Without that read, the pill never shows.
+    func testSidebarReadsTheAmbianceDownloadSignal() throws {
+        let model = try dashboardModel()
+        model.showWelcome = false
+        let modules = GoalongModuleStore.shared, wasOn = modules.isEnabled(.ambiance)
+        modules.setEnabled(.ambiance, true)
+        defer { modules.setEnabled(.ambiance, wasOn); AmbianceDownloadSignal.shared.setForTesting(false) }
+        let pill = "Ambiance, Téléchargement…"
+        AmbianceDownloadSignal.shared.setForTesting(true)
+        XCTAssertTrue(visibleText(LocalHistoryDashboardView(model: model), width: 900, height: 620).contains(pill))
+        AmbianceDownloadSignal.shared.setForTesting(false)
+        let off = visibleText(LocalHistoryDashboardView(model: model), width: 900, height: 620)
+        XCTAssertFalse(off.contains(pill))
+        XCTAssertTrue(off.contains("Ambiance"), "the row itself stays: \(off.sorted())")
+    }
+
+    // R4d-24 (view side): a missing own file offers « Localiser… » on its row; a present one does not.
+    func testMissingOwnFileOffersLocate() {
+        let sources = GalleryFixtures.ambianceSources(orchestra: true, textures: true, files: true)
+        let page = AmbiancePageContent(sources: sources, packs: GalleryFixtures.ambiancePacks(.installed, .installed), state: .idle,
+                                       volume: .constant(0.5), actions: GalleryFixtures.ambianceActions)
+        let texts = visibleText(page, width: 900, height: 1_600)
+        XCTAssertTrue(texts.contains("Localiser…"), "\(texts.sorted())")
+        XCTAssertTrue(texts.contains("Fichier introuvable"))
+        XCTAssertTrue(texts.contains("ambiance-locate-file:/Volumes/Disque/Forêt.wav"))
+        XCTAssertFalse(texts.contains("ambiance-locate-file:/Users/exemple/Musique/Pluie du matin.m4a"))
     }
 
     // R4d-24: an own file reads by its name, without its extension.
@@ -139,6 +178,21 @@ final class T043R4dATests: XCTestCase {
     }
 
     // MARK: - Helpers (same as T043R4cTests)
+
+    func dashboardModel() throws -> DashboardViewModel {
+        try requireIsolatedHome()
+        let config = ConfigManager(), permissions = PermissionManager(), health = CaptureHealthStore(permissions: PermissionManager())
+        let agents = try AgentActivityRuntime(rootDirectory: AppPaths.agentActivityDirectory,
+            executableURL: URL(fileURLWithPath: "/nonexistent/r4da-test"), performInitialDiscovery: false,
+            sourceDiscovery: { [] }, onCaptured: { _ in })
+        return DashboardViewModel(state: CaptureState(), permissions: permissions, configManager: config,
+            sharingRulesStore: SharingRulesStore(), agentActivityRuntime: agents,
+            deviceInfo: DeviceIdentityInfo(deviceID: "r4da-fixture", publicKeyBase64: "", trustTier: "test", algorithm: "test"),
+            eventTapStatus: { false }, currentSuppression: { nil }, captureHealthSnapshot: { health.snapshot },
+            onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
+            onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
+            onDeleteTargetedDetails: { _, done in done(.success(0)) })
+    }
 
     func requireIsolatedHome() throws {
         guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
