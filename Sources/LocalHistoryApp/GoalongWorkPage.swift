@@ -98,8 +98,10 @@ import SwiftUI
                 statusAction
             }
             // Without consent, or with the history off, the switch reads off whatever the stored preference says (UI-69, UI-9 C).
-            // Consent is read directly (DEF-02/DEF-05): readiness may report history off before a missing consent.
-            let canClassify = consents.isEnabled(.chatGPTAnalysis) && agent.readiness != .historyOff
+            // Consent is read directly (DEF-02/DEF-05): readiness may report history off before a missing consent,
+            // and an empty definition before a history turned off (P-3).
+            let canClassify = Self.canClassify(analysisConsent: consents.isEnabled(.chatGPTAnalysis),
+                historyConsent: consents.isEnabled(.localComputerHistory), historyOff: agent.readiness == .historyOff)
             Toggle("Classer automatiquement les nouveaux contextes",
                    isOn: Binding(get: { Self.automaticSwitchShowsOn(automatic: work.automatic, consented: canClassify) },
                                  set: { work.automatic = $0 }))
@@ -121,6 +123,10 @@ import SwiftUI
 
     /// Without consent nothing is classified: the switch reads off, whatever choice it will restore.
     /// Consent is read directly: `readiness` reports an empty definition or history off first.
+    nonisolated static func canClassify(analysisConsent: Bool, historyConsent: Bool, historyOff: Bool) -> Bool {
+        analysisConsent && historyConsent && !historyOff
+    }
+
     nonisolated static func automaticSwitchShowsOn(automatic: Bool, consented: Bool) -> Bool {
         automatic && consented
     }

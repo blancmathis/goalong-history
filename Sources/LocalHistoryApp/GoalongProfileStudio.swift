@@ -335,7 +335,8 @@ struct GoalongProfileStudio: View {
                             if conversations {
                                 HStack(spacing: 8) {
                                     Text("Conversations actives depuis").font(.system(size: 13))
-                                    DateSelectionControl(date: conversationsFrom, onChange: { conversationsFrom = Calendar.current.startOfDay(for: $0) }, showsToday: false, earliest: earliestDay)
+                                    // R-265: ChatGPT conversations may be older than this Mac's history: no lower bound here.
+                                    DateSelectionControl(date: conversationsFrom, onChange: { conversationsFrom = Calendar.current.startOfDay(for: $0) }, showsToday: false)
                                 }
                                 Text("Le jour à analyser et jusqu’à 31 jours avant. Seules les sources déjà autorisées sont lues. Les échanges éclairent vos projets et décisions, même si « Usage de l’IA » est décochée. Certains messages plus anciens peuvent venir sans heure précise.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             }

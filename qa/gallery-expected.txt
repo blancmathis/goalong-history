@@ -1081,6 +1081,10 @@ programme/pret--   # UI-17C (écran 1 : « Bloquer jusqu’à … » avec le cad
 programme/page--   # UI-17C (écran 1 : « Bloquer jusqu’à … » avec le cadenas fermé de la section, plus le cadenas ouvert)
 programme/vide--   # UI-17C (écran 1 : « Bloquer … » avec le cadenas fermé de la section, plus le cadenas ouvert)
 programme/blocage-actif--   # UI-17C (écran 1 : « Réseaux sociaux » nommé une fois, « Ensuite : bloqué jusqu’à 18:00 » ; cadenas fermé sur « Bloquer »)
+activite/detail-rhythm--   # UI16-23 (O3) : axe « Heure par heure » en heures pleines (08 h–10 h), la barre de 9 h n'est plus collée au bord droit
+activite/28-jours--   # R-265 (O3) : « Période précédente » grisé, la période de 28 j touche déjà le premier jour (toutes sources) ; boîte 926,107 6×10
+conversations-ia/gestion-remplie--   # 6-CODEX (O3) : une seule ligne Codex, l'état du dossier des sessions en une ligne
+conversations-ia/indexees--   # 6-CODEX (O3) : une seule ligne Codex, l'état du dossier des sessions en une ligne
 # UI-17A (T-046, #265) : écarts déclarés à l’intégration T-043 lot 3 (la PR n’avait pas de bloc ; mode clair seul pour les interrupteurs).
 menubar/ambiance-chargement--light   # UI-17A (interrupteur éteint : puits pâle E4E7DB à bord, curseur cerclé 4,2:1)
 menubar/ambiance-erreur--light   # UI-17A (interrupteur éteint : puits pâle à bord, curseur cerclé)

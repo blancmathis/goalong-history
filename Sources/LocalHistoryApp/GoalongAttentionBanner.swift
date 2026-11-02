@@ -14,17 +14,42 @@ struct GoalongAttentionBanner: View {
     @State private var globalPause = GoalongGlobalPause.load()
 
     private enum Notice: Equatable {
+        /// The cause that stops all recording, shown in place of a storage alert (HL-45).
+        case recordingCause
         case storage(CaptureStorageFailureKind)
         case lowSpace(Int64)
         case updated(from: String, to: String)
     }
 
     private var notice: Notice? {
-        let recordingExpected = consents.isEnabled(.localComputerHistory) && !globalPause.blocksActivity
-        if recordingExpected, let kind = model.runtime.storageFailure { return .storage(kind) }
-        if recordingExpected, let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
+        let slot = Self.storageSlot(globallyPaused: globalPause.blocksActivity,
+            recording: GoalongRecordingStateNotice.kind(localEnabled: consents.isEnabled(.localComputerHistory),
+                globallyPaused: globalPause.blocksActivity, dashboardVisible: model.recordingStatusIsLive,
+                runtime: model.runtime.state, captureHealth: model.runtime.captureHealth?.state),
+            recordingNoticeOnPage: Self.pagesWithRecordingNotice.contains(model.selectedSection))
+        let storageProblem = model.runtime.storageFailure != nil || model.freeDiskBytes.map(StorageHealth.isLow) == true
+        if storageProblem, slot == .recordingCause { return .recordingCause }
+        if slot == .storage, let kind = model.runtime.storageFailure { return .storage(kind) }
+        if slot == .storage, let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
         if let previous = updates.updatedFromVersion { return .updated(from: previous, to: updates.currentVersion) }
         return nil
+    }
+
+    /// Activité (also the landing page) shows its own recording notice (GoalongAnalyticsPage).
+    static let pagesWithRecordingNotice: Set<DashboardSection> = [.overview, .analytics]
+
+    enum StorageSlot: Equatable { case storage, recordingCause, none }
+
+    /// HL-45 (écran 45): never zero banner, only one. A cause that stops all recording (off, paused, permission)
+    /// comes first: nothing is written then, the storage failure may be old. The global pause has its own banner;
+    /// on Activité the recording notice of the page is that one banner. Otherwise the storage alert shows.
+    static func storageSlot(globallyPaused: Bool, recording: GoalongRecordingStateNotice.Kind?,
+                            recordingNoticeOnPage: Bool) -> StorageSlot {
+        if globallyPaused { return .none }
+        switch recording {
+        case .off?, .paused?, .permissions?: return recordingNoticeOnPage ? .none : .recordingCause
+        case .input?, nil: return .storage
+        }
     }
 
     var body: some View {
@@ -33,7 +58,13 @@ struct GoalongAttentionBanner: View {
     }
 
     @ViewBuilder private var content: some View {
-        if let notice {
+        if notice == .recordingCause {
+            VStack(spacing: 0) {
+                GoalongRecordingStateNotice(model: model)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12)
+                Divider()
+            }
+        } else if let notice {
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 14) {
                     Image(systemName: symbol(notice)).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint(notice))
@@ -60,6 +91,7 @@ struct GoalongAttentionBanner: View {
         switch notice {
         // The internal disk, not an external drive (read as a car at 16 pt).
         case .storage, .lowSpace: return "internaldrive"
+        case .recordingCause: return "record.circle"
         case .updated: return "checkmark.seal.fill"
         }
     }
@@ -67,6 +99,7 @@ struct GoalongAttentionBanner: View {
     private func tint(_ notice: Notice) -> Color {
         switch notice {
         case .storage: return LHTheme.danger
+        case .recordingCause: return LHTheme.warning
         case .lowSpace: return LHTheme.warning
         case .updated: return LHTheme.success
         }
@@ -74,6 +107,7 @@ struct GoalongAttentionBanner: View {
 
     private func title(_ notice: Notice) -> String {
         switch notice {
+        case .recordingCause: return ""
         case .storage(.diskFull): return "Enregistrement interrompu : le disque est plein"
         case .storage: return "Enregistrement interrompu"
         case .lowSpace: return "Espace disque presque plein"
@@ -83,6 +117,7 @@ struct GoalongAttentionBanner: View {
 
     private func detail(_ notice: Notice) -> String {
         switch notice {
+        case .recordingCause: return ""
         case .storage(.diskFull):
             return "Libérez de l’espace : l’enregistrement reprendra seul, la coupure restera visible."
         // UI-15A (40, 45): the refused write says its cause and how to repair it; UI-16C: and where.
@@ -100,6 +135,7 @@ struct GoalongAttentionBanner: View {
     // UI-13C (45): one action per storage banner, same place; the report only when the disk refused a write.
     @ViewBuilder private func actions(_ notice: Notice) -> some View {
         switch notice {
+        case .recordingCause: EmptyView()
         case .storage(.diskFull):
             manageStorageButton(primary: true)
         case .storage(.permissionDenied):

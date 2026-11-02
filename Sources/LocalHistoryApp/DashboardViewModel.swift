@@ -977,14 +977,6 @@
             }
         }
 
-        func deleteComputerHistoryEpisode(_ episode: ComputerHistoryEpisode, day: Date) {
-            deleteTargetedDetails(
-                .computerHistoryEpisode(id: episode.id, day: day),
-                successMessage:
-                    "L’élément choisi et ses détails locaux ont été supprimés. Les sceaux et reçus sont conservés."
-            )
-        }
-
         func deleteActivitySession(_ session: ActivitySession) {
             deleteTargetedDetails(
                 .activitySession(session),

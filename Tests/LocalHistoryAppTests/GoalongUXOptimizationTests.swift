@@ -103,7 +103,10 @@ final class GoalongUXOptimizationTests: XCTestCase {
         XCTAssertEqual(today(nil).title, "Pas encore d’activité aujourd’hui")
         XCTAssertEqual(today(.input).title, "Pas encore d’activité aujourd’hui", "Input loss alone does not stop recording")
         XCTAssertEqual(today(nil, incomplete: 1).title, "Lecture incomplète")
-        XCTAssertEqual(today(.off, events: 3).title, "Les premières traces sont reçues")
+        // DEF-06: traces before a stop never promise more; the stop stays named.
+        XCTAssertEqual(today(.off, events: 3).title, "Aucune durée mesurable aujourd’hui")
+        XCTAssertTrue(today(.off, events: 3).message.contains("désactivé"))
+        XCTAssertEqual(today(nil, events: 3).title, "Les premières traces sont reçues", "recording on: more traces will come")
         let past = Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 1, purged: false, recording: .off)
         XCTAssertEqual(past.title, "Lecture incomplète", "A past day keeps its own reading state")
         XCTAssertEqual(Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false, recording: nil).title,
@@ -121,9 +124,29 @@ final class GoalongUXOptimizationTests: XCTestCase {
         XCTAssertTrue(full.message.contains("disque est plein"))
         XCTAssertFalse(full.message.contains("premières minutes"), "UI-21: no promise while nothing is recorded")
         XCTAssertFalse(full.offersHistory)
-        let refused = Empty.copy(isDay: true, isToday: true, eventCount: 4, incompleteDays: 0, purged: false, recording: .off,
+        let refused = Empty.copy(isDay: true, isToday: true, eventCount: 4, incompleteDays: 0, purged: false, recording: nil,
                                  storage: .init(kind: .permissionDenied, since: nil))
         XCTAssertEqual(refused.title, "Enregistrement interrompu")
+        // P-1: a stopped recording comes before the storage failure, as in the top banner.
+        let offFirst = Empty.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 0, purged: false, recording: .off,
+                                  storage: .init(kind: .permissionDenied, since: nil))
+        XCTAssertEqual(offFirst.title, "Aucune activité enregistrée aujourd’hui")
+        XCTAssertTrue(offFirst.message.contains("désactivé"))
+        // P-2: storage stop + unreadable day still says « Lecture incomplète », with the stop.
+        let unread = Empty.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 1, purged: false, recording: nil,
+                                storage: .init(kind: .diskFull, since: since))
+        XCTAssertEqual(unread.title, "Lecture incomplète")
+        XCTAssertTrue(unread.message.contains("disque est plein"))
+        XCTAssertTrue(unread.message.hasPrefix("Enregistrement interrompu depuis"))
+        // P-4: an unavailable storage cannot write; it refuses nothing.
+        let unavailable = Empty.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
+                                     storage: .init(kind: .unavailable, since: nil))
+        XCTAssertTrue(unavailable.message.contains("ne peut pas écrire"))
+        XCTAssertFalse(unavailable.message.contains("refuse"))
+        let fullWithTraces = Empty.copy(isDay: true, isToday: true, eventCount: 2, incompleteDays: 0, purged: false, recording: nil,
+                                        storage: .init(kind: .diskFull, since: since))
+        XCTAssertNotEqual(fullWithTraces.title, "Les premières traces sont reçues", "DEF-06: disk full, no promise")
+        XCTAssertTrue(fullWithTraces.message.contains("disque est plein"))
         XCTAssertTrue(refused.message.contains("refuse l’écriture"))
         let past = Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
                               storage: .init(kind: .diskFull, since: since))

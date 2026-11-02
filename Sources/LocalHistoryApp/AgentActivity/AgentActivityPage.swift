@@ -561,9 +561,7 @@
                         .buttonStyle(LHSecondaryButtonStyle())
                     }
 
-                    // UI-15C (6): a rule above every row, the Codex folder one included.
-                    Divider()
-                    providerDirectoryRow
+                    // UI-15C (6): a rule above every row. 6-CODEX: one row per tool; Codex's folder state sits in its row.
                     ForEach(AgentIntegrationKind.allCases) { kind in
                         Divider()
                         integrationRow(kind)
@@ -586,43 +584,6 @@
             }
         }
 
-        private var providerDirectoryRow: some View {
-            HStack(spacing: 12) {
-                providerIcon(.codex)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Dossier des sessions Codex")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "Goalong suit les sessions et l’historique de Codex quand Codex est installé sur ce Mac."
-                    )
-                    .font(.system(size: 12))
-                    .foregroundStyle(LHTheme.secondaryText)
-                }
-                Spacer()
-                StatusPill(
-                    title: agents.configuration.watchedFolders.contains(where: {
-                        $0.provider == .codex && !$0.isManaged && $0.isEnabled
-                    })
-                        ? "Dossier actif"
-                        : agents.configuration.watchedFolders.contains(where: {
-                            $0.provider == .codex && !$0.isManaged
-                        }) ? "Détecté — désactivé" : "Non détecté",
-                    symbol: agents.configuration.watchedFolders.contains(where: {
-                        $0.provider == .codex && !$0.isManaged && $0.isEnabled
-                    })
-                        ? "checkmark.circle.fill" : "folder.badge.questionmark",
-                    tint: agents.configuration.watchedFolders.contains(where: {
-                        $0.provider == .codex && !$0.isManaged && $0.isEnabled
-                    })
-                        ? LHTheme.success : Color.secondary
-                )
-                Button("Détecter") {
-                    agents.detectCommonSources()
-                }
-                .buttonStyle(LHSecondaryButtonStyle())
-            }
-        }
-
         private func configurationPathLabel(_ path: String) -> String {
             AgentActivityPathLabel.abbreviated(path)
         }
@@ -637,6 +598,15 @@
                         // The file path is developer detail: on hover, and listed in « En savoir plus » below.
                         // UI-15C (6): the card subtitle says once what each state does; no sentence per row.
                         .help(configurationPathLabel(status.configurationPath))
+                    if kind.provider == .codex {
+                        Text(AgentActivityCodexFolder.label(
+                            found: agents.configuration.watchedFolders.contains { $0.provider == .codex && !$0.isManaged },
+                            enabled: agents.configuration.watchedFolders.contains {
+                                $0.provider == .codex && !$0.isManaged && $0.isEnabled
+                            }))
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                    }
                     if let otherPath = status.otherExecutablePath {
                         Text(
                             status.otherExecutableExists
