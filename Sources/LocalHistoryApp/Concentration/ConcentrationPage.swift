@@ -893,7 +893,7 @@ struct FocusThreadModel: Equatable {
                 addField("Durée (min)") {
                     TextField("", text: $newEstimate)
                         .textFieldStyle(GoalongFieldStyle())
-                        .planPlaceholder("5 à 600", isEmpty: newEstimate.isEmpty)
+                        .planPlaceholder("min", isEmpty: newEstimate.isEmpty)
                         .frame(width: 64)
                         .onSubmit(add)
                         .help("Estimation, facultative : de 5 à 600 minutes.")
