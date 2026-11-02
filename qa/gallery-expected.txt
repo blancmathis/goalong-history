@@ -1650,3 +1650,15 @@ ambiance/a-installer--   # R281-8 (tour 2 R1) : seul « Télécharger » visible
 modules/actifs-verrouille--   # R281-6 (tour 2 R1) : cadenas dans le bouton de l'interrupteur, « Ouvrir » ne bouge plus
 activite/enregistrement-desactive--   # R281-3 (tour 2 R1) : désactivé sans bord ni pointillé, remplissage léger
 settings/chatgpt-consentement--   # T-043 R4a R282-1 (état ajouté : consentement donné, version sans connexion ; « Autoriser les analyses » actif reste en encre pleine, utilisable pour retirer le consentement)
+concentration-maintenant/verrouille--dark--900x1000.png   # T-043 R4c : un seul cadenas, la ligne de phase garde son glyphe
+concentration-maintenant/verrouille--light--900x1000.png  # T-043 R4c : un seul cadenas, la ligne de phase garde son glyphe
+fenetre/stockage-refuse--dark.png    # T-043 R4c R-90 : cadenas, chemin complet, « Ouvrir Réglages Système… »
+fenetre/stockage-refuse--light.png   # T-043 R4c R-90 : cadenas, chemin complet, « Ouvrir Réglages Système… »
+settings/chatgpt--dark.png    # T-043 R4c R282-6 : interrupteur auto grisé d'après la valeur affichée
+settings/chatgpt--light.png   # T-043 R4c R282-6 : interrupteur auto grisé d'après la valeur affichée
+support/constats-multiples--dark--580x660.png   # T-043 R4c R9B-43 : « Activer le journal technique » dans le constat
+support/constats-multiples--light--580x660.png  # T-043 R4c R9B-43 : « Activer le journal technique » dans le constat
+support/retour-journal-desactive--dark--580x660.png   # T-043 R4c R9B-43 : bouton dans le constat
+support/retour-journal-desactive--light--580x660.png  # T-043 R4c R9B-43 : bouton dans le constat
+support/journal-desactive-action--dark--580x660.png   # T-043 R4c R9B-43 : nouvelle entrée, retour court
+support/journal-desactive-action--light--580x660.png  # T-043 R4c R9B-43 : nouvelle entrée, retour court

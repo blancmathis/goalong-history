@@ -168,11 +168,21 @@ enum SupportReportStore {
 
     func markIssue(journal: SupportDiagnostics = .shared) {
         guard journal.isEnabled else {
-            report("Le journal technique est désactivé : activez « Conserver les journaux techniques sur ce Mac » dans Réglages › Avancé › Aide et diagnostic pour ajouter un repère.", .problem)
+            // R9B-43: the finding row already says the journal is off and carries the switch; do not repeat it here.
+            report(Self.journalOffFeedback, .problem)
             return
         }
         journal.record(.userMarkedIssue, component: .support)
         report("Repère ajouté à \(GoalongUIFormat.time(Date())). Reproduisez le problème, puis actualisez le rapport.", .success)
+    }
+
+    static let journalOffFeedback = "Repère non ajouté. Activez d’abord le journal technique, ci-dessous."
+
+    /// R9B-43: the « Journal technique désactivé » finding is fixed in place, then the report is rebuilt.
+    func enableJournal(_ journal: SupportDiagnostics = .shared) {
+        journal.setEnabled(true)
+        prepare()  // clears the old answer, so the new one comes after
+        report("Journal technique activé. Les prochains événements seront inclus.", .success)
     }
 
     func close() { window?.close() }
@@ -282,7 +292,7 @@ struct SupportRequestView: View {
                 case .ready(_, let findings, _, _):
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(Array(Self.shownFindings(findings).enumerated()), id: \.offset) { _, finding in
-                            SupportFindingRow(finding: finding)
+                            SupportFindingRow(finding: finding, enableJournal: { controller.enableJournal() })
                         }
                     }
                     .accessibilityIdentifier("support-findings")
@@ -425,6 +435,7 @@ struct SupportRequestView: View {
 
 struct SupportFindingRow: View {
     let finding: SupportFinding
+    var enableJournal: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -440,11 +451,18 @@ struct SupportFindingRow: View {
                         .buttonStyle(LHSecondaryButtonStyle()).font(.system(size: 12))
                         .padding(.top, 4)
                         .accessibilityIdentifier("support-finding-action-\(finding.code.rawValue)")
+                } else if finding.code == .diagnosticsDisabled, let enableJournal {
+                    Button(Self.enableJournalTitle, action: enableJournal)
+                        .buttonStyle(LHSecondaryButtonStyle()).font(.system(size: 12))
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("support-finding-action-\(finding.code.rawValue)")
                 }
             }
             Spacer(minLength: 0)
         }
     }
+
+    static let enableJournalTitle = "Activer le journal technique"
 
     struct Action: Equatable {
         let title: String

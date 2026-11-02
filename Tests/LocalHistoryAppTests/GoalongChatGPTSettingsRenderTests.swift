@@ -6,8 +6,9 @@ import LocalHistoryCore
 @testable import LocalHistoryApp
 
 /// R282-1 (T-043 R4a): in the version without sign-in, a switch that is ON must stay usable so the member can
-/// withdraw consent. The real view is hosted off screen (alpha 0, never ordered front) and its accessibility
-/// tree says whether each switch is enabled.
+/// withdraw consent. The real view is hosted off screen (alpha 0, never ordered front) and its pixels say
+/// whether the ON switch is drawn usable (full ink) or locked (secondary ink): the accessibility tree does not
+/// tell a greyed switch apart.
 final class GoalongChatGPTSettingsRenderTests: XCTestCase {
     @MainActor private func model() throws -> DashboardViewModel {
         guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
@@ -28,7 +29,6 @@ final class GoalongChatGPTSettingsRenderTests: XCTestCase {
 
     @MainActor func testLockedVersionKeepsTheActiveConsentSwitchUsableInTheRenderedView() throws {
         let model = try model()
-        NSApplication.shared.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
         // A reviewed selection and a stored consent: the « Autoriser » switch reads ON.
         var selection = GoalongAnalysisSelection(); selection.version = 1; selection.reviewed = true; selection.computer = true
         selection.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
@@ -86,30 +86,6 @@ final class GoalongChatGPTSettingsRenderTests: XCTestCase {
             if best >= 25 { rows += 1 }
         }
         return rows
-    }
-
-    private func text(_ object: NSObject) -> String {
-        guard let raw = value(object, "accessibilityValue") else { return "nil" }
-        return "\(raw)"
-    }
-
-    private func value(_ object: NSObject, _ name: String) -> AnyObject? {
-        let selector = NSSelectorFromString(name)
-        guard object.responds(to: selector), let method = object.method(for: selector) else { return nil }
-        typealias Getter = @convention(c) (AnyObject, Selector) -> Unmanaged<AnyObject>?
-        return unsafeBitCast(method, to: Getter.self)(object, selector)?.takeUnretainedValue()
-    }
-
-    @MainActor private func find(_ identifier: String, in view: NSView) -> NSObject? {
-        var pending: [Any] = [view], seen = Set<ObjectIdentifier>(), visited = 0
-        while let item = pending.popLast(), visited < 10_000 {
-            guard let object = item as? NSObject, seen.insert(ObjectIdentifier(object)).inserted else { continue }
-            visited += 1
-            if value(object, "accessibilityIdentifier") as? String == identifier { return object }
-            pending.append(contentsOf: value(object, "accessibilityChildren") as? [Any] ?? [])
-            if let child = object as? NSView { pending.append(contentsOf: child.subviews) }
-        }
-        return nil
     }
 }
 #endif

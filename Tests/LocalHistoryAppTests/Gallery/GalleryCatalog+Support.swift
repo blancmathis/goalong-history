@@ -52,6 +52,9 @@ extension GalleryCatalog {
             supportPanel("support/retour-journal-desactive", note: "retour d’information : journal technique désactivé", phase: supportReport(),
                          feedback: "Le journal technique est désactivé : activez « Conserver les journaux techniques sur ce Mac » dans Réglages › Avancé › Aide et diagnostic pour ajouter un repère.",
                          kind: .problem),
+            // T-043 R4c (R9B-43): the answer the app gives now, with the switch in the finding row.
+            supportPanel("support/journal-desactive-action", note: "journal désactivé : bouton dans le constat, retour court",
+                         phase: supportReport(), feedback: SupportRequestController.journalOffFeedback, kind: .problem),
         ]
     }
 }

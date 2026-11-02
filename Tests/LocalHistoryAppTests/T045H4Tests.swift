@@ -44,7 +44,8 @@ final class T045H4Tests: XCTestCase {
         }
         let support = try String(contentsOf: sources.appendingPathComponent("SupportRequest.swift"), encoding: .utf8)
         XCTAssertFalse(support.contains("Réglages › Aide et diagnostic"), "chemin complet : Réglages › Avancé › Aide et diagnostic")
-        XCTAssertTrue(support.contains("« Conserver les journaux techniques sur ce Mac » dans Réglages › Avancé › Aide et diagnostic"))
+        // T-043 R4c (R9B-43): the journal-off finding now carries « Activer le journal technique »; no path to type.
+        XCTAssertTrue(support.contains("Activer le journal technique"))
     }
 }
 #endif

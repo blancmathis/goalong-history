@@ -96,12 +96,23 @@ struct GoalongAttentionBanner: View {
 
     private func symbol(_ notice: Notice) -> String {
         switch notice {
+        case .storage(let kind): return Self.storageSymbol(kind)
         // The internal disk, not an external drive (read as a car at 16 pt).
-        case .storage, .lowSpace: return "internaldrive"
+        case .lowSpace: return "internaldrive"
         case .recordingCause: return "record.circle"
         case .updated: return "checkmark.seal.fill"
         }
     }
+
+    /// R-90 (R9C-41): a refused write is an access problem, so a padlock, not a disk.
+    static func storageSymbol(_ kind: CaptureStorageFailureKind) -> String {
+        kind == .permissionDenied ? "lock.fill" : "internaldrive"
+    }
+
+    /// R-90: the same name as the sidebar state, the full path, and a button that opens it.
+    static let storageRefusedTitle = "Enregistrement interrompu : écriture impossible"
+    static let storageRefusedDetail = "macOS refuse à Goalong l’accès à son dossier. Dans Réglages Système › Confidentialité et sécurité › Accès complet au disque, autorisez Goalong, puis actualisez."
+    static let storageRefusedOpenTitle = "Ouvrir Réglages Système…"
 
     /// One alert style in the whole app (T-043 R-7): every problem is yellow; only the update confirmation is green.
     private func tint(_ notice: Notice) -> Color {
@@ -117,6 +128,7 @@ struct GoalongAttentionBanner: View {
         switch notice {
         case .recordingCause: return ""
         case .storage(.diskFull): return "Enregistrement interrompu : le disque est plein"
+        case .storage(.permissionDenied): return Self.storageRefusedTitle
         case .storage: return "Enregistrement interrompu"
         case .lowSpace: return "Espace disque presque plein"
         case .updated(_, let version): return "Goalong est à jour, version \(version)"
@@ -130,7 +142,7 @@ struct GoalongAttentionBanner: View {
             return "Libérez de l’espace : l’enregistrement reprendra seul, l’interruption restera visible."
         // UI-15A (40, 45): the refused write says its cause and how to repair it; UI-16C: and where.
         case .storage(.permissionDenied):
-            return "Goalong ne peut plus écrire dans son dossier : macOS en refuse l’accès. Rendez l’accès dans Réglages Système › Confidentialité et sécurité, puis actualisez."
+            return Self.storageRefusedDetail
         case .storage:
             return "Goalong réessaie seul. Si cela dure, signalez-le : le rapport contient la cause, pas votre activité."
         case .lowSpace(let free):
@@ -147,8 +159,12 @@ struct GoalongAttentionBanner: View {
         case .storage(.diskFull):
             manageStorageButton(primary: true)
         case .storage(.permissionDenied):
-            Button("Actualiser") { model.refreshEverything() }
-                .buttonStyle(LHSecondaryButtonStyle())
+            HStack(spacing: 8) {
+                Button(Self.storageRefusedOpenTitle) { PermissionManager.shared.openFullDiskAccessSettings() }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                Button("Actualiser") { model.refreshEverything() }
+                    .buttonStyle(LHQuietButtonStyle())
+            }
         case .storage:
             Button("Signaler le problème…") { SupportRequestController.shared.present() }
                 .buttonStyle(LHSecondaryButtonStyle())

@@ -36,13 +36,15 @@ import LocalHistoryCore
                 })).toggleStyle(.goalongSwitch)
                     .accessibilityIdentifier("analysis-allow")
                     .disabled(Self.switchDisabled(isOn: selection.allowsAnalysis(consented: consents.isEnabled(.chatGPTAnalysis), policy: exclusions.policy), locked: locked, otherwiseBlocked: false))
+                let automatic = Self.automaticSwitch(stored: runtime.automaticRecapsEnabled,
+                                                     selectionValid: selection.isValid(for: exclusions.policy),
+                                                     consented: consents.isEnabled(.chatGPTAnalysis), locked: locked)
                 Toggle("Analyser automatiquement la journée d’hier", isOn: Binding(
-                    get: { runtime.automaticRecapsEnabled && selection.isValid(for: exclusions.policy) },
+                    get: { automatic.isOn },
                     set: { runtime.automaticRecapsEnabled = $0; if $0 { runtime.start() } }))
                     .toggleStyle(.goalongSwitch)
                     .accessibilityIdentifier("analysis-automatic")
-                    .disabled(Self.switchDisabled(isOn: runtime.automaticRecapsEnabled, locked: locked,
-                                                  otherwiseBlocked: !selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis)))
+                    .disabled(automatic.disabled)
                 HStack {
                     Button("Voir les données qui partiront") { open(3) }.buttonStyle(LHSecondaryButtonStyle())
                     Spacer()
@@ -76,6 +78,12 @@ import LocalHistoryCore
     static func analysisLocked(_ state: ChatGPTConnectionState) -> Bool { state == .codexUnavailable }
     /// R282-1: a switch that is ON can always be turned off; only turning ON is blocked.
     static func switchDisabled(isOn: Bool, locked: Bool, otherwiseBlocked: Bool) -> Bool { !isOn && (locked || otherwiseBlocked) }
+    /// R282-6: the automatic switch is greyed from the value it shows, not the stored one. A stored ON with a
+    /// selection that is no longer valid shows OFF, so it is greyed like any OFF switch that cannot be turned on.
+    static func automaticSwitch(stored: Bool, selectionValid: Bool, consented: Bool, locked: Bool) -> (isOn: Bool, disabled: Bool) {
+        let shown = stored && selectionValid
+        return (shown, switchDisabled(isOn: shown, locked: locked, otherwiseBlocked: !selectionValid || !consented))
+    }
     private var locked: Bool { Self.analysisLocked(runtime.connectionState) }
 
     private var analyzeButton: some View {
