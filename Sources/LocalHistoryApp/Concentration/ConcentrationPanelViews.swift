@@ -184,12 +184,14 @@ struct FocusReviewPanelView: View {
                     .accessibilityLabel("Fermer sans répondre")
                 }
                 FocusFactsView(facts: facts)
-                TextField("", text: $note)
-                    .textFieldStyle(GoalongFieldStyle())
-                    .goalongPlaceholder("Une note, si vous voulez", isEmpty: note.isEmpty)
-                    .accessibilityLabel("Note")
-                    .onChange(of: note) { value in if value.count > 140 { note = String(value.prefix(140)) } }
-                    .accessibilityIdentifier("concentration-review-note")
+                GoalongFormField(title: "Note") {
+                    TextField("", text: $note)
+                        .textFieldStyle(GoalongFieldStyle())
+                        .goalongPlaceholder("Si vous voulez", isEmpty: note.isEmpty)
+                        .accessibilityLabel("Note")
+                        .onChange(of: note) { value in if value.count > 140 { note = String(value.prefix(140)) } }
+                        .accessibilityIdentifier("concentration-review-note")
+                }
                 HStack(spacing: 8) {
                     Spacer()
                     Button("Pas fait") { answer(.notDone) }

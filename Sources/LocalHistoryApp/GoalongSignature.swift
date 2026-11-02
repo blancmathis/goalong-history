@@ -198,9 +198,12 @@
             }
             .padding(.leading, 8).padding(.trailing, 16).padding(.vertical, 8)
             .background {
-                Capsule().fill(LHTheme.elevatedBackground)
-                    .overlay(Capsule().strokeBorder(LHTheme.controlBorder))
+                // R4d-4: a stroked `Capsule` drew a vertical tick at each end. The border is a fill instead:
+                // the border colour in the capsule, the surface in a capsule 1 pt smaller.
+                Capsule(style: .continuous).fill(LHTheme.elevatedBackground)
                     .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
+                    .overlay(Capsule(style: .continuous).fill(LHTheme.controlBorder)
+                        .overlay(Capsule(style: .continuous).fill(LHTheme.elevatedBackground).padding(1)))
             }
             .onAppear {
                 if reduceMotion { drawn = 1 } else { withAnimation(LHTheme.ease(0.3).delay(0.12)) { drawn = 1 } }

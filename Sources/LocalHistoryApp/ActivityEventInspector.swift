@@ -242,7 +242,7 @@
                     )
 
                     Spacer(minLength: 8)
-                    Text("\(filteredEvents.count)")
+                    Text(GoalongUIFormat.number(filteredEvents.count))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LHTheme.secondaryText)
                 }

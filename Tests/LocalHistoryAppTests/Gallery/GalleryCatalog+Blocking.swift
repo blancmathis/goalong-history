@@ -17,21 +17,9 @@ extension GalleryCatalog {
             }
         }
         let weekdays: Set<Int> = [1, 2, 3, 4, 5]
-        /// The list sheet's own frame stops at 760 pt and scrolls inside (BlockListSheet): a capture of it cuts the
-        /// last rows. Same header and editor, no height limit, so the capture shows the whole list (R-60).
+        /// The real list sheet (BlockListSheet), without its 760 pt limit, so the capture shows the whole list (R-60).
         @MainActor func listSheetWhole(controller: BlockingController, listID: UUID, now: Date) -> some View {
-            VStack(spacing: 0) {
-                HStack {
-                    Text(BlockListSheet.title(locked: controller.isStricterOnly(listID)))
-                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(LHTheme.text)
-                    Spacer()
-                    Button("Fermer") {}.buttonStyle(LHQuietButtonStyle())
-                }
-                .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 4)
-                if let list = controller.list(listID) {
-                    BlockListEditor(controller: controller, list: list, now: now, onDone: {}).padding(28)
-                }
-            }
+            BlockListSheet(controller: controller, listID: listID, now: now, maxHeight: .infinity, onDone: {})
         }
         var entries: [GalleryEntry] = [
             page("programme/vide", height: 900, themes: GalleryTheme.withContrast) { F.blockingEmpty() },

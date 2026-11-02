@@ -128,7 +128,7 @@
                         HStack(spacing: 8) {
                             Label(title, systemImage: symbol)
                                 .font(.system(size: 13, weight: .semibold))
-                            Text("\(items.count)")
+                            Text(GoalongUIFormat.number(items.count))
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 .padding(.horizontal, 6)

@@ -187,12 +187,8 @@ struct FocusCommitmentGauge: View {
     var body: some View {
         Group {
             if empty {
-                GeometryReader { proxy in
-                    Path { path in
-                        path.move(to: CGPoint(x: 1, y: 3)); path.addLine(to: CGPoint(x: proxy.size.width - 1, y: 3))
-                    }
-                    .stroke(LHTheme.tertiaryText.opacity(0.7), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [0.5, 6]))
-                }
+                // Nothing measured and nothing taken: the empty track, solid (no decorative dots; decision 9).
+                Capsule().fill(LHTheme.insetBackground)
             } else if kind == .sessions || kind == .plan, (1...12).contains(target) {
                 HStack(spacing: 3) {
                     ForEach(0..<target, id: \.self) { index in

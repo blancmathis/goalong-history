@@ -81,8 +81,17 @@ import SwiftUI
         return parts.isEmpty ? "Vide" : parts.joined(separator: ", ")
     }
 
+    /// R4d-26: « Bloque l’accès » names what it blocks, as « Ralentit de N secondes » names its delay.
+    static func blockedSubject(_ list: BlockList) -> String {
+        if list.mode == .allowOnly { return "à tout le reste" }
+        let hasSites = !list.sites.isEmpty, hasApps = !list.apps.isEmpty
+        if hasSites && !hasApps { return "à ces sites" }
+        if hasApps && !hasSites { return "à ces apps" }
+        return "à ces sites et apps"
+    }
+
     static func behaviour(_ list: BlockList) -> String {
-        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) secondes" : "Bloque l’accès"]
+        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) secondes" : "Bloque l’accès \(blockedSubject(list))"]
         if let quota = list.quotaMinutesPerDay { parts.append("\(BlockingFormat.duration(minutes: quota)) libres par jour") }
         if let breaks = list.breaks { parts.append("\(breaks.count) pause\(breaks.count > 1 ? "s" : "")") }
         return parts.joined(separator: ", ")
@@ -564,6 +573,8 @@ import SwiftUI
     @ObservedObject var controller: BlockingController
     let listID: UUID
     let now: Date
+    /// Tallest the sheet may grow before it scrolls (760 pt in the app). `.infinity` lets the content decide, which the gallery uses to capture the whole list.
+    var maxHeight: CGFloat = 760
     var onDone: () -> Void
 
     /// The sheet's title: a locked list says why it can only get stricter.
@@ -590,7 +601,7 @@ import SwiftUI
                 Color.clear.onAppear(perform: onDone)
             }
         }
-        .frame(width: 600).frame(minHeight: 420, idealHeight: 640, maxHeight: 760)
+        .frame(width: 600).frame(minHeight: 420, idealHeight: maxHeight.isFinite ? min(640, maxHeight) : nil, maxHeight: maxHeight)
         .background(LHTheme.pageBackground)
         .background(Button("") { onDone() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
     }
