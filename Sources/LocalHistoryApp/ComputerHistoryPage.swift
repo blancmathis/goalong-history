@@ -947,7 +947,7 @@
                 GoalongEmptyState(
                     title: emptyTimelineTitle,
                     kind: ComputerHistoryPageCopy.emptyTimelineKind(storageStopped: storageStopTitle != nil, status: model.sourceStatus,
-                                                                    dayIsPast: !GoalongToday.isToday(day) && day < Date()),
+                                                                    dayIsPast: !GoalongToday.isToday(day) && day < GoalongToday.now),
                     message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
                         ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
                 // R-86: no « Actualiser » here; the day header above already holds the refresh button.
