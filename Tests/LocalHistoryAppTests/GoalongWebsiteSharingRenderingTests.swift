@@ -4,12 +4,13 @@ import SwiftUI
 import XCTest
 import LocalHistoryQueryCLI
 @testable import LocalHistoryApp
+import AppleScreenTime
 
 /// Real native views, entirely synthetic data and an isolated preferences home.
 final class GoalongWebsiteSharingRenderingTests: XCTestCase {
     /// P-6: the test writes the token path and the origin into the shared preferences; they never outlive it.
     override func tearDown() {
-        for key in ["goalong.website.tokenFilePath", "goalong.website.origin"] { UserDefaults.standard.removeObject(forKey: key) }
+        for key in ["goalong.website.tokenFilePath", "goalong.website.origin"] { GoalongDefaults.standard.removeObject(forKey: key) }
         super.tearDown()
     }
 
@@ -27,11 +28,11 @@ final class GoalongWebsiteSharingRenderingTests: XCTestCase {
         let token = root.appendingPathComponent("synthetic.token")
         try Data("synthetic-preview-only-access".utf8).write(to: token)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: token.path)
-        UserDefaults.standard.set("https://goalong.example", forKey: "goalong.website.origin")
-        UserDefaults.standard.set(token.path, forKey: "goalong.website.tokenFilePath")
+        GoalongDefaults.standard.set("https://goalong.example", forKey: "goalong.website.origin")
+        GoalongDefaults.standard.set(token.path, forKey: "goalong.website.tokenFilePath")
         let catalog = Data(#"{"days":[{"telemetry":{"timezone":"Europe/Paris","devices":[{"id":"mac","name":"MacBook Pro · Démonstration","kind":"computer","screenSeconds":21600,"apps":[{"id":"vscode","name":"Visual Studio Code","seconds":7200},{"id":"figma","name":"Figma","seconds":3600},{"id":"safari","name":"Safari","seconds":2400},{"id":"notes","name":"Notes","seconds":1200},{"id":"mail","name":"Mail","seconds":900},{"id":"private","name":"Application privée","seconds":600}]},{"id":"phone","name":"iPhone · Démonstration","kind":"phone","screenSeconds":5400,"apps":[]}],"websites":{"rows":[{"domain":"github.com","seconds":900},{"domain":"developer.apple.com","seconds":600}]}}}]}"#.utf8)
         let payload = Data(#"{"version":2,"source":"goalong-history","days":[{"date":"2026-09-13","title":"Journée de démonstration","summary":"","outcomes":[],"activities":[],"telemetry":{"devices":[{"id":"device-demo","name":"Ordinateur","screenSeconds":null,"hourly":null,"apps":[{"id":"vscode","name":"Visual Studio Code","seconds":7200},{"id":"figma","name":"Figma","seconds":3600}]}],"websites":null,"agent":null}}]}"#.utf8)
-        let scheduler = GoalongWebsiteAutoSender(defaults: .standard, root: root, sourceConsent: { _ in true })
+        let scheduler = GoalongWebsiteAutoSender(defaults: GoalongDefaults.standard, root: root, sourceConsent: { _ in true })
         let model = GoalongWebsiteSharingModel(autoSender: scheduler, root: root,
             catalogLoader: { _, _, _ in try GoalongSiteSelectionCatalog(payload: catalog) },
             exporter: { _, _, _ in payload }, sender: { _, _, _, _ in XCTFail("Rendering must never send"); return Data() }, sourceConsent: { _ in true })

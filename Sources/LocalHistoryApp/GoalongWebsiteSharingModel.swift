@@ -3,6 +3,7 @@ import Foundation
 import Combine
 import LocalHistoryCore
 import LocalHistoryQueryCLI
+import AppleScreenTime
 
 struct GoalongWebsiteShareDraft: Equatable, Codable {
     enum Delivery: String, CaseIterable, Codable { case once, daily }
@@ -154,8 +155,8 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     }
     private struct Remembered: Codable { let account: String; let draft: GoalongWebsiteShareDraft }
     private static var accountKey: String {
-        SHA256Digest.hashHex((UserDefaults.standard.string(forKey: "goalong.website.origin") ?? "") + "|" +
-            (UserDefaults.standard.string(forKey: "goalong.website.accountID") ?? ""))
+        SHA256Digest.hashHex((GoalongDefaults.standard.string(forKey: "goalong.website.origin") ?? "") + "|" +
+            (GoalongDefaults.standard.string(forKey: "goalong.website.accountID") ?? ""))
     }
     private static func rememberedSelection(in root: URL) -> GoalongWebsiteShareDraft? {
         let file = root.appendingPathComponent("website-selection.json")

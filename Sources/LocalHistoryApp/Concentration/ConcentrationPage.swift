@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
+import AppleScreenTime
 
 /// The module on one page: the session (start one, or the one running), today's plan, the
 /// engagements of the day and the week, today's sessions, then the settings, folded.
@@ -208,7 +209,7 @@ struct FocusComposerDraft: Equatable {
 
     private static let key = "goalong.concentration.composer.v1"
 
-    static func remembered(_ defaults: UserDefaults = .standard) -> FocusComposerDraft {
+    static func remembered(_ defaults: UserDefaults = GoalongDefaults.standard) -> FocusComposerDraft {
         var draft = FocusComposerDraft()
         guard let values = defaults.dictionary(forKey: key) as? [String: Int] else { return draft }
         draft.kind = values["pomodoro"] == 1 ? .pomodoro : .free
@@ -228,7 +229,7 @@ struct FocusComposerDraft: Equatable {
         return draft
     }
 
-    func remember(_ defaults: UserDefaults = .standard) {
+    func remember(_ defaults: UserDefaults = GoalongDefaults.standard) {
         var values = ["pomodoro": kind == .pomodoro ? 1 : 0, "customMinutes": customMinutes,
                       "rhythm": rhythm == .classic ? 0 : rhythm == .long ? 1 : 2,
                       "work": work, "short": shortBreak, "long": longBreak, "every": every]

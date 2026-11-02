@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Foundation
@@ -17,7 +18,7 @@
         }
 
         private static func migrateOnboardingState() {
-            let defaults = UserDefaults.standard
+            let defaults = GoalongDefaults.standard
             let migrationKey = "didPrepareLocalHistoryConsentOnboardingV5"
             guard !defaults.bool(forKey: migrationKey) else { return }
             defaults.removeObject(forKey: "didShowLocalHistoryConsentOnboardingV5")

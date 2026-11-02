@@ -4,6 +4,7 @@ import Foundation
 import LocalHistoryCore
 import Ambiance
 @testable import LocalHistoryApp
+import AppleScreenTime
 
 final class GoalongRecordingDefaultsTests: XCTestCase {
     private func defaults() -> UserDefaults {
@@ -108,7 +109,7 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {
             throw XCTSkip("App model construction requires an isolated HOME")
         }
-        let preferences = UserDefaults.standard
+        let preferences = GoalongDefaults.standard
         let original = preferences.object(forKey: AmbianceSettings.enabledKey)
         preferences.removeObject(forKey: AmbianceSettings.enabledKey)
         defer { preferences.set(original, forKey: AmbianceSettings.enabledKey) }

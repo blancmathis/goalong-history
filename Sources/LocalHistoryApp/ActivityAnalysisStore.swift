@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AppKit
     import ApplicationServices
@@ -11,15 +12,15 @@
         static let agentTokenBudgetKey = "activityAnalysis.agentTokenBudget"
 
         static var richContextEnabled: Bool {
-            UserDefaults.standard.bool(forKey: richContextEnabledKey)
+            GoalongDefaults.standard.bool(forKey: richContextEnabledKey)
         }
 
         static var richContextIntervalSeconds: TimeInterval {
-            let raw = UserDefaults.standard.integer(forKey: richContextIntervalKey)
+            let raw = GoalongDefaults.standard.integer(forKey: richContextIntervalKey)
             return TimeInterval(raw == 0 ? 15 : min(max(raw, 8), 120))
         }
 
-        static var agentTokenBudget: Int { agentTokenBudget(in: .standard) }
+        static var agentTokenBudget: Int { agentTokenBudget(in: GoalongDefaults.standard) }
 
         static func agentTokenBudget(in defaults: UserDefaults) -> Int {
             let raw = defaults.integer(forKey: agentTokenBudgetKey)

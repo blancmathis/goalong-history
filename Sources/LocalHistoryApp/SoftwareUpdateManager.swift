@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Combine
@@ -100,7 +101,7 @@
         @Published private(set) var requiresSignedBuild = false
         @Published private(set) var statusMessage = "Version de test : pas de mises à jour."
         @Published private(set) var lastCheckResult: SupportState = .unknown
-        @Published private(set) var lastCheckedAt: Date? = UserDefaults.standard.object(forKey: SoftwareUpdateManager.lastCheckedKey) as? Date
+        @Published private(set) var lastCheckedAt: Date? = GoalongDefaults.standard.object(forKey: SoftwareUpdateManager.lastCheckedKey) as? Date
         /// Set on the first launch after an update so the app can confirm it worked.
         @Published private(set) var updatedFromVersion: String?
         static let lastCheckedKey = "goalong.updates.lastCheckedAt.v1"
@@ -235,7 +236,7 @@
         /// Compares the running version with the one seen at the previous launch. A change
         /// after an in-app update is confirmed once in the interface.
         private func noteLaunchedVersion() {
-            let defaults = UserDefaults.standard
+            let defaults = GoalongDefaults.standard
             let previous = defaults.string(forKey: Self.lastSeenVersionKey)
             defaults.set(currentVersion, forKey: Self.lastSeenVersionKey)
             if let previous, previous != currentVersion, previous.compare(currentVersion, options: .numeric) == .orderedAscending {
@@ -439,7 +440,7 @@
             lastCheckResult = result
             let now = Date()
             lastCheckedAt = now
-            UserDefaults.standard.set(now, forKey: Self.lastCheckedKey)
+            GoalongDefaults.standard.set(now, forKey: Self.lastCheckedKey)
             let values = Self.checkResultValues(result: result, foundVersion: foundVersion,
                                                 availableVersion: presentationState.availableVersion, error: error)
             SupportDiagnostics.shared.record(.updateCheckFinished, component: .updates,

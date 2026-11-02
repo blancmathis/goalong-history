@@ -242,10 +242,9 @@ def build() -> None:
 
 
 LAUNCH_ARGUMENTS = ["-AppleLocale", "fr_FR", "-AppleLanguages", "(fr)", "-AppleAccentColor", "4",
-                    "-AppleShowScrollBars", "WhenScrolling",
-                    # R282-8: the machine's own preference must never reach a picture (UserDefaults.standard of the
-                    # test tool ignores the fake HOME); an argument-domain value wins and writes nothing.
-                    "-chatgptRecap.automaticEnabled", "NO"]
+                    "-AppleShowScrollBars", "WhenScrolling"]
+# R282-8 / T-043 T1: the machine's own preferences never reach a picture: under XCTest every preference read goes to
+# one throwaway suite (GoalongDefaults.standard, and the headless hook for +standardUserDefaults).
 
 
 def shard_command(run: Path, shard: int, shards: int, home: str, only: str | None) -> list[str]:

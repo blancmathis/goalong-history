@@ -697,6 +697,123 @@ if ! grep -Fq 'capabilityConsents.isEnabled(.appleScreenTime)' "$ROOT_DIR/Source
   failed=true
 fi
 
+# T-043 T1 (R282-8): preferences go through GoalongDefaults only. The app gets UserDefaults.standard there; a test or
+# gallery process gets one throwaway suite, so no test reads or writes this Mac's real settings.
+# R-286 F3: also refused: UserDefaults() and UserDefaults(suiteName: nil) (both the standard domain), `.standard`
+# passed as a `defaults:`/`userDefaults:` argument or as `@AppStorage(…, store: .standard)`, any CFPreferences call,
+# [[NSUserDefaults alloc] init], in .swift and Objective-C (.m/.h) files. Comments are removed before matching, with
+# string literals kept intact ("https://…" no longer hides the rest of the line). Allowed on purpose: `@AppStorage`
+# without `store:`. In the app it is the standard domain as before; in a test process the headless hook routes
+# +standardUserDefaults (which @AppStorage uses) to the throwaway suite, and every test target links that hook.
+# T-043 T1 tour 3: the hook also keeps every bare suite name (`UserDefaults(suiteName: "x-<UUID>")`) in the throwaway
+# HOME. So `UserDefaults(suiteName:` / `initWithSuiteName:` is refused outside the test targets that link the hook (and
+# GoalongDefaults.swift), and every .testTarget in Package.swift must depend on GoalongHeadlessTestSupport.
+if ! python3 - "$ROOT_DIR" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+hook = "GoalongHeadlessTestSupport"
+
+def test_targets(package):
+    """(name, path, dependencies text) of each .testTarget( … ) call, parentheses balanced, strings skipped."""
+    found, start = [], 0
+    while (start := package.find(".testTarget(", start)) >= 0:
+        i, depth, string = start + len(".testTarget("), 1, False
+        while i < len(package) and depth:
+            c = package[i]
+            if string:
+                if c == "\\": i += 1
+                elif c == '"': string = False
+            elif c == '"': string = True
+            elif c == "(": depth += 1
+            elif c == ")": depth -= 1
+            i += 1
+        body = package[start:i]
+        name = re.search(r'name\s*:\s*"([^"]+)"', body)
+        path = re.search(r'path\s*:\s*"([^"]+)"', body)
+        deps = re.search(r'dependencies\s*:\s*\[([^\]]*)\]', body)
+        name = name.group(1) if name else "?"
+        found.append((name, (path.group(1) if path else f"Tests/{name}").rstrip("/"), deps.group(1) if deps else ""))
+        start = i
+    return found
+
+hooked, unhooked = [], []
+for name, path, deps in test_targets((root / "Package.swift").read_text(encoding="utf-8")):
+    (hooked if f'"{hook}"' in deps else unhooked).append(path)
+    if f'"{hook}"' not in deps:
+        print(f"Package.swift: testTarget {name} does not depend on {hook} (its tests would reach this Mac's preferences)", file=sys.stderr)
+hooked.append(f"Tests/{hook}")
+suite_pattern = re.compile(r"\bUserDefaults\s*\(\s*suiteName\s*:|\binitWithSuiteName\s*:")
+allowed = {"Features/AppleScreenTime/Sources/GoalongDefaults.swift",
+           "Tests/LocalHistoryAppTests/GoalongDefaultsIsolationTests.swift",
+           "Tests/GoalongHeadlessTestSupport/GoalongHeadlessTestSupport.m"}
+pattern = re.compile(r"UserDefaults\s*\.\s*standard\b|UserDefaults\??\s*=\s*\.standard\b|standardUserDefaults"
+                     r"|UserDefaults\(\s*suiteName:\s*(GoalongBundleIdentity|Bundle\.main|\"ai\.goalong)"
+                     r"|\bUserDefaults\s*\(\s*(suiteName\s*:\s*nil\s*)?\)"
+                     r"|\b(defaults|userDefaults)\s*:\s*\.standard\b|@AppStorage\s*\([^)]*\bstore\s*:\s*\.standard\b"
+                     r"|\bCFPreferences\w*|\[\s*\[\s*NSUserDefaults\s+alloc\s*\]\s*init\s*\]")
+
+def without_comments(text):
+    """Blanks // and /* */ comments, keeps string literals and newlines (line numbers stay right)."""
+    out, i, n, string = [], 0, len(text), None
+    while i < n:
+        c = text[i]
+        if string:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1]); i += 2; continue
+            if string == '"' and c == "\n":
+                string = None; i += 1; continue   # a one-line literal never spans lines (keeps a stray quote local)
+            if text.startswith(string, i):
+                out.append(text[i + 1:i + len(string)]); i += len(string); string = None; continue
+            i += 1
+        elif text.startswith('"""', i):
+            out.append('"""'); i += 3; string = '"""'
+        elif c == '"':
+            out.append(c); i += 1; string = '"'
+        elif text.startswith("//", i):
+            while i < n and text[i] != "\n": i += 1
+        elif text.startswith("/*", i):
+            close = text.find("*/", i + 2)
+            close = n if close < 0 else close + 2
+            out.append("\n" * text.count("\n", i, close)); i = close
+        else:
+            out.append(c); i += 1
+    return "".join(out)
+
+bad = []
+for folder in ("Sources", "Features", "Tests"):
+    for path in sorted(p for p in (root / folder).rglob("*") if p.suffix in (".swift", ".m", ".h")):
+        relative = path.relative_to(root).as_posix()
+        if relative in allowed:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        code = without_comments(text)
+        lines = text.splitlines()
+        for match in pattern.finditer(code):
+            number = code.count("\n", 0, match.start()) + 1
+            bad.append(f"{relative}:{number}: {lines[number - 1].strip() if number <= len(lines) else match.group(0)}")
+for folder in ("Sources", "Features", "Tests"):
+    for path in sorted(p for p in (root / folder).rglob("*") if p.suffix in (".swift", ".m", ".h")):
+        relative = path.relative_to(root).as_posix()
+        if relative == "Features/AppleScreenTime/Sources/GoalongDefaults.swift":
+            continue
+        if any(relative.startswith(target + "/") for target in hooked):
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        code = without_comments(text)
+        lines = text.splitlines()
+        for match in suite_pattern.finditer(code):
+            number = code.count("\n", 0, match.start()) + 1
+            bad.append(f"{relative}:{number}: suite outside the hooked test targets: {lines[number - 1].strip() if number <= len(lines) else match.group(0)}")
+for entry in bad:
+    print(entry, file=sys.stderr)
+sys.exit(1 if bad or unhooked else 0)
+PY
+then
+  echo "Preferences outside GoalongDefaults (use GoalongDefaults.standard: tests must never reach this Mac's settings)." >&2
+  failed=true
+fi
+
 if [[ "$failed" == true ]]; then
   echo "Privacy-boundary audit failed. Review the matches above." >&2
   exit 1

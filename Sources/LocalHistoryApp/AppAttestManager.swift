@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import Foundation
     import LocalHistoryCore
@@ -36,7 +37,7 @@
                         return
                     }
 
-                    if let keyID = UserDefaults.standard.string(forKey: defaultsKey) {
+                    if let keyID = GoalongDefaults.standard.string(forKey: defaultsKey) {
                         service.generateAssertion(keyID, clientDataHash: clientDataHash) { assertion, _ in
                             completion(AppAttestMaterial(
                                 keyID: keyID,
@@ -52,7 +53,7 @@
                             completion(AppAttestMaterial(keyID: nil, attestationObjectBase64: nil, assertionBase64: nil))
                             return
                         }
-                        UserDefaults.standard.set(keyID, forKey: self.defaultsKey)
+                        GoalongDefaults.standard.set(keyID, forKey: self.defaultsKey)
                         service.attestKey(keyID, clientDataHash: clientDataHash) { object, _ in
                             completion(AppAttestMaterial(
                                 keyID: keyID,
@@ -76,7 +77,7 @@
 
             #if canImport(DeviceCheck) && !LOCALHISTORY_NO_APP_ATTEST
                 if #available(macOS 27.0, *),
-                   let keyID = UserDefaults.standard.string(forKey: defaultsKey),
+                   let keyID = GoalongDefaults.standard.string(forKey: defaultsKey),
                    DCAppAttestService.shared.isSupported
                 {
                     DCAppAttestService.shared.generateAssertion(keyID, clientDataHash: clientDataHash) { assertion, _ in

@@ -5,6 +5,7 @@ import Security
 import CryptoKit
 import Darwin
 import LocalHistoryCore
+import AppleScreenTime
 
 struct SupportBuild: Codable {
     let version: String?
@@ -394,7 +395,7 @@ struct SupportReport: Codable {
         if let free = StorageHealth.availableBytes() { values[.freeSpaceMB] = .count(Int(free / 1_048_576)) }
         values[.monitoringEnabled] = .flag(GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
         values[.websiteAutoSend] = .flag(GoalongWebsiteAutoSender.shared.enabled)
-        let defaults = UserDefaults.standard
+        let defaults = GoalongDefaults.standard
         let tokenPath = defaults.string(forKey: "goalong.website.tokenFilePath") ?? ""
         values[.websiteLinked] = .flag(!tokenPath.isEmpty && !(defaults.string(forKey: "goalong.website.origin") ?? "").isEmpty
             && FileManager.default.fileExists(atPath: tokenPath))
