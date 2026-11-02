@@ -20,6 +20,14 @@
                 && windowIsKey && sessionIsAvailable
         }
 
+        /// The recording and storage status is cheap (in-memory health, a throttled free-space
+        /// read). It stays live while the window can be seen beside another app.
+        var permitsStatusRefresh: Bool {
+            permitsRefresh
+                || (windowIsVisible && !windowIsMiniaturized && !applicationIsHidden
+                    && !windowIsOccluded && sessionIsAvailable)
+        }
+
         static let hidden = DashboardVisibilityState(
             windowIsVisible: false,
             windowIsMiniaturized: false,
@@ -31,17 +39,29 @@
 
     final class DashboardVisibilityCoordinator {
         private let visibilityDidChange: (Bool) -> Void
+        private let statusVisibilityDidChange: (Bool) -> Void
         private(set) var permitsRefresh = false
+        private(set) var permitsStatusRefresh = false
 
-        init(visibilityDidChange: @escaping (Bool) -> Void) {
+        init(
+            visibilityDidChange: @escaping (Bool) -> Void,
+            statusVisibilityDidChange: @escaping (Bool) -> Void = { _ in }
+        ) {
             self.visibilityDidChange = visibilityDidChange
+            self.statusVisibilityDidChange = statusVisibilityDidChange
         }
 
         func update(_ state: DashboardVisibilityState) {
             let next = state.permitsRefresh
-            guard next != permitsRefresh else { return }
-            permitsRefresh = next
-            visibilityDidChange(next)
+            if next != permitsRefresh {
+                permitsRefresh = next
+                visibilityDidChange(next)
+            }
+            let nextStatus = state.permitsStatusRefresh
+            if nextStatus != permitsStatusRefresh {
+                permitsStatusRefresh = nextStatus
+                statusVisibilityDidChange(nextStatus)
+            }
         }
     }
 
@@ -54,15 +74,24 @@
         private var sessionObservers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
         /// Injected by tests; production reads the same session signal as capture.
         var sessionAvailable: () -> Bool = { ForegroundSessionAvailability.isAvailable() }
-        private lazy var visibilityCoordinator = DashboardVisibilityCoordinator {
-            [weak self] isVisible in
-            guard let self else { return }
-            if isVisible {
-                self.viewModel.dashboardDidBecomeVisible()
-            } else {
-                self.viewModel.dashboardDidBecomeHidden(discardContents: false)
+        private lazy var visibilityCoordinator = DashboardVisibilityCoordinator(
+            visibilityDidChange: { [weak self] isVisible in
+                guard let self else { return }
+                if isVisible {
+                    self.viewModel.dashboardDidBecomeVisible()
+                } else {
+                    self.viewModel.dashboardDidBecomeHidden(discardContents: false)
+                }
+            },
+            statusVisibilityDidChange: { [weak self] isVisible in
+                guard let self else { return }
+                if isVisible {
+                    self.viewModel.dashboardStatusDidBecomeVisible()
+                } else {
+                    self.viewModel.dashboardStatusDidBecomeHidden()
+                }
             }
-        }
+        )
 
         init(viewModel: DashboardViewModel) {
             self.viewModel = viewModel

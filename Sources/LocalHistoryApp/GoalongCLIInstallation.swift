@@ -46,9 +46,12 @@
             "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
         }
 
+        /// Gallery only: the installed app's executable, so the page does not show the test runner's path.
+        nonisolated(unsafe) static var galleryExecutableURL: URL?
+
         static func inspect(
             linkURL: URL = defaultLinkURL,
-            expectedExecutableURL: URL? = Bundle.main.executableURL,
+            expectedExecutableURL: URL? = galleryExecutableURL ?? Bundle.main.executableURL,
             fileManager: FileManager = .default,
             isDevelopment: Bool = GoalongBuildChannel.current.isDevelopment
         ) -> GoalongCLIInstallationReport {
@@ -87,7 +90,7 @@
                     state: .missing,
                     linkPath: linkPath,
                     resolvedTargetPath: nil,
-                    detail: "L’installation par l’image disque (DMG) et les mises à jour Sparkle ne créent pas la commande goalong. Cliquez sur « Installer la commande », ou collez cette ligne dans le Terminal :",
+                    detail: "L’installation de l’app et ses mises à jour ne créent pas la commande goalong. Cliquez sur « Installer la commande », ou collez cette ligne dans le Terminal :",
                     linkCommand: expectedExecutableURL.map { linkCommand(executableURL: $0, linkURL: linkURL) },
                     canInstall: expectedExecutableURL != nil
                 )

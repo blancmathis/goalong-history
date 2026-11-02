@@ -3,7 +3,7 @@ import Foundation
 /// Private evidence and public cards have separate types. Only `Projection` is sent to Goalong.
 public enum GoalongProfileAnalysis {
     public static let modules = ["totals", "apps", "projects", "work", "rhythm", "progress", "methods", "evolution", "recap", "ai"]
-    public static let labels = ["totals": "Bilan du temps", "apps": "Applications et usages", "projects": "Projets et sujets", "work": "Types de travail", "rhythm": "Rythme et changements de contexte", "progress": "Avancées et suites", "methods": "Méthodes de travail", "evolution": "Évolution", "recap": "Récapitulatif", "ai": "Usage de l’IA"]
+    public static let labels = ["totals": "Bilan du temps", "apps": "Applications et usages", "projects": "Projets et sujets", "work": "Types de travail", "rhythm": "Rythme et changements de contexte", "progress": "Ce qui a avancé", "methods": "Méthodes de travail", "evolution": "Évolution", "recap": "Résumé de la journée", "ai": "Usage de l’IA"]
     public struct Replacement: Codable, Equatable, Sendable {
         public var term: String; public var replacement: String
         public init(term: String, replacement: String) { self.term = term; self.replacement = replacement }

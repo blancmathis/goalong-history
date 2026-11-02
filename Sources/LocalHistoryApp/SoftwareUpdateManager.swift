@@ -98,7 +98,7 @@
         @Published private(set) var presentationState = SoftwareUpdatePresentationState()
         @Published private(set) var automaticallyChecksForUpdates = false
         @Published private(set) var requiresSignedBuild = false
-        @Published private(set) var statusMessage = "Les mises à jour sont disponibles dans les versions publiées."
+        @Published private(set) var statusMessage = "Cette copie n’a pas de mises à jour intégrées : installez la version publiée pour les recevoir."
         @Published private(set) var lastCheckResult: SupportState = .unknown
         @Published private(set) var lastCheckedAt: Date? = UserDefaults.standard.object(forKey: SoftwareUpdateManager.lastCheckedKey) as? Date
         /// Set on the first launch after an update so the app can confirm it worked.
@@ -175,7 +175,7 @@
 
             guard Self.hasValidSparkleConfiguration(in: .main) else {
                 requiresSignedBuild = true
-                statusMessage = "Cette version a été compilée sans configuration de mise à jour valide. Installez une fois la version Community ou recompilez avec la clé publique incluse dans le dépôt. Aucun abonnement Apple n’est nécessaire."
+                statusMessage = "Cette version ne peut pas se mettre à jour toute seule. Installez la version Community une fois : les mises à jour suivantes seront automatiques."
                 return
             }
 

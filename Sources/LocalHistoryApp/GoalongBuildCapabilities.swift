@@ -23,7 +23,7 @@
         static let permitsHTTPWorkspaceOpening = true
 
         static var summary: String {
-            "Une seule app Goalong · collecte locale désactivée par défaut · envois au site sur demande ou programmés · mises à jour signées, installées avec votre accord"
+            "Une seule app Goalong, collecte locale désactivée par défaut, envois au site sur demande ou programmés, mises à jour signées, installées avec votre accord"
         }
     }
 #endif

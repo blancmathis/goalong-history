@@ -67,7 +67,8 @@ enum GoalongStackedBars {
     static func pieces(_ values: [(GoalongLocalAnalytics.Kind, Double)], unit: Double, gap: Double, id: String) -> [Piece] {
         var result: [Piece] = [], cursor = 0.0
         for (kind, seconds) in values where seconds > 0 {
-            let height = seconds / unit
+            // At least a few points tall: a 1 pt sliver (« Hors travail ») reads as a rule, not a value.
+            let height = max(seconds / unit, gap * 3)
             let lower = cursor + (result.isEmpty ? 0 : min(gap, height / 2))
             result.append(Piece(id: id + kind.rawValue, kind: kind, lower: lower, upper: cursor + height, seconds: seconds))
             cursor += height
@@ -79,12 +80,14 @@ enum GoalongStackedBars {
 /// Hour by hour, split into work, other and still-to-classify time.
 struct GoalongHourlyClassChart: View {
     let day: GoalongLocalAnalytics.Day
+    /// The page's focus threshold: the bars, the « Heures et valeurs » list and the range read the same hours.
+    let minimumMinutes: Int
     let dateRange: ClosedRange<Date>
     let hourStride: Int
     private let height: CGFloat = 180
 
     var body: some View {
-        let hours = day.hours(minimumMinutes: 25).filter { $0.seconds > 0 }
+        let hours = day.hours(minimumMinutes: minimumMinutes).filter { $0.seconds > 0 }
         let scale = GoalongAnalyticsChartScale(maximumSeconds: hours.map(\.seconds).max() ?? 0, hourly: true)
         let span = dateRange.upperBound.timeIntervalSince(dateRange.lowerBound) / 3600
         VStack(alignment: .leading, spacing: 10) {
@@ -108,22 +111,37 @@ struct GoalongHourlyClassChart: View {
             .chartLegend(.hidden).chartXScale(domain: dateRange).chartYScale(domain: 0...scale.upperBound)
             .chartPlotStyle { $0.clipped() }
             .chartXAxis {
-                AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
-                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
-                        .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                // Each bar fills its hour: the hour's name sits under the bar, not on the edge between two bars.
+                // Hourly ticks sit mid-hour: a `centered` label drops the last one, so the last bar had no hour (UI-14, écran 23).
+                AxisMarks(values: Self.hourTicks(dateRange, stride: hourStride).map { hourStride == 1 ? $0.addingTimeInterval(1800) : $0 }) { _ in
+                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour(), anchor: .top)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                 }
             }
             .chartYAxis {
                 AxisMarks(position: .leading) { value in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
                     AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
-                        .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                 }
             }
             .frame(height: height)
             .accessibilityIdentifier("activity-hourly-class-chart")
             GoalongActivityClassLegend()
         }
+    }
+
+    /// Hour starts inside the range, the closing edge excluded (a centred label there would fall outside).
+    static func hourTicks(_ range: ClosedRange<Date>, stride: Int, calendar: Calendar = .current) -> [Date] {
+        var tick = calendar.dateInterval(of: .hour, for: range.lowerBound)?.start ?? range.lowerBound
+        if tick < range.lowerBound { tick = calendar.date(byAdding: .hour, value: 1, to: tick) ?? range.lowerBound }
+        var ticks: [Date] = []
+        while tick < range.upperBound, ticks.count < 25 {
+            ticks.append(tick)
+            guard let next = calendar.date(byAdding: .hour, value: max(1, stride), to: tick) else { break }
+            tick = next
+        }
+        return ticks
     }
 }
 
@@ -165,7 +183,7 @@ struct GoalongUsageTimelineChart: View {
             AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
                 AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
-                    .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
             }
         }
         .chartYAxis {
@@ -261,7 +279,7 @@ struct GoalongDailyClassChart: View {
                         .annotation(position: .top, alignment: .trailing) {
                             // A patch of page behind the label keeps it readable where bars pass the average.
                             Text("Moyenne\(averageExcludesToday ? " (sans aujourd’hui)" : "") \(GoalongAnalyticsFormatting.duration(average))")
-                                .font(.system(size: 11, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                                .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                                 .padding(.horizontal, 5).padding(.vertical, 2)
                                 .background(LHTheme.pageBackground.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
                         }
@@ -273,12 +291,12 @@ struct GoalongDailyClassChart: View {
             .chartLegend(.hidden).chartYScale(domain: 0...scale.upperBound).chartXScale(domain: dateRange)
             .chartXAxis { AxisMarks(values: .stride(by: .day, count: period.days.count > 7 ? 4 : 1)) { _ in
                 AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).weekday(.abbreviated).day())
-                    .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
             } }
             .chartYAxis { AxisMarks(position: .leading) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
                 AxisValueLabel { if let amount = value.as(Double.self) { Text(scale.label(amount)) } }
-                    .font(.system(size: 11)).foregroundStyle(LHTheme.tertiaryText)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
             } }
             .frame(height: height)
             .chartOverlay { proxy in

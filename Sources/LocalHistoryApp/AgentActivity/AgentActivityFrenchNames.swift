@@ -29,10 +29,10 @@
     extension AgentIntegrationKind {
         var frenchName: String {
             switch self {
-            case .codexHooks: return "Hooks Codex"
-            case .claudeCodeHooks: return "Hooks Claude Code"
-            case .cursorHooks: return "Hooks Cursor"
-            case .openCodePlugin: return "Plugin OpenCode"
+            case .codexHooks: return "Codex"
+            case .claudeCodeHooks: return "Claude Code"
+            case .cursorHooks: return "Cursor"
+            case .openCodePlugin: return "OpenCode"
             }
         }
     }

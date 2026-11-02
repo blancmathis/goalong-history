@@ -82,10 +82,10 @@ import SwiftUI
     }
 
     static func behaviour(_ list: BlockList) -> String {
-        var parts = [list.effectiveAction == .slowDown ? "Ralentit \(list.delaySeconds) s" : "Bloque"]
+        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) s" : "Bloque l’accès"]
         if let quota = list.quotaMinutesPerDay { parts.append("\(BlockingFormat.duration(minutes: quota)) libres/jour") }
         if let breaks = list.breaks { parts.append("\(breaks.count) pause\(breaks.count > 1 ? "s" : "")") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -706,7 +706,7 @@ struct BlockingProgramLock: View {
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
             DatePicker("Jusqu’au", selection: $until, in: max(now, current ?? now)..., displayedComponents: .date)
-                .datePickerStyle(.field)
+                .goalongDateField(label: "Jusqu’au")
             HStack {
                 Spacer()
                 Button("Verrouiller jusqu’au \(BlockingFormat.day(until))") { onLock(BlockingWallClock.endOfDay(until)) }
@@ -732,6 +732,8 @@ struct BlockingIconCluster: View {
     let lists: [BlockList]
     var size: CGFloat = 22
     var limit = 5
+    /// Size of the « +N » count; nil keeps half the icon size, 10 pt at least.
+    var overflowFont: CGFloat?
 
     /// Each app or host once, in list order: several rules can share a host and lists can share an app.
     static func items(for lists: [BlockList]) -> [BlockingItem] {
@@ -748,7 +750,7 @@ struct BlockingIconCluster: View {
                 .frame(width: size, height: size)
                 .accessibilityHidden(true)
         } else {
-            BlockingIconStack(items: Array(items.prefix(limit)), size: size, overflow: max(0, items.count - limit))
+            BlockingIconStack(items: Array(items.prefix(limit)), size: size, overflow: max(0, items.count - limit), overflowFont: overflowFont)
         }
     }
 }
@@ -757,12 +759,14 @@ struct BlockingIconStack: View {
     let items: [BlockingItem]
     var size: CGFloat = 22
     var overflow = 0
+    var overflowFont: CGFloat?
 
     var body: some View {
         HStack(spacing: max(2, size * 0.14)) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in icon(item) }
             if overflow > 0 {
-                Text("+\(overflow)").font(.system(size: max(10, size * 0.5), weight: .medium).monospacedDigit())
+                // 12 pt floor: « +3 » reads like the chip's name, not as a micro caption (UI-15B, 1).
+                Text("+\(overflow)").font(.system(size: overflowFont ?? max(12, size * 0.5), weight: .medium).monospacedDigit())
                     .foregroundStyle(LHTheme.secondaryText).fixedSize().padding(.leading, 2)
             }
         }
@@ -782,19 +786,11 @@ struct BlockingIconStack: View {
     }
 }
 
-/// A site has no icon offline: a globe on a quiet tile, the same shape as an app icon.
+/// A site has no icon offline: its monogram (`WebsiteIconView`), the same shape as an app icon.
 struct BlockingSiteTile: View {
     let host: String
     var size: CGFloat = 22
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-        Image(systemName: "globe")
-            .font(.system(size: size * 0.5, weight: .medium))
-            .foregroundStyle(LHTheme.secondaryText)
-            .frame(width: size, height: size)
-            .background(shape.fill(LHTheme.insetBackground))
-            .overlay(shape.strokeBorder(LHTheme.separator))
-    }
+    var body: some View { WebsiteIconView(host: host, size: size) }
 }
 
 /// One site or app in a list: icon, name, and a remove cross when removing is allowed.
@@ -864,9 +860,16 @@ struct BlockingListChip: View {
 /// Installed apps, searchable, with their icons.
 @MainActor struct BlockingAppPicker: View {
     let excluded: Set<String>
+    /// Given by a test or the gallery: shown as is, and no scan of the installed apps.
+    private let fixedApps: [BlockAppRule]?
     var onPick: (BlockAppRule) -> Void
-    @State private var apps: [BlockAppRule] = []
+    @State private var apps: [BlockAppRule]
     @State private var search = ""
+
+    init(excluded: Set<String>, apps: [BlockAppRule]? = nil, onPick: @escaping (BlockAppRule) -> Void) {
+        self.excluded = excluded; fixedApps = apps; self.onPick = onPick
+        _apps = State(initialValue: apps ?? [])
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -889,7 +892,7 @@ struct BlockingListChip: View {
             .frame(height: 300)
         }
         .padding(14).frame(width: 300)
-        .task { apps = await BlockingController.installedApps() }
+        .task { if fixedApps == nil { apps = await BlockingController.installedApps() } }
         .goalongControls()
     }
 }

@@ -16,7 +16,7 @@ import LocalHistoryCore
                 Text("Tout l’historique local").tag(0)
             }.pickerStyle(.radioGroup)
             Text("Supprime l’activité de la période et ses résumés locaux. Les appels et l’activité de développement des jours concernés sont effacés pour la journée entière. La note du jour n’est effacée qu’avec tout l’historique. Les données déjà envoyées restent conservées.")
-                .font(.system(size: 13)).foregroundStyle(.secondary)
+                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
             Divider()
             HStack {
                 Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)

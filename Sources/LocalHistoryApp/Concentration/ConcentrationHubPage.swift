@@ -54,15 +54,14 @@ struct ConcentrationHubHeader: View {
     }
 }
 
-/// A tab whose module is off: one sentence and the switch, nothing else.
+/// A tab whose module is off: the empty state of DESIGN §9 (dotted thread, title, sentence) and the switch.
 @MainActor struct GoalongModuleOffNote: View {
     let module: GoalongModule
     let text: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(text).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+        // UI-11A (2): same empty state as Activité and Temps d’écran, with a title that says what is off.
+        GoalongEmptyState(title: "Le module \(module.title) est désactivé", message: text) {
             Button("Activer \(module.title)") { GoalongModuleStore.shared.setEnabled(module, true) }
                 .buttonStyle(LHPrimaryButtonStyle())
                 .accessibilityIdentifier("module-enable-\(module.rawValue)")
@@ -155,7 +154,7 @@ struct ConcentrationHubHeader: View {
                 } else {
                     HStack(alignment: .top, spacing: 14) {
                         Text(store.context.procrastination.isEmpty
-                             ? "Aucun exemple. Ex. « Scroller le fil de X, regarder des vidéos de divertissement. »"
+                             ? "Aucun exemple. Par exemple : « faire défiler le fil de X », « regarder des vidéos de divertissement »."
                              : store.context.procrastination)
                             .foregroundStyle(store.context.procrastination.isEmpty ? LHTheme.secondaryText : LHTheme.text)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -362,11 +361,14 @@ extension EnvironmentValues {
         if !consents.isEnabled(.jevMonitoring) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "eye.circle").foregroundStyle(LHTheme.secondaryText).accessibilityHidden(true)
-                Text(text).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Configurer Jev", action: open)
-                    .buttonStyle(LHQuietButtonStyle())
-                    .accessibilityIdentifier("jev-open-settings")
+                // The sentence and its link share one column: the text never wraps under the icon.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(text).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Configurer Jev", action: open)
+                        .buttonStyle(LHQuietButtonStyle())
+                        .accessibilityIdentifier("jev-open-settings")
+                }
                 Spacer(minLength: 0)
             }
         }
@@ -379,25 +381,31 @@ extension EnvironmentValues {
 @MainActor struct JevScopeControl: View {
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
+    /// GoalongSegmentedControl draws `.disabled` itself, labels in secondary text (≥ 4.5:1, UI-16A, 5): no extra fade here.
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 Text("Quand").font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isEnabled ? LHTheme.text : LHTheme.secondaryText)
                 Spacer(minLength: 8)
-                GoalongSegmentedControl("Quand surveiller", selection: Binding(get: { monitor.scope }, set: { monitor.setScope($0) }),
+                GoalongSegmentedControl("Quand recevoir les rappels", selection: Binding(get: { monitor.scope }, set: { monitor.setScope($0) }),
                                         options: JevMonitoringScope.allCases) {
                     $0 == .always ? "Toujours" : "Pendant mes séances"
                 }
                 .controlSize(.small)
                 .accessibilityIdentifier("jev-scope")
             }
-            Text(monitor.scope == .always
-                 ? "Dès que la surveillance est activée, toute la journée."
+            // Connected but off: only the activation is missing (UI-14, M2).
+            Text(!isEnabled ? (monitor.hasKey ? "Activez Jev pour choisir quand il agit."
+                               : "Connectez d’abord Jev, puis activez-le, pour choisir quand il agit.")
+                 : monitor.scope == .always
+                 ? "Dès que les rappels Jev sont activés, toute la journée."
                  : "Seulement pendant une séance Concentration, pauses comprises. Hors séance : aucun envoi, rappel ni effet.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
-            if monitor.scope == .sessionsOnly && !modules.isEnabled(.concentration) {
-                GoalongNote("Activez Concentration pour lancer une séance : sans séance, la surveillance attend.", tone: .warning)
+            if isEnabled && monitor.scope == .sessionsOnly && !modules.isEnabled(.concentration) {
+                GoalongNote("Activez Concentration pour lancer une séance : sans séance, Jev attend.", tone: .warning)
             }
         }
     }

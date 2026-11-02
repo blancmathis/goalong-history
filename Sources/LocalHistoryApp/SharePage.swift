@@ -1,15 +1,23 @@
 #if os(macOS)
+    import LocalHistoryCore
     import SwiftUI
 
     struct SharePage: View {
         @ObservedObject var model: DashboardViewModel
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+
+        private var proof: ShareProofStatus {
+            ShareProofStatus.make(observedMinutes: model.snapshot.activeMinutes,
+                                  sealedMinutes: model.snapshot.sealedMinutes,
+                                  recordingEnabled: consents.isEnabled(.localComputerHistory))
+        }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(
-                    title: "Exporter un fichier signé",
+                    title: "Partager",
                     subtitle:
-                        "Choisissez ce que le fichier montre de chaque app et site. Goalong vérifie les signatures de l’historique avant de créer le fichier."
+                        "Choisissez ce que le fichier montre de chaque app et site. Goalong vérifie l’historique sur ce Mac avant de créer le fichier."
                 ) {
                     HStack(spacing: 10) {
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay)
@@ -29,7 +37,8 @@
                 disclosureBanner
                 ruleSummary
 
-                UsageRulesList(model: model, showsDefaultRule: true)
+                UsageRulesList(model: model, showsDefaultRule: true,
+                               recordingEnabled: consents.isEnabled(.localComputerHistory))
                     .frame(maxHeight: .infinity)
 
                 exportBar
@@ -37,6 +46,8 @@
             .padding(.horizontal, LHTheme.pageInset)
             .padding(.top, 28)
             .padding(.bottom, 20)
+            // Pinned to the top: an empty list never pushes the header (and « Retour ») up (UI-13B).
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(LHTheme.pageBackground)
         }
 
@@ -68,60 +79,56 @@
                     tint: LHTheme.privateTint
                 )
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(model.snapshot.sealedMinutes) minute\(model.snapshot.sealedMinutes > 1 ? "s" : "") avec preuve")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("Les règles s’appliquent événement par événement")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
             }
         }
 
+        /// A count, not a filter: plain text with a neutral glyph, no capsule.
         private func summaryItem(title: String, count: Int, symbol: String, tint: Color) -> some View {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: symbol)
-                    .foregroundStyle(tint)
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                Text("\(count)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LHTheme.secondaryText)
+                Text("\(title) : \(count)")
+                    .font(.system(size: 12, weight: .medium))
+                    .monospacedDigit()
             }
-            .padding(.horizontal, 11)
             .frame(height: 32)
-            .background(tint.opacity(0.08), in: Capsule())
+            .accessibilityElement(children: .combine)
         }
 
         private var exportBar: some View {
             HStack(spacing: 12) {
                 Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(model.snapshot.sealedMinutes > 0 ? LHTheme.success : Color.secondary)
+                    .foregroundStyle(proof.canExport ? LHTheme.success : Color.secondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(
-                        model.snapshot.sealedMinutes > 0
-                            ? "Prêt à créer un fichier selon vos règles"
-                            : "Aucune donnée avec preuve pour ce jour"
-                    )
-                    .font(.system(size: 11, weight: .semibold))
-                    Text(
-                        "Les vérifications se font sur ce Mac, sans connexion. Rien n’est envoyé."
-                    )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                    Text(proof.title)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(proof.detail)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .accessibilityIdentifier("share-proof-status")
                 Spacer()
-                Button {
-                    model.exportSharePackage()
-                } label: {
-                    Label("Créer le fichier", systemImage: "square.and.arrow.up")
-                        .frame(minWidth: 176)
+                // « Créer le fichier » is always there and keeps the lime, held back until a minute is
+                // verified; reporting the gap is a secondary step (UI-15B, 32/55). With recording off,
+                // the settings are the only way forward and take the lime.
+                switch proof.action {
+                case .openRecordingSettings?:
+                    Button("Ouvrir les réglages") { model.openRecordingSettings() }
+                        .buttonStyle(LHPrimaryButtonStyle())
+                case .reportProblem?:
+                    Button("Signaler l’écart…") { model.openDiagnostics() }
+                        .buttonStyle(LHSecondaryButtonStyle())
+                case nil:
+                    EmptyView()
                 }
-                .buttonStyle(LHPrimaryButtonStyle())
-                .disabled(model.snapshot.sealedMinutes == 0 || model.isExportingShare)
+                createButton
+                    .modifier(GoalongMainActionStyle(primary: proof.action != .openRecordingSettings))
+                    .disabled(!proof.canExport || model.isExportingShare)
             }
             .padding(.horizontal, 14)
-            .frame(height: 56)
+            .padding(.vertical, 10)
+            .frame(minHeight: UsageRulesList.exportBarHeight)
             .background(LHTheme.cardBackground, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -129,10 +136,62 @@
             )
         }
 
+        private var createButton: some View {
+            Button {
+                model.exportSharePackage()
+            } label: {
+                Label("Créer le fichier", systemImage: "square.and.arrow.up")
+                    .frame(minWidth: 176)
+            }
+        }
+
         private func count(for visibility: SharingVisibility) -> Int {
             model.snapshot.trackedUsage.filter {
                 model.sharingVisibility(for: $0.id) == visibility
             }.count
+        }
+    }
+
+    /// What the export bar says about the selected day. Only minutes signed on this Mac while recording
+    /// go into the file, so « no proof » always says why and, when the user can change it, what to do.
+    struct ShareProofStatus: Equatable {
+        enum Action: Equatable {
+            case openRecordingSettings
+            case reportProblem
+        }
+
+        let title: String
+        let detail: String
+        let action: Action?
+        let canExport: Bool
+
+        static func make(observedMinutes: Int, sealedMinutes: Int, recordingEnabled: Bool) -> ShareProofStatus {
+            if sealedMinutes > 0 {
+                let checked = FrenchCount.count(sealedMinutes, "minute vérifiée", "minutes vérifiées")
+                return ShareProofStatus(
+                    title: "Prêt à créer un fichier selon vos règles",
+                    detail: "\(checked) sur \(max(observedMinutes, sealedMinutes)). La vérification se fait sur ce Mac, sans connexion. Rien n’est envoyé.",
+                    action: nil, canExport: true)
+            }
+            if observedMinutes == 0 {
+                return recordingEnabled
+                    ? ShareProofStatus(
+                        title: "Aucune activité ce jour",
+                        detail: "Rien à mettre dans le fichier. Choisissez un autre jour.",
+                        action: nil, canExport: false)
+                    : ShareProofStatus(
+                        title: "Enregistrement désactivé",
+                        detail: "Goalong n’observe aucune minute. Activez l’enregistrement pour partager.",
+                        action: .openRecordingSettings, canExport: false)
+            }
+            let observed = FrenchCount.count(observedMinutes, "minute observée", "minutes observées")
+            return ShareProofStatus(
+                title: "\(observed), aucune vérifiée",
+                detail: recordingEnabled
+                    ? "Ce Mac n’a pas signé ces minutes, et le fichier ne contient que les minutes vérifiées par ce Mac. Le partage reste possible dès qu’une minute est vérifiée ; signalez l’écart s’il dure."
+                    : "Le fichier ne contient que les minutes vérifiées par ce Mac pendant l’enregistrement, qui est désactivé.",
+                action: recordingEnabled ? .reportProblem : .openRecordingSettings,
+                canExport: false)
         }
     }
 #endif

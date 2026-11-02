@@ -27,7 +27,7 @@
             case .jevMonitoring: return "Jev"
             case .remoteVerification: return "External verification"
             case .automaticUpdates: return "Automatic update checks"
-            case .launchAtLogin: return "Démarrage à la connexion"
+            case .launchAtLogin: return "Ouverture de session"
             }
         }
     }

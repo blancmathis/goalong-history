@@ -120,6 +120,14 @@ final class AgentConversationSourceHealthTests: XCTestCase {
         XCTAssertEqual(health.actionTitle, "Réessayer")
     }
 
+    /// UI-15C (6): « restent disponibles » only when the page still lists conversations.
+    func testReadFailureMessageClaimsReadableConversationsOnlyWhenThereAreSome() {
+        let health = AgentConversationSourceHealth(indexIsValid: true, scan: .init(failures: ["fixture"]))
+        XCTAssertTrue(health.message(hasReadableConversations: true).contains("restent disponibles"))
+        XCTAssertFalse(health.message(hasReadableConversations: false).contains("restent disponibles"))
+        XCTAssertTrue(health.message(hasReadableConversations: false).hasPrefix("1 problème de lecture. Réessayez"))
+    }
+
     func testBoundedAnalysisIsNotMisreportedAsUnavailable() {
         let health = AgentConversationSourceHealth(indexIsValid: true, scan: .init(analysisIncomplete: true))
         XCTAssertEqual(health, .analysisPending)

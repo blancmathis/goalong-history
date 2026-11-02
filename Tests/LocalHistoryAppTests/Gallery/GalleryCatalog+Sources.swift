@@ -25,8 +25,9 @@ extension GalleryCatalog {
             verification: .unsigned,
             envelope: .init(requestedStart: day, requestedEnd: end, requestedScope: .allDevices, provenance: provenance,
                             reports: [.init(device: device, lastUpdatedAt: GalleryClock.at(9, 35),
-                                            segments: [.init(start: day, end: day.addingTimeInterval(7_200),
-                                                             totalScreenOnDuration: 7_200, applications: apps)])]))
+                                            // UI-15C (15): Apple's total covers the apps (1 h 30 + 50 + 9 + 5 min = 2 h 34).
+                                            segments: [.init(start: day, end: day.addingTimeInterval(9_240),
+                                                             totalScreenOnDuration: 9_240, applications: apps)])]))
         return .init(storedExport: stored, availableDevices: [device],
                      status: .init(kind: .ready, title: "Prêt", message: "Données de la galerie"),
                      deviceSourceLabels: [:], latestAppleUpdate: GalleryClock.at(9, 35),

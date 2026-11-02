@@ -5,6 +5,15 @@
     import LocalHistoryCore
     import ServiceManagement
 
+    /// The System Settings pane where macOS lets an app open at login and run in the background.
+    /// macOS 15 renamed it « Ouverture et extensions »; every help text names it through here (UI-13).
+    enum LoginItemsPanel {
+        static let path: String = {
+            if #available(macOS 15, *) { return "Réglages Système › Général › Ouverture et extensions" }
+            return "Réglages Système › Général › Ouverture"
+        }()
+    }
+
     @MainActor
     final class LaunchAtLoginManager: ObservableObject {
         enum State: Equatable {
@@ -20,9 +29,11 @@
 
         private var reading = false
         private var generation = 0
+        /// Gallery only: a fixed state instead of the system's, never read again by `refresh()`.
+        nonisolated(unsafe) static var galleryState: State?
 
         init() {
-            state = Self.state(for: SMAppService.mainApp.status)
+            state = Self.galleryState ?? Self.state(for: SMAppService.mainApp.status)
         }
 
         var isEnabled: Bool {
@@ -55,11 +66,22 @@
             case .enabled:
                 return "\(ProductIdentity.displayName) sera prêt après chaque ouverture de session."
             case .requiresApproval:
-                return "Autorisez \(ProductIdentity.displayName) dans Réglages Système → Général → Ouverture."
+                return "Autorisez \(ProductIdentity.displayName) dans \(LoginItemsPanel.path)."
             case .disabled:
                 return "Vous pouvez toujours ouvrir \(ProductIdentity.displayName) vous-même à tout moment."
             case .unavailable:
-                return "macOS n’a pas pu lire l’état d’ouverture à la connexion."
+                return "macOS n’a pas pu lire l’état de l’ouverture de session."
+            }
+        }
+
+        /// The value a switch may show. An unread state is unknown, never drawn as "off" (UI-43).
+        var switchValue: Bool? { Self.switchValue(for: state) }
+
+        nonisolated static func switchValue(for state: State) -> Bool? {
+            switch state {
+            case .enabled, .requiresApproval: return true
+            case .disabled: return false
+            case .unavailable: return nil
             }
         }
 
@@ -76,7 +98,7 @@
         /// `SMAppService.status` is a synchronous XPC round trip: read it off the main thread,
         /// one read at a time, and drop a result older than a change made meanwhile.
         func refresh() {
-            guard !reading else { return }
+            guard !reading, Self.galleryState == nil else { return }
             reading = true
             let started = generation
             DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -103,7 +125,7 @@
         @discardableResult
         func setEnabled(_ enabled: Bool, channel: GoalongBuildChannel = .current) -> Bool {
             guard channel.allowsLoginItems else {
-                message = "Goalong Dev ne gère pas l’ouverture à la connexion : c’est le rôle de Goalong installé."
+                message = "Goalong Dev ne gère pas l’ouverture de session : c’est le rôle de Goalong installé."
                 // Turning it off needs no change, so it succeeds; only turning it on is refused.
                 return !enabled
             }
@@ -174,7 +196,7 @@
             return setEnabled(enabled)
         }
 
-        static let heldMessage = "Un blocage verrouillé est en cours : Goalong reste ouvert à la connexion jusqu’à la fin."
+        static let heldMessage = "Un blocage verrouillé est en cours : Goalong reste dans l’ouverture de session jusqu’à la fin."
 
 
         func openLoginItemsSettings() {

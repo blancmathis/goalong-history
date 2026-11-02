@@ -136,7 +136,8 @@
         }
 
         var body: some View {
-            HStack(spacing: 10) {
+            // UI-12A: top-aligned, so the logo stays on the « Goalong » line when a repair message grows.
+            HStack(alignment: .top, spacing: 10) {
                 Image(nsImage: GoalongBrandAssets.menuBarImage)
                     .renderingMode(.template).resizable().scaledToFit()
                     .frame(width: 18, height: 18).foregroundStyle(LHTheme.text)
@@ -157,21 +158,33 @@
                             }
                             .accessibilityElement(children: .combine)
                             if let fix = model.attentionFix {
-                                Button(fix.label) { model.perform(fix) }
-                                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
-                                    .accessibilityIdentifier("menubar-attention-fix")
+                                // A missing permission stops recording and blocking: the repair is the panel's one lime
+                                // action, and « Commencer » steps down to secondary.
+                                Group {
+                                    if fix == .permissions {
+                                        Button(fix.label) { model.perform(fix) }.buttonStyle(LHPrimaryButtonStyle())
+                                    } else {
+                                        Button(fix.label) { model.perform(fix) }.buttonStyle(LHSecondaryButtonStyle())
+                                    }
+                                }
+                                .controlSize(.small)
+                                // 8 pt under the message: the repair reads as its own step, apart from the pause button.
+                                .padding(.top, 7)
+                                .accessibilityIdentifier("menubar-attention-fix")
                             }
                         }
                     }
                     .help(model.attentionTitle.map { "\($0) : \(model.trackingDetail)" } ?? model.trackingDetail)
                 }
-                Spacer(minLength: 8)
+                // 16 pt at least: « Réparer… » never touches the pause button.
+                Spacer(minLength: 16)
                 PanelIconButton(
                     symbol: model.consentOff || model.globalPaused ? "gearshape.fill" : (paused ? "play.fill" : "pause.fill"),
                     label: model.headerActionLabel,
                     prominent: paused,
                     action: model.togglePause
                 )
+                .padding(.top, 2)
             }
             .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 12))
         }
@@ -187,7 +200,8 @@
                 Button("Voir la journée", action: model.openDay).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
             } content: {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    WorkFigure(seconds: model.workSeconds, known: model.workKnown)
+                    // A running session owns the large figure: the day total steps down (UI-14, écran 7).
+                    WorkFigure(seconds: model.workSeconds, known: model.workKnown, compact: model.focusRun != nil)
                     Text(model.otherSeconds >= 60
                         ? "de travail, \(durationText(model.otherSeconds)) hors travail" : "de travail")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
@@ -202,21 +216,24 @@
     private struct WorkFigure: View {
         let seconds: TimeInterval
         let known: Bool
+        var compact = false
+        private var large: Font { .system(size: compact ? 20 : 28, weight: .bold) }
+        private var small: Font { .system(size: compact ? 13 : 17, weight: .semibold) }
         var body: some View {
             // Rounded like the Activity page, so both show the same figure for the same day.
             let minutes = Int((seconds / 60).rounded())
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 if !known {
-                    Text("—").font(.system(size: 28, weight: .bold)).tracking(-0.6)
+                    Text("—").font(large).tracking(-0.6)
                 } else if seconds > 0 && seconds < 60 {
-                    Text("< 1").font(.system(size: 28, weight: .bold)).tracking(-0.6)
-                    Text("min").font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                    Text("< 1").font(large).tracking(-0.6)
+                    Text("min").font(small).tracking(-0.2)
                 } else if minutes >= 60 {
-                    Text("\(minutes / 60) h").font(.system(size: 28, weight: .bold)).tracking(-0.6)
-                    Text(String(format: "%02d", minutes % 60)).font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                    Text("\(minutes / 60) h").font(large).tracking(-0.6)
+                    Text(String(format: "%02d", minutes % 60)).font(small).tracking(-0.2)
                 } else {
-                    Text("\(minutes)").font(.system(size: 28, weight: .bold)).tracking(-0.6)
-                    Text("min").font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                    Text("\(minutes)").font(large).tracking(-0.6)
+                    Text("min").font(small).tracking(-0.2)
                 }
             }
             .goalongNumericTransition()
@@ -265,7 +282,7 @@
                         if label != "24 h" { Spacer(minLength: 0) }
                     }
                 }
-                .font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityHidden(true)
             }
             .onAppear {
@@ -305,6 +322,10 @@
         @ObservedObject var model: MenuBarPanelModel
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+        private var startLabel: some View {
+            Label("Commencer", systemImage: "play.fill").frame(maxWidth: .infinity)
+        }
+
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
                 // Same order and labels as the Concentration page: Libre first, « 1 h 30 ».
@@ -313,19 +334,21 @@
                     $0 == .pomodoro ? "Pomodoro" : "Libre"
                 }
                 if model.focusKind == .pomodoro {
-                    HStack(spacing: 6) {
-                        ForEach(model.focusMinuteChoices, id: \.self) { minutes in
-                            ChoiceChip(title: BlockingFormat.duration(minutes: minutes), selected: model.focusMinutes == minutes) {
-                                model.focusMinutes = minutes
-                            }
-                        }
+                    // UI-12A: one selection style in the panel, the raised pill of « Type de séance ».
+                    GoalongSegmentedControl("Durée", selection: $model.focusMinutes,
+                                            options: model.focusMinuteChoices, fills: true) {
+                        BlockingFormat.duration(minutes: $0)
                     }
                 }
-                Button(action: model.startFocus) {
-                    Label("Commencer", systemImage: "play.fill").frame(maxWidth: .infinity)
+                Group {
+                    if model.attentionFix == .permissions {
+                        Button(action: model.startFocus) { startLabel }.buttonStyle(LHSecondaryButtonStyle())
+                            .keyboardShortcut(.defaultAction)
+                    } else {
+                        Button(action: model.startFocus) { startLabel }.buttonStyle(LHPrimaryButtonStyle())
+                            .keyboardShortcut(.defaultAction)
+                    }
                 }
-                .buttonStyle(LHPrimaryButtonStyle())
-                .keyboardShortcut(.defaultAction)
                 .disabled(!model.focusAvailable)
                 if !model.focusAvailable, let reason = model.focusUnavailableReason {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -375,7 +398,8 @@
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {
                             Rectangle().fill(LHTheme.separator).frame(height: 1)
-                            Capsule().fill(LHTheme.workData)
+                            // Ink, not lime: lime stays rare in the panel (DESIGN.md).
+                            Capsule().fill(LHTheme.text)
                                 .frame(width: max(4, proxy.size.width * min(1, max(0, progress))), height: 4)
                         }
                         .frame(maxHeight: .infinity)
@@ -388,7 +412,7 @@
                     if let cycle = run.cycle, let cycles = run.cycles {
                         HStack(spacing: 4) {
                             ForEach(1...max(1, cycles), id: \.self) { index in
-                                Capsule().fill(index <= cycle ? LHTheme.workData : LHTheme.separator).frame(width: 14, height: 4)
+                                Capsule().fill(index <= cycle ? LHTheme.text : LHTheme.separator).frame(width: 14, height: 4)
                             }
                         }
                         .accessibilityHidden(true)
@@ -401,35 +425,6 @@
         }
     }
 
-    private struct ChoiceChip: View {
-        let title: String
-        let selected: Bool
-        let action: () -> Void
-        @State private var hovered = false
-
-        var body: some View {
-            Button(action: action) {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
-                    .lineLimit(1)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                            .fill(hovered ? LHTheme.hoverBackground : LHTheme.elevatedBackground)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                            .strokeBorder(selected ? LHTheme.accent : LHTheme.separator, lineWidth: selected ? 2 : 1)
-                    )
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { hovered = $0 }
-            .animation(LHTheme.hover, value: hovered)
-            .accessibilityAddTraits(selected ? .isSelected : [])
-        }
-    }
-
     // MARK: - Ambiance
 
     private struct AmbianceSection: View {
@@ -437,6 +432,9 @@
         @State private var expanded = false
         @State private var tab: MenuBarPanelModel.AmbianceTab = .focus
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        /// The raised pill slides between tabs and between tiles, 240 ms (DESIGN §10, UI-14 M1).
+        @Namespace private var tabPill
+        @Namespace private var tilePill
 
         private func kind(of tab: MenuBarPanelModel.AmbianceTab) -> AmbianceSource.Kind {
             switch tab { case .focus: return .focus; case .relax: return .relax; case .texture: return .texture; case .ownFile: return .ownFile }
@@ -475,8 +473,11 @@
                         player
                         volume
                         if let error = model.ambianceError {
-                            Text(error).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
+                            Text(error.replacingOccurrences(of: " Réessayez.", with: "")).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if let current = model.ambianceCurrent {
+                                Button("Réessayer") { model.play(current) }.buttonStyle(LHSecondaryButtonStyle())
+                            }
                         }
                         if showsGrid { grid.transition(.opacity) }
                     }
@@ -500,7 +501,8 @@
                     RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous).strokeBorder(LHTheme.separator)
                     if let current = model.ambianceCurrent {
                         AmbianceWave(seed: current.id, character: AmbianceWaveCharacter(current),
-                                     look: model.ambianceLoading ? .waiting : (model.ambiancePlaying ? .active : .idle))
+                                     // A neutral tile: ink while playing, never lime (DESIGN §12, no tinted icon tile).
+                                     look: model.ambianceLoading ? .waiting : (model.ambiancePlaying ? .playing : .idle))
                             .padding(.horizontal, 6).padding(.vertical, 10)
                     }
                 }
@@ -552,33 +554,44 @@
 
         private var grid: some View {
             VStack(alignment: .leading, spacing: 8) {
+                // UI-12A: the raised pill of GoalongSegmentedControl, kept here so long names may shrink.
                 HStack(spacing: 2) {
                     ForEach(tabs, id: \.self) { t in
-                        Button { tab = t } label: {
-                            Text(tabTitle(t)).font(.system(size: 12, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
+                        Button { withAnimation(reduceMotion ? nil : LHTheme.settle) { tab = t } } label: {
+                            Text(tabTitle(t)).font(.system(size: 12, weight: tab == t ? .semibold : .medium))
+                                .lineLimit(1).minimumScaleFactor(0.8)
                                 .foregroundStyle(tab == t ? LHTheme.text : LHTheme.secondaryText)
                                 .padding(.horizontal, 6).padding(.vertical, 3)
-                                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(tab == t ? LHTheme.elevatedBackground : .clear))
-                                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(tab == t ? LHTheme.separator : .clear))
+                                .frame(maxWidth: .infinity)
+                                .background {
+                                    if tab == t {
+                                        GoalongSurface(corner: LHTheme.controlRadius - 2, fill: LHTheme.segmentSelected, highlighted: true)
+                                            .matchedGeometryEffect(id: "tab", in: tabPill)
+                                    }
+                                }
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(tab == t ? .isSelected : [])
                     }
                 }
+                .padding(2)
+                .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous).strokeBorder(LHTheme.controlBorder))
                 let sources = model.ambianceSources.filter { $0.kind == kind(of: tab) }
                 if sources.isEmpty {
                     Text("Aucun son ici pour l’instant.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 } else {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                         ForEach(sources) { source in
-                            SoundTile(source: source, selected: source.id == model.ambianceCurrent?.id && model.ambiancePlaying) {
+                            SoundTile(source: source, selected: source.id == model.ambianceCurrent?.id && model.ambiancePlaying,
+                                      pill: tilePill) {
                                 model.play(source)
                             }
                         }
                     }
+                    .animation(reduceMotion ? nil : LHTheme.settle,
+                               value: model.ambiancePlaying ? model.ambianceCurrent?.id : nil)
                 }
             }
         }
@@ -587,6 +600,7 @@
     private struct SoundTile: View {
         let source: AmbianceSource
         let selected: Bool
+        let pill: Namespace.ID
         let action: () -> Void
         @State private var hovered = false
 
@@ -597,13 +611,18 @@
                     Spacer(minLength: 0)
                     if !source.isAvailable { Image(systemName: "arrow.down.circle").font(.system(size: 10)) }
                 }
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: selected ? .semibold : .medium))
                 .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.secondaryText)
                 .padding(.horizontal, 8).padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                    .fill(hovered ? LHTheme.hoverBackground : LHTheme.elevatedBackground))
-                .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
-                    .strokeBorder(selected ? LHTheme.accent : LHTheme.separator, lineWidth: selected ? 2 : 1))
+                // UI-12A: the piece playing wears the raised pill of the panel's other selections, not a black ring.
+                .background {
+                    RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
+                        .fill(hovered && !selected ? LHTheme.hoverBackground : LHTheme.insetBackground)
+                    if selected {
+                        GoalongSurface(corner: LHTheme.controlRadius, fill: LHTheme.segmentSelected, highlighted: true)
+                            .matchedGeometryEffect(id: "tile", in: pill)
+                    }
+                }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -699,7 +718,7 @@
                 Button(action: model.openApp) {
                     HStack(spacing: 6) {
                         Text("Ouvrir \(ProductIdentity.displayName)").font(.system(size: 13, weight: .medium))
-                        Text("⌘O").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                        Text("⌘O").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8).frame(height: 28)

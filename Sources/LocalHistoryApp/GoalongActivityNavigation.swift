@@ -234,7 +234,7 @@ enum GoalongActivityProjection {
         if day.state == .incomplete { return "Lecture incomplète" }
         if day.activeSeconds > 0 { return GoalongAnalyticsFormatting.duration(day.activeSeconds) + " actives" }
         if day.observedSeconds > 0 { return "0 min actives observées" }
-        return day.eventCount > 0 ? "Premières traces · durée non mesurable" : "Sans enregistrement"
+        return day.eventCount > 0 ? "Premières traces, durée non mesurable" : "Sans enregistrement"
     }
 }
 #endif

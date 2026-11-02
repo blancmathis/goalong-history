@@ -112,28 +112,22 @@ final class GoalongUXOptimizationTests: XCTestCase {
                        "Détail effacé")
     }
 
-    /// DEF-03 (T-046): with the « disque plein » banner on, the empty day never promises minutes to come.
-    func testEmptyTodayNamesAnInterruptedStorageInsteadOfPromisingMinutes() {
+    func testEmptyTodayNamesAStorageStopAndItsTime() {
         typealias Empty = GoalongActivityEmptyCopy
-        func today(_ recording: GoalongRecordingStateNotice.Kind?, storage: CaptureStorageFailureKind?, events: Int = 0) -> Empty.Copy {
-            Empty.copy(isDay: true, isToday: true, eventCount: events, incompleteDays: 0, purged: false,
-                       recording: recording, storage: storage)
-        }
-        let full = today(nil, storage: .diskFull)
-        XCTAssertEqual(full.title, "Aucune activité enregistrée aujourd’hui")
-        XCTAssertTrue(full.message.contains("disque est plein"), full.message)
-        XCTAssertFalse(full.message.contains("premières minutes"))
+        let since = Date(timeIntervalSince1970: 1_800_000_000)
+        let full = Empty.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
+                              storage: .init(kind: .diskFull, since: since))
+        XCTAssertEqual(full.title, "Enregistrement interrompu depuis \(GoalongUIFormat.time(since))", "UI-21: the stop and its time")
+        XCTAssertTrue(full.message.contains("disque est plein"))
+        XCTAssertFalse(full.message.contains("premières minutes"), "UI-21: no promise while nothing is recorded")
         XCTAssertFalse(full.offersHistory)
-        for kind in [CaptureStorageFailureKind.permissionDenied, .unavailable] {
-            let copy = today(nil, storage: kind)
-            XCTAssertEqual(copy.title, "Aucune activité enregistrée aujourd’hui", "\(kind)")
-            XCTAssertFalse(copy.message.contains("premières minutes"), "\(kind)")
-        }
-        XCTAssertTrue(today(.off, storage: .diskFull).message.contains("désactivé"), "A stopped recording stays the first cause")
-        XCTAssertEqual(today(nil, storage: .diskFull, events: 3).title, "Les premières traces sont reçues")
-        XCTAssertEqual(Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false,
-                                  recording: nil, storage: .diskFull).title, "Pas encore d’enregistrement",
-                       "A past day is not explained by today's storage")
+        let refused = Empty.copy(isDay: true, isToday: true, eventCount: 4, incompleteDays: 0, purged: false, recording: .off,
+                                 storage: .init(kind: .permissionDenied, since: nil))
+        XCTAssertEqual(refused.title, "Enregistrement interrompu")
+        XCTAssertTrue(refused.message.contains("refuse l’écriture"))
+        let past = Empty.copy(isDay: true, isToday: false, eventCount: 0, incompleteDays: 0, purged: false, recording: nil,
+                              storage: .init(kind: .diskFull, since: since))
+        XCTAssertEqual(past.title, "Pas encore d’enregistrement", "a past day keeps its own state")
     }
 
     /// DEF-02 (T-046): « Classement non autorisé » never sits next to a switch shown on. Consent is read
@@ -216,7 +210,7 @@ final class GoalongUXOptimizationTests: XCTestCase {
 
         model.selectSection(.overview)
         model.selectSection(.screenTime)
-        XCTAssertEqual(model.secondaryReturnTitle, "Retour à Activité")
+        XCTAssertEqual(model.secondaryReturnTitle, "Activité")
         model.returnFromSecondaryPage()
         XCTAssertEqual(model.selectedSection, .overview)
         XCTAssertNil(model.secondaryReturn)
@@ -306,11 +300,11 @@ final class GoalongUXOptimizationTests: XCTestCase {
 
     @MainActor func testWebsitePlanSummaryNeverShowsAnUnfilteredSelectionAsZero() {
         var options = GoalongSiteExportOptions(deviceIDs: ["mac"], includeApplications: true, includeWebsites: true)
-        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil · toutes les applications · tous les sites")
+        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil, toutes les applications, tous les sites")
         options.selectedApplicationIDs = ["a", "b"]; options.selectedWebsiteDomains = []
-        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil · 2 applications · 0 site")
+        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "1 appareil, 2 applications, 0 site")
         options.includeWebsites = false; options.deviceIDs = []
-        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "tous les appareils · 2 applications · sans sites")
+        XCTAssertEqual(GoalongWebsiteSettings.planSummary(options), "tous les appareils, 2 applications, sans sites")
     }
 
     private func isolatedModel(

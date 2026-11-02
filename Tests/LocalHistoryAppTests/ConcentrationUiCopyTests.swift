@@ -6,7 +6,7 @@ import XCTest
 /// Plan row figures, empty commitment cards and the evening review gate (UI batch u02).
 final class ConcentrationUiCopyTests: XCTestCase {
     func testPlanMeasureLineGivesEveryFigureItsUnit() {
-        XCTAssertEqual(FocusPlanMeasureText.line(measured: 95.4, estimate: 90), "mesuré 95 min · prévu 90 min")
+        XCTAssertEqual(FocusPlanMeasureText.line(measured: 95.4, estimate: 90), "mesuré 95 min, prévu 90 min")
         XCTAssertEqual(FocusPlanMeasureText.line(measured: nil, estimate: 30), "prévu 30 min")
         XCTAssertEqual(FocusPlanMeasureText.line(measured: 21, estimate: nil), "mesuré 21 min")
     }

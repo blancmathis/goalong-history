@@ -139,7 +139,7 @@
                 for mark in marks {
                     let x = min(size.width - 0.5, max(0.5, mark.position * size.width))
                     context.fill(Path(CGRect(x: x - 0.5, y: 0, width: 1, height: 4)), with: .color(LHTheme.separator))
-                    let text = context.resolve(Text(mark.label).font(.system(size: 11)).foregroundColor(LHTheme.tertiaryText))
+                    let text = context.resolve(Text(mark.label).font(.system(size: 12)).foregroundColor(LHTheme.tertiaryText))
                     let width = text.measure(in: size).width
                     // The first and last labels stay inside the thread's width.
                     let anchorX = min(size.width - width, max(0, x - (mark.position <= 0.001 ? 0 : width / 2)))
@@ -336,7 +336,7 @@
             let observed = day.observedSeconds > 0 && day.state == .ready
             Button(action: open) {
                 HStack(spacing: 12) {
-                    Text(label).font(.system(size: 11)).foregroundStyle(hovered ? LHTheme.text : LHTheme.secondaryText)
+                    Text(label).font(.system(size: 12)).foregroundStyle(hovered ? LHTheme.text : LHTheme.secondaryText)
                         .lineLimit(1).frame(width: labelWidth, alignment: .leading)
                     ZStack {
                         Rectangle().fill(LHTheme.tertiaryText.opacity(observed ? 0.5 : 0.2)).frame(height: 1)
@@ -346,7 +346,7 @@
                             .equatable()
                     }
                     Text(day.activeSeconds >= 60 ? GoalongAnalyticsFormatting.duration(day.activeSeconds) : "—")
-                        .font(.system(size: 11)).monospacedDigit()
+                        .font(.system(size: 12)).monospacedDigit()
                         .foregroundStyle(hovered ? LHTheme.text : LHTheme.secondaryText)
                         .frame(width: totalWidth, alignment: .trailing)
                 }

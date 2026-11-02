@@ -18,9 +18,9 @@ enum BlockingFormat {
         return value == "00:00" ? "minuit" : value
     }
 
-    /// Quota bonus earned by focusing: « +1 min de pause gagnée en concentration ».
+    /// Quota bonus earned by focusing: « +1 min de pause gagnée pendant vos séances de concentration ».
     static func earnedBreak(minutes: Int) -> String {
-        "+\(minutes) min de pause \(minutes > 1 ? "gagnées" : "gagnée") en concentration"
+        "+\(minutes) min de pause \(minutes > 1 ? "gagnées" : "gagnée") pendant vos séances de concentration"
     }
 
     static func minuteOfDay(_ minute: Int) -> String {
@@ -171,7 +171,7 @@ enum BlockingFormat {
         if list.effectiveAction == .slowDown { parts.append("ralentir \(list.delaySeconds) s") }
         if let quota = list.quotaMinutesPerDay { parts.append("\(duration(minutes: quota)) par jour") }
         if let breaks = list.breaks { parts.append("\(breaks.count) pause\(breaks.count > 1 ? "s" : "") de \(breaks.minutes) min") }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: ", ")
     }
 
     /// « Ralenti » when every list only slows down, else « Bloqué ».

@@ -126,7 +126,7 @@ final class ConcentrationHubRenderingTests: XCTestCase {
         }
         try render("tab-off-light", height: 300,
                    tab(.concentration, GoalongModuleOffNote(module: .concentration,
-                                                            text: "Séances, Pomodoro, plan du jour et bilan. Le module est désactivé.")))
+                                                            text: "Activez-le pour lancer des séances et des Pomodoro, préparer le plan du jour et lire le bilan.")))
     }
 }
 #endif
