@@ -101,21 +101,21 @@ final class T043R4bTests: XCTestCase {
         var onChange: (() -> Void)?
         var needsConsent = false
         var canRemove = false
-        private(set) var retries = 0
-        private(set) var updates = 0
-        func update(severeUntil: Date?) -> BlockingProtectionState.Component { updates += 1; return .notInstalled }
+        private(set) var calls: [String] = []
+        var retries: Int { calls.filter { $0 == "retry" }.count }
+        func update(severeUntil: Date?) -> BlockingProtectionState.Component { calls.append("update"); return .notInstalled }
         func removeService() {}
-        func retry() { retries += 1 }
+        func retry() { calls.append("retry") }
     }
 
     // R-89 (R280-3): « Réessayer » reaches the guard client once, then the state is read again.
     func testRetryGuardServiceCallsClientRetryThenRefreshes() {
         let client = CountingGuardClient()
         let controller = BlockingController(document: BlockingDocument(), guardClient: client)
-        let before = client.updates
+        let before = client.calls.count
         controller.retryGuardService()
-        XCTAssertEqual(client.retries, 1)
-        XCTAssertGreaterThanOrEqual(client.updates, before, "refresh ran after retry")
+        // M2 (R-280b): the state is read again right after the retry, not merely « not fewer reads ».
+        XCTAssertEqual(Array(client.calls[before...]), ["retry", "update"], "retry, then refresh")
         controller.retryGuardService()
         XCTAssertEqual(client.retries, 2)
     }
