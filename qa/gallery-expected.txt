@@ -1139,3 +1139,5 @@ settings-sheets/analyse-remplacements--   # T-043 O2 R-266 (titre 17 → LHTheme
 settings-sheets/analyse-remplacements-regle-vide--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
 # T-043 P « constats mineurs » : un état de galerie pour la ligne « Ensuite » fusionnée.
 programme/blocage-ensuite--   # T-043 P-15 (état ajouté : un blocage sur « Réseaux sociaux » avec le programme de la semaine de la même liste dessous ; ce programme devient la ligne « Ensuite : bloqué jusqu’à 18:00 » sans ses listes ni ses boutons)
+fenetre/stockage-plein--   # T-043 Q4b (R8-6 : la pastille latérale ne répète plus « Disque plein » quand le bandeau le dit : « Voir le bandeau » ; boîte 84,1460 178×24)
+fenetre/stockage-refuse--   # T-043 Q4b (R8-6 : idem pour le refus d’écriture ; pastille « Voir le bandeau » ; boîte 84,1456 221×28)
