@@ -84,7 +84,8 @@ extension GalleryCatalog {
             // UI-15C (22): one state keeps the .activity destination covered. The filled variant drew the same
             // PNG as historique/, and « Ouvrir le journal » shows the file in the Finder, outside the app's window.
             dashboard("enregistrement/journal", section: .activity),
-            dashboard("partage/avec-donnees", section: .share, fixture: .realistic),
+            // R8-2: the large window shows several rows; the default one shows the fade.
+            dashboard("partage/avec-donnees", section: .share, sizes: [.window, .large], fixture: .realistic),
             dashboard("temps-ecran/vide", section: .screenTime),
             dashboard("conversations-ia/vide", section: .agentActivity),
             dashboard("bilan/non-connecte", section: .chatGPTRecap),
@@ -110,7 +111,12 @@ extension GalleryCatalog {
             dashboard("concentration/page", section: .concentration, sizes: [.window, .full(1240)]),
             dashboard("distractions/page", section: .distractions),
             dashboard("programme/page", section: .blocking),
-            dashboard("braise/page-fenetre", section: .braise),
+            // R8-5: the module is on, so its sidebar entry exists and is the selected one.
+            dashboard("braise/page-fenetre", section: .braise, prepare: { ctx in
+                let wasOn = GoalongModuleStore.shared.isEnabled(.braise)
+                GoalongModuleStore.shared.setEnabled(.braise, true)
+                ctx.cleanups.append { GoalongModuleStore.shared.setEnabled(.braise, wasOn) }
+            }),
             dashboard("ambiance/page-fenetre", section: .ambiance),
         ]
     }

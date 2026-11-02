@@ -1144,5 +1144,19 @@ sante/import-erreur--   # O5 CUT-GAL : idem
 settings-sheets/comprendre-mon-travail--   # O5 CUT-GAL : capture en hauteur du contenu (écran 11), plus fitWidth coupé
 fenetre/stockage-plein--   # R8-6 (écran 17) : une seule annonce de la cause, le bandeau ; la page dit l’effet « Aucune donnée depuis 09:40 » sans « disque plein »
 fenetre/stockage-refuse--   # R8-6 (Historique) : la page dit l’effet « Aucune donnée depuis 09:40 » sans redire la cause ni la promesse du bandeau ; elle garde la cause seulement si le bandeau montre l’enregistrement arrêté
+settings-sheets/conservation--   # R8-1 : cadre 700x780 (hauteur de la feuille), « En savoir plus » entier
+partage/avec-donnees--   # R8-2 + R275-3 : fondu de 44 pt sous la liste « Applications », 3 lignes visibles à 1240×790 (pastille « Enregistré sur ce Mac » dans l’en-tête, compteurs dans la bannière, sous-titre court) ; état 1600x1000
+partage/vide--   # R8-8 : un seul « Activez… », bouton « Ouvrir les réglages d’enregistrement »
+settings/accueil--   # R8-3 : état connu (ouverture à la session activée) ; R8-4 : cadre ≥ contenu avec barre de retour (pleine page 2588 → 2472 px)
+settings/applications--   # R8-4 : cadre ≥ contenu (barre de retour comptée)
+settings/enregistrement--   # R8-4 : cadre ≥ contenu (barre de retour comptée)
+settings/accueil-ouverture-activee-   # R8-3 : retiré, doublon de settings/accueil
+mises-a-jour/a-jour--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+mises-a-jour/disponible--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+mises-a-jour/erreur--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+mises-a-jour/non-configure--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+mises-a-jour/recherche--   # R8-4 : cadre ≥ contenu (barre de retour comptée), pleine page +88 px
+braise/page-fenetre--   # R8-5 : élément Braise sélectionné dans la barre latérale
+permissions/temps-ecran-a-configurer--   # R8-7 : étape 2 « Activer Temps d’écran »
 # T-043 P « constats mineurs » : un état de galerie pour la ligne « Ensuite » fusionnée.
-programme/blocage-ensuite--   # T-043 P-15 (état ajouté : un blocage sur « Réseaux sociaux » avec le programme de la semaine de la même liste dessous ; ce programme devient la ligne « Ensuite : bloqué jusqu’à 18:00 » sans ses listes ni ses boutons)
+programme/blocage-ensuite--   # T-043 P-15 (état ajouté : un blocage sur « Réseaux sociaux » avec le programme de la semaine de la même liste dessous ; ce programme devient la ligne « Ensuite : bloqué jusqu’à 18:00 » sans noms de listes, avec son bouton « Arrêter » ; rendu vu : runs/20261102-053552-6a46d900/png/programme/blocage-ensuite--light--900x1500.png)
