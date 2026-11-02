@@ -376,6 +376,7 @@
                                 if recap.verifiesLocalAttestation {
                                     StatusPill(
                                         title: "Signé localement",
+                                        kind: .ready,
                                         symbol: "signature",
                                         tint: LHTheme.success
                                     )
@@ -385,6 +386,7 @@
                                 } else {
                                     StatusPill(
                                         title: "Rapport non vérifié",
+                                        kind: .attention,
                                         symbol: "clock.arrow.circlepath",
                                         tint: LHTheme.warning
                                     )
@@ -434,7 +436,9 @@
                     }
                     .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
                 } else {
-                    GoalongEmptyState(title: "Aucun rapport pour ce jour", message: emptyReportMessage)
+                    GoalongEmptyState(title: "Aucun rapport pour ce jour",
+                                      kind: Self.emptyReportKind(analysesEnabled: consents.isEnabled(.chatGPTAnalysis), connected: isConnected, needsUpdate: needsUpdate),
+                                      message: emptyReportMessage)
                 }
             }
         }
@@ -690,6 +694,11 @@
 
         /// R-71: the separate « Lecture… » card only shows under an existing report; without one, the report card holds it.
         static func showsSeparateLoadingCard(hasRecap: Bool, loadingOverview: Bool) -> Bool { loadingOverview && hasRecap }
+
+        /// R4e-9: an app too old to connect is « indisponible »; a day with no report yet is simply empty.
+        static func emptyReportKind(analysesEnabled: Bool, connected: Bool, needsUpdate: Bool) -> GoalongStateKind {
+            analysesEnabled && !connected && needsUpdate ? .unavailable : .empty
+        }
 
         static func emptyReportMessage(analysesEnabled: Bool, connected: Bool, needsUpdate: Bool) -> String {
             if !analysesEnabled {

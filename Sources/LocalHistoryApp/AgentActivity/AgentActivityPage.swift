@@ -543,6 +543,7 @@
                     }
                     StatusPill(
                         title: agents.indexIsValid ? "Sources lisibles" : "Sources à vérifier",
+                        kind: agents.indexIsValid ? .ready : .attention,
                         symbol: agents.indexIsValid ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
                         tint: agents.indexIsValid ? LHTheme.success : LHTheme.danger
                     )
@@ -671,6 +672,7 @@
                         : (status.otherExecutablePath != nil
                             ? (status.otherExecutableExists ? "Installé pour une autre copie" : "Intégration cassée")
                             : "Lecture périodique"),
+                    kind: status.isInstalled ? .ready : (status.otherExecutablePath != nil ? .attention : .notYet),
                     symbol: status.isInstalled ? "bolt.shield.fill" : "clock.arrow.circlepath",
                     tint: status.isInstalled ? LHTheme.success : Color.secondary
                 )

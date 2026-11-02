@@ -99,6 +99,7 @@
                 statusAction
                 StatusPill(
                     title: statusPillTitle,
+                    kind: statusKind,
                     symbol: statusSymbol,
                     tint: statusTint
                 )
@@ -251,6 +252,7 @@
                                 if item.device.id == screenTime.currentMacDeviceID {
                                     StatusPill(
                                         title: "Ce Mac",
+                                        kind: .ready,
                                         symbol: "laptopcomputer",
                                         tint: LHTheme.success
                                     )
@@ -506,6 +508,15 @@
             case .fullDiskAccessRequired: return LHTheme.warning
             case .noAppleData: return LHTheme.warning
             case .partial: return LHTheme.warning
+            }
+        }
+
+        private var statusKind: GoalongStateKind {
+            switch screenTime.status.kind {
+            case .ready, .localOnly: return .ready
+            case .fullDiskAccessRequired: return .needsPermission
+            case .noAppleData: return .notYet
+            case .partial: return .attention
             }
         }
 

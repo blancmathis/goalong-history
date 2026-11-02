@@ -86,6 +86,7 @@
                     Spacer()
                     StatusPill(
                         title: "Stored locally",
+                        kind: .ready,
                         symbol: "internaldrive.fill",
                         tint: LHTheme.success
                     )
@@ -160,6 +161,7 @@
                             .lineLimit(1)
                         StatusPill(
                             title: state.enabled ? "Monitored" : "Excluded",
+                            kind: state.enabled ? .ready : .unavailable,
                             symbol: state.enabled ? "checkmark.circle.fill" : "eye.slash.fill",
                             tint: state.enabled ? LHTheme.success : LHTheme.privateTint
                         )

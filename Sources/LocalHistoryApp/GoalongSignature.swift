@@ -18,6 +18,10 @@
         case unavailable
         /// The list is simply empty (nothing matches, nothing added).
         case empty
+        /// A pill only: the thing works or is on.
+        case ready
+        /// A pill only: needs a look (partial, to verify, broken).
+        case attention
 
         var symbol: String {
             switch self {
@@ -25,30 +29,32 @@
             case .needsPermission: return "lock.shield"
             case .unavailable: return "nosign"
             case .empty: return "tray"
+            case .ready: return "checkmark.circle.fill"
+            case .attention: return "exclamationmark.circle.fill"
             }
         }
     }
 
     /// An empty screen: one sentence that says what is missing and, at most, one named action (déc. 9, T-043 R-11).
-    /// No dotted thread, no decorative mark: an optional state glyph only. Set directly on the page, or inside a
+    /// No dotted thread, no decorative mark: the state glyph of its required `kind` only. Set directly on the page, or inside a
     /// group when it replaces a list.
     struct GoalongEmptyState<Actions: View>: View {
         let title: String
         let message: String
-        var kind: GoalongStateKind?
+        let kind: GoalongStateKind
         @ViewBuilder var actions: () -> Actions
 
         /// Several free actions. Kept for the existing callers; new code names its one action with
         /// `init(title:message:kind:actionTitle:prominent:action:)`.
         @available(*, deprecated, message: "Une seule action nommée : init(title:message:kind:actionTitle:prominent:action:) (T-043 R-11)")
-        init(title: String, message: String, kind: GoalongStateKind? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+        init(title: String, kind: GoalongStateKind, message: String, @ViewBuilder actions: @escaping () -> Actions) {
             self.title = title
             self.message = message
             self.kind = kind
             self.actions = actions
         }
 
-        fileprivate init(uncheckedTitle title: String, message: String, kind: GoalongStateKind?,
+        fileprivate init(uncheckedTitle title: String, kind: GoalongStateKind, message: String,
                          @ViewBuilder actions: @escaping () -> Actions) {
             self.title = title
             self.message = message
@@ -58,12 +64,10 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
-                if let kind {
-                    Image(systemName: kind.symbol).font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(LHTheme.secondaryText)
-                        .padding(.bottom, 2)
-                        .accessibilityHidden(true)
-                }
+                Image(systemName: kind.symbol).font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .padding(.bottom, 2)
+                    .accessibilityHidden(true)
                 Text(title).font(LHTheme.sectionTitleFont).tracking(-0.2)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
@@ -78,8 +82,8 @@
     }
 
     extension GoalongEmptyState where Actions == EmptyView {
-        init(title: String, message: String, kind: GoalongStateKind? = nil) {
-            self.init(uncheckedTitle: title, message: message, kind: kind) { EmptyView() }
+        init(title: String, kind: GoalongStateKind, message: String) {
+            self.init(uncheckedTitle: title, kind: kind, message: message) { EmptyView() }
         }
     }
 
@@ -109,9 +113,9 @@
 
     extension GoalongEmptyState where Actions == GoalongEmptyStateAction {
         /// One sentence and one named action (« Ouvrir les réglages d’enregistrement », never « Ouvrir »).
-        init(title: String, message: String, kind: GoalongStateKind? = nil, actionTitle: String,
+        init(title: String, kind: GoalongStateKind, message: String, actionTitle: String,
              prominent: Bool = true, action: @escaping () -> Void) {
-            self.init(uncheckedTitle: title, message: message, kind: kind) {
+            self.init(uncheckedTitle: title, kind: kind, message: message) {
                 GoalongEmptyStateAction(title: actionTitle, prominent: prominent, action: action)
             }
         }

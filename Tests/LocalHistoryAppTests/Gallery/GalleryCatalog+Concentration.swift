@@ -58,6 +58,16 @@ extension GalleryCatalog {
                 return AnyView(ConcentrationPageContent(controller: planned.controller, now: now, measures: planned.measures,
                                                         draft: draft, settingsOpen: true))
             },
+            // R4e-8 (R-94): a chosen day is outlined; « Jours » and « Heure de fin » share one top line.
+            page("concentration-maintenant/reglages-jour-choisi", height: 2_250) { f in
+                let planned = try f.planned()
+                var settings = planned.controller.settings
+                settings.limits.endMinute = 18 * 60 + 30
+                settings.limits.weekdays = [1, 2, 4]
+                try planned.controller.updateSettings(settings)
+                return AnyView(ConcentrationPageContent(controller: planned.controller, now: now, measures: planned.measures,
+                                                        draft: draft, settingsOpen: true))
+            },
             page("concentration-maintenant/module-coupe", height: 300) { _ in
                 tab(.concentration, GoalongModuleOffNote(module: .concentration,
                     text: "Activez-le pour lancer des séances et des Pomodoro, préparer le plan du jour et lire le bilan."))

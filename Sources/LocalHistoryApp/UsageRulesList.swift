@@ -67,6 +67,7 @@
                     // alone, on the leading edge like every other empty state (R7, UI-17A, 55: no dashed square).
                     GoalongEmptyState(
                         title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
+                        kind: .empty,
                         message: model.snapshot.trackedUsage.isEmpty
                             ? (recordingEnabled
                                 ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
@@ -255,6 +256,7 @@
                         if let host = item.host, model.isDomainExcludedFromCapture(host) {
                             StatusPill(
                                 title: "Détails futurs exclus",
+                                kind: .unavailable,
                                 symbol: "eye.slash.fill",
                                 tint: LHTheme.privateTint
                             )

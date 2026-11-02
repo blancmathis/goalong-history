@@ -25,7 +25,7 @@
                     HStack(spacing: 10) {
                         // R-87 (R9C-50): the pill never says « Enregistré » while recording is off.
                         if consents.isEnabled(.localComputerHistory) {
-                            StatusPill(title: "Enregistré sur ce Mac", symbol: "internaldrive", tint: LHTheme.secondaryText)
+                            StatusPill(title: "Enregistré sur ce Mac", kind: .ready, symbol: "internaldrive", tint: LHTheme.secondaryText)
                                 .padding(.trailing, 6)
                         }
                         DateSelectionControl(date: model.selectedDay, onChange: model.selectDay,

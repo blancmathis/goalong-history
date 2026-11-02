@@ -35,7 +35,7 @@ import SwiftUI
                 VStack(alignment: .leading, spacing: 22) {
                     // UI-13C (48): no project yet is an empty state with its one next step, in lime.
                     if developer.selectedProjects.isEmpty {
-                        GoalongEmptyState(title: "Aucun projet suivi",
+                        GoalongEmptyState(title: "Aucun projet suivi", kind: .empty,
                                           message: "Ajoutez le dossier d’un projet Git pour voir ses commits et ses fichiers modifiés.") {
                             Button("Ajouter un dossier…", action: choose).buttonStyle(LHPrimaryButtonStyle())
                         }

@@ -76,16 +76,16 @@ struct GoalongFocusExplanation: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                Text("Focus, séquence minimale").font(.system(size: 12, weight: .medium))
-                GoalongSegmentedControl("Séquence minimale de focus", selection: $minimumMinutes,
+                Text("Focus, séance minimale").font(.system(size: 12, weight: .medium))
+                GoalongSegmentedControl("Séance minimale de focus", selection: $minimumMinutes,
                                         options: [10, 25, 50]) { "\($0) min" }
                 .controlSize(.small)
                 .accessibilityIdentifier("analytics-focus-threshold")
                 Spacer(minLength: 0)
             }
             Text(hasFocus
-                ? "Le focus correspond aux séquences continues dans une même application et sur un même site. Ce temps est inclus dans le temps actif, pas ajouté."
-                : "Aucune séquence continue d’au moins \(minimumMinutes) minutes dans une même application et sur un même site n’a été détectée. Cela ne signifie pas que vous n’avez pas travaillé ou été concentré.")
+                ? "Le focus correspond aux séances continues dans une même application et sur un même site. Ce temps est inclus dans le temps actif, pas ajouté."
+                : "Aucune séance continue d’au moins \(minimumMinutes) minutes dans une même application et sur un même site n’a été détectée. Cela ne signifie pas que vous n’avez pas travaillé ou été concentré.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Changer d’outil peut interrompre cette mesure, même pour le même projet. Elle ne mesure pas votre attention mentale.")

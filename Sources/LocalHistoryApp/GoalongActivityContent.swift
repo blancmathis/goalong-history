@@ -751,7 +751,7 @@ struct GoalongAnalyticsContent: View {
                                         + GoalongProfileAnalysis.modules.map { ($0, GoalongProfileAnalysis.labels[$0] ?? $0) })
                         .frame(maxWidth: 260, alignment: .leading)
                     if cards.isEmpty {
-                        GoalongEmptyState(title: "Rien dans cette rubrique",
+                        GoalongEmptyState(title: "Rien dans cette rubrique", kind: .empty,
                                           message: "Aucun élément enregistré dans cette rubrique.") {
                             Button("Voir tous les éléments") { module = "all" }.buttonStyle(LHSecondaryButtonStyle())
                         }
@@ -859,7 +859,7 @@ struct GoalongAnalyticsContent: View {
             purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording,
             storage: storageStop)
         VStack(alignment: .leading, spacing: 12) {
-            GoalongEmptyState(title: copy.title, message: copy.message) {
+            GoalongEmptyState(title: copy.title, kind: copy.kind, message: copy.message) {
                 if copy.offersHistory {
                     Button("Consulter l’historique", action: onHistory).buttonStyle(LHSecondaryButtonStyle()).disabled(payload.isPreview)
                 }
@@ -971,6 +971,8 @@ enum GoalongActivityEmptyCopy {
         let message: String
         var offersHistory = true
         var showsObservationCount = false
+        /// R4e-2: a stop, an unreadable day or a missing app is « indisponible »; only a day that may still start is « pas encore ».
+        var kind: GoalongStateKind = .notYet
     }
 
     struct StorageStop: Equatable {
@@ -999,15 +1001,15 @@ enum GoalongActivityEmptyCopy {
             if incompleteDays > 0 {
                 return Copy(title: "Lecture incomplète",
                     message: reason + " Certaines sources n’ont pas pu être lues : cela ne signifie pas une absence d’activité.",
-                    offersHistory: false)
+                    offersHistory: false, kind: .unavailable)
             }
             // DEF-06: a few traces before the stop never read as « premières traces » (no more minutes are coming).
             if eventCount > 0 {
                 return Copy(title: "Aucune durée mesurable aujourd’hui",
                     message: reason + " Les traces reçues avant l’arrêt sont trop isolées pour mesurer une durée.",
-                    offersHistory: false, showsObservationCount: true)
+                    offersHistory: false, showsObservationCount: true, kind: .unavailable)
             }
-            return Copy(title: "Aucune activité enregistrée aujourd’hui", message: reason, offersHistory: false)
+            return Copy(title: "Aucune activité enregistrée aujourd’hui", message: reason, offersHistory: false, kind: .unavailable)
         }
         // Writes refused today: the page says the effect and its time, never a promise of minutes to come.
         // R8-6: the cause is said once per screen, by the top banner, which holds the action (« Gérer le stockage… »).
@@ -1020,14 +1022,14 @@ enum GoalongActivityEmptyCopy {
             if incompleteDays > 0 {
                 return Copy(title: "Lecture incomplète",
                     message: stop + ". " + message + " Certaines sources n’ont pas pu être lues : cela ne signifie pas une absence d’activité.",
-                    offersHistory: false)
+                    offersHistory: false, kind: .unavailable)
             }
-            return Copy(title: stop, message: message, offersHistory: false)
+            return Copy(title: stop, message: message, offersHistory: false, kind: .unavailable)
         }
         if incompleteDays > 0 {
             return Copy(title: "Lecture incomplète",
                 message: "Certaines sources n’ont pas pu être lues. Cela ne signifie pas une absence d’activité.",
-                showsObservationCount: true)
+                showsObservationCount: true, kind: .unavailable)
         }
         if eventCount > 0 {
             return Copy(title: "Les premières traces sont reçues",

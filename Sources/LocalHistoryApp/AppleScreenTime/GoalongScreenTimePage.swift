@@ -300,7 +300,7 @@ struct GoalongScreenTimePage: View {
     /// Source off: the empty state itself carries the one action (UI-60).
     private var emptyState: some View {
         SourceActivationToggle(capability: .appleScreenTime, activateButtonTitle: "Activer…") {
-            GoalongEmptyState(title: GoalongScreenTimeOffCopy.title,
+            GoalongEmptyState(title: GoalongScreenTimeOffCopy.title, kind: .needsPermission,
                 message: GoalongScreenTimeOffCopy.message(accessRevoked: accessRevoked))
                 // The empty state reserves room for actions it does not have here: « Activer… »
                 // follows the sentence at 24 pt, not 48 (UI-13B).

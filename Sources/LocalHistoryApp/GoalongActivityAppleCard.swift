@@ -33,7 +33,7 @@ struct GoalongActivityAppleCard: View {
             else {
                 // The same empty state and action as the « Temps d’écran Apple » page.
                 SourceActivationToggle(capability: .appleScreenTime, activateButtonTitle: "Activer le Temps d’écran…") {
-                    GoalongEmptyState(title: GoalongScreenTimeOffCopy.title,
+                    GoalongEmptyState(title: GoalongScreenTimeOffCopy.title, kind: .needsPermission,
                                       message: GoalongScreenTimeOffCopy.message(accessRevoked: accessDenied))
                         // « Activer… » follows the sentence at 24 pt, as on the « Temps d’écran Apple » page (UI-17C, écran 15).
                         .padding(.bottom, -24)
