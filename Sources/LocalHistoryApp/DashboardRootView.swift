@@ -370,31 +370,31 @@
     extension DashboardSection {
         static let primarySections: [DashboardSection] = [.overview, .work, .history, .concentration, .settings]
 
+        /// R-80: « 1 modification en attente : clics » or « 3 modifications en attente : clics, défilement… ».
+        static func pendingChangeSummary(saved: DashboardSettingsDraft, draft: DashboardSettingsDraft) -> String {
+            var names: [String] = []
+            func check<T: Equatable>(_ path: KeyPath<DashboardSettingsDraft, T>, _ name: String) {
+                if saved[keyPath: path] != draft[keyPath: path], !names.contains(name) { names.append(name) }
+            }
+            check(\.captureClicks, "clics"); check(\.captureScroll, "défilement")
+            check(\.captureKeyboardActivity, "activité du clavier"); check(\.captureShortcuts, "raccourcis")
+            check(\.captureWindowTitles, "titres de fenêtre"); check(\.captureElementLabels, "libellés des éléments")
+            check(\.captureURLs, "adresses des sites"); check(\.captureCallPresence, "appels")
+            check(\.capturePrivateBrowsing, "navigation privée"); check(\.redactAllURLQueryValues, "paramètres des adresses")
+            check(\.foregroundIdleSeconds, "délai d’inactivité"); check(\.retentionDays, "durée de conservation")
+            check(\.verificationEnabled, "vérification"); check(\.verificationServerURL, "vérification")
+            check(\.enableAppAttest, "vérification")
+            check(\.excludedDomainsText, "exclusions"); check(\.excludedApplicationsText, "exclusions")
+            check(\.includedDomainsText, "inclusions"); check(\.includedApplicationsText, "inclusions")
+            guard !names.isEmpty else { return "Modifications en attente" }
+            let count = names.count == 1 ? "1 modification en attente" : "\(names.count) modifications en attente"
+            return count + " : " + names.joined(separator: ", ")
+        }
+
         /// An enabled module's page joins the sidebar before Réglages; a disabled one has no entry.
         /// Blocage and Surveillance live in Concentration's tabs, which is always there.
-        /// R-80: « 1 modification en attente : clics » or « 3 modifications en attente : clics, défilement… ».
-    static func pendingChangeSummary(saved: DashboardSettingsDraft, draft: DashboardSettingsDraft) -> String {
-        var names: [String] = []
-        func check<T: Equatable>(_ path: KeyPath<DashboardSettingsDraft, T>, _ name: String) {
-            if saved[keyPath: path] != draft[keyPath: path], !names.contains(name) { names.append(name) }
-        }
-        check(\.captureClicks, "clics"); check(\.captureScroll, "défilement")
-        check(\.captureKeyboardActivity, "activité du clavier"); check(\.captureShortcuts, "raccourcis")
-        check(\.captureWindowTitles, "titres de fenêtre"); check(\.captureElementLabels, "libellés des éléments")
-        check(\.captureURLs, "adresses des sites"); check(\.captureCallPresence, "appels")
-        check(\.capturePrivateBrowsing, "navigation privée"); check(\.redactAllURLQueryValues, "paramètres des adresses")
-        check(\.foregroundIdleSeconds, "délai d’inactivité"); check(\.retentionDays, "durée de conservation")
-        check(\.verificationEnabled, "vérification"); check(\.verificationServerURL, "vérification")
-        check(\.enableAppAttest, "vérification")
-        check(\.excludedDomainsText, "exclusions"); check(\.excludedApplicationsText, "exclusions")
-        check(\.includedDomainsText, "inclusions"); check(\.includedApplicationsText, "inclusions")
-        guard !names.isEmpty else { return "Modifications en attente" }
-        let count = names.count == 1 ? "1 modification en attente" : "\(names.count) modifications en attente"
-        return count + " : " + names.joined(separator: ", ")
-    }
-
-    /// R-73 (R9A-33): a disabled module's page that is open keeps its entry, selected, until the user leaves it.
-    static func sidebarSections(modules: Set<GoalongModule>, showing: DashboardSection? = nil) -> [DashboardSection] {
+        /// R-73 (R9A-33): a disabled module's page that is open keeps its entry, selected, until the user leaves it.
+        static func sidebarSections(modules: Set<GoalongModule>, showing: DashboardSection? = nil) -> [DashboardSection] {
             var sections = primarySections
             if modules.contains(.ambiance) || showing == .ambiance { sections.insert(.ambiance, at: sections.count - 1) }
             if modules.contains(.braise) || showing == .braise { sections.insert(.braise, at: sections.count - 1) }

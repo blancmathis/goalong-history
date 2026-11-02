@@ -22,8 +22,8 @@ import LocalHistoryCore
                 GoalongRowDivider()
                 GoalongSettingsLink(title: "Personnaliser le bilan", value: selection.outputGuidance?.isEmpty == false ? "Consignes ajoutées" : "Ton et informations à omettre", symbol: "text.bubble") { open(2) }.accessibilityIdentifier("analysis-open-guidance")
             }
-            // R-71 (déc. 11): this version cannot reach ChatGPT, so no analysis can be allowed or started
-            // until the update. The local choices above stay editable: they need no connection.
+            // R-71 (déc. 11, R282-1): this version cannot reach ChatGPT, so nothing can be switched ON
+            // until the update. Withdrawing the consent or stopping the automatic analysis stays possible.
             GoalongSettingsGroup(title: "Quand analyser") {
                 Toggle("Autoriser les analyses", isOn: Binding(get: { selection.allowsAnalysis(consented: consents.isEnabled(.chatGPTAnalysis), policy: exclusions.policy) }, set: { value in
                     if value { open(0) }
@@ -34,10 +34,13 @@ import LocalHistoryCore
                         }
                     }
                 })).toggleStyle(.goalongSwitch)
+                    .disabled(Self.switchDisabled(isOn: selection.allowsAnalysis(consented: consents.isEnabled(.chatGPTAnalysis), policy: exclusions.policy), locked: locked, otherwiseBlocked: false))
                 Toggle("Analyser automatiquement la journée d’hier", isOn: Binding(
                     get: { runtime.automaticRecapsEnabled && selection.isValid(for: exclusions.policy) },
                     set: { runtime.automaticRecapsEnabled = $0; if $0 { runtime.start() } }))
-                    .toggleStyle(.goalongSwitch).disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis))
+                    .toggleStyle(.goalongSwitch)
+                    .disabled(Self.switchDisabled(isOn: runtime.automaticRecapsEnabled, locked: locked,
+                                                  otherwiseBlocked: !selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis)))
                 HStack {
                     Button("Voir les données qui partiront") { open(3) }.buttonStyle(LHSecondaryButtonStyle())
                     Spacer()
@@ -56,8 +59,6 @@ import LocalHistoryCore
                 Text("ChatGPT reçoit uniquement votre sélection. Le bilan n’est pas envoyé au site automatiquement.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
-            .disabled(Self.analysisLocked(runtime.connectionState))
-            .opacity(Self.analysisLocked(runtime.connectionState) ? 0.5 : 1)
         }
         .onAppear { selection = .load(); runtime.configure(deviceID: model.knownDeviceID ?? "") }
         .sheet(item: $presentation) { request in
@@ -69,14 +70,17 @@ import LocalHistoryCore
         } message: { Text(error ?? "") }
         .alert(item: $runtime.alert) { item in Alert(title: Text(item.title), message: Text(item.message), dismissButton: .default(Text("Fermer"))) }
     }
-    /// R-71: an app version that cannot connect greys « Quand analyser » (allow, automatic, analyse).
+    /// R-71: an app version that cannot connect blocks switching ON (allow, automatic, analyse).
     static func analysisLocked(_ state: ChatGPTConnectionState) -> Bool { state == .codexUnavailable }
+    /// R282-1: a switch that is ON can always be turned off; only turning ON is blocked.
+    static func switchDisabled(isOn: Bool, locked: Bool, otherwiseBlocked: Bool) -> Bool { !isOn && (locked || otherwiseBlocked) }
+    private var locked: Bool { Self.analysisLocked(runtime.connectionState) }
 
     private var analyzeButton: some View {
         Button("Analyser cette journée") {
             runtime.configure(deviceID: model.knownDeviceID ?? ""); runtime.selectDay(model.selectedDay)
             runtime.generateRecap(); model.selectSection(.chatGPTRecap)
-        }.disabled(!selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating || model.knownDeviceID == nil)
+        }.disabled(locked || !selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating || model.knownDeviceID == nil)
     }
     private var sourceSummary: String {
         guard selection.reviewed else { return "Choisir les apps et les types de données" }

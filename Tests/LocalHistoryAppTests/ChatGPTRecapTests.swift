@@ -2848,5 +2848,14 @@
         XCTAssertFalse(GoalongChatGPTSettings.analysisLocked(.signedOut))
         XCTAssertFalse(GoalongChatGPTSettings.analysisLocked(.connected(email: nil, plan: nil)))
     }
+
+    // R282-1: locked version: ON switches stay usable (to withdraw), OFF ones are blocked.
+    func testLockedVersionStillLetsTheUserSwitchOffConsentAndAutomaticAnalysis() {
+        XCTAssertFalse(GoalongChatGPTSettings.switchDisabled(isOn: true, locked: true, otherwiseBlocked: false))
+        XCTAssertFalse(GoalongChatGPTSettings.switchDisabled(isOn: true, locked: true, otherwiseBlocked: true))
+        XCTAssertTrue(GoalongChatGPTSettings.switchDisabled(isOn: false, locked: true, otherwiseBlocked: false))
+        XCTAssertTrue(GoalongChatGPTSettings.switchDisabled(isOn: false, locked: false, otherwiseBlocked: true))
+        XCTAssertFalse(GoalongChatGPTSettings.switchDisabled(isOn: false, locked: false, otherwiseBlocked: false))
+    }
 }
 #endif

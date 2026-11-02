@@ -69,6 +69,8 @@ final class T043R4aScreensTests: XCTestCase {
         XCTAssertEqual(LocalHistoryOnboardingView.readyTitle(recordingOn: true, paused: false), "Vous pouvez commencer")
         XCTAssertEqual(LocalHistoryOnboardingView.readyTitle(recordingOn: false, paused: false), "Presque prêt")
         XCTAssertEqual(LocalHistoryOnboardingView.readyTitle(recordingOn: true, paused: true), "Presque prêt")
+        // R282-5: a missing macOS permission keeps « Presque prêt ».
+        XCTAssertEqual(LocalHistoryOnboardingView.readyTitle(recordingOn: true, paused: false, permissionMissing: true), "Presque prêt")
     }
 }
 #endif
