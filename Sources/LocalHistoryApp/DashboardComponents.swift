@@ -621,8 +621,9 @@
             case .paused: return "Enregistrement en pause"
             case .permissionsMissing: return "Accès à rétablir"
             case .inputTapUnavailable: return "Pas d’interactions"
-            case .storageUnavailable(.diskFull): return "Enregistrement interrompu : disque plein"
-            case .storageUnavailable: return "Enregistrement interrompu : écriture impossible"
+            case .storageUnavailable(.diskFull): return "Enregistrement interrompu : le disque est plein"
+            case .storageUnavailable(.permissionDenied): return GoalongAttentionBanner.storageRefusedTitle
+            case .storageUnavailable: return "Enregistrement interrompu"
             case .suppressed(let reason):
                 switch reason {
                 case .manualPause: return "Enregistrement en pause"
@@ -648,7 +649,8 @@
             case .permissionsMissing: return "Accès à rétablir"
             case .inputTapUnavailable: return "Pas d’interactions"
             case .storageUnavailable(.diskFull): return "Disque plein"
-            case .storageUnavailable: return "Écriture impossible"
+            case .storageUnavailable(.permissionDenied): return "Écriture refusée"
+            case .storageUnavailable: return "Interrompu"
             case .suppressed(.sessionUnavailable): return "Session Mac inactive"
             case .suppressed(.accessibilityUnavailable): return "Navigateur illisible"
             case .suppressed: return "Enregistrement actif"

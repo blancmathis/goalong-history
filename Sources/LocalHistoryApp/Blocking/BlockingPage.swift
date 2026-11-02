@@ -408,7 +408,7 @@ struct BlockingStopRequest: Identifiable {
     private func frozen(_ freeze: BlockFreeze) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
-                Label("Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
+                Label(FrozenMacShield.stateLine, systemImage: "snowflake") // R280-6: the end shows once, on the thread
                     .font(.system(size: 13, weight: .medium))
                 Text(BlockingFormat.remaining(freeze.end.timeIntervalSince(now)))
                     .font(LHTheme.heroFont).tracking(LHTheme.heroTracking)

@@ -2015,6 +2015,18 @@ terminal/aide--dark.png   # T-043 R2 : textes (glossaire § 0, « Goalong », he
 terminal/aide--light.png   # T-043 R2 : textes (glossaire § 0, « Goalong », heure système, minuteurs, états, « Jev », « … »)
 terminal/installe--dark.png   # T-043 R2 : textes (glossaire § 0, « Goalong », heure système, minuteurs, états, « Jev », « … »)
 terminal/installe--light.png   # T-043 R2 : textes (glossaire § 0, « Goalong », heure système, minuteurs, états, « Jev », « … »)
+concentration-maintenant/verrouille--dark--900x1000.png   # T-043 R4c : un seul cadenas, la ligne de phase garde son glyphe
+concentration-maintenant/verrouille--light--900x1000.png  # T-043 R4c : un seul cadenas, la ligne de phase garde son glyphe
+fenetre/stockage-refuse--dark.png    # T-043 R4c R-90 : cadenas, chemin complet, « Ouvrir Réglages Système… »
+fenetre/stockage-refuse--light.png   # T-043 R4c R-90 : cadenas, chemin complet, « Ouvrir Réglages Système… »
+settings/chatgpt--dark.png    # T-043 R4c R282-6 : interrupteur auto grisé d'après la valeur affichée
+settings/chatgpt--light.png   # T-043 R4c R282-6 : interrupteur auto grisé d'après la valeur affichée
+support/constats-multiples--dark--580x660.png   # T-043 R4c R9B-43 : « Activer le journal technique » dans le constat
+support/constats-multiples--light--580x660.png  # T-043 R4c R9B-43 : « Activer le journal technique » dans le constat
+support/retour-journal-desactive--dark--580x660.png   # T-043 R4c R9B-43 : bouton dans le constat
+support/retour-journal-desactive--light--580x660.png  # T-043 R4c R9B-43 : bouton dans le constat
+support/journal-desactive-action--dark--580x660.png   # T-043 R4c R9B-43 : nouvelle entrée, retour court
+support/journal-desactive-action--light--580x660.png  # T-043 R4c R9B-43 : nouvelle entrée, retour court
 activite/mode-developpeur--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
 activite/mode-developpeur--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
 activite/traces-isolees--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu

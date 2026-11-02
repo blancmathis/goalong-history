@@ -36,7 +36,7 @@ final class T046UI15ATests: XCTestCase {
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: true), "Tout le suivi en pause")
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: true), "Tout le suivi en pause")
         XCTAssertEqual(runtime(.storageUnavailable(.permissionDenied)).sidebarTitle(recordingEnabled: true, globallyPaused: false),
-                       "Écriture impossible")
+                       "Écriture refusée")
         XCTAssertEqual(runtime(.storageUnavailable(.diskFull)).sidebarTitle(recordingEnabled: true, globallyPaused: false), "Disque plein")
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: false), "Enregistrement actif")
     }
