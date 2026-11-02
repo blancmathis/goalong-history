@@ -135,7 +135,7 @@ extension GalleryCatalog {
             ("temps-ecran-indisponible", .appleScreenTime, .unavailable(
                 "La source Apple n’a pas pu être ouverte. Vérifiez Temps d’écran dans Réglages Système, puis réessayez.")),
             ("historique-reparation-en-cours", .localComputerHistory,
-             .unavailable("Une réparation d’autorisation est en cours. Aucun nouvel accès n’est confirmé.")),
+             .unavailable("Une réparation d’autorisation est en cours. Patientez, puis choisissez « Vérifier l’accès ».")),
         ]
         entries += activations.map { name, capability, status in
             // UI-13C (25): fitted height, as a real sheet sizes itself; a fixed 690 left ~40 % empty above the footer.
