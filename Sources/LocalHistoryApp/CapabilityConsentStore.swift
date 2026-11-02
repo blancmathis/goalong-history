@@ -18,7 +18,7 @@
 
         var title: String {
             switch self {
-            case .localComputerHistory: return "Historique de ce Mac"
+            case .localComputerHistory: return "Enregistrement"
             case .calendar: return "Agenda et rappels"
             case .appleScreenTime: return "Temps d’écran Apple"
             case .aiConversations: return "Conversations locales"

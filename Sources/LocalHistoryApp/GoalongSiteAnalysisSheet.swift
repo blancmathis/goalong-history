@@ -274,7 +274,7 @@ struct GoalongSiteAnalysisSheet: View {
             HStack(alignment: .center, spacing: 12) {
                 Text("Analyser une demande du site").font(LHTheme.sheetTitleFont)
                 Spacer(minLength: 0)
-                StatusPill(title: model.accountLabel, symbol: model.connected ? "checkmark.circle.fill" : "circle.dashed",
+                StatusPill(title: model.accountLabel, kind: model.connected ? .ready : .notYet, symbol: model.connected ? "checkmark.circle.fill" : "circle.dashed",
                            tint: model.connected ? LHTheme.success : LHTheme.secondaryText)
             }.padding(24)
             Divider()
@@ -312,7 +312,7 @@ struct GoalongSiteAnalysisSheet: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Goalong utilise votre abonnement ChatGPT sur ce Mac pour expliquer une demande du site. Vos identifiants ne sont pas transmis à Goalong en ligne.")
+            Text("Goalong utilise votre abonnement ChatGPT sur ce Mac pour expliquer une demande du site. Vos identifiants ne sont pas transmis au site Goalong.")
                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             // UI-15B (29): the prerequisites are three numbered steps, each with its own action.

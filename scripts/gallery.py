@@ -51,21 +51,27 @@ NOT_COVERED = (
     "Activité : aperçu (mode développeur)",
     "Mon travail : agent absent",
     "Historique : filtres Temps d’écran et conversations",
-    "Temps d’écran : importé, indisponible",
-    "Conversations : consentement, liste, carte jetons (et fixtures §5.7)",
-    "Bilan : chargement, erreur, rapport",
+    "Temps d’écran : indisponible",
+    "Conversations : consentement, carte jetons (et fixtures §5.7)",
     "Surveillance : prête, interventions, panneau d’alerte Jev",
     "Distractions : suggestions",
     "Programme : semaine",
     "Blocage sévère : service absent, actif, « Retirer le service »",
     "Ambiance : erreur de téléchargement (page)",
     "Barre des menus : bouton avec badge dev",
-    "Feuilles : import Santé, analyse de site, projets développeur",
     "Permissions : relance demandée",
     "Compte et site : non lié, appairage, lié, envoi auto, erreur, hors ligne ; carte ChatGPT (3 états) ; studio de profil",
-    "Terminal : installé, lien cassé",
-    "Mises à jour : 4 états",
+    "Terminal : lien cassé",
     "Support : demande",
+    "Enregistrement : « journal activé, vide » (la section .activity ouvre la même page que Historique ; entrée retirée, 6bc0d8ad)",
+)
+# R-63 (T-043 R3): entries renamed when their name stopped matching what they show. The old keys show as « disparu »
+# in a diff; they are not lost. Proof: commit 6bc0d8ad (« analyse-* au nom des onglets »).
+RENAMED = (
+    "settings-sheets/analyse-applications → settings-sheets/analyse-donnees (onglet Données, 6bc0d8ad)",
+    "settings-sheets/analyse-sites → settings-sheets/analyse-remplacements (onglet Remplacements, 6bc0d8ad)",
+    "settings-sheets/analyse-categories → settings-sheets/analyse-consignes (onglet Consignes, 6bc0d8ad)",
+    "settings-sheets/analyse-sites-regle-vide → settings-sheets/analyse-remplacements-regle-vide (6bc0d8ad)",
 )
 STALE_INDEX_LIMIT = ("Index : un accept réécrit l'index des runs de ce checkout ; un index ouvert depuis un autre "
                      "checkout ou une copie peut montrer une base remplacée depuis (make gallery-index pour le "
@@ -237,6 +243,8 @@ def build() -> None:
 
 LAUNCH_ARGUMENTS = ["-AppleLocale", "fr_FR", "-AppleLanguages", "(fr)", "-AppleAccentColor", "4",
                     "-AppleShowScrollBars", "WhenScrolling"]
+# R282-8 / T-043 T1: the machine's own preferences never reach a picture: under XCTest every preference read goes to
+# one throwaway suite (GoalongDefaults.standard, and the headless hook for +standardUserDefaults).
 
 
 def shard_command(run: Path, shard: int, shards: int, home: str, only: str | None) -> list[str]:
@@ -1037,6 +1045,8 @@ def write_index(run: Path) -> None:
     not_covered = (f'<details class="limits"><summary>{len(NOT_COVERED)} groupe(s) d’états de la spec (§6) non '
                    f'couverts : pas d’image</summary><ul>'
                    + "".join(f"<li>{html.escape(line)}</li>" for line in NOT_COVERED) + "</ul></details>")
+    renamed = (f'<details class="limits"><summary>{len(RENAMED)} entrée(s) renommée(s) (ancienne clé = « disparu » dans '
+               f'un diff)</summary><ul>' + "".join(f"<li>{html.escape(line)}</li>" for line in RENAMED) + "</ul></details>")
     totals = " · ".join(f"{html.escape(key)} {value}" for key, value in sorted(counts.items()))
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     page = f"""<!doctype html>
@@ -1050,6 +1060,7 @@ def write_index(run: Path) -> None:
 <div class="meta">{diff_line}</div>
 {duplicates_block}
 {not_covered}
+{renamed}
 <div class="limits">{html.escape(GUARD_LIMITS)} {html.escape(APP_ICON_LIMIT)} {html.escape(STALE_INDEX_LIMIT)}</div></header>
 <div class="bar"><label>Thème <select id="theme"><option value="">tous</option></select></label>
 <label>Surface <select id="surface"><option value="">toutes</option></select></label>

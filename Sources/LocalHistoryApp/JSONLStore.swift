@@ -282,11 +282,13 @@
 
         /// Deletes only explicitly resolved source-event identifiers. The caller
         /// provides the source interval solely to bound which day journals are
-        /// streamed; timestamps never broaden the deletion predicate.
+        /// streamed; timestamps never broaden the deletion predicate. With
+        /// `requireEveryID` false (a retry), identifiers already gone are skipped.
         func deleteEvents(
             withIDs eventIDs: Set<String>,
             from start: Date,
             through end: Date,
+            requireEveryID: Bool = true,
             completion: @escaping (Result<JSONLTargetedDeletionOutcome, Error>) -> Void
         ) {
             queue.async { [weak self] in
@@ -318,6 +320,7 @@
                         withIDs: eventIDs,
                         from: start,
                         through: end,
+                        requireEveryID: requireEveryID,
                         directory: directory
                     )
                     DispatchQueue.main.async { completion(.success(outcome)) }
@@ -581,6 +584,7 @@
             withIDs eventIDs: Set<String>,
             from start: Date,
             through end: Date,
+            requireEveryID: Bool,
             directory: DirectoryHandle
         ) throws -> JSONLTargetedDeletionOutcome {
             var metrics = JSONLDeletionMetrics()
@@ -602,6 +606,7 @@
             let preflight = try preflightTargetedEventFiles(
                 candidateFileNames,
                 eventIDs: eventIDs,
+                requireEveryID: requireEveryID,
                 directory: directory
             )
             metrics.sourceBytesRead += preflight.bytesRead
@@ -630,6 +635,7 @@
         private func preflightTargetedEventFiles(
             _ fileNames: [String],
             eventIDs: Set<String>,
+            requireEveryID: Bool,
             directory: DirectoryHandle
         ) throws -> (
             matchingFileNames: Set<String>,
@@ -680,7 +686,7 @@
                     readMetrics.peakBufferedBytes
                 )
             }
-            guard foundIDs == eventIDs else {
+            guard foundIDs == eventIDs || !requireEveryID else {
                 throw JSONLStoreError.targetedEventsUnavailable(
                     eventIDs.count - foundIDs.count
                 )

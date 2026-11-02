@@ -6,6 +6,11 @@ import ServiceManagement
 import SwiftUI
 
 @MainActor struct BraisePage: View {
+    /// Each schedule switch names its rule: two rules at the same hours differ by their days (R-93).
+    nonisolated static func ruleSwitchLabel(_ rule: ScheduleRule) -> String {
+        "Activer l’horaire \(rule.hours), \(rule.dayLabel)"
+    }
+
     @ObservedObject private var runtime = BraiseRuntime.shared
     var onOpenModules: () -> Void = {}
     /// Turns the module on right here; the module switch in Réglages › Modules does the same.
@@ -27,16 +32,16 @@ import SwiftUI
         VStack(alignment: .leading, spacing: 24) {
             Text("Braise").goalongPageTitle()
             if let error {
-                GoalongEmptyState(title: "Braise ne répond pas", message: error) {
+                GoalongEmptyState(title: "Braise n’a pas pu démarrer", kind: .unavailable, message: error) {
                     Button("Réessayer", action: onRetry).buttonStyle(LHPrimaryButtonStyle())
-                    Button("Ouvrir Réglages › Modules", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
+                    Button("Ouvrir Réglages › Modules › Braise", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
                 }
             } else {
-                GoalongEmptyState(title: "Braise est désactivée",
+                GoalongEmptyState(title: "Braise est désactivée", kind: .needsPermission,
                                   message: "Le filtre rouge du soir s’active ici, ou dans Réglages › Modules.") {
                     Button("Activer Braise", action: onEnable).buttonStyle(LHPrimaryButtonStyle())
                         .accessibilityIdentifier("braise-enable")
-                    Button("Ouvrir Réglages › Modules", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
+                    Button("Ouvrir Réglages › Modules › Braise", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
                 }
             }
         }
@@ -91,7 +96,7 @@ import SwiftUI
                 }
                 GoalongSection(title: "Horaires", subtitle: "Une plage qui passe minuit compte pour le jour où elle commence.") {
                     VStack(alignment: .leading, spacing: 12) {
-                        if controller.preferences.rules.isEmpty { GoalongEmptyState(title: "Aucun horaire", message: "Ajoutez une plage pour le mode Auto.") }
+                        if controller.preferences.rules.isEmpty { GoalongEmptyState(title: "Aucun horaire", kind: .empty, message: "Ajoutez une plage pour le mode Auto.") }
                         ForEach(controller.preferences.rules) { rule in
                             HStack(spacing: 12) {
                                 Button { editingRule = rule } label: {
@@ -102,7 +107,7 @@ import SwiftUI
                                 }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Modifier l’horaire \(rule.hours), \(rule.dayLabel)")
                                 Toggle("Activer l’horaire", isOn: Binding(get: { rule.enabled }, set: { enabled in
                                     controller.update { p in if let i = p.rules.firstIndex(where: { $0.id == rule.id }) { p.rules[i].enabled = enabled } }
-                                })).toggleStyle(.goalongSwitchOnly).fixedSize().accessibilityLabel("Activer l’horaire \(rule.hours)")
+                                })).toggleStyle(.goalongSwitchOnly).fixedSize().accessibilityLabel(BraisePage.ruleSwitchLabel(rule))
                             }
                             // Aligned on the text of the rows (DESIGN §7): these rows have no icon column.
                             GoalongRowDivider(inset: 0)
@@ -129,6 +134,7 @@ import SwiftUI
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }.fixedSize(horizontal: false, vertical: true).padding(.top, 12)
                 }
+                .collapsedSummary("Secours : ⌃ ⌥ ⌘ R")
             }
             .font(.system(size: 13)).frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
             .padding(.horizontal, compact ? 24 : LHTheme.pageInset).padding(.top, 28).padding(.bottom, 32)
@@ -162,7 +168,7 @@ import SwiftUI
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text(existed ? "Modifier l’horaire" : "Ajouter un horaire").font(LHTheme.sheetTitleFont).tracking(-0.4)
-            Text("Jours de début de la plage").foregroundStyle(LHTheme.secondaryText)
+            Text("Jours concernés").foregroundStyle(LHTheme.secondaryText)
             HStack(spacing: 10) {
                 ForEach(days, id: \.0) { day in
                     Toggle(day.1, isOn: Binding(get: { draft.weekdays.contains(day.0) }, set: { on in
@@ -175,7 +181,7 @@ import SwiftUI
                                                                              set: { if let preset = $0 { draft.weekdays = preset.weekdays } }),
                                     options: BraiseDayPreset.allCases.map(Optional.some), title: { $0?.title ?? "" })
             HStack(spacing: 24) { time("Activation", minute: $draft.startMinute); time("Désactivation", minute: $draft.endMinute) }
-            Text(!draft.isValid ? "Choisissez au moins un jour et deux heures différentes." : draft.crossesMidnight ? "La désactivation a lieu le lendemain." : "La plage commence et se termine le même jour.")
+            Text(!draft.isValid ? "Choisissez au moins un jour et deux heures différentes." : draft.crossesMidnight ? "La désactivation a lieu le lendemain à \(GoalongUIFormat.time(minuteOfDay: draft.endMinute))." : "La plage commence et se termine le même jour.")
                 .foregroundStyle(LHTheme.secondaryText)
             if let error { Text(error).foregroundStyle(LHTheme.secondaryText) }
             HStack {

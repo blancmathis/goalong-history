@@ -8,6 +8,14 @@ struct GoalongDisclosureGroup<Label: View, Content: View>: View {
     private let externalExpansion: Binding<Bool>?
     private let content: Content
     private let label: Label
+    private var collapsedSummary: String?
+
+    /// One line shown after the title while the group is folded, so a folded group is never an empty header (R-93).
+    func collapsedSummary(_ text: String?) -> Self {
+        var copy = self
+        copy.collapsedSummary = text
+        return copy
+    }
 
     init(isExpanded: Binding<Bool>? = nil, @ViewBuilder content: () -> Content,
          @ViewBuilder label: () -> Label) {
@@ -36,12 +44,22 @@ struct GoalongDisclosureGroup<Label: View, Content: View>: View {
         } label: {
             label
         }
+        .environment(\.goalongDisclosureSummary, collapsedSummary)
         .disclosureGroupStyle(GoalongDisclosureGroupStyle())
+    }
+}
+
+private struct GoalongDisclosureSummaryKey: EnvironmentKey { static let defaultValue: String? = nil }
+extension EnvironmentValues {
+    fileprivate var goalongDisclosureSummary: String? {
+        get { self[GoalongDisclosureSummaryKey.self] }
+        set { self[GoalongDisclosureSummaryKey.self] = newValue }
     }
 }
 
 struct GoalongDisclosureGroupStyle: DisclosureGroupStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.goalongDisclosureSummary) private var summary
 
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -59,6 +77,10 @@ struct GoalongDisclosureGroupStyle: DisclosureGroupStyle {
                     configuration.label
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
+                    if !configuration.isExpanded, let summary {
+                        Text(summary).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
                 .padding(.horizontal, 6)

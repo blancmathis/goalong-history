@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppleScreenTime
 import Darwin
 import Foundation
 import GoalongGuardCore
@@ -18,6 +19,18 @@ import GoalongGuardCore
     func update(severeUntil: Date?) -> BlockingProtectionState.Component
     /// Removes the service (button outside a severe block). Next arming registers it again.
     func removeService()
+    /// « Réessayer » after a failed registration: the next update tries to register once more (R-89).
+    func retry()
+}
+
+extension GoalongGuardClienting {
+    func retry() {}
+}
+
+/// Why the guard is unavailable, said where it shows (R-89: « Réessayer » + cause).
+enum GuardFailure {
+    static let registrationRefused = "Service de protection indisponible : macOS n’a pas accepté de l’enregistrer."
+    static let unknownStatus = "Service de protection indisponible : macOS renvoie un état inconnu."
 }
 
 /// The one sentence a member reads before the first registration (spec K §6).
@@ -45,7 +58,9 @@ enum GoalongGuardGate {
     }
 
     /// The account's real home, not `CFFIXED_USER_HOME`.
-    private static var realHome: URL {
+    /// Under XCTest the account's real home is never read: the throwaway home stands in for it.
+    static var realHome: URL {
+        if GoalongTestEnvironment.isXCTest { return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true) }
         guard let entry = getpwuid(getuid()), let directory = entry.pointee.pw_dir else { return URL(fileURLWithPath: NSHomeDirectory()) }
         return URL(fileURLWithPath: String(cString: directory), isDirectory: true)
     }
@@ -323,7 +338,7 @@ struct GuardEscalation {
     private nonisolated(unsafe) var connection: xpc_connection_t?
 
     /// nil outside an installed copy (`GoalongGuardGate`): the controller then has no guard at all.
-    static func standard(defaults: UserDefaults = .standard) -> GoalongGuardClient? {
+    static func standard(defaults: UserDefaults = GoalongDefaults.standard) -> GoalongGuardClient? {
         guard GoalongGuardGate.isAllowed, let identity = GoalongGuardGate.identity else { return nil }
         return GoalongGuardClient(identity: identity, defaults: defaults)
     }
@@ -382,7 +397,7 @@ struct GuardEscalation {
         case .notRegistered?, .notFound?:
             // The only system notification: the first registration of this build's guard. Tried once per
             // launch when it fails (unsigned or unnotarised copy), never on every refresh.
-            guard !registerFailed else { component = .failed("Service de protection indisponible."); break }
+            guard !registerFailed else { component = .failed(GuardFailure.registrationRefused); break }
             component = .notInstalled
             work { client in client.registerThenPing() }
         case .requiresApproval?:
@@ -394,7 +409,7 @@ struct GuardEscalation {
                 work { client in client.pingEscalating() }
             }
         @unknown default:
-            component = .failed("Service de protection indisponible.")
+            component = .failed(GuardFailure.unknownStatus)
         }
         return component
     }
@@ -510,6 +525,10 @@ struct GuardEscalation {
 
     fileprivate var isArmed: Bool { armed }
     fileprivate func noteRegisterFailed() { registerFailed = true }
+    func retry() {
+        registerFailed = false
+        status = nil
+    }
     fileprivate func noteBootedOut() { if armed { bootedOut = true } }
     fileprivate var isBootedOut: Bool { bootedOut }
 
@@ -548,7 +567,7 @@ struct GuardEscalation {
             case .requiresApproval: return (status, .awaitingApproval)
             default:
                 DispatchQueue.main.async { MainActor.assumeIsolated { client?.noteRegisterFailed() } }
-                return (status, .failed("Service de protection indisponible."))
+                return (status, .failed(GuardFailure.registrationRefused))
             }
         }
 

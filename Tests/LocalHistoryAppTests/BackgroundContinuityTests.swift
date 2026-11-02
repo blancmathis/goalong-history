@@ -4,6 +4,7 @@
     import ServiceManagement
     import XCTest
     @testable import LocalHistoryApp
+    import AppleScreenTime
 
     final class BackgroundContinuityTests: XCTestCase {
         private func isolatedDefaults() -> UserDefaults {
@@ -185,7 +186,7 @@
 
         @MainActor
         func testRealDelegateKeepsRunningAfterLastWindowClosesUnlessDisabled() {
-            let defaults = UserDefaults.standard
+            let defaults = GoalongDefaults.standard
             let key = BackgroundContinuityPreferences.keepRunningKey
             let old = defaults.object(forKey: key)
             defer {

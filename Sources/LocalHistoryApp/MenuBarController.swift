@@ -179,11 +179,11 @@
         ) -> (title: String, symbol: String, description: String) {
             let display: (title: String, symbol: String, description: String)
             if globalPaused {
-                display = ("Arrêt de confidentialité", "pause.circle.fill", "Sources et envois suspendus")
+                display = ("Tout le suivi en pause", "pause.circle.fill", "Sources et envois suspendus")
             } else if configUnreadable {
                 display = ("Réglages illisibles", "exclamationmark.triangle.fill", ConfigManager.failClosedNotice)
             } else if !localEnabled {
-                display = ("Suivi en pause", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
+                display = ("Enregistrement désactivé", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
             } else if health == .storageUnavailable {
                 display = ("Enregistrement interrompu", "internaldrive",
                            "L’historique ne peut pas être écrit (disque plein ?). Libérez de l’espace sur le Mac : la reprise est automatique.")
@@ -416,7 +416,7 @@
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Mettre l’enregistrement en pause ?"
-            alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour suspendre seulement les rappels de surveillance, utilisez plutôt « Faire une pause » : l’historique continue."
+            alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour suspendre seulement les rappels de Jev, utilisez plutôt « Faire une pause » : l’historique continue."
             alert.addButton(withTitle: "Annuler")
             alert.addButton(withTitle: allSources ? "Suspendre le suivi" : "Mettre en pause")
             return alert.runModal() == .alertSecondButtonReturn

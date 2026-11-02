@@ -235,7 +235,7 @@ import SwiftUI
                     .overlay(Capsule().strokeBorder(LHTheme.accent, lineWidth: 1.5))
                     .frame(width: max(Self.laneHeight, x(high) - x(low)), height: Self.laneHeight)
                     .overlay(alignment: .top) {
-                        Text("\(BlockingFormat.minuteOfDay(low)) → \(high == 1_440 ? "24:00" : BlockingFormat.minuteOfDay(high))")
+                        Text("\(BlockingFormat.minuteOfDay(low)) → \(BlockingFormat.rangeEnd(high))")
                             .font(.system(size: 12, weight: .medium).monospacedDigit()).fixedSize()
                             .offset(y: -16)
                     }

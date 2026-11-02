@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AppKit
     import ApplicationServices
@@ -172,7 +173,7 @@
 
         /// Preferences and clock of the analysis passes. The app keeps `.standard` and the real clock; the gallery sets
         /// its own suite and frozen clock once, before any page asks for a refresh.
-        var preferences: UserDefaults = .standard
+        var preferences: UserDefaults = GoalongDefaults.standard
         var clock: () -> Date = Date.init
 
         private let axClient: AXClient
@@ -1312,7 +1313,7 @@
             case .reentrantCycle:
                 return "Analyse déjà en cours sur cette source : nouvelle lecture refusée."
             case .retainedEvidenceBudgetExceeded(let rows, let bytes):
-                return "La journée dépasse la mémoire prévue pour l’analyse (\(rows) lignes ou \(bytes) octets estimés). Les dernières vues valides sont conservées."
+                return "La journée dépasse la mémoire prévue pour l’analyse (\(GoalongUIFormat.number(rows)) lignes ou \(GoalongUIFormat.number(bytes)) octets estimés). Les dernières vues valides sont conservées."
             }
         }
     }

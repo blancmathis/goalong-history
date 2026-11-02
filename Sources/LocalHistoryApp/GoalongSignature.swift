@@ -6,16 +6,68 @@
     // itself (GoalongThread.swift), where Goalong speaks in its own voice. Everything here
     // answers a person's action or appears once; nothing loops.
 
-    /// An empty screen is a thread that has not started: what is missing and the one step
-    /// that fixes it. Set directly on the page, or inside a group when it replaces a list.
+    /// The sort of thing an empty or state view reports (déc. 9 et 14, T-043 R-10): one distinct glyph per sort, so
+    /// « pas encore », « à autoriser » and « indisponible » never look alike. Shared by `GoalongEmptyState`,
+    /// `EmptyStateView` and `StatusPill`.
+    enum GoalongStateKind: Equatable {
+        /// Nothing yet: data will come by itself.
+        case notYet
+        /// Needs an access or a setting the person must give.
+        case needsPermission
+        /// Cannot work here (missing app, unsupported, failed).
+        case unavailable
+        /// The list is simply empty (nothing matches, nothing added).
+        case empty
+        /// A pill only: the thing works or is on.
+        case ready
+        /// A pill only: needs a look (partial, to verify, broken).
+        case attention
+
+        var symbol: String {
+            switch self {
+            case .notYet: return "clock"
+            case .needsPermission: return "lock.shield"
+            case .unavailable: return "nosign"
+            case .empty: return "tray"
+            case .ready: return "checkmark.circle.fill"
+            case .attention: return "exclamationmark.circle.fill"
+            }
+        }
+    }
+
+    /// An empty screen: one sentence that says what is missing and, at most, one named action (déc. 9, T-043 R-11).
+    /// No dotted thread, no decorative mark: the state glyph of its required `kind` only. Set directly on the page, or inside a
+    /// group when it replaces a list.
     struct GoalongEmptyState<Actions: View>: View {
         let title: String
         let message: String
+        let kind: GoalongStateKind
         @ViewBuilder var actions: () -> Actions
+
+        /// Several free actions. Kept for the existing callers; new code names its one action with
+        /// `init(title:message:kind:actionTitle:prominent:action:)`.
+        @available(*, deprecated, message: "Une seule action nommée : init(title:message:kind:actionTitle:prominent:action:) (T-043 R-11)")
+        init(title: String, kind: GoalongStateKind, message: String, @ViewBuilder actions: @escaping () -> Actions) {
+            self.title = title
+            self.message = message
+            self.kind = kind
+            self.actions = actions
+        }
+
+        fileprivate init(uncheckedTitle title: String, kind: GoalongStateKind, message: String,
+                         @ViewBuilder actions: @escaping () -> Actions) {
+            self.title = title
+            self.message = message
+            self.kind = kind
+            self.actions = actions
+        }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
-                GoalongThreadPlaceholder().padding(.bottom, 4)
+                Image(systemName: kind.symbol).font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .padding(.bottom, 2)
+                    .accessibilityHidden(true)
                 Text(title).font(LHTheme.sectionTitleFont).tracking(-0.2)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
@@ -30,8 +82,42 @@
     }
 
     extension GoalongEmptyState where Actions == EmptyView {
-        init(title: String, message: String) {
-            self.init(title: title, message: message) { EmptyView() }
+        init(title: String, kind: GoalongStateKind, message: String) {
+            self.init(uncheckedTitle: title, kind: kind, message: message) { EmptyView() }
+        }
+    }
+
+    /// The one named action of an empty state: primary (lime) when it is the screen's recommended step, otherwise
+    /// secondary (déc. 7).
+    struct GoalongEmptyStateAction: View {
+        /// Shown when a caller passes an empty title, never a crash (R281-10).
+        static let fallbackTitle = "Continuer"
+        let title: String
+        var prominent = true
+        let action: () -> Void
+
+        init(title: String, prominent: Bool = true, action: @escaping () -> Void) {
+            self.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.fallbackTitle : title
+            self.prominent = prominent
+            self.action = action
+        }
+
+        var body: some View {
+            if prominent {
+                Button(title, action: action).buttonStyle(LHPrimaryButtonStyle())
+            } else {
+                Button(title, action: action).buttonStyle(LHSecondaryButtonStyle())
+            }
+        }
+    }
+
+    extension GoalongEmptyState where Actions == GoalongEmptyStateAction {
+        /// One sentence and one named action (« Ouvrir les réglages d’enregistrement », never « Ouvrir »).
+        init(title: String, kind: GoalongStateKind, message: String, actionTitle: String,
+             prominent: Bool = true, action: @escaping () -> Void) {
+            self.init(uncheckedTitle: title, kind: kind, message: message) {
+                GoalongEmptyStateAction(title: actionTitle, prominent: prominent, action: action)
+            }
         }
     }
 
@@ -116,9 +202,12 @@
             }
             .padding(.leading, 8).padding(.trailing, 16).padding(.vertical, 8)
             .background {
-                Capsule().fill(LHTheme.elevatedBackground)
-                    .overlay(Capsule().strokeBorder(LHTheme.controlBorder))
+                // R4d-4: a stroked `Capsule` drew a vertical tick at each end. The border is a fill instead:
+                // the border colour in the capsule, the surface in a capsule 1 pt smaller.
+                Capsule(style: .continuous).fill(LHTheme.elevatedBackground)
                     .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
+                    .overlay(Capsule(style: .continuous).fill(LHTheme.controlBorder)
+                        .overlay(Capsule(style: .continuous).fill(LHTheme.elevatedBackground).padding(1)))
             }
             .onAppear {
                 if reduceMotion { drawn = 1 } else { withAnimation(LHTheme.ease(0.3).delay(0.12)) { drawn = 1 } }

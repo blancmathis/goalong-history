@@ -16,7 +16,7 @@ struct GoalongHelpButton: View {
             Image(systemName: "info.circle").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 24, height: 24).contentShape(Rectangle())
         }
-            .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6)).accessibilityLabel("En savoir plus")
+            .buttonStyle(LHNavigationButtonStyle(cornerRadius: 6, readableWhenDisabled: true)).accessibilityLabel("En savoir plus")
             .popover(isPresented: $presented) {
                 Text(text).font(.system(size: 13)).padding(18).frame(width: 320, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -67,7 +67,7 @@ struct GoalongSettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !title.isEmpty {
-                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+                Text(title).font(LHTheme.cardTitleFont).foregroundStyle(LHTheme.text)
                     .accessibilityAddTraits(.isHeader)
             }
             LHCard { VStack(alignment: .leading, spacing: 14, content: content).frame(maxWidth: .infinity, alignment: .leading) }
@@ -82,7 +82,7 @@ struct GoalongSettingsList<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !title.isEmpty {
-                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+                Text(title).font(LHTheme.cardTitleFont).foregroundStyle(LHTheme.text)
                     .accessibilityAddTraits(.isHeader)
             }
             LHCard(padding: 0) { VStack(spacing: 0, content: content) }
@@ -95,7 +95,7 @@ enum GoalongHomeRows {
     static let recordingSymbol = SettingsPane.recording.symbol
     static let sendSymbol = "arrow.up.circle"
     static let chatGPTSymbol = "sparkles"
-    static func jevSummary(enabled: Bool) -> String { enabled ? "Activé" : "Surveillance de vos séances" }
+    static func jevSummary(enabled: Bool) -> String { enabled ? "Activé" : "Repère les distractions pendant vos séances" }
     /// One glyph per permission row, shared with the activation sheet.
     static func permissionSymbol(_ capability: GoalongCapability) -> String {
         PermissionSetupCopy(capability: capability, status: .ready).symbol
@@ -118,7 +118,7 @@ enum GoalongHomeRows {
                 row("Enregistrement", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
                     detail: "Ce que Goalong conserve sur ce Mac", symbol: GoalongHomeRows.recordingSymbol, pane: .recording)
                 GoalongRowDivider()
-                row("Envoi à Goalong", status: Self.websiteStatus(enabled: sender.enabled, hasPlan: sender.savedConfiguration != nil, pauseReason: sender.pauseReason),
+                row("Envoyer au site Goalong", status: Self.websiteStatus(enabled: sender.enabled, hasPlan: sender.savedConfiguration != nil, pauseReason: sender.pauseReason),
                     detail: "Compte, données et fréquence des envois",
                     symbol: GoalongHomeRows.sendSymbol, pane: .website, tint: !sender.enabled && sender.pauseReason != nil ? LHTheme.warning : nil)
                 GoalongRowDivider()

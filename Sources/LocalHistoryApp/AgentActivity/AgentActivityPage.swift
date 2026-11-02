@@ -2,6 +2,7 @@
     import AgentActivity
     import AppKit
     import SwiftUI
+    import LocalHistoryCore
 
     enum AgentActivityPresentation {
         case history
@@ -117,11 +118,12 @@
                     }
                     if !consents.isEnabled(.aiConversations) {
                         disabledSourceExplanation
-                        if presentation == .management { watchedFoldersCard }
+                        // R-72 (R9A-39): reading off, one message; the folders card would say the same thing again.
                     } else if presentation == .history {
                         conversationHistoryList
                         // The token figures come after the list they describe, and not at all when no source is readable.
-                        if !sourcesUnreadable {
+                        if Self.showsTokenCard(sourcesUnreadable: sourcesUnreadable, scanning: agents.isScanning,
+                                               capturesEmpty: filteredCaptures.isEmpty) {
                             AgentTokenUsageCard(usage: agents.tokenUsageSnapshot, scanning: agents.isScanning, analyzedAt: agents.tokenUsageAnalyzedAt)
                         }
                         GoalongDisclosureGroup("Source et confidentialité") {
@@ -260,6 +262,18 @@
             hasSourceIssue && agents.overview.captures.isEmpty && !agents.isScanning
         }
 
+        /// R-72 (R9A-40): one reading indicator. No conversation yet: the empty state says it; otherwise the header line.
+        enum ScanIndicator: Equatable { case none, header, emptyState }
+        static func scanIndicator(scanning: Bool, capturesEmpty: Bool) -> ScanIndicator {
+            guard scanning else { return .none }
+            return capturesEmpty ? .emptyState : .header
+        }
+
+        /// The token card waits for the read when there is nothing yet: its own « en cours » would be a third indicator.
+        static func showsTokenCard(sourcesUnreadable: Bool, scanning: Bool, capturesEmpty: Bool) -> Bool {
+            !sourcesUnreadable && !(scanning && capturesEmpty)
+        }
+
         private var conversationHistoryList: some View {
             let captures = filteredCaptures
             return VStack(alignment: .leading, spacing: 12) {
@@ -271,11 +285,15 @@
                             Text(GoalongUIFormat.count(agents.overview.captures.count, "conversation"))
                             .font(.system(size: 20, weight: .semibold))
                             HStack(spacing: 7) {
-                                if agents.isScanning {
+                                switch Self.scanIndicator(scanning: agents.isScanning, capturesEmpty: captures.isEmpty) {
+                                case .header:
                                     ProgressView()
                                         .controlSize(.mini)
                                     Text("Mise à jour des sources modifiées…")
-                                } else {
+                                case .emptyState:
+                                    // R-72: the empty state below is the one reading indicator.
+                                    EmptyView()
+                                case .none:
                                     Text(conversationSummaryDetail + ".")
                                 }
                             }
@@ -299,6 +317,7 @@
                                 Text(sourceHealth.message(hasReadableConversations: !agents.overview.captures.isEmpty))
                                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     .fixedSize(horizontal: false, vertical: true)
+                                failedSourcesList
                             }
                             Spacer()
                             if let title = sourceHealth.actionTitle {
@@ -332,6 +351,7 @@
                                 if search.isEmpty, providerFilter == nil, !hasSourceIssue, let onManageSources {
                                     Button("Vérifier les sources", action: onManageSources)
                                         .buttonStyle(LHSecondaryButtonStyle()).frame(maxWidth: .infinity).padding(.bottom, 20)
+                                        .disabled(agents.isScanning)
                                 }
                                 if !search.isEmpty || providerFilter != nil {
                                     Button("Effacer les filtres") { search = ""; providerFilter = nil }
@@ -364,6 +384,30 @@
             }
         }
 
+        /// R-72 (R4d-8): the sources that failed, one per line, so « Vérifier les sources » says which ones.
+        static let failedSourcesShown = 5
+        static func failedSourceLines(_ failures: [String]) -> [String] {
+            let shown = Array(failures.prefix(failedSourcesShown))
+            let rest = failures.count - shown.count
+            return rest > 0 ? shown + ["et \(FrenchCount.count(rest, "autre source", "autres sources"))"] : shown
+        }
+
+        @ViewBuilder private var failedSourcesList: some View {
+            let lines = sourceHealth.hasReadFailure ? Self.failedSourceLines(agents.lastScanResult.failures) : []
+            if !lines.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                    }
+                }
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .frame(maxWidth: 520, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Sources en erreur : " + lines.joined(separator: " ; "))
+                .accessibilityIdentifier("conversation-failed-sources")
+            }
+        }
+
         /// One message for one problem: what failed, what to do (no count, no token line, no card).
         /// UI-15C (6): aligned on the page's left edge, one lime action (retry), the other secondary.
         private var unreadableSourcesState: some View {
@@ -377,6 +421,7 @@
                     .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 520, alignment: .leading)
+                failedSourcesList
                 HStack(spacing: 10) {
                     if let title = sourceHealth.actionTitle {
                         Button(title) { agents.scanNow(analyzeSelectedDay: true) }
@@ -498,6 +543,7 @@
                     }
                     StatusPill(
                         title: agents.indexIsValid ? "Sources lisibles" : "Sources à vérifier",
+                        kind: agents.indexIsValid ? .ready : .attention,
                         symbol: agents.indexIsValid ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
                         tint: agents.indexIsValid ? LHTheme.success : LHTheme.danger
                     )
@@ -537,9 +583,9 @@
         /// « Le 23 octobre 2026 : 12 sessions, 340 messages et 85 actions des agents. »
         private var metricsDetail: String {
             let day = DashboardFormatters.dayTitle.string(from: agents.selectedDay)
-            let sessions = GoalongUIFormat.count(Int(agents.overview.sessionCount), "session")
-            let messages = GoalongUIFormat.count(Int(agents.overview.messageCount), "message")
-            let actions = GoalongUIFormat.count(Int(agents.overview.toolCallCount), "action d’agent", plural: "actions d’agents")
+            let sessions = GoalongUIFormat.count(Int(agents.overview.sessionCount), "conversation")
+            let messages = GoalongUIFormat.count(Int(agents.overview.messageCount), "demande ou réponse", plural: "demandes et réponses")
+            let actions = GoalongUIFormat.count(Int(agents.overview.toolCallCount), "outil utilisé", plural: "outils utilisés")
             return "\(day) : \(sessions), \(messages) et \(actions)."
         }
 
@@ -561,9 +607,7 @@
                         .buttonStyle(LHSecondaryButtonStyle())
                     }
 
-                    // UI-15C (6): a rule above every row, the Codex folder one included.
-                    Divider()
-                    providerDirectoryRow
+                    // UI-15C (6): a rule above every row. 6-CODEX: one row per tool; Codex's folder state sits in its row.
                     ForEach(AgentIntegrationKind.allCases) { kind in
                         Divider()
                         integrationRow(kind)
@@ -586,43 +630,6 @@
             }
         }
 
-        private var providerDirectoryRow: some View {
-            HStack(spacing: 12) {
-                providerIcon(.codex)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Dossier des sessions Codex")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(
-                        "Goalong suit les sessions et l’historique de Codex quand Codex est installé sur ce Mac."
-                    )
-                    .font(.system(size: 12))
-                    .foregroundStyle(LHTheme.secondaryText)
-                }
-                Spacer()
-                StatusPill(
-                    title: agents.configuration.watchedFolders.contains(where: {
-                        $0.provider == .codex && !$0.isManaged && $0.isEnabled
-                    })
-                        ? "Dossier actif"
-                        : agents.configuration.watchedFolders.contains(where: {
-                            $0.provider == .codex && !$0.isManaged
-                        }) ? "Détecté — désactivé" : "Non détecté",
-                    symbol: agents.configuration.watchedFolders.contains(where: {
-                        $0.provider == .codex && !$0.isManaged && $0.isEnabled
-                    })
-                        ? "checkmark.circle.fill" : "folder.badge.questionmark",
-                    tint: agents.configuration.watchedFolders.contains(where: {
-                        $0.provider == .codex && !$0.isManaged && $0.isEnabled
-                    })
-                        ? LHTheme.success : Color.secondary
-                )
-                Button("Détecter") {
-                    agents.detectCommonSources()
-                }
-                .buttonStyle(LHSecondaryButtonStyle())
-            }
-        }
-
         private func configurationPathLabel(_ path: String) -> String {
             AgentActivityPathLabel.abbreviated(path)
         }
@@ -637,6 +644,15 @@
                         // The file path is developer detail: on hover, and listed in « En savoir plus » below.
                         // UI-15C (6): the card subtitle says once what each state does; no sentence per row.
                         .help(configurationPathLabel(status.configurationPath))
+                    if kind.provider == .codex {
+                        Text(AgentActivityCodexFolder.label(
+                            found: agents.configuration.watchedFolders.contains { $0.provider == .codex && !$0.isManaged },
+                            enabled: agents.configuration.watchedFolders.contains {
+                                $0.provider == .codex && !$0.isManaged && $0.isEnabled
+                            }))
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                    }
                     if let otherPath = status.otherExecutablePath {
                         Text(
                             status.otherExecutableExists
@@ -656,6 +672,7 @@
                         : (status.otherExecutablePath != nil
                             ? (status.otherExecutableExists ? "Installé pour une autre copie" : "Intégration cassée")
                             : "Lecture périodique"),
+                    kind: status.isInstalled ? .ready : (status.otherExecutablePath != nil ? .attention : .notYet),
                     symbol: status.isInstalled ? "bolt.shield.fill" : "clock.arrow.circlepath",
                     tint: status.isInstalled ? LHTheme.success : Color.secondary
                 )
@@ -806,7 +823,7 @@
                             GoalongMenuPicker("Outil", selection: $providerFilter, options: providerOptions)
                                 .frame(width: 165)
                         }
-                        GoalongSearchField("Rechercher sessions, fichiers, modèles ou outils", text: $search)
+                        GoalongSearchField("Rechercher conversations, fichiers, modèles ou outils", text: $search)
                             .frame(width: 285)
                     }
 
@@ -895,7 +912,7 @@
                             tint: LHTheme.success,
                             title: "Index léger des sources",
                             subtitle:
-                                "Seules des métadonnées limitées sont conservées dans le dossier privé de Goalong History."
+                                "Seules des métadonnées limitées sont conservées dans le dossier privé de Goalong."
                         )
                         detailLine("Espace total utilisé", value: formatBytes(agents.storageBytes))
                         detailLine("Fichier d’index", value: formatBytes(agents.overview.indexBytes))

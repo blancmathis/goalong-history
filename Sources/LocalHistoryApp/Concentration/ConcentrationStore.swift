@@ -250,6 +250,12 @@ struct FocusStore {
         let result = line.withUnsafeBytes { write(fd, $0.baseAddress!, $0.count) }
         guard result == line.count, fsync(fd) == 0 else { throw FocusFailure.storageFailed }
     }
+    /// R-77 (R9C-54): « Supprimer les données… » is held back when there is nothing to delete.
+    /// Something to delete: any file in the folder, even one the safe reads would refuse (R-77).
+    var hasData: Bool {
+        !((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty
+    }
+
     func deleteData() throws {
         guard let fd = try openDirectory(nil, create: false) else { return }; close(fd)
         // The root is verified, and removeItem does not follow a contained symlink.

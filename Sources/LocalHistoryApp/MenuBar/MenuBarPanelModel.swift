@@ -8,7 +8,7 @@ import LocalHistoryCore
 @MainActor final class MenuBarPanelModel: ObservableObject {
     enum Tracking: Equatable { case active, paused(since: Date?), attention(String) }
     @Published var tracking: Tracking = .attention("Chargement")
-    @Published var trackingDetail = "Chargement de l’état du suivi…"
+    @Published var trackingDetail = "Chargement de l’état de l’enregistrement…"
     /// Title shown above the detail when the tracking needs attention, so the cause is never lost to truncation.
     var attentionTitle: String? { if case .attention(let title) = tracking { return title }; return nil }
     /// A one-tap repair that goes with the attention message or the unavailable-focus message.
@@ -16,7 +16,7 @@ import LocalHistoryCore
         case permissions, modules, recording, app
         var label: String {
             switch self {
-            case .permissions: return "Réparer…"
+            case .permissions: return "Rétablir l’accès…"
             case .modules: return "Activer dans Réglages"
             case .recording: return "Ouvrir Réglages"
             case .app: return "Ouvrir Goalong"
@@ -207,7 +207,7 @@ import LocalHistoryCore
             trackingDetail = ConfigManager.failClosedNotice
         } else if !localHistoryEnabled() {
             pausedSince = nil
-            tracking = .attention("Suivi en pause")
+            tracking = .attention("Enregistrement désactivé")
             trackingDetail = "Activez l’enregistrement dans Réglages"
         } else if state.isManuallyPaused {
             if case .paused = tracking {} else { pausedSince = nil }

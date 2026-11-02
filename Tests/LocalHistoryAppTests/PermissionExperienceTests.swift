@@ -63,7 +63,7 @@ final class PermissionExperienceTests: XCTestCase {
         XCTAssertFalse(computer.purpose.contains("record what you type"))
     }
     func testUIU05SheetTitleAndBadgeCopy() {
-        XCTAssertEqual(PermissionSetupCopy(capability: .localComputerHistory, status: .accessibility).title, "Autoriser l’historique de ce Mac")
+        XCTAssertEqual(PermissionSetupCopy(capability: .localComputerHistory, status: .accessibility).title, "Autoriser l’enregistrement")
         XCTAssertEqual(PermissionSetupCopy(capability: .appleScreenTime, status: .fullDiskAccess).title, "Autoriser Temps d’écran Apple")
         XCTAssertEqual(PermissionSetupStatusCard.badge(checking: false, ready: false, unavailable: false), "À autoriser")
         XCTAssertEqual(PermissionSetupStatusCard.badge(checking: false, ready: false, unavailable: true), "Non confirmé")
@@ -78,7 +78,7 @@ final class PermissionExperienceTests: XCTestCase {
     }
 
     func testUIU05ReviewActivationTitleAndListName() {
-        XCTAssertEqual(PermissionSetupCopy(capability: .localComputerHistory, status: .ready).activateTitle, "Activer l’historique de ce Mac")
+        XCTAssertEqual(PermissionSetupCopy(capability: .localComputerHistory, status: .ready).activateTitle, "Activer l’enregistrement")
         XCTAssertEqual(PermissionSetupCopy(capability: .appleScreenTime, status: .ready).activateTitle, "Activer \(GoalongCapability.appleScreenTime.title)")
         XCTAssertEqual(PermissionSetupCopy.macOSListName(isDevelopment: true), "Goalong Dev")
         XCTAssertEqual(PermissionSetupCopy.macOSListName(isDevelopment: false), ProductIdentity.canonicalDisplayName)

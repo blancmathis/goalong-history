@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AgentActivity
     import AppKit
@@ -73,7 +74,7 @@
                     guard let window = controller.window else { return }
                     let connected = await websitePairing.connect(url: url, window: window)
                     if connected && pendingWebsiteURL == nil {
-                        UserDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
+                        GoalongDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
                         controller.show(section: .settings)
                         self.dashboardViewModel.settingsPane = .website
                         // A share link only reveals the picker: the credential did not change, so a
@@ -463,7 +464,7 @@
                 Diagnostics.write("Goalong reopened by its blocking guard")
             } else if !resumedSetup { showDashboardOnFirstConsentLaunch() }
             if GoalongGuardFiles.isGuardRelaunch {
-                UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
+                GoalongDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
             } else if resumedSetup {
                 // The activation toggles live in the Recording pane, not on the Settings home.
                 if let capability = PermissionRecovery.resumedCapability,
@@ -474,9 +475,9 @@
                 PermissionRecovery.expireResumedCapability(after: 30)
             } else if CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
                 dashboardWindowController?.show(section: .settings)
-            } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || UserDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
-                UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
-                let previousSection = UserDefaults.standard.string(forKey: "goalong.restoreVisibleSection")
+            } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || GoalongDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
+                GoalongDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
+                let previousSection = GoalongDefaults.standard.string(forKey: "goalong.restoreVisibleSection")
                     .flatMap(DashboardSection.init(rawValue:)) ?? dashboardViewModel.selectedSection
                 dashboardWindowController?.show(section: previousSection)
             }
@@ -692,8 +693,8 @@
         func applicationWillTerminate(_ notification: Notification) {
             guard runtimeStarted else { return }
             if dashboardWindowController?.window?.isVisible == true {
-                UserDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
-                UserDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
+                GoalongDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
+                GoalongDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
             MainActor.assumeIsolated { ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown() }
             SoftwareUpdateManager.shared.stop()
@@ -875,124 +876,38 @@
             ActivityAnalysisRuntime.shared.prepareForHistoryClear()
             ChatGPTRecapRuntime.shared.prepareForHistoryClear()
             barrier.notifyWhenDrained(suspension) { [self] in
-                DispatchQueue.global(qos: .userInitiated).async { [self] in
-                    do {
-                        let selection = try TargetedHistoryDeletionResolver().resolve(request)
-                        try semanticContextStore.preflightSnapshotDeletion(
-                            withIDs: selection.semanticSnapshotIDs,
-                            on: selection.semanticDays
+                TargetedHistoryDeletionCommitter(
+                    rawStore: store,
+                    semanticStore: semanticContextStore,
+                    derivedCleaner: DerivedHistoryCleaner()
+                ).commit(request) { [self] result in
+                    if case .success(let outcome) = result {
+                        recorder.record(
+                            kind: .historyCleared,
+                            message:
+                                "Selected local activity, semantic snapshots, and derived memories deleted",
+                            metadata: [
+                                "scope": "targeted_item",
+                                "deleted_events": String(outcome.rawCount),
+                                "deleted_semantic_snapshots": String(outcome.semanticCount),
+                                "deleted_activity_analysis_files": String(
+                                    outcome.derived.activityAnalysisFiles
+                                ),
+                                "deleted_activity_memory_files": String(
+                                    outcome.derived.activityMemoryFiles
+                                ),
+                                "deleted_computer_history_files": String(
+                                    outcome.derived.computerHistoryFiles
+                                ),
+                            ]
                         )
-                        let derivedPlan = try DerivedHistoryCleaner().prepareDeletion(
-                            days: selection.affectedDays
-                        )
-                        deleteTargetedDetailsAfterPreflight(
-                            selection: selection,
-                            derivedPlan: derivedPlan,
-                            suspension: suspension,
-                            completion: completion
-                        )
-                    } catch {
-                        DispatchQueue.main.async { [self] in
-                            completeHistoryClear(
-                                .failure(error),
-                                suspension: suspension,
-                                completion: completion
-                            )
-                        }
                     }
-                }
-            }
-        }
-
-        private func deleteTargetedDetailsAfterPreflight(
-            selection: TargetedHistoryDeletionSelection,
-            derivedPlan: DerivedHistoryDeletionPlan,
-            suspension: DerivedHistoryWriteBarrier.Suspension,
-            completion: @escaping (Result<Int, Error>) -> Void
-        ) {
-            store.deleteEvents(
-                withIDs: selection.eventIDs,
-                from: selection.start,
-                through: selection.end
-            ) { [self] rawResult in
-                switch rawResult {
-                case .failure(let error):
                     completeHistoryClear(
-                        .failure(error),
+                        result.map(\.total),
                         suspension: suspension,
                         completion: completion
                     )
-                case .success(let raw):
-                    guard raw.eventCount >= selection.eventIDs.count else {
-                        completeHistoryClear(
-                            .failure(TargetedHistoryDeletionError.sourceChangedDuringCommit),
-                            suspension: suspension,
-                            completion: completion
-                        )
-                        return
-                    }
-                    let semanticIDs = selection.semanticSnapshotIDs.union(
-                        raw.semanticSnapshotIDs
-                    )
-                    semanticContextStore.deleteSnapshots(
-                        withIDs: semanticIDs,
-                        on: selection.semanticDays
-                    ) { [self] semanticResult in
-                        switch semanticResult {
-                        case .failure(let error):
-                            derivedPlan.executeAfterSemanticFailure()
-                            completeHistoryClear(
-                                .failure(error),
-                                suspension: suspension,
-                                completion: completion
-                            )
-                        case .success(let semanticCount):
-                            finishTargetedHistoryDeletion(
-                                rawCount: raw.eventCount,
-                                semanticCount: semanticCount,
-                                derivedPlan: derivedPlan,
-                                suspension: suspension,
-                                completion: completion
-                            )
-                        }
-                    }
                 }
-            }
-        }
-
-        private func finishTargetedHistoryDeletion(
-            rawCount: Int,
-            semanticCount: Int,
-            derivedPlan: DerivedHistoryDeletionPlan,
-            suspension: DerivedHistoryWriteBarrier.Suspension,
-            completion: @escaping (Result<Int, Error>) -> Void
-        ) {
-            do {
-                let derived = try derivedPlan.execute()
-                recorder.record(
-                    kind: .historyCleared,
-                    message:
-                        "Selected local activity, semantic snapshots, and derived memories deleted",
-                    metadata: [
-                        "scope": "targeted_item",
-                        "deleted_events": String(rawCount),
-                        "deleted_semantic_snapshots": String(semanticCount),
-                        "deleted_activity_analysis_files": String(derived.activityAnalysisFiles),
-                        "deleted_activity_memory_files": String(derived.activityMemoryFiles),
-                        "deleted_computer_history_files": String(derived.computerHistoryFiles),
-                    ]
-                )
-                completeHistoryClear(
-                    .success(rawCount + semanticCount + derived.total),
-                    suspension: suspension,
-                    completion: completion
-                )
-            } catch {
-                completeHistoryClear(
-                    .failure(error),
-                    suspension: suspension,
-                    completion: completion
-                )
             }
         }
 
@@ -1760,7 +1675,7 @@
         private func presentFatalError(_ error: Error) {
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert(error: error)
-            alert.messageText = "Goalong History n’a pas pu démarrer"
+            alert.messageText = "Goalong n’a pas pu démarrer"
             alert.informativeText = StorageHealth.failureKind(for: error) == .diskFull
                 ? "Le disque est plein. Libérez de l’espace puis relancez Goalong : votre historique n’a pas été modifié."
                 : "Votre historique n’a pas été modifié. Envoyez un rapport pour qu’on puisse corriger le problème, puis relancez Goalong."

@@ -38,23 +38,23 @@ extension GalleryCatalog {
             dashboard("activite/28-jours", section: .overview, sizes: [.window, .full(1240)], fixture: .classified, period: 28),
             dashboard("activite/non-classe", section: .overview, sizes: [.window, .full(1240)], fixture: .realistic),
             dashboard("activite/journee-vide", section: .overview, sizes: [.window, .full(1240)], fixture: .recordingOn),
-            dashboard("activite/traces-isolees", section: .overview, fixture: .sparse),
+            dashboard("activite/traces-isolees", section: .overview, sizes: [.window, .full(1240)], fixture: .sparse),
             dashboard("activite/enregistrement-desactive", section: .overview),
             // Developer mode shows the preview switch; the preview itself is page state, not reachable from here.
-            dashboard("activite/mode-developpeur", section: .analytics, fixture: .recordingOn,
+            dashboard("activite/mode-developpeur", section: .analytics, sizes: [.window, .full(1240)], fixture: .recordingOn,
                       configure: { _, ctx in ctx.defaults.set(true, forKey: GoalongDeveloperPreferences.enabledKey) }),
             dashboard("activite/permission-manquante", section: .overview,
                       environment: { $0.permissions = .galleryMissing }, fixture: .recordingOn),
             dashboard("fenetre/interactions-indisponibles", section: .overview,
                       environment: { $0.inputTapWorks = false }, fixture: .recordingOn,
-                      note: "bannière « Clics et frappe non reçus » avec « Vérifier les accès… », et statut "
-                          + "« Saisie non reçue » dans la barre latérale"),
-            dashboard("fenetre/pause-globale", section: .overview, paused: true),
+                      note: "bannière « Les clics et la frappe ne parviennent pas à Goalong… », et statut "
+                          + "« Pas d’interactions » dans la barre latérale"),
+            dashboard("fenetre/pause-globale", section: .overview, sizes: [.window, .full(1240)], paused: true),
             dashboard("fenetre/stockage-plein", section: .overview, environment: { $0.storageFailure = .diskFull },
                       fixture: .recordingOn),
             dashboard("fenetre/stockage-refuse", section: .history, environment: { $0.storageFailure = .permissionDenied },
                       fixture: .recordingOn),
-            dashboard("fenetre/espace-faible", section: .overview, environment: { $0.freeBytes = 900_000_000 },
+            dashboard("fenetre/espace-faible", section: .overview, sizes: [.window, .full(1240)], environment: { $0.freeBytes = 900_000_000 },
                       fixture: .recordingOn),
             dashboard("mon-travail/vide", section: .work, sizes: [.window, .full(1240)]),
             dashboard("mon-travail/definition-enregistree", section: .work, configure: { _, _ in
@@ -78,24 +78,25 @@ extension GalleryCatalog {
                     procrastination: "youtube.com, Messages")
             }),
             dashboard("historique/vide", section: .history, sizes: [.window, .full(1240)]),
-            dashboard("historique/journee-vide", section: .history, fixture: .recordingOn),
+            dashboard("historique/journee-vide", section: .history, sizes: [.window, .full(1240)], fixture: .recordingOn),
             dashboard("historique/chronologie", section: .history, sizes: [.window, .minimum, .full(1240)],
                       fixture: .realistic),
-            // UI-15C (22): one state keeps the .activity destination covered. The filled variant drew the same
-            // PNG as historique/, and « Ouvrir le journal » shows the file in the Finder, outside the app's window.
-            dashboard("enregistrement/journal", section: .activity),
-            dashboard("partage/avec-donnees", section: .share, fixture: .realistic),
-            dashboard("temps-ecran/vide", section: .screenTime),
-            dashboard("conversations-ia/vide", section: .agentActivity),
-            dashboard("bilan/non-connecte", section: .chatGPTRecap),
-            dashboard("partage/vide", section: .share),
-            dashboard("confidentialite/choix-par-defaut", section: .privacy),
-            dashboard("confidentialite/pause-globale", section: .privacy, paused: true),
-            dashboard("confidentialite/suivi-actif", section: .privacy, fixture: .realistic),
+            // R-61 (T-043 R2c, décision 1): « enregistrement/journal » drew the same PNG as historique/vide (section
+            // .activity opens the same page). 6bc0d8ad removed it for that reason, e2fef957 put it back only for the
+            // DashboardSection coverage guard; the entry is gone again and the guard names .activity as covered by
+            // historique/ (scripts/gallery.py NOT_COVERED says so).
+            // R8-2: the large window shows several rows; the default one shows the fade.
+            dashboard("partage/avec-donnees", section: .share, sizes: [.window, .large, .full(1240)], fixture: .realistic),
+            dashboard("temps-ecran/vide", section: .screenTime, sizes: [.window, .full(1240)]),
+            dashboard("conversations-ia/vide", section: .agentActivity, sizes: [.window, .full(1240)]),
+            dashboard("partage/vide", section: .share, sizes: [.window, .full(1240)]),
+            dashboard("confidentialite/choix-par-defaut", section: .privacy, sizes: [.window, .full(1240)]),
+            dashboard("confidentialite/pause-globale", section: .privacy, sizes: [.window, .full(1240)], paused: true),
+            dashboard("confidentialite/suivi-actif", section: .privacy, sizes: [.window, .full(1240)], fixture: .realistic),
             // The page shows the install command with the home folder: a fixed displayed home, not the shard's
             // `/tmp/goalong-gallery-<run>/shard-N-…`, which changes every run.
             // UI-9 (36): the installed app's executable, not the xctest runner's.
-            dashboard("terminal/aide", section: .cli, configure: { _, ctx in
+            dashboard("terminal/aide", section: .cli, sizes: [.window, .full(1240)], configure: { _, ctx in
                 showFixedHome(ctx)
                 GoalongCLIInstallation.galleryExecutableURL = URL(fileURLWithPath: "/Applications/Goalong History.app/Contents/MacOS/Goalong History")
                 ctx.cleanups.append { GoalongCLIInstallation.galleryExecutableURL = nil }
@@ -110,7 +111,12 @@ extension GalleryCatalog {
             dashboard("concentration/page", section: .concentration, sizes: [.window, .full(1240)]),
             dashboard("distractions/page", section: .distractions),
             dashboard("programme/page", section: .blocking),
-            dashboard("braise/page-fenetre", section: .braise),
+            // R8-5: the module is on, so its sidebar entry exists and is the selected one.
+            dashboard("braise/page-fenetre", section: .braise, prepare: { ctx in
+                let wasOn = GoalongModuleStore.shared.isEnabled(.braise)
+                GoalongModuleStore.shared.setEnabled(.braise, true)
+                ctx.cleanups.append { GoalongModuleStore.shared.setEnabled(.braise, wasOn) }
+            }),
             dashboard("ambiance/page-fenetre", section: .ambiance),
         ]
     }

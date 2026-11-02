@@ -55,7 +55,8 @@ enum SupportReportStore {
         case success, problem
 
         var symbol: String { self == .success ? "checkmark.circle" : "exclamationmark.triangle.fill" }
-        var tint: Color { self == .success ? LHTheme.secondaryText : LHTheme.warning }
+        /// R-81 (R9B-45): a success reads as one, with a green glyph; the sentence keeps the text colour.
+        var tint: Color { self == .success ? LHTheme.success : LHTheme.warning }
     }
 
     private func report(_ message: String, _ kind: FeedbackKind) {
@@ -93,17 +94,25 @@ enum SupportReportStore {
         prepare()
     }
 
-    func prepare() {
-        guard phase != .preparing else { return }
-        phase = .preparing; feedback = nil; emailUnavailable = false
+    /// R4d-3: a rebuild asked while one is running (the journal was just switched on) runs once the first one ends.
+    private(set) var rebuildPending = false
+    /// Reports built so far; a test reads it to see that the queued rebuild really ran.
+    private(set) var buildCount = 0
+    /// Where the report file goes; a test points it at a throwaway folder.
+    var reportDirectory: URL = SupportReportStore.directory
+
+    func prepare(keepingFeedback: Bool = false) {
+        guard phase != .preparing else { rebuildPending = true; return }
+        phase = .preparing; if !keepingFeedback { feedback = nil }; emailUnavailable = false; buildCount += 1
         let live = SupportDiagnosticsRuntime.shared.snapshot()
         let previousBuild = SupportDiagnosticsRuntime.shared.previousWorkingBuildProvider?()
+        let directory = reportDirectory
         Task {
             let result = await Task.detached(priority: .userInitiated) { () -> Result<(URL, SupportReport, Int), Error> in
                 Result {
                     let report = SupportReport.build(live: live, previousWorkingBuild: previousBuild)
                     let data = try report.data()
-                    return (try SupportReportStore.save(data, createdAt: report.createdAt), report, data.count)
+                    return (try SupportReportStore.save(data, createdAt: report.createdAt, in: directory), report, data.count)
                 }
             }.value
             switch result {
@@ -114,6 +123,7 @@ enum SupportReportStore {
                 SupportDiagnostics.shared.failure(error, component: .support)
                 phase = .failed("Le rapport n’a pas pu être préparé (\(StorageHealth.failureKind(for: error) == .diskFull ? "disque plein" : "erreur d’écriture")). Rien n’a été envoyé.")
             }
+            if rebuildPending { rebuildPending = false; prepare(keepingFeedback: true) }
         }
     }
 
@@ -145,7 +155,7 @@ enum SupportReportStore {
             data = try SupportDiagnostics.readPrivateFile(url, maximum: Self.maximumReportBytes)
         } catch {
             SupportDiagnostics.shared.failure(error, component: .support)
-            report("Le rapport n’est plus disponible. Choisissez « Autres options › Actualiser le rapport », puis réessayez.", .problem)
+            report("Le rapport n’est plus disponible. Actualisez le rapport, puis réessayez.", .problem)
             return
         }
         do {
@@ -167,11 +177,21 @@ enum SupportReportStore {
 
     func markIssue(journal: SupportDiagnostics = .shared) {
         guard journal.isEnabled else {
-            report("Le journal technique est désactivé : activez « Conserver les journaux techniques sur ce Mac » dans Réglages › Avancé › Aide et diagnostic pour ajouter un repère.", .problem)
+            // R9B-43: the finding row already says the journal is off and carries the switch; do not repeat it here.
+            report(Self.journalOffFeedback, .problem)
             return
         }
         journal.record(.userMarkedIssue, component: .support)
-        report("Repère ajouté à \(GoalongUIFormat.time(Date())). Reproduisez le problème, puis choisissez « Autres options › Actualiser le rapport ».", .success)
+        report("Repère ajouté à \(GoalongUIFormat.time(Date())). Reproduisez le problème, puis actualisez le rapport.", .success)
+    }
+
+    static let journalOffFeedback = "Repère non ajouté. Activez d’abord le journal technique, ci-dessous."
+
+    /// R9B-43: the « Journal technique désactivé » finding is fixed in place, then the report is rebuilt.
+    func enableJournal(_ journal: SupportDiagnostics = .shared) {
+        journal.setEnabled(true)
+        prepare()  // clears the old answer, so the new one comes after
+        report("Journal technique activé. Les prochains événements seront inclus.", .success)
     }
 
     func close() { window?.close() }
@@ -211,14 +231,19 @@ struct SupportRequestView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     header
+                    // The answer to the last action sits under the header, in view without scrolling (R-81).
+                    if let feedback = controller.feedback {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: controller.feedbackKind.symbol).foregroundStyle(controller.feedbackKind.tint)
+                            Text(feedback).foregroundStyle(LHTheme.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.system(size: 12))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("support-feedback")
+                    }
                     detected
                     contents
-                    if let feedback = controller.feedback {
-                        Label(feedback, systemImage: controller.feedbackKind.symbol)
-                            .font(.system(size: 12)).foregroundStyle(controller.feedbackKind.tint)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("support-feedback")
-                    }
                 }
                 .padding(.horizontal, 28).padding(.top, 34).padding(.bottom, 20)
             }
@@ -259,7 +284,7 @@ struct SupportRequestView: View {
                 switch controller.phase {
                 case .idle, .preparing:
                     HStack(spacing: 10) {
-                        ProgressView().controlSize(.small)
+                        ProgressView().controlSize(.small).progressViewStyle(GoalongSpinnerStyle())
                         Text("Analyse des journaux techniques…").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 case .failed(let message):
@@ -276,7 +301,7 @@ struct SupportRequestView: View {
                 case .ready(_, let findings, _, _):
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(Array(Self.shownFindings(findings).enumerated()), id: \.offset) { _, finding in
-                            SupportFindingRow(finding: finding)
+                            SupportFindingRow(finding: finding, enableJournal: { controller.enableJournal() })
                         }
                     }
                     .accessibilityIdentifier("support-findings")
@@ -301,6 +326,10 @@ struct SupportRequestView: View {
                             Text("\(GoalongUIFormat.count(events, "événement")) technique\(events > 1 ? "s" : ""), \(GoalongUIFormat.bytes(Int64(bytes)))")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             Spacer()
+                            // R-81 (R9B-45): refreshing is a direct action, not hidden in « Autres options ».
+                            Button("Actualiser le rapport") { controller.prepare() }
+                                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                                .accessibilityIdentifier("support-refresh")
                             Button("Afficher le fichier") { controller.revealReport() }
                                 .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
                                 .accessibilityIdentifier("support-reveal")
@@ -354,6 +383,7 @@ struct SupportRequestView: View {
                 Button("Noter l’heure du problème") { controller.markIssue() }
                     .disabled(!SupportDiagnostics.shared.isEnabled)
                 Button("Actualiser le rapport") { controller.prepare() }
+                    .disabled(controller.isPreparing)
                 Divider()
                 Button("Enregistrer une copie…") { controller.saveCopy() }.disabled(ready == nil)
             } label: { Text("Autres options") }
@@ -361,31 +391,45 @@ struct SupportRequestView: View {
             .tint(LHTheme.text) // Lime stays on the main action.
             .accessibilityIdentifier("support-more")
             Spacer()
-            if let ready {
-                let share = ShareLink(item: ready, subject: Text("Goalong History — rapport de diagnostic")) {
-                    Label("Partager…", systemImage: "square.and.arrow.up")
-                }
-                Group {
+            // R-81 (R9B-41): the bar keeps the same buttons in every state; held back rather than removed.
+            Group {
+                if let ready {
+                    let share = ShareLink(item: ready, subject: Text("Goalong History — rapport de diagnostic")) {
+                        Label("Partager…", systemImage: "square.and.arrow.up")
+                    }
                     if controller.emailUnavailable {
                         share.buttonStyle(LHPrimaryButtonStyle())
                     } else {
                         share.buttonStyle(LHSecondaryButtonStyle())
                     }
-                }
-                .fixedSize()
-                .accessibilityIdentifier("support-share")
-            }
-            Group {
-                if canEmail {
-                    emailButton.buttonStyle(LHPrimaryButtonStyle())
                 } else {
-                    emailButton.buttonStyle(LHSecondaryButtonStyle())
+                    Button {} label: { Label("Partager…", systemImage: "square.and.arrow.up") }
+                        .buttonStyle(LHSecondaryButtonStyle())
+                        .disabled(true)
                 }
             }
             .fixedSize()
-            .disabled(!canEmail)
-            .keyboardShortcut(.defaultAction)
-            .accessibilityIdentifier("support-email")
+            .accessibilityIdentifier("support-share")
+            if controller.emailUnavailable {
+                // R-81 (R9B-44): with no mail app, the copy the message points to takes the e-mail button's place.
+                Button("Enregistrer une copie…") { controller.saveCopy() }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .fixedSize()
+                    .disabled(ready == nil)
+                    .accessibilityIdentifier("support-save-copy")
+            } else {
+                Group {
+                    if canEmail {
+                        emailButton.buttonStyle(LHPrimaryButtonStyle())
+                    } else {
+                        emailButton.buttonStyle(LHSecondaryButtonStyle())
+                    }
+                }
+                .fixedSize()
+                .disabled(!canEmail)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("support-email")
+            }
         }
     }
 
@@ -400,6 +444,7 @@ struct SupportRequestView: View {
 
 struct SupportFindingRow: View {
     let finding: SupportFinding
+    var enableJournal: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -409,8 +454,39 @@ struct SupportFindingRow: View {
                 Text(finding.title).font(.system(size: 13, weight: .semibold))
                 Text(finding.detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+                // R-81 (R9B-37): a finding the user can fix leads to the place that fixes it.
+                if let action = Self.action(for: finding.code) {
+                    Button(action.title) { _ = GoalongWorkspaceOpenPolicy.open(action.url, purpose: .systemSettings) }
+                        .buttonStyle(LHSecondaryButtonStyle()).font(.system(size: 12))
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("support-finding-action-\(finding.code.rawValue)")
+                } else if finding.code == .diagnosticsDisabled, let enableJournal {
+                    Button(Self.enableJournalTitle, action: enableJournal)
+                        .buttonStyle(LHSecondaryButtonStyle()).font(.system(size: 12))
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("support-finding-action-\(finding.code.rawValue)")
+                }
             }
             Spacer(minLength: 0)
+        }
+    }
+
+    static let enableJournalTitle = "Activer le journal technique"
+
+    struct Action: Equatable {
+        let title: String
+        let url: URL
+    }
+
+    static func action(for code: SupportFinding.Code) -> Action? {
+        switch code {
+        case .permissionMissing:
+            return Action(title: "Ouvrir Réglages Système…",
+                          url: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        case .lowDiskSpace:
+            return Action(title: "Gérer le stockage…", url: URL(string: "x-apple.systempreferences:com.apple.settings.Storage")!)
+        default:
+            return nil
         }
     }
 

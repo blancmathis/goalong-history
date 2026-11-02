@@ -17,7 +17,7 @@ struct BlockedSiteVeil: View {
                 VStack(spacing: 8) {
                     Text(title).font(LHTheme.pageTitleFont).tracking(LHTheme.pageTitleTracking)
                         .multilineTextAlignment(.center).lineLimit(2)
-                    Label(untilLine, systemImage: presentation.lock == .locked ? "lock.fill" : "lock")
+                    Label(Self.stateLine(presentation), systemImage: presentation.lock == .locked ? "lock.fill" : "lock")
                         .font(.system(size: 15, weight: .medium))
                 }
                 if !BlockingFormat.isOpenEnded(presentation.end) {
@@ -34,9 +34,9 @@ struct BlockedSiteVeil: View {
                 }
                 Text(detail).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     .multilineTextAlignment(.center).frame(maxWidth: 460).fixedSize(horizontal: false, vertical: true)
-                if let counts = countsLine {
+                if let counts = Self.countsLine(presentation.feedback) {
                     Text(counts).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
-                        .multilineTextAlignment(.center).lineSpacing(3)
+                        .multilineTextAlignment(.center)
                         .accessibilityIdentifier("blocking-veil-attempts")
                 }
                 if let minutes = presentation.breakMinutes, presentation.breaksLeft > 0 {
@@ -54,9 +54,8 @@ struct BlockedSiteVeil: View {
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                 } else if presentation.breakMinutes != nil {
-                    // No break left and no extra one: say it, instead of a veil that silently lost its way out.
-                    Text(BlockingFormat.isOpenEnded(presentation.end) ? "Pauses du jour prises."
-                         : "Pauses du jour prises. Le blocage s’arrête à \(BlockingFormat.endTime(presentation.end)).")
+                    // No break left and no extra one: say it. The end time is already on the state line (R-85).
+                    Text("Pauses du jour prises.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .accessibilityIdentifier("blocking-veil-no-break")
                 }
@@ -92,15 +91,20 @@ struct BlockedSiteVeil: View {
         }
     }
 
-    private var untilLine: String {
+    /// The line under the title says the state. A used quota is a state of its own, not a lock (R-85);
+    /// the end time is said here once.
+    static func stateLine(_ presentation: BlockingVeilPresentation) -> String {
+        // A used quota is the state; its end shows on the thread under it.
+        if case .quotaUsed = presentation.reason { return "Quota du jour atteint" }
+        // A timed block shows its end on the thread under the line, never twice (R-85).
         if BlockingFormat.isOpenEnded(presentation.end) { return "Bloqué pendant que vous travaillez" }
-        return "\(presentation.lock == .locked ? "Verrouillé" : "Bloqué") jusqu’à \(BlockingFormat.endTime(presentation.end))"
+        return presentation.lock == .locked ? "Verrouillé" : "Bloqué"
     }
 
-    private var countsLine: String? {
-        let parts = [presentation.feedback?.attemptLine, presentation.feedback?.earnedLine].compactMap { $0 }
-        // One fact per line: the attempt count, then the earned break (UI-15B, 47).
-        return parts.isEmpty ? nil : parts.map { $0 + "." }.joined(separator: "\n")
+    /// The attempt count and the earned break, on one line (R-98).
+    static func countsLine(_ feedback: BlockingListFeedback?) -> String? {
+        let parts = [feedback?.attemptLine, feedback?.earnedLine].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ") + "."
     }
 
     var detail: String {
@@ -174,6 +178,9 @@ struct FrozenMacShield: View {
     var now: Date?
     var onOpen: (BlockAppRule) -> Void = { _ in }
 
+    /// The end time shows once, on the thread under it (R-85).
+    static let stateLine = "Mac gelé"
+
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 1)) { context in // wall: display tick
             let now = self.now ?? GoalongToday.timeline(context.date)
@@ -184,15 +191,22 @@ struct FrozenMacShield: View {
                     GoalongMark().stroke(LHTheme.secondaryText, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                         .frame(width: 52, height: 36)
                     VStack(spacing: 10) {
-                        Text(clock(freeze.end.timeIntervalSince(now)))
-                            .font(.system(size: 96, weight: .bold).monospacedDigit()).tracking(-3)
-                            .accessibilityLabel("Temps restant : \(BlockingFormat.remaining(freeze.end.timeIntervalSince(now)))")
+                        VStack(spacing: 0) {
+                            Text(clock(freeze.end.timeIntervalSince(now)))
+                                .font(.system(size: 96, weight: .bold).monospacedDigit()).tracking(-3)
+                            // The timer says its direction (déc. 15).
+                            Text("restant").font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Temps restant : \(BlockingFormat.remaining(freeze.end.timeIntervalSince(now)))")
                         // The figure is the time left (said to VoiceOver); the line under it says when it ends (UI-16C, 47).
-                        Label("Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
+                        Label(Self.stateLine, systemImage: "snowflake")
                             .font(.system(size: 17, weight: .semibold))
                     }
                     BlockingSessionThread(start: freeze.start, end: freeze.end, now: now, locked: true).frame(width: 440)
                     if !freeze.allowedApps.isEmpty {
+                      VStack(spacing: 10) {
+                        Text("Apps autorisées").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
                         HStack(spacing: 18) {
                             ForEach(freeze.allowedApps) { app in
                                 Button { onOpen(app) } label: {
@@ -206,7 +220,8 @@ struct FrozenMacShield: View {
                                 .accessibilityLabel("Ouvrir \(app.name)")
                             }
                         }
-                        .padding(.top, 8)
+                      }
+                      .padding(.top, 8)
                     }
                 }
                 Spacer()
@@ -226,7 +241,7 @@ struct FrozenMacShield: View {
     }
 }
 
-/// An app or site icon crossed out by one stroke of ink, ringed by the page so it reads on the icon.
+/// An app or site icon with a "forbidden" mark in its corner, ringed by the page so it reads on the icon.
 struct BlockingStruckIcon: View {
     let item: BlockingItem
     var size: CGFloat = 48
@@ -243,7 +258,7 @@ struct BlockingStruckIcon: View {
     var body: some View {
         ZStack {
             if let initial = Self.fallbackInitial(for: item) {
-                // The initial sits in a corner, away from the stroke, so both stay whole.
+                // The initial sits in the top corner, away from the badge, so both stay whole.
                 let shape = RoundedRectangle(cornerRadius: size * 0.23, style: .continuous)
                 ZStack {
                     shape.fill(LHTheme.insetBackground)
@@ -257,16 +272,14 @@ struct BlockingStruckIcon: View {
             } else {
                 BlockingIconStack(items: [item], size: size)
             }
-            Path { path in
-                path.move(to: CGPoint(x: size * 0.08, y: size * 0.92))
-                path.addLine(to: CGPoint(x: size * 0.92, y: size * 0.08))
-            }
-            .stroke(LHTheme.pageBackground, style: StrokeStyle(lineWidth: max(4, size * 0.13), lineCap: .round))
-            Path { path in
-                path.move(to: CGPoint(x: size * 0.08, y: size * 0.92))
-                path.addLine(to: CGPoint(x: size * 0.92, y: size * 0.08))
-            }
-            .stroke(LHTheme.text, style: StrokeStyle(lineWidth: max(2, size * 0.06), lineCap: .round))
+            // The "forbidden" mark sits in a corner, so the icon itself stays readable (R-84).
+            let badge = max(14, size * 0.42)
+            Image(systemName: "nosign")
+                .font(.system(size: badge * 0.72, weight: .bold))
+                .foregroundStyle(LHTheme.text)
+                .frame(width: badge, height: badge)
+                .background(Circle().fill(LHTheme.pageBackground))
+                .offset(x: size / 2 - badge * 0.35, y: size / 2 - badge * 0.35)
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)

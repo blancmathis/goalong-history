@@ -7,14 +7,17 @@ import SwiftUI
     /// Lets a module stop at once when it is turned off (Ambiance stops its music).
     var onChange: (GoalongModule, Bool) -> Void = { _, _ in }
     @ObservedObject var modules = GoalongModuleStore.shared
-    @ObservedObject private var concentration = ConcentrationRuntime.shared
+    /// M3 (R4d-19): injectable so a test can render the delete link's state; the app keeps the shared runtime.
+    @ObservedObject var concentration: ConcentrationRuntime = .shared
     @ObservedObject private var blocking = BlockingRuntime.shared
     /// The gallery shows a running locked block without starting the Blocage runtime.
     var blockingController: BlockingController?
     @State private var confirmingDelete = false
     @State private var deleteMessage: String?
     /// Commitments live in the same folder: open ones go too, without a result (T-045 H5-01).
-    static let concentrationKeptData = "Ses séances, plans et engagements restent sur ce Mac, même désactivé."
+    /// VoiceOver names the module on each « Ouvrir » button; the label starts with the visible word (Voice Control).
+    nonisolated static func openAccessibilityLabel(_ module: GoalongModule) -> String { "Ouvrir \(module.title)" }
+    static let concentrationKeptData = "Ses séances, plans et engagements restent sur ce Mac, même si le module est désactivé."
     static let concentrationDeleteMessage = "Séances, plans, bilans, engagements (en cours compris) et réglages de ce module. Le reste de Goalong ne change pas."
 
     var body: some View {
@@ -55,6 +58,8 @@ import SwiftUI
         let on = modules.isEnabled(module)
         let locked = (module == .blocking && (blockingController ?? blocking.controller)?.moduleOffRefusal != nil) || (module == .concentration && concentration.controller?.hasLockedBlock == true)
         return HStack(alignment: .center, spacing: 12) {
+            // R-98 (R4d-13): the icon sits on the title's line in every row, also in the taller Concentration row.
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
             Image(systemName: module.symbol).font(.system(size: 14, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 22).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -71,16 +76,20 @@ import SwiftUI
                         // UI-13C (42): the link says what it deletes.
                         Button("Supprimer les données de Concentration…", role: .destructive) { confirmingDelete = true }
                             .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
-                            .disabled(concentration.controller?.hasLockedBlock == true)
+                            // R-77 (R9C-54): held back, with the reason, when there is nothing to delete.
+                            .disabled(concentration.controller?.hasLockedBlock == true || !concentration.hasStoredData)
+                            .help(concentration.hasStoredData ? "" : "Aucune donnée de Concentration sur ce Mac.")
+                            .onAppear { concentration.refreshHasData() }
                     }.padding(.top, 2).padding(.bottom, 6) // The red link keeps clear of the row's divider (UI-11C).
                 }
+            }
             }
             Spacer(minLength: 12)
             if on {
                 // R7 (42): a bordered secondary button, so « Ouvrir » reads as clickable (UI-17A).
                 Button("Ouvrir") { onOpen(section(module)) }.buttonStyle(LHSecondaryButtonStyle())
                     // R-265: VoiceOver names the module, not five bare « Ouvrir ».
-                    .accessibilityLabel("Ouvrir \(module.title)")
+                    .accessibilityLabel(Self.openAccessibilityLabel(module))
                     .accessibilityIdentifier("settings-module-open-\(module.rawValue)")
             }
             Toggle(module.title, isOn: Binding(get: { on }, set: { value in

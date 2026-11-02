@@ -9,8 +9,8 @@ struct GoalongHealthImportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var host = GoalongWebsiteWindowHost()
     @State private var file: URL?
-    @State private var from = Calendar.current.date(byAdding: .day, value: -7, to: GoalongToday.now) ?? GoalongToday.now
-    @State private var through = Calendar.current.date(byAdding: .day, value: -1, to: GoalongToday.now) ?? GoalongToday.now
+    @State private var from = GoalongHealthImportSheet.defaultRange().from
+    @State private var through = GoalongHealthImportSheet.defaultRange().through
     @State private var selected = Set(GoalongHealthGroup.allCases)
     @State private var preferred: [GoalongHealthGroup: String] = [:]
     @State private var result: GoalongHealthImportResult?
@@ -33,6 +33,12 @@ struct GoalongHealthImportSheet: View {
     @State private var confirmsForget = false
     @AppStorage("goalong.website.origin") private var origin = ""
     @AppStorage("goalong.website.tokenFilePath") private var tokenFilePath = ""
+
+    /// The dates the sheet proposes: the last 7 days, today included. An export always holds today's readings, and the
+    /// day the page shows must sit inside the range (it ended the day before « today » and left today's day out).
+    static func defaultRange(now: Date = GoalongToday.now, calendar: Calendar = .current) -> (from: Date, through: Date) {
+        (calendar.date(byAdding: .day, value: -6, to: now) ?? now, now)
+    }
 
     init() {}
     /// Gallery only: the sheet as a step leaves it, without a real file, task or panel.
@@ -130,7 +136,7 @@ struct GoalongHealthImportSheet: View {
                 // Lime marks the current step only: choose, then prepare, then send (UI-59).
                 // A refused file sends the member back to this step (R33 F1); a send or save failure does not (UI-14).
                 if file == nil || fileRefused { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHPrimaryButtonStyle()) }
-                else { Button("Choisir export.xml…", action: chooseFile).buttonStyle(LHSecondaryButtonStyle()) }
+                else { Button("Choisir un autre fichier…", action: chooseFile).buttonStyle(LHSecondaryButtonStyle()) }
                 if let file { Text(file.lastPathComponent).font(.system(size: 12)); Button("Oublier ce fichier") { self.file = nil; sourceChoices = [:]; preferred = [:]; invalidate() } }
             }
             // The error sits under the file it concerns, not in the footer far from it.
@@ -415,7 +421,7 @@ struct GoalongHealthImportSheet: View {
         guard let value = metric["value"] as? Double, let unit = metric["unit"] as? String else { return "Non disponible" }
         if unit == "s" { return duration(value) }
         if unit == "m" { return kilometres(value) }
-        let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "fr_FR"); formatter.maximumFractionDigits = 1
+        let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "fr_FR"); formatter.numberStyle = .decimal; formatter.maximumFractionDigits = 1
         // French units, bound to the number by a no-break space: « 16 resp./min », « 97 % ».
         let shown = unit == "count/min" ? "resp./min" : unit
         return (formatter.string(from: NSNumber(value: value)) ?? "—") + (unit == "count" ? "" : "\u{00A0}\(shown)")

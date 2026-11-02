@@ -122,11 +122,11 @@ struct GoalongActivityTextureSection: View {
         let total = breakdown.totalSeconds
         let rows = GoalongActivityTexture.order.map { ($0, breakdown.seconds($0)) }
             .filter { $0.1 >= 1 }.sorted { $0.1 > $1.1 }
-        GoalongSection(title: "Écriture, lecture et appels",
+        GoalongSection(title: "Présence au clavier",
                        subtitle: "Le même temps actif, réparti selon ce que le Mac observait à chaque minute") {
             VStack(alignment: .leading, spacing: 14) {
                 if rows.isEmpty {
-                    GoalongEmptyState(title: "Aucune minute active",
+                    GoalongEmptyState(title: "Aucune minute active", kind: .notYet,
                                       message: "Le détail apparaîtra dès que le Mac aura mesuré du temps actif sur cette période.")
                 }
                 ForEach(rows, id: \.0) { mode, seconds in
@@ -213,6 +213,16 @@ struct GoalongSourceRow: Identifiable {
             case .unavailable: return "minus"
             }
         }
+        /// The shared sort of this state (T-043 R4d-7).
+        var kind: GoalongStateKind {
+            switch self {
+            case .ready: return .ready
+            case .partial: return .attention
+            case .off, .noData: return .notYet
+            case .needsPermission: return .needsPermission
+            case .unavailable, .failed: return .unavailable
+            }
+        }
         var tint: Color {
             switch self {
             case .ready: return LHTheme.success
@@ -283,7 +293,7 @@ struct GoalongActivityCoverageSection: View {
         let total = isDay ? "\(observed) observées" : "\(observed) observées sur \(days) jour\(days > 1 ? "s" : "")"
         let span = isDay ? "entre la première et la dernière activité" : "entre la première et la dernière activité de chaque jour"
         return missing >= 60
-            ? "\(total), dont \(GoalongAnalyticsFormatting.duration(missing)) sans observation \(span)."
+            ? "\(total), dont \(GoalongAnalyticsFormatting.duration(missing)) non observées \(span)."
             : "\(total), sans trou \(span)."
     }
 
@@ -330,7 +340,7 @@ struct GoalongActivityCoverageSection: View {
                     Text(source.title).font(.system(size: 13, weight: .medium))
                     // A ready source needs nothing: only the states to act on carry a label.
                     if source.state != .ready {
-                        StatusPill(title: source.state.word, symbol: source.state.symbol, tint: source.state.tint)
+                        StatusPill(title: source.state.word, kind: source.state.kind, symbol: source.state.symbol, tint: source.state.tint)
                     }
                 }
                 Text(source.detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)

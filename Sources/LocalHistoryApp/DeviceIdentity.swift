@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import Foundation
     import LocalAuthentication
@@ -98,7 +99,7 @@
         /// never creates another key; the app records without sealing instead.
         static func resolve(
             provider: () throws -> DeviceIdentity = { try DeviceIdentity.shared(attempts: 2, delay: 0.1) },
-            defaults: UserDefaults = .standard
+            defaults: UserDefaults = GoalongDefaults.standard
         ) -> DeviceIdentityStartup {
             do {
                 let identity = try provider()
@@ -127,7 +128,7 @@
         let previousTier: String
         let newTier: String
 
-        static func load(defaults: UserDefaults = .standard) -> DeviceIdentityRotation? {
+        static func load(defaults: UserDefaults = GoalongDefaults.standard) -> DeviceIdentityRotation? {
             guard let value = defaults.string(forKey: DeviceIdentity.rotationKey) else { return nil }
             let parts = value.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
             guard parts.count == 3, let seconds = TimeInterval(parts[0]) else { return nil }
@@ -233,7 +234,7 @@
             NotificationCenter.default.post(name: didChange, object: nil)
         }
 
-        static func acknowledgeRotation(defaults: UserDefaults = .standard) {
+        static func acknowledgeRotation(defaults: UserDefaults = GoalongDefaults.standard) {
             defaults.removeObject(forKey: DeviceIdentity.rotationKey)
             postChange()
         }
@@ -274,7 +275,7 @@
         }
 
         static func noteIdentity(
-            _ info: DeviceIdentityInfo, defaults: UserDefaults = .standard, now: Date = Date()
+            _ info: DeviceIdentityInfo, defaults: UserDefaults = GoalongDefaults.standard, now: Date = Date()
         ) {
             let previous = defaults.string(forKey: lastIdentityKey)
             if identityChanged(previous: previous, current: info) {
@@ -292,7 +293,7 @@
         static let rotationKey = "goalong.deviceIdentity.rotation.v1"
 
         /// The device ID of the previous launch, if any. Never creates a key.
-        static func lastPersistedDeviceID(defaults: UserDefaults = .standard) -> String? {
+        static func lastPersistedDeviceID(defaults: UserDefaults = GoalongDefaults.standard) -> String? {
             guard let value = defaults.string(forKey: lastIdentityKey),
                 let id = value.split(separator: "|", omittingEmptySubsequences: false).first, !id.isEmpty
             else { return nil }

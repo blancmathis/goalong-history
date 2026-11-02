@@ -35,7 +35,7 @@ extension GalleryCatalog {
             },
             state("focus-indisponible") { model in
                 model.focusAvailable = false
-                model.consentOff = true
+                model.consentOff = true; model.tracking = .attention("Enregistrement désactivé"); model.trackingDetail = "Activez l’enregistrement dans Réglages"
                 model.focusUnavailableReason = "Activez l’enregistrement dans Réglages."
                 model.focusUnavailableFix = .recording
             },
@@ -44,8 +44,9 @@ extension GalleryCatalog {
                 model.ambianceError = "Le son n’a pas pu démarrer. Réessayez."
             },
             state("permission-manquante") { model in
-                model.tracking = .attention("Accessibilité requise")
-                model.trackingDetail = "Autorisez Goalong dans Accessibilité pour reprendre le suivi."
+                // The app's own words for this state (CaptureHealthPresentation.swift).
+                model.tracking = .attention(CaptureHealthState.permissionRequired.frenchTitle)
+                model.trackingDetail = CaptureHealthState.permissionRequired.frenchDetail
                 model.attentionFix = .permissions
             },
             state("blocage-verrouille") { model in
@@ -65,7 +66,7 @@ extension GalleryCatalog {
         [
             panel("temoin/date-et-heure", width: 420, clock: .injected) { ctx in AnyView(GalleryWitness.View(now: ctx.now)) },
             GalleryEntry("toast/exemple", sizes: [.fixed(460, 120)], clock: .none) { _ in
-                GoalongToastCenter.shared.setForTesting("Choix d’analyse enregistrés")
+                GoalongToastCenter.shared.setForTesting("Données à analyser enregistrées")
                 return AnyView(GoalongToastHost())
             },
         ] + supportEntries
@@ -76,8 +77,8 @@ extension GalleryCatalog {
     static var supportEntries: [GalleryEntry] {
         let findings = [
             SupportFinding(severity: .warning, code: .recordingWasInterrupted, title: "Enregistrement interrompu 2 fois",
-                           detail: "Au moins une coupure venait d’un disque plein. 14 observations n’ont pas pu être "
-                               + "enregistrées ; chaque coupure est marquée dans l’historique."),
+                           detail: "Au moins une interruption venait d’un disque plein. 14 événements n’ont pas pu être "
+                               + "enregistrés ; chaque interruption est marquée dans l’historique."),
         ]
         let phases: [(String, SupportRequestController.Phase)] = [
             ("preparation", .preparing),

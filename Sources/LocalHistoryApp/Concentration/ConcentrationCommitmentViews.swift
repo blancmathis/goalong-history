@@ -82,8 +82,12 @@ enum FocusCommitmentFormat {
         date == calendar.startOfDay(for: date) ? "minuit" : BlockingFormat.time(date)
     }
 
-    /// A stored « 09:30 » shown as is: the two-digit clock of every other time in the app (T-044 B3-01, C4-04).
-    static func clock(_ value: String) -> String { value }
+    /// A stored « 09:30 » shown in the system clock (« 09:30 », or « 9:30 AM » in 12 h), like every other time (R-20).
+    static func clock(_ value: String) -> String {
+        let parts = value.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2 else { return value }
+        return GoalongUIFormat.time(minuteOfDay: parts[0] * 60 + parts[1])
+    }
 
     /// « la fin de la journée » for 23:59, else the stored clock.
     static func deadline(_ value: String) -> String { value == "23:59" ? "la fin de la journée" : clock(value) }
@@ -101,9 +105,9 @@ enum FocusCommitmentFormat {
         return format(end, days < 7 ? "EEEE" : "EEEE d MMMM")
     }
 
-    /// Before the result: « Si non tenu : blocage de Réseaux sociaux demain jusqu’à 12:00. »
+    /// Before the result: « Si non tenu, blocage demain jusqu’à 12:00. Bloqué : Réseaux sociaux. » (R-84: « Bloqué : » before the group).
     static func stake(_ stake: FocusStake, period: FocusCommitmentPeriod, lists all: [BlockList], now: Date) -> String {
-        "Si non tenu : blocage de \(lists(stake.listIds, in: all)) \(stakeDay(period, now: now)) \(until(stake.until))."
+        "Si non tenu, blocage \(stakeDay(period, now: now)) \(until(stake.until)). Bloqué : \(lists(stake.listIds, in: all))."
     }
 
     /// After the result: the outcome, then what became of the stake.
@@ -183,12 +187,8 @@ struct FocusCommitmentGauge: View {
     var body: some View {
         Group {
             if empty {
-                GeometryReader { proxy in
-                    Path { path in
-                        path.move(to: CGPoint(x: 1, y: 3)); path.addLine(to: CGPoint(x: proxy.size.width - 1, y: 3))
-                    }
-                    .stroke(LHTheme.tertiaryText.opacity(0.7), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [0.5, 6]))
-                }
+                // Nothing measured and nothing taken: the empty track, solid (no decorative dots; decision 9).
+                Capsule().fill(LHTheme.insetBackground)
             } else if kind == .sessions || kind == .plan, (1...12).contains(target) {
                 HStack(spacing: 3) {
                     ForEach(0..<target, id: \.self) { index in
@@ -365,8 +365,8 @@ struct FocusCommitmentEditRequest: Identifiable {
     }
 
     static func emptyText(for kind: FocusCommitmentPeriod.Kind) -> String {
-        kind == .day ? "Un objectif pour aujourd’hui, que Goalong mesure. Ajoutez un enjeu si vous voulez."
-                     : "Un objectif pour la semaine, que Goalong mesure. Ajoutez un enjeu si vous voulez."
+        kind == .day ? "Un objectif pour aujourd’hui, mesuré par Goalong."
+                     : "Un objectif pour la semaine (7 jours). Enjeu facultatif : un blocage si l’objectif n’est pas tenu."
     }
 
     @ViewBuilder private var empty: some View {
@@ -776,7 +776,7 @@ struct FocusCommitmentDraft: Equatable {
         if harderOnly { return "Engagé : l’objectif peut seulement monter, l’enjeu seulement s’étendre." }
         let created = request.existing?.createdAt ?? now
         let start = draft.period.interval()?.start ?? now
-        return "Modifiable \(FocusCommitmentFormat.editUntil(max(created.addingTimeInterval(600), start), now: now)), puis seulement plus exigeant."
+        return "Modifiable \(FocusCommitmentFormat.editUntil(max(created.addingTimeInterval(600), start), now: now)), puis seulement en le renforçant."
     }
 
     var body: some View {

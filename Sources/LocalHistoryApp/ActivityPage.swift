@@ -56,7 +56,6 @@
                 refreshVisibleAnalysis(day: model.selectedDay)
             }
             .onChange(of: model.selectedDay) { day in
-                computerHistoryModel.clearAnswer()
                 refreshVisibleAnalysis(day: day)
             }
             .onChange(of: consents.document) { _ in

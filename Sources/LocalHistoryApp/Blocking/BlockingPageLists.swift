@@ -12,7 +12,7 @@ import SwiftUI
     @Binding var editing: UUID?
 
     var body: some View {
-        GoalongSection(title: "Listes", subtitle: controller.lists.isEmpty ? "Ce que vous voulez couper. Choisissez un point de départ, vous pourrez tout modifier." : nil) {
+        GoalongSection(title: "Listes", subtitle: controller.lists.isEmpty ? "Ce que vous voulez bloquer. Choisissez un point de départ, vous pourrez tout modifier." : nil) {
             if !controller.lists.isEmpty {
                 Button { create(from: nil) } label: { Label("Nouvelle liste", systemImage: "plus") }
                     .buttonStyle(LHQuietButtonStyle())
@@ -81,9 +81,21 @@ import SwiftUI
         return parts.isEmpty ? "Vide" : parts.joined(separator: ", ")
     }
 
+    /// R4d-26: « Bloque l’accès » names what it blocks, as « Ralentit de N secondes » names its delay.
+    static func blockedSubject(_ list: BlockList) -> String {
+        if list.mode == .allowOnly { return "à tout le reste" }
+        let hasSites = !list.sites.isEmpty, hasApps = !list.apps.isEmpty
+        if hasSites && !hasApps { return "à ces sites" }
+        if hasApps && !hasSites { return "à ces apps" }
+        return "à ces sites et apps"
+    }
+
     static func behaviour(_ list: BlockList) -> String {
-        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) s" : "Bloque l’accès"]
-        if let quota = list.quotaMinutesPerDay { parts.append("\(BlockingFormat.duration(minutes: quota)) libres/jour") }
+        // R4d-26 (tour 2): a block list with nothing in it blocks nothing yet; it must not claim « ces sites et apps ».
+        let empty = list.sites.isEmpty && list.apps.isEmpty && (list.keywords?.isEmpty ?? true)
+        let blocks = empty && list.mode != .allowOnly ? "Ne bloque encore rien" : "Bloque l’accès \(blockedSubject(list))"
+        var parts = [list.effectiveAction == .slowDown ? "Ralentit de \(list.delaySeconds) secondes" : blocks]
+        if let quota = list.quotaMinutesPerDay { parts.append("\(BlockingFormat.duration(minutes: quota)) libres par jour") }
         if let breaks = list.breaks { parts.append("\(breaks.count) pause\(breaks.count > 1 ? "s" : "")") }
         return parts.joined(separator: ", ")
     }
@@ -391,7 +403,7 @@ import SwiftUI
         ruleRow(label: "Mots-clés", symbol: "textformat", empty: "Bloquer des mots…",
                 detail: "Bloque toute page dont l’adresse ou le titre contient ce mot. Mot entier, accents ignorés.",
                 items: list.keywords ?? [], adding: $addingKeyword, text: $newKeyword,
-                placeholder: "ex. match en direct", canAdd: (list.keywords?.count ?? 0) < 50, canRemove: !stricterOnly,
+                placeholder: "ex. résumé du match", canAdd: (list.keywords?.count ?? 0) < 50, canRemove: !stricterOnly,
                 identifier: "keyword") { value in
             ruleError = message(controller.addKeyword(value, to: list.id), input: value, kind: "un mot-clé de 2 à 40 caractères")
         } remove: { keyword in
@@ -423,7 +435,7 @@ import SwiftUI
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     BlockingFlow(spacing: 6) {
-                        Text("Démarre avec").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                        Text("Démarre quand j’ouvre").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                             .frame(height: 26)
                         ForEach(apps) { app in
                             BlockingItemChip(item: .app(app), removable: !stricterOnly) {
@@ -564,6 +576,8 @@ import SwiftUI
     @ObservedObject var controller: BlockingController
     let listID: UUID
     let now: Date
+    /// Tallest the sheet may grow before it scrolls (760 pt in the app). `.infinity` lets the content decide, which the gallery uses to capture the whole list.
+    var maxHeight: CGFloat = 760
     var onDone: () -> Void
 
     /// The sheet's title: a locked list says why it can only get stricter.
@@ -590,7 +604,7 @@ import SwiftUI
                 Color.clear.onAppear(perform: onDone)
             }
         }
-        .frame(width: 600).frame(minHeight: 420, idealHeight: 640, maxHeight: 760)
+        .frame(width: 600).frame(minHeight: 420, idealHeight: maxHeight.isFinite ? min(640, maxHeight) : nil, maxHeight: maxHeight)
         .background(LHTheme.pageBackground)
         .background(Button("") { onDone() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
     }

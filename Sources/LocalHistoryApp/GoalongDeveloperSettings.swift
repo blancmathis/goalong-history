@@ -1,10 +1,11 @@
 #if os(macOS)
 import SwiftUI
+import AppleScreenTime
 
 /// Local UI preference only. It grants no recording, sharing, or system permissions.
 enum GoalongDeveloperPreferences {
     static let enabledKey = "goalong.developerMode.enabled"
-    static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
+    static func isEnabled(in defaults: UserDefaults = GoalongDefaults.standard) -> Bool {
         defaults.bool(forKey: enabledKey) // An absent key is false, including in debug builds.
     }
 }

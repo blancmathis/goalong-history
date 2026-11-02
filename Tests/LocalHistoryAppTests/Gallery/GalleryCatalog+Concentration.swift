@@ -17,6 +17,11 @@ extension GalleryCatalog {
                 try make(GalleryConcentrationFixtures())
             }
         }
+        // R-60: an isolated card keeps 8 pt of margin around it, so its border and shadow are not cut by the frame.
+        func card(_ id: String, width cardWidth: CGFloat, clock: GalleryClockUse = .none,
+                  _ make: @escaping @MainActor (GalleryContext) throws -> AnyView) -> GalleryEntry {
+            panel(id, width: cardWidth + 16, clock: clock) { ctx in AnyView(try make(ctx).padding(8)) }
+        }
         var draft = FocusComposerDraft(); draft.free = .minutes(50)
         var pomodoroDraft = FocusComposerDraft()
         pomodoroDraft.kind = .pomodoro; pomodoroDraft.cycles = 4
@@ -53,40 +58,50 @@ extension GalleryCatalog {
                 return AnyView(ConcentrationPageContent(controller: planned.controller, now: now, measures: planned.measures,
                                                         draft: draft, settingsOpen: true))
             },
+            // R4e-8 (R-94): a chosen day is outlined; « Jours » and « Heure de fin » share one top line.
+            page("concentration-maintenant/reglages-jour-choisi", height: 2_250) { f in
+                let planned = try f.planned()
+                var settings = planned.controller.settings
+                settings.limits.endMinute = 18 * 60 + 30
+                settings.limits.weekdays = [1, 2, 4]
+                try planned.controller.updateSettings(settings)
+                return AnyView(ConcentrationPageContent(controller: planned.controller, now: now, measures: planned.measures,
+                                                        draft: draft, settingsOpen: true))
+            },
             page("concentration-maintenant/module-coupe", height: 300) { _ in
                 tab(.concentration, GoalongModuleOffNote(module: .concentration,
                     text: "Activez-le pour lancer des séances et des Pomodoro, préparer le plan du jour et lire le bilan."))
             },
             page("concentration-distractions/vide", height: 760) { f in
-                tab(.distractions, DistractionsPage(runtime: BlockingRuntime(controller: f.blocking), now: now))
+                tab(.distractions, DistractionsPage(runtime: BlockingRuntime(controller: f.blockingNoList()), now: now))
             },
             page("concentration-distractions/listes", height: 820) { f in
                 tab(.distractions, DistractionsPage(runtime: BlockingRuntime(controller: f.blockingWithLists()), now: now))
             },
-            panel("concentration-panneaux/phase-travail", width: 380, clock: .injected) { _ in
+            card("concentration-panneaux/phase-travail", width: 380, clock: .injected) { _ in
                 AnyView(FocusPhaseNotice(isWork: true, intent: "Rédiger le chapitre 2", endsAt: now.addingTimeInterval(1_500)))
             },
-            panel("concentration-panneaux/phase-pause", width: 380, clock: .injected) { _ in
+            card("concentration-panneaux/phase-pause", width: 380, clock: .injected) { _ in
                 AnyView(FocusPhaseNotice(isWork: false, intent: "Rédiger le chapitre 2", endsAt: now.addingTimeInterval(300)))
             },
-            panel("concentration-panneaux/revue-de-fin", width: 460) { _ in
+            card("concentration-panneaux/revue-de-fin", width: 460) { _ in
                 AnyView(FocusReviewPanelView(intent: "Rédiger le chapitre 2", seconds: 50 * 60, facts: GalleryConcentrationFixtures.facts,
                                              onAnswer: { _, _ in }, onClose: {}))
             },
-            panel("concentration-panneaux/revue-sans-mesure", width: 460) { _ in
+            card("concentration-panneaux/revue-sans-mesure", width: 460) { _ in
                 AnyView(FocusReviewPanelView(intent: "Lire l’article", seconds: 25 * 60, facts: FocusFacts(),
                                              onAnswer: { _, _ in }, onClose: {}))
             },
-            panel("concentration-panneaux/matin", width: 420) { _ in
+            card("concentration-panneaux/matin", width: 420) { _ in
                 AnyView(FocusPromptPanelView(morning: true, onNow: {}, onLater: {}))
             },
-            panel("concentration-panneaux/soir", width: 420) { _ in
+            card("concentration-panneaux/soir", width: 420) { _ in
                 AnyView(FocusPromptPanelView(morning: false, onNow: {}, onLater: {}))
             },
-            panel("concentration-panneaux/limite", width: 420) { _ in
+            card("concentration-panneaux/limite", width: 420) { _ in
                 AnyView(FocusLimitPanelView(text: "45 h de travail cette semaine — votre limite.", onClose: {}))
             },
-            panel("concentration-panneaux/feuille-bilan", width: 640, clock: .injected) { _ in
+            card("concentration-panneaux/feuille-bilan", width: 640, clock: .injected) { _ in
                 let planned = try GalleryConcentrationFixtures().planned().controller
                 return AnyView(ConcentrationReviewSheet(controller: planned, plan: planned.plan, review: nil, onClose: {}))
             },
@@ -111,7 +126,7 @@ extension GalleryCatalog {
                 AnyView(SlowDownVeil(presentation: GalleryConcentrationFixtures.slowDown(ready: true),
                                      item: .site("instagram.com"), now: now))
             },
-            panel("ralentissement/app", width: 420, height: 168, clock: .injected) { _ in
+            card("ralentissement/app", width: 420, clock: .injected) { _ in
                 var app = GalleryConcentrationFixtures.slowDown(ready: false); app.name = "Messages"; app.occurrence = 1
                 return AnyView(SlowDownAppCard(presentation: app,
                     item: .app(BlockAppRule(bundleIdentifier: "com.apple.MobileSMS", name: "Messages")), now: now))
@@ -120,9 +135,9 @@ extension GalleryCatalog {
     }
 
     static var ambianceEntries: [GalleryEntry] {
-        func page(_ id: String, width: CGFloat = 900, height: CGFloat, sources: [AmbianceSource], packs: [AmbiancePackState],
+        func page(_ id: String, width: CGFloat = 900, sources: [AmbianceSource], packs: [AmbiancePackState],
                   state: @escaping ([AmbianceSource]) -> AmbianceController.State = { _ in .idle }, lastSource: String? = nil) -> GalleryEntry {
-            panel(id, width: width, height: height) { _ in
+            panel(id, width: width) { _ in
                 var volume = 0.6
                 let binding = Binding(get: { volume }, set: { volume = $0 })
                 return AnyView(AmbiancePageContent(sources: sources, packs: packs, state: state(sources), lastSource: lastSource,
@@ -132,16 +147,28 @@ extension GalleryCatalog {
         let none = GalleryFixtures.ambianceSources(orchestra: false, textures: false, files: false)
         let all = GalleryFixtures.ambianceSources(orchestra: true, textures: true, files: true)
         return [
-            page("ambiance/a-installer", height: 1_250, sources: none,
+            page("ambiance/a-installer", sources: none,
                  packs: GalleryFixtures.ambiancePacks(.notInstalled, .notInstalled)),
-            page("ambiance/telechargement", height: 560, sources: none,
+            page("ambiance/telechargement", sources: none,
                  packs: GalleryFixtures.ambiancePacks(.downloading(0.42), .notInstalled)),
-            page("ambiance/prete", height: 1_300, sources: GalleryFixtures.ambianceSources(orchestra: true, textures: false, files: false),
+            page("ambiance/prete", sources: GalleryFixtures.ambianceSources(orchestra: true, textures: false, files: false),
                  packs: GalleryFixtures.ambiancePacks(.installed, .downloading(0.67)), lastSource: "confluence"),
-            page("ambiance/lecture", height: 1_500, sources: all, packs: GalleryFixtures.ambiancePacks(.installed, .installed),
+            page("ambiance/lecture", sources: all, packs: GalleryFixtures.ambiancePacks(.installed, .installed),
                  state: { .playing($0[0]) }),
-            page("ambiance/etroit", width: 640, height: 900, sources: all, packs: GalleryFixtures.ambiancePacks(.installed, .installed),
+            page("ambiance/etroit", width: 640, sources: all, packs: GalleryFixtures.ambiancePacks(.installed, .installed),
                  state: { .playing($0[0]) }),
+            // R4d-9: a pack comes down, and the sidebar says so on the Ambiance row (the module is on; another page is open,
+            // so the page does not follow its own controller and keep the signal).
+            dashboard("ambiance/barre-telechargement", section: .concentration, sizes: [.window, .minimum],
+                      reached: { AmbianceDownloadSignal.shared.downloading }, prepare: { ctx in
+                let wasOn = GoalongModuleStore.shared.isEnabled(.ambiance)
+                GoalongModuleStore.shared.setEnabled(.ambiance, true)
+                AmbianceDownloadSignal.shared.setForTesting(true)
+                ctx.cleanups.append {
+                    GoalongModuleStore.shared.setEnabled(.ambiance, wasOn)
+                    AmbianceDownloadSignal.shared.setForTesting(false)
+                }
+            }),
             panel("braise/page", width: 900, height: 1_050) { ctx in AnyView(BraisePageContent(controller: try braise(ctx))) },
             panel("braise/panneau-compact", width: 480, height: 820) { ctx in
                 AnyView(BraisePageContent(controller: try braise(ctx), compact: true))
@@ -208,6 +235,13 @@ extension GalleryCatalog {
         document.usage = usage
         blocking = BlockingController(document: document, clock: { clock.now },
                                       continuous: { clock.now.timeIntervalSince1970 })
+    }
+
+    /// R-61: « vide » means no list at all (`blocking` holds two lists and a day of use).
+    func blockingNoList() -> BlockingController {
+        let clock = self.clock
+        return BlockingController(document: BlockingDocument(), clock: { clock.now },
+                                  continuous: { clock.now.timeIntervalSince1970 })
     }
 
     func blockingWithLists() -> BlockingController {

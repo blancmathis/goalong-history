@@ -114,7 +114,7 @@
             var emptyPolicy = GoalongPrivacyPolicy(); emptyPolicy.revision = "none"
             return ContextReadParameters(foregroundApplication: front, applications: catalogue,
                 config: config, accessibilityAvailable: accessibility,
-                blockingAXTrusted: history ? false : AXIsProcessTrusted(), sessionAvailable: ForegroundSessionAvailability.isAvailable(),
+                blockingAXTrusted: history ? false : GoalongAccessibilityTrust.isTrusted, sessionAvailable: ForegroundSessionAvailability.isAvailable(),
                 idleSeconds: UserInputActivityClock.secondsSinceLastInput(),
                 privacy: history ? GoalongPrivacyPolicyCache.read(in: AppPaths.applicationSupportDirectory) : emptyPolicy,
                 pauseRevision: history ? try? GoalongGlobalPause.admit() : nil,

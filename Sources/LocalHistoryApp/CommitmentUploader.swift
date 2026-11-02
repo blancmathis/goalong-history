@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import Darwin
     import Foundation
@@ -368,7 +369,7 @@
             self.appAttest = AppAttestManager(enabled: config.enableAppAttest != false)
             self.registrationStore = CommitmentRegistrationStore(
                 baseURL: url,
-                defaults: .standard
+                defaults: GoalongDefaults.standard
             )
             let configuration = URLSessionConfiguration.ephemeral
             configuration.waitsForConnectivity = false
@@ -400,7 +401,7 @@
             maximumRetryDelay: TimeInterval = 15 * 60,
             retryJitter: @escaping (TimeInterval) -> TimeInterval = { $0 },
             testingSession: URLSession? = nil,
-            testingDefaults: UserDefaults = .standard,
+            testingDefaults: UserDefaults = GoalongDefaults.standard,
             onlyDeviceID: String? = nil,
             uploadAttempt: UploadAttempt? = nil
         ) {

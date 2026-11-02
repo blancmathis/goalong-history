@@ -81,6 +81,8 @@
     struct LHNavigationButtonStyle: ButtonStyle {
         var selected = false
         var cornerRadius: CGFloat = LHTheme.controlRadius
+        /// Keep full color when disabled: help and disclosure rows stay readable inside a locked zone.
+        var readableWhenDisabled = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.isFocused) private var isFocused
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -105,7 +107,7 @@
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2)
                 }
-                .opacity(isEnabled ? 1 : 0.45)
+                .opacity(isEnabled || readableWhenDisabled ? 1 : 0.6)
                 .contentShape(Rectangle())
                 .onHover { isHovered = $0 }
                 .animation(reduceMotion ? nil : LHTheme.hover, value: isHovered)
@@ -218,11 +220,26 @@
         }
     }
 
-    /// A state in one glance: the glyph carries the colour, the words stay in ink.
+    /// A state in one glance: the glyph carries the colour, the words stay in ink. Never a pill without words
+    /// (déc. 14, T-043 R-10): the title is required and is also what VoiceOver reads, unless a fuller
+    /// `accessibilityLabel` is given. `kind` picks the shared glyph of a state sort when no symbol is chosen.
     struct StatusPill: View {
         let title: String
         let symbol: String
         let tint: Color
+        var accessibilityLabel: String?
+
+        /// Shown when a caller passes an empty title: a pill always has words, and never stops the app (R281-10).
+        static let fallbackTitle = "Statut"
+
+        /// `kind` is required (T-043 R4d-7); `symbol` replaces the glyph of the sort when a state has its own.
+        init(title: String, kind: GoalongStateKind, symbol: String? = nil, tint: Color = LHTheme.secondaryText,
+             accessibilityLabel: String? = nil) {
+            self.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.fallbackTitle : title
+            self.symbol = symbol ?? kind.symbol
+            self.tint = tint
+            self.accessibilityLabel = accessibilityLabel
+        }
 
         var body: some View {
             HStack(spacing: 5) {
@@ -233,6 +250,8 @@
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel ?? title)
         }
     }
 
@@ -315,8 +334,8 @@
         }
     }
 
-    /// Centered empty state for a whole pane or list: the thread that has not started,
-    /// what is missing, and the one action that helps.
+    /// Centered empty state for a whole pane or list: what is missing and, at most, the one named action that
+    /// helps (déc. 9, T-043 R-10/R-11). No dotted thread: the state glyph alone, above the title.
     struct EmptyStateView: View {
         let symbol: String
         let title: String
@@ -324,18 +343,35 @@
         var buttonTitle: String?
         var action: (() -> Void)?
 
+        init(symbol: String, title: String, message: String, buttonTitle: String? = nil, action: (() -> Void)? = nil) {
+            self.symbol = symbol
+            self.title = title
+            self.message = message
+            self.buttonTitle = buttonTitle
+            self.action = action
+        }
+
+        init(kind: GoalongStateKind, title: String, message: String, buttonTitle: String? = nil,
+             action: (() -> Void)? = nil) {
+            self.init(symbol: kind.symbol, title: title, message: message, buttonTitle: buttonTitle, action: action)
+        }
+
         var body: some View {
             VStack(spacing: 10) {
-                GoalongThreadPlaceholder(width: 72).padding(.bottom, 6)
-                Label(title, systemImage: symbol)
+                Image(systemName: symbol).font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .padding(.bottom, 2)
+                    .accessibilityHidden(true)
+                Text(title)
                     .font(LHTheme.cardTitleFont)
                     .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
                 Text(message)
                     .font(.system(size: 13))
                     .foregroundStyle(LHTheme.secondaryText)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 380)
-                if let buttonTitle, let action {
+                if let buttonTitle, !buttonTitle.isEmpty, let action {
                     Button(buttonTitle, action: action)
                         .buttonStyle(LHPrimaryButtonStyle())
                         .padding(.top, 6)
@@ -359,6 +395,8 @@
         var dateLabel: String? = nil
         /// First day with history (M3, UI-17A): the calendar and « Jour précédent » never go before it. Nil: no bound.
         var earliest: Date? = nil
+        /// Days shown at once (7 or 28 in Activité): « précédent » stops when the period starts on `earliest` (R-265).
+        var periodDays: Int = 1
 
         var body: some View {
             HStack(spacing: 8) {
@@ -376,7 +414,7 @@
         private var stepper: some View {
             HStack(spacing: 2) {
                 stepButton(-1, symbol: "chevron.left", label: previousLabel, identifier: "previous-period")
-                    .disabled(Self.isAtEarliest(date, earliest: earliest))
+                    .disabled(Self.isAtEarliest(date, earliest: earliest, periodDays: periodDays))
                 GoalongCalendarButton(date: date, onChange: onChange, label: dateLabel, earliest: earliest)
                     .accessibilityIdentifier(identifierPrefix.map { "\($0)-date-picker" } ?? "")
                 stepButton(1, symbol: "chevron.right", label: nextLabel, identifier: "next-period")
@@ -398,9 +436,10 @@
         }
 
         /// True when the shown day is the first day with history: nothing older to step back to.
-        static func isAtEarliest(_ date: Date, earliest: Date?, calendar: Calendar = .current) -> Bool {
+        static func isAtEarliest(_ date: Date, earliest: Date?, periodDays: Int = 1, calendar: Calendar = .current) -> Bool {
             guard let earliest else { return false }
-            return calendar.startOfDay(for: date) <= calendar.startOfDay(for: earliest)
+            let start = calendar.date(byAdding: .day, value: 1 - max(1, periodDays), to: date) ?? date
+            return calendar.startOfDay(for: start) <= calendar.startOfDay(for: earliest)
         }
 
         private func stepButton(_ direction: Int, symbol: String, label: String, identifier: String) -> some View {
@@ -577,9 +616,10 @@
             switch state {
             case .recording: return "Enregistrement actif"
             case .paused: return "Enregistrement en pause"
-            case .permissionsMissing: return "Accès à configurer"
-            case .inputTapUnavailable: return "Saisie non reçue"
-            case .storageUnavailable(.diskFull): return "Disque plein"
+            case .permissionsMissing: return "Accès à rétablir"
+            case .inputTapUnavailable: return "Pas d’interactions"
+            case .storageUnavailable(.diskFull): return "Enregistrement interrompu : le disque est plein"
+            case .storageUnavailable(.permissionDenied): return GoalongAttentionBanner.storageRefusedTitle
             case .storageUnavailable: return "Enregistrement interrompu"
             case .suppressed(let reason):
                 switch reason {
@@ -592,18 +632,22 @@
             }
         }
 
-        /// UI-15A: the sidebar row holds one line (≤ 20 characters); the page says the rest.
-        func sidebarTitle(recordingEnabled: Bool, globallyPaused: Bool) -> String {
-            if globallyPaused { return "Tout est en pause" }
-            if !recordingEnabled { return "Enregistrement coupé" }
+        /// UI-15A: the sidebar row holds one line (≤ 24 characters, « Enregistrement désactivé »); the page says the rest.
+        /// `storageNamedByBanner`: the banner already says the storage cause (GoalongAttentionBanner.storageSlot == .storage),
+        /// so the row only says the state, short (« Interrompu »), never the cause nor « Voir le bandeau » (R8-6).
+        func sidebarTitle(recordingEnabled: Bool, globallyPaused: Bool, storageNamedByBanner: Bool = false) -> String {
+            if globallyPaused { return "Tout le suivi en pause" }
+            if !recordingEnabled { return "Enregistrement désactivé" }
             if isBackgroundPrivacyRule { return "Enregistrement actif" }
+            if storageNamedByBanner, storageFailure != nil { return "Interrompu" }
             switch state {
             case .recording: return "Enregistrement actif"
             case .paused, .suppressed(.manualPause): return "En pause"
-            case .permissionsMissing: return "Accès à configurer"
-            case .inputTapUnavailable: return "Saisie non reçue"
+            case .permissionsMissing: return "Accès à rétablir"
+            case .inputTapUnavailable: return "Pas d’interactions"
             case .storageUnavailable(.diskFull): return "Disque plein"
-            case .storageUnavailable: return "Écriture impossible"
+            case .storageUnavailable(.permissionDenied): return "Écriture refusée"
+            case .storageUnavailable: return "Interrompu"
             case .suppressed(.sessionUnavailable): return "Session Mac inactive"
             case .suppressed(.accessibilityUnavailable): return "Navigateur illisible"
             case .suppressed: return "Enregistrement actif"
@@ -612,7 +656,7 @@
 
         var displayDetail: String {
             if isBackgroundPrivacyRule {
-                return "Le suivi respecte vos exclusions. Modifiez-les dans Réglages › Apps et sites."
+                return "L’enregistrement respecte vos exclusions. Modifiez-les dans Réglages › Apps et sites."
             }
             switch state {
             case .recording:
@@ -625,7 +669,7 @@
             case .inputTapUnavailable:
                 return "Les interactions clavier et souris ne sont pas encore disponibles."
             case .storageUnavailable(.diskFull):
-                return "Le disque est plein : rien n’est enregistré pour l’instant. Libérez de l’espace, l’enregistrement reprendra tout seul et la coupure sera signalée dans l’historique."
+                return "Le disque est plein : rien n’est enregistré pour l’instant. Libérez de l’espace, l’enregistrement reprendra tout seul et l’interruption sera signalée dans l’historique."
             case .storageUnavailable(.permissionDenied):
                 return "Goalong ne peut plus écrire dans son dossier d’historique : macOS en refuse l’accès. Goalong réessaie automatiquement ; envoyez un diagnostic si cela persiste."
             case .storageUnavailable:

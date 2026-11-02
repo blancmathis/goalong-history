@@ -136,7 +136,7 @@ import SwiftUI
                   program: BlockProgram(ranges: [BlockProgramRange(weekdays: Set(1...5), startMinute: 540, endMinute: 1_080)],
                                         lockedUntil: nil),
                   quotaMinutesPerDay: 20, breaks: BlockBreaks(count: 3, minutes: 5),
-                  exceptions: [BlockSiteRule(pattern: "reddit.com/r/swift")], keywords: ["match en direct", "transfert"],
+                  exceptions: [BlockSiteRule(pattern: "reddit.com/r/swift")], keywords: ["mercato", "transfert"],
                   reason: "Finir le mémoire avant vendredi.",
                   triggers: BlockTriggers(apps: [BlockAppRule(bundleIdentifier: "com.apple.dt.Xcode", name: "Xcode")]),
                   earn: BlockEarn())
@@ -192,6 +192,17 @@ import SwiftUI
         usage.blocked = [socialID: 4, focusID: 3]
         usage.earnedSeconds = [socialID: 600.0]
         document.usage = usage
+        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 }, runningApps: noApps)
+    }
+
+    /// A typed-lock block on the social list, with the list's weekday program (free, until 18:00) running under it: same
+    /// lists, no stricter lock, so the program folds into one « Ensuite : … » line (BlockingPage.folds, R-266, P-15).
+    static func blockingContinued() -> BlockingController {
+        let now = blockingNow
+        var document = BlockingDocument()
+        document.lists = [socialList, videoList, focusList]
+        document.sessions = [BlockSession(listIDs: [socialID], start: now.addingTimeInterval(-20 * 60),
+                                          end: now.addingTimeInterval(84 * 60), lock: .typing)]
         return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 }, runningApps: noApps)
     }
 

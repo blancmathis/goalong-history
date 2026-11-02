@@ -13,18 +13,59 @@ struct GoalongAttentionBanner: View {
     /// The global pause banner already says nothing is recorded: storage alerts wait for the resume.
     @State private var globalPause = GoalongGlobalPause.load()
 
-    private enum Notice: Equatable {
+    enum Notice: Equatable {
+        /// The cause that stops all recording, shown in place of a storage alert (HL-45).
+        case recordingCause
         case storage(CaptureStorageFailureKind)
         case lowSpace(Int64)
         case updated(from: String, to: String)
     }
 
+    /// Tests show one notice without the slot rules (the slot reads the shared consent store).
+    private let forcedNotice: Notice?
+
+    init(model: DashboardViewModel, showing forcedNotice: Notice? = nil) {
+        self.model = model
+        self.forcedNotice = forcedNotice
+    }
+
     private var notice: Notice? {
-        let recordingExpected = consents.isEnabled(.localComputerHistory) && !globalPause.blocksActivity
-        if recordingExpected, let kind = model.runtime.storageFailure { return .storage(kind) }
-        if recordingExpected, let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
+        if let forcedNotice { return forcedNotice }
+        let slot = Self.currentStorageSlot(model: model, localEnabled: consents.isEnabled(.localComputerHistory),
+            globallyPaused: globalPause.blocksActivity, section: model.selectedSection)
+        let storageProblem = model.runtime.storageFailure != nil || model.freeDiskBytes.map(StorageHealth.isLow) == true
+        if storageProblem, slot == .recordingCause { return .recordingCause }
+        if slot == .storage, let kind = model.runtime.storageFailure { return .storage(kind) }
+        if slot == .storage, let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
         if let previous = updates.updatedFromVersion { return .updated(from: previous, to: updates.currentVersion) }
         return nil
+    }
+
+    /// Activité (also the landing page) shows its own recording notice (GoalongAnalyticsPage).
+    static let pagesWithRecordingNotice: Set<DashboardSection> = [.overview, .analytics]
+
+    enum StorageSlot: Equatable { case storage, recordingCause, none }
+
+    /// HL-45 (écran 45): never zero banner, only one. A cause that stops all recording (off, paused, permission)
+    /// comes first: nothing is written then, the storage failure may be old. The global pause has its own banner;
+    /// on Activité the recording notice of the page is that one banner. Otherwise the storage alert shows.
+    static func storageSlot(globallyPaused: Bool, recording: GoalongRecordingStateNotice.Kind?,
+                            recordingNoticeOnPage: Bool) -> StorageSlot {
+        if globallyPaused { return .none }
+        switch recording {
+        case .off?, .paused?, .permissions?: return recordingNoticeOnPage ? .none : .recordingCause
+        case .input?, nil: return .storage
+        }
+    }
+
+    /// The one reading of the slot, for the banner and for the pages that must not repeat it (R8-6).
+    static func currentStorageSlot(model: DashboardViewModel, localEnabled: Bool, globallyPaused: Bool,
+                                   section: DashboardSection) -> StorageSlot {
+        storageSlot(globallyPaused: globallyPaused,
+            recording: GoalongRecordingStateNotice.kind(localEnabled: localEnabled, globallyPaused: globallyPaused,
+                dashboardVisible: model.recordingStatusIsLive, runtime: model.runtime.state,
+                captureHealth: model.runtime.captureHealth?.state),
+            recordingNoticeOnPage: pagesWithRecordingNotice.contains(section))
     }
 
     var body: some View {
@@ -33,7 +74,13 @@ struct GoalongAttentionBanner: View {
     }
 
     @ViewBuilder private var content: some View {
-        if let notice {
+        if notice == .recordingCause {
+            VStack(spacing: 0) {
+                GoalongRecordingStateNotice(model: model)
+                    .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12)
+                Divider()
+            }
+        } else if let notice {
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 14) {
                     Image(systemName: symbol(notice)).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint(notice))
@@ -48,7 +95,7 @@ struct GoalongAttentionBanner: View {
                     actions(notice)
                 }
                 .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12)
-                .background(tint(notice).opacity(0.08))
+                .goalongAlertSurface(tint: tint(notice), corner: nil)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("attention-banner")
                 Divider()
@@ -58,15 +105,31 @@ struct GoalongAttentionBanner: View {
 
     private func symbol(_ notice: Notice) -> String {
         switch notice {
+        case .storage(let kind): return Self.storageSymbol(kind)
         // The internal disk, not an external drive (read as a car at 16 pt).
-        case .storage, .lowSpace: return "internaldrive"
+        case .lowSpace: return "internaldrive"
+        case .recordingCause: return "record.circle"
         case .updated: return "checkmark.seal.fill"
         }
     }
 
+    /// R-90 (R9C-41): a refused write is an access problem, so a padlock, not a disk.
+    static func storageSymbol(_ kind: CaptureStorageFailureKind) -> String {
+        kind == .permissionDenied ? "lock.fill" : "internaldrive"
+    }
+
+    /// R-90: the folder refuses the write (EACCES, EPERM, read-only volume). Full Disk Access fixes none of these
+    /// for an app that is not sandboxed, so the way out is the folder's own permissions, opened in the Finder.
+    static let storageRefusedTitle = "Enregistrement interrompu : le dossier refuse l’écriture"
+    static let storageRefusedDetail = "macOS refuse à Goalong l’écriture dans son dossier d’historique : ses droits ont changé, ou le disque est en lecture seule. Dans le Finder, sélectionnez ce dossier, choisissez Fichier › Lire les informations › Partage et permissions, donnez « Lecture et écriture » à votre compte, puis actualisez."
+    static let storageRefusedOpenTitle = "Afficher le dossier dans le Finder"
+    static let storageRefusedRefreshTitle = "Actualiser"
+
+    /// One alert style in the whole app (T-043 R-7): every problem is yellow; only the update confirmation is green.
     private func tint(_ notice: Notice) -> Color {
         switch notice {
-        case .storage: return LHTheme.danger
+        case .storage: return LHTheme.warning
+        case .recordingCause: return LHTheme.warning
         case .lowSpace: return LHTheme.warning
         case .updated: return LHTheme.success
         }
@@ -74,7 +137,9 @@ struct GoalongAttentionBanner: View {
 
     private func title(_ notice: Notice) -> String {
         switch notice {
+        case .recordingCause: return ""
         case .storage(.diskFull): return "Enregistrement interrompu : le disque est plein"
+        case .storage(.permissionDenied): return Self.storageRefusedTitle
         case .storage: return "Enregistrement interrompu"
         case .lowSpace: return "Espace disque presque plein"
         case .updated(_, let version): return "Goalong est à jour, version \(version)"
@@ -83,11 +148,12 @@ struct GoalongAttentionBanner: View {
 
     private func detail(_ notice: Notice) -> String {
         switch notice {
+        case .recordingCause: return ""
         case .storage(.diskFull):
-            return "Libérez de l’espace : l’enregistrement reprendra seul, la coupure restera visible."
+            return "Libérez de l’espace : l’enregistrement reprendra seul, l’interruption restera visible."
         // UI-15A (40, 45): the refused write says its cause and how to repair it; UI-16C: and where.
         case .storage(.permissionDenied):
-            return "Goalong ne peut plus écrire dans son dossier : macOS en refuse l’accès. Rendez l’accès dans Réglages Système › Confidentialité et sécurité, puis actualisez."
+            return Self.storageRefusedDetail
         case .storage:
             return "Goalong réessaie seul. Si cela dure, signalez-le : le rapport contient la cause, pas votre activité."
         case .lowSpace(let free):
@@ -100,11 +166,18 @@ struct GoalongAttentionBanner: View {
     // UI-13C (45): one action per storage banner, same place; the report only when the disk refused a write.
     @ViewBuilder private func actions(_ notice: Notice) -> some View {
         switch notice {
+        case .recordingCause: EmptyView()
         case .storage(.diskFull):
             manageStorageButton(primary: true)
         case .storage(.permissionDenied):
-            Button("Actualiser") { model.refreshEverything() }
+            HStack(spacing: 8) {
+                Button(Self.storageRefusedOpenTitle) {
+                    NSWorkspace.shared.activateFileViewerSelecting([AppPaths.applicationSupportDirectory])
+                }
                 .buttonStyle(LHSecondaryButtonStyle())
+                Button(Self.storageRefusedRefreshTitle) { model.refreshEverything() }
+                    .buttonStyle(LHQuietButtonStyle())
+            }
         case .storage:
             Button("Signaler le problème…") { SupportRequestController.shared.present() }
                 .buttonStyle(LHSecondaryButtonStyle())

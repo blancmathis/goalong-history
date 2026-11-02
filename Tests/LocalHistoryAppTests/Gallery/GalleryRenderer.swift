@@ -5,6 +5,7 @@ import Foundation
 import GoalongHeadlessTestSupport
 import SwiftUI
 @testable import LocalHistoryApp
+import AppleScreenTime
 
 /// One rendered image and what the manifest says about it.
 struct GalleryImage {
@@ -101,7 +102,7 @@ struct GalleryImage {
         return try body()
     }
 
-    /// Singletons that read `UserDefaults.standard` once, in their initializer, and that the catalog's views touch.
+    /// Singletons that read `GoalongDefaults.standard` once, in their initializer, and that the catalog's views touch.
     /// They are built here, before any guard window, from the shard's empty throwaway HOME: every shard and every
     /// relaunch builds them the same way, and the first entry that touches them is not marked `leaky` for it.
     static func warmSingletons() {
@@ -171,6 +172,10 @@ struct GalleryImage {
     /// One render. Never orders the window; the window is closed and released before returning.
     private static func renderOnce(_ entry: GalleryEntry, theme: GalleryTheme, size: GallerySize, ctx: GalleryContext) throws -> GalleryImage {
         ctx.theme = theme
+        // The window's high-contrast appearance is plain Aqua or Dark Aqua to the theme colours, so it alone never
+        // reaches the high* tokens (R281-1); a plain theme ignores the Mac's own setting.
+        LHTheme.increasedContrastOverride = theme.isContrast
+        defer { LHTheme.increasedContrastOverride = nil }
         let start: NSSize
         switch size {
         case let .fixed(width, height): start = NSSize(width: width, height: height)
@@ -261,7 +266,9 @@ struct GalleryImage {
         host.layoutSubtreeIfNeeded()
         guard let scroll = largestScrollView(in: host), let document = scroll.documentView else { return nil }
         let extra = host.bounds.height - scroll.frame.height
-        let height = document.frame.height + max(0, extra)
+        // R8-4: a top or bottom bar (« Retour aux réglages ») is a content inset of the scroll view, not part of the
+        // document: without it the last card lost its bottom edge.
+        let height = document.frame.height + max(0, extra) + (extra > 0 ? 0 : scroll.contentInsets.top + scroll.contentInsets.bottom)
         return height > 1 ? ceil(height) : nil
     }
 
@@ -422,7 +429,7 @@ struct GalleryGuardReport {
         if !violations.isEmpty { parts.append("violations: " + violations.joined(separator: "; ")) }
         if network > 0 { parts.append("network requests: \(network)") }
         if tasks > 0 { parts.append("processes: \(tasks)") }
-        if standardDefaults > 0 { parts.append("UserDefaults.standard reads: \(standardDefaults)") }
+        if standardDefaults > 0 { parts.append("standard-defaults reads: \(standardDefaults)") }
         return parts.joined(separator: ", ")
     }
 }

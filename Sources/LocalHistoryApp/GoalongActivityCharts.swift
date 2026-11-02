@@ -113,8 +113,8 @@ struct GoalongHourlyClassChart: View {
             .chartXAxis {
                 // Each bar fills its hour: the hour's name sits under the bar, not on the edge between two bars.
                 // Hourly ticks sit mid-hour: a `centered` label drops the last one, so the last bar had no hour (UI-14, écran 23).
-                AxisMarks(values: Self.hourTicks(dateRange, stride: hourStride).map { hourStride == 1 ? $0.addingTimeInterval(1800) : $0 }) { _ in
-                    AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour(), anchor: .top)
+                AxisMarks(values: Self.hourTicks(dateRange, stride: hourStride).map { hourStride == 1 ? $0.addingTimeInterval(1800) : $0 }) { value in
+                    AxisValueLabel(anchor: .top) { if let date = value.as(Date.self) { Text(GoalongUIFormat.hour(date)) } }
                         .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                 }
             }
@@ -129,6 +129,16 @@ struct GoalongHourlyClassChart: View {
             .accessibilityIdentifier("activity-hourly-class-chart")
             GoalongActivityClassLegend()
         }
+    }
+
+    /// UI16-23 (écran 23): the range covers whole hours. The current hour ends « now » (09:41): ending the axis
+    /// there put the last bar on the right edge and its hour out of place. Nil when there is no bar.
+    static func wholeHours(starts: [Date], ends: [Date], calendar: Calendar = .current) -> ClosedRange<Date>? {
+        guard let first = starts.min(), let last = ends.max() else { return nil }
+        let lower = calendar.dateInterval(of: .hour, for: first)?.start ?? first
+        var upper = calendar.dateInterval(of: .hour, for: last)?.start ?? last
+        if upper < last { upper = calendar.date(byAdding: .hour, value: 1, to: upper) ?? last }
+        return lower...max(upper, lower.addingTimeInterval(3600))
     }
 
     /// Hour starts inside the range, the closing edge excluded (a centred label there would fall outside).
@@ -180,9 +190,9 @@ struct GoalongUsageTimelineChart: View {
         .chartYScale(domain: order)
         .chartPlotStyle { $0.clipped() }
         .chartXAxis {
-            AxisMarks(values: .stride(by: .hour, count: hourStride)) { _ in
+            AxisMarks(values: .stride(by: .hour, count: hourStride)) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(LHTheme.separator)
-                AxisValueLabel(format: .dateTime.locale(Locale(identifier: "fr_FR")).hour())
+                AxisValueLabel { if let date = value.as(Date.self) { Text(GoalongUIFormat.hour(date)) } }
                     .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
             }
         }
@@ -337,9 +347,7 @@ struct GoalongShareBar: View {
 
 enum GoalongSummaryFormat {
     static func time(_ date: Date) -> String { GoalongActivitySummary.time(date) }
-    static func hour(_ date: Date) -> String {
-        date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour())
-    }
+    static func hour(_ date: Date) -> String { GoalongUIFormat.hour(date) }
     static func shortDate(_ date: Date) -> String {
         date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated))
     }

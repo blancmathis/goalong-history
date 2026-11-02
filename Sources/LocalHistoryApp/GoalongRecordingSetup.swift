@@ -2,6 +2,7 @@
 import SwiftUI
 import Foundation
 import LocalHistoryCore
+import AppleScreenTime
 
 /// The dormant recorder stays off until consent. Every first-activation surface
 /// uses this complete proposal instead of exposing the dormant defaults as choices.
@@ -18,12 +19,12 @@ enum GoalongRecordingSetup {
         for signal in RecordingSignal.allCases { next[keyPath: signal.keyPath] = true }
         return next // Do not change private windows, exclusions, retention or sends.
     }
-    static func hasReviewedChoices(defaults: UserDefaults = .standard) -> Bool {
+    static func hasReviewedChoices(defaults: UserDefaults = GoalongDefaults.standard) -> Bool {
         defaults.bool(forKey: reviewedKey) || defaults.bool(forKey: preparedKey)
             || defaults.bool(forKey: "goalongOnboardingPrivacyReviewedV1")
     }
     static func proposal(from current: DashboardSettingsDraft, visibleText: Bool,
-                         complete: Bool = false, defaults: UserDefaults = .standard) -> Proposal {
+                         complete: Bool = false, defaults: UserDefaults = GoalongDefaults.standard) -> Proposal {
         if !complete && hasReviewedChoices(defaults: defaults) {
             return Proposal(settings: current, visibleText: visibleText)
         }
@@ -38,14 +39,14 @@ enum GoalongRecordingSetup {
         return result
     }
     static func rememberChanges(from before: DashboardSettingsDraft, to after: DashboardSettingsDraft,
-                                defaults: UserDefaults = .standard) {
+                                defaults: UserDefaults = GoalongDefaults.standard) {
         var choices = defaults.dictionary(forKey: explicitChoicesKey) ?? [:]
         for signal in RecordingSignal.allCases where before[keyPath: signal.keyPath] != after[keyPath: signal.keyPath] {
             choices[signal.rawValue] = after[keyPath: signal.keyPath]
         }
         defaults.set(choices, forKey: explicitChoicesKey)
     }
-    static func rememberVisibleText(_ enabled: Bool, defaults: UserDefaults = .standard) {
+    static func rememberVisibleText(_ enabled: Bool, defaults: UserDefaults = GoalongDefaults.standard) {
         var choices = defaults.dictionary(forKey: explicitChoicesKey) ?? [:]
         choices["visibleText"] = enabled
         defaults.set(choices, forKey: explicitChoicesKey)
@@ -146,7 +147,7 @@ struct GoalongCompleteRecordingButton: View {
     @ObservedObject var model: DashboardViewModel
     @State private var showing = false
     var body: some View {
-        Button("Configurer le suivi complet") { showing = true }
+        Button("Configurer l’enregistrement complet") { showing = true }
             .buttonStyle(LHSecondaryButtonStyle())
             .accessibilityIdentifier("recording-complete-setup")
             .sheet(isPresented: $showing) { GoalongRecordingSetupSheet(model: model, complete: true).goalongControls() }
@@ -221,7 +222,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "L’enregistrement de ce Mac est désactivé"
         case .paused: return "Enregistrement en pause"
         case .permissions: return "Autorisation macOS à rétablir"
-        case .input: return "Clics et frappe non reçus"
+        case .input: return "Interactions non reçues"
         }
     }
     private func detail(_ kind: Kind) -> String {
@@ -237,7 +238,7 @@ struct GoalongRecordingStateNotice: View {
         case .off: return "Activer…"
         case .paused: return "Reprendre"
         case .permissions: return "Rétablir l’accès…"
-        case .input: return "Vérifier les accès…"
+        case .input: return "Vérifier l’accès…"
         }
     }
     private func perform(_ kind: Kind) {

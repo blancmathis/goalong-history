@@ -7,6 +7,8 @@ import SwiftUI
 /// "Mon travail": the user's own definition of work, the agent that applies it, and the
 /// review where every verdict can be corrected. Goalong never rates an app or a site.
 @MainActor struct GoalongWorkPage: View {
+    /// R-45 (R4d-25): two sentences, the cause then what it changes.
+    static let withheldTitlesNotice = "Vos choix « Données pour ChatGPT » excluent les titres de fenêtre. Le classement ne distingue alors deux usages d’une même app que par le site."
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var work = GoalongWorkStore.shared
     @ObservedObject private var agent = GoalongWorkAgent.shared
@@ -98,8 +100,10 @@ import SwiftUI
                 statusAction
             }
             // Without consent, or with the history off, the switch reads off whatever the stored preference says (UI-69, UI-9 C).
-            // Consent is read directly (DEF-02/DEF-05): readiness may report history off before a missing consent.
-            let canClassify = consents.isEnabled(.chatGPTAnalysis) && agent.readiness != .historyOff
+            // Consent is read directly (DEF-02/DEF-05): readiness may report history off before a missing consent,
+            // and an empty definition before a history turned off (P-3).
+            let canClassify = Self.canClassify(analysisConsent: consents.isEnabled(.chatGPTAnalysis),
+                historyConsent: consents.isEnabled(.localComputerHistory), historyOff: agent.readiness == .historyOff)
             Toggle("Classer automatiquement les nouveaux contextes",
                    isOn: Binding(get: { Self.automaticSwitchShowsOn(automatic: work.automatic, consented: canClassify) },
                                  set: { work.automatic = $0 }))
@@ -109,7 +113,7 @@ import SwiftUI
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             if GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory),
                                         selection: GoalongAnalysisSelection.load()).withholdsTitles {
-                Label("Vos choix « Données pour ChatGPT » excluent les titres de fenêtre : le classement ne peut distinguer deux usages d’une même app que par le site.", systemImage: "info.circle")
+                Label(GoalongWorkPage.withheldTitlesNotice, systemImage: "info.circle")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.warning).fixedSize(horizontal: false, vertical: true)
             }
             if work.hasAgentVerdicts {
@@ -121,14 +125,31 @@ import SwiftUI
 
     /// Without consent nothing is classified: the switch reads off, whatever choice it will restore.
     /// Consent is read directly: `readiness` reports an empty definition or history off first.
+    nonisolated static func canClassify(analysisConsent: Bool, historyConsent: Bool, historyOff: Bool) -> Bool {
+        analysisConsent && historyConsent && !historyOff
+    }
+
     nonisolated static func automaticSwitchShowsOn(automatic: Bool, consented: Bool) -> Bool {
         automatic && consented
     }
 
     private var statusSymbol: String {
-        if agent.isRunning { return "sparkles" }
-        if agent.lastError != nil { return "exclamationmark.triangle" }
-        return agent.readiness == .ready ? "checkmark.circle" : "circle.dashed"
+        var checking = false
+        if case .checking = runtime.connectionState { checking = true }
+        return Self.statusSymbol(running: agent.isRunning, failed: agent.lastError != nil, readiness: agent.readiness, checking: checking)
+    }
+    /// R-83 (R4d-12): one symbol per status title, so two states never share an icon.
+    nonisolated static func statusSymbol(running: Bool, failed: Bool, readiness: GoalongWorkAgent.Readiness, checking: Bool) -> String {
+        if running { return "sparkles" }
+        if failed { return "exclamationmark.triangle" }
+        switch readiness {
+        case .ready: return "checkmark.circle"
+        case .noConsent: return "hand.raised"
+        case .notConnected: return checking ? "arrow.triangle.2.circlepath" : "person.crop.circle.badge.xmark"
+        case .historyOff: return "clock.badge.xmark"
+        case .paused: return "pause.circle"
+        case .noDefinition: return "square.and.pencil"
+        }
     }
     private var statusTint: Color {
         if agent.lastError != nil && !agent.isRunning { return LHTheme.warning }
@@ -263,6 +284,8 @@ import SwiftUI
 @MainActor struct GoalongWorkReviewCard: View {
     @ObservedObject var review: GoalongWorkReviewModel
     @ObservedObject private var work = GoalongWorkStore.shared
+    @ObservedObject private var agent = GoalongWorkAgent.shared
+    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @State private var day: Date
     @State private var expanded: Set<String>
     private let focusTask: String?
@@ -321,7 +344,8 @@ import SwiftUI
             HStack(spacing: 12) {
                 DateSelectionControl(date: day, onChange: { day = $0 }, showsToday: false, earliest: earliestDay)
                 Button(review.loadedDay == nil ? "Afficher le classement" : "Actualiser") { review.load(day: day) }
-                    .buttonStyle(LHSecondaryButtonStyle()).disabled(review.loading).accessibilityIdentifier("work-review-load")
+                    .buttonStyle(LHSecondaryButtonStyle()).disabled(!canLoad).accessibilityIdentifier("work-review-load")
+                    .help(canLoad || review.loading ? "" : Self.historyOffReason)
                 if review.loading { ProgressView().controlSize(.small) }
                 Spacer(minLength: 0)
             }
@@ -330,7 +354,7 @@ import SwiftUI
             if let error = review.error {
                 Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
             } else if review.loadedDay != nil && review.rows.isEmpty && !review.loading {
-                GoalongEmptyState(title: "Rien à classer ce jour-là",
+                GoalongEmptyState(title: "Rien à classer ce jour-là", kind: .empty,
                                   message: "Aucune activité attribuable n’a été observée. Choisissez un autre jour avec le sélecteur ci-dessus.")
             }
             ForEach(groups) { group in groupView(group) }
@@ -398,6 +422,20 @@ import SwiftUI
         }.padding(.top, 4)
     }
 
+    /// R-83 (déc. 11): without the Mac's history there is nothing to classify, so the button is greyed with its reason.
+    nonisolated static func canLoadReview(historyConsent: Bool, historyOff: Bool, loading: Bool) -> Bool {
+        historyConsent && !historyOff && !loading
+    }
+    static let historyOffReason = "Enregistrement désactivé : rien à classer."
+
+    private var canLoad: Bool {
+        Self.canLoadReview(historyConsent: consents.isEnabled(.localComputerHistory),
+                           historyOff: agent.readiness == .historyOff, loading: review.loading)
+    }
+
+    /// R-83: a row the owner already corrected says so once, in a pill, and its menu reads « Modifier ».
+    nonisolated static func correctionMenuTitle(byOwner: Bool) -> String { byOwner ? "Modifier" : "Corriger" }
+
     private func rowView(_ row: GoalongWorkReviewModel.Row) -> some View {
         let assignment = work.verdicts.assignment(for: row.id)
         return HStack(spacing: 10) {
@@ -407,10 +445,14 @@ import SwiftUI
                 Text(row.label.title ?? row.label.application).font(.system(size: 12, weight: .medium)).lineLimit(1)
                     .help(row.label.title ?? row.label.application)
                 Text(([row.label.application, row.label.host].compactMap { $0 }).joined(separator: ", ")
-                     + (assignment?.byOwner == true ? ", corrigé par vous" : assignment?.verdict == .unclear ? ", indéterminé" : ""))
+                     + (assignment?.byOwner != true && assignment?.verdict == .unclear ? ", indéterminé" : ""))
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
             }
             Spacer(minLength: 8)
+            if assignment?.byOwner == true {
+                StatusPill(title: "Corrigé", kind: .ready, symbol: "checkmark", tint: LHTheme.success)
+                    .accessibilityLabel("Corrigé par vous")
+            }
             Text(GoalongAnalyticsFormatting.duration(row.seconds)).font(.system(size: 12)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
             Menu {
                 Section("Travail") {
@@ -428,7 +470,7 @@ import SwiftUI
                     Divider()
                     Button("Laisser l’agent décider") { correct(row, nil, task: nil) }
                 }
-            } label: { Text("Corriger").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text) }
+            } label: { Text(Self.correctionMenuTitle(byOwner: assignment?.byOwner == true)).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text) }
                 // DESIGN §9 rank 3: ink text, no chrome, like LHQuietButtonStyle.
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).tint(LHTheme.text).fixedSize()
                 .accessibilityLabel("Corriger le classement de \(row.label.title ?? row.label.application)")

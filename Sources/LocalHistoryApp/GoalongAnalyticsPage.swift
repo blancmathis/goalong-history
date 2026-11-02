@@ -49,12 +49,17 @@ struct GoalongAnalyticsPage: View {
     @State private var lastAutomaticRefresh = Date.distantPast
 
     private var previewActive: Bool { developerMode && showingPreview }
+    /// First day of every source: this Mac's history and the imported days, which can be older (R-265).
+    /// The model owns the bound and the step, so the page cannot drop it (R272b-1).
+    private var earliestDay: Date? {
+        analytics.earliestDay(macDays: model.snapshot.availableDays, preview: previewActive)
+    }
     /// Disk full or unwritable: « Gérer le stockage… » in the top banner stays the only action.
     private var recordingInterrupted: Bool { !previewActive && model.runtime.storageFailure != nil }
     private var shareBlockedReason: String? {
         guard !previewActive else { return nil }
         // Paused: nothing is read, so there is nothing to share yet (same grey button as an empty day).
-        if analytics.paused { return "Suivi en pause : rien à partager pour l’instant" }
+        if analytics.paused { return "Tout le suivi en pause : rien à partager pour l’instant" }
         guard let payload = analytics.payload, selection.matches(payload, preview: false) else { return nil }
         return payload.current.observedSeconds > 0 ? nil : "Rien à partager ce jour-là"
     }
@@ -71,10 +76,13 @@ struct GoalongAnalyticsPage: View {
             if detail != .screenTime {
                 GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
                     shareBlockedReason: shareBlockedReason,
-                    earliestDay: previewActive ? nil : model.snapshot.availableDays.min(),
+                    // R-265, UI-17A M3: one bound for the calendar, « précédent » and every period's step.
+                    earliestDay: earliestDay,
                     onDay: { day in updateSelection { $0.selectDay(day) } },
                     onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
-                    onStep: { direction in updateSelection { $0.step(direction) } },
+                    onStep: { direction in
+                        updateSelection { analytics.step(&$0, direction, macDays: model.snapshot.availableDays, preview: previewActive) }
+                    },
                     onToday: { updateSelection { $0.today() } },
                     onReturn: { updateSelection { $0.restorePeriod() } },
                     onRefresh: refresh,
@@ -96,14 +104,11 @@ struct GoalongAnalyticsPage: View {
                         if developerMode && !previewActive { previewControl }
                         if previewActive { GoalongAnalyticsPreviewBanner(onExit: { showingPreview = false }) }
                         if analytics.paused {
-                            // An empty state is title, sentence, action: the resume sits here too, in secondary,
-                            // since the window's pause banner holds the lime one (UI-16B, écran 17).
+                            // R-74 (R9C-39): the window's pause banner holds the title and the one resume button;
+                            // the page only says what the pause means for these figures.
                             if analytics.payload == nil {
-                                GoalongEmptyState(title: "Suivi en pause",
-                                    message: "Vos durées reviennent ici dès que le suivi reprend.") {
-                                    GoalongGlobalPauseControl(model: model, compact: true, prominent: false).fixedSize()
-                                }
-                                .accessibilityIdentifier("activity-read-paused")
+                                GoalongNote("Vos durées reviennent ici dès que le suivi reprend.", symbol: "pause.circle")
+                                    .accessibilityIdentifier("activity-read-paused")
                             } else {
                                 GoalongNote("Chiffres figés pendant la pause : ils seront actualisés dès la reprise.", symbol: "pause.circle")
                                     .accessibilityIdentifier("activity-read-paused")
@@ -217,6 +222,11 @@ struct GoalongAnalyticsPage: View {
             // The page is rebuilt on each section change: a day that turned while it was away counts too.
             followCalendarDay()
             model.selectDay(navigation.day)
+        }
+        .task(id: "\(revision)|\(laneRevision)") {
+            // A Santé import or a new Temps d’écran day can move the first day back (R-265), read in the
+            // model's own data folder, never AppPaths directly (R272b-2).
+            await analytics.refreshImportedFirstDay()
         }
         .task(id: loadRequest) {
             let request = loadRequest

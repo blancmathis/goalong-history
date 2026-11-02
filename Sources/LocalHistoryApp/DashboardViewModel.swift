@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Ambiance
@@ -180,7 +181,7 @@
         /// The « aujourd’hui » this model last saw; `followToday` compares it with the clock.
         private var seenToday: GoalongCalendarDay
         private var clockObservers: [NSObjectProtocol] = []
-        private var savedSettingsDraft: DashboardSettingsDraft
+        private(set) var savedSettingsDraft: DashboardSettingsDraft
 
         private let state: CaptureState
         private let permissions: PermissionManager
@@ -252,7 +253,7 @@
             refreshScheduler: DashboardRefreshScheduler = DashboardRefreshScheduler(),
             dataReader: DashboardDataReader = DashboardDataReader(),
             now: @escaping () -> Date = Date.init,
-            defaults: UserDefaults = .standard,
+            defaults: UserDefaults = GoalongDefaults.standard,
             availableBytes: @escaping () -> Int64? = { StorageHealth.availableBytes() },
             analyticsReader: GoalongAnalyticsReader = .shared,
             shareExportWriter: ShareExportWriter? = nil,
@@ -545,7 +546,7 @@
             switch secondaryReturn?.section ?? selectedSection.defaultReturnSection {
             case .settings: return "Retour aux réglages"
             case .history: return "Retour à l’historique"
-            case .monitoring: return "Retour à la surveillance"
+            case .monitoring: return "Retour à Jev"
             // Same « ‹ Activité » as the return inside Activity's own detail views (UI-13B).
             default: return "Activité"
             }
@@ -875,7 +876,7 @@
         /// profile rather than marking an unrecorded proposal as reviewed.
         @discardableResult
         func applyRecordingSetup(_ proposal: GoalongRecordingSetup.Proposal,
-                                 defaults: UserDefaults = .standard,
+                                 defaults: UserDefaults = GoalongDefaults.standard,
                                  flushPreferences: (() -> Bool)? = nil,
                                  notifyRuntime: Bool = true) -> Bool {
             let original = configManager.config
@@ -975,14 +976,6 @@
                     }
                 }
             }
-        }
-
-        func deleteComputerHistoryEpisode(_ episode: ComputerHistoryEpisode, day: Date) {
-            deleteTargetedDetails(
-                .computerHistoryEpisode(id: episode.id, day: day),
-                successMessage:
-                    "L’élément choisi et ses détails locaux ont été supprimés. Les sceaux et reçus sont conservés."
-            )
         }
 
         func deleteActivitySession(_ session: ActivitySession) {

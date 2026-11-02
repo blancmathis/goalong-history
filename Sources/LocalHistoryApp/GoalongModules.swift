@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import AppleScreenTime
 
 /// Optional parts of Goalong, off by default. Off means nothing runs: no controller, timer,
 /// observer, window, file or permission request. Key: `goalong.module.<id>.enabled`.
@@ -52,7 +53,7 @@ final class GoalongModuleStore: ObservableObject {
     var onBraiseEnabledChange: ((Bool) -> Void)?
     var onBlockingEnabledChange: ((Bool) -> Void)?
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = GoalongDefaults.standard) {
         self.defaults = defaults
         enabled = Set(GoalongModule.allCases.filter { defaults.bool(forKey: $0.defaultsKey) })
     }

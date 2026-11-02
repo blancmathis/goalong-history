@@ -26,23 +26,16 @@
 
     final class ComputerHistoryPageModel: ObservableObject {
         @Published private(set) var memory: ComputerHistoryDayMemory?
-        @Published private(set) var answer: ComputerHistoryAnswer?
         @Published private(set) var isLoading = false
-        @Published private(set) var isAnswering = false
         @Published private(set) var errorMessage: String?
         @Published private(set) var sourceStatus: ComputerHistorySourceStatus = .unverified
         /// The journal is readable but the day outgrew the analysis ceiling: the memory
         /// shown is the last one that fitted, so it stops before the end of the day.
         @Published private(set) var isAnalysisPartial = false
-        @Published var question = ""
 
         private let store: ComputerHistoryStore
         private let refreshRuntime: ActivityAnalysisRefreshServing
         private let storedMemoryLoader: (Date) -> ComputerHistoryDayMemory?
-        private let queue = DispatchQueue(
-            label: "ai.goalong.localhistory.computer-history-page",
-            qos: .userInitiated
-        )
         /// Serial: a retained view is always published before its verified successor.
         private let loadQueue = DispatchQueue(
             label: "ai.goalong.localhistory.computer-history-page.load",
@@ -168,50 +161,6 @@
                 return true
             case .runtimeUnavailable:
                 return false
-            }
-        }
-
-        func ask() {
-            let query = question.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !query.isEmpty, !isAnswering else { return }
-            isAnswering = true
-            errorMessage = nil
-            queue.async { [weak self] in
-                guard let self else { return }
-                let answer = self.store.answer(query, maximumDays: 30)
-                DispatchQueue.main.async {
-                    self.answer = answer
-                    self.isAnswering = false
-                }
-            }
-        }
-
-        func clearAnswer() {
-            answer = nil
-        }
-
-        func open(_ resource: ComputerHistoryResourceReference) {
-            if let localPath = resource.localPath {
-                GoalongWorkspaceOpenPolicy.open(
-                    URL(fileURLWithPath: localPath),
-                    purpose: .localFile
-                )
-                return
-            }
-            if let raw = resource.canonicalURI, let url = URL(string: raw) {
-                GoalongWorkspaceOpenPolicy.open(url, purpose: .observedWebsite)
-            }
-        }
-
-        func revealMemoryFiles(for day: Date) {
-            let directory = AppPaths.applicationSupportDirectory
-                .appendingPathComponent("computer-history", isDirectory: true)
-            let files = store.memoryFileURLs(for: day)
-                .filter { FileManager.default.fileExists(atPath: $0.path) }
-            if files.isEmpty {
-                GoalongWorkspaceOpenPolicy.open(directory, purpose: .localFile)
-            } else {
-                NSWorkspace.shared.activateFileViewerSelecting(files)
             }
         }
     }
@@ -607,6 +556,33 @@
 
     /// Pure display strings of the Computer History page, kept testable.
     enum ComputerHistoryPageCopy {
+        /// DEF-07: today, writes refused → the stop and its time, above a timeline that stops there. Nil otherwise.
+        /// R8-6: the cause is said once per screen. When the top banner names the storage alert (`bannerNamesStorage`),
+        /// the page says only the effect; it keeps the cause only when the banner shows another one (recording stopped).
+        static func storageStopNote(isToday: Bool, failure: CaptureStorageFailureKind?, since: Date?,
+                                    bannerNamesStorage: Bool) -> String? {
+            guard isToday, let failure else { return nil }
+            if bannerNamesStorage { return storageEffect(since: since) + "." }
+            let start = since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
+            return "\(start) : \(GoalongActivityEmptyCopy.storageCause(failure)). Rien de plus n’est enregistré avant la reprise, qui est automatique."
+        }
+
+        /// What the page says when the banner already names the cause: the effect and its time, as Activité does.
+        static func storageEffect(since: Date?) -> String {
+            since.map { "Aucune donnée depuis \(GoalongUIFormat.time($0))" } ?? "Aucune nouvelle donnée"
+        }
+
+        /// Empty day, writes refused today.
+        static func storageEmptyTitle(since: Date?, bannerNamesStorage: Bool) -> String {
+            bannerNamesStorage ? storageEffect(since: since)
+                : since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
+        }
+
+        static func storageEmptyMessage(failure: CaptureStorageFailureKind, bannerNamesStorage: Bool) -> String {
+            bannerNamesStorage ? "Cette interruption restera indiquée ici."
+                : "Rien n’est enregistré tant que \(GoalongActivityEmptyCopy.storageCause(failure)). La reprise est automatique et l’interruption restera indiquée ici."
+        }
+
         /// "12 périodes", or "3 sur 12 périodes" while a search filters the timeline.
         static func periodCountLabel(visible: Int, total: Int, searching: Bool) -> String {
             let totalLabel = total <= 1 ? "\(total) période" : "\(total) périodes"
@@ -644,6 +620,15 @@
                 + "confiance \(GoalongUIFormat.percent(confidence))"
         }
 
+        /// R4e-2: the glyph of an empty day follows its state: a stopped recording or an unreadable source is not « pas encore ».
+        static func emptyTimelineKind(storageStopped: Bool, status: ComputerHistorySourceStatus) -> GoalongStateKind {
+            if storageStopped { return .unavailable }
+            switch status {
+            case .inaccessible, .unverified: return .unavailable
+            case .available, .absent, .checking: return .notYet
+            }
+        }
+
         /// With an empty timeline, one place explains why. The timeline card does it for a day without
         /// data; the status card does it when it also offers « Réessayer ».
         static func timelineExplainsEmptyDay(_ status: ComputerHistorySourceStatus) -> Bool {
@@ -667,6 +652,15 @@
         @State private var newestFirst = true
         @State private var hasRetried = false
         @Environment(\.goalongRecordingModel) private var recordingModel
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+
+        /// R8-6: the banner's own slot rule (one source). Without a model (preview), the page keeps the cause.
+        private var bannerNamesStorage: Bool {
+            guard let recordingModel else { return false }
+            return GoalongAttentionBanner.currentStorageSlot(model: recordingModel,
+                localEnabled: consents.isEnabled(.localComputerHistory),
+                globallyPaused: GoalongGlobalPause.load().blocksActivity, section: .history) == .storage
+        }
 
         var body: some View {
             ScrollView {
@@ -876,7 +870,7 @@
             case .absent:
                 return model.memory == nil
                     ? "Aucune activité pour cette date. Choisissez une autre journée."
-                    : "Le journal original est indisponible. L’historique déjà enregistré est conservé."
+                    : "Le journal d’origine est indisponible. L’historique déjà enregistré est conservé."
             case .inaccessible:
                 if hasRetried {
                     let nextStep = "Nouvel échec de l’actualisation. Choisissez une autre date ou consultez les détails techniques."
@@ -927,7 +921,7 @@
                             .foregroundStyle(LHTheme.secondaryText)
                     }
                     Button(action: openSourceJSON) {
-                        Label("Ouvrir le journal", systemImage: "doc.text")
+                        Label("Ouvrir le journal d’origine", systemImage: "doc.text")
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
                     .controlSize(.regular)
@@ -951,18 +945,22 @@
             if tenMinuteGroups.isEmpty && !isPreparingTimeline {
                 GoalongEmptyState(
                     title: emptyTimelineTitle,
+                    kind: ComputerHistoryPageCopy.emptyTimelineKind(storageStopped: storageStopTitle != nil, status: model.sourceStatus),
                     message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
-                        ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.") {
-                    if !needsRetry {
-                        Button("Actualiser") { model.refresh(day: day) }
-                            .buttonStyle(LHSecondaryButtonStyle())
-                            .disabled(model.isLoading || isSnapshotLoading)
-                    }
-                }
+                        ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
+                // R-86: no « Actualiser » here; the day header above already holds the refresh button.
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 8)
                 .accessibilityIdentifier("history-empty-day")
             } else {
+                // DEF-07: a day with traces still names the stop and its cause above the timeline.
+                if let stop = ComputerHistoryPageCopy.storageStopNote(
+                    isToday: GoalongToday.isToday(day), failure: recordingModel?.runtime.storageFailure,
+                    since: recordingModel?.runtime.storageInterruptedSince,
+                    bannerNamesStorage: bannerNamesStorage) {
+                    GoalongNote(stop, tone: .warning)
+                        .accessibilityIdentifier("history-storage-stop")
+                }
                 timelineList
             }
         }
@@ -1001,7 +999,7 @@
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
                     } else if visibleTimelineGroups.isEmpty {
-                        GoalongEmptyState(title: "Aucune activité correspondante",
+                        GoalongEmptyState(title: "Aucune activité correspondante", kind: .empty,
                                           message: "Essayez un autre nom d’app ou un mot du contexte enregistré.") {
                             Button("Effacer la recherche") { timelineSearch = "" }
                                 .buttonStyle(LHSecondaryButtonStyle())
@@ -1035,8 +1033,8 @@
 
         private var sourceDataHelp: String {
             canRevealSourceData
-                ? "Afficher le journal original de cette journée dans le Finder"
-                : "Le journal original de cette journée est indisponible"
+                ? "Afficher le journal d’origine de cette journée dans le Finder"
+                : "Le journal d’origine de cette journée est indisponible"
         }
 
         /// A day without any journal is one fact: the timeline's empty state says it, the card above does not repeat it.
@@ -1048,8 +1046,8 @@
         /// Writes refused today: the empty day has a known cause and a start time.
         private var storageStopTitle: String? {
             guard GoalongToday.isToday(day), let runtime = recordingModel?.runtime, runtime.storageFailure != nil else { return nil }
-            return runtime.storageInterruptedSince.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" }
-                ?? "Enregistrement interrompu"
+            return ComputerHistoryPageCopy.storageEmptyTitle(since: runtime.storageInterruptedSince,
+                                                             bannerNamesStorage: bannerNamesStorage)
         }
 
         private var emptyTimelineTitle: String {
@@ -1059,12 +1057,12 @@
                 return "Chargement impossible"
             case .absent:
                 return model.memory == nil
-                    ? "Aucun journal pour cette date"
+                    ? "Aucune activité enregistrée le \(GoalongUIFormat.day(day))"
                     : "Détails de la journée indisponibles"
             case .available where GoalongToday.isToday(day):
                 return "Aucune activité enregistrée aujourd’hui"
             case .available:
-                return "Aucune activité trouvée"
+                return "Aucune activité enregistrée le \(GoalongUIFormat.day(day))"
             case .checking:
                 return "Vérification de l’activité"
             case .unverified:
@@ -1074,9 +1072,7 @@
 
         private var emptyTimelineMessage: String {
             if storageStopTitle != nil, let kind = recordingModel?.runtime.storageFailure {
-                return kind == .diskFull
-                    ? "Rien n’est enregistré tant que le disque est plein. La reprise est automatique et la coupure restera indiquée ici."
-                    : "Rien n’est enregistré tant que le dossier de l’historique refuse l’écriture. La reprise est automatique et la coupure restera indiquée ici."
+                return ComputerHistoryPageCopy.storageEmptyMessage(failure: kind, bannerNamesStorage: bannerNamesStorage)
             }
             switch model.sourceStatus {
             case .inaccessible:

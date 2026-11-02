@@ -17,17 +17,22 @@ extension GalleryCatalog {
             }
         }
         let weekdays: Set<Int> = [1, 2, 3, 4, 5]
+        /// The real list sheet (BlockListSheet), without its 760 pt limit, so the capture shows the whole list (R-60).
+        @MainActor func listSheetWhole(controller: BlockingController, listID: UUID, now: Date) -> some View {
+            BlockListSheet(controller: controller, listID: listID, now: now, maxHeight: .infinity, onDone: {})
+        }
         var entries: [GalleryEntry] = [
             page("programme/vide", height: 900, themes: GalleryTheme.withContrast) { F.blockingEmpty() },
             page("programme/pret", height: 1_500, at: { F.sunday }) { F.blockingIdle() },
             page("programme/blocage-actif", height: 1_500) { F.blockingActive() },
+            page("programme/blocage-ensuite", height: 1_500) { F.blockingContinued() },
             page("programme/declenche", height: 1_500) { F.blockingTriggered() },
             page("programme/mot-de-passe", height: 1_500) { F.blockingGuarded() },
-            panel("programme/feuille-liste", width: 600, height: 900, clock: .injected) { _ in
-                AnyView(BlockListSheet(controller: F.blockingIdle(), listID: F.socialID, now: F.sunday, onDone: {}))
+            panel("programme/feuille-liste", width: 600, clock: .injected) { _ in
+                AnyView(listSheetWhole(controller: F.blockingIdle(), listID: F.socialID, now: F.sunday))
             },
-            panel("programme/feuille-liste-verrouillee", width: 600, height: 900, clock: .injected) { _ in
-                AnyView(BlockListSheet(controller: F.blockingActive(), listID: F.videoID, now: F.blockingNow, onDone: {}))
+            panel("programme/feuille-liste-verrouillee", width: 600, clock: .injected) { _ in
+                AnyView(listSheetWhole(controller: F.blockingActive(), listID: F.videoID, now: F.blockingNow))
             },
             panel("programme/selecteur-de-plage", width: 440, clock: .injected) { _ in
                 AnyView(BlockingRangePopover(controller: F.blockingIdle(),
@@ -51,7 +56,7 @@ extension GalleryCatalog {
                 AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.awaitingApproval)).padding(18))
             },
             panel("programme/protection-indisponible", width: 440, clock: .injected) { _ in
-                AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.failed("Service de protection indisponible."))).padding(18))
+                AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.failed(GuardFailure.registrationRefused))).padding(18))
             },
             panel("programme/protection-renforcee", width: 440, clock: .injected) { _ in
                 AnyView(BlockingProtectionDetails(controller: F.blockingProtected(.running)).padding(18))

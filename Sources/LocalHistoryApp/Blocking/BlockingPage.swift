@@ -320,12 +320,17 @@ struct BlockingStopRequest: Identifiable {
             switch block.lock {
             case .free:
                 if block.origin.stopsFromPage {
-                    Button("Arrêter") { controller.stop(block.id) }.accessibilityIdentifier("blocking-stop")
+                    Button("Arrêter") { controller.stop(block.id) }
+                        .accessibilityLabel(Self.actionAccessibilityLabel("Arrêter", lists: lists, named: !breaks))
+                        .accessibilityIdentifier("blocking-stop")
                 }
             case .typing:
-                Button("Arrêter…") { onStop(block) }.accessibilityIdentifier("blocking-stop")
+                Button("Arrêter le blocage…") { onStop(block) }
+                    .accessibilityLabel(Self.actionAccessibilityLabel("Arrêter", lists: lists, named: !breaks))
+                    .accessibilityIdentifier("blocking-stop")
             case .password:
                 Button { onUnlock(block) } label: { Label("Débloquer…", systemImage: "key") }
+                    .accessibilityLabel(Self.actionAccessibilityLabel("Débloquer", lists: lists, named: !breaks))
                     .accessibilityIdentifier("blocking-unlock")
             case .locked:
                 EmptyView()
@@ -344,9 +349,7 @@ struct BlockingStopRequest: Identifiable {
             } else if let left = block.quotaSecondsLeft[list.id], let quota = list.quotaMinutesPerDay {
                 let earned = Int(controller.earnedMinutesToday[list.id] ?? 0)
                 Image(systemName: "hourglass").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
-                Text((left > 0 ? "\(list.name) : encore \(BlockingFormat.remaining(left)) aujourd’hui"
-                               : "\(list.name) : vos \(BlockingFormat.duration(minutes: quota + earned)) du jour sont passées")
-                     + (earned > 0 ? ". \(BlockingFormat.earnedBreak(minutes: earned))" : ""))
+                Text(BlockingFormat.quotaGaugeLine(name: list.name, secondsLeft: left, quotaMinutes: quota, earnedMinutes: earned))
                 Spacer(minLength: 8)
                 BlockingMeter(fraction: 1 - left / Double(max(1, (quota + earned) * 60))).frame(width: 120)
             }
@@ -364,6 +367,15 @@ struct BlockingStopRequest: Identifiable {
     /// never says that every list goes on when only some do (R-266).
     nonisolated static func folds(_ other: BlockingActiveBlock, into leading: BlockingActiveBlock) -> Bool {
         Set(other.listIDs) == Set(leading.listIDs) && other.lock.strength <= leading.lock.strength
+    }
+
+    /// What VoiceOver reads for a stop or unlock button. A secondary row names its lists (« Arrêter le blocage de … »),
+    /// because the row's text is read before the button and two rows would sound the same (R-270, P-14).
+    /// The label starts with the visible word, so Voice Control still answers « cliquer Arrêter ».
+    nonisolated static func actionAccessibilityLabel(_ verb: String, lists: [BlockList], named: Bool) -> String {
+        guard named, !lists.isEmpty else { return verb }
+        return verb == "Débloquer" ? "Débloquer \(lists.map(\.name).joined(separator: ", "))"
+            : "\(verb) le blocage de \(lists.map(\.name).joined(separator: ", "))"
     }
 
     /// What VoiceOver reads for a folded « Ensuite » line: the lists it holds, then its state.
@@ -394,7 +406,7 @@ struct BlockingStopRequest: Identifiable {
     private func frozen(_ freeze: BlockFreeze) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
-                Label("Mac gelé jusqu’à \(BlockingFormat.endTime(freeze.end))", systemImage: "snowflake")
+                Label(FrozenMacShield.stateLine, systemImage: "snowflake") // R280-6: the end shows once, on the thread
                     .font(.system(size: 13, weight: .medium))
                 Text(BlockingFormat.remaining(freeze.end.timeIntervalSince(now)))
                     .font(LHTheme.heroFont).tracking(LHTheme.heroTracking)
@@ -912,12 +924,12 @@ struct BlockingLockExplainer: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Protection").font(LHTheme.cardTitleFont)
             VStack(spacing: 0) {
-                statusRow(symbol: "arrow.clockwise", title: "Relance à l’ouverture de session",
+                statusRow(symbol: "arrow.clockwise", title: "Lancer à l’ouverture de session",
                           ok: controller.protection.launchAtLogin,
                           value: controller.protection.launchAtLogin ? "Active" : "Pas encore",
                           action: controller.protection.launchAtLogin ? nil : loginItemsButton)
                 GoalongRowDivider()
-                statusRow(symbol: "globe", title: "Lecture des adresses",
+                statusRow(symbol: "globe", title: "Lecture des adresses web (navigateurs)",
                           ok: controller.siteBlockingAvailable,
                           value: controller.siteBlockingAvailable ? "Autorisée" : "Nécessaire pour les sites")
                 if !controller.browsers.isEmpty {
@@ -936,6 +948,12 @@ struct BlockingLockExplainer: View {
                         Text(help).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        if Self.showsRetry(controller.protection) {
+                            // A failed service gets a way to try again, next to its cause (R-89).
+                            Button("Réessayer") { controller.retryGuardService() }
+                                .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
+                                .accessibilityIdentifier("blocking-guard-retry")
+                        }
                         // UI-9 (1): one « Ouvrir Réglages Système… » per group; « Relance » already shows it when off.
                         if controller.protection.launchAtLogin { loginItemsButton }
                     }
@@ -987,9 +1005,15 @@ struct BlockingLockExplainer: View {
         guard protection.level != .strict else { return nil }
         switch protection.guardian {
         case .failed(let reason): return reason
-        case .awaitingApproval: return "Autorisez Goalong dans \(LoginItemsPanel.path)."
+        case .awaitingApproval: return "Autorisez \(PermissionSetupCopy.macOSListName()) dans \(LoginItemsPanel.path)."
         case .running, .notInstalled: return nil
         }
+    }
+
+    /// A failed service shows « Réessayer » (R-89); a waiting one only needs the member's approval.
+    static func showsRetry(_ protection: BlockingProtectionState) -> Bool {
+        guard protection.level != .strict, case .failed = protection.guardian else { return false }
+        return true
     }
 
     /// « Standard » is a normal level, not something missing: only a guard waiting or failed keeps the dashed circle.
@@ -1048,7 +1072,7 @@ struct BlockingLockExplainer: View {
     private var loginItemsButton: AnyView {
         AnyView(Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
-            .help("Autorisez Goalong dans \(LoginItemsPanel.path).")
+            .help("Autorisez \(PermissionSetupCopy.macOSListName()) dans \(LoginItemsPanel.path).")
             .accessibilityIdentifier("blocking-open-login-items"))
     }
 

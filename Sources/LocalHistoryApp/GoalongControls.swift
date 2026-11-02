@@ -21,6 +21,29 @@
         }
     }
 
+    /// The one disabled look of every button style (déc. 3, T-043 R-5, R281-3): a faint flat fill, no edge, so it reads
+    /// as off next to a raised, edged secondary button or a lime primary one; its label is `LHTheme.disabledText`
+    /// (≥ 3:1). A dashed edge stays for « add » chips only (« Tout le Mac + »), never for a disabled control.
+    struct GoalongDisabledControlSurface: View {
+        /// Share of `LHTheme.text` laid over the surface; the contrast test blends the same amount.
+        static let fillOpacity = 0.05
+        var corner: CGFloat = LHTheme.controlRadius
+        var body: some View {
+            RoundedRectangle(cornerRadius: corner, style: .continuous).fill(LHTheme.text.opacity(Self.fillOpacity))
+        }
+    }
+
+    /// A count next to a title (« 1 284 »): always the French grouping, never a bare interpolation (R4d-20).
+    struct GoalongRuleCount: View {
+        let count: Int
+        init(_ count: Int) { self.count = count }
+        var body: some View {
+            Text(GoalongUIFormat.number(count))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(LHTheme.secondaryText)
+        }
+    }
+
     /// Shared control heights so a primary and a secondary button always sit on one line.
     enum GoalongControlMetrics {
         static func height(_ size: ControlSize) -> CGFloat {
@@ -66,17 +89,24 @@
                 .lineLimit(1)
                 .padding(.horizontal, GoalongControlMetrics.inset(controlSize))
                 .frame(minHeight: GoalongControlMetrics.height(controlSize))
-                .foregroundStyle(!isEnabled ? LHTheme.secondaryText : destructive ? LHTheme.danger : LHTheme.text)
+                .foregroundStyle(!isEnabled ? LHTheme.disabledText : destructive ? LHTheme.danger : LHTheme.text)
                 .background {
-                    GoalongSurface(corner: LHTheme.controlRadius,
-                                   fill: configuration.isPressed && isEnabled ? LHTheme.pressedBackground
-                                       : isHovered && isEnabled ? LHTheme.hoverBackground : LHTheme.controlBackground,
-                                   increased: contrast == .increased, highlighted: true)
+                    if isEnabled {
+                        GoalongSurface(corner: LHTheme.controlRadius,
+                                       fill: configuration.isPressed ? LHTheme.pressedBackground
+                                           : isHovered ? LHTheme.hoverBackground : LHTheme.controlBackground,
+                                       increased: contrast == .increased, highlighted: true)
+                    } else {
+                        GoalongDisabledControlSurface()
+                    }
+                }
+                .overlay {
+                    // A destructive action keeps a red edge, so it never looks like its neighbours (T-043 R-13).
+                    if destructive && isEnabled { shape.strokeBorder(LHTheme.danger, lineWidth: 1) }
                 }
                 .overlay {
                     shape.strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2).padding(-3)
                 }
-                .opacity(isEnabled ? 1 : 0.5)
                 .scaleEffect(configuration.isPressed && isEnabled && !reduceMotion ? 0.97 : 1)
                 .contentShape(shape)
                 .onHover { isHovered = $0 }
@@ -85,8 +115,8 @@
         }
     }
 
-    /// Third-rank actions ("Corriger", "Voir les 12 usages"): ink text, no chrome at rest, so lime stays
-    /// the one action color of a screen.
+    /// Third-rank actions and text links ("Modifier", "Voir les 12 usages"): accent text (≥ 4.5:1 in every
+    /// appearance), no chrome at rest, so they read as links while lime stays the one filled action of a screen.
     /// The hover fill bleeds outside the layout bounds so the label stays on the text column.
     struct LHQuietButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var isEnabled
@@ -98,17 +128,43 @@
             let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
             configuration.label
                 .fontWeight(.medium)
-                .foregroundStyle(!isEnabled ? LHTheme.secondaryText
-                                 : configuration.role == .destructive ? LHTheme.danger : LHTheme.text)
+                .foregroundStyle(!isEnabled ? LHTheme.disabledText
+                                 : configuration.role == .destructive ? LHTheme.danger : LHTheme.accent)
                 .padding(.horizontal, 7).padding(.vertical, 4)
                 .background(configuration.isPressed && isEnabled ? LHTheme.pressedBackground
                             : isHovered && isEnabled ? LHTheme.hoverBackground : .clear, in: shape)
                 .overlay { shape.strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2) }
                 .contentShape(shape)
                 .padding(.horizontal, -7).padding(.vertical, -4)
-                .opacity(isEnabled ? 1 : 0.6)
                 .onHover { isHovered = $0 }
                 .animation(reduceMotion ? nil : LHTheme.hover, value: isHovered)
+        }
+    }
+
+    /// Small inline loading ring tinted `LHTheme.progressTint` (≥ 3:1), for "Préparation…" / "Recherche…" rows.
+    /// The native macOS spinner ignores tint and is too faint on the light page (R-6). Static under Reduce Motion.
+    struct GoalongSpinnerStyle: ProgressViewStyle {
+        @Environment(\.controlSize) private var controlSize
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var turning = false
+
+        func makeBody(configuration: Configuration) -> some View {
+            let side: CGFloat = switch controlSize {
+            case .mini: 10
+            case .small: 14
+            default: 18
+            }
+            Circle().trim(from: 0, to: 0.72)
+                .stroke(LHTheme.progressTint, style: StrokeStyle(lineWidth: max(1.5, side / 7), lineCap: .round))
+                .rotationEffect(.degrees(turning ? 360 : 0))
+                .frame(width: side, height: side)
+                .onAppear {
+                    guard !reduceMotion else { return }
+                    withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) { turning = true }
+                }
+                .accessibilityElement()
+                .accessibilityLabel("Chargement en cours")
+                .accessibilityAddTraits(.updatesFrequently)
         }
     }
 
@@ -307,19 +363,47 @@
     }
 
     /// Brand switch: the same corner family as buttons and fields, ink track and page-coloured knob
-    /// when on, an empty edged well when off. Lime stays for the one main action of the screen; a locked switch
-    /// is dashed with a padlock, never lime. A real Button underneath keeps keyboard focus and Space activation.
+    /// when on, an empty edged well when off. Lime stays for the one main action of the screen. A locked switch
+    /// (déc. 13, T-043 R-9) still shows its real position, solid, with a padlock beside it; never a padlock alone.
+    /// A real Button underneath keeps keyboard focus and Space activation.
     struct GoalongSwitch: View {
         @Binding var isOn: Bool
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.controlSize) private var controlSize
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+        /// VoiceOver value of a locked switch: its state, then that it is locked.
+        static func lockedAccessibilityValue(isOn: Bool) -> String {
+            isOn ? "Activé, verrouillé" : "Désactivé, verrouillé"
+        }
+
+        /// Off when a `GoalongSwitchStyle` toggle already says « verrouillé » in its own representation: the value is
+        /// set once (R281-6).
+        var speaksLockedValue = true
+
         var body: some View {
+            let small = controlSize == .small || controlSize == .mini
+            // The padlock sits in the knob (`GoalongSwitchButtonStyle`): same size locked or not, so the controls beside
+            // it never move (R281-6).
             Button {
                 withAnimation(reduceMotion ? nil : LHTheme.press) { isOn.toggle() }
             } label: { EmptyView() }
-                .buttonStyle(GoalongSwitchButtonStyle(isOn: isOn, small: controlSize == .small || controlSize == .mini))
+                .buttonStyle(GoalongSwitchButtonStyle(isOn: isOn, small: small))
+                .modifier(GoalongLockedSwitchAccessibility(locked: !isEnabled && speaksLockedValue, isOn: isOn))
+        }
+    }
+
+    /// A locked switch says its state then « verrouillé »; an enabled one keeps the native value.
+    private struct GoalongLockedSwitchAccessibility: ViewModifier {
+        let locked: Bool
+        let isOn: Bool
+        func body(content: Content) -> some View {
+            if locked {
+                content.accessibilityElement(children: .combine)
+                    .accessibilityValue(GoalongSwitch.lockedAccessibilityValue(isOn: isOn))
+            } else {
+                content
+            }
         }
     }
 
@@ -335,18 +419,15 @@
         private var trackFill: Color {
             switch (isOn, isEnabled) {
             case (true, true): return hovered ? LHTheme.text.opacity(0.82) : LHTheme.text
-            // Locked (UI-16A, 42/58): on = a full track (secondary text, ≥ 6:1 on groups), off = an empty dashed
-            // track. Full reads as on by itself, whatever the colour.
+            // Locked on (T-043 R-9): a full track in secondary ink (≥ 5:1 on every surface); full reads as on.
             case (true, false): return LHTheme.secondaryText
-            case (false, true): return hovered ? LHTheme.switchTrackHover : LHTheme.switchTrack
-            case (false, false): return .clear
+            // Off, locked or not: the same empty well with its solid ≥ 3:1 edge, knob on the leading side.
+            case (false, _): return hovered && isEnabled ? LHTheme.switchTrackHover : LHTheme.switchTrack
             }
         }
 
         private var knobFill: Color {
-            if isOn { return LHTheme.pageBackground }
-            // Locked off: a solid secondary-text knob (≥ 5.5:1 on groups) on the empty track.
-            return isEnabled ? LHTheme.switchKnob : LHTheme.secondaryText
+            isOn ? LHTheme.pageBackground : LHTheme.switchKnob
         }
 
         func makeBody(configuration: Configuration) -> some View {
@@ -358,31 +439,30 @@
             let stretch: CGFloat = configuration.isPressed && !reduceMotion ? 4 : 0
             ZStack(alignment: isOn ? .trailing : .leading) {
                 track.fill(trackFill)
-                if !isOn || !isEnabled || contrast == .increased {
-                    // The off track keeps a 3:1 edge (WCAG 1.4.11); a locked switch is dashed.
-                    track.strokeBorder(LHTheme.strongSeparator,
-                                       style: StrokeStyle(lineWidth: 1, dash: isEnabled ? [] : [3, 2]))
+                if !isOn || contrast == .increased {
+                    // The off track keeps a solid ≥ 3:1 edge (WCAG 1.4.11), locked or not: never dashed (T-043 R-9).
+                    track.strokeBorder(LHTheme.strongSeparator, lineWidth: 1)
                 }
                 RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
                     .fill(knobFill)
                     .overlay {
-                        if !isOn && isEnabled {
-                            // The white off knob on the pale light well: a 1 pt edge, 4.2:1 (clear in dark, UI-17A).
+                        if !isOn {
+                            // The white off knob on the pale light well: a 1 pt edge, 4.6:1 (clear in dark, UI-17A).
                             RoundedRectangle(cornerRadius: radius - 2.5, style: .continuous)
                                 .strokeBorder(LHTheme.switchKnobEdge, lineWidth: 1)
                         }
                     }
-                    .frame(width: knob + stretch, height: knob)
-                    .padding(.horizontal, 3)
                     .overlay {
                         if !isEnabled {
-                            // The padlock carries meaning, ≥ 5.5:1 in both modes and 10 pt on a 16 pt knob: ink on the
-                            // page-coloured on knob, page colour on the secondary-text off knob (UI-16A, 58; R7, 38/44).
-                            Image(systemName: "lock.fill").font(.system(size: small ? 8 : 10, weight: .bold))
-                                .foregroundStyle(isOn ? LHTheme.text : LHTheme.pageBackground)
+                            // Locked (déc. 13): a padlock in the knob, the switch keeps its size and position. On the
+                            // on knob (page colour) secondary ink ≥ 5:1; on the pale off knob a fixed dark ink ≥ 4.5:1.
+                            Image(systemName: "lock.fill").font(.system(size: small ? 7 : 8, weight: .bold))
+                                .foregroundStyle(isOn ? LHTheme.secondaryText : Color(nsColor: LHTheme.rgb(0x4C5747)))
                                 .accessibilityHidden(true)
                         }
                     }
+                    .frame(width: knob + stretch, height: knob)
+                    .padding(.horizontal, 3)
             }
             .frame(width: width, height: height)
             .overlay { RoundedRectangle(cornerRadius: radius + 3, style: .continuous)
@@ -414,21 +494,26 @@
             Group {
                 switch layout {
                 case .switchOnly:
-                    GoalongSwitch(isOn: configuration.$isOn)
+                    GoalongSwitch(isOn: configuration.$isOn, speaksLockedValue: false)
                 case .inline:
                     HStack(spacing: 8) {
                         label
-                        GoalongSwitch(isOn: configuration.$isOn)
+                        GoalongSwitch(isOn: configuration.$isOn, speaksLockedValue: false)
                     }
                 case .row:
                     HStack(alignment: .center, spacing: 16) {
                         label.frame(maxWidth: .infinity, alignment: .leading)
-                        GoalongSwitch(isOn: configuration.$isOn)
+                        GoalongSwitch(isOn: configuration.$isOn, speaksLockedValue: false)
                     }
                 }
             }
             .accessibilityRepresentation {
-                Toggle(isOn: configuration.$isOn) { configuration.label }
+                if isEnabled {
+                    Toggle(isOn: configuration.$isOn) { configuration.label }
+                } else {
+                    Toggle(isOn: configuration.$isOn) { configuration.label }
+                        .accessibilityValue(GoalongSwitch.lockedAccessibilityValue(isOn: configuration.isOn))
+                }
             }
         }
 
@@ -607,6 +692,36 @@
         }
     }
 
+    /// The one alert surface of the app (T-043 R-7): a yellow (`LHTheme.warning`) wash, stronger in light
+    /// (14 %, was 8 %), and a 1 pt edge of the same tint in dark and with Increase Contrast. `corner == nil` is a
+    /// full-width strip (page banner): the edge is drawn on its top. Text on it stays ink or secondary (≥ 4.6:1),
+    /// the glyph in the tint (≥ 4:1).
+    struct GoalongAlertSurface: ViewModifier {
+        var tint: Color = LHTheme.warning
+        var corner: CGFloat? = LHTheme.controlRadius
+        @Environment(\.colorScheme) private var scheme
+        @Environment(\.colorSchemeContrast) private var contrast
+
+        func body(content: Content) -> some View {
+            let fill = tint.opacity(scheme == .dark ? 0.10 : 0.14)
+            let edge = scheme == .dark || contrast == .increased ? tint : Color.clear
+            if let corner {
+                let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+                content.background(fill, in: shape).overlay(shape.strokeBorder(edge, lineWidth: 1))
+            } else {
+                content.background(fill)
+                    .overlay(alignment: .top) { Rectangle().fill(edge).frame(height: 1).accessibilityHidden(true) }
+            }
+        }
+    }
+
+    extension View {
+        /// The shared alert block (T-043 R-7); see `GoalongAlertSurface`.
+        func goalongAlertSurface(tint: Color = LHTheme.warning, corner: CGFloat? = LHTheme.controlRadius) -> some View {
+            modifier(GoalongAlertSurface(tint: tint, corner: corner))
+        }
+    }
+
     /// Secondary information (privacy, scope, limits) as one deliberate, quiet block
     /// instead of loose paragraphs of fine print. A warning tints the glyph and the block, never the text
     /// (DESIGN §9, UI-16A): the sentence stays in ink and readable.
@@ -640,8 +755,20 @@
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(tone == .warning ? LHTheme.warning.opacity(0.08) : LHTheme.insetBackground,
-                        in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+            .modifier(GoalongNoteBackground(warning: tone == .warning))
+        }
+    }
+
+    /// Inset block for a neutral note or banner; the shared alert surface for a warning (T-043 R-7).
+    private struct GoalongNoteBackground: ViewModifier {
+        let warning: Bool
+        func body(content: Content) -> some View {
+            if warning {
+                content.goalongAlertSurface()
+            } else {
+                content.background(LHTheme.insetBackground,
+                                   in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+            }
         }
     }
 
@@ -663,15 +790,16 @@
                     .frame(width: 22, height: 18).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.system(size: 13, weight: .semibold))
-                    Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    // On the warning wash the detail stays in ink, like GoalongNote (≥ 13:1).
+                    Text(detail).font(.system(size: 12))
+                        .foregroundStyle(tone == .warning ? LHTheme.text : LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 trailing()
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
-            .background(tone == .warning ? LHTheme.warning.opacity(0.08) : LHTheme.insetBackground,
-                        in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+            .modifier(GoalongNoteBackground(warning: tone == .warning))
         }
     }
 

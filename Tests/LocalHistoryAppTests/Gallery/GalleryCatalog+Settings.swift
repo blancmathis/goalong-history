@@ -14,13 +14,33 @@ extension GalleryCatalog {
             ("stockage", .storage), ("avance", .advanced), ("outils", .tools),
         ]
         var entries: [GalleryEntry] = [
+            // R282-1: consent given, version without sign-in: the active switches must stay usable (to withdraw).
+            dashboard("settings/chatgpt-consentement", section: .settings, pane: .chatGPT, prepare: { ctx in
+                var selection = GoalongAnalysisSelection(); selection.version = 1; selection.reviewed = true; selection.computer = true
+                selection.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
+                // The secure writer refuses the symlinked /tmp ancestor of a shard HOME: plain write.
+                let support = AppPaths.applicationSupportDirectory
+                try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+                try JSONEncoder().encode(selection).write(to: support.appendingPathComponent("chatgpt-analysis-selection.json"))
+                // R282-8: the entry sets what it shows. Automatic analysis is off, and consent is restored afterwards.
+                let consent = GoalongCapabilityConsentStore.shared
+                let wasEnabled = consent.isEnabled(.chatGPTAnalysis)
+                ctx.cleanups.append { consent.set(.chatGPTAnalysis, enabled: wasEnabled, surface: .settings) }
+                consent.set(.chatGPTAnalysis, enabled: true, surface: .settings)
+                ChatGPTRecapRuntime.shared.setConnectionStateForTesting(.codexUnavailable)
+                precondition(!ChatGPTRecapRuntime.shared.automaticRecapsEnabled, "R282-8: automatic analysis must be off")
+            }),
+            // R8-3: the normal state (open at login known and on); « État inconnu » has its own entry.
             dashboard("settings/accueil", section: .settings, pane: .home, sizes: [.window, .full(1240)],
-                      themes: GalleryTheme.withContrast),
+                      themes: GalleryTheme.withContrast, prepare: { ctx in
+                LaunchAtLoginManager.galleryState = .enabled
+                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
+            }),
         ]
         // UI-9 (32, 44): --full too, so the bottom of « Règles d'usage » and « Titres et adresses » can be seen.
         entries += panes.map { name, pane in
             dashboard("settings/\(name)", section: .settings, pane: pane,
-                      sizes: name == "applications" || name == "enregistrement" ? [.window, .full(1240)] : [.window])
+                      sizes: ["applications", "enregistrement", "stockage", "permissions"].contains(name) ? [.window, .full(1240)] : [.window])
         }
         entries += [
             // The unsaved-changes banner shows once the member leaves Réglages.
@@ -35,19 +55,14 @@ extension GalleryCatalog {
                 LaunchAtLoginManager.galleryState = .unavailable
                 ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
             }),
-            // UI-13C (59): the normal states too, open at login on and off.
-            dashboard("settings/accueil-ouverture-activee", section: .settings, pane: .home, sizes: [.full(1240)],
-                      prepare: { ctx in
-                LaunchAtLoginManager.galleryState = .enabled
-                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
-            }),
+            // UI-13C (59): the off state too; the on state is settings/accueil (R8-3).
             dashboard("settings/accueil-ouverture-desactivee", section: .settings, pane: .home, sizes: [.full(1240)],
                       prepare: { ctx in
                 LaunchAtLoginManager.galleryState = .disabled
                 ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
             }),
             // UI-9 (58): Avancé with developer mode on, its switch and help shown.
-            dashboard("settings/avance-developpeur", section: .settings, pane: .advanced,
+            dashboard("settings/avance-developpeur", section: .settings, pane: .advanced, sizes: [.window, .full(1240)],
                       configure: { _, ctx in ctx.defaults.set(true, forKey: GoalongDeveloperPreferences.enabledKey) }),
             // Recording on, so the history row asks for the missing access instead of « Fonction désactivée ».
             dashboard("settings/permission-manquante", section: .settings, pane: .permissions,
@@ -63,7 +78,7 @@ extension GalleryCatalog {
                 }.toggleStyle(.goalongSwitch).padding(24))
             },
             panel("settings-sheets/connexion-jev", width: 560) { _ in AnyView(JevConnectionSheet()) },
-            panel("settings-sheets/conservation", width: 700, height: 670) { _ in AnyView(HistoryRetentionSettingsSheet()) },
+            panel("settings-sheets/conservation", width: 700, height: HistoryRetentionSettingsSheet.idealHeight) { _ in AnyView(HistoryRetentionSettingsSheet()) },
             panel("settings-sheets/partage-site", width: 740, clock: .injected) { _ in AnyView(GoalongWebsiteSharingSheet()) },
             // UI-9 (11, 29): the two analysis windows opened from Réglages › Stockage; both inits are inert until a button is pressed.
             panel("settings-sheets/comprendre-mon-travail", width: 760, scrolling: true, clock: .injected) { _ in
@@ -120,7 +135,7 @@ extension GalleryCatalog {
             ("temps-ecran-indisponible", .appleScreenTime, .unavailable(
                 "La source Apple n’a pas pu être ouverte. Vérifiez Temps d’écran dans Réglages Système, puis réessayez.")),
             ("historique-reparation-en-cours", .localComputerHistory,
-             .unavailable("Une réparation d’autorisation est en cours. Aucun nouvel accès n’est confirmé.")),
+             .unavailable("Une réparation d’autorisation est en cours. Patientez, puis choisissez « Vérifier l’accès ».")),
         ]
         entries += activations.map { name, capability, status in
             // UI-13C (25): fitted height, as a real sheet sizes itself; a fixed 690 left ~40 % empty above the footer.

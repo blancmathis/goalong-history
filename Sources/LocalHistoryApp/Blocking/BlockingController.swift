@@ -223,6 +223,11 @@ import LocalHistoryQueryCLI
         guardClient?.canRemove == true && lockedUntil == nil
             && !lists.contains { $0.program.ranges.contains { effectiveLock($0.effectiveLock).protectsLists } }
     }
+    /// « Réessayer » under a failed protection level (R-89).
+    func retryGuardService() {
+        guardClient?.retry()
+        refresh(enforceLast: false)
+    }
     func removeGuardService() {
         refresh(enforceLast: false)
         guard canRemoveGuard else { return }
@@ -955,7 +960,7 @@ import LocalHistoryQueryCLI
             if !storeFailed {
                 let message: String?
                 switch protection.component {
-                case .awaitingApproval: message = "Autorisez Goalong dans \(LoginItemsPanel.path) pour reprendre les verrous à l’ouverture de session."
+                case .awaitingApproval: message = "Autorisez \(PermissionSetupCopy.macOSListName()) dans \(LoginItemsPanel.path) pour reprendre les verrous à l’ouverture de session."
                 case .failed(let reason): message = reason
                 default: message = nil
                 }

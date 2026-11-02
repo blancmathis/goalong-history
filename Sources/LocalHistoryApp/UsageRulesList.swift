@@ -58,12 +58,16 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
-                controls
+                // R-87 (R9C-50): no search or default rule over a list that has nothing to filter.
+                if !model.snapshot.trackedUsage.isEmpty {
+                    controls
+                }
                 if filteredItems.isEmpty {
                     // Read-only state on the page, not in a card; the sentence adds to the title (UI-13B). The thread
                     // alone, on the leading edge like every other empty state (R7, UI-17A, 55: no dashed square).
                     GoalongEmptyState(
                         title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
+                        kind: .empty,
                         message: model.snapshot.trackedUsage.isEmpty
                             ? (recordingEnabled
                                 ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
@@ -81,8 +85,8 @@
                         // The export bar sits under the list, not over it: a small margin is enough (UI-15B, 32/55).
                         .padding(.bottom, 12)
                     }
-                    // CUT-55 (55): the export bar cuts the last row; a visible scroller and a soft fade say « more below ».
-                    .scrollIndicators(.visible)
+                    // CUT-55 (55): the export bar cuts the last row; a soft fade says « more below ».
+                    // (No `.scrollIndicators(.visible)`: with the overlay scroller style it shows nothing.)
                     .overlay(alignment: .bottom) {
                         LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground], startPoint: .top, endPoint: .bottom)
                             .frame(height: 16).allowsHitTesting(false)
@@ -125,9 +129,7 @@
                         HStack(spacing: 8) {
                             Label(title, systemImage: symbol)
                                 .font(.system(size: 13, weight: .semibold))
-                            Text("\(items.count)")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(LHTheme.secondaryText)
+                            GoalongRuleCount(items.count)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())
@@ -254,6 +256,7 @@
                         if let host = item.host, model.isDomainExcludedFromCapture(host) {
                             StatusPill(
                                 title: "Détails futurs exclus",
+                                kind: .unavailable,
                                 symbol: "eye.slash.fill",
                                 tint: LHTheme.privateTint
                             )
@@ -641,8 +644,9 @@
                 // The older entries' limit is said once, at the head of the section (UI-15B, 32/55).
                 return parts.joined(separator: ", ")
             }
-            // The bundle identifier (com.apple.…) is technical: plain words instead (UI-11C, screen 55).
-            return "Application observée sur ce Mac"
+            // R-87 (R9C-48): the same « Application observée sur ce Mac » on every row was noise; the section
+            // title already says « Applications ». No bundle identifier either (UI-11C, screen 55).
+            return ""
         }
 
         private var identityHelp: String {

@@ -23,10 +23,10 @@ enum GoalongActivityDetail: String, CaseIterable, Identifiable {
 
     func title(isDay: Bool) -> String {
         switch self {
-        case .rhythm: return isDay ? "Heure par heure" : "Jour par jour"
+        case .rhythm: return isDay ? "Rythme" : "Jour par jour"
         case .usage: return "Applications et sites"
-        case .sessions: return "Sessions et focus"
-        case .texture: return "Écriture, lecture et appels"
+        case .sessions: return "Séances et concentration"
+        case .texture: return "Clavier et lecture"
         case .agenda: return "Appels et agenda"
         case .code: return "Agents et code"
         case .sleep: return "Sommeil et activité"
@@ -36,8 +36,45 @@ enum GoalongActivityDetail: String, CaseIterable, Identifiable {
         }
     }
 
+    /// R-75 (R4d-10): the title the detail header shows. Nil where the first section already carries the same
+    /// words (« Applications et sites », « Appels et agenda »…): the page never says its name twice.
+    func headerTitle(isDay: Bool) -> String? {
+        switch self {
+        case .rhythm: return "Rythme"
+        case .texture, .coverage, .screenTime: return title(isDay: isDay)
+        case .usage, .sessions, .agenda, .code, .sleep, .reports: return nil
+        }
+    }
+
+    static let fullDayHelp = "Montrer les 24 heures, de minuit à minuit, et pas seulement les heures actives."
+    static let noDurationCaption = "Aucune durée mesurée pour l’instant"
+    static func exploreItems(isPreview: Bool, isAvailable: (Self) -> Bool) -> [Self] {
+        allCases.filter { !($0 == .screenTime && isPreview) && isAvailable($0) }
+    }
+
     /// Views that only read the observations of the period.
     var needsObservations: Bool { self == .rhythm || self == .usage || self == .sessions || self == .texture }
+}
+
+/// R-75 (R4d-10): the one header of every Activité detail: the way back, then the title, at one spacing.
+struct GoalongDetailHeader: View {
+    var title: String?
+    var backHelp: String
+    var titleIdentifier = "activity-detail-title"
+    var onBack: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: onBack) { Label("Activité", systemImage: "chevron.left") }
+                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                .help(backHelp)
+                .accessibilityIdentifier("activity-detail-back")
+            if let title {
+                Text(title).font(LHTheme.sheetTitleFont).tracking(-0.4)
+                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier(titleIdentifier)
+            }
+        }
+    }
 }
 
 /// Pure presentation. Native snapshot tests render this without opening user stores.
@@ -98,6 +135,14 @@ struct GoalongAnalyticsContent: View {
                     GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
                 }
                 exploreSection
+            } else if GoalongActivityEmptyCopy.bannerHoldsEmptyDay(isDay: isDay, isToday: isEmptyTodayCandidate,
+                        eventCount: current.eventCount, incompleteDays: current.incompleteDays,
+                        purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording) {
+                // R-74: recording stopped today with nothing read; the banner above says it and holds the one action.
+                // No second block, no empty « Explorer » list (R-80).
+                if isDay && lanes.noteAvailable {
+                    GoalongDayNoteBlock(note: lanes.note, isPreview: payload.isPreview, onEdit: lanes.editNote)
+                }
             } else {
                 // The note belongs to the empty day: 16 pt under it (8 + the empty state's own 8), not a section gap (UI-14, écran 13/17).
                 VStack(alignment: .leading, spacing: 8) {
@@ -156,10 +201,14 @@ struct GoalongAnalyticsContent: View {
     private func headline(_ summary: GoalongActivitySummary) -> some View {
         let known = summary.workIsMeasurable || summary.workSeconds > 0
         let work = isDay ? summary.workSeconds : summary.averagePerDay(.work)
-        let figure = GoalongActivityHeadline.workFigure(known: known, seconds: work)
-        let unit = isDay ? "de travail" : "de travail par jour"
+        let workFigure = GoalongActivityHeadline.workFigure(known: known, seconds: work)
+        // R-91 (R4d-11): before any verdict the hero is still a figure, the time left to classify, at the same size.
+        let pending = workFigure == nil ? GoalongActivityHeadline.pendingFigure(
+            known: known, seconds: isDay ? summary.unclassifiedSeconds : summary.averagePerDay(.unclassified)) : nil
+        let figure = workFigure ?? pending
+        let unit = GoalongActivityHeadline.unit(work: workFigure != nil, isDay: isDay)
         let value = figure ?? GoalongActivityHeadline.unknownWork
-        let split = headlineSplit(summary)
+        let split = headlineSplit(summary, showsPending: pending == nil)
         let details = headlineDetails(summary)
         return VStack(alignment: .leading, spacing: 4) {
             if let figure {
@@ -188,15 +237,15 @@ struct GoalongAnalyticsContent: View {
     }
 
     /// « sur 5 h 22 actives · 40 min hors travail · 7 min à classer » : work + the rest = active.
-    private func headlineSplit(_ summary: GoalongActivitySummary) -> String {
+    private func headlineSplit(_ summary: GoalongActivitySummary, showsPending: Bool = true) -> String {
         let value: (GoalongLocalAnalytics.Kind) -> Double = { kind in
             guard isDay else { return summary.averagePerDay(kind) ?? 0 }
             return kind == .other ? summary.otherSeconds : summary.unclassifiedSeconds
         }
         let active = isDay ? current.activeSeconds : (summary.averageActivePerDay ?? 0)
-        var parts = ["sur \(duration(active)) actives"]
+        var parts = ["sur \(duration(active)) de temps actif"]
         if value(.other) >= 60 { parts.append("\(duration(value(.other))) hors travail") }
-        if value(.unclassified) >= 60 { parts.append("\(duration(value(.unclassified))) à classer") }
+        if showsPending && value(.unclassified) >= 60 { parts.append("\(duration(value(.unclassified))) à classer") }
         return parts.joined(separator: ", ")
     }
 
@@ -206,25 +255,29 @@ struct GoalongAnalyticsContent: View {
             // Gaps inside the day change how its figures read; the night around it does not.
             let missing = current.days.first.map { GoalongActivityGaps(day: $0, from: bounds.start, to: bounds.end).unobservedSeconds } ?? 0
             lines.append("De \(GoalongActivitySummary.time(bounds.start)) à \(GoalongActivitySummary.time(bounds.end))"
-                + (missing >= 600 ? ", dont \(duration(missing)) sans observation" : ""))
+                + (missing >= 600 ? ", dont \(duration(missing)) non observées" : ""))
         } else if isDay {
             lines.append("Activité observée au premier plan")
         } else {
             let days = current.daysWithObservations
-            lines.append("\(duration(current.activeSeconds)) actives sur \(days) jour\(days > 1 ? "s" : "") observé\(days > 1 ? "s" : "")"
+            lines.append("\(duration(current.activeSeconds)) de temps actif sur \(days) jour\(days > 1 ? "s" : "") observé\(days > 1 ? "s" : "")"
                 + (summary.averageExcludesToday ? ", moyenne sans aujourd’hui" : ""))
         }
         if let line = summary.comparison?.headlineLine(isDay: isDay) { lines.append(line) }
+        else if let reason = GoalongActivityHeadline.noComparisonReason(isDay: isDay, hasComparison: summary.comparison != nil,
+                                                                        pending: payload.comparisonPending, days: current.days.count) {
+            lines.append(reason)
+        }
         return lines
     }
 
-    /// The figures of « Sessions et focus »: plain columns, no tiles.
+    /// The figures of « Séances et concentration »: plain columns, no tiles.
     private func sessionFigures(_ summary: GoalongActivitySummary) -> some View {
         HStack(alignment: .top, spacing: 24) {
             concentrationFigure(summary); switchesFigure(summary)
             figure("Focus observé", value: duration(focusSeconds),
-                   detail: "\(focus.count) séquence\(focus.count > 1 ? "s" : "") de \(focusMinutes) min ou plus",
-                   help: "Temps passé dans des séquences continues d’au moins \(focusMinutes) minutes.")
+                   detail: "\(focus.count) séance\(focus.count > 1 ? "s" : "") de \(focusMinutes) min ou plus",
+                   help: "Temps passé dans des séances continues d’au moins \(focusMinutes) minutes.")
         }
     }
 
@@ -236,7 +289,7 @@ struct GoalongAnalyticsContent: View {
                           help: "Plus longue séance sur une même tâche. \(blocks) séance\(blocks > 1 ? "s" : "") de 25 min ou plus.")
         }
         let longest = summary.longestSequence
-        return figure("Plus longue séquence", value: longest.map { duration($0.seconds) } ?? "—",
+        return figure("Plus longue séance", value: longest.map { duration($0.seconds) } ?? "—",
                       detail: longest.map { "Dans \(GoalongActivityPresentation.displayName($0.host ?? $0.application))" }
                         ?? "Aucune période continue",
                       help: "Plus longue période continue dans une même app ou un même site.")
@@ -248,7 +301,7 @@ struct GoalongAnalyticsContent: View {
         }
         let sameTask = current.sameTaskChanges
         return figure("Changements d’app", value: "\(Int(perHour.rounded()))", unit: "/ h",
-                      detail: "Un toutes les \(GoalongActivitySummary.shortInterval(every))",
+                      detail: "Un changement toutes les \(GoalongActivitySummary.shortInterval(every))",
                       help: "\(FrenchCount.count(summary.contextChanges, "changement", "changements")) d’app ou de site au total"
                         + (sameTask > 0 ? ", dont \(sameTask) sans quitter la tâche." : "."))
     }
@@ -330,11 +383,18 @@ struct GoalongAnalyticsContent: View {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(insights) { insight in
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Image(systemName: insight.symbol).font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(insight.tone == .attention ? LHTheme.warning
-                                        : insight.tone == .positive ? LHTheme.success : LHTheme.secondaryText)
-                                    .frame(width: 18)
-                                    .accessibilityHidden(true)
+                                Group {
+                                    if let app = insight.app {
+                                        AppIconView(bundleIdentifier: app.bundleIdentifier, appName: app.name, size: 16)
+                                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
+                                    } else {
+                                        Image(systemName: insight.symbol).font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(insight.tone == .attention ? LHTheme.warning
+                                                : insight.tone == .positive ? LHTheme.success : LHTheme.secondaryText)
+                                    }
+                                }
+                                .frame(width: 18)
+                                .accessibilityHidden(true)
                                 Text(insight.text).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
                                     .textSelection(.enabled)
                             }
@@ -393,7 +453,7 @@ struct GoalongAnalyticsContent: View {
                         .accessibilityIdentifier("activity-tasks-definition")
                     Text("·").font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.tertiaryText)
                         .accessibilityHidden(true)
-                    Button("Corriger") { onReview(nil) }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                    Button("Corriger l’attribution") { onReview(nil) }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                         .help(isDay ? "Corriger le classement d’une tâche de cette journée"
                               : "Corriger le classement d’une tâche du \(shortDate(anchorDay))")
                         .accessibilityIdentifier("activity-tasks-review")
@@ -457,10 +517,9 @@ struct GoalongAnalyticsContent: View {
         }
     }
 
+    /// R-91 (R4d-11): the same list whatever the state of the period; only a missing source or a preview removes a line.
     private var exploreItems: [GoalongActivityDetail] {
-        GoalongActivityDetail.allCases.filter { item in
-            (current.observedSeconds > 0 || !item.needsObservations) && !(item == .screenTime && payload.isPreview) && isAvailable(item)
-        }
+        GoalongActivityDetail.exploreItems(isPreview: payload.isPreview, isAvailable: isAvailable)
     }
 
     /// A day-only view needs one day and its source; the others are always there.
@@ -474,6 +533,7 @@ struct GoalongAnalyticsContent: View {
     }
 
     private func exploreCaption(_ item: GoalongActivityDetail) -> String {
+        if item.needsObservations && current.observedSeconds == 0 { return GoalongActivityDetail.noDurationCaption }
         switch item {
         case .rhythm: return isDay ? "À quel moment, dans quelle app" : "Le détail de chaque jour"
         case .usage: return "Le temps passé dans chaque app et chaque site"
@@ -544,22 +604,13 @@ struct GoalongAnalyticsContent: View {
     // MARK: - Named views
 
     @ViewBuilder private func detailView(_ shown: GoalongActivityDetail, summary: GoalongActivitySummary) -> some View {
-        // The way back and the title of the sub-page form one header; the sections follow it.
-        VStack(alignment: .leading, spacing: 8) {
-            Button { detail.wrappedValue = nil } label: { Label("Activité", systemImage: "chevron.left") }
-                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
-                .help("Revenir à l’activité de la \(isDay ? "journée" : "période")")
-                .accessibilityIdentifier("activity-detail-back")
-            if shown == .rhythm && !(shown.needsObservations && current.observedSeconds == 0) {
-                // A sub-page title, above its sections: not a section title left without content.
-                Text("Rythme").font(LHTheme.sheetTitleFont).tracking(-0.4)
-                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("activity-rhythm-title")
-            } else if shown == .screenTime {
-                // Same title as the « Temps d’écran Apple » page reached from the sidebar (UI-14, écran 15).
-                Text(shown.title(isDay: isDay)).font(LHTheme.sheetTitleFont).tracking(-0.4)
-                    .accessibilityAddTraits(.isHeader).accessibilityIdentifier("activity-screen-time-title")
-            }
-        }
+        // The way back and the title of the sub-page form one header; the sections follow it (R-75, R4d-10).
+        GoalongDetailHeader(
+            title: shown.needsObservations && current.observedSeconds == 0 ? nil : shown.headerTitle(isDay: isDay),
+            backHelp: "Revenir à l’activité de la \(isDay ? "journée" : "période")",
+            titleIdentifier: shown == .rhythm ? "activity-rhythm-title" : shown == .screenTime ? "activity-screen-time-title"
+                : "activity-detail-title",
+            onBack: { detail.wrappedValue = nil })
         if shown.needsObservations && current.observedSeconds == 0 {
             emptyState
         } else {
@@ -605,8 +656,12 @@ struct GoalongAnalyticsContent: View {
                            : "Cliquez sur un jour pour l’ouvrir") {
             if isDay {
                 HStack(spacing: 14) {
+                    // R-91 (R4d-11): the box says what it changes, and is off when the hours shown are already the whole day.
                     Toggle("Journée entière", isOn: $fullDay).toggleStyle(.goalongCheckbox)
-                        .font(.system(size: 12)).fixedSize().accessibilityIdentifier("activity-full-day")
+                        .font(.system(size: 12)).fixedSize()
+                        .disabled(!fullDay && !Self.fullDayChangesRange(current.days.first))
+                        .help(GoalongActivityDetail.fullDayHelp)
+                        .accessibilityIdentifier("activity-full-day")
                     GoalongSegmentedControl("Affichage du rythme", selection: $hourly, options: [true, false]) {
                         $0 ? "Par heure" : "Par usage"
                     }.controlSize(.small).disabled(sparse)
@@ -696,7 +751,7 @@ struct GoalongAnalyticsContent: View {
                                         + GoalongProfileAnalysis.modules.map { ($0, GoalongProfileAnalysis.labels[$0] ?? $0) })
                         .frame(maxWidth: 260, alignment: .leading)
                     if cards.isEmpty {
-                        GoalongEmptyState(title: "Rien dans cette rubrique",
+                        GoalongEmptyState(title: "Rien dans cette rubrique", kind: .empty,
                                           message: "Aucun élément enregistré dans cette rubrique.") {
                             Button("Voir tous les éléments") { module = "all" }.buttonStyle(LHSecondaryButtonStyle())
                         }
@@ -732,13 +787,13 @@ struct GoalongAnalyticsContent: View {
     }
 
     private func sessionsSection(_ summary: GoalongActivitySummary) -> some View {
-        GoalongSection(title: "Sessions et focus") {
+        GoalongSection(title: "Séances et concentration") {
             VStack(alignment: .leading, spacing: 18) {
                 sessionFigures(summary)
                 GoalongFocusExplanation(hasFocus: !focus.isEmpty, minimumMinutes: $focusMinutes)
                 if !focus.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Plus longues séquences de focus").font(.system(size: 13, weight: .semibold))
+                        Text("Plus longues séances de focus").font(.system(size: 13, weight: .semibold))
                         ForEach(focus.sorted { $0.seconds > $1.seconds }.prefix(5)) { block in
                             HStack(spacing: 12) {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -754,12 +809,12 @@ struct GoalongAnalyticsContent: View {
                 }
                 let blocks = current.workBlocks(minimumMinutes: 25)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Sessions de travail").font(.system(size: 13, weight: .semibold))
-                    Text("Au moins 25 minutes sur une même tâche, même en changeant d’application ; un détour de deux minutes au plus (message, recherche, courte pause) ne coupe pas la session.")
+                    Text("Séances de travail").font(.system(size: 13, weight: .semibold))
+                    Text("Au moins 25 minutes sur une même tâche, même en changeant d’application ; un détour de deux minutes au plus (message, recherche, courte pause) ne coupe pas la séance.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                     if blocks.isEmpty {
-                        Text(current.workSeconds > 0 ? "Aucune session de 25 minutes ou plus sur cette période."
-                             : "Décrivez votre travail dans Mon travail pour voir apparaître vos sessions.")
+                        Text(current.workSeconds > 0 ? "Aucune séance de 25 minutes ou plus sur cette période."
+                             : "Décrivez votre travail dans Mon travail pour voir apparaître vos séances.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     ForEach(blocks.sorted { $0.workSeconds > $1.workSeconds }.prefix(5)) { block in
@@ -804,7 +859,7 @@ struct GoalongAnalyticsContent: View {
             purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording,
             storage: storageStop)
         VStack(alignment: .leading, spacing: 12) {
-            GoalongEmptyState(title: copy.title, message: copy.message) {
+            GoalongEmptyState(title: copy.title, kind: copy.kind, message: copy.message) {
                 if copy.offersHistory {
                     Button("Consulter l’historique", action: onHistory).buttonStyle(LHSecondaryButtonStyle()).disabled(payload.isPreview)
                 }
@@ -812,6 +867,8 @@ struct GoalongAnalyticsContent: View {
             if copy.showsObservationCount && current.eventCount > 0 {
                 Text(current.eventCount > 1 ? "\(current.eventCount) observations reçues" : "1 observation reçue").font(.system(size: 13, weight: .medium)).monospacedDigit()
                     .foregroundStyle(LHTheme.secondaryText)
+                    // R-91 (R4d-11): the count is not glued to « Ajouter une note » under it.
+                    .padding(.bottom, 8)
                     .accessibilityIdentifier("analytics-first-observations")
             }
         }
@@ -820,10 +877,14 @@ struct GoalongAnalyticsContent: View {
     private var methodology: some View {
         GoalongDisclosureGroup("Comment lire ces chiffres ?") {
             VStack(alignment: .leading, spacing: 9) {
+                // R-96 (R4d-15): the agenda page has one help disclosure; what Goalong reads there comes first.
+                if detail.wrappedValue == .agenda {
+                    ForEach(GoalongAgendaSection.readingNotes, id: \.self) { Text($0) }
+                }
                 Text("Temps actif = Travail + Hors travail + À classer. Le travail et le focus sont inclus dans l’actif ; ce ne sont pas des heures supplémentaires.")
                 Text("Goalong ne décide jamais qu’une app ou un site est productif. Un agent applique votre définition (Mon travail) à chaque contexte — app, site et titre de fenêtre — et vos corrections priment. Sans verdict, le temps reste à classer, pas à zéro. Hors travail ne signifie pas procrastination.")
                 Text("Les moyennes par jour ne comptent que les jours observés. Aujourd’hui est comparé à hier à la même heure ; une période, à la moyenne de la précédente.")
-                Text("La plus longue session de travail suit une même tâche, même en changeant d’application. Sans tâche connue, Goalong montre à la place la plus longue séquence dans une même app ou un même site. Aucune des deux ne mesure l’attention ni l’efficacité.")
+                Text("La plus longue séance de travail suit une même tâche, même en changeant d’application. Sans tâche connue, Goalong montre à la place la plus longue séance dans une même app ou un même site. Aucune des deux ne mesure l’attention ni l’efficacité.")
                 Text("Un écart de plus de deux minutes entre observations ou une interruption de collecte coupe la continuité. Les appels, lectures et présentations observés au premier plan comptent même sans clavier ni souris. Les périodes sans saisie et sans signal d’usage, privées ou non observées restent distinctes. Rien n’est prolongé avant la première trace ou après la dernière.")
                 Text("Chaque minute active est décrite par le signal le plus fort observé : appel, média, écran gardé allumé, clavier ou souris ; sinon, elle compte comme sans saisie. Ces signaux décrivent le Mac, pas l’attention.")
                 Text("Après la durée de conservation, chaque journée reste lisible depuis un résumé : durées, apps, sites et raisons des trous, sans titres de fenêtre ni textes.")
@@ -847,8 +908,14 @@ struct GoalongAnalyticsContent: View {
     /// Same threshold as the chart and the list, so the range never cuts a bar (UI-12C, screen 23).
     private func hourlyRange(_ day: GoalongLocalAnalytics.Day) -> ClosedRange<Date> {
         let hours = day.hours(minimumMinutes: focusMinutes).filter { $0.seconds > 0 }
-        guard !fullDay, let first = hours.map(\.start).min(), let last = hours.map(\.end).max() else { return chartDateRange }
-        return first...max(last, first.addingTimeInterval(3600))
+        guard !fullDay else { return chartDateRange }
+        return GoalongHourlyClassChart.wholeHours(starts: hours.map(\.start), ends: hours.map(\.end)) ?? chartDateRange
+    }
+    /// True when « Journée entière » shows more hours than the active ones.
+    nonisolated static func fullDayChangesRange(_ day: GoalongLocalAnalytics.Day?, calendar: Calendar = .current) -> Bool {
+        guard let day else { return false }
+        return GoalongActivityPresentation.chartRange(day, fullDay: false, calendar: calendar)
+            != GoalongActivityPresentation.chartRange(day, fullDay: true, calendar: calendar)
     }
     private var chartDateRange: ClosedRange<Date> {
         guard isDay, let day = current.days.first else { return dateRange }
@@ -864,7 +931,7 @@ struct GoalongAnalyticsContent: View {
     }
     private func duration(_ value: Double) -> String { GoalongAnalyticsFormatting.duration(value) }
     private func percent(_ share: Double) -> String { "\(Int((max(0, min(1, share)) * 100).rounded()))\u{00A0}%" }
-    private func time(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) }
+    private func time(_ date: Date) -> String { GoalongUIFormat.time(date) }
     private func shortDate(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)) }
     private func cardDay(_ value: String) -> Date? {
         GoalongDayParser.date(value)
@@ -881,6 +948,20 @@ enum GoalongActivityHeadline {
         guard known, let seconds else { return nil }
         return GoalongAnalyticsFormatting.duration(seconds)
     }
+    /// R-91 (R4d-11): without a work verdict, the time still to classify, when there is a minute of it.
+    static func pendingFigure(known: Bool, seconds: Double?) -> String? {
+        guard !known, let seconds, seconds >= 60 else { return nil }
+        return GoalongAnalyticsFormatting.duration(seconds)
+    }
+    static func unit(work: Bool, isDay: Bool) -> String {
+        (work ? "de travail" : "à classer") + (isDay ? "" : " par jour")
+    }
+    /// R-91 (R4d-11): a period without a comparison line says why, with the data it already has.
+    static func noComparisonReason(isDay: Bool, hasComparison: Bool, pending: Bool, days: Int) -> String? {
+        guard !isDay, !hasComparison, !pending else { return nil }
+        let span = days > 1 ? "les \(FrenchCount.count(days, "jour précédent", "jours précédents"))" : "le jour précédent"
+        return "Aucune comparaison : rien n’est observé \(span)"
+    }
 }
 
 /// What Activité says when the period shown has no measurable activity.
@@ -890,11 +971,20 @@ enum GoalongActivityEmptyCopy {
         let message: String
         var offersHistory = true
         var showsObservationCount = false
+        /// R4e-2: a stop, an unreadable day or a missing app is « indisponible »; only a day that may still start is « pas encore ».
+        var kind: GoalongStateKind = .notYet
     }
 
     struct StorageStop: Equatable {
         let kind: CaptureStorageFailureKind
         let since: Date?
+    }
+
+    /// R-74 (déc. 1): today, recording off, paused or missing a permission, and nothing read: the recording banner
+    /// already says it with its action, so the page shows no empty state repeating it.
+    static func bannerHoldsEmptyDay(isDay: Bool, isToday: Bool, eventCount: Int, incompleteDays: Int, purged: Bool,
+                                    recording: GoalongRecordingStateNotice.Kind?) -> Bool {
+        !purged && isDay && isToday && eventCount == 0 && incompleteDays == 0 && recording.flatMap(stoppedReason) != nil
     }
 
     static func copy(isDay: Bool, isToday: Bool, eventCount: Int, incompleteDays: Int, purged: Bool,
@@ -904,33 +994,46 @@ enum GoalongActivityEmptyCopy {
                 message: "Ce jour a été effacé après la durée de conservation, avant que Goalong garde un résumé de chaque journée. Une absence de données n’est pas une journée à zéro.",
                 offersHistory: false)
         }
-        // Writes refused today: one empty state names the cause and its time, never a promise of minutes to come.
-        if isDay && isToday, let storage {
-            let title = storage.since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
-            let cause = storage.kind == .diskFull ? "le disque est plein" : "le dossier de l’historique refuse l’écriture"
-            return Copy(title: title,
-                message: "Rien n’est enregistré tant que \(cause). La reprise est automatique et la coupure restera indiquée dans votre historique.",
-                offersHistory: false)
-        }
         // Today, a stopped recording is the known cause, never a promise of minutes to come; a real read error still shows.
-        if isDay && isToday && eventCount == 0,
+        if isDay && isToday,
            let reason = recording.flatMap(stoppedReason) {
             // An unreadable day must not read as "nothing recorded": keep the cause, say the reading is incomplete.
             if incompleteDays > 0 {
                 return Copy(title: "Lecture incomplète",
                     message: reason + " Certaines sources n’ont pas pu être lues : cela ne signifie pas une absence d’activité.",
-                    offersHistory: false)
+                    offersHistory: false, kind: .unavailable)
             }
-            return Copy(title: "Aucune activité enregistrée aujourd’hui", message: reason, offersHistory: false)
+            // DEF-06: a few traces before the stop never read as « premières traces » (no more minutes are coming).
+            if eventCount > 0 {
+                return Copy(title: "Aucune durée mesurable aujourd’hui",
+                    message: reason + " Les traces reçues avant l’arrêt sont trop isolées pour mesurer une durée.",
+                    offersHistory: false, showsObservationCount: true, kind: .unavailable)
+            }
+            return Copy(title: "Aucune activité enregistrée aujourd’hui", message: reason, offersHistory: false, kind: .unavailable)
+        }
+        // Writes refused today: the page says the effect and its time, never a promise of minutes to come.
+        // R8-6: the cause is said once per screen, by the top banner, which holds the action (« Gérer le stockage… »).
+        // P-1: a stopped recording comes first (above): only then can the banner show the storage alert, so it always does here.
+        if isDay && isToday, let storage {
+            let stop = storage.since.map { "Aucune donnée depuis \(GoalongUIFormat.time($0))" } ?? "Aucune nouvelle donnée"
+            // R-74 (R9C-40): the banner says it resumes on its own and stays visible; this says what it means for the day.
+            let message = "Une absence de données n’est pas une journée à zéro."
+            // P-2: an unreadable day still says so, with the stop.
+            if incompleteDays > 0 {
+                return Copy(title: "Lecture incomplète",
+                    message: stop + ". " + message + " Certaines sources n’ont pas pu être lues : cela ne signifie pas une absence d’activité.",
+                    offersHistory: false, kind: .unavailable)
+            }
+            return Copy(title: stop, message: message, offersHistory: false, kind: .unavailable)
         }
         if incompleteDays > 0 {
             return Copy(title: "Lecture incomplète",
                 message: "Certaines sources n’ont pas pu être lues. Cela ne signifie pas une absence d’activité.",
-                showsObservationCount: true)
+                showsObservationCount: true, kind: .unavailable)
         }
         if eventCount > 0 {
             return Copy(title: "Les premières traces sont reçues",
-                message: "La durée devient mesurable dès que deux observations d’activité sont assez proches. Aucune minute n’est inventée entre des traces isolées.",
+                message: "La durée devient mesurable dès que deux observations d’activité sont assez proches. Aucune durée n’est estimée entre des traces isolées.",
                 showsObservationCount: true)
         }
         if isDay && isToday {
@@ -940,6 +1043,15 @@ enum GoalongActivityEmptyCopy {
         }
         return Copy(title: "Pas encore d’enregistrement",
             message: "Choisissez une autre date ou consultez les sources dans l’historique. Une absence de données n’est pas une journée à zéro.")
+    }
+
+    /// Why nothing is written, after « tant que » (P-4: an unavailable storage cannot write, it refuses nothing).
+    static func storageCause(_ kind: CaptureStorageFailureKind) -> String {
+        switch kind {
+        case .diskFull: return "le disque est plein"
+        case .permissionDenied: return "le dossier refuse l’écriture"
+        case .unavailable: return "Goalong ne peut pas écrire dans son dossier d’historique"
+        }
     }
 
     private static func stoppedReason(_ kind: GoalongRecordingStateNotice.Kind) -> String? {

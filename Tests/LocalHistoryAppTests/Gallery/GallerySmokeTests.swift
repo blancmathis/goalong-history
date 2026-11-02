@@ -244,8 +244,11 @@ final class GallerySmokeTests: XCTestCase {
     @MainActor func testCatalogCoversEveryDestinationWithUniqueIDs() {
         let entries = GalleryCatalog.all
         let sections = Set(entries.compactMap(\.section))
+        // .activity opens the same page as .history (same PNG; DashboardRootView → UnifiedHistoryPage): historique/ covers
+        // it, NOT_COVERED says so (R-61). The skip is this one table entry, so the guard fails if historique/ goes (R-289 2).
+        let coveredBy: [DashboardSection: DashboardSection] = [.activity: .history]
         for section in DashboardSection.allCases where section != .settings {
-            XCTAssertTrue(sections.contains(section), "no gallery entry for DashboardSection.\(section)")
+            XCTAssertTrue(sections.contains(coveredBy[section] ?? section), "no gallery entry for DashboardSection.\(section)")
         }
         let panes = Set(entries.compactMap(\.pane))
         let allPanes: [SettingsPane] = [.home, .recording, .applications, .connections, .website, .chatGPT, .jev, .modules,

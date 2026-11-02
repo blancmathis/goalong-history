@@ -18,12 +18,12 @@ enum GoalongAnalyticsPreview {
         formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
         let dayLabel = formatter.string(from: last)
         let examples: [(String, String, String, String)] = [
-            ("totals", "Une journée entre création et échanges", "Les mesures fictives illustrent une alternance de longues séquences de création et de tâches plus courtes. Les durées exactes restent dans les graphiques ci-dessus.", "observed"),
+            ("totals", "Une journée entre création et échanges", "Les mesures fictives illustrent une alternance de longues séances de création et de tâches plus courtes. Les durées exactes restent dans les graphiques ci-dessus.", "observed"),
             ("apps", "Des outils complémentaires", "L’éditeur sert au développement, Figma à la conception et le navigateur à la documentation. Les sites restent inclus dans le temps du navigateur.", "observed"),
             ("projects", "Parcours mobile, conception et intégration", "Exemple de projet regroupant la conception des écrans, leur intégration et la vérification du parcours. Plusieurs applications peuvent contribuer au même projet.", "inferred"),
             ("projects", "Documentation, préparer la prochaine livraison", "Un second projet illustre la préparation des notes de version et des points à vérifier avant une livraison.", "inferred"),
             ("work", "Concevoir, développer, relire", "La présentation distingue ici la conception d’interface, le développement et la rédaction. Un type de travail ne constitue pas une preuve de résultat.", "inferred"),
-            ("rhythm", "Des séquences longues le matin", "Exemple d’interprétation du rythme : une première plage continue de création, puis des échanges et une reprise l’après-midi. Le focus observé ne mesure pas l’attention mentale.", "observed"),
+            ("rhythm", "Des séances longues le matin", "Exemple d’interprétation du rythme : une première plage continue de création, puis des échanges et une reprise l’après-midi. Le focus observé ne mesure pas l’attention mentale.", "observed"),
             ("progress", "Prochaine étape, vérifier le parcours complet", "Exemple d’avancée déclarée : les principaux écrans sont intégrés. Prochaine étape suggérée : relire les états vides et tester le parcours sur une petite fenêtre.", "declared"),
             ("methods", "Alterner réalisation et vérification", "Exemple de méthode : construire un écran, le tester, puis documenter la décision avant de passer au suivant.", "inferred"),
             ("evolution", "Deux périodes à mettre en regard", "Exemple de carte d’évolution. Les périodes précédentes sont elles aussi entièrement simulées ; aucune évolution réelle n’est déduite de cet aperçu.", "inferred"),
@@ -79,7 +79,7 @@ enum GoalongAnalyticsPreview {
             stages: [.init(id: "Sommeil léger", seconds: 4.0 * 3600 + 5.0 * 60), .init(id: "Sommeil paradoxal", seconds: 100.0 * 60),
                      .init(id: "Sommeil profond", seconds: 70.0 * 60), .init(id: "Éveillé", seconds: 25.0 * 60)],
             steps: 8_420, workouts: 1, workoutSeconds: 45.0 * 60,
-            label: "Sommeil compté sur ce jour, coupé à minuit dans le fuseau horaire de l’import")
+            label: "Sommeil compté sur ce jour, réparti à minuit dans le fuseau horaire de l’import")
         let devices = GoalongOtherDevicesDay(devices: [
             .init(id: "phone", name: "iPhone", screenOnSeconds: 2.0 * 3600 + 10.0 * 60, duringGapsSeconds: 50.0 * 60, estimated: true),
             .init(id: "tablet", name: "iPad", screenOnSeconds: 35.0 * 60, duringGapsSeconds: 15.0 * 60, estimated: false),
@@ -91,7 +91,7 @@ enum GoalongAnalyticsPreview {
             .init(id: "health", title: "Apple Santé (import)", state: .ready, detail: "Import du 17 septembre."),
         ]
         return GoalongActivityLanes(agenda: agenda, code: code, sleep: sleep, otherDevices: devices,
-                                    note: "Journée coupée par la revue client ; maquettes validées en fin d’après-midi.",
+                                    note: "Journée raccourcie par la revue client ; maquettes validées en fin d’après-midi.",
                                     noteAvailable: true, sources: sources + systemSources)
     }
 

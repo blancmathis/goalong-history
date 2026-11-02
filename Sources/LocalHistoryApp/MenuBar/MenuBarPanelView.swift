@@ -349,12 +349,12 @@
                             .keyboardShortcut(.defaultAction)
                     }
                 }
-                .disabled(!model.focusAvailable)
-                if !model.focusAvailable, let reason = model.focusUnavailableReason {
+                .disabled(model.focusStartBlocked)
+                if let reason = model.focusBlockedReason {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let fix = model.focusUnavailableFix {
+                        if let fix = model.focusBlockedFix {
                             Spacer(minLength: 8)
                             Button(fix.label) { model.perform(fix) }
                                 .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
@@ -372,10 +372,10 @@
         @ObservedObject var model: MenuBarPanelModel
 
         private var meta: String {
-            var parts: [String] = []
-            if let cycle = run.cycle, let cycles = run.cycles { parts.append("Cycle \(cycle) sur \(cycles)") }
-            if let next = run.nextBreak, !run.isPaused { parts.append("pause à \(GoalongUIFormat.time(next))") }
-            if run.isPaused { parts.append("en pause") }
+            // Decision 15: the big clock says what it counts.
+            var parts: [String] = [run.isPaused ? "En pause" : run.remaining != nil ? "Temps restant" : "Temps écoulé"]
+            if let cycle = run.cycle, let cycles = run.cycles { parts.append("cycle \(cycle) sur \(cycles)") }
+            if let next = run.nextBreak, !run.isPaused { parts.append("pause dans \(GoalongUIFormat.timerLength(next.timeIntervalSince(GoalongToday.now)))") }
             return parts.joined(separator: ", ")
         }
 
@@ -502,7 +502,7 @@
                     if let current = model.ambianceCurrent {
                         AmbianceWave(seed: current.id, character: AmbianceWaveCharacter(current),
                                      // A neutral tile: ink while playing, never lime (DESIGN §12, no tinted icon tile).
-                                     look: model.ambianceLoading ? .waiting : (model.ambiancePlaying ? .playing : .idle))
+                                     look: model.ambiancePlaying && !model.ambianceLoading ? .playing : .idle)  // R-73: same vignette while loading
                             .padding(.horizontal, 6).padding(.vertical, 10)
                     }
                 }
@@ -536,8 +536,8 @@
 
         private var subtitle: String {
             guard let current = model.ambianceCurrent else { return "Choisissez un son ci-dessous" }
-            if model.ambianceLoading { return "\(kindTitle(current.kind)), chargement…" }
-            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en cours" : "\(kindTitle(current.kind)), écouté en dernier"
+            if model.ambianceLoading { return "Chargement du son…" }  // R-73 (R9A-24)
+            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en cours" : "Dernier son écouté"
         }
 
         private var volume: some View {
@@ -677,7 +677,7 @@
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 8)
                 if list.isLocked {
-                    Button("Arrêter…") { model.requestStopBlocking(list.id) }
+                    Button("Arrêter le blocage…") { model.requestStopBlocking(list.id) }
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
                         .accessibilityLabel("Demander l’arrêt de \(list.title)")
                 } else {
@@ -737,3 +737,21 @@
         }
     }
 #endif
+
+// R-70 (déc. 11): « Commencer » stays greyed while a prerequisite is missing, and the panel keeps one call to action.
+extension MenuBarPanelModel {
+    /// A missing macOS permission stops recording: a session could not observe anything, so it cannot start.
+    var focusStartBlocked: Bool { !focusAvailable || attentionFix == .permissions }
+
+    var focusBlockedReason: String? {
+        if !focusAvailable { return focusUnavailableReason }
+        return attentionFix == .permissions ? "Accès à rétablir avant de commencer." : nil
+    }
+
+    /// The header already offers the repair (permission) or the recording settings (gear): no second button below.
+    var focusBlockedFix: PanelFix? {
+        guard !focusAvailable else { return nil }
+        if consentOff && focusUnavailableFix == .recording { return nil }
+        return focusUnavailableFix
+    }
+}

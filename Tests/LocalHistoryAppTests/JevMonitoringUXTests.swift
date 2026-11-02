@@ -59,7 +59,7 @@ final class JevMonitoringUXTests: XCTestCase {
         XCTAssertTrue(root.contains("case .settings, .monitoring:\n                SettingsPage(model: model)"))
         XCTAssertTrue(try source("Concentration/ConcentrationHubPage.swift").contains(".environment(\\.openJevSettings) { model.selectSection(.monitoring) }"))
         XCTAssertTrue(try source("AppDelegate.swift").contains("onOpenMonitoring: { [weak self] in self?.dashboardWindowController.show(section: .monitoring) }"))
-        XCTAssertTrue(try source("JevControls.swift").contains("Ouvrir la surveillance…"))
+        XCTAssertTrue(try source("JevControls.swift").contains("Ouvrir Jev…"))
     }
 
     func testBatchU07CopyAndControlsStayInTheViews() throws {
@@ -73,9 +73,11 @@ final class JevMonitoringUXTests: XCTestCase {
         let controls = try source("GoalongControls.swift")
         XCTAssertTrue(controls.contains("LHTheme.switchTrackHover : LHTheme.switchTrack"))
         XCTAssertFalse(controls.contains("LHTheme.pressedBackground : LHTheme.switchTrack"))
-        XCTAssertTrue(controls.contains(".opacity(isEnabled ? 1 : 0.6)"), "R7-C-01: a disabled track, on or off, is faded")
+        // T-043 R-9 replaces the R7-C-01 fade: a locked switch keeps its real position, a quieter track and a padlock.
+        XCTAssertTrue(controls.contains("Image(systemName: \"lock.fill\")"), "R-9: a locked switch shows a padlock")
+        XCTAssertTrue(controls.contains("lockedAccessibilityValue"), "R-9: VoiceOver reads « Activé, verrouillé »")
         let share = try source("SharePage.swift")
-        XCTAssertTrue(share.contains("avant de créer le fichier."))
+        XCTAssertTrue(share.contains("Choisissez ce que le fichier montre de chaque app et site."), "R275-3: a short subtitle keeps three rows of the list in view")
         XCTAssertFalse(share.contains("paquet") || share.contains("chaîne d’intégrité"))
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()

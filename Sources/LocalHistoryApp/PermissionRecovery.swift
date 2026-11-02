@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Foundation
@@ -56,12 +57,12 @@
         @MainActor private static var relaunch: PermissionRelaunchHandshake?
         @MainActor static var isRestarting: Bool { relaunch != nil }
 
-        static func rememberSetup(_ capability: GoalongCapability, defaults: UserDefaults = .standard, now: Date = Date()) {
+        static func rememberSetup(_ capability: GoalongCapability, defaults: UserDefaults = GoalongDefaults.standard, now: Date = Date()) {
             guard [.localComputerHistory, .appleScreenTime, .aiConversations].contains(capability) else { return }
             defaults.set(["capability": capability.rawValue, "expires": now.addingTimeInterval(600).timeIntervalSince1970], forKey: returnKey)
         }
 
-        static func pendingSetup(defaults: UserDefaults = .standard, now: Date = Date()) -> GoalongCapability? {
+        static func pendingSetup(defaults: UserDefaults = GoalongDefaults.standard, now: Date = Date()) -> GoalongCapability? {
             guard let value = defaults.dictionary(forKey: returnKey),
                   let raw = value["capability"] as? String, let capability = GoalongCapability(rawValue: raw),
                   [.localComputerHistory, .appleScreenTime, .aiConversations].contains(capability),
@@ -70,7 +71,7 @@
             return capability
         }
 
-        static func clearSetup(defaults: UserDefaults = .standard) { defaults.removeObject(forKey: returnKey) }
+        static func clearSetup(defaults: UserDefaults = GoalongDefaults.standard) { defaults.removeObject(forKey: returnKey) }
 
         @MainActor static func consumeSetupReturn() -> Bool {
             resumedCapability = pendingSetup()

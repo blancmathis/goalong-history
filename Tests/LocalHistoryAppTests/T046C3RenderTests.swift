@@ -6,6 +6,7 @@ import LocalHistoryQueryCLI
 import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
+import AppleScreenTime
 
 /// T-046 C3: controls shown only in one state (a Jev break, a disconnected ChatGPT account, the management of the
 /// conversation sources, the Apple Screen Time details, a saved Health day). Each test puts the app in that state in the
@@ -109,8 +110,8 @@ final class T046C3RenderTests: XCTestCase {
         JevMenuController.shared.menuNeedsUpdate(menu)
         var titles = menu.items.map(\.title)
         XCTAssertTrue(titles.contains("Pause de 5 min (historique inchangé)"), "saw \(titles)")
-        XCTAssertTrue(titles.contains("Désactiver la surveillance"), "saw \(titles)")
-        XCTAssertFalse(titles.contains("Reprendre la surveillance"), "No break yet; saw \(titles)")
+        XCTAssertTrue(titles.contains("Désactiver Jev"), "saw \(titles)")
+        XCTAssertFalse(titles.contains("Reprendre Jev"), "No break yet; saw \(titles)")
 
         let quick = strings(of: host(JevQuickPauseControl()))
         XCTAssertTrue(quick.contains("jev-quick-pause"), "saw \(quick.sorted())")
@@ -124,20 +125,20 @@ final class T046C3RenderTests: XCTestCase {
         XCTAssertNotNil(monitor.timedBreak, "Pressing a duration starts the break")
         spin(until: { strings(of: breaks).contains("jev-end-break") })
         seen = strings(of: breaks)
-        XCTAssertTrue(seen.contains("Reprendre la surveillance"), "saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Reprendre Jev"), "saw \(seen.sorted())")
         XCTAssertTrue(seen.contains("jev-break-countdown"), "saw \(seen.sorted())")
         XCTAssertFalse(seen.contains("5 min"), "No new break during a break; saw \(seen.sorted())")
 
         JevMenuController.shared.menuNeedsUpdate(menu)
         titles = menu.items.map(\.title)
-        XCTAssertTrue(titles.contains("Reprendre la surveillance"), "saw \(titles)")
-        XCTAssertTrue(titles.contains { $0.hasPrefix("Surveillance en pause : ") && $0.hasSuffix(" restantes") }, "saw \(titles)")
+        XCTAssertTrue(titles.contains("Reprendre Jev"), "saw \(titles)")
+        XCTAssertTrue(titles.contains { $0.hasPrefix("Jev en pause · ") && $0.hasSuffix(" restantes") }, "saw \(titles)")
         XCTAssertFalse(titles.contains("Pause de 5 min (historique inchangé)"), "saw \(titles)")
 
         let quickBreak = strings(of: host(JevQuickPauseControl()))
-        XCTAssertTrue(quickBreak.contains { $0.hasPrefix("Pause, ") }, "The quick control shows the countdown; saw \(quickBreak.sorted())")
+        XCTAssertTrue(quickBreak.contains { $0.hasPrefix("Pause · ") }, "The quick control shows the countdown; saw \(quickBreak.sorted())")
 
-        XCTAssertTrue(press("Reprendre la surveillance", in: breaks))
+        XCTAssertTrue(press("Reprendre Jev", in: breaks))
         XCTAssertNil(monitor.timedBreak, "Resuming ends the break")
         XCTAssertNil(try JevLocalFiles.read("break.json"), "No break file is left")
         assertNoVisibleWindow()
@@ -249,10 +250,10 @@ final class T046C3RenderTests: XCTestCase {
     /// HOME and the previous value comes back at teardown.
     @MainActor private func fakeTokenFile() -> String {
         let key = "goalong.website.tokenFilePath"
-        let before = UserDefaults.standard.string(forKey: key)
-        addTeardownBlock { UserDefaults.standard.set(before, forKey: key) }
+        let before = GoalongDefaults.standard.string(forKey: key)
+        addTeardownBlock { GoalongDefaults.standard.set(before, forKey: key) }
         let path = AppPaths.applicationSupportDirectory.appendingPathComponent("t046-c3-acces.txt").path
-        UserDefaults.standard.set(path, forKey: key)
+        GoalongDefaults.standard.set(path, forKey: key)
         return path
     }
 
@@ -277,7 +278,7 @@ final class T046C3RenderTests: XCTestCase {
         let sheet = host(GoalongWebsiteConnectionSheet())
         var seen = strings(of: sheet)
         XCTAssertTrue(seen.contains("Rapport structuré de productivité"), "saw \(seen.sorted())")
-        XCTAssertTrue(seen.contains("Calculer le rythme à partir de l’historique de ce Mac"), "saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Calculer le rythme à partir de l’enregistrement de ce Mac"), "saw \(seen.sorted())")
         XCTAssertFalse(seen.contains("Inclure l’heure de début précise"), "Rhythm off; saw \(seen.sorted())")
         // The disclosure and the switch are pressed through accessibility; a style that does not answer the press is
         // reported, not failed (the coverage run says what was reached).
@@ -288,7 +289,7 @@ final class T046C3RenderTests: XCTestCase {
         } else {
             print("[t046-c3] advanced options not pressable; saw \(seen.sorted())")
         }
-        if press("Calculer le rythme à partir de l’historique de ce Mac", in: sheet) {
+        if press("Calculer le rythme à partir de l’enregistrement de ce Mac", in: sheet) {
             spin(until: { strings(of: sheet).contains("Inclure l’heure de début précise") })
             seen = strings(of: sheet)
             XCTAssertTrue(seen.contains("Inclure les épisodes simplifiés"), "saw \(seen.sorted())")
@@ -310,7 +311,10 @@ final class T046C3RenderTests: XCTestCase {
 
     /// Renders off screen: a hosting view with no window, so nothing is shown and nothing takes the focus.
     @MainActor private func host(_ root: some View) -> NSView {
-        let view = NSHostingView(rootView: root.environment(\.goalongReduceMotion, true).goalongControls())
+        let view = NSHostingView(rootView: root.environment(\.goalongReduceMotion, true)
+            // No real probe of the Screen Time store: the page must not depend on this Mac's disk permissions.
+            .environment(\.sourceAccessCheck, { _, done in done(.ready) })
+            .goalongControls())
         view.frame = NSRect(x: 0, y: 0, width: 900, height: 1600)
         view.layoutSubtreeIfNeeded()
         // The conversations page first shows « Vérification des accès… » while it checks the sources.

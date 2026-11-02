@@ -76,8 +76,12 @@
 
                         agentCollaborationCard(overview)
                         coverageCard(overview)
-                    } else if recapRuntime.isLoadingDayOverview {
+                    } else if Self.showsSeparateLoadingCard(hasRecap: recapRuntime.recap != nil,
+                                                            loadingOverview: recapRuntime.isLoadingDayOverview) {
                         loadingDataCard
+                    } else if recapRuntime.isLoadingDayOverview {
+                        // R-71: the report card already shows the read in progress, not « Aucun rapport » above a spinner.
+                        EmptyView()
                     } else if recapRuntime.dayOverviewError != nil {
                         // Already shown above the ChatGPT card (readErrorLeads).
                         EmptyView()
@@ -299,13 +303,15 @@
                         .disabled(!canGenerate || recapRuntime.isGenerating)
                         .help(generationBlockedReason ?? "")
                         .accessibilityHint(generationBlockedReason ?? "")
-                    }
-                    // Analyses off: the report's empty state already says it (one message, UI-13C).
-                    // Not connected and no report: the report's empty state says it too, so it is said once (UI-17C, 34).
-                    if let reason = generationBlockedReason, !recapRuntime.isGenerating, consents.isEnabled(.chatGPTAnalysis),
-                       isConnected || recapRuntime.recap != nil {
-                        Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                            .fixedSize().accessibilityHidden(true)
+                        // R-71: the reason sits beside the greyed button it explains.
+                        // Analyses off: the report's empty state already says it (one message, UI-13C).
+                        // Not connected and no report: the report's empty state says it too, so it is said once (UI-17C, 34).
+                        if let reason = generationBlockedReason, !recapRuntime.isGenerating, consents.isEnabled(.chatGPTAnalysis),
+                           isConnected || recapRuntime.recap != nil {
+                            Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 180, alignment: .leading).accessibilityHidden(true)
+                        }
                     }
                 }
             }
@@ -370,6 +376,7 @@
                                 if recap.verifiesLocalAttestation {
                                     StatusPill(
                                         title: "Signé localement",
+                                        kind: .ready,
                                         symbol: "signature",
                                         tint: LHTheme.success
                                     )
@@ -379,12 +386,13 @@
                                 } else {
                                     StatusPill(
                                         title: "Rapport non vérifié",
+                                        kind: .attention,
                                         symbol: "clock.arrow.circlepath",
                                         tint: LHTheme.warning
                                     )
                                     .help("Ce rapport est antérieur aux analyses signées. Régénérez-le pour détecter toute modification.")
                                 }
-                                Text(recap.generatedAt.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(GoalongUIFormat.locale)))
+                                Text("\(GoalongUIFormat.dayAbbreviated(recap.generatedAt)) à \(GoalongUIFormat.time(recap.generatedAt))")
                                     .font(.system(size: 12))
                                     .foregroundStyle(LHTheme.secondaryText)
                             }
@@ -418,8 +426,19 @@
                             .lineSpacing(3)
                             .textSelection(.enabled)
                     }
+                } else if recapRuntime.isLoadingDayOverview {
+                    // R-71 (déc. 1): one state at a time; while the day is read, the report card says so.
+                    HStack(spacing: 12) {
+                        ProgressView().controlSize(.small)
+                        Text("Lecture de la journée dans les sources locales…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(LHTheme.secondaryText)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
                 } else {
-                    GoalongEmptyState(title: "Aucun rapport pour ce jour", message: emptyReportMessage)
+                    GoalongEmptyState(title: "Aucun rapport pour ce jour",
+                                      kind: Self.emptyReportKind(analysesEnabled: consents.isEnabled(.chatGPTAnalysis), connected: isConnected, needsUpdate: needsUpdate),
+                                      message: emptyReportMessage)
                 }
             }
         }
@@ -434,31 +453,20 @@
                     )
                     bandDivider
                     metric(
-                        title: "Classé travail",
+                        title: "Classé comme travail",
                         value: duration(overview.workSeconds),
                         detail: "D’après Mon travail"
                     )
                     bandDivider
-                    // A source with nothing read is absent, not a zero (PRODUCT.md, UI-17C 34).
-                    if overview.screenTimeDevices.isEmpty && overview.screenTimeSeconds == 0 {
-                        metric(title: "Temps d’écran", value: "—", detail: "Non lu")
-                    } else {
-                        metric(
-                            title: "Temps d’écran",
-                            value: duration(overview.screenTimeSeconds),
-                            detail: "\(overview.screenTimeDevices.count) appareil\(overview.screenTimeDevices.count > 1 ? "s" : "") Apple"
-                        )
-                    }
+                    // A source with nothing read is absent, not a zero (PRODUCT.md, UI-17C 34). R-266: « absent » when the
+                    // source is not allowed or was never read; a source read with nothing that day is a real zero.
+                    let screen = ChatGPTRecapMetricCopy.screenTime(enabled: consents.isEnabled(.appleScreenTime), read: overview.screenTimeRead,
+                        seconds: overview.screenTimeSeconds, devices: overview.screenTimeDevices.count, duration: duration)
+                    metric(title: "Temps d’écran", value: screen.value, detail: screen.detail)
                     bandDivider
-                    if overview.agentSessions == 0 && overview.agentMessages == 0 {
-                        metric(title: "Conversations IA", value: "—", detail: "Non lues")
-                    } else {
-                        metric(
-                            title: "Conversations IA",
-                            value: "\(overview.agentSessions)",
-                            detail: GoalongUIFormat.count(overview.agentMessages, "message")
-                        )
-                    }
+                    let ai = ChatGPTRecapMetricCopy.aiConversations(enabled: consents.isEnabled(.aiConversations), read: overview.agentActivityRead,
+                        sessions: overview.agentSessions, messages: overview.agentMessages)
+                    metric(title: "Conversations IA", value: ai.value, detail: ai.detail)
                 }
             }
         }
@@ -480,6 +488,9 @@
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14)
+            // VoiceOver reads one sentence, never « tiret » for an unread source (R-266).
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(ChatGPTRecapMetricCopy.spoken(title: title, value: value, detail: detail))
         }
 
         private func usagePanel(
@@ -562,9 +573,9 @@
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 18)
-                    collaborationMetric("Sessions", overview.agentSessions)
-                    collaborationMetric("Messages", overview.agentMessages)
-                    collaborationMetric("Actions des agents", overview.agentToolCalls)
+                    collaborationMetric("Conversations", overview.agentSessions)
+                    collaborationMetric("Demandes et réponses", overview.agentMessages)
+                    collaborationMetric("Outils utilisés", overview.agentToolCalls)
                     collaborationMetric("Erreurs", overview.agentErrors)
                 }
             }
@@ -681,6 +692,14 @@
             return nil
         }
 
+        /// R-71: the separate « Lecture… » card only shows under an existing report; without one, the report card holds it.
+        static func showsSeparateLoadingCard(hasRecap: Bool, loadingOverview: Bool) -> Bool { loadingOverview && hasRecap }
+
+        /// R4e-9: an app too old to connect is « indisponible »; a day with no report yet is simply empty.
+        static func emptyReportKind(analysesEnabled: Bool, connected: Bool, needsUpdate: Bool) -> GoalongStateKind {
+            analysesEnabled && !connected && needsUpdate ? .unavailable : .empty
+        }
+
         static func emptyReportMessage(analysesEnabled: Bool, connected: Bool, needsUpdate: Bool) -> String {
             if !analysesEnabled {
                 return "Les analyses sont désactivées. Choisissez les données ci-dessous pour générer le bilan en cinq lignes."
@@ -703,4 +722,22 @@
             DashboardFormatters.duration(seconds: TimeInterval(seconds))
         }
     }
+/// The recap band's figures: « — » for a source not allowed or never read; a source read with nothing that day says 0.
+enum ChatGPTRecapMetricCopy {
+    struct Figure: Equatable { let value: String; let detail: String }
+
+    static func screenTime(enabled: Bool, read: Bool = true, seconds: Int, devices: Int, duration: (Int) -> String) -> Figure {
+        guard enabled, read else { return Figure(value: "—", detail: "Non lu") }
+        return Figure(value: duration(seconds), detail: "\(devices) appareil\(devices > 1 ? "s" : "") Apple")
+    }
+
+    static func aiConversations(enabled: Bool, read: Bool = true, sessions: Int, messages: Int) -> Figure {
+        guard enabled, read else { return Figure(value: "—", detail: "Non lues") }
+        return Figure(value: "\(sessions)", detail: GoalongUIFormat.count(messages, "demande ou réponse", plural: "demandes et réponses"))
+    }
+
+    static func spoken(title: String, value: String, detail: String) -> String {
+        value == "—" ? "\(title) : \(detail.lowercased())" : "\(title) : \(value), \(detail)"
+    }
+}
 #endif

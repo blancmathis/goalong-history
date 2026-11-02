@@ -24,7 +24,7 @@ final class T046UI15ATests: XCTestCase {
             for enabled in [true, false] {
                 for paused in [true, false] {
                     let title = runtime(state).sidebarTitle(recordingEnabled: enabled, globallyPaused: paused)
-                    XCTAssertLessThanOrEqual(title.count, 20, "« \(title) » for \(state)")
+                    XCTAssertLessThanOrEqual(title.count, 24, "« \(title) » for \(state)")
                     XCTAssertFalse(title.isEmpty)
                 }
             }
@@ -32,13 +32,23 @@ final class T046UI15ATests: XCTestCase {
     }
 
     func testSidebarStatusSaysOffPauseAndRefusedWrite() {
-        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: false), "Enregistrement coupé")
-        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: true), "Tout est en pause")
-        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: true), "Tout est en pause")
+        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: false), "Enregistrement désactivé")
+        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: true), "Tout le suivi en pause")
+        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: true), "Tout le suivi en pause")
         XCTAssertEqual(runtime(.storageUnavailable(.permissionDenied)).sidebarTitle(recordingEnabled: true, globallyPaused: false),
-                       "Écriture impossible")
+                       "Écriture refusée")
         XCTAssertEqual(runtime(.storageUnavailable(.diskFull)).sidebarTitle(recordingEnabled: true, globallyPaused: false), "Disque plein")
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: false), "Enregistrement actif")
+    }
+
+    /// R8-6: when the banner already names the storage cause, the sidebar row says only « Interrompu » (state), neither the cause nor « Voir le bandeau ».
+    func testSidebarDoesNotRepeatStorageCauseNamedByBanner() {
+        let full = runtime(.storageUnavailable(.diskFull))
+        XCTAssertEqual(full.sidebarTitle(recordingEnabled: true, globallyPaused: false, storageNamedByBanner: true), "Interrompu")
+        XCTAssertEqual(full.sidebarTitle(recordingEnabled: true, globallyPaused: false, storageNamedByBanner: false), "Disque plein")
+        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: false, storageNamedByBanner: true),
+                       "Enregistrement actif")
+        XCTAssertEqual(full.sidebarTitle(recordingEnabled: true, globallyPaused: true, storageNamedByBanner: true), "Tout le suivi en pause")
     }
 
     /// « Historique de ce Mac » and « Temps d’écran Apple » are masculine, « Conversations locales » feminine plural.

@@ -1,5 +1,6 @@
 #if os(macOS)
     import AppKit
+    import AppleScreenTime
     import ApplicationServices
     import CoreGraphics
 
@@ -292,10 +293,24 @@
         }
 
         private static func liveStatus() -> PermissionStatus {
-            probeStatus(includeFunctionalCheck: true)
+            guardedProbe(includeFunctionalCheck: true)
+        }
+
+        /// Times the real system (TCC, other processes' windows) was read. Stays 0 under XCTest.
+        nonisolated(unsafe) static var systemReadCount = 0
+
+        /// Under XCTest nothing is read from this Mac: every grant answers « not granted », whatever the machine's TCC says.
+        static func guardedProbe(includeFunctionalCheck: Bool) -> PermissionStatus {
+            if GoalongTestEnvironment.isXCTest {
+                return PermissionStatus.resolved(accessibilityPreflight: false, accessibilityFunctionalProbe: false,
+                                                 inputMonitoringDirectlyGranted: false,
+                                                 accessibilityCrossProcessProbe: false, accessibilityProbeError: nil)
+            }
+            return probeStatus(includeFunctionalCheck: includeFunctionalCheck)
         }
 
         private static func probeStatus(includeFunctionalCheck: Bool) -> PermissionStatus {
+            systemReadCount += 1
             let started = ProcessInfo.processInfo.systemUptime
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
             let preflight = AXIsProcessTrustedWithOptions(options)
@@ -345,6 +360,9 @@
 
         @discardableResult
         func requestAccessibility() -> Bool {
+            // Under XCTest the system prompt never opens: nothing is requested, nothing is read.
+            if GoalongTestEnvironment.isXCTest { return false }
+            Self.systemReadCount += 1
             let options =
                 [
                     kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
@@ -359,6 +377,8 @@
             // Input Monitoring preflight is reported independently from Accessibility.
             // A successful callback remains the authoritative runtime proof.
             if refresh(force: true).inputMonitoringDirectlyGranted { return true }
+            if GoalongTestEnvironment.isXCTest { return false }
+            Self.systemReadCount += 1
             let requested = CGRequestListenEventAccess()
             _ = refresh(force: true)
             return requested

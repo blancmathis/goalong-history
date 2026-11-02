@@ -168,13 +168,13 @@ enum GoalongKnownApplications {
         VStack(alignment: .leading, spacing: 16) {
             // UI-13C (27): the sentence is the page lead (SettingsPane.lead); a compact segmented control, its help beside it.
             HStack(spacing: 8) {
-                GoalongSegmentedControl("Type", selection: $sites, options: [false, true]) { $0 ? "Sites web" : "Applications" }
+                GoalongSegmentedControl("Type", selection: $sites, options: [false, true]) { $0 ? "Sites web" : "Apps" }
                     .fixedSize()
                 GoalongHelpButton(text: "Le suivi détaillé et les prochains envois respectent ces exclusions. Les historiques locaux d’Apple et des outils IA restent séparés ; ils ne sont pas effacés. Les textes et totaux impossibles à filtrer sont bloqués. Une ancienne exclusion limitée au suivi détaillé est indiquée comme telle.")
             }
             HStack {
                 GoalongSearchField("Rechercher par nom…", text: $search)
-                Toggle("Exclusions seulement", isOn: $excludedOnly).toggleStyle(.goalongCheckbox).fixedSize()
+                Toggle("Afficher seulement les exclues", isOn: $excludedOnly).toggleStyle(.goalongCheckbox).fixedSize()
             }
             if sites {
                 HStack {
@@ -258,7 +258,7 @@ enum GoalongKnownApplications {
             Button("Fermer", role: .cancel) {}
         } message: { Text(exclusions.error ?? "") }
     }
-    private var empty: some View { GoalongEmptyState(title: "Aucun résultat", message: "Essayez un autre nom d’application.").padding(24) }
+    private var empty: some View { GoalongEmptyState(title: "Aucun résultat", kind: .empty, message: "Essayez un autre nom d’application.").padding(24) }
     private func isExcluded(_ app: GoalongApplicationChoice) -> Bool { exclusions.policy.excludes(appID: app.id) || model.isApplicationExcludedFromCapture(app.id) }
     /// The rule, other than the host itself, that excludes this host (« example.fr » for docs.example.fr).
     /// Same matching as `URLRedactor.domain`: lowercase, surrounding dots and spaces trimmed, suffix after a dot.
@@ -368,7 +368,7 @@ enum GoalongOnboardingExclusionEdit {
                 HStack {
                     Text(item).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Button("Retirer") { remove(item) }.buttonStyle(.plain).foregroundStyle(LHTheme.secondaryText)
+                    Button("Retirer") { remove(item) }.buttonStyle(LHQuietButtonStyle())
                         .accessibilityLabel("Retirer \(item) des exclusions")
                 }
             }

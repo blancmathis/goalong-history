@@ -86,6 +86,7 @@
                     Spacer()
                     StatusPill(
                         title: "Stored locally",
+                        kind: .ready,
                         symbol: "internaldrive.fill",
                         tint: LHTheme.success
                     )
@@ -115,9 +116,7 @@
                         HStack {
                             Label(title, systemImage: symbol)
                                 .font(.system(size: 14, weight: .semibold))
-                            Text("\(items.count)")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(LHTheme.secondaryText)
+                            GoalongRuleCount(items.count)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.primary.opacity(0.06), in: Capsule())
@@ -162,6 +161,7 @@
                             .lineLimit(1)
                         StatusPill(
                             title: state.enabled ? "Monitored" : "Excluded",
+                            kind: state.enabled ? .ready : .unavailable,
                             symbol: state.enabled ? "checkmark.circle.fill" : "eye.slash.fill",
                             tint: state.enabled ? LHTheme.success : LHTheme.privateTint
                         )

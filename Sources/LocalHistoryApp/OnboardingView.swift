@@ -108,11 +108,18 @@
                     ForEach(SetupStep.allCases) { item in
                         let done = item.position < step.position, current = item == step
                         HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            // R-79 (R4d-21): a walked step is ticked; the current one is a plain lime mark.
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .fill(done || current ? LHTheme.accent : LHTheme.sidebarBackground)
-                                .overlay(RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                                .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
                                     .strokeBorder(done || current ? .clear : LHTheme.tertiaryText, lineWidth: 1.5))
-                                .frame(width: 9, height: 9)
+                                .overlay {
+                                    if done {
+                                        Image(systemName: "checkmark").font(.system(size: 7, weight: .heavy))
+                                            .foregroundStyle(LHTheme.text)
+                                    }
+                                }
+                                .frame(width: 11, height: 11)
                             Text(item.navigationTitle)
                                 .font(.system(size: 13, weight: current ? .semibold : .regular))
                                 .foregroundStyle(current ? LHTheme.text : LHTheme.secondaryText)
@@ -123,7 +130,7 @@
                         if item != SetupStep.allCases.last {
                             Rectangle().fill(done ? LHTheme.accent : LHTheme.separator)
                                 .frame(width: done ? 2 : 1, height: 18)
-                                .frame(width: 9)
+                                .frame(width: 11)
                                 .accessibilityHidden(true)
                         }
                     }

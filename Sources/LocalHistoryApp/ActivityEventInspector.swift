@@ -53,7 +53,7 @@
         static func loadIssueWarning(count: Int) -> String {
             count == 1
                 ? "1 ligne locale n’a pas pu être lue. Ces lacunes restent signalées, jamais ignorées en silence."
-                : "\(count) lignes locales n’ont pas pu être lues. Ces lacunes restent signalées, jamais ignorées en silence."
+                : "\(GoalongUIFormat.number(count)) lignes locales n’ont pas pu être lues. Ces lacunes restent signalées, jamais ignorées en silence."
         }
 
         static func button(_ raw: String) -> String {
@@ -242,9 +242,7 @@
                     )
 
                     Spacer(minLength: 8)
-                    Text("\(filteredEvents.count)")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(LHTheme.secondaryText)
+                    GoalongRuleCount(filteredEvents.count)
                 }
 
                 if inspector.isLoading {
@@ -309,6 +307,7 @@
                     if let reason = event.suppressionReason {
                         StatusPill(
                             title: ActivityEventLabels.reason(reason),
+                            kind: .unavailable,
                             symbol: "eye.slash",
                             tint: LHTheme.privateTint
                         )

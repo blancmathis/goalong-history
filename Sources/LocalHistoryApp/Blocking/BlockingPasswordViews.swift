@@ -105,10 +105,10 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
                             .accessibilityLabel(purpose == .change ? "Nouveau mot de passe" : "Mot de passe")
                             .accessibilityIdentifier("blocking-password-new")
                     }
-                    GoalongFormField(title: "Confirmation") {
+                    GoalongFormField(title: "Confirmer le mot de passe") {
                         SecureField("", text: $again)
                             .textFieldStyle(GoalongFieldStyle())
-                            .accessibilityLabel("Confirmation")
+                            .accessibilityLabel("Confirmer le mot de passe")
                             .accessibilityIdentifier("blocking-password-again")
                     }
                 }
@@ -137,7 +137,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array([
                 ("person.2", "Demandez à un proche de le taper, sans vous le montrer."),
-                ("key", "Il le garde. Sans lui, un blocage « Mot de passe » va jusqu’à sa fin."),
+                ("key", "Votre proche le garde. Sans lui, un blocage « Mot de passe » va jusqu’à sa fin."),
                 ("arrow.counterclockwise", "Oublié ? Le blocage finit à son heure. Goalong ne peut pas le retrouver."),
             ].enumerated()), id: \.offset) { _, line in
                 // A fixed icon column keeps the three texts on one left edge.

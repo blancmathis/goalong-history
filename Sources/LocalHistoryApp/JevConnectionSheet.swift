@@ -62,7 +62,7 @@ import SwiftUI
             Button("Annuler", role: .cancel) {}
             Button("Supprimer la clé", role: .destructive) { monitor.removeKey(); keyError = monitor.error }
         } message: {
-            Text("La surveillance ne pourra plus rien analyser sans une nouvelle clé. Votre historique et vos autres réglages restent inchangés.")
+            Text("Jev ne pourra plus rien analyser sans une nouvelle clé. Votre historique et vos autres réglages restent inchangés.")
         }
     }
 }

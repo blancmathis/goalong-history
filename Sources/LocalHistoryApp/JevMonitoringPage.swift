@@ -54,8 +54,11 @@ struct JevActivationAvailability: Equatable {
 
     private var content: some View {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Des rappels pour rester sur vos projets de travail.")
-                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                // Embedded in Réglages, the pane's title carries this sentence (SettingsPane.lead).
+                if !embedded {
+                    Text("Des rappels pour rester sur vos projets de travail.")
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                }
                 monitoringCard
                 GoalongWorkDefinitionSummary(onOpen: onOpenWork)
                 JevBreakControls()
@@ -82,7 +85,7 @@ struct JevActivationAvailability: Equatable {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Surveillance").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
+                        Text("Jev").font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
                         Text("Facultatif. Jev, service payant de la société TypeSafe, vous rappelle votre projet quand il repère une distraction.")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -119,7 +122,7 @@ struct JevActivationAvailability: Equatable {
                 connectionRow
                 if !availability.localHistoryEnabled {
                     HStack(alignment: .top, spacing: 12) {
-                        Text("L’historique de ce Mac doit aussi être activé. Aucun accès n’est modifié à votre place.")
+                        Text("L’enregistrement doit aussi être activé. Aucun accès n’est modifié à votre place.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)

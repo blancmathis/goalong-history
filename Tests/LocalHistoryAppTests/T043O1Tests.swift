@@ -82,6 +82,21 @@ final class T043O1Tests: XCTestCase {
         XCTAssertTrue(helps.contains("Facultatif, sur ce Mac. Peut contenir des messages et documents personnels."), "saw \(helps)")
     }
 
+    /// P-9: the hint and the line under the title come from one constant.
+    func testVisibleTextHintIsTheDisplayedSentence() {
+        XCTAssertEqual(VisibleContextControl.warning, "Facultatif, sur ce Mac. Peut contenir des messages et documents personnels.")
+    }
+
+    /// P-10 (R-265): the « Ouvrir » buttons say what they open and start with the visible word (Voice Control).
+    func testOpenButtonsNameWhatTheyOpen() {
+        for module in GoalongModule.allCases {
+            let label = GoalongModulesSettings.openAccessibilityLabel(module)
+            XCTAssertEqual(label, "Ouvrir \(module.title)")
+            XCTAssertTrue(label.hasPrefix("Ouvrir "))
+        }
+        XCTAssertEqual(SharePage.openRecordingSettingsAccessibilityLabel, "Ouvrir les réglages d’enregistrement")
+    }
+
     // MARK: Helpers
 
     @MainActor private func host(_ root: some View, width: CGFloat, height: CGFloat) -> NSView {

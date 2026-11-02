@@ -657,7 +657,7 @@
             XCTAssertEqual(runtime.alert?.title, "Détection indisponible")
             XCTAssertEqual(
                 runtime.alert?.message,
-                "Le suivi des agents n’est pas actif — activez la lecture des conversations locales pour détecter des sources."
+                "La lecture des conversations locales est désactivée. Activez-la pour détecter des sources."
             )
             XCTAssertEqual(runtime.configuration, before)
         }
@@ -686,7 +686,7 @@
             let before = runtime.configuration
             runtime.detectCommonSources()
             XCTAssertEqual(runtime.alert?.title, "Détection indisponible")
-            XCTAssertEqual(runtime.alert?.message, "Suivi en pause — reprenez le suivi pour détecter des sources.")
+            XCTAssertEqual(runtime.alert?.message, "Tout le suivi en pause. Reprenez tout le suivi pour détecter des sources.")
             XCTAssertEqual(runtime.configuration, before)
             XCTAssertFalse(runtime.configuration.watchedFolders.contains(where: { $0.id == discovered.id }))
         }

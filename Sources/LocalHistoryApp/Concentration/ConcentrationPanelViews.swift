@@ -139,12 +139,13 @@ struct FocusPhaseNotice: View {
 
     private var title: String {
         guard let endsAt else { return fallback }
-        return isWork ? "On reprend jusqu’à \(BlockingFormat.time(endsAt))" : "Pause jusqu’à \(BlockingFormat.time(endsAt))"
+        return isWork ? "Concentration jusqu’à \(BlockingFormat.time(endsAt))" : "Pause jusqu’à \(BlockingFormat.time(endsAt))"
     }
 
     private var detail: String {
         if isWork { return intent ?? fallback }
-        return "Le travail reprend seul à la fin."
+        guard let endsAt else { return "La prochaine séance démarre automatiquement à la fin de la pause." }
+        return "La prochaine séance démarre automatiquement à \(BlockingFormat.time(endsAt))."
     }
 }
 
@@ -183,17 +184,19 @@ struct FocusReviewPanelView: View {
                     .accessibilityLabel("Fermer sans répondre")
                 }
                 FocusFactsView(facts: facts)
-                TextField("", text: $note)
-                    .textFieldStyle(GoalongFieldStyle())
-                    .goalongPlaceholder("Une note, si vous voulez", isEmpty: note.isEmpty)
-                    .accessibilityLabel("Note")
-                    .onChange(of: note) { value in if value.count > 140 { note = String(value.prefix(140)) } }
-                    .accessibilityIdentifier("concentration-review-note")
+                GoalongFormField(title: "Note") {
+                    TextField("", text: $note)
+                        .textFieldStyle(GoalongFieldStyle())
+                        .goalongPlaceholder("Si vous voulez", isEmpty: note.isEmpty)
+                        .accessibilityLabel("Note")
+                        .onChange(of: note) { value in if value.count > 140 { note = String(value.prefix(140)) } }
+                        .accessibilityIdentifier("concentration-review-note")
+                }
                 HStack(spacing: 8) {
                     Spacer()
-                    Button("Non") { answer(.notDone) }
+                    Button("Pas fait") { answer(.notDone) }
                     Button("En partie") { answer(.partly) }
-                    Button("Oui") { answer(.done) }.buttonStyle(LHPrimaryButtonStyle())
+                    Button("Fait") { answer(.done) }.buttonStyle(LHPrimaryButtonStyle())
                         .keyboardShortcut(.defaultAction)
                 }
             }
@@ -238,7 +241,7 @@ struct FocusFactsView: View {
             }
             .accessibilityElement(children: .combine)
         } else {
-            Text("Pas de mesure pour cette séance : l’historique de ce Mac n’était pas enregistré.")
+            Text("Pas de mesure : l’enregistrement était en pause pendant cette séance.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -267,14 +270,14 @@ struct FocusPromptPanelView: View {
                         .foregroundStyle(LHTheme.secondaryText).frame(width: 26).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(morning ? "Plan du matin" : "Bilan du soir").font(.system(size: 14, weight: .semibold))
-                        Text(morning ? "Une à dix tâches pour aujourd’hui." : "Ce qui est fait, et ce qui passe à demain.")
+                        Text(morning ? "Choisissez vos tâches du jour." : "Ce qui est fait, et ce qui passe à demain.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                 }
                 HStack(spacing: 8) {
                     Spacer()
                     Button("Plus tard", action: onLater)
-                    Button(morning ? "Faire le plan" : "Faire le bilan", action: onNow).buttonStyle(LHPrimaryButtonStyle())
+                    Button(morning ? "Planifier" : "Faire le bilan", action: onNow).buttonStyle(LHPrimaryButtonStyle())
                 }
             }
         }

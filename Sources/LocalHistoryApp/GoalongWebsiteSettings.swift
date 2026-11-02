@@ -13,7 +13,7 @@ import LocalHistoryQueryCLI
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(sender.enabled ? "Chaque jour" : sender.savedConfiguration == nil ? "Envoi ponctuel" : "Envoi quotidien en pause").font(.system(size: 13, weight: .semibold))
-                        Text(sender.enabled ? "La veille, après l’heure choisie" : "Vous vérifiez puis confirmez chaque envoi")
+                        Text(sender.enabled ? "La veille, après l’heure choisie" : "Vous vérifiez puis confirmez chaque envoi.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer()
@@ -42,9 +42,9 @@ import LocalHistoryQueryCLI
         .sheet(item: $presentation) { request in GoalongWebsiteSharingSheet(initialDay: request.day).id(request.id).goalongControls() }
     }
 
-    /// « 8 h 00 (heure de Paris) » rather than the raw `Europe/Paris` identifier.
+    /// « 08:00 (heure de Paris) » rather than the raw `Europe/Paris` identifier.
     static func scheduleLabel(hour: Int, minute: Int, zone: String?) -> String {
-        let time = String(format: "%d h %02d", hour, minute)
+        let time = GoalongUIFormat.time(minuteOfDay: hour * 60 + minute)
         guard let zone, let tz = TimeZone(identifier: zone),
               let city = tz.localizedName(for: .generic, locale: Locale(identifier: "fr_FR")) else { return time }
         return "\(time) (\(city))"

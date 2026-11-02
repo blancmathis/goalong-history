@@ -5,6 +5,7 @@ import Security
 import CryptoKit
 import Darwin
 import LocalHistoryCore
+import AppleScreenTime
 
 struct SupportBuild: Codable {
     let version: String?
@@ -206,7 +207,7 @@ enum SupportFindings {
         }
 
         if flag(.storageInterrupted) {
-            let cause = state(live, .storageFailure) == .diskFull ? "le disque est plein" : "le dossier d’historique refuse l’écriture"
+            let cause = state(live, .storageFailure) == .diskFull ? "le disque est plein" : "le dossier refuse l’écriture"
             findings.append(SupportFinding(severity: .error, code: .recordingInterrupted,
                 title: "L’enregistrement est interrompu",
                 detail: "Goalong ne peut plus écrire son historique : \(cause). Il reprendra automatiquement dès que l’écriture sera de nouveau possible."))
@@ -217,13 +218,13 @@ enum SupportFindings {
             let diskFull = interruptions.contains { state($0.values, .state) == .diskFull }
             findings.append(SupportFinding(severity: .warning, code: .recordingWasInterrupted,
                 title: "Enregistrement interrompu \(interruptions.count) fois",
-                detail: (diskFull ? "Au moins une coupure venait d’un disque plein. " : "")
-                    + (lost > 1 ? "\(lost) observations n’ont pas pu être enregistrées" : "\(lost) observation n’a pas pu être enregistrée") + " ; chaque coupure est marquée dans l’historique."))
+                detail: (diskFull ? "Au moins une interruption venait d’un disque plein. " : "")
+                    + GoalongUIFormat.count(lost, "événement n’a pas pu être enregistré", plural: "événements n’ont pas pu être enregistrés") + " ; chaque interruption est marquée dans l’historique."))
         }
         if let storage, storage.lowSpace, let free = storage.freeMB {
             findings.append(SupportFinding(severity: .warning, code: .lowDiskSpace,
                 title: "Espace disque faible",
-                detail: "Il reste \(free) Mo sur le disque. Sous environ \(StorageHealth.lowSpaceThresholdText), macOS peut refuser les écritures de Goalong."))
+                detail: "Il reste \(free) Mo sur le disque où Goalong enregistre. Sous environ \(StorageHealth.lowSpaceThresholdText), macOS peut refuser les écritures de Goalong."))
         }
         let unclean = timeline.filter { $0.event == .appStarted && $0.values[SupportKey.previousExitUnclean.rawValue] == .flag(true) }.count
         if unclean > 0 {
@@ -247,7 +248,7 @@ enum SupportFindings {
         if statuses.contains(402) {
             findings.append(SupportFinding(severity: .warning, code: .monitoringPaymentRequired,
                 title: "Jev : crédit épuisé",
-                detail: "Le service d’analyse a répondu 402 (paiement requis) : la surveillance s’est mise en pause. Rechargez le compte TypeSafe puis cliquez sur Réessayer."))
+                detail: "Le service d’analyse a répondu 402 (paiement requis) : Jev s’est mis en pause. Rechargez le compte TypeSafe puis cliquez sur Réessayer."))
         } else if statuses.contains(where: { $0 == 401 || $0 == 403 }) {
             findings.append(SupportFinding(severity: .warning, code: .monitoringAuthentication,
                 title: "Jev : clé refusée", detail: "Le service d’analyse refuse la clé configurée."))
@@ -283,9 +284,10 @@ enum SupportFindings {
         if !diagnosticsEnabled {
             findings.append(SupportFinding(severity: .info, code: .diagnosticsDisabled,
                 title: "Journal technique désactivé",
-                detail: timeline.isEmpty
+                detail: "Le journal technique note les événements internes de Goalong (démarrages, erreurs, interruptions), sans votre activité. "
+                    + (timeline.isEmpty
                     ? "Le rapport ne contient que l’état actuel."
-                    : "Aucun nouvel événement n’est enregistré ; les journaux déjà conservés (7 jours au plus) restent inclus."))
+                    : "Aucun nouvel événement n’est enregistré ; les journaux déjà conservés (7 jours au plus) restent inclus.")))
         }
         if findings.isEmpty {
             findings.append(SupportFinding(severity: .info, code: .noProblemDetected,
@@ -393,7 +395,7 @@ struct SupportReport: Codable {
         if let free = StorageHealth.availableBytes() { values[.freeSpaceMB] = .count(Int(free / 1_048_576)) }
         values[.monitoringEnabled] = .flag(GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
         values[.websiteAutoSend] = .flag(GoalongWebsiteAutoSender.shared.enabled)
-        let defaults = UserDefaults.standard
+        let defaults = GoalongDefaults.standard
         let tokenPath = defaults.string(forKey: "goalong.website.tokenFilePath") ?? ""
         values[.websiteLinked] = .flag(!tokenPath.isEmpty && !(defaults.string(forKey: "goalong.website.origin") ?? "").isEmpty
             && FileManager.default.fileExists(atPath: tokenPath))

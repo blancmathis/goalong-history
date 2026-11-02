@@ -172,7 +172,7 @@ struct GoalongRhythmStudio: View {
                     }
                     if let value = model.result {
                         Divider(); Text("Relire et corriger").font(.headline)
-                        HStack { metric("Lié au projet", value.project_ms); metric("Plus longue séquence", value.longest_project_ms); VStack { Text("Consultations brèves").font(.caption); Text("\(value.brief_consultations), \(duration(value.brief_consultation_ms))").font(.headline) } }
+                        HStack { metric("Lié au projet", value.project_ms); metric("Plus longue séance", value.longest_project_ms); VStack { Text("Consultations brèves").font(.caption); Text("\(value.brief_consultations), \(duration(value.brief_consultation_ms))").font(.headline) } }
                         ForEach(value.episodes ?? [], id: \.id) { row in
                             VStack(alignment: .leading) {
                                 HStack {
