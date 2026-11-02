@@ -1679,3 +1679,23 @@ temps-ecran/vide--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre �
 temps-ecran/vide--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
 terminal/aide--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
 terminal/aide--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+ambiance/a-installer--dark.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+ambiance/a-installer--light.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/chargement--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/chargement--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/erreur--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/erreur--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/rapport--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/rapport--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+conversations-ia/vide--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+conversations-ia/vide--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+fenetre/pause-globale--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+fenetre/pause-globale--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+historique/journee-vide--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+historique/journee-vide--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+partage/avec-donnees--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+partage/avec-donnees--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+partage/vide--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+partage/vide--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+settings/chatgpt-consentement--dark.png   # T-043 R3 : écart voulu face à int3 (changé), cadre ≥ contenu ou état posé par l'entrée
+settings/chatgpt-consentement--light.png   # T-043 R3 : écart voulu face à int3 (changé), cadre ≥ contenu ou état posé par l'entrée
