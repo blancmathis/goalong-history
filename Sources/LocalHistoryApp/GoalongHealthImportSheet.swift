@@ -9,8 +9,8 @@ struct GoalongHealthImportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var host = GoalongWebsiteWindowHost()
     @State private var file: URL?
-    @State private var from = Calendar.current.date(byAdding: .day, value: -7, to: GoalongToday.now) ?? GoalongToday.now
-    @State private var through = Calendar.current.date(byAdding: .day, value: -1, to: GoalongToday.now) ?? GoalongToday.now
+    @State private var from = GoalongHealthImportSheet.defaultRange().from
+    @State private var through = GoalongHealthImportSheet.defaultRange().through
     @State private var selected = Set(GoalongHealthGroup.allCases)
     @State private var preferred: [GoalongHealthGroup: String] = [:]
     @State private var result: GoalongHealthImportResult?
@@ -33,6 +33,12 @@ struct GoalongHealthImportSheet: View {
     @State private var confirmsForget = false
     @AppStorage("goalong.website.origin") private var origin = ""
     @AppStorage("goalong.website.tokenFilePath") private var tokenFilePath = ""
+
+    /// The dates the sheet proposes: the last 7 days, today included. An export always holds today's readings, and the
+    /// day the page shows must sit inside the range (it ended the day before « today » and left today's day out).
+    static func defaultRange(now: Date = GoalongToday.now, calendar: Calendar = .current) -> (from: Date, through: Date) {
+        (calendar.date(byAdding: .day, value: -6, to: now) ?? now, now)
+    }
 
     init() {}
     /// Gallery only: the sheet as a step leaves it, without a real file, task or panel.

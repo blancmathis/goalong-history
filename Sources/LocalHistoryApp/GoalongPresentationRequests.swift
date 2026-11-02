@@ -44,11 +44,16 @@ enum GoalongUIFormat {
         let value = (DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .autoupdatingCurrent) ?? "").contains("a")
         systemTwelveHour = value
         // Read once per region change, not once per displayed hour (lists, chart axes).
-        if localeObserver == nil {
-            localeObserver = NotificationCenter.default.addObserver(forName: NSLocale.currentLocaleDidChangeNotification,
-                                                                    object: nil, queue: nil) { _ in systemTwelveHour = nil }
-        }
+        if localeObserver == nil { localeObserver = observeLocaleChange() }
         return value
+    }
+    /// Clears the cached 12/24 h choice on the main queue, where the cache is read: a `nil` queue would run the
+    /// closure on whatever thread posts the notification, racing the readers of `nonisolated(unsafe)` state.
+    static func observeLocaleChange(center: NotificationCenter = .default, didClear: (() -> Void)? = nil) -> NSObjectProtocol {
+        center.addObserver(forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: .main) { _ in
+            systemTwelveHour = nil
+            didClear?()
+        }
     }
     nonisolated(unsafe) private static var systemTwelveHour: Bool?
     nonisolated(unsafe) private static var localeObserver: NSObjectProtocol?

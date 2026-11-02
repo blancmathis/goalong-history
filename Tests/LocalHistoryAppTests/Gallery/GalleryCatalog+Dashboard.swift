@@ -47,8 +47,8 @@ extension GalleryCatalog {
                       environment: { $0.permissions = .galleryMissing }, fixture: .recordingOn),
             dashboard("fenetre/interactions-indisponibles", section: .overview,
                       environment: { $0.inputTapWorks = false }, fixture: .recordingOn,
-                      note: "bannière « Clics et frappe non reçus » avec « Vérifier les accès… », et statut "
-                          + "« Saisie non reçue » dans la barre latérale"),
+                      note: "bannière « Les clics et la frappe ne parviennent pas à Goalong… », et statut "
+                          + "« Pas d’interactions » dans la barre latérale"),
             dashboard("fenetre/pause-globale", section: .overview, sizes: [.window, .full(1240)], paused: true),
             dashboard("fenetre/stockage-plein", section: .overview, environment: { $0.storageFailure = .diskFull },
                       fixture: .recordingOn),
@@ -81,11 +81,10 @@ extension GalleryCatalog {
             dashboard("historique/journee-vide", section: .history, sizes: [.window, .full(1240)], fixture: .recordingOn),
             dashboard("historique/chronologie", section: .history, sizes: [.window, .minimum, .full(1240)],
                       fixture: .realistic),
-            // UI-15C (22): one state keeps the .activity destination covered. The filled variant drew the same
-            // PNG as historique/, and « Ouvrir le journal » shows the file in the Finder, outside the app's window.
-            // R-61: .activity draws the same page as historique/vide (same PNG, proof in the run's duplicate list;
-            // 6bc0d8ad removed this entry for that reason, e2fef957 put it back for DashboardSection coverage).
-            dashboard("enregistrement/journal", section: .activity),
+            // R-61 (T-043 R2c, décision 1): « enregistrement/journal » drew the same PNG as historique/vide (section
+            // .activity opens the same page). 6bc0d8ad removed it for that reason, e2fef957 put it back only for the
+            // DashboardSection coverage guard; the entry is gone again and the guard names .activity as covered by
+            // historique/ (scripts/gallery.py NOT_COVERED says so).
             // R8-2: the large window shows several rows; the default one shows the fade.
             dashboard("partage/avec-donnees", section: .share, sizes: [.window, .large, .full(1240)], fixture: .realistic),
             dashboard("temps-ecran/vide", section: .screenTime, sizes: [.window, .full(1240)]),
