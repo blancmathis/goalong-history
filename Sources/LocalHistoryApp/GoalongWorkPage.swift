@@ -7,6 +7,8 @@ import SwiftUI
 /// "Mon travail": the user's own definition of work, the agent that applies it, and the
 /// review where every verdict can be corrected. Goalong never rates an app or a site.
 @MainActor struct GoalongWorkPage: View {
+    /// R-45 (R4d-25): two sentences, the cause then what it changes.
+    static let withheldTitlesNotice = "Vos choix « Données pour ChatGPT » excluent les titres de fenêtre. Le classement ne distingue alors deux usages d’une même app que par le site."
     @ObservedObject var model: DashboardViewModel
     @ObservedObject private var work = GoalongWorkStore.shared
     @ObservedObject private var agent = GoalongWorkAgent.shared
@@ -111,7 +113,7 @@ import SwiftUI
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             if GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory),
                                         selection: GoalongAnalysisSelection.load()).withholdsTitles {
-                Label("Vos choix « Données pour ChatGPT » excluent les titres de fenêtre : le classement ne peut distinguer deux usages d’une même app que par le site.", systemImage: "info.circle")
+                Label(GoalongWorkPage.withheldTitlesNotice, systemImage: "info.circle")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.warning).fixedSize(horizontal: false, vertical: true)
             }
             if work.hasAgentVerdicts {
@@ -132,9 +134,22 @@ import SwiftUI
     }
 
     private var statusSymbol: String {
-        if agent.isRunning { return "sparkles" }
-        if agent.lastError != nil { return "exclamationmark.triangle" }
-        return agent.readiness == .ready ? "checkmark.circle" : "circle.dashed"
+        var checking = false
+        if case .checking = runtime.connectionState { checking = true }
+        return Self.statusSymbol(running: agent.isRunning, failed: agent.lastError != nil, readiness: agent.readiness, checking: checking)
+    }
+    /// R-83 (R4d-12): one symbol per status title, so two states never share an icon.
+    nonisolated static func statusSymbol(running: Bool, failed: Bool, readiness: GoalongWorkAgent.Readiness, checking: Bool) -> String {
+        if running { return "sparkles" }
+        if failed { return "exclamationmark.triangle" }
+        switch readiness {
+        case .ready: return "checkmark.circle"
+        case .noConsent: return "hand.raised"
+        case .notConnected: return checking ? "arrow.triangle.2.circlepath" : "person.crop.circle.badge.xmark"
+        case .historyOff: return "clock.badge.xmark"
+        case .paused: return "pause.circle"
+        case .noDefinition: return "square.and.pencil"
+        }
     }
     private var statusTint: Color {
         if agent.lastError != nil && !agent.isRunning { return LHTheme.warning }

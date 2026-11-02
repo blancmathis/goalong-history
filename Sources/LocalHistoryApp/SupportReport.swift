@@ -206,7 +206,7 @@ enum SupportFindings {
         }
 
         if flag(.storageInterrupted) {
-            let cause = state(live, .storageFailure) == .diskFull ? "le disque où Goalong enregistre est plein" : "macOS refuse l’écriture dans le dossier où Goalong enregistre"
+            let cause = state(live, .storageFailure) == .diskFull ? "le disque est plein" : "le dossier refuse l’écriture"
             findings.append(SupportFinding(severity: .error, code: .recordingInterrupted,
                 title: "L’enregistrement est interrompu",
                 detail: "Goalong ne peut plus écrire son historique : \(cause). Il reprendra automatiquement dès que l’écriture sera de nouveau possible."))

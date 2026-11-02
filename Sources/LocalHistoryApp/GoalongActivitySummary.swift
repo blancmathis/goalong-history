@@ -28,6 +28,13 @@ struct GoalongActivitySummary {
         let symbol: String
         let text: String
         var tone: Tone = .neutral
+        /// The app this sentence is about: the row shows its icon, or its initial (never an empty SF « app » square).
+        var app: AppMark? = nil
+    }
+
+    struct AppMark: Equatable {
+        let bundleIdentifier: String?
+        let name: String
     }
 
     let period: GoalongLocalAnalytics.Period
@@ -222,7 +229,8 @@ struct GoalongActivitySummary {
         if let top = topUsage, activeSeconds > 0 {
             let share = Int((top.seconds / activeSeconds * 100).rounded())
             result.append(Insight(id: "top", symbol: top.isWebsite ? "globe" : "app",
-                text: "Usage principal : \(top.displayName), \(Self.duration(top.seconds)) (\(GoalongUIFormat.percent(share)) du temps actif)."))
+                text: "Usage principal : \(top.displayName), \(Self.duration(top.seconds)) (\(GoalongUIFormat.percent(share)) du temps actif).",
+                app: top.isWebsite ? nil : AppMark(bundleIdentifier: top.bundleIdentifier, name: top.displayName)))
         }
         if let every = secondsPerChange, let perHour = changesPerActiveHour {
             // Under one change an hour the rate rounds to « 0 fois » (T-045 H1-05): the interval says it alone.
@@ -244,7 +252,7 @@ struct GoalongActivitySummary {
         if workIsMeasurable {
             var text = "Travail : \(Self.duration(workSeconds)) (\(GoalongUIFormat.percent(workShare * 100)) du temps actif)"
             if let block = longestWorkBlock, block.workSeconds >= 600 {
-                text += ", plus longue session sur une même tâche \(Self.duration(block.workSeconds))"
+                text += ", plus longue séance sur une même tâche \(Self.duration(block.workSeconds))"
             }
             result.append(Insight(id: "work", symbol: "briefcase", text: text + ".", tone: .positive))
         } else if unclassifiedShare >= 0.3 {
