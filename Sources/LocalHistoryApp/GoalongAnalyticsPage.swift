@@ -49,6 +49,12 @@ struct GoalongAnalyticsPage: View {
     @State private var lastAutomaticRefresh = Date.distantPast
 
     private var previewActive: Bool { developerMode && showingPreview }
+    /// Oldest day imported from Temps d’écran or Santé (R-265); listed off the main thread.
+    @State private var importedFirstDay: Date?
+    /// First day of every source: this Mac's history and the imported days, which can be older (R-265).
+    private var earliestDay: Date? {
+        previewActive ? nil : GoalongActivityFirstDay.earliest(macDays: model.snapshot.availableDays, imported: importedFirstDay)
+    }
     /// Disk full or unwritable: « Gérer le stockage… » in the top banner stays the only action.
     private var recordingInterrupted: Bool { !previewActive && model.runtime.storageFailure != nil }
     private var shareBlockedReason: String? {
@@ -71,12 +77,11 @@ struct GoalongAnalyticsPage: View {
             if detail != .screenTime {
                 GoalongActivityHeader(selection: selection, isPreview: previewActive, isRefreshing: analytics.busy,
                     shareBlockedReason: shareBlockedReason,
-                    // R-265: imported days (Temps d’écran, Santé) can be older than this Mac's first day: no bound
-                    // from the Mac history alone. A bound given here is honoured by every period (see DateSelectionControl).
-                    earliestDay: nil,
+                    // R-265, UI-17A M3: one bound for the calendar, « précédent » and every period's step.
+                    earliestDay: earliestDay,
                     onDay: { day in updateSelection { $0.selectDay(day) } },
                     onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
-                    onStep: { direction in updateSelection { $0.step(direction) } },
+                    onStep: { direction in updateSelection { $0.step(direction, earliest: earliestDay) } },
                     onToday: { updateSelection { $0.today() } },
                     onReturn: { updateSelection { $0.restorePeriod() } },
                     onRefresh: refresh,
@@ -219,6 +224,11 @@ struct GoalongAnalyticsPage: View {
             // The page is rebuilt on each section change: a day that turned while it was away counts too.
             followCalendarDay()
             model.selectDay(navigation.day)
+        }
+        .task(id: "\(revision)|\(laneRevision)") {
+            // A Santé import or a new Temps d’écran day can move the first day back (R-265).
+            let root = AppPaths.applicationSupportDirectory
+            importedFirstDay = await Task.detached(priority: .utility) { GoalongActivityFirstDay.importedEarliest(root: root) }.value
         }
         .task(id: loadRequest) {
             let request = loadRequest

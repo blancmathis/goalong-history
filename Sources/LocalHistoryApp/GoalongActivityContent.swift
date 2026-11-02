@@ -904,14 +904,6 @@ enum GoalongActivityEmptyCopy {
                 message: "Ce jour a été effacé après la durée de conservation, avant que Goalong garde un résumé de chaque journée. Une absence de données n’est pas une journée à zéro.",
                 offersHistory: false)
         }
-        // Writes refused today: one empty state names the cause and its time, never a promise of minutes to come.
-        if isDay && isToday, let storage {
-            let title = storage.since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
-            let cause = storage.kind == .diskFull ? "le disque est plein" : "le dossier de l’historique refuse l’écriture"
-            return Copy(title: title,
-                message: "Rien n’est enregistré tant que \(cause). La reprise est automatique et la coupure restera indiquée dans votre historique.",
-                offersHistory: false)
-        }
         // Today, a stopped recording is the known cause, never a promise of minutes to come; a real read error still shows.
         if isDay && isToday,
            let reason = recording.flatMap(stoppedReason) {
@@ -928,6 +920,19 @@ enum GoalongActivityEmptyCopy {
                     offersHistory: false, showsObservationCount: true)
             }
             return Copy(title: "Aucune activité enregistrée aujourd’hui", message: reason, offersHistory: false)
+        }
+        // Writes refused today: one empty state names the cause and its time, never a promise of minutes to come.
+        // P-1: a stopped recording comes first (above), as in the top banner: nothing is written then, the failure may be old.
+        if isDay && isToday, let storage {
+            let stop = storage.since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
+            let message = "Rien n’est enregistré tant que \(storageCause(storage.kind)). La reprise est automatique et la coupure restera indiquée dans votre historique."
+            // P-2: an unreadable day still says so, with the stop.
+            if incompleteDays > 0 {
+                return Copy(title: "Lecture incomplète",
+                    message: stop + ". " + message + " Certaines sources n’ont pas pu être lues : cela ne signifie pas une absence d’activité.",
+                    offersHistory: false)
+            }
+            return Copy(title: stop, message: message, offersHistory: false)
         }
         if incompleteDays > 0 {
             return Copy(title: "Lecture incomplète",
@@ -946,6 +951,15 @@ enum GoalongActivityEmptyCopy {
         }
         return Copy(title: "Pas encore d’enregistrement",
             message: "Choisissez une autre date ou consultez les sources dans l’historique. Une absence de données n’est pas une journée à zéro.")
+    }
+
+    /// Why nothing is written, after « tant que » (P-4: an unavailable storage cannot write, it refuses nothing).
+    static func storageCause(_ kind: CaptureStorageFailureKind) -> String {
+        switch kind {
+        case .diskFull: return "le disque est plein"
+        case .permissionDenied: return "le dossier de l’historique refuse l’écriture"
+        case .unavailable: return "Goalong ne peut pas écrire dans son dossier d’historique"
+        }
     }
 
     private static func stoppedReason(_ kind: GoalongRecordingStateNotice.Kind) -> String? {

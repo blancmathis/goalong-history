@@ -1080,6 +1080,5 @@ programme/page--   # UI-17C (écran 1 : « Bloquer jusqu’à … » avec le cad
 programme/vide--   # UI-17C (écran 1 : « Bloquer … » avec le cadenas fermé de la section, plus le cadenas ouvert)
 programme/blocage-actif--   # UI-17C (écran 1 : « Réseaux sociaux » nommé une fois, « Ensuite : bloqué jusqu’à 18:00 » ; cadenas fermé sur « Bloquer »)
 activite/detail-rhythm--   # UI16-23 (O3) : axe « Heure par heure » en heures pleines (08 h–10 h), la barre de 9 h n'est plus collée au bord droit
-activite/traces-isolees--   # R-265 (O3) : « précédent » de l'en-tête Activité reste actif, sans borne au premier jour du Mac (jours importés plus anciens)
 conversations-ia/gestion-remplie--   # 6-CODEX (O3) : une seule ligne Codex, l'état du dossier des sessions en une ligne
 conversations-ia/indexees--   # 6-CODEX (O3) : une seule ligne Codex, l'état du dossier des sessions en une ligne

@@ -559,7 +559,7 @@
         /// DEF-07: today, writes refused → the cause and its time, above a timeline that stops there. Nil otherwise.
         static func storageStopNote(isToday: Bool, failure: CaptureStorageFailureKind?, since: Date?) -> String? {
             guard isToday, let failure else { return nil }
-            let cause = failure == .diskFull ? "le disque est plein" : "le dossier de l’historique refuse l’écriture"
+            let cause = GoalongActivityEmptyCopy.storageCause(failure)
             let start = since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
             return "\(start) : \(cause). Rien de plus n’est enregistré avant la reprise, qui est automatique."
         }
@@ -1038,9 +1038,7 @@
 
         private var emptyTimelineMessage: String {
             if storageStopTitle != nil, let kind = recordingModel?.runtime.storageFailure {
-                return kind == .diskFull
-                    ? "Rien n’est enregistré tant que le disque est plein. La reprise est automatique et la coupure restera indiquée ici."
-                    : "Rien n’est enregistré tant que le dossier de l’historique refuse l’écriture. La reprise est automatique et la coupure restera indiquée ici."
+                return "Rien n’est enregistré tant que \(GoalongActivityEmptyCopy.storageCause(kind)). La reprise est automatique et la coupure restera indiquée ici."
             }
             switch model.sourceStatus {
             case .inaccessible:

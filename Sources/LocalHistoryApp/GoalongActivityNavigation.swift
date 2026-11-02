@@ -125,6 +125,33 @@ struct GoalongActivityNavigation: Equatable {
     }
 }
 
+/// R-265: the first day Activité can show, all sources together: this Mac's history (events, seals) and the
+/// days imported from Temps d’écran and Santé, which can be older. Nil when no source holds a day.
+enum GoalongActivityFirstDay {
+    static func earliest(macDays: [Date], imported: Date?, calendar: Calendar = .current) -> Date? {
+        (macDays + [imported].compactMap { $0 }).map { calendar.startOfDay(for: $0) }.min()
+    }
+
+    /// The oldest day file (`yyyy-MM-dd.json`) of the Temps d’écran archive and of the Santé imports.
+    /// Lists two folders, reads no file: call it off the main thread.
+    static func importedEarliest(root: URL, calendar: Calendar = .current) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.isLenient = false
+        let folders = [root.appendingPathComponent("apple-screen-time/days", isDirectory: true),
+                       root.appendingPathComponent("health", isDirectory: true)]
+        return folders.flatMap { (try? FileManager.default.contentsOfDirectory(atPath: $0.path)) ?? [] }
+            .compactMap { name -> Date? in
+                guard name.count == 15, name.hasSuffix(".json") else { return nil }
+                return formatter.date(from: String(name.dropLast(5))).map { calendar.startOfDay(for: $0) }
+            }
+            .min()
+    }
+}
+
 enum GoalongActivityUsageGrouping: String, CaseIterable, Identifiable {
     case sites, applications
     var id: String { rawValue }

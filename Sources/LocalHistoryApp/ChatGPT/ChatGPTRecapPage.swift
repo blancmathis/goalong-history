@@ -439,13 +439,13 @@
                         detail: "D’après Mon travail"
                     )
                     bandDivider
-                    // A source with nothing read is absent, not a zero (PRODUCT.md, UI-17C 34). R-266: « absent »
-                    // follows the source's consent; a source read with nothing that day is a real zero.
-                    let screen = ChatGPTRecapMetricCopy.screenTime(enabled: consents.isEnabled(.appleScreenTime),
+                    // A source with nothing read is absent, not a zero (PRODUCT.md, UI-17C 34). R-266: « absent » when the
+                    // source is not allowed or was never read; a source read with nothing that day is a real zero.
+                    let screen = ChatGPTRecapMetricCopy.screenTime(enabled: consents.isEnabled(.appleScreenTime), read: overview.screenTimeRead,
                         seconds: overview.screenTimeSeconds, devices: overview.screenTimeDevices.count, duration: duration)
                     metric(title: "Temps d’écran", value: screen.value, detail: screen.detail)
                     bandDivider
-                    let ai = ChatGPTRecapMetricCopy.aiConversations(enabled: consents.isEnabled(.aiConversations),
+                    let ai = ChatGPTRecapMetricCopy.aiConversations(enabled: consents.isEnabled(.aiConversations), read: overview.agentActivityRead,
                         sessions: overview.agentSessions, messages: overview.agentMessages)
                     metric(title: "Conversations IA", value: ai.value, detail: ai.detail)
                 }
@@ -695,17 +695,17 @@
             DashboardFormatters.duration(seconds: TimeInterval(seconds))
         }
     }
-/// The recap band's figures: « — » only for a source not allowed; a source read with nothing that day says 0.
+/// The recap band's figures: « — » for a source not allowed or never read; a source read with nothing that day says 0.
 enum ChatGPTRecapMetricCopy {
     struct Figure: Equatable { let value: String; let detail: String }
 
-    static func screenTime(enabled: Bool, seconds: Int, devices: Int, duration: (Int) -> String) -> Figure {
-        guard enabled else { return Figure(value: "—", detail: "Non lu") }
+    static func screenTime(enabled: Bool, read: Bool = true, seconds: Int, devices: Int, duration: (Int) -> String) -> Figure {
+        guard enabled, read else { return Figure(value: "—", detail: "Non lu") }
         return Figure(value: duration(seconds), detail: "\(devices) appareil\(devices > 1 ? "s" : "") Apple")
     }
 
-    static func aiConversations(enabled: Bool, sessions: Int, messages: Int) -> Figure {
-        guard enabled else { return Figure(value: "—", detail: "Non lues") }
+    static func aiConversations(enabled: Bool, read: Bool = true, sessions: Int, messages: Int) -> Figure {
+        guard enabled, read else { return Figure(value: "—", detail: "Non lues") }
         return Figure(value: "\(sessions)", detail: GoalongUIFormat.count(messages, "message"))
     }
 
