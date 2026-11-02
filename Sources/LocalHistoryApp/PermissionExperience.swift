@@ -228,7 +228,7 @@ extension Notification.Name {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(ProductIdentity.bundleURL.path).font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                    Text("Une autorisation macOS et votre choix d’enregistrer sont deux contrôles distincts. La réparation ne change ni l’historique, ni les sources, ni les envois.")
+                    Text("Une autorisation macOS et votre choix d’enregistrer sont deux contrôles distincts. Le rétablissement ne change ni l’historique, ni les sources, ni les envois.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }.padding(.top, 8)
@@ -260,9 +260,9 @@ extension Notification.Name {
         case .closeOtherCopy: return "Plusieurs copies de Goalong sont ouvertes"
         case .grant: return "Autoriser cette application"
         case .relaunch: return "Appliquer l’autorisation au processus actuel"
-        case .repair: return "Réparer l’autorisation de cette copie"
+        case .repair: return "Rétablir l’autorisation de cette copie"
         case .reauthorize: return "Réautoriser après la réinitialisation"
-        case .manualRepair: return "Le refus persiste après la réparation"
+        case .manualRepair: return "Le refus persiste après le rétablissement"
         }
     }
     private var detail: String {

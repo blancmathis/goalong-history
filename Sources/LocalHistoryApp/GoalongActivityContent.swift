@@ -25,7 +25,7 @@ enum GoalongActivityDetail: String, CaseIterable, Identifiable {
         switch self {
         case .rhythm: return isDay ? "Rythme" : "Jour par jour"
         case .usage: return "Applications et sites"
-        case .sessions: return "Sessions et focus"
+        case .sessions: return "Séances et concentration"
         case .texture: return "Clavier et lecture"
         case .agenda: return "Appels et agenda"
         case .code: return "Agents et code"
@@ -226,7 +226,7 @@ struct GoalongAnalyticsContent: View {
         return lines
     }
 
-    /// The figures of « Sessions et focus »: plain columns, no tiles.
+    /// The figures of « Séances et concentration »: plain columns, no tiles.
     private func sessionFigures(_ summary: GoalongActivitySummary) -> some View {
         HStack(alignment: .top, spacing: 24) {
             concentrationFigure(summary); switchesFigure(summary)
@@ -740,7 +740,7 @@ struct GoalongAnalyticsContent: View {
     }
 
     private func sessionsSection(_ summary: GoalongActivitySummary) -> some View {
-        GoalongSection(title: "Sessions et focus") {
+        GoalongSection(title: "Séances et concentration") {
             VStack(alignment: .leading, spacing: 18) {
                 sessionFigures(summary)
                 GoalongFocusExplanation(hasFocus: !focus.isEmpty, minimumMinutes: $focusMinutes)

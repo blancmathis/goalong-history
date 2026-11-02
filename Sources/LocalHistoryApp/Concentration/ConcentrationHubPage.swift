@@ -97,7 +97,7 @@ struct ConcentrationHubHeader: View {
                 } else {
                     GoalongSection(title: "Listes") {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Les listes de sites et d’apps à couper viennent du module Blocage.")
+                            Text("Les listes de sites et d’apps à bloquer viennent du module Blocage.")
                                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                             Button("Activer le blocage") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
                                 .buttonStyle(LHPrimaryButtonStyle())

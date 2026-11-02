@@ -19,7 +19,7 @@ import LocalHistoryCore
             Divider()
             Toggle("Activer les effets progressifs", isOn: binding(\.effectsEnabled))
                 .toggleStyle(.goalongSwitch).accessibilityIdentifier("jev-effects-enabled")
-            Text("Optionnel. Par défaut : assombrissement à 2 min, puis assombrissement + rouge dès 5 min. Ensuite, ce dernier effet et les rappels continuent sans nouveau palier. Retour productif, pause ou arrêt de la surveillance dans Goalong : tout disparaît.")
+            Text("Optionnel. Par défaut : assombrissement à 2 min, puis assombrissement + rouge dès 5 min. Ensuite, ce dernier effet et les rappels continuent sans nouveau palier. Retour productif, pause ou arrêt de Jev dans Goalong : tout disparaît.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             strengthPresets
             ForEach(0..<preferences.settings.stages.count, id: \.self) { index in

@@ -83,7 +83,7 @@ struct GoalongGlobalPauseBanner: View {
                 HStack(spacing: 14) {
                     Image(systemName: "pause.circle.fill").foregroundStyle(LHTheme.secondaryText)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Suivi en pause").font(.system(size: 13, weight: .semibold))
+                        Text("Tout le suivi en pause").font(.system(size: 13, weight: .semibold))
                         Text(pause.invalid ? GoalongGlobalPauseText.damagedNotice : "Tout le suivi est arrêté : rien n’est enregistré et Jev ne repère rien. Reprenez le suivi pour enregistrer à nouveau.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)

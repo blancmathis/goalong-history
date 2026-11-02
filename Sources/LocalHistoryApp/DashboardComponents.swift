@@ -621,8 +621,8 @@
             case .paused: return "Enregistrement en pause"
             case .permissionsMissing: return "Accès à rétablir"
             case .inputTapUnavailable: return "Pas d’interactions"
-            case .storageUnavailable(.diskFull): return "Disque plein"
-            case .storageUnavailable: return "Enregistrement interrompu"
+            case .storageUnavailable(.diskFull): return "Enregistrement interrompu : disque plein"
+            case .storageUnavailable: return "Enregistrement interrompu : écriture impossible"
             case .suppressed(let reason):
                 switch reason {
                 case .manualPause: return "Enregistrement en pause"
@@ -634,12 +634,12 @@
             }
         }
 
-        /// UI-15A: the sidebar row holds one line (≤ 20 characters); the page says the rest.
+        /// UI-15A: the sidebar row holds one line (≤ 24 characters, « Enregistrement désactivé »); the page says the rest.
         /// `storageNamedByBanner`: the banner already says the storage cause (GoalongAttentionBanner.storageSlot == .storage),
         /// so the row only says the state, short (« Interrompu »), never the cause nor « Voir le bandeau » (R8-6).
         func sidebarTitle(recordingEnabled: Bool, globallyPaused: Bool, storageNamedByBanner: Bool = false) -> String {
-            if globallyPaused { return "Tout est en pause" }
-            if !recordingEnabled { return "Désactivé" }
+            if globallyPaused { return "Tout le suivi en pause" }
+            if !recordingEnabled { return "Enregistrement désactivé" }
             if isBackgroundPrivacyRule { return "Enregistrement actif" }
             if storageNamedByBanner, storageFailure != nil { return "Interrompu" }
             switch state {
@@ -657,7 +657,7 @@
 
         var displayDetail: String {
             if isBackgroundPrivacyRule {
-                return "Le suivi respecte vos exclusions. Modifiez-les dans Réglages › Apps et sites."
+                return "L’enregistrement respecte vos exclusions. Modifiez-les dans Réglages › Apps et sites."
             }
             switch state {
             case .recording:

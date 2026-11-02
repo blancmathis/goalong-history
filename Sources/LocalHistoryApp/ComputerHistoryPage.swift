@@ -861,7 +861,7 @@
             case .absent:
                 return model.memory == nil
                     ? "Aucune activité pour cette date. Choisissez une autre journée."
-                    : "Le journal original est indisponible. L’historique déjà enregistré est conservé."
+                    : "Le journal d’origine est indisponible. L’historique déjà enregistré est conservé."
             case .inaccessible:
                 if hasRetried {
                     let nextStep = "Nouvel échec de l’actualisation. Choisissez une autre date ou consultez les détails techniques."
@@ -912,7 +912,7 @@
                             .foregroundStyle(LHTheme.secondaryText)
                     }
                     Button(action: openSourceJSON) {
-                        Label("Ouvrir le journal", systemImage: "doc.text")
+                        Label("Ouvrir le journal d’origine", systemImage: "doc.text")
                     }
                     .buttonStyle(LHSecondaryButtonStyle())
                     .controlSize(.regular)
@@ -1023,8 +1023,8 @@
 
         private var sourceDataHelp: String {
             canRevealSourceData
-                ? "Afficher le journal original de cette journée dans le Finder"
-                : "Le journal original de cette journée est indisponible"
+                ? "Afficher le journal d’origine de cette journée dans le Finder"
+                : "Le journal d’origine de cette journée est indisponible"
         }
 
         /// A day without any journal is one fact: the timeline's empty state says it, the card above does not repeat it.
@@ -1047,12 +1047,12 @@
                 return "Chargement impossible"
             case .absent:
                 return model.memory == nil
-                    ? "Aucun journal pour cette date"
+                    ? "Aucune activité enregistrée le \(GoalongUIFormat.day(day))"
                     : "Détails de la journée indisponibles"
             case .available where GoalongToday.isToday(day):
                 return "Aucune activité enregistrée aujourd’hui"
             case .available:
-                return "Aucune activité trouvée"
+                return "Aucune activité enregistrée le \(GoalongUIFormat.day(day))"
             case .checking:
                 return "Vérification de l’activité"
             case .unverified:

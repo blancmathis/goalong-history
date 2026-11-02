@@ -35,7 +35,7 @@ import LocalHistoryCore
                     }
                     Divider()
                     // With every source off, the recording summary would describe a capture that does not happen.
-                    Text(pause.blocksActivity ? "Tout est en pause."
+                    Text(pause.blocksActivity ? "Tout le suivi en pause."
                          : Self.sources.contains { consents.isEnabled($0) } ? model.appliedSettings.recordingSummary : "Aucune source activée.")
                         .font(.system(size: 13))
                     Text(model.appliedSettings.capturePrivateBrowsing

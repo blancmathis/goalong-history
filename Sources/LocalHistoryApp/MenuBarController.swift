@@ -179,11 +179,11 @@
         ) -> (title: String, symbol: String, description: String) {
             let display: (title: String, symbol: String, description: String)
             if globalPaused {
-                display = ("Arrêt de confidentialité", "pause.circle.fill", "Sources et envois suspendus")
+                display = ("Tout le suivi en pause", "pause.circle.fill", "Sources et envois suspendus")
             } else if configUnreadable {
                 display = ("Réglages illisibles", "exclamationmark.triangle.fill", ConfigManager.failClosedNotice)
             } else if !localEnabled {
-                display = ("Suivi en pause", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
+                display = ("Enregistrement désactivé", "circle.dashed", "Activez l’enregistrement dans Réglages pour remplir votre historique")
             } else if health == .storageUnavailable {
                 display = ("Enregistrement interrompu", "internaldrive",
                            "L’historique ne peut pas être écrit (disque plein ?). Libérez de l’espace sur le Mac : la reprise est automatique.")

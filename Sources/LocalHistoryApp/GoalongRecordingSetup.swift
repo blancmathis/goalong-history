@@ -146,7 +146,7 @@ struct GoalongCompleteRecordingButton: View {
     @ObservedObject var model: DashboardViewModel
     @State private var showing = false
     var body: some View {
-        Button("Configurer le suivi complet") { showing = true }
+        Button("Configurer l’enregistrement complet") { showing = true }
             .buttonStyle(LHSecondaryButtonStyle())
             .accessibilityIdentifier("recording-complete-setup")
             .sheet(isPresented: $showing) { GoalongRecordingSetupSheet(model: model, complete: true).goalongControls() }

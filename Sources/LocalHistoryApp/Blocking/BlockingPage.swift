@@ -926,7 +926,7 @@ struct BlockingLockExplainer: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Protection").font(LHTheme.cardTitleFont)
             VStack(spacing: 0) {
-                statusRow(symbol: "arrow.clockwise", title: "Lancer Goalong à l’ouverture de session",
+                statusRow(symbol: "arrow.clockwise", title: "Lancer à l’ouverture de session",
                           ok: controller.protection.launchAtLogin,
                           value: controller.protection.launchAtLogin ? "Active" : "Pas encore",
                           action: controller.protection.launchAtLogin ? nil : loginItemsButton)
@@ -1007,7 +1007,7 @@ struct BlockingLockExplainer: View {
         guard protection.level != .strict else { return nil }
         switch protection.guardian {
         case .failed(let reason): return reason
-        case .awaitingApproval: return "Autorisez Goalong dans \(LoginItemsPanel.path)."
+        case .awaitingApproval: return "Autorisez \(PermissionSetupCopy.macOSListName()) dans \(LoginItemsPanel.path)."
         case .running, .notInstalled: return nil
         }
     }
@@ -1074,7 +1074,7 @@ struct BlockingLockExplainer: View {
     private var loginItemsButton: AnyView {
         AnyView(Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }
             .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
-            .help("Autorisez Goalong dans \(LoginItemsPanel.path).")
+            .help("Autorisez \(PermissionSetupCopy.macOSListName()) dans \(LoginItemsPanel.path).")
             .accessibilityIdentifier("blocking-open-login-items"))
     }
 

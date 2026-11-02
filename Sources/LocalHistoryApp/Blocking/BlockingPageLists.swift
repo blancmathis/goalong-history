@@ -12,7 +12,7 @@ import SwiftUI
     @Binding var editing: UUID?
 
     var body: some View {
-        GoalongSection(title: "Listes", subtitle: controller.lists.isEmpty ? "Ce que vous voulez couper. Choisissez un point de départ, vous pourrez tout modifier." : nil) {
+        GoalongSection(title: "Listes", subtitle: controller.lists.isEmpty ? "Ce que vous voulez bloquer. Choisissez un point de départ, vous pourrez tout modifier." : nil) {
             if !controller.lists.isEmpty {
                 Button { create(from: nil) } label: { Label("Nouvelle liste", systemImage: "plus") }
                     .buttonStyle(LHQuietButtonStyle())

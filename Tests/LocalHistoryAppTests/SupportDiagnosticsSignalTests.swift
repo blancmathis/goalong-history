@@ -216,7 +216,7 @@ final class SupportDiagnosticsSignalTests: XCTestCase {
                                               timeline: timeline, storage: storage, crashes: [], diagnosticsEnabled: true)
         let codes = findings.map(\.code)
         XCTAssertEqual(codes.first, .recordingInterrupted)
-        XCTAssertTrue(findings[0].detail.contains("disque est plein"))
+        XCTAssertTrue(findings[0].detail.contains("disque où Goalong enregistre est plein"))
         for expected: SupportFinding.Code in [.recordingWasInterrupted, .lowDiskSpace, .uncleanExit, .monitoringPaymentRequired, .repeatedError] {
             XCTAssertTrue(codes.contains(expected), "\(expected)")
         }

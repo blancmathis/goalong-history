@@ -206,7 +206,7 @@ enum SupportFindings {
         }
 
         if flag(.storageInterrupted) {
-            let cause = state(live, .storageFailure) == .diskFull ? "le disque est plein" : "le dossier d’historique refuse l’écriture"
+            let cause = state(live, .storageFailure) == .diskFull ? "le disque où Goalong enregistre est plein" : "macOS refuse l’écriture dans le dossier où Goalong enregistre"
             findings.append(SupportFinding(severity: .error, code: .recordingInterrupted,
                 title: "L’enregistrement est interrompu",
                 detail: "Goalong ne peut plus écrire son historique : \(cause). Il reprendra automatiquement dès que l’écriture sera de nouveau possible."))
@@ -218,12 +218,12 @@ enum SupportFindings {
             findings.append(SupportFinding(severity: .warning, code: .recordingWasInterrupted,
                 title: "Enregistrement interrompu \(interruptions.count) fois",
                 detail: (diskFull ? "Au moins une interruption venait d’un disque plein. " : "")
-                    + (lost > 1 ? "\(lost) observations n’ont pas pu être enregistrées" : "\(lost) observation n’a pas pu être enregistrée") + " ; chaque interruption est marquée dans l’historique."))
+                    + GoalongUIFormat.count(lost, "événement n’a pas pu être enregistré", plural: "événements n’ont pas pu être enregistrés") + " ; chaque interruption est marquée dans l’historique."))
         }
         if let storage, storage.lowSpace, let free = storage.freeMB {
             findings.append(SupportFinding(severity: .warning, code: .lowDiskSpace,
                 title: "Espace disque faible",
-                detail: "Il reste \(free) Mo sur le disque. Sous environ \(StorageHealth.lowSpaceThresholdText), macOS peut refuser les écritures de Goalong."))
+                detail: "Il reste \(free) Mo sur le disque où Goalong enregistre. Sous environ \(StorageHealth.lowSpaceThresholdText), macOS peut refuser les écritures de Goalong."))
         }
         let unclean = timeline.filter { $0.event == .appStarted && $0.values[SupportKey.previousExitUnclean.rawValue] == .flag(true) }.count
         if unclean > 0 {
@@ -283,9 +283,10 @@ enum SupportFindings {
         if !diagnosticsEnabled {
             findings.append(SupportFinding(severity: .info, code: .diagnosticsDisabled,
                 title: "Journal technique désactivé",
-                detail: timeline.isEmpty
+                detail: "Le journal technique note les événements internes de Goalong (démarrages, erreurs, interruptions), sans votre activité. "
+                    + (timeline.isEmpty
                     ? "Le rapport ne contient que l’état actuel."
-                    : "Aucun nouvel événement n’est enregistré ; les journaux déjà conservés (7 jours au plus) restent inclus."))
+                    : "Aucun nouvel événement n’est enregistré ; les journaux déjà conservés (7 jours au plus) restent inclus.")))
         }
         if findings.isEmpty {
             findings.append(SupportFinding(severity: .info, code: .noProblemDetected,

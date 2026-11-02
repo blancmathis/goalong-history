@@ -27,8 +27,8 @@ import LocalHistoryCore
 
         var actionTitle: String {
             switch self {
-            case .accessibility: return "Autoriser l’accessibilité"
-            case .inputMonitoring: return "Autoriser la surveillance de l’entrée"
+            case .accessibility: return "Ouvrir Réglages Système…"
+            case .inputMonitoring: return "Ouvrir Réglages Système…"
             case .fullDiskAccess: return "Ouvrir Réglages Système…"
             case .screenTimeSetup: return "Ouvrir Temps d’écran"
             case .ready, .unavailable: return "Réessayer"
@@ -49,13 +49,14 @@ import LocalHistoryCore
             }
         }
 
-        var message: String { message(appName: ProductIdentity.displayName) }
+        /// The macOS privacy list shows the bundle name (« Goalong History », « Goalong Dev »), not « Goalong ».
+        var message: String { message(appName: PermissionSetupCopy.macOSListName()) }
 
         func message(appName: String) -> String {
             switch self {
             case .ready: return "L’accès nécessaire est disponible."
             case .accessibility: return "Autorisez \(appName) dans Confidentialité et sécurité → Accessibilité, puis revenez dans Goalong pour terminer. Vos réglages de partage sont inchangés."
-            case .inputMonitoring: return "Autorisez Goalong dans Réglages Système → Surveillance de l’entrée, puis revenez ici pour vérifier l’accès."
+            case .inputMonitoring: return "Autorisez \(appName) dans Réglages Système → Surveillance de l’entrée, puis revenez ici pour vérifier l’accès."
             case .fullDiskAccess: return "Autorisez \(appName) dans Confidentialité et sécurité → Accès complet au disque. Si macOS le propose, choisissez Quitter et rouvrir : Goalong reviendra à cette étape. Vous pouvez continuer sans cette source."
             case .screenTimeSetup: return "Aucune donnée Temps d’écran n’est encore disponible. Activez « Activité des apps et des sites web » dans Temps d’écran de macOS, puis vérifiez à nouveau."
             case .unavailable(let message): return message

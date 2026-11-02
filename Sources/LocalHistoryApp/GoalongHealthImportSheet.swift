@@ -415,7 +415,7 @@ struct GoalongHealthImportSheet: View {
         guard let value = metric["value"] as? Double, let unit = metric["unit"] as? String else { return "Non disponible" }
         if unit == "s" { return duration(value) }
         if unit == "m" { return kilometres(value) }
-        let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "fr_FR"); formatter.maximumFractionDigits = 1
+        let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "fr_FR"); formatter.numberStyle = .decimal; formatter.maximumFractionDigits = 1
         // French units, bound to the number by a no-break space: « 16 resp./min », « 97 % ».
         let shown = unit == "count/min" ? "resp./min" : unit
         return (formatter.string(from: NSNumber(value: value)) ?? "—") + (unit == "count" ? "" : "\u{00A0}\(shown)")

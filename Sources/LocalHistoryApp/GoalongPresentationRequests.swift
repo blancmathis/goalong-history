@@ -40,8 +40,18 @@ enum GoalongUIFormat {
         // Tests and the gallery stay 24 h whatever the machine's region, so renders do not depend on it.
         if let twelveHourOverride { return twelveHourOverride }
         if NSClassFromString("XCTestCase") != nil { return false }
-        return (DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .autoupdatingCurrent) ?? "").contains("a")
+        if let systemTwelveHour { return systemTwelveHour }
+        let value = (DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .autoupdatingCurrent) ?? "").contains("a")
+        systemTwelveHour = value
+        // Read once per region change, not once per displayed hour (lists, chart axes).
+        if localeObserver == nil {
+            localeObserver = NotificationCenter.default.addObserver(forName: NSLocale.currentLocaleDidChangeNotification,
+                                                                    object: nil, queue: nil) { _ in systemTwelveHour = nil }
+        }
+        return value
     }
+    nonisolated(unsafe) private static var systemTwelveHour: Bool?
+    nonisolated(unsafe) private static var localeObserver: NSObjectProtocol?
     /// « 14:05 » — the system short time: 24 h, or « 2:05 PM » when the user chose 12 h. Every displayed hour with minutes uses it.
     static func time(_ date: Date) -> String {
         let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
