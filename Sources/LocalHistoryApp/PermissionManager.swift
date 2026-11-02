@@ -1,5 +1,6 @@
 #if os(macOS)
     import AppKit
+    import AppleScreenTime
     import ApplicationServices
     import CoreGraphics
 
@@ -359,6 +360,9 @@
 
         @discardableResult
         func requestAccessibility() -> Bool {
+            // Under XCTest the system prompt never opens: nothing is requested, nothing is read.
+            if GoalongTestEnvironment.isXCTest { return false }
+            Self.systemReadCount += 1
             let options =
                 [
                     kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
@@ -373,6 +377,8 @@
             // Input Monitoring preflight is reported independently from Accessibility.
             // A successful callback remains the authoritative runtime proof.
             if refresh(force: true).inputMonitoringDirectlyGranted { return true }
+            if GoalongTestEnvironment.isXCTest { return false }
+            Self.systemReadCount += 1
             let requested = CGRequestListenEventAccess()
             _ = refresh(force: true)
             return requested

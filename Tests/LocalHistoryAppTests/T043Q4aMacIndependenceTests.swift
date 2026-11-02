@@ -1,17 +1,33 @@
 #if os(macOS)
 import Foundation
 import XCTest
+import AppleScreenTime
 @testable import LocalHistoryApp
 
 /// T-043 Q4a: no test depends on this Mac's real account, real home or TCC grants.
 final class T043Q4aMacIndependenceTests: XCTestCase {
-    func testGuardGateHomeIsTheThrowawayHomeUnderXCTest() {
+    func testGuardGateHomeIsTheThrowawayHomeUnderXCTest() throws {
         XCTAssertTrue(GoalongTestEnvironment.isXCTest)
-        // `make check` runs with a throwaway HOME; getpwuid would return the real one.
-        XCTAssertEqual(GoalongGuardGate.realHome.path, URL(fileURLWithPath: NSHomeDirectory()).path)
-        if let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir, String(cString: dir) != NSHomeDirectory() {
-            XCTAssertNotEqual(GoalongGuardGate.realHome.path, String(cString: dir), "the account's real home was used")
+        // The test sets its own throwaway home, so it fails without the guard whatever HOME the run started with.
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("goalong-test-home-\(UUID().uuidString)").path
+        try FileManager.default.createDirectory(atPath: temp, withIntermediateDirectories: true)
+        let saved = ["HOME", "CFFIXED_USER_HOME"].map { ($0, ProcessInfo.processInfo.environment[$0]) }
+        defer {
+            for (key, value) in saved { if let value { setenv(key, value, 1) } else { unsetenv(key) } }
+            try? FileManager.default.removeItem(atPath: temp)
         }
+        setenv("HOME", temp, 1); setenv("CFFIXED_USER_HOME", temp, 1)
+        XCTAssertEqual(URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath().path,
+                       URL(fileURLWithPath: temp).resolvingSymlinksInPath().path, "precondition: the test home is in force")
+        XCTAssertEqual(GoalongGuardGate.realHome.resolvingSymlinksInPath().path,
+                       URL(fileURLWithPath: temp).resolvingSymlinksInPath().path, "the account's real home was used")
+    }
+
+    @MainActor func testSystemPromptsNeverOpenUnderXCTest() {
+        let before = PermissionManager.systemReadCount
+        XCTAssertFalse(PermissionManager.shared.requestAccessibility(), "AXIsProcessTrustedWithOptions(prompt) was called")
+        XCTAssertFalse(PermissionManager.shared.requestInputMonitoring(), "CGRequestListenEventAccess was called")
+        XCTAssertEqual(PermissionManager.systemReadCount, before, "a system prompt path ran")
     }
 
     func testPermissionProbeIsNeutralAndReadsNothingFromTheMac() {

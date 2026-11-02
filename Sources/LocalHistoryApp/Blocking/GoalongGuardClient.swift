@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppleScreenTime
 import Darwin
 import Foundation
 import GoalongGuardCore
