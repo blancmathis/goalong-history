@@ -17,6 +17,22 @@ extension GalleryCatalog {
             }
         }
         let weekdays: Set<Int> = [1, 2, 3, 4, 5]
+        /// The list sheet's own frame stops at 760 pt and scrolls inside (BlockListSheet): a capture of it cuts the
+        /// last rows. Same header and editor, no height limit, so the capture shows the whole list (R-60).
+        @MainActor func listSheetWhole(controller: BlockingController, listID: UUID, now: Date) -> some View {
+            VStack(spacing: 0) {
+                HStack {
+                    Text(BlockListSheet.title(locked: controller.isStricterOnly(listID)))
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(LHTheme.text)
+                    Spacer()
+                    Button("Fermer") {}.buttonStyle(LHQuietButtonStyle())
+                }
+                .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 4)
+                if let list = controller.list(listID) {
+                    BlockListEditor(controller: controller, list: list, now: now, onDone: {}).padding(28)
+                }
+            }
+        }
         var entries: [GalleryEntry] = [
             page("programme/vide", height: 900, themes: GalleryTheme.withContrast) { F.blockingEmpty() },
             page("programme/pret", height: 1_500, at: { F.sunday }) { F.blockingIdle() },
@@ -25,10 +41,10 @@ extension GalleryCatalog {
             page("programme/declenche", height: 1_500) { F.blockingTriggered() },
             page("programme/mot-de-passe", height: 1_500) { F.blockingGuarded() },
             panel("programme/feuille-liste", width: 600, clock: .injected) { _ in
-                AnyView(BlockListSheet(controller: F.blockingIdle(), listID: F.socialID, now: F.sunday, onDone: {}))
+                AnyView(listSheetWhole(controller: F.blockingIdle(), listID: F.socialID, now: F.sunday))
             },
             panel("programme/feuille-liste-verrouillee", width: 600, clock: .injected) { _ in
-                AnyView(BlockListSheet(controller: F.blockingActive(), listID: F.videoID, now: F.blockingNow, onDone: {}))
+                AnyView(listSheetWhole(controller: F.blockingActive(), listID: F.videoID, now: F.blockingNow))
             },
             panel("programme/selecteur-de-plage", width: 440, clock: .injected) { _ in
                 AnyView(BlockingRangePopover(controller: F.blockingIdle(),
