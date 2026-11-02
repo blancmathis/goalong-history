@@ -82,7 +82,7 @@ extension Notification.Name {
                 guard operation == id else { return }
                 guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source a été désactivée pendant la lecture.") }
                 try Self.revalidate(native: computer, revisions: guardRevisions, root: root)
-                evidence = rows; selectedEvidence = Set(rows.map(\.id)); busy = false; status = "\(GoalongUIFormat.count(rows.count, "événement")) chargé\(rows.count > 1 ? "s" : "") localement. Préparez ensuite le prompt pour appliquer vos règles. \(selection.1)"
+                evidence = rows; selectedEvidence = Set(rows.map(\.id)); busy = false; status = "\(GoalongUIFormat.count(rows.count, "événement")) chargé\(rows.count > 1 ? "s" : "") sur ce Mac. Préparez ensuite l’analyse pour appliquer vos règles. \(selection.1)"
             } catch { guard operation == id else { return }; self.error = goalongUserMessage(error); busy = false }
         }
     }
@@ -275,6 +275,8 @@ struct GoalongProfileStudio: View {
     @StateObject private var connection = GoalongSiteAnalysisModel()
     @StateObject private var windowHost = GoalongWebsiteWindowHost()
     @State private var start = Calendar.current.startOfDay(for: GoalongToday.now)
+    /// True when the last day picked for the start came after the analysed day and was brought back to it (UI-14, M3).
+    @State private var startCapped = false
     @State private var end = GoalongToday.now
     @State private var rich = false
     @State private var computer = true
@@ -292,94 +294,122 @@ struct GoalongProfileStudio: View {
         _start = State(initialValue: day)
         _end = State(initialValue: min(GoalongToday.now, Calendar.current.date(byAdding: .day, value: 1, to: day) ?? GoalongToday.now))
     }
+    // « Activité depuis le » at 13 pt, plus air: both day selectors start on this edge.
+    private static let dayLabelWidth: CGFloat = 124
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack { Text("Comprendre mon travail").font(.title2.weight(.semibold)); Spacer(); Button("Fermer") { model.cancel(); closeStudio() } }.padding(22)
+            HStack { Text("Comprendre mon travail").font(.system(size: 22, weight: .bold)).tracking(-0.4).accessibilityAddTraits(.isHeader); Spacer(); Button("Fermer") { model.cancel(); closeStudio() } }.padding(22)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Analysez votre activité pour vous-même. Vous pourrez conserver le résultat ici, puis choisir séparément ce qui part dans votre compte Goalong.").foregroundStyle(.secondary)
+                    Text("Analysez votre activité pour vous-même. Vous pourrez conserver le résultat ici, puis choisir séparément ce qui part dans votre compte Goalong.").foregroundStyle(LHTheme.secondaryText)
                     HStack { Button("Ouvrir une analyse ou une sélection enregistrée…") { openSaved() }; Spacer() }
-                    GoalongProfileSection("1. Choisir les données") {
+                    GoalongProfileSection("Choisir les données") {
                         VStack(alignment: .leading, spacing: 10) {
-                            DatePicker("Journée analysée — jusqu’à", selection: $end)
-                            Toggle("Historique de ce Mac — activité de l’ordinateur", isOn: $computer)
-                            if computer { DatePicker("Activité depuis", selection: $start); Toggle("Inclure le contexte enrichi déjà autorisé", isOn: $rich) }
-                            Toggle("Historique des conversations — utiliser les conversations IA comme contexte", isOn: $conversations)
-                            if conversations {
-                                DatePicker("Conversations actives depuis", selection: $conversationsFrom, displayedComponents: .date)
-                                Text("Journée analysée et jours précédents, jusqu’à 31 jours. Les échanges peuvent éclairer les projets, décisions et méthodes même si « Usage de l’IA » est décochée. Seules les sources déjà autorisées sont lues. Les dates sélectionnent les conversations ; selon la source, des messages antérieurs peuvent être inclus sans horodatage individuel. Les horodatages fournis par la source sont conservés.").font(.caption).foregroundStyle(.secondary)
+                            // Same label column for both days: the two selectors start on the same edge.
+                            HStack(spacing: 8) {
+                                Text("Jour à analyser").font(.system(size: 13)).frame(width: Self.dayLabelWidth, alignment: .leading)
+                                DateSelectionControl(date: analyzedDay, onChange: selectDay, showsToday: false)
                             }
-                            Text("Événements, applications, fenêtres, navigation, interactions et contexte disponibles avec leurs horodatages. Les champs protégés et les événements supprimés sont exclus. Les extraits sont bornés ; les absences restent inconnues.").font(.caption).foregroundStyle(.secondary)
-                            HStack { Button("Charger les sources choisies") { model.load(start: start, end: end, rich: rich, computer: computer, conversations: conversations, conversationsFrom: conversationsFrom) }; Button("Ajouter des preuves (mesures, IA, historique)…") { importEvidence() } }.disabled(model.busy)
+                            Toggle("Activité de ce Mac", isOn: $computer)
+                            if computer {
+                                // UI-12A: the same day selector as above, never the system DatePicker; at most the analysed day.
+                                HStack(spacing: 8) {
+                                    Text("Activité depuis le").font(.system(size: 13)).frame(width: Self.dayLabelWidth, alignment: .leading)
+                                    DateSelectionControl(date: start, onChange: { day in
+                                        let picked = Calendar.current.startOfDay(for: day)
+                                        startCapped = picked > analyzedDay
+                                        start = min(picked, analyzedDay)
+                                    }, showsToday: false)
+                                }
+                                if startCapped {
+                                    Text("Le début ne peut pas dépasser le jour à analyser : il revient à ce jour.")
+                                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                        .accessibilityIdentifier("profile-start-capped")
+                                }
+                                Toggle("Inclure les textes de fenêtres déjà autorisés", isOn: $rich) }
+                            Toggle("Conversations IA, comme contexte", isOn: $conversations)
+                            if conversations {
+                                HStack(spacing: 8) {
+                                    Text("Conversations actives depuis").font(.system(size: 13))
+                                    DateSelectionControl(date: conversationsFrom, onChange: { conversationsFrom = Calendar.current.startOfDay(for: $0) }, showsToday: false)
+                                }
+                                Text("Le jour à analyser et jusqu’à 31 jours avant. Seules les sources déjà autorisées sont lues. Les échanges éclairent vos projets et décisions, même si « Usage de l’IA » est décochée. Certains messages plus anciens peuvent venir sans heure précise.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            }
+                            Text("Goalong lit les applications, fenêtres, sites et interactions, avec leurs heures. Les champs protégés et les éléments supprimés sont exclus. Les textes longs sont coupés, et un moment sans données reste inconnu.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            Button("Ajouter un fichier de données…") { importEvidence() }.disabled(model.busy)
                             if !model.evidence.isEmpty { GoalongDisclosureGroup("Choisir les événements (\(model.selectedEvidence.count)/\(model.evidence.count))") {
                                 HStack { Button("Tout sélectionner") { model.selectedEvidence = Set(model.evidence.map(\.id)); model.invalidate() }; Button("Tout décocher") { model.selectedEvidence = []; model.invalidate() } }
-                                LazyVStack(alignment: .leading) { ForEach(model.evidence, id: \.id) { e in Toggle(isOn: Binding(get: { model.selectedEvidence.contains(e.id) }, set: { yes in if yes { model.selectedEvidence.insert(e.id) } else { model.selectedEvidence.remove(e.id) }; model.invalidate() })) { Text("\(e.start) · \(e.application) · \(e.text)").font(.caption).lineLimit(3) } } }
+                                LazyVStack(alignment: .leading) { ForEach(model.evidence, id: \.id) { e in Toggle(isOn: Binding(get: { model.selectedEvidence.contains(e.id) }, set: { yes in if yes { model.selectedEvidence.insert(e.id) } else { model.selectedEvidence.remove(e.id) }; model.invalidate() })) { Text("\(e.start), \(e.application), \(e.text)").font(.system(size: 12)).lineLimit(3) } } }
                             } }
                         }.padding(8)
                     }
-                    GoalongProfileSection("2. Choisir les analyses et protéger le contexte") {
+                    GoalongProfileSection("Choisir les analyses et ce qui reste privé") {
                         VStack(alignment: .leading, spacing: 12) {
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading) {
                                 ForEach(GoalongProfileAnalysis.modules, id: \.self) { key in Toggle(GoalongProfileAnalysis.labels[key] ?? key, isOn: Binding(get: { modules.contains(key) }, set: { yes in if yes { modules.insert(key) } else { modules.remove(key) }; settingsChanged() })) }
                             }
-                            Text("Décochez une rubrique pour que l’agent ne l’analyse pas. La rubrique « Usage de l’IA » est indépendante de la source Conversation History choisie plus haut.").font(.caption)
-                            Text("Exclure des applications, projets ou termes — un par ligne").font(.subheadline)
+                            // Ten ticked boxes: ink, so the lime stays rare (UI-14, écran 11).
+                            .toggleStyle(.goalongCheckboxInk)
+                            Text("Décochez une rubrique pour que l’agent ne l’analyse pas. La rubrique « Usage de l’IA » ne dépend pas du choix des conversations IA plus haut.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            Text("Exclure des applications, projets ou termes — un par ligne").font(.system(size: 13, weight: .medium))
                             GoalongTextArea(text: $exclusions, minHeight: 60).accessibilityLabel("Termes à exclure")
-                            Text("Les événements contenant ces termes sont retirés avant analyse. Toute réapparition littérale dans un résultat est masquée.").font(.caption).foregroundStyle(.secondary)
-                            Text("Remplacer des noms — une ligne « nom privé => alias »").font(.subheadline)
+                            Text("Les événements contenant ces termes sont retirés avant analyse. Toute réapparition littérale dans un résultat est masquée.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            Text("Remplacer des noms — une ligne « nom privé => alias »").font(.system(size: 13, weight: .medium))
                             GoalongTextArea(text: $aliases, minHeight: 60).accessibilityLabel("Règles de remplacement")
-                            Text("Exemple : Projet Atlas => Projet secret. Les remplacements s’appliquent avant analyse et avant export.").font(.caption).foregroundStyle(.secondary)
-                            Text("Ce que l’agent ne doit pas aborder — complément personnel").font(.subheadline)
+                            Text("Exemple : Projet Atlas => Projet secret. Les remplacements s’appliquent avant analyse et avant export.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            Text("Ce que l’agent ne doit pas aborder — complément personnel").font(.system(size: 13, weight: .medium))
                             GoalongTextArea(text: $instructions, minHeight: 80).accessibilityLabel("Consignes personnelles de confidentialité")
-                            Text("Pour masquer un nom précis, ajoutez-le aussi aux règles ci-dessus. Les consignes libres guident l’agent ; elles ne garantissent pas à elles seules qu’un sujet ne sera jamais évoqué. Relisez les résultats.").font(.caption).foregroundStyle(.secondary)
-                            Button("Préparer le prompt protégé") { prepare() }.disabled(model.busy || model.selectedEvidence.isEmpty || modules.isEmpty)
+                            Text("Pour masquer un nom précis, ajoutez-le aussi aux règles ci-dessus. Les consignes libres guident l’agent ; elles ne garantissent pas à elles seules qu’un sujet ne sera jamais évoqué. Relisez les résultats.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         }.padding(8)
                     }
                     if let request = model.request {
-                        Text("Période du dossier préparé : \((try? request.context().date) ?? ""). Le prompt précise les timestamps disponibles et les fenêtres de sélection des conversations.").font(.caption)
-                        GoalongProfileSection("3. Vérifier et analyser") {
+                        Text("Période préparée : \((try? request.context().date) ?? ""). La consigne indique l’heure connue de chaque élément.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        GoalongProfileSection("Vérifier et analyser") {
                             VStack(alignment: .leading, spacing: 12) {
-                                GoalongDisclosureGroup("Voir le prompt exact — consigne principale fixe") { Text((try? request.prompt()) ?? "Sélection invalide").font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
-                                HStack { Text(connection.accountLabel).font(.caption); Spacer(); Button(connection.connected ? "Déconnecter ChatGPT" : "Connecter ChatGPT") { if connection.connected { connection.disconnect() } else { connection.connect() } }.disabled(model.busy || connection.busy) }
+                                GoalongDisclosureGroup("Voir la consigne exacte") { Text((try? request.prompt()) ?? "Sélection invalide").font(.system(size: 12, design: .monospaced)).textSelection(.enabled) }
+                                HStack { Text(connection.accountLabel).font(.system(size: 12)); Spacer(); Button(connection.connected ? "Déconnecter ChatGPT" : "Connecter ChatGPT") { if connection.connected { connection.disconnect() } else { connection.connect() } }.disabled(model.busy || connection.busy) }
                                 Toggle("J’autorise l’envoi de ce contexte à l’agent connecté", isOn: $model.consent)
-                                Button("Lancer l’analyse") { model.analyze() }.disabled(model.busy || !connection.connected || !model.consent)
-                                HStack { Button("Exporter le prompt pour mon agent…") { exportPrompt(request) }; Button("Importer sa réponse…") { importResult() }; Button("Enregistrer ici") { model.save() } }.disabled(model.busy)
-                                Text("L’export du prompt contient seulement le contexte préparé, sans les noms originaux des règles de remplacement. Votre agent suit ses propres conditions. Aucun de ces boutons n’envoie au site.").font(.caption).foregroundStyle(.secondary)
+                                HStack { Button("Exporter la consigne pour mon agent…") { exportPrompt(request) }; Button("Importer sa réponse…") { importResult() }; Button("Enregistrer ici") { model.save() } }.disabled(model.busy)
+                                Text("L’export contient seulement les données préparées, sans les noms d’origine de vos remplacements. Votre agent suit ses propres conditions. Aucun de ces boutons n’envoie au site.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             }.padding(8)
                         }
                     }
                     if let result = model.result {
-                        GoalongProfileSection(localOnly ? "4. Relire et conserver dans History" : "4. Relire et choisir les résultats à transmettre") {
+                        GoalongProfileSection(localOnly ? "Relire et conserver" : "Relire et choisir les résultats à transmettre") {
                             VStack(alignment: .leading, spacing: 14) {
-                                Text(localOnly ? "Relisez les cartes avant de les conserver. Elles apparaîtront dans Analyses, sans envoi au site." : "Aucun résultat n’est sélectionné par défaut. Les preuves, leurs timestamps et vos règles privées restent dans Goalong History.").font(.caption)
+                                Text(localOnly ? "Relisez les cartes avant de les conserver. Elles apparaîtront dans Analyses, sans envoi au site." : "Aucun résultat n’est sélectionné par défaut. Les éléments sources, leurs heures et vos règles privées restent sur ce Mac.").font(.system(size: 12))
                                 ForEach(result.items, id: \.id) { item in
                                     VStack(alignment: .leading, spacing: 8) {
                                         if !localOnly { Toggle("Transmettre : \(GoalongProfileAnalysis.labels[item.module] ?? item.module)", isOn: Binding(get: { model.selectedItems.contains(item.id) }, set: { yes in if yes { model.selectedItems.insert(item.id) } else { model.selectedItems.remove(item.id) }; model.reviewed = false })) }
                                         TextField("Titre", text: Binding(get: { item.title }, set: { model.correct(item.id, field: "title", text: $0) })).textFieldStyle(GoalongFieldStyle())
                                         GoalongTextArea(text: Binding(get: { item.summary }, set: { model.correct(item.id, field: "summary", text: $0) }), minHeight: 70).accessibilityLabel("Synthèse \(item.title)")
                                         TextField("Limites", text: Binding(get: { item.caveat }, set: { model.correct(item.id, field: "caveat", text: $0) })).textFieldStyle(GoalongFieldStyle())
-                                        Text("\(item.status) · \(item.evidence_refs.count) éléments de preuve locaux").font(.caption).foregroundStyle(.secondary)
-                                        GoalongDisclosureGroup("Examiner les preuves") { ForEach((try? model.request?.context().evidence.filter { item.evidence_refs.contains($0.id) }) ?? [], id: \.id) { e in Text("\(e.start) · \(e.application)\n\(e.text)").font(.caption).textSelection(.enabled) } }
+                                        Text("\(item.status), \(GoalongUIFormat.count(item.evidence_refs.count, "élément source", plural: "éléments sources"))").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                        GoalongDisclosureGroup("Voir les éléments sources") { ForEach((try? model.request?.context().evidence.filter { item.evidence_refs.contains($0.id) }) ?? [], id: \.id) { e in Text("\(e.start), \(e.application)\n\(e.text)").font(.system(size: 12)).textSelection(.enabled) } }
                                         Divider()
                                     }
                                 }
-                                Button("Conserver l’analyse dans Goalong History") { model.save() }
                                 if !localOnly {
                                 Toggle("J’ai relu les résultats sélectionnés et leur confidentialité", isOn: $model.reviewed)
                                 if let archive = model.archive, let projection = try? GoalongProfileAnalysis.project(archive, selectedIDs: model.selectedItems), let bytes = try? GoalongContextualRhythm.encode(projection) {
-                                    GoalongDisclosureGroup("Voir exactement les cartes sélectionnées") { Text(String(decoding: bytes, as: UTF8.self)).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+                                    GoalongDisclosureGroup("Voir exactement les cartes sélectionnées") { Text(String(decoding: bytes, as: UTF8.self)).font(.system(size: 12, design: .monospaced)).textSelection(.enabled) }
                                 }
                                 HStack { Button("Exporter les cartes sélectionnées…") { exportCards() }; Button("Préparer l’envoi à mon compte Goalong") { do { let bytes = try model.projection(); onSend(bytes); closeStudio() } catch { model.error = goalongUserMessage(error) } } }.disabled(!model.reviewed || model.selectedItems.isEmpty || model.busy)
-                                Text("Le partage avec les autres se règle ensuite sur le site, rubrique par rubrique et selon le public choisi.").font(.caption).foregroundStyle(.secondary)
+                                Text("Le partage avec les autres se règle ensuite sur le site, rubrique par rubrique et selon le public choisi.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 }
                             }.padding(8)
                         }
                     }
                     if model.busy { HStack { ProgressView(); Text(model.status); Button("Annuler") { model.cancel() } } }
-                    else if !model.status.isEmpty { Text(model.status).font(.caption) }
+                    else if !model.status.isEmpty { Text(model.status).font(.system(size: 12)) }
                     if let error = model.error ?? connection.error { Text(error).foregroundStyle(.red) }
                 }.padding(22)
+            }
+            // One lime action, at the foot: the next step of the analysis (DESIGN §9).
+            GoalongSheetFooter(inset: 22) {
+                Spacer()
+                nextStepButton.buttonStyle(LHPrimaryButtonStyle())
             }
         }.frame(minWidth: 700, idealWidth: 830, minHeight: 540, idealHeight: 760)
         .background(GoalongWebsiteWindowReader(host: windowHost).frame(width: 0, height: 0))
@@ -388,11 +418,32 @@ struct GoalongProfileStudio: View {
         .onChange(of: rich) { _ in resetSources() }
         .onChange(of: computer) { _ in resetSources() }
         .onChange(of: conversationsFrom) { _ in resetSources() }
-        .onChange(of: conversations) { _ in if model.request == nil { model.cancel() } else { settingsChanged() } }
+        // Before a request exists, a source change drops loaded data so the footer offers « Charger les données » again.
+        .onChange(of: conversations) { _ in if model.request == nil { resetSources() } else { settingsChanged() } }
         .onChange(of: exclusions) { _ in settingsChanged() }.onChange(of: aliases) { _ in settingsChanged() }.onChange(of: instructions) { _ in settingsChanged() }
         .onDisappear { model.cancel() }
     }
     private func closeStudio() { if let onClose { onClose() } else { dismiss() } }
+    @ViewBuilder private var nextStepButton: some View {
+        if model.result != nil {
+            Button("Conserver l’analyse") { model.save() }.disabled(model.busy)
+        } else if model.request != nil {
+            Button("Lancer l’analyse") { model.analyze() }.disabled(model.busy || !connection.connected || !model.consent)
+        } else if !model.evidence.isEmpty {
+            Button("Préparer l’analyse") { prepare() }.disabled(model.busy || model.selectedEvidence.isEmpty || modules.isEmpty)
+        } else {
+            Button("Charger les données") { model.load(start: start, end: end, rich: rich, computer: computer, conversations: conversations, conversationsFrom: conversationsFrom) }
+                .disabled(model.busy || (!computer && !conversations))
+        }
+    }
+    /// The analysed day, as the app writes days (« 23 oct. 2026 »); `end` is exclusive.
+    private var analyzedDay: Date { Calendar.current.startOfDay(for: end.addingTimeInterval(-0.001)) }
+    private func selectDay(_ day: Date) {
+        let start = Calendar.current.startOfDay(for: day)
+        self.start = start
+        startCapped = false
+        end = min(GoalongToday.now, Calendar.current.date(byAdding: .day, value: 1, to: start) ?? GoalongToday.now)
+    }
     private func prepare() {
         do {
             let split: (String) -> [String] = { $0.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
@@ -439,7 +490,7 @@ struct GoalongProfileStudio: View {
                 let input = try JSONDecoder().decode(Input.self, from: bytes)
                 model.invalidate()
                 for var e in input.evidence { e.id = "e\(model.evidence.count + 1)"; model.evidence.append(e); model.selectedEvidence.insert(e.id) }
-                model.status = "Preuves ajoutées localement. Vérifiez les dates et préparez le prompt pour appliquer vos règles."
+                model.status = "Données ajoutées sur ce Mac. Vérifiez les dates, puis préparez l’analyse pour appliquer vos règles."
             } catch { model.error = goalongUserMessage(error) }
         }
     }
@@ -454,13 +505,15 @@ private struct GoalongProfileSection<Content: View>: View {
         self.content = content()
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline).accessibilityAddTraits(.isHeader)
+        // A group title above a group surface, as in Réglages (DESIGN §6, §8).
+        let shape = RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.secondaryText).accessibilityAddTraits(.isHeader)
             content.frame(maxWidth: .infinity, alignment: .leading)
+                .padding(LHTheme.cardInset)
+                .background(LHTheme.cardBackground, in: shape)
+                .overlay(shape.strokeBorder(LHTheme.separator))
         }
-        .padding(14)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.18)))
     }
 }
 

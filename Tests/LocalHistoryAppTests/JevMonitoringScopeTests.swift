@@ -42,7 +42,7 @@ final class JevMonitoringScopeTests: XCTestCase {
         monitor.start()
         XCTAssertEqual(monitor.status, "En attente d’une séance"); XCTAssertFalse(inbox.isEnabled)
         session = UUID(); NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: nil)
-        XCTAssertTrue(monitor.status.contains("connexion API"), "Session scope still respects the missing key")
+        XCTAssertTrue(monitor.status.contains("connexion à Jev"), "Session scope still respects the missing key")
         inbox.configure(enabled: true); let generation = inbox.generation
         session = nil; NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: nil)
         XCTAssertEqual(monitor.status, "En attente d’une séance"); XCTAssertFalse(inbox.isEnabled)
@@ -67,7 +67,7 @@ final class JevMonitoringScopeTests: XCTestCase {
         XCTAssertTrue(monitor.keyStorageInvalid); XCTAssertFalse(monitor.hasKey)
         XCTAssertFalse(monitor.breakStorageInvalid, "A bad key file must not be shown as a broken break timer")
         XCTAssertEqual(monitor.timedBreak, pause)
-        XCTAssertTrue(monitor.error?.contains("Clé API illisible") == true)
+        XCTAssertTrue(monitor.error?.contains("Clé d’accès Jev illisible") == true)
         XCTAssertEqual(chmod(keyPath, 0o600), 0)
         monitor.retry()
         XCTAssertFalse(monitor.keyStorageInvalid); XCTAssertTrue(monitor.hasKey)

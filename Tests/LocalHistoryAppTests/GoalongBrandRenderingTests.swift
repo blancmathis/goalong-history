@@ -128,9 +128,10 @@ final class GoalongBrandRenderingTests: XCTestCase {
         pump(); pump()
         let shareSheet = try XCTUnwrap(window.attachedSheet)
         let dateControl = try XCTUnwrap(accessibleElement("sharing-selected-date", within: shareSheet))
-        let nativeDate = try XCTUnwrap(dateControl.value("accessibilityValue") as? Date,
-            "Date picker must expose the actual selected date")
-        XCTAssertTrue(Calendar.current.isDate(nativeDate, inSameDayAs: selectedDate))
+        // UI-11A (4): the calendar button says the selected day in words.
+        let spokenDate = try XCTUnwrap(dateControl.value("accessibilityValue") as? String,
+            "Day button must expose the actual selected date")
+        XCTAssertEqual(spokenDate, selectedDate.formatted(.dateTime.weekday(.wide).day().month(.wide).year().locale(GoalongUIFormat.locale)))
         XCTAssertTrue(try XCTUnwrap(accessibleElement("sharing-close", within: shareSheet)).accessibilityPerformPress())
         pump()
         XCTAssertNil(window.attachedSheet)

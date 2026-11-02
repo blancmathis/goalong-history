@@ -199,7 +199,7 @@ struct GuardLaunchProbes: Sendable {
 /// failed. A bootout seen in this arming (kickstart 113) is final until the next arming. Never an alert.
 struct GuardEscalation {
     static let stoppedUntilLogin = "Service de protection arrêté jusqu’à la prochaine ouverture de session."
-    static let unreachable = "Service de protection injoignable. Réessayez dans Réglages Système › Général › Ouverture."
+    static let unreachable = "Service de protection injoignable. Réessayez dans \(LoginItemsPanel.path)."
 
     var status: () -> SMAppService.Status
     var ping: () -> GuardPingOutcome

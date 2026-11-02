@@ -166,7 +166,7 @@
             XCTAssertFalse(browser.sourceDetail.contains("+"))
             XCTAssertEqual(
                 browser.sourceDetail,
-                "Temps d’écran Apple · Goalong a observé 20\u{00A0}min sur ce Mac"
+                "Temps d’écran Apple : Goalong a observé 20\u{00A0}min sur ce Mac"
             )
         }
 

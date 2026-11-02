@@ -111,6 +111,8 @@
         let verificationEnabled: Bool
         let verificationServer: String?
         let captureHealth: CaptureHealthAssessment?
+        /// When writes started to fail; set only while the state is `.storageUnavailable`.
+        var storageInterruptedSince: Date? = nil
 
         /// Publishing re-renders every view observing the dashboard model, so equality ignores
         /// the assessment's English diagnostic detail (it counts idle seconds). The live
@@ -122,6 +124,7 @@
                 && a.captureHealth?.state == b.captureHealth?.state
                 && a.captureHealth?.captureProven == b.captureHealth?.captureProven
                 && a.captureHealth?.limitations == b.captureHealth?.limitations
+                && a.storageInterruptedSince == b.storageInterruptedSince
         }
 
         static let unavailable = RuntimePresentation(

@@ -100,10 +100,10 @@ enum PermissionRepair {
         VStack(alignment: .leading, spacing: 9) {
             if !stableLocation {
                 Text("Cette copie n’est pas installée dans un emplacement stable. Placez Goalong History dans Applications, ouvrez cette copie puis réaccordez l’accès. Ne réinitialisez pas les accès depuis l’image disque.")
-                    .font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
             }
             Text("Toujours bloqué après relancement ? Une ancienne entrée macOS peut correspondre à une autre copie. Réinitialisez uniquement cet accès, puis autorisez à nouveau cette application.")
-                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             Button(resetting ? "Réinitialisation…" : "Réinitialiser cet accès…") { confirming = true }
                 .buttonStyle(LHSecondaryButtonStyle()).disabled(resetting || !stableLocation || PermissionRepair.service(for: status) == nil)
                 .accessibilityIdentifier("permission-targeted-repair")
@@ -112,7 +112,7 @@ enum PermissionRepair {
                     PermissionRecovery.restart(permission: status) { error in if let error { result = error } }
                 }.buttonStyle(LHSecondaryButtonStyle())
             }
-            if let result { Text(result).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true) }
+            if let result { Text(result).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true) }
             SupportDiagnosticsExportButton()
         }
         .confirmationDialog("Réinitialiser cette autorisation de Goalong ?", isPresented: $confirming) {

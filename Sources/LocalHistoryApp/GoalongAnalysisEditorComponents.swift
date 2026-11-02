@@ -18,7 +18,7 @@ struct GoalongAnalysisAppRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(app.name).font(.system(size: 14, weight: .medium)).lineLimit(2)
                     if mode == 2 && !GoalongAnalysisField.allCases.contains(where: { scope.allows($0, id: app.id, name: app.name) }) {
-                        Text("Aucun détail activé").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Aucun détail activé").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                 }
                 Spacer()
@@ -67,21 +67,21 @@ struct GoalongReplacementRow: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Rechercher").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Texte à remplacer").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         TextField("Bonjour Charlie", text: $rule.search).textFieldStyle(GoalongFieldStyle())
                     }
-                    Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                    Image(systemName: "arrow.right").foregroundStyle(LHTheme.secondaryText)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Remplacer par").font(.system(size: 12)).foregroundStyle(.secondary)
-                        TextField("Projet A · vide pour supprimer", text: $rule.replacement).textFieldStyle(GoalongFieldStyle())
+                        Text("Remplacer par").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        TextField("Projet A, vide pour supprimer", text: $rule.replacement).textFieldStyle(GoalongFieldStyle())
                     }
                     Button(action: remove) { Image(systemName: "trash").frame(width: 30, height: 30) }.buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Supprimer le remplacement")
                 }
                 if rule.search.isEmpty && !rule.replacement.isEmpty {
-                    Text("Indiquez le texte à rechercher.").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                    Text("Indiquez le texte à remplacer.").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                 }
                 HStack(spacing: 24) {
-                    Toggle("Respecter la casse", isOn: $rule.caseSensitive).toggleStyle(.goalongCheckbox)
+                    Toggle("Distinguer majuscules et minuscules", isOn: $rule.caseSensitive).toggleStyle(.goalongCheckbox)
                     Toggle("Mot entier", isOn: $rule.wholeWord).toggleStyle(.goalongCheckbox)
                 }.font(.system(size: 12))
             }
@@ -120,7 +120,7 @@ struct GoalongAnalysisHumanPreview: View {
                         if rows.count > (visibleLimits[key] ?? 40) {
                             HStack {
                                 Text("\(visibleLimits[key] ?? 40) sur \(rows.count) éléments")
-                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 Spacer()
                                 Button("Afficher les suivants") { visibleLimits[key] = min(rows.count, (visibleLimits[key] ?? 40) + 40) }
                                     .buttonStyle(LHSecondaryButtonStyle())
@@ -129,10 +129,10 @@ struct GoalongAnalysisHumanPreview: View {
                     }
                 }
             }
-            if let limit = object["limite"] as? String { Label(limit, systemImage: "info.circle").font(.system(size: 12)).foregroundStyle(.secondary) }
+            if let limit = object["limite"] as? String { Label(limit, systemImage: "info.circle").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
             if object.isEmpty { Text(text).font(.system(size: 13)).textSelection(.enabled) }
             else if !["applications_sur_ce_Mac", "temps_ecran_Apple", "details_autorises", "conversations_choisies"].contains(where: { (object[$0] as? [Any])?.isEmpty == false }) {
-                Text("Aucune donnée de cette journée ne correspond aux choix actuels.").font(.system(size: 14)).foregroundStyle(.secondary)
+                Text("Aucune donnée de cette journée ne correspond aux choix actuels.").font(.system(size: 14)).foregroundStyle(LHTheme.secondaryText)
             }
         }
     }

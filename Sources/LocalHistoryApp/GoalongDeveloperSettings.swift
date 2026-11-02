@@ -10,6 +10,7 @@ enum GoalongDeveloperPreferences {
 }
 
 struct GoalongDeveloperSettings: View {
+    static let activeText = "Mode développeur actif : l’aperçu est dans Activité."
     @AppStorage(GoalongDeveloperPreferences.enabledKey) private var enabled = false
 
     var body: some View {
@@ -17,10 +18,20 @@ struct GoalongDeveloperSettings: View {
             Toggle("Mode développeur", isOn: $enabled)
                 .toggleStyle(.goalongSwitch)
                 .accessibilityIdentifier("settings-developer-mode")
-            Text("Désactivé par défaut. Ajoute dans Activité un bouton pour explorer un exemple complet avec des données fictives.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
-            Text("L’aperçu est temporaire : il ne modifie pas votre historique, ne lance pas d’analyse IA et ne peut pas être envoyé à Goalong. Désactiver ce mode ferme immédiatement l’aperçu.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+            // UI-53: one sentence; the switch already shows its state.
+            Text("Ajoute dans Activité un aperçu avec des données fictives, sans toucher à votre historique ni rien envoyer.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            // UI-15A (58): while it is on, one line confirms it and says where to look.
+            if enabled {
+                Label {
+                    Text(Self.activeText).foregroundStyle(LHTheme.text)
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(LHTheme.success)
+                }
+                    .font(.system(size: 12, weight: .medium))
+                    .accessibilityIdentifier("settings-developer-mode-active")
+            }
         }
     }
 }

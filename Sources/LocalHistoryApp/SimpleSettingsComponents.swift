@@ -173,7 +173,7 @@ enum GoalongHomeRows {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(capability.title).font(.system(size: 13, weight: .medium))
-                Text(status).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(status).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             Spacer()
             if consents.isEnabled(capability) {
@@ -194,7 +194,8 @@ enum GoalongHomeRows {
         }
     }
     private var status: String {
-        guard consents.isEnabled(capability) else { return "Fonction désactivée · aucun accès demandé" }
+        // The page says once that a disabled feature asks for nothing; each row only says it is off.
+        guard consents.isEnabled(capability) else { return "Désactivée" }
         guard let result = validation.result else { return "Vérification…" }
         switch result {
         case .ready: return "L’accès nécessaire est disponible"

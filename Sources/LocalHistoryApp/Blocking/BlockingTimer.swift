@@ -37,7 +37,7 @@ struct BlockingVisibleTimer: Equatable {
     /// Long list names are shortened so the capsule never grows toward the centre of the screen.
     var prefix: String {
         let name = listName.count > 28 ? listName.prefix(27) + "…" : listName
-        return kind == .breakTime ? "Pause · \(name) · " : "\(name) · "
+        return kind == .breakTime ? "Pause, \(name), " : "\(name), "
     }
     var text: String { prefix + clock }
     var accessibilityLabel: String {

@@ -70,7 +70,10 @@
                 isRefreshing: model.isRefreshing || agents.isScanning || screenTime.isBusy,
                 onSelectDay: selectDay,
                 onShare: { model.showingWebsiteShare = true },
-                onRefresh: refresh
+                onRefresh: refresh,
+                // Same rule as Activité: an empty day greys the button instead of offering nothing.
+                sharingEnabled: model.snapshot.eventCount > 0,
+                sharingDisabledReason: "Rien à partager ce jour-là"
             )
         }
 

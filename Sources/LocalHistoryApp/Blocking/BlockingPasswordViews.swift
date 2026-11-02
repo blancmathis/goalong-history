@@ -91,17 +91,26 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
             if purpose == .create { handOver }
             VStack(alignment: .leading, spacing: 10) {
                 if needsOld {
-                    SecureField(purpose == .change ? "Mot de passe actuel" : "Mot de passe de blocage", text: $old)
-                        .textFieldStyle(GoalongFieldStyle()).focused($focused)
-                        .accessibilityIdentifier("blocking-password-field")
+                    GoalongFormField(title: purpose == .change ? "Mot de passe actuel" : "Mot de passe de blocage") {
+                        SecureField("", text: $old)
+                            .textFieldStyle(GoalongFieldStyle()).focused($focused)
+                            .accessibilityLabel(purpose == .change ? "Mot de passe actuel" : "Mot de passe de blocage")
+                            .accessibilityIdentifier("blocking-password-field")
+                    }
                 }
                 if needsNew {
-                    SecureField(purpose == .change ? "Nouveau mot de passe" : "Mot de passe", text: $new)
-                        .textFieldStyle(GoalongFieldStyle())
-                        .accessibilityIdentifier("blocking-password-new")
-                    SecureField("Retapez-le", text: $again)
-                        .textFieldStyle(GoalongFieldStyle())
-                        .accessibilityIdentifier("blocking-password-again")
+                    GoalongFormField(title: purpose == .change ? "Nouveau mot de passe" : "Mot de passe") {
+                        SecureField("", text: $new)
+                            .textFieldStyle(GoalongFieldStyle())
+                            .accessibilityLabel(purpose == .change ? "Nouveau mot de passe" : "Mot de passe")
+                            .accessibilityIdentifier("blocking-password-new")
+                    }
+                    GoalongFormField(title: "Confirmation") {
+                        SecureField("", text: $again)
+                            .textFieldStyle(GoalongFieldStyle())
+                            .accessibilityLabel("Confirmation")
+                            .accessibilityIdentifier("blocking-password-again")
+                    }
                 }
             }
             if let message {

@@ -955,7 +955,7 @@ import LocalHistoryQueryCLI
             if !storeFailed {
                 let message: String?
                 switch protection.component {
-                case .awaitingApproval: message = "Autorisez Goalong dans Réglages Système › Général › Ouverture pour reprendre les verrous à la connexion."
+                case .awaitingApproval: message = "Autorisez Goalong dans \(LoginItemsPanel.path) pour reprendre les verrous à l’ouverture de session."
                 case .failed(let reason): message = reason
                 default: message = nil
                 }

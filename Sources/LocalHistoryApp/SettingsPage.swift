@@ -25,18 +25,25 @@ import AppKit
             let denied = permissions.contains(.permissionDenied)
             VStack(alignment: .leading, spacing: 6) {
                 Text(denied ? "macOS refuse l’accès à l’agenda ou aux rappels." : "macOS doit encore donner l’accès à l’agenda et aux rappels.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 Button(denied ? "Ouvrir Réglages Système…" : "Autoriser l’accès…") {
                     if denied { GoalongCalendarSettings.open() } else { Task { await system.requestCalendarPermissions() } }
                 }
-                .buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("settings-calendar-access")
+                .buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("settings-calendar-access")
             }
         }
     }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text(pane.title).goalongPageTitle()
+                // UI-9 (38, 42): a title, then its sentence close under it (DESIGN §7, §9).
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(pane.title).goalongPageTitle()
+                    if let lead = pane.lead {
+                        Text(lead).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 GoalongConfigStatusBanner(model: model)
                 // While config.json is unreadable, nothing may be saved over it.
                 content.disabled(model.configLocked && pane != .home)
@@ -73,7 +80,7 @@ import AppKit
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
                     ForEach(visiblePanes, id: \.self) { item in
-                        GoalongSettingsLink(title: item.title, value: summary(item), symbol: item.symbol) { pane = item }
+                        GoalongSettingsLink(title: item.title, value: summary(item), symbol: item.symbol, detail: detail(item)) { pane = item }
                             .accessibilityIdentifier("settings-\(item.identifier)")
                         if item != visiblePanes.last { GoalongRowDivider() }
                     }
@@ -86,19 +93,26 @@ import AppKit
             }
             if search.isEmpty || SettingsPane.matchesStartup(search) { BackgroundContinuitySettings() }
             if search.isEmpty {
-                GoalongDisclosureGroup("Confidentialité · tout suspendre") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Réglages › Jev : l’historique continue.")
-                            .font(.callout).foregroundStyle(.secondary)
-                        GoalongGlobalPauseControl(model: model)
-                    }.padding(.top, 12)
-                }.accessibilityIdentifier("settings-privacy-stop")
-                VStack(alignment: .leading, spacing: 16) {
-                    GoalongUpdateStatusRow()
-                    Button("Signaler un problème…") { SupportRequestController.shared.present() }
-                        .buttonStyle(LHQuietButtonStyle())
+                // UI-15A (20): the full stop, the report and the version form one group, no longer three loose items.
+                GoalongSettingsList(title: "Aide et confidentialité") {
+                    // UI-12B (20): a row of a list, aligned like the others, no longer a bold link alone.
+                    GoalongSettingsLink(title: "Signaler un problème…", value: "", symbol: "stethoscope") { SupportRequestController.shared.present() }
                         .accessibilityIdentifier("settings-report-problem")
-                }.font(.system(size: 13))
+                    GoalongRowDivider()
+                    GoalongUpdateStatusRow().font(.system(size: 13))
+                        .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10)
+                    GoalongRowDivider()
+                    GoalongDisclosureGroup("Confidentialité, tout suspendre") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Réglages › Jev : l’historique continue.")
+                                .font(.callout).foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                            GoalongGlobalPauseControl(model: model)
+                        }.padding(.top, 12)
+                    }.accessibilityIdentifier("settings-privacy-stop")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 12)
+                }
             }
         case .recording:
             GoalongRecordingCoverageNotice(model: model)
@@ -106,37 +120,46 @@ import AppKit
                 SourceActivationToggle(capability: .localComputerHistory) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Enregistrer mon activité").font(.system(size: 14, weight: .medium))
-                        Text("Reste sur ce Mac : enregistrer n’autorise aucun envoi. Le démarrage à l’ouverture de session se règle sur l’accueil des Réglages.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        // UI-15A (24, 44): one sentence.
+                        Text("Reste sur ce Mac et n’autorise aucun envoi ; le démarrage se règle sur l’accueil des Réglages.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
-            GoalongSettingsGroup(title: "Enregistrement de l’activité") {
-                Text("Lire, réfléchir ou regarder sans cliquer compte aussi. Seule la fenêtre au premier plan est suivie.")
-                    .font(.callout).foregroundStyle(.secondary)
-                Picker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds) {
-                    Text("2 minutes").tag(120)
-                    Text("5 minutes · recommandé").tag(300)
-                    Text("10 minutes").tag(600)
-                    Text("15 minutes").tag(900)
-                    Text("30 minutes").tag(1_800)
-                    Text("Tant que l’écran reste allumé").tag(0)
-                    if ![0, 120, 300, 600, 900, 1_800].contains(model.appliedSettings.foregroundIdleSeconds) {
-                        Text("\(model.appliedSettings.foregroundIdleSeconds) secondes · personnalisé")
-                            .tag(model.appliedSettings.foregroundIdleSeconds)
+            // Details stay readable but inert while recording is off (UI-48).
+            Group {
+                GoalongSettingsGroup(title: "Enregistrement de l’activité") {
+                    // UI-9 (24, 44): one help sentence per setting, the rest in « En savoir plus » (DESIGN §12).
+                    Text("Lire, réfléchir ou regarder sans cliquer compte aussi.")
+                        .font(.callout).foregroundStyle(LHTheme.secondaryText)
+                    // UI-15A (24, 44): the app's menu, as in Activité and Historique, not the system pop-up.
+                    HStack(spacing: 12) {
+                        Text("Sans interaction, continuer à compter").font(.system(size: 13))
+                        Spacer(minLength: 12)
+                        GoalongMenuPicker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds,
+                                          options: Self.idleOptions(current: model.appliedSettings.foregroundIdleSeconds))
+                            .fixedSize()
+                            .accessibilityIdentifier("settings-foreground-idle-limit")
                     }
-                }.accessibilityIdentifier("settings-foreground-idle-limit")
-                Text("Le délai repart à chaque interaction ; augmentez-le pour de longues lectures. Appels et vidéos au premier plan continuent au-delà. Verrouillage, veille et arrêt de confidentialité interrompent toujours le suivi.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if model.appliedSettings.foregroundIdleSeconds == 0 {
-                    Label("Ce mode peut compter votre absence si vous laissez une fenêtre visible et le Mac déverrouillé.", systemImage: "exclamationmark.triangle")
-                        .font(.callout).foregroundStyle(LHTheme.warning)
+                    Text("Le délai repart à chaque interaction ; augmentez-le pour de longues lectures.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    GoalongDisclosureGroup("En savoir plus") {
+                        Text("Seule la fenêtre au premier plan est suivie. Appels et vidéos au premier plan continuent au‑delà. Verrouillage, veille et arrêt de confidentialité interrompent toujours le suivi.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true).padding(.top, 8)
+                    }.font(.system(size: 12))
+                    if model.appliedSettings.foregroundIdleSeconds == 0 {
+                        Label("Ce mode peut compter votre absence si vous laissez une fenêtre visible et le Mac déverrouillé.", systemImage: "exclamationmark.triangle")
+                            .font(.callout).foregroundStyle(LHTheme.warning)
+                    }
                 }
+                GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording, columns: 1) }
+                VisibleContextControl()
             }
-            GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording) }
-            VisibleContextControl()
+            // UI-9 (24, 44): inert but readable; the controls dim themselves, a group fade made the help ~2:1.
+            .disabled(!consents.isEnabled(.localComputerHistory))
             GoalongDisclosureGroup("Confidentialité avancée") {
                 VStack(alignment: .leading, spacing: 14) {
                     Toggle("Inclure les fenêtres privées détectées", isOn: Binding(
@@ -153,25 +176,25 @@ import AppKit
                         }))
                         .toggleStyle(.goalongSwitch)
                     Text("La détection des fenêtres privées dépend du navigateur. Utilisez Pause pour une activité sensible. Pendant un blocage, Goalong lit l’adresse en mémoire pour appliquer vos listes ; il ne l’enregistre jamais.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }.padding(.top, 12)
             }.font(.system(size: 13))
-            GoalongSettingsGroup(title: "Autres sources · facultatives") {
+            GoalongSettingsGroup(title: "Autres sources, facultatives") {
                 SourceActivationToggle(capability: .appleScreenTime) { Text("Temps d’écran Apple") }
                 Divider()
                 SourceActivationToggle(capability: .aiConversations) { Text("Conversations locales") }
-                Button("Choisir les dossiers de conversations…") { model.selectSection(.agentActivity) }.buttonStyle(LHQuietButtonStyle())
+                Button("Choisir les dossiers de conversations…") { model.selectSection(.agentActivity) }.buttonStyle(LHSecondaryButtonStyle())
                 Divider()
                 SourceActivationToggle(capability: .developerActivity) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Activité de développement")
-                        Text("Commits et nombre de fichiers modifiés dans les projets choisis. Ni code, ni messages de commit.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Nombre de validations Git et de fichiers modifiés dans les projets choisis. Ni code, ni messages.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if consents.isEnabled(.developerActivity) {
-                    Button("Choisir les projets…") { showingDeveloperProjects = true }.buttonStyle(LHQuietButtonStyle())
+                    Button("Choisir les projets…") { showingDeveloperProjects = true }.buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("settings-developer-projects")
                 }
                 Divider()
@@ -179,7 +202,7 @@ import AppKit
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Agenda et rappels")
                         Text("Événements et rappels terminés de ce Mac, pour comparer le prévu et l’observé. Rien n’est modifié.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -197,11 +220,12 @@ import AppKit
         case .connections:
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
-                    GoalongSettingsLink(title: "Envoi à Goalong", value: "Compte, données et fréquence", symbol: "arrow.up.circle") { pane = .website }
+                    // UI-12B (20): the description under the title, the value column for the state only.
+                    GoalongSettingsLink(title: "Envoi à Goalong", value: "", symbol: "arrow.up.circle", detail: detail(.website)) { pane = .website }
                     GoalongRowDivider()
-                    GoalongSettingsLink(title: "Analyse ChatGPT", value: "Données et personnalisation", symbol: "sparkles") { pane = .chatGPT }
+                    GoalongSettingsLink(title: "Analyse ChatGPT", value: "", symbol: "sparkles", detail: detail(.chatGPT)) { pane = .chatGPT }
                     GoalongRowDivider()
-                    GoalongSettingsLink(title: "Jev", value: "Surveillance de vos séances", symbol: "eye.circle") { pane = .jev }
+                    GoalongSettingsLink(title: "Jev", value: summary(.jev), symbol: "eye.circle", detail: detail(.jev)) { pane = .jev }
                 }
             }
         case .website:
@@ -224,60 +248,79 @@ import AppKit
                 GoalongPermissionRow(capability: .aiConversations)
             }
             Text("Les fonctions désactivées ne demandent aucune autorisation.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             GoalongDisclosureGroup("Résoudre un problème") {
                 Button("Ouvrir les diagnostics d’accès") { model.selectSection(.privacy) }.buttonStyle(LHSecondaryButtonStyle()).padding(.top, 10)
             }.font(.system(size: 13))
         case .storage:
             GoalongStorageSettings(model: model)
         case .advanced:
-            SupportDiagnosticsPanel()
+            // UI-15A (58): the developer mode first, the pane's subject in view; it is two lines high,
+            // so « Installer la version… » stays in view without scrolling (UI-9, 54).
             GoalongDeveloperSettings()
-            VStack(alignment: .leading, spacing: 12) {
-                GoalongSettingsList(title: "Outils") {
-                    GoalongSettingsLink(title: "Outils de partage et analyses", value: "", symbol: "square.and.arrow.up") { pane = .tools }
-                    GoalongRowDivider()
-                    GoalongSettingsLink(title: "Terminal et agents", value: "CLI", symbol: "terminal") { model.selectSection(.cli) }
-                    GoalongRowDivider()
-                    GoalongSettingsLink(title: "Diagnostic et preuves", value: "", symbol: "checkmark.shield") { model.selectSection(.privacy) }
-                }
-                Button("Ouvrir le fichier de configuration") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
-                    .font(.system(size: 13))
-            }
             GoalongSettingsGroup(title: "Mises à jour") {
                 GoalongUpdateStatusRow()
                 Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.goalongSwitch)
                     .disabled(!updates.isConfigured)
+                // UI-12B (58): the locked switch says why, right under it.
                 if !updates.isConfigured {
-                    Text(updates.statusMessage).font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("Indisponible dans cette copie : seule la version publiée reçoit les mises à jour.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Revoir le démarrage") { model.showWelcome = true }.buttonStyle(LHSecondaryButtonStyle())
+            SupportDiagnosticsPanel()
+            GoalongSettingsList(title: "Outils") {
+                GoalongSettingsLink(title: "Outils de partage et analyses", value: "", symbol: "square.and.arrow.up") { pane = .tools }
+                GoalongRowDivider()
+                GoalongSettingsLink(title: "Terminal et agents", value: "", symbol: "terminal") { model.selectSection(.cli) }
+                GoalongRowDivider()
+                GoalongSettingsLink(title: "Diagnostic et preuves", value: "", symbol: "checkmark.shield") { model.selectSection(.privacy) }
+                GoalongRowDivider()
+                // UI-51: a row of the list, no longer a button alone under the last section.
+                GoalongSettingsLink(title: "Revoir le démarrage", value: "", symbol: "sparkles") { model.showWelcome = true }
+                GoalongRowDivider()
+                // UI-9 (54): a row of the list, no longer a bold link between two groups.
+                GoalongSettingsLink(title: "Ouvrir le fichier de configuration", value: "", symbol: "doc.text") { model.openConfiguration() }
+            }
         case .tools:
             GoalongAdvancedTools(model: model)
         }
     }
+    /// The idle limits offered, plus a custom value from config.json so the menu always names the current one.
+    static func idleOptions(current: Int) -> [(Int, String)] {
+        var options: [(Int, String)] = [(120, "2 minutes"), (300, "5 minutes, recommandé"), (600, "10 minutes"),
+                                        (900, "15 minutes"), (1_800, "30 minutes"), (0, "Tant que l’écran reste allumé")]
+        if !options.contains(where: { $0.0 == current }) { options.append((current, "\(current) secondes, personnalisé")) }
+        return options
+    }
     private var visiblePanes: [SettingsPane] {
         SettingsPane.matches(search)
     }
+    /// The value column holds a state only (UI-12B, 20); descriptions go under the title (`detail`).
     private func summary(_ item: SettingsPane) -> String {
         switch item {
         case .recording: return consents.isEnabled(.localComputerHistory) ? "Activé" : "Désactivé"
+        case .jev: return consents.isEnabled(.jevMonitoring) ? "Activé" : "Désactivé"
+        case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
+        default: return ""
+        }
+    }
+    private func detail(_ item: SettingsPane) -> String? {
+        switch item {
         case .applications: return "Choisir les exclusions"
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
-        case .jev: return GoalongHomeRows.jevSummary(enabled: GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring))
-        case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
+        case .jev: return "Surveillance de vos séances"
         case .permissions: return "Selon vos fonctions"
         case .storage: return "Conservation et effacement"
         case .advanced: return "Outils et diagnostics"
-        default: return ""
+        default: return nil
         }
     }
 }
@@ -307,12 +350,26 @@ enum SettingsPane: Hashable {
         case .connections: return "Connexions"
         case .website: return "Envoi à Goalong"
         case .chatGPT: return "Analyse ChatGPT"
-        case .jev: return "Jev"
+        case .jev: return "Jev" // UI-10 (M3): one name with the sidebar and the card; the row's value and the card say what it does.
         case .modules: return "Modules"
         case .permissions: return "Autorisations macOS"
         case .storage: return "Stockage"
         case .advanced: return "Avancé"
-        case .tools: return "Outils de partage"
+        case .tools: return "Outils de partage et analyses"
+        }
+    }
+    /// The sentence under the pane's title, when the pane has one.
+    var lead: String? {
+        switch self {
+        // UI-15A (20, 24): every main pane says what it is for under its title.
+        case .home: return "Choisissez ce que Goalong enregistre, ce qu’il envoie et comment il démarre."
+        case .recording: return "Choisissez ce que Goalong enregistre sur ce Mac. Rien n’est envoyé sans un autre choix."
+        case .chatGPT: return "Votre ChatGPT résume une journée à partir des seules données que vous choisissez."
+        case .modules: return "Activez seulement les fonctions dont vous avez besoin."
+        // UI-13C (27, 40): the page's sentence sits under its title, as on ChatGPT and Modules.
+        case .applications: return "Désactivez une app ou un site pour l’exclure du suivi détaillé et des prochains envois."
+        case .storage: return "Votre historique reste sur ce Mac. Choisissez combien de temps le garder et ce qu’il faut effacer."
+        default: return nil
         }
     }
     /// Stable accessibility identifier of the pane's entry on the Settings home.
@@ -397,7 +454,7 @@ enum SettingsPane: Hashable {
             }
         } else if let backup = model.configBackupName {
             Text("Ancien fichier conservé : \(backup)")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityIdentifier("settings-config-backup")
         }
     }
@@ -417,13 +474,24 @@ enum SettingsPane: Hashable {
             }
             Spacer(minLength: 12)
             if updates.isChecking || updates.isPreparingAvailableUpdate {
-                ProgressView().controlSize(.small)
+                // UI-51: the busy state keeps the button's place and says it, a lone small spinner was hardly visible.
+                // It names the real work, as the sidebar does: preparing an update is not a search.
+                Button {} label: {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini); Text(updates.isChecking ? "Recherche…" : "Préparation…")
+                    }
+                }
+                .buttonStyle(LHSecondaryButtonStyle()).disabled(true)
             } else if let version = updates.availableVersion {
                 Button("Installer la version \(version)") { updates.showAvailableUpdate() }
                     .buttonStyle(LHPrimaryButtonStyle())
+            } else if updates.requiresSignedBuild {
+                // This copy cannot update itself: the way out is the published version.
+                Button("Voir les versions") { updates.openRollingReleasePage() }.buttonStyle(LHSecondaryButtonStyle())
             } else {
-                // Always enabled: an unavailable updater explains why and links to the releases.
-                Button("Rechercher") { updates.checkForUpdates() }.buttonStyle(LHSecondaryButtonStyle())
+                // UI-51: greyed when this build has no update configuration; the detail line says why.
+                Button(updates.lastCheckResult == .failed ? "Réessayer" : "Rechercher") { updates.checkForUpdates() }.buttonStyle(LHSecondaryButtonStyle())
+                    .disabled(!updates.isConfigured)
             }
         }
         .accessibilityElement(children: .combine)
@@ -449,10 +517,11 @@ enum SettingsPane: Hashable {
     }
 
     private var detail: String {
-        if updates.requiresSignedBuild { return "Version compilée sans mises à jour intégrées." }
+        if updates.requiresSignedBuild { return "Cette version ne se met pas à jour toute seule." }
+        if !updates.isConfigured { return updates.statusMessage }
         if updates.isChecking { return "Recherche en cours…" }
         if let version = updates.availableVersion { return "La version \(version) est prête à être installée." }
-        let when = updates.lastCheckedAt.map { " · vérifié " + Self.relative($0) } ?? ""
+        let when = updates.lastCheckedAt.map { ", vérifié " + Self.relative($0) } ?? ""
         switch updates.lastCheckResult {
         case .failed: return updates.statusMessage
         case .upToDate: return "À jour" + when

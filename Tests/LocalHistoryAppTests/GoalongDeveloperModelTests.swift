@@ -74,7 +74,7 @@ final class GoalongDeveloperModelTests: XCTestCase {
         let code = GoalongCodeDay(value)
         XCTAssertEqual(code.projects.map(\.name), ["busy"])
         XCTAssertEqual(code.fileChanges, 4); XCTAssertTrue(code.followsProjects); XCTAssertEqual(code.followedProjects, 2)
-        XCTAssertEqual(code.caption, "1\u{00A0}projet · 4\u{00A0}modifications de fichiers")
+        XCTAssertEqual(code.caption, "1\u{00A0}projet, 4\u{00A0}modifications de fichiers")
         let running = [DateInterval(start: day, duration: 600), DateInterval(start: day.addingTimeInterval(300), duration: 600)]
         let present = [DateInterval(start: day.addingTimeInterval(120), duration: 180)]
         XCTAssertEqual(GoalongIntervals.seconds(running, outside: present), 720)

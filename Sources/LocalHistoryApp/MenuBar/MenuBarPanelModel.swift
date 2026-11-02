@@ -176,7 +176,7 @@ import LocalHistoryCore
                 guard let self, !Task.isCancelled, self.dayGeneration == generation else { return }
                 self.dayTask = nil
                 self.workSeconds = 0; self.workKnown = false; self.otherSeconds = 0; self.segments = []
-                self.trackingDetail += " · Journée indisponible"
+                self.trackingDetail += ", Journée indisponible"
             }
         }
     }
@@ -207,7 +207,7 @@ import LocalHistoryCore
             trackingDetail = ConfigManager.failClosedNotice
         } else if !localHistoryEnabled() {
             pausedSince = nil
-            tracking = .attention("Enregistrement désactivé")
+            tracking = .attention("Suivi en pause")
             trackingDetail = "Activez l’enregistrement dans Réglages"
         } else if state.isManuallyPaused {
             if case .paused = tracking {} else { pausedSince = nil }
@@ -389,9 +389,9 @@ import LocalHistoryCore
         blockLists = controller.lists.map { list in
             let active = controller.activeBlocks.filter { $0.listIDs.contains(list.id) }
             let locked = controller.isStricterOnly(list.id)
-            let contents = "\(FrenchCount.count(list.sites.count, "site", "sites")) · \(FrenchCount.count(list.apps.count, "app", "apps"))"
-            let detail = locked ? "Verrouillée · " + contents
-                : active.isEmpty ? contents : "Active · " + contents
+            let contents = "\(FrenchCount.count(list.sites.count, "site", "sites")), \(FrenchCount.count(list.apps.count, "app", "apps"))"
+            let detail = locked ? "Verrouillée, " + contents
+                : active.isEmpty ? contents : "Active, " + contents
             return BlockList(id: list.id.uuidString, title: list.name, detail: detail,
                              isActive: !active.isEmpty, isLocked: locked)
         }

@@ -29,18 +29,18 @@ final class BlockingTimerTests: XCTestCase {
     func testQuotaCountsDownFromTheLastMeasure() throws {
         let timer = try XCTUnwrap(BlockingTimerSelection.select(input(used: 3_300, target: target(now)), at: now.addingTimeInterval(3)))
         XCTAssertEqual(timer.kind, .quota); XCTAssertTrue(timer.counting)
-        XCTAssertEqual(timer.text, "Échecs · 4:57"); XCTAssertEqual(timer.urgency, .warning)
+        XCTAssertEqual(timer.text, "Échecs, 4:57"); XCTAssertEqual(timer.urgency, .warning)
         // Never extrapolates past what the controller can credit between two samples.
         let stale = try XCTUnwrap(BlockingTimerSelection.select(input(used: 3_300, target: target(now)), at: now.addingTimeInterval(40)))
         XCTAssertEqual(stale.seconds, 285)
-        XCTAssertEqual(BlockingTimerSelection.select(input(used: 1_800, target: target(now)), at: now)?.text, "Échecs · 30:00")
+        XCTAssertEqual(BlockingTimerSelection.select(input(used: 1_800, target: target(now)), at: now)?.text, "Échecs, 30:00")
         var earned = input(used: 3_600, target: target(now)); earned.usage.earnedSeconds = [chess.id: 600]
-        XCTAssertEqual(BlockingTimerSelection.select(earned, at: now)?.text, "Échecs · 10:00")
+        XCTAssertEqual(BlockingTimerSelection.select(earned, at: now)?.text, "Échecs, 10:00")
     }
 
     func testQuotaPausedWhenIdleButCountsInPrivateWindows() throws {
         let idle = try XCTUnwrap(BlockingTimerSelection.select(input(used: 3_000, target: target(now, idle: 200)), at: now.addingTimeInterval(5)))
-        XCTAssertFalse(idle.counting); XCTAssertEqual(idle.text, "Échecs · 10:00")
+        XCTAssertFalse(idle.counting); XCTAssertEqual(idle.text, "Échecs, 10:00")
         XCTAssertTrue(idle.accessibilityLabel.contains("en pause"))
         // A private window follows the same rules: the quota shows and counts as in a normal window.
         var hidden = target(now); hidden.privateWindow = true
@@ -52,7 +52,7 @@ final class BlockingTimerTests: XCTestCase {
     func testBreakShowsWhateverTheForegroundApp() throws {
         let value = input(target: nil) { $0.usage.breakEnds[self.chess.id] = self.now.addingTimeInterval(90) }
         let timer = try XCTUnwrap(BlockingTimerSelection.select(value, at: now))
-        XCTAssertEqual(timer.kind, .breakTime); XCTAssertEqual(timer.text, "Pause · Échecs · 1:30")
+        XCTAssertEqual(timer.kind, .breakTime); XCTAssertEqual(timer.text, "Pause, Échecs, 1:30")
         // The quota does not count during a break, so it is not shown next to it.
         let both = input(used: 3_590, target: target(now)) { $0.usage.breakEnds[self.chess.id] = self.now.addingTimeInterval(240) }
         XCTAssertEqual(BlockingTimerSelection.select(both, at: now)?.kind, .breakTime)
@@ -65,7 +65,7 @@ final class BlockingTimerTests: XCTestCase {
             $0.allowances[BlockingFrictionPresentation.key(video, listID: slow.id)] = self.now.addingTimeInterval(400)
         }
         let timer = try XCTUnwrap(BlockingTimerSelection.select(value, at: now))
-        XCTAssertEqual(timer.kind, .slowDownAllowance); XCTAssertEqual(timer.text, "Vidéo · 6:40"); XCTAssertEqual(timer.urgency, .neutral)
+        XCTAssertEqual(timer.kind, .slowDownAllowance); XCTAssertEqual(timer.text, "Vidéo, 6:40"); XCTAssertEqual(timer.urgency, .neutral)
         XCTAssertNil(BlockingTimerSelection.select(value, at: now.addingTimeInterval(401)))
     }
 
@@ -109,7 +109,7 @@ final class BlockingTimerTests: XCTestCase {
         let hard = BlockList(name: "Soir", sites: [.init(pattern: "chess.com")])
         var value = BlockingTimerInput(lists: [hard], usage: BlockDayUsage(day: BlockingController.dayKey(now)),
                                        upcomingStarts: [.init(listID: hard.id, date: now.addingTimeInterval(45))], target: target(now))
-        XCTAssertEqual(BlockingTimerSelection.select(value, at: now)?.text, "Soir · 0:45")
+        XCTAssertEqual(BlockingTimerSelection.select(value, at: now)?.text, "Soir, 0:45")
         XCTAssertEqual(BlockingTimerSelection.select(value, at: now)?.kind, .upcomingStart)
         value.upcomingStarts = [.init(listID: hard.id, date: now.addingTimeInterval(120))]
         XCTAssertNil(BlockingTimerSelection.select(value, at: now))
@@ -152,9 +152,9 @@ final class BlockingTimerTests: XCTestCase {
         c.start(listIDs: [slow.id], until: now.addingTimeInterval(3_600), lock: .free)
         c.observe(target(clock, url: "youtube.com/watch")); XCTAssertNotNil(c.friction)
         clock = clock.addingTimeInterval(3); c.continueFriction()
-        XCTAssertEqual(BlockingTimerSelection.select(c.timerInput, at: clock)?.text, "Vidéo · 2:00")
+        XCTAssertEqual(BlockingTimerSelection.select(c.timerInput, at: clock)?.text, "Vidéo, 2:00")
         c.takeBreak(listID: slow.id)
-        XCTAssertEqual(BlockingTimerSelection.select(c.timerInput, at: clock)?.text, "Pause · Vidéo · 5:00")
+        XCTAssertEqual(BlockingTimerSelection.select(c.timerInput, at: clock)?.text, "Pause, Vidéo, 5:00")
     }
 
     /// `GOALONG_TIMER_SNAPSHOTS=<dir> swift test --filter BlockingTimerTests/testRenderCapsules`

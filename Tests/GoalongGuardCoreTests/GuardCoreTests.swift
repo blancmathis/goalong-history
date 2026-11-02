@@ -276,9 +276,12 @@ extension GuardDecisionTests {
         check.setActive(true)
         check.setActive(true)
         XCTAssertTrue(check.isActive)
-        usleep(400_000)
+        // No fixed sleep: a slow runner only takes longer to reach three ticks, it never counts fewer.
+        let deadline = Date().addingTimeInterval(30)
+        while counter.value < 3 && Date() < deadline { usleep(10_000) }
         XCTAssertGreaterThanOrEqual(counter.value, 3)
         check.setActive(false)
+        // `isActive` runs on the timer's serial queue, after the cancel: no tick can follow it.
         XCTAssertFalse(check.isActive)
         let stopped = counter.value
         usleep(200_000)

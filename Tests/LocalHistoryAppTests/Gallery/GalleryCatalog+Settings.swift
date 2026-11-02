@@ -1,6 +1,8 @@
 #if os(macOS)
 import Foundation
 import SwiftUI
+import AgentActivity
+import LocalHistoryCore
 @testable import LocalHistoryApp
 
 /// Réglages (every pane, in the real window), their sheets, the source activation sheets and the onboarding.
@@ -15,7 +17,11 @@ extension GalleryCatalog {
             dashboard("settings/accueil", section: .settings, pane: .home, sizes: [.window, .full(1240)],
                       themes: GalleryTheme.withContrast),
         ]
-        entries += panes.map { name, pane in dashboard("settings/\(name)", section: .settings, pane: pane) }
+        // UI-9 (32, 44): --full too, so the bottom of « Règles d'usage » and « Titres et adresses » can be seen.
+        entries += panes.map { name, pane in
+            dashboard("settings/\(name)", section: .settings, pane: pane,
+                      sizes: name == "applications" || name == "enregistrement" ? [.window, .full(1240)] : [.window])
+        }
         entries += [
             // The unsaved-changes banner shows once the member leaves Réglages.
             dashboard("settings/non-enregistre", section: .overview, configure: { model, _ in
@@ -23,6 +29,26 @@ extension GalleryCatalog {
             }),
             dashboard("settings/enregistrement-actif", section: .settings, pane: .recording, fixture: .realistic),
             dashboard("settings/stockage-avec-donnees", section: .settings, pane: .storage, fixture: .realistic),
+            // UI-10 (59): macOS gave no login state: « État inconnu » on the row and one orange note under it (UI-43).
+            dashboard("settings/accueil-etat-inconnu", section: .settings, pane: .home, sizes: [.full(1240)],
+                      prepare: { ctx in
+                LaunchAtLoginManager.galleryState = .unavailable
+                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
+            }),
+            // UI-13C (59): the normal states too, open at login on and off.
+            dashboard("settings/accueil-ouverture-activee", section: .settings, pane: .home, sizes: [.full(1240)],
+                      prepare: { ctx in
+                LaunchAtLoginManager.galleryState = .enabled
+                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
+            }),
+            dashboard("settings/accueil-ouverture-desactivee", section: .settings, pane: .home, sizes: [.full(1240)],
+                      prepare: { ctx in
+                LaunchAtLoginManager.galleryState = .disabled
+                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
+            }),
+            // UI-9 (58): Avancé with developer mode on, its switch and help shown.
+            dashboard("settings/avance-developpeur", section: .settings, pane: .advanced,
+                      configure: { _, ctx in ctx.defaults.set(true, forKey: GoalongDeveloperPreferences.enabledKey) }),
             // Recording on, so the history row asks for the missing access instead of « Fonction désactivée ».
             dashboard("settings/permission-manquante", section: .settings, pane: .permissions,
                       environment: { $0.permissions = .galleryMissing }, fixture: .recordingOn),
@@ -39,8 +65,37 @@ extension GalleryCatalog {
             panel("settings-sheets/connexion-jev", width: 560) { _ in AnyView(JevConnectionSheet()) },
             panel("settings-sheets/conservation", width: 700, height: 670) { _ in AnyView(HistoryRetentionSettingsSheet()) },
             panel("settings-sheets/partage-site", width: 740, clock: .injected) { _ in AnyView(GoalongWebsiteSharingSheet()) },
+            // UI-9 (11, 29): the two analysis windows opened from Réglages › Stockage; both inits are inert until a button is pressed.
+            panel("settings-sheets/comprendre-mon-travail", width: 760, clock: .injected) { _ in
+                AnyView(GoalongProfileStudio(onSend: { _ in }, localOnly: true))
+            },
+            panel("settings-sheets/analyse-demande-site", width: 700, clock: .injected) { _ in AnyView(GoalongSiteAnalysisSheet()) },
+            // UI-12B (29): the main state, connected, a request chosen and reviewed, « Analyser » active (inert model, no Codex).
+            panel("settings-sheets/analyse-demande-site-pret", width: 700, clock: .injected) { _ in
+                GoalongCapabilityConsentStore.shared.set(.chatGPTAnalysis, enabled: true, surface: .settings)
+                let model = GoalongSiteAnalysisModel(consent: { true }, makeSession: { throw CodexAppServerError.executableUnavailable })
+                let request = try GoalongSiteAnalysisRequest.parse(JSONSerialization.data(withJSONObject: [
+                    "schema": "goalong.analysis-request.v1", "requestId": "11111111-2222-4333-8444-555555555555",
+                    "date": "2026-09-07", "timezone": "Europe/Paris", "question": "Explain only these selected observations.",
+                    "data": ["totals": [["device": "SELECTED_PHONE", "kind": "phone", "source": "apple-screen-time", "seconds": 3600]]],
+                ], options: [.sortedKeys]))
+                model.setStateForTesting(request: request, connected: true, accountLabel: "ChatGPT connecté, Plus")
+                model.reviewed = true
+                return AnyView(GoalongSiteAnalysisSheet(model: model))
+            },
+            // UI-9 (48): « Projets suivis », with a model on the gallery's own folder (no real project, no agent read).
+            panel("settings-sheets/projets-suivis-vide", width: 620, height: 480) { ctx in
+                AnyView(GoalongDeveloperProjectsSheet(developer: developerModel(ctx, followed: [], suggested: [])))
+            },
+            panel("settings-sheets/projets-suivis", width: 620, height: 560) { ctx in
+                let site = GoalongDeveloperProject(root: URL(fileURLWithPath: "/Users/demo/Projets/goalong-site"), name: "goalong-site")
+                let app = GoalongDeveloperProject(root: URL(fileURLWithPath: "/Users/demo/Projets/goalong-app"), name: "goalong-app")
+                let seen = GoalongDeveloperProject(root: URL(fileURLWithPath: "/Users/demo/Projets/carnet"), name: "carnet")
+                return AnyView(GoalongDeveloperProjectsSheet(developer: developerModel(ctx, followed: [site, app], suggested: [seen])))
+            },
         ]
-        for (tab, name) in ["applications", "sites", "categories"].enumerated() {
+        // UI-15C (8): each name is the tab it shows (Données, Remplacements, Consignes).
+        for (tab, name) in ["donnees", "remplacements", "consignes"].enumerated() {
             entries.append(panel("settings-sheets/analyse-\(name)", width: 940, clock: .injected) { ctx in
                 let model = try GalleryFixtures.dashboardModel(ctx, .init(section: .settings, settingsPane: .chatGPT))
                 return AnyView(GoalongAnalysisSelectionSheet(model: model, selection: GoalongAnalysisSelection.load(),
@@ -48,7 +103,7 @@ extension GalleryCatalog {
             })
         }
         // A freshly added rule has no search text yet: the test area must not pretend it replaced something.
-        entries.append(panel("settings-sheets/analyse-sites-regle-vide", width: 940, clock: .injected) { ctx in
+        entries.append(panel("settings-sheets/analyse-remplacements-regle-vide", width: 940, clock: .injected) { ctx in
             let model = try GalleryFixtures.dashboardModel(ctx, .init(section: .settings, settingsPane: .chatGPT))
             var selection = GoalongAnalysisSelection.load()
             selection.replacements = [GoalongTextReplacement()]
@@ -68,7 +123,8 @@ extension GalleryCatalog {
              .unavailable("Une réparation d’autorisation est en cours. Aucun nouvel accès n’est confirmé.")),
         ]
         entries += activations.map { name, capability, status in
-            panel("permissions/\(name)", width: 620, height: 690) { _ in
+            // UI-13C (25): fitted height, as a real sheet sizes itself; a fixed 690 left ~40 % empty above the footer.
+            panel("permissions/\(name)", width: 620) { _ in
                 AnyView(SourceActivationSheet(capability: capability, surface: .settings, prepare: {},
                                               check: { _, done in done(status) }, initialStatus: status))
             }
@@ -89,6 +145,19 @@ extension GalleryCatalog {
                 return AnyView(LocalHistoryOnboardingView(model: built))
             }
         }
+    }
+
+    /// A developer model on the gallery's temporary folder, with fixed projects and no consent: it reads nothing real.
+    @MainActor private static func developerModel(_ ctx: GalleryContext, followed: [GoalongDeveloperProject],
+                                                  suggested: [GoalongDeveloperProject]) -> GoalongDeveloperModel {
+        let root = ctx.home.appendingPathComponent("developer", isDirectory: true)
+        let model = ctx.keep(GoalongDeveloperModel(root: root, consents: GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("capability-consent.json"))))
+        model.setSelectedProjectsForTesting(followed)
+        let day = Calendar.current.startOfDay(for: GoalongToday.now)
+        model.setValueForTesting(GoalongDeveloperDay(day: day, t3: T3CodeMetadataReader.read(day: day, enabled: false, shouldContinue: { true }),
+            agents: GoalongAgentProjectGrouping.group(.init(day: day), t3: nil, enabled: false), git: [],
+            files: .init(status: .noData, buckets: []), selectedProjects: followed, suggestions: suggested, developerStatus: .noData))
+        return model
     }
 }
 #endif

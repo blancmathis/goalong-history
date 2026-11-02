@@ -131,7 +131,7 @@ import SwiftUI
     func refresh() {
         let image = NSImage(systemSymbolName: controller.active ? "sun.horizon.fill" : "sun.horizon", accessibilityDescription: controller.stateLabel)
         image?.isTemplate = true; item.button?.image = image
-        item.button?.toolTip = "Braise · \(controller.stateLabel)\n\(controller.nextEvent)"
+        item.button?.toolTip = "Braise, \(controller.stateLabel)\n\(controller.nextEvent)"
     }
     func showPanel() {
         guard !panel.isShown, let button = item.button, button.window != nil else { return }
