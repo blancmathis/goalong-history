@@ -597,12 +597,12 @@
 
         /// UI-15A: the sidebar row holds one line (≤ 20 characters); the page says the rest.
         /// `storageNamedByBanner`: the banner already says the storage cause (GoalongAttentionBanner.storageSlot == .storage),
-        /// so the row stays neutral and does not repeat it (R8-6).
+        /// so the row only says the state, short (« Interrompu »), never the cause nor « Voir le bandeau » (R8-6).
         func sidebarTitle(recordingEnabled: Bool, globallyPaused: Bool, storageNamedByBanner: Bool = false) -> String {
             if globallyPaused { return "Tout est en pause" }
             if !recordingEnabled { return "Enregistrement coupé" }
             if isBackgroundPrivacyRule { return "Enregistrement actif" }
-            if storageNamedByBanner, storageFailure != nil { return "Voir le bandeau" }
+            if storageNamedByBanner, storageFailure != nil { return "Interrompu" }
             switch state {
             case .recording: return "Enregistrement actif"
             case .paused, .suppressed(.manualPause): return "En pause"

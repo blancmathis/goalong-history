@@ -255,13 +255,10 @@
             .contentShape(Rectangle())
         }
 
-        /// Same rule as GoalongAttentionBanner (storageSlot): the banner names a storage failure when the slot is .storage.
+        /// The banner's own slot rule (GoalongAttentionBanner.currentStorageSlot): the banner names a storage failure when the slot is .storage.
         private var storageNamedByBanner: Bool {
-            GoalongAttentionBanner.storageSlot(globallyPaused: globalPause.blocksActivity,
-                recording: GoalongRecordingStateNotice.kind(localEnabled: consents.isEnabled(.localComputerHistory),
-                    globallyPaused: globalPause.blocksActivity, dashboardVisible: model.recordingStatusIsLive,
-                    runtime: model.runtime.state, captureHealth: model.runtime.captureHealth?.state),
-                recordingNoticeOnPage: GoalongAttentionBanner.pagesWithRecordingNotice.contains(model.selectedSection)) == .storage
+            GoalongAttentionBanner.currentStorageSlot(model: model, localEnabled: consents.isEnabled(.localComputerHistory),
+                globallyPaused: globalPause.blocksActivity, section: model.selectedSection) == .storage
         }
 
         private var statusRow: some View {

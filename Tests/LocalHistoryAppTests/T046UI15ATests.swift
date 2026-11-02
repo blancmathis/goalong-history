@@ -41,10 +41,10 @@ final class T046UI15ATests: XCTestCase {
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: false), "Enregistrement actif")
     }
 
-    /// R8-6: when the banner already names the storage cause, the sidebar row does not repeat « Disque plein ».
+    /// R8-6: when the banner already names the storage cause, the sidebar row says only « Interrompu » (state), neither the cause nor « Voir le bandeau ».
     func testSidebarDoesNotRepeatStorageCauseNamedByBanner() {
         let full = runtime(.storageUnavailable(.diskFull))
-        XCTAssertEqual(full.sidebarTitle(recordingEnabled: true, globallyPaused: false, storageNamedByBanner: true), "Voir le bandeau")
+        XCTAssertEqual(full.sidebarTitle(recordingEnabled: true, globallyPaused: false, storageNamedByBanner: true), "Interrompu")
         XCTAssertEqual(full.sidebarTitle(recordingEnabled: true, globallyPaused: false, storageNamedByBanner: false), "Disque plein")
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: false, storageNamedByBanner: true),
                        "Enregistrement actif")
