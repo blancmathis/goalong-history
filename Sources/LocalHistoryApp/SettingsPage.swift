@@ -139,7 +139,7 @@ import AppKit
                                           options: Self.idleOptions(current: model.appliedSettings.foregroundIdleSeconds))
                             .fixedSize()
                             .accessibilityIdentifier("settings-foreground-idle-limit")
-                    }
+                    }.disabled(!consents.isEnabled(.localComputerHistory))
                     Text("Lire, réfléchir ou regarder sans cliquer compte aussi, tant que le délai ne s’écoule pas.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -153,11 +153,13 @@ import AppKit
                             .font(.callout).foregroundStyle(LHTheme.warning)
                     }
                 }
-                GoalongSettingsGroup(title: "Données enregistrées") { RecordingChoicesView(draft: recording, columns: 1) }
-                VisibleContextControl()
+                GoalongSettingsGroup(title: "Données enregistrées") {
+                    RecordingChoicesView(draft: recording, columns: 1, locked: !consents.isEnabled(.localComputerHistory))
+                }
+                // UI-9 (24, 44): inert but readable; the controls dim themselves, a group fade made the help ~2:1.
+                // R281-7: only the controls are disabled; « En savoir plus » stays usable.
+                VisibleContextControl().disabled(!consents.isEnabled(.localComputerHistory))
             }
-            // UI-9 (24, 44): inert but readable; the controls dim themselves, a group fade made the help ~2:1.
-            .disabled(!consents.isEnabled(.localComputerHistory))
             GoalongDisclosureGroup("Confidentialité avancée") {
                 VStack(alignment: .leading, spacing: 14) {
                     Toggle("Inclure les fenêtres privées détectées", isOn: Binding(
@@ -476,7 +478,7 @@ enum SettingsPane: Hashable {
                 // It names the real work, as the sidebar does: preparing an update is not a search.
                 Button {} label: {
                     HStack(spacing: 6) {
-                        ProgressView().controlSize(.mini); Text(updates.isChecking ? "Recherche…" : "Préparation…")
+                        ProgressView().controlSize(.mini).progressViewStyle(GoalongSpinnerStyle()); Text(updates.isChecking ? "Recherche…" : "Préparation…")
                     }
                 }
                 .buttonStyle(LHSecondaryButtonStyle()).disabled(true)

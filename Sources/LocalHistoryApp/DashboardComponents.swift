@@ -81,6 +81,8 @@
     struct LHNavigationButtonStyle: ButtonStyle {
         var selected = false
         var cornerRadius: CGFloat = LHTheme.controlRadius
+        /// Keep full color when disabled: help and disclosure rows stay readable inside a locked zone.
+        var readableWhenDisabled = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.isFocused) private var isFocused
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -105,7 +107,7 @@
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(isFocused ? LHTheme.accent : .clear, lineWidth: 2)
                 }
-                .opacity(isEnabled ? 1 : 0.45)
+                .opacity(isEnabled || readableWhenDisabled ? 1 : 0.6)
                 .contentShape(Rectangle())
                 .onHover { isHovered = $0 }
                 .animation(reduceMotion ? nil : LHTheme.hover, value: isHovered)
@@ -218,11 +220,29 @@
         }
     }
 
-    /// A state in one glance: the glyph carries the colour, the words stay in ink.
+    /// A state in one glance: the glyph carries the colour, the words stay in ink. Never a pill without words
+    /// (déc. 14, T-043 R-10): the title is required and is also what VoiceOver reads, unless a fuller
+    /// `accessibilityLabel` is given. `kind` picks the shared glyph of a state sort when no symbol is chosen.
     struct StatusPill: View {
         let title: String
         let symbol: String
         let tint: Color
+        var accessibilityLabel: String?
+
+        /// Shown when a caller passes an empty title: a pill always has words, and never stops the app (R281-10).
+        static let fallbackTitle = "Statut"
+
+        init(title: String, symbol: String, tint: Color, accessibilityLabel: String? = nil) {
+            self.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.fallbackTitle : title
+            self.symbol = symbol
+            self.tint = tint
+            self.accessibilityLabel = accessibilityLabel
+        }
+
+        init(title: String, kind: GoalongStateKind, tint: Color = LHTheme.secondaryText,
+             accessibilityLabel: String? = nil) {
+            self.init(title: title, symbol: kind.symbol, tint: tint, accessibilityLabel: accessibilityLabel)
+        }
 
         var body: some View {
             HStack(spacing: 5) {
@@ -233,6 +253,8 @@
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(LHTheme.insetBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel ?? title)
         }
     }
 
@@ -315,8 +337,8 @@
         }
     }
 
-    /// Centered empty state for a whole pane or list: the thread that has not started,
-    /// what is missing, and the one action that helps.
+    /// Centered empty state for a whole pane or list: what is missing and, at most, the one named action that
+    /// helps (déc. 9, T-043 R-10/R-11). No dotted thread: the state glyph alone, above the title.
     struct EmptyStateView: View {
         let symbol: String
         let title: String
@@ -324,18 +346,35 @@
         var buttonTitle: String?
         var action: (() -> Void)?
 
+        init(symbol: String, title: String, message: String, buttonTitle: String? = nil, action: (() -> Void)? = nil) {
+            self.symbol = symbol
+            self.title = title
+            self.message = message
+            self.buttonTitle = buttonTitle
+            self.action = action
+        }
+
+        init(kind: GoalongStateKind, title: String, message: String, buttonTitle: String? = nil,
+             action: (() -> Void)? = nil) {
+            self.init(symbol: kind.symbol, title: title, message: message, buttonTitle: buttonTitle, action: action)
+        }
+
         var body: some View {
             VStack(spacing: 10) {
-                GoalongThreadPlaceholder(width: 72).padding(.bottom, 6)
-                Label(title, systemImage: symbol)
+                Image(systemName: symbol).font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(LHTheme.secondaryText)
+                    .padding(.bottom, 2)
+                    .accessibilityHidden(true)
+                Text(title)
                     .font(LHTheme.cardTitleFont)
                     .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
                 Text(message)
                     .font(.system(size: 13))
                     .foregroundStyle(LHTheme.secondaryText)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 380)
-                if let buttonTitle, let action {
+                if let buttonTitle, !buttonTitle.isEmpty, let action {
                     Button(buttonTitle, action: action)
                         .buttonStyle(LHPrimaryButtonStyle())
                         .padding(.top, 6)

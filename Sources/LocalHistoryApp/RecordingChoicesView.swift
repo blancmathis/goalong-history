@@ -47,7 +47,10 @@ struct RecordingChoicesView: View {
     @Binding var draft: DashboardSettingsDraft
     /// Settings use one column so every switch sits on the shared right edge (UI-48).
     var columns = 2
-    @Environment(\.isEnabled) private var isEnabled
+    /// Locks the switches only, so each « En savoir plus » stays usable (R281-7). nil: locked when the view is disabled.
+    var locked: Bool? = nil
+    @Environment(\.isEnabled) private var environmentEnabled
+    private var isEnabled: Bool { !(locked ?? !environmentEnabled) }
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     /// Why the switches are locked. « Appels » is named only when it stays on (UI-12C, screens 24/44).
     static func lockedReason(localRecordingOn: Bool, callsOn: Bool) -> String {
@@ -113,7 +116,7 @@ struct RecordingChoicesView: View {
                                     Text("Réglé à part, dans Appels").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                 }
                                 Toggle(choice.title, isOn: choice.isOn)
-                                    .labelsHidden().toggleStyle(.goalongSwitchOnly)
+                                    .labelsHidden().toggleStyle(.goalongSwitchOnly).disabled(!isEnabled)
                                     .accessibilityIdentifier("recording-\(choice.id)")
                             }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         }

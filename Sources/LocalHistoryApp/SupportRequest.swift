@@ -259,7 +259,7 @@ struct SupportRequestView: View {
                 switch controller.phase {
                 case .idle, .preparing:
                     HStack(spacing: 10) {
-                        ProgressView().controlSize(.small)
+                        ProgressView().controlSize(.small).progressViewStyle(GoalongSpinnerStyle())
                         Text("Analyse des journaux techniques…").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 case .failed(let message):
