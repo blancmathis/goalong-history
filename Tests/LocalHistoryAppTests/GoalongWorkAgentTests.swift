@@ -107,7 +107,8 @@ final class GoalongWorkAgentTests: XCTestCase {
 
     func testCancellingTheParentStopsTheDetachedScan() async throws {
         final class Counter: @unchecked Sendable { let lock = NSLock(); var n = 0; var stopped = false
-            func tick(_ live: Bool) { lock.lock(); n += 1; if !live { stopped = true }; lock.unlock() } }
+            func tick(_ live: Bool) { lock.lock(); n += 1; if !live { stopped = true }; lock.unlock() }
+            var started: Bool { lock.lock(); defer { lock.unlock() }; return n > 0 } }
         let counter = Counter()
         let parent = Task {
             await GoalongWorkAgent.detachedForwardingCancellation(priority: .utility) {
@@ -119,7 +120,10 @@ final class GoalongWorkAgentTests: XCTestCase {
                 return true
             }
         }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // Wait for the real « scan started » signal (first tick), not a fixed delay: a loaded runner may start the detached task late.
+        let deadline = Date().addingTimeInterval(30)
+        while !counter.started && Date() < deadline { try await Task.sleep(nanoseconds: 2_000_000) }
+        XCTAssertTrue(counter.started, "the detached scan never started")
         parent.cancel()
         let finished = await parent.value
         XCTAssertFalse(finished)
