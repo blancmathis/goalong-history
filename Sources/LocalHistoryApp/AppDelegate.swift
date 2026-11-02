@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AgentActivity
     import AppKit
@@ -73,7 +74,7 @@
                     guard let window = controller.window else { return }
                     let connected = await websitePairing.connect(url: url, window: window)
                     if connected && pendingWebsiteURL == nil {
-                        UserDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
+                        GoalongDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
                         controller.show(section: .settings)
                         self.dashboardViewModel.settingsPane = .website
                         // A share link only reveals the picker: the credential did not change, so a
@@ -463,7 +464,7 @@
                 Diagnostics.write("Goalong reopened by its blocking guard")
             } else if !resumedSetup { showDashboardOnFirstConsentLaunch() }
             if GoalongGuardFiles.isGuardRelaunch {
-                UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
+                GoalongDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
             } else if resumedSetup {
                 // The activation toggles live in the Recording pane, not on the Settings home.
                 if let capability = PermissionRecovery.resumedCapability,
@@ -474,9 +475,9 @@
                 PermissionRecovery.expireResumedCapability(after: 30)
             } else if CommandLine.arguments.contains(PermissionRecovery.parentArgument) {
                 dashboardWindowController?.show(section: .settings)
-            } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || UserDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
-                UserDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
-                let previousSection = UserDefaults.standard.string(forKey: "goalong.restoreVisibleSection")
+            } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || GoalongDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
+                GoalongDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
+                let previousSection = GoalongDefaults.standard.string(forKey: "goalong.restoreVisibleSection")
                     .flatMap(DashboardSection.init(rawValue:)) ?? dashboardViewModel.selectedSection
                 dashboardWindowController?.show(section: previousSection)
             }
@@ -692,8 +693,8 @@
         func applicationWillTerminate(_ notification: Notification) {
             guard runtimeStarted else { return }
             if dashboardWindowController?.window?.isVisible == true {
-                UserDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
-                UserDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
+                GoalongDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
+                GoalongDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
             MainActor.assumeIsolated { ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown() }
             SoftwareUpdateManager.shared.stop()

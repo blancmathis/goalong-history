@@ -1,6 +1,7 @@
 #if os(macOS)
 import Combine
 import Foundation
+import AppleScreenTime
 
 enum JevMonitoringScope: String, Codable, CaseIterable {
     case always, sessionsOnly
@@ -20,7 +21,7 @@ extension Notification.Name {
     @Published private(set) var scope: JevMonitoringScope = .always
     @Published private(set) var error: String?
     private let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = GoalongDefaults.standard) {
         self.defaults = defaults
         guard defaults.object(forKey: Self.storageKey) != nil else { return }
         guard let data = defaults.data(forKey: Self.storageKey), data.count <= 1024,

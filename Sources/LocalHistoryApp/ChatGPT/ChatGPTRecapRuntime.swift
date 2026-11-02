@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Combine
@@ -562,7 +563,7 @@
             analysisSelectionProvider: @escaping () -> GoalongAnalysisSelection = { GoalongAnalysisSelection.load() },
             analysisSigningIdentityProvider: (() throws -> AnalysisRunSigningIdentity)? = nil,
             dayOverviewReader: ((Date) throws -> ChatGPTRecapDayOverview)? = nil,
-            defaults: UserDefaults = .standard
+            defaults: UserDefaults = GoalongDefaults.standard
         ) {
             self.defaults = defaults
             self.chatHistoryStore = chatHistoryStore

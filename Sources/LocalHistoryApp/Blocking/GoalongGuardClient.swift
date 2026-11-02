@@ -338,7 +338,7 @@ struct GuardEscalation {
     private nonisolated(unsafe) var connection: xpc_connection_t?
 
     /// nil outside an installed copy (`GoalongGuardGate`): the controller then has no guard at all.
-    static func standard(defaults: UserDefaults = .standard) -> GoalongGuardClient? {
+    static func standard(defaults: UserDefaults = GoalongDefaults.standard) -> GoalongGuardClient? {
         guard GoalongGuardGate.isAllowed, let identity = GoalongGuardGate.identity else { return nil }
         return GoalongGuardClient(identity: identity, defaults: defaults)
     }

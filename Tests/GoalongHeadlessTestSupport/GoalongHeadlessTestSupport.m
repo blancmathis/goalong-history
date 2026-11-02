@@ -428,6 +428,26 @@ static void cleanOnSignal(int sig) {
     raise(sig);
 }
 
+// Preferences (T-043 T1): under `swift test`, +[NSUserDefaults standardUserDefaults] is xctest's real domain
+// on this Mac (cfprefsd ignores CFFIXED_USER_HOME). For the whole run it returns one throwaway suite instead,
+// the same one `GoalongDefaults.standard` uses (name passed in GOALONG_TEST_DEFAULTS_SUITE). SwiftUI
+// `@AppStorage`, AppKit and test code then never read nor write the owner's settings. The name holds a UUID,
+// so the suite tracker deletes its plist at exit. Installed before the gallery guards, which wrap it.
+static NSUserDefaults *isolatedStandardSuite;
+static IMP replaceClassMethod(Class cls, SEL sel, id block);
+
+static void isolateStandardDefaults(void) {
+    const char *existing = getenv("GOALONG_TEST_DEFAULTS_SUITE");
+    NSString *name = (existing && *existing) ? [NSString stringWithUTF8String:existing]
+        : [@"goalong-tests-defaults-" stringByAppendingString:NSUUID.UUID.UUIDString];
+    setenv("GOALONG_TEST_DEFAULTS_SUITE", name.UTF8String, 1);
+    isolatedStandardSuite = [[NSUserDefaults alloc] initWithSuiteName:name];
+    if (!isolatedStandardSuite) return;
+    replaceClassMethod(NSUserDefaults.class, @selector(standardUserDefaults), ^id(id cls) {
+        return isolatedStandardSuite;
+    });
+}
+
 // Gallery guards (`make gallery`, `GallerySmokeTests`). Installed once at load, active only between
 // GoalongGalleryGuardsBegin() and GoalongGalleryGuardsTake(). While active: ordering a window
 // on screen, presenting a sheet or a modal and creating a status item are refused and recorded;
@@ -650,6 +670,7 @@ static void useThrowawayHomeIfNone(void) {
     if (!NSClassFromString(@"XCTestCase") && !environment[@"XCTestConfigurationFilePath"]) return;
     useThrowawayHomeIfNone();
     trackSuites();
+    isolateStandardDefaults();
     atexit(failIfWindowsShowed);   // atexit runs in reverse: this exits 1 after the suite cleanup
     atexit(cleanAtExit);
     static const int signals[] = {SIGINT, SIGTERM, SIGHUP, SIGABRT, SIGTRAP, SIGSEGV, SIGBUS, SIGILL};

@@ -697,6 +697,34 @@ if ! grep -Fq 'capabilityConsents.isEnabled(.appleScreenTime)' "$ROOT_DIR/Source
   failed=true
 fi
 
+# T-043 T1 (R282-8): preferences go through GoalongDefaults only. The app gets UserDefaults.standard there; a test or
+# gallery process gets one throwaway suite, so no test reads or writes this Mac's real settings.
+if ! python3 - "$ROOT_DIR" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+allowed = {"Features/AppleScreenTime/Sources/GoalongDefaults.swift",
+           "Tests/LocalHistoryAppTests/GoalongDefaultsIsolationTests.swift"}
+pattern = re.compile(r"UserDefaults\s*\.\s*standard\b|UserDefaults\??\s*=\s*\.standard\b|standardUserDefaults"
+                     r"|UserDefaults\(\s*suiteName:\s*(GoalongBundleIdentity|Bundle\.main|\"ai\.goalong)")
+bad = []
+for folder in ("Sources", "Features", "Tests"):
+    for path in sorted((root / folder).rglob("*.swift")):
+        relative = path.relative_to(root).as_posix()
+        if relative in allowed:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            code = line.split("//", 1)[0]
+            if pattern.search(code):
+                bad.append(f"{relative}:{number}: {line.strip()}")
+for entry in bad:
+    print(entry, file=sys.stderr)
+sys.exit(1 if bad else 0)
+PY
+then
+  echo "Preferences outside GoalongDefaults (use GoalongDefaults.standard: tests must never reach this Mac's settings)." >&2
+  failed=true
+fi
+
 if [[ "$failed" == true ]]; then
   echo "Privacy-boundary audit failed. Review the matches above." >&2
   exit 1

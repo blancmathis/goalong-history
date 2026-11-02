@@ -6,6 +6,7 @@ import LocalHistoryQueryCLI
 import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
+import AppleScreenTime
 
 /// T-046 C3: controls shown only in one state (a Jev break, a disconnected ChatGPT account, the management of the
 /// conversation sources, the Apple Screen Time details, a saved Health day). Each test puts the app in that state in the
@@ -249,10 +250,10 @@ final class T046C3RenderTests: XCTestCase {
     /// HOME and the previous value comes back at teardown.
     @MainActor private func fakeTokenFile() -> String {
         let key = "goalong.website.tokenFilePath"
-        let before = UserDefaults.standard.string(forKey: key)
-        addTeardownBlock { UserDefaults.standard.set(before, forKey: key) }
+        let before = GoalongDefaults.standard.string(forKey: key)
+        addTeardownBlock { GoalongDefaults.standard.set(before, forKey: key) }
         let path = AppPaths.applicationSupportDirectory.appendingPathComponent("t046-c3-acces.txt").path
-        UserDefaults.standard.set(path, forKey: key)
+        GoalongDefaults.standard.set(path, forKey: key)
         return path
     }
 

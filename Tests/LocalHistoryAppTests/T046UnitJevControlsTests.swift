@@ -2,6 +2,7 @@
 import Foundation
 import XCTest
 @testable import LocalHistoryApp
+import AppleScreenTime
 
 /// T-046 L9 lot 2 : ce que font les commandes de Jev (pause, reprise, extraits), sans vue.
 @MainActor final class T046UnitJevControlsTests: XCTestCase {
@@ -87,17 +88,17 @@ import XCTest
     }
     func testExcerptSwitchStoresTheChosenValue() {
         let key = JevMonitor.excerptKey
-        let before = UserDefaults.standard.object(forKey: key)
-        defer { if let before { UserDefaults.standard.set(before, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) } }
+        let before = GoalongDefaults.standard.object(forKey: key)
+        defer { if let before { GoalongDefaults.standard.set(before, forKey: key) } else { GoalongDefaults.standard.removeObject(forKey: key) } }
         let richKey = ActivityAnalysisPreferences.richContextEnabledKey
-        let richBefore = UserDefaults.standard.object(forKey: richKey)
-        defer { if let richBefore { UserDefaults.standard.set(richBefore, forKey: richKey) } else { UserDefaults.standard.removeObject(forKey: richKey) } }
-        UserDefaults.standard.set(true, forKey: richKey)
+        let richBefore = GoalongDefaults.standard.object(forKey: richKey)
+        defer { if let richBefore { GoalongDefaults.standard.set(richBefore, forKey: richKey) } else { GoalongDefaults.standard.removeObject(forKey: richKey) } }
+        GoalongDefaults.standard.set(true, forKey: richKey)
         let m = JevMonitor(loadLocalSettings: false)
-        m.setIncludeText(true); XCTAssertTrue(UserDefaults.standard.bool(forKey: key)); XCTAssertTrue(m.includeText)
-        m.setIncludeText(false); XCTAssertFalse(UserDefaults.standard.bool(forKey: key))
+        m.setIncludeText(true); XCTAssertTrue(GoalongDefaults.standard.bool(forKey: key)); XCTAssertTrue(m.includeText)
+        m.setIncludeText(false); XCTAssertFalse(GoalongDefaults.standard.bool(forKey: key))
         XCTAssertFalse(m.includeText, "sans « Texte affiché », aucun extrait n’est joint")
-        UserDefaults.standard.set(false, forKey: richKey); m.setIncludeText(true)
+        GoalongDefaults.standard.set(false, forKey: richKey); m.setIncludeText(true)
         XCTAssertFalse(m.includeText, "sans le contexte riche, l’extrait n’est pas joint même demandé")
     }
 }

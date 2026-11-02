@@ -1,4 +1,5 @@
 import Foundation
+import AppleScreenTime
 
 /// Availability preferences never grant a recording or sharing capability.
 struct BackgroundContinuityPreferences {
@@ -8,7 +9,7 @@ struct BackgroundContinuityPreferences {
     static let blockingForcedLoginKey = "blockingForcedLoginItem"
     let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    init(defaults: UserDefaults = GoalongDefaults.standard) { self.defaults = defaults }
 
     var keepRunning: Bool {
         get { defaults.object(forKey: Self.keepRunningKey) as? Bool ?? true }
@@ -64,7 +65,7 @@ struct BackgroundSessionJournal {
     static let exitReasonKey = "goalong.runtime.lastExitReason.v1"
     let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    init(defaults: UserDefaults = GoalongDefaults.standard) { self.defaults = defaults }
 
     @discardableResult
     func begin(now: Date = Date()) -> Bool {

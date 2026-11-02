@@ -4,6 +4,7 @@ import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
 @testable import LocalHistoryCore
+import AppleScreenTime
 
 /// Opt-in native rendering. Refuses to construct any model outside an isolated home.
 /// Never starts AppDelegate, capture, login items or external source discovery.
@@ -207,10 +208,10 @@ final class GoalongBrandRenderingTests: XCTestCase {
         XCTAssertEqual(model.selectedSection, .history)
         model.selectSection(.overview)
         XCTAssertEqual(model.selectedSection, .overview)
-        UserDefaults.standard.set(true, forKey: "goalongOnboardingPrivacyReviewedV1")
+        GoalongDefaults.standard.set(true, forKey: "goalongOnboardingPrivacyReviewedV1")
         for setupStep in SetupStep.allCases {
             let step = setupStep.rawValue
-            UserDefaults.standard.set(step, forKey: "goalongOnboardingStep")
+            GoalongDefaults.standard.set(step, forKey: "goalongOnboardingStep")
             let onboarding = NSHostingController(rootView: LocalHistoryOnboardingView(model: model)
                 .foregroundStyle(LHTheme.text).tint(LHTheme.accent).accentColor(LHTheme.accent)
                 .frame(width: 1080, height: 680))
@@ -269,7 +270,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
         // Exercise the real first-activation gate with mock OS permission, never
         // with the user's recorder, protected sources, or external services.
         do {
-            let defaults = UserDefaults.standard
+            let defaults = GoalongDefaults.standard
             let keys = [GoalongRecordingSetup.reviewedKey, GoalongRecordingSetup.preparedKey,
                         GoalongRecordingSetup.explicitChoicesKey, "goalongOnboardingPrivacyReviewedV1",
                         ActivityAnalysisPreferences.richContextEnabledKey]
@@ -347,7 +348,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
         if environment["GOALONG_JOURNEY_INTERACTIVE"] == "1" {
             app.setActivationPolicy(.regular)
             window.title = "Goalong Journey QA — synthetic data only"
-            UserDefaults.standard.set(0, forKey: "goalongOnboardingStep")
+            GoalongDefaults.standard.set(0, forKey: "goalongOnboardingStep")
             model.alert = nil; model.showWelcome = true
             let interactive = NSHostingController(rootView: LocalHistoryDashboardView(model: model)
                 .environment(\.sourceAccessCheck, { _, done in done(.fullDiskAccess) }))

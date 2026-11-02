@@ -5,6 +5,7 @@ import LocalHistoryQueryCLI
 import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
+import AppleScreenTime
 
 /// T-046 L5d: sheets with a simple constructor that no test rendered. Each test renders the view off screen
 /// (no window, no focus) and checks the title, the controls and the state the user sees.
@@ -23,8 +24,8 @@ final class T046L5dRenderTests: XCTestCase {
             NSApplication.shared.accessibilitySetValue(true, forAttribute: Self.enhancedUI)
         }
         for key in Self.isolatedKeys {
-            if let value = UserDefaults.standard.object(forKey: key) { defaultsBefore[key] = value }
-            UserDefaults.standard.removeObject(forKey: key)
+            if let value = GoalongDefaults.standard.object(forKey: key) { defaultsBefore[key] = value }
+            GoalongDefaults.standard.removeObject(forKey: key)
         }
     }
 
@@ -32,7 +33,7 @@ final class T046L5dRenderTests: XCTestCase {
         await MainActor.run {
             NSApplication.shared.accessibilitySetValue(enhancedUIBefore ?? false, forAttribute: Self.enhancedUI)
         }
-        for key in Self.isolatedKeys { UserDefaults.standard.set(defaultsBefore[key], forKey: key) }
+        for key in Self.isolatedKeys { GoalongDefaults.standard.set(defaultsBefore[key], forKey: key) }
         try await super.tearDown()
     }
 

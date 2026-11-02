@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Combine
@@ -164,7 +165,7 @@
             }
         }
 
-        func suggestedOnboardingPreference(defaults: UserDefaults = .standard) -> Bool {
+        func suggestedOnboardingPreference(defaults: UserDefaults = GoalongDefaults.standard) -> Bool {
             let consent = GoalongCapabilityConsentStore.shared.document.consent(for: .launchAtLogin)
             return BackgroundContinuityPreferences.suggestedLoginPreference(
                 storedPreference: defaults.object(forKey: "launchAtLoginPreference") as? Bool,
@@ -182,7 +183,7 @@
             }
             // Save explicit opt-outs even when the previous consent was already off.
             // Never re-register in refresh(), after a wake, or merely after an update.
-            UserDefaults.standard.set(enabled, forKey: "launchAtLoginPreference")
+            GoalongDefaults.standard.set(enabled, forKey: "launchAtLoginPreference")
             let preferences = BackgroundContinuityPreferences()
             if BackgroundContinuityPreferences.keepsLoginItem(enabled: enabled, registered: isRegistered,
                                                               lockActive: BlockingRuntime.shared.controller?.hasLocks == true) {

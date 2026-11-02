@@ -1,6 +1,7 @@
 #if os(macOS)
 import Foundation
 import CryptoKit
+import AppleScreenTime
 
 /// Remembers only user-requested recovery steps, not permission grants or consent.
 /// Bound to this installation/build and expiring after one day; never exported raw.
@@ -26,7 +27,7 @@ enum PermissionRecoveryLedger {
                      bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""].joined(separator: "|")
         return SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
     }
-    static func load(_ permission: SourceAccessStatus, defaults: UserDefaults = .standard,
+    static func load(_ permission: SourceAccessStatus, defaults: UserDefaults = GoalongDefaults.standard,
                      now: Date = Date(), scope: String = currentScope) -> Progress {
         lock.lock(); defer { lock.unlock() }
         guard let service = PermissionRepair.service(for: permission),
@@ -40,7 +41,7 @@ enum PermissionRecoveryLedger {
         return record.progress
     }
     static func record(_ action: Action, for permission: SourceAccessStatus,
-                       defaults: UserDefaults = .standard, now: Date = Date(), scope: String = currentScope) {
+                       defaults: UserDefaults = GoalongDefaults.standard, now: Date = Date(), scope: String = currentScope) {
         guard let service = PermissionRepair.service(for: permission) else { return }
         lock.lock(); defer { lock.unlock() }
         var progress = load(permission, defaults: defaults, now: now, scope: scope)
@@ -73,7 +74,7 @@ enum PermissionRecoveryLedger {
         default: return []
         }
     }
-    static func clear(_ permission: SourceAccessStatus, defaults: UserDefaults = .standard) {
+    static func clear(_ permission: SourceAccessStatus, defaults: UserDefaults = GoalongDefaults.standard) {
         guard let service = PermissionRepair.service(for: permission) else { return }
         lock.lock(); defer { lock.unlock() }
         defaults.removeObject(forKey: prefix + service)
@@ -81,7 +82,7 @@ enum PermissionRecoveryLedger {
     }
     /// A restart that names no permission counts for every permission the user opened Settings for
     /// during this attempt, not only the last one (`active`), so none asks for a second restart.
-    static func recordRelaunchForOpenedPermissions(defaults: UserDefaults = .standard) {
+    static func recordRelaunchForOpenedPermissions(defaults: UserDefaults = GoalongDefaults.standard) {
         let opened = [SourceAccessStatus.accessibility, .inputMonitoring, .fullDiskAccess]
             .filter { load($0, defaults: defaults) != Progress() }
         let active = activePermission(defaults: defaults)
@@ -91,7 +92,7 @@ enum PermissionRecoveryLedger {
             defaults.set(service, forKey: prefix + "active")
         }
     }
-    static func activePermission(defaults: UserDefaults = .standard) -> SourceAccessStatus? {
+    static func activePermission(defaults: UserDefaults = GoalongDefaults.standard) -> SourceAccessStatus? {
         lock.lock(); defer { lock.unlock() }
         let status: SourceAccessStatus
         switch defaults.string(forKey: prefix + "active") {
