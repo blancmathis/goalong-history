@@ -147,10 +147,17 @@
             .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 12)
         }
 
+        static func readyTitle(recordingOn: Bool, paused: Bool, permissionMissing: Bool = false) -> String {
+            recordingOn && !paused && !permissionMissing ? "Vous pouvez commencer" : "Presque prêt"
+        }
+
         var readyPage: some View {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Vous pouvez commencer").goalongPageTitle()
+                    // R-79: the title says the real state; nothing recorded yet reads « Presque prêt ».
+                    Text(Self.readyTitle(recordingOn: consents.isEnabled(.localComputerHistory),
+                                         paused: pauseRevision >= 0 && GoalongGlobalPause.load().blocksActivity,
+                                         permissionMissing: !GoalongAccessibilityTrust.isTrusted)).goalongPageTitle()
                     Text(pauseRevision >= 0 && GoalongGlobalPause.load().blocksActivity
                          ? "Tout le suivi est suspendu : rien n’est enregistré pour l’instant. Reprenez-le pour que votre fil apparaisse dans Activité."
                          : consents.isEnabled(.localComputerHistory)

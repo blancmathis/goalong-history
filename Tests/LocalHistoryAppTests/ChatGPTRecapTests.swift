@@ -2833,3 +2833,29 @@
         }
     }
 #endif
+
+#if os(macOS)
+@MainActor final class ChatGPTRecapR4aTests: XCTestCase {
+    func testReadInProgressIsOneStateInTheReportCard() {
+        // R-71: no « Lecture… » card under « Aucun rapport »; the report card itself shows the read.
+        XCTAssertFalse(ChatGPTRecapPage.showsSeparateLoadingCard(hasRecap: false, loadingOverview: true))
+        XCTAssertTrue(ChatGPTRecapPage.showsSeparateLoadingCard(hasRecap: true, loadingOverview: true))
+        XCTAssertFalse(ChatGPTRecapPage.showsSeparateLoadingCard(hasRecap: true, loadingOverview: false))
+    }
+
+    func testAnalysisScheduleIsGreyedUntilTheUpdate() {
+        XCTAssertTrue(GoalongChatGPTSettings.analysisLocked(.codexUnavailable))
+        XCTAssertFalse(GoalongChatGPTSettings.analysisLocked(.signedOut))
+        XCTAssertFalse(GoalongChatGPTSettings.analysisLocked(.connected(email: nil, plan: nil)))
+    }
+
+    // R282-1: locked version: ON switches stay usable (to withdraw), OFF ones are blocked.
+    func testLockedVersionStillLetsTheUserSwitchOffConsentAndAutomaticAnalysis() {
+        XCTAssertFalse(GoalongChatGPTSettings.switchDisabled(isOn: true, locked: true, otherwiseBlocked: false))
+        XCTAssertFalse(GoalongChatGPTSettings.switchDisabled(isOn: true, locked: true, otherwiseBlocked: true))
+        XCTAssertTrue(GoalongChatGPTSettings.switchDisabled(isOn: false, locked: true, otherwiseBlocked: false))
+        XCTAssertTrue(GoalongChatGPTSettings.switchDisabled(isOn: false, locked: false, otherwiseBlocked: true))
+        XCTAssertFalse(GoalongChatGPTSettings.switchDisabled(isOn: false, locked: false, otherwiseBlocked: false))
+    }
+}
+#endif
