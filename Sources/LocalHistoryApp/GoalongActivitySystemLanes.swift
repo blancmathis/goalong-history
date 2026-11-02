@@ -138,22 +138,19 @@ struct GoalongAgendaSection: View {
         .accessibilityIdentifier("activity-agenda")
     }
 
-    /// One sentence on the page; what Goalong reads and keeps waits in the disclosure.
+    /// What Goalong reads here. R-96 (R4d-15): it sits in the page's one help disclosure, « Comment lire ces chiffres ? ».
+    static let readingNotes = [
+        "Un appel n’est pas la preuve d’une réunion. Goalong ne lit ni le son ni l’image.",
+        "Si vous excluez tout un moment de l’enregistrement, la caméra n’est pas lue et la journée reste incomplète.",
+        "Les titres de l’agenda s’affichent ici sans jamais être enregistrés.",
+    ]
+
+    /// One sentence on the page; what Goalong reads waits in the page's help disclosure.
     private var explanation: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Un appel compte quand le micro ou la caméra sert à une app. Il ne s’ajoute pas au temps actif.")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            GoalongDisclosureGroup("Ce que Goalong lit") {
-                VStack(alignment: .leading, spacing: 9) {
-                    Text("Un appel n’est pas la preuve d’une réunion. Goalong ne lit ni le son ni l’image.")
-                    Text("Si vous excluez tout un moment de l’enregistrement, la caméra n’est pas lue et la journée reste incomplète.")
-                    Text("Les titres de l’agenda s’affichent ici sans jamais être enregistrés.")
-                }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 10).padding(.bottom, 8)
-            }.font(.system(size: 13)).padding(.horizontal, -6)
-        }
-        .frame(maxWidth: 760, alignment: .leading)
+        Text("Un appel compte quand le micro ou la caméra sert à une app. Il ne s’ajoute pas au temps actif.")
+            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: 760, alignment: .leading)
     }
 
     /// A day with nothing read: the waiting thread and the way to the sources, as every empty state.
@@ -323,6 +320,9 @@ struct GoalongSleepSection: View {
                             Text(stage.id).font(.system(size: 13)).lineLimit(1)
                             Spacer(minLength: 8)
                             Text(GoalongAnalyticsFormatting.duration(stage.seconds)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                            // R-91 (R4d-11): each bar says its share, as the task bars do.
+                            Text(Self.share(stage.seconds, of: total)).font(.system(size: 12)).monospacedDigit()
+                                .foregroundStyle(LHTheme.secondaryText).frame(minWidth: 36, alignment: .trailing)
                         }
                         GoalongShareBar(share: stage.seconds / total, color: LHTheme.secondaryText)
                     }
@@ -334,6 +334,11 @@ struct GoalongSleepSection: View {
             }
         }
         .accessibilityIdentifier("activity-sleep")
+    }
+
+    /// « 23 % »: the share of one stage in the night, rounded, with a non-breaking space.
+    nonisolated static func share(_ seconds: TimeInterval, of total: TimeInterval) -> String {
+        "\(Int((max(0, min(1, seconds / max(1, total))) * 100).rounded()))\u{00A0}%"
     }
 
     private var lead: String {
