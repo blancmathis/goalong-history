@@ -82,7 +82,7 @@ extension GalleryCatalog {
             // R4e-suite B: the gallery clock is 23 Oct, so the entry above shows today (« pas encore »); this one shows the day before.
             dashboard("historique/journee-passee-vide", section: .history, fixture: .recordingOn,
                       configure: { model, _ in
-                          model.selectedDay = GalleryClock.calendar.date(byAdding: .day, value: -1, to: GalleryClock.today) ?? GalleryClock.today
+                          model.selectDay(GalleryClock.calendar.date(byAdding: .day, value: -1, to: GalleryClock.today) ?? GalleryClock.today)
                       }),
             dashboard("historique/chronologie", section: .history, sizes: [.window, .minimum, .full(1240)],
                       fixture: .realistic),
