@@ -50,7 +50,7 @@ extension GalleryCatalog {
         return [
             dashboard("terminal/installe", section: .cli, note: "la commande goalong est installée dans le Terminal",
                       configure: { _, ctx in try installCLILink(ctx) }),
-            GalleryEntry("temps-ecran/importe", sizes: [.window], clock: .injected,
+            GalleryEntry("temps-ecran/importe", sizes: [.window, .full(1240)], clock: .injected,
                          note: "un jour de Temps d'écran lu : applications et site",
                          ready: { _ in screenTime.map { $0.summary != nil && !$0.isBusy } ?? false }) { ctx in
                 try GalleryFixtureHome.install(.recordingOn)

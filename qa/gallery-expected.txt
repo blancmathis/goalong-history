@@ -1662,3 +1662,113 @@ support/retour-journal-desactive--dark--580x660.png   # T-043 R4c R9B-43 : bouto
 support/retour-journal-desactive--light--580x660.png  # T-043 R4c R9B-43 : bouton dans le constat
 support/journal-desactive-action--dark--580x660.png   # T-043 R4c R9B-43 : nouvelle entrée, retour court
 support/journal-desactive-action--light--580x660.png  # T-043 R4c R9B-43 : nouvelle entrée, retour court
+activite/mode-developpeur--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+activite/mode-developpeur--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+activite/traces-isolees--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+activite/traces-isolees--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+agenda/reglages-acces-non-demande--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+agenda/reglages-acces-non-demande--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+agenda/reglages-acces-refuse--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+agenda/reglages-acces-refuse--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+ambiance/etroit--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/etroit--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/lecture--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/lecture--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/prete--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/prete--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/telechargement--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ambiance/telechargement--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+bilan/non-connecte--dark--full.png   # T-043 R3 R-61 : montre « Non connecté » (compte non connecté), cohérent avec bilan/rapport (1 h 28 / 1 h 07, apps = 88 min)
+bilan/non-connecte--light--full.png   # T-043 R3 R-61 : montre « Non connecté » (compte non connecté), cohérent avec bilan/rapport (1 h 28 / 1 h 07, apps = 88 min)
+confidentialite/choix-par-defaut--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/choix-par-defaut--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/pause-globale--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/pause-globale--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/suivi-actif--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+confidentialite/suivi-actif--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+fenetre/espace-faible--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+fenetre/espace-faible--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+programme/feuille-liste--dark.png   # T-043 R3 R-60 : feuille entière, sans hauteur fixe ni bas rogné ; R-62 : mot-clé « mercato » (≠ exemple du champ)
+programme/feuille-liste--light.png   # T-043 R3 R-60 : feuille entière, sans hauteur fixe ni bas rogné ; R-62 : mot-clé « mercato » (≠ exemple du champ)
+programme/feuille-liste-verrouillee--dark.png   # T-043 R3 R-60 : feuille entière, sans hauteur fixe ni bas rogné ; R-62 : mot-clé « mercato » (≠ exemple du champ)
+programme/feuille-liste-verrouillee--light.png   # T-043 R3 R-60 : feuille entière, sans hauteur fixe ni bas rogné ; R-62 : mot-clé « mercato » (≠ exemple du champ)
+ralentissement/app--dark.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+ralentissement/app--light.png   # T-043 R3 R-60 : cadre à la hauteur du contenu (marge 8 pt pour les cartes isolées)
+settings/avance-developpeur--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/avance-developpeur--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/permissions--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/permissions--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/stockage--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+settings/stockage--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+temps-ecran/importe--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+temps-ecran/importe--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+temps-ecran/vide--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+temps-ecran/vide--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+terminal/aide--dark--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+terminal/aide--light--full.png   # T-043 R3 R-60 : image pleine page, cadre ≥ contenu
+ambiance/a-installer--dark.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+ambiance/a-installer--light.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/chargement--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/chargement--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/erreur--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/erreur--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/rapport--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+bilan/rapport--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+conversations-ia/vide--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+conversations-ia/vide--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+fenetre/pause-globale--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+fenetre/pause-globale--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+historique/journee-vide--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+historique/journee-vide--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+partage/avec-donnees--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+partage/avec-donnees--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+partage/vide--dark--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+partage/vide--light--full.png   # T-043 R3 : écart voulu face à int3 (nouveau), cadre ≥ contenu / état posé par l'entrée
+settings/chatgpt-consentement--dark.png   # T-043 R3 : écart voulu face à int3 (changé), cadre ≥ contenu ou état posé par l'entrée
+settings/chatgpt-consentement--light.png   # T-043 R3 : écart voulu face à int3 (changé), cadre ≥ contenu ou état posé par l'entrée
+activite/apercu-developpeur--dark--full.png   # T-043 R3 R-62 : texte « coupé » remplacé par « réparti » (GoalongAnalyticsPreview.swift ; boîte 588,1586 847×26) ; ligne R1 déjà dans int3, redéclarée
+activite/apercu-developpeur--light--full.png   # T-043 R3 R-62 : texte « coupé » remplacé par « réparti » (GoalongAnalyticsPreview.swift ; boîte 588,1586 847×26) ; ligne R1 déjà dans int3, redéclarée
+agenda/reglages-acces-non-demande--dark--1240x1560.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+agenda/reglages-acces-non-demande--light--1240x1560.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+agenda/reglages-acces-refuse--dark--1240x1560.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+agenda/reglages-acces-refuse--light--1240x1560.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/a-installer--dark--900x1250.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/a-installer--light--900x1250.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/etroit--dark--640x900.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/etroit--light--640x900.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/lecture--dark--900x1500.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/lecture--light--900x1500.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/prete--dark--900x1300.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/prete--light--900x1300.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/telechargement--dark--900x560.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ambiance/telechargement--light--900x560.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+bilan/non-connecte--dark.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+bilan/non-connecte--light.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+bilan/rapport--dark.png   # T-043 R3 R-62 : Notes 13 → 23 min, totaux = somme des parties (boîte 774,1357 660×47) ; ligne R1 déjà dans int3, redéclarée
+bilan/rapport--light.png   # T-043 R3 R-62 : Notes 13 → 23 min, totaux = somme des parties (boîte 774,1357 660×47) ; ligne R1 déjà dans int3, redéclarée
+concentration-panneaux/feuille-bilan--dark.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/feuille-bilan--light.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/limite--dark.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/limite--light.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/matin--dark.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/matin--light.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/phase-pause--dark.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/phase-pause--light.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/phase-travail--dark.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/phase-travail--light.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/revue-de-fin--dark.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/revue-de-fin--light.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/revue-sans-mesure--dark.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/revue-sans-mesure--light.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/soir--dark.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+concentration-panneaux/soir--light.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+programme/feuille-liste--dark--600x900.png   # T-043 R3 R-60 : clé sans hauteur fixe (feuille entière, voir feuille-liste--*.png) ; ligne R1 déjà dans int3, redéclarée
+programme/feuille-liste--light--600x900.png   # T-043 R3 R-60 : clé sans hauteur fixe (feuille entière, voir feuille-liste--*.png) ; ligne R1 déjà dans int3, redéclarée
+programme/feuille-liste-verrouillee--dark--600x900.png   # T-043 R3 R-60 : clé sans hauteur fixe (feuille entière, voir feuille-liste--*.png) ; ligne R1 déjà dans int3, redéclarée
+programme/feuille-liste-verrouillee--light--600x900.png   # T-043 R3 R-60 : clé sans hauteur fixe (feuille entière, voir feuille-liste--*.png) ; ligne R1 déjà dans int3, redéclarée
+ralentissement/app--dark--420x168.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+ralentissement/app--light--420x168.png   # T-043 R3 : écart voulu face à int3 (cadre ≥ contenu ou état posé par l'entrée ; ligne R1 déjà dans int3, redéclarée)
+settings/chatgpt--light.png   # T-043 R3 R282-8 : « Analyser automatiquement » rendu éteint (réglage forcé, plus la valeur de la machine ; boîte 514,1019 1412×26)
+settings/chatgpt--dark.png   # T-043 R3 R282-8 : « Analyser automatiquement » rendu éteint (réglage forcé, plus la valeur de la machine ; boîte 514,1019 1412×26)
+concentration-distractions/vide--dark--900x760.png   # T-043 R3 R-61 : état « vide » réel, aucune liste affichée (boîte 64,381 1519×702)
+concentration-distractions/vide--light--900x760.png   # T-043 R3 R-61 : état « vide » réel, aucune liste affichée (boîte 64,381 1519×702)

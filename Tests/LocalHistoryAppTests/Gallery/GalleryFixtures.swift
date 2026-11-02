@@ -136,7 +136,7 @@ import SwiftUI
                   program: BlockProgram(ranges: [BlockProgramRange(weekdays: Set(1...5), startMinute: 540, endMinute: 1_080)],
                                         lockedUntil: nil),
                   quotaMinutesPerDay: 20, breaks: BlockBreaks(count: 3, minutes: 5),
-                  exceptions: [BlockSiteRule(pattern: "reddit.com/r/swift")], keywords: ["match en direct", "transfert"],
+                  exceptions: [BlockSiteRule(pattern: "reddit.com/r/swift")], keywords: ["mercato", "transfert"],
                   reason: "Finir le mémoire avant vendredi.",
                   triggers: BlockTriggers(apps: [BlockAppRule(bundleIdentifier: "com.apple.dt.Xcode", name: "Xcode")]),
                   earn: BlockEarn())

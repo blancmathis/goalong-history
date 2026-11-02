@@ -50,6 +50,12 @@ struct GalleryImage {
         ActivityAnalysisRuntime.shared.clock = { GalleryClock.now }
         // « Aujourd’hui » in the views is the gallery day, whatever the real date (C2-couverture-02).
         GoalongToday.galleryClock = { GalleryClock.now }
+        // R282-8: « Analyser automatiquement » is off unless an entry turns it on: the machine's value (read through
+        // `UserDefaults.standard` whatever the HOME) is hidden by a volatile argument-domain value, never written.
+        UserDefaults.standard.setVolatileDomain(
+            UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+                .merging(["chatgptRecap.automaticEnabled": false]) { _, new in new },
+            forName: UserDefaults.argumentDomain)
         warmSingletons()
     }
 
@@ -66,6 +72,7 @@ struct GalleryImage {
         let hidesHostIcons: Bool
         let iconProvider: ((String) -> NSImage?)?
         let activationPolicy: NSApplication.ActivationPolicy
+        let argumentDomain: [String: Any]
     }
 
     static func saveGlobals() -> ProcessGlobals {
@@ -76,7 +83,8 @@ struct GalleryImage {
                        applications: GoalongApplicationCatalog.galleryApplications,
                        today: GoalongToday.galleryClock, hidesHostIcons: AppIconView.galleryHidesHostIcons,
                        iconProvider: AppIconView.galleryIconProvider,
-                       activationPolicy: NSApplication.shared.activationPolicy())
+                       activationPolicy: NSApplication.shared.activationPolicy(),
+                       argumentDomain: UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain))
     }
 
     static func restoreGlobals(_ saved: ProcessGlobals) {
@@ -89,6 +97,7 @@ struct GalleryImage {
         GoalongToday.galleryClock = saved.today
         AppIconView.galleryHidesHostIcons = saved.hidesHostIcons
         AppIconView.galleryIconProvider = saved.iconProvider
+        UserDefaults.standard.setVolatileDomain(saved.argumentDomain, forName: UserDefaults.argumentDomain)
         let app = NSApplication.shared
         if app.activationPolicy() != saved.activationPolicy { app.setActivationPolicy(saved.activationPolicy) }
     }

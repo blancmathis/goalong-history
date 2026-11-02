@@ -14,7 +14,7 @@ extension GalleryCatalog {
             focusBlockCount: 2,
             computerApplications: [Usage(id: "xcode", name: "Xcode", seconds: 2_400, detail: nil),
                                    Usage(id: "safari", name: "Safari", seconds: 1_500, detail: nil),
-                                   Usage(id: "notes", name: "Notes", seconds: 780, detail: nil)],
+                                   Usage(id: "notes", name: "Notes", seconds: 1_380, detail: nil)],
             screenTimeSeconds: 0, screenTimeDevices: [], screenTimeApplications: [],
             agentSessions: 0, agentMessages: 0, agentToolCalls: 0, agentErrors: 0, analyzedAgentSessions: 0)
     }
@@ -47,21 +47,29 @@ extension GalleryCatalog {
     }
 
     /// One state of the page. `reader` replaces the day's local read; `ready` says the state is on screen.
-    private static func recapEntry(_ id: String, saved: Bool = false, note: String,
+    private static func recapEntry(_ id: String, saved: Bool = false, signedOut: Bool = false, note: String,
                                    reader: @escaping (GalleryContext) -> (Date) throws -> ChatGPTRecapDayOverview,
                                    ready: @escaping (ChatGPTRecapRuntime) -> Bool) -> GalleryEntry {
         var runtime: ChatGPTRecapRuntime?
         var model: DashboardViewModel?
         // UI-13C (34): inside the real window, like bilan/non-connecte, so every state has the sidebar and the return bar.
-        return GalleryEntry(id, sizes: [.window], clock: .injected, dashboardWindow: true, note: note,
+        return GalleryEntry(id, sizes: [.window, .full(1240)], clock: .injected, dashboardWindow: true, note: note,
                             section: .chatGPTRecap,
                             ready: { ctx in
                                 guard let model, GalleryFixtures.dashboardReady(model)(ctx) else { return false }
-                                return runtime.map(ready) ?? false
+                                guard let runtime else { return false }
+                                // R-61: with no Codex the page's own check ends on « mise à jour »; the signed-out state is
+                                // then set on the page's runtime, after the page appeared, and read back.
+                                if signedOut, runtime.dayOverview != nil { runtime.setConnectionStateForTesting(.signedOut) }
+                                return ready(runtime)
                             }) { ctx in
             ctx.environment.usedBytes = GalleryFixtureHome.usedBytes(.recordingOn)
             try GalleryFixtureHome.install(.recordingOn)
-            GoalongCapabilityConsentStore.shared.set(.chatGPTAnalysis, enabled: true, surface: .settings)
+            // R282-8: consent is the entry's own and is given back; automatic analysis is off in every picture.
+            let consent = GoalongCapabilityConsentStore.shared
+            let consentWas = consent.isEnabled(.chatGPTAnalysis)
+            ctx.cleanups.append { consent.set(.chatGPTAnalysis, enabled: consentWas, surface: .settings) }
+            consent.set(.chatGPTAnalysis, enabled: true, surface: .settings)
             if saved { try saveRecap() }
             let read = reader(ctx)
             let built = ChatGPTRecapRuntime(
@@ -92,6 +100,12 @@ extension GalleryCatalog {
             recapEntry("bilan/erreur", note: "la lecture de la journée a échoué",
                        reader: { _ in { _ in throw RecapReadFailure() } },
                        ready: { $0.dayOverviewError != nil }),
+            // R-61: moved here from the plain dashboard entry, which showed the shared runtime, not this state.
+            recapEntry("bilan/non-connecte", signedOut: true, note: "compte ChatGPT non connecté (« Non connecté »)",
+                       reader: { _ in { _ in recapOverview } }, ready: { runtime in
+                           if case .signedOut = runtime.connectionState { return runtime.dayOverview != nil }
+                           return false
+                       }),
             recapEntry("bilan/rapport", saved: true, note: "rapport enregistré (ancien format, non signé) et mesures du jour",
                        reader: { _ in { _ in recapOverview } },
                        ready: { $0.dayOverview != nil && $0.recap != nil }),

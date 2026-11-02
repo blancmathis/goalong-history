@@ -15,15 +15,20 @@ extension GalleryCatalog {
         ]
         var entries: [GalleryEntry] = [
             // R282-1: consent given, version without sign-in: the active switches must stay usable (to withdraw).
-            dashboard("settings/chatgpt-consentement", section: .settings, pane: .chatGPT, prepare: { _ in
+            dashboard("settings/chatgpt-consentement", section: .settings, pane: .chatGPT, prepare: { ctx in
                 var selection = GoalongAnalysisSelection(); selection.version = 1; selection.reviewed = true; selection.computer = true
                 selection.privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
                 // The secure writer refuses the symlinked /tmp ancestor of a shard HOME: plain write.
                 let support = AppPaths.applicationSupportDirectory
                 try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
                 try JSONEncoder().encode(selection).write(to: support.appendingPathComponent("chatgpt-analysis-selection.json"))
-                GoalongCapabilityConsentStore.shared.set(.chatGPTAnalysis, enabled: true, surface: .settings)
+                // R282-8: the entry sets what it shows. Automatic analysis is off, and consent is restored afterwards.
+                let consent = GoalongCapabilityConsentStore.shared
+                let wasEnabled = consent.isEnabled(.chatGPTAnalysis)
+                ctx.cleanups.append { consent.set(.chatGPTAnalysis, enabled: wasEnabled, surface: .settings) }
+                consent.set(.chatGPTAnalysis, enabled: true, surface: .settings)
                 ChatGPTRecapRuntime.shared.setConnectionStateForTesting(.codexUnavailable)
+                precondition(!ChatGPTRecapRuntime.shared.automaticRecapsEnabled, "R282-8: automatic analysis must be off")
             }),
             // R8-3: the normal state (open at login known and on); « État inconnu » has its own entry.
             dashboard("settings/accueil", section: .settings, pane: .home, sizes: [.window, .full(1240)],
@@ -35,7 +40,7 @@ extension GalleryCatalog {
         // UI-9 (32, 44): --full too, so the bottom of « Règles d'usage » and « Titres et adresses » can be seen.
         entries += panes.map { name, pane in
             dashboard("settings/\(name)", section: .settings, pane: pane,
-                      sizes: name == "applications" || name == "enregistrement" ? [.window, .full(1240)] : [.window])
+                      sizes: ["applications", "enregistrement", "stockage", "permissions"].contains(name) ? [.window, .full(1240)] : [.window])
         }
         entries += [
             // The unsaved-changes banner shows once the member leaves Réglages.
@@ -57,7 +62,7 @@ extension GalleryCatalog {
                 ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
             }),
             // UI-9 (58): Avancé with developer mode on, its switch and help shown.
-            dashboard("settings/avance-developpeur", section: .settings, pane: .advanced,
+            dashboard("settings/avance-developpeur", section: .settings, pane: .advanced, sizes: [.window, .full(1240)],
                       configure: { _, ctx in ctx.defaults.set(true, forKey: GoalongDeveloperPreferences.enabledKey) }),
             // Recording on, so the history row asks for the missing access instead of « Fonction désactivée ».
             dashboard("settings/permission-manquante", section: .settings, pane: .permissions,
