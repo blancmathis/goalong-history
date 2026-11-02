@@ -1133,3 +1133,8 @@ programme/selecteur-mot-de-passe--   # T-043 O2 HL-31 (jours « Lun … Dim », 
 settings-sheets/analyse-consignes--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
 settings-sheets/analyse-remplacements--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
 settings-sheets/analyse-remplacements-regle-vide--   # T-043 O2 R-266 (titre 17 → LHTheme.sectionTitleFont, interlettrage −0,2)
+sante/import-vide--   # O5 CUT-GAL : capture en hauteur du contenu (écran 14), plus 800x720 fixe ; nom d'image --full
+sante/import-lecture--   # O5 CUT-GAL : idem
+sante/import-reussi--   # O5 CUT-GAL : la feuille n'est plus coupée à 720 pt (contenu entier)
+sante/import-erreur--   # O5 CUT-GAL : idem
+settings-sheets/comprendre-mon-travail--   # O5 CUT-GAL : capture en hauteur du contenu (écran 11), plus fitWidth coupé
