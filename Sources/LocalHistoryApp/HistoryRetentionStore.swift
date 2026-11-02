@@ -26,6 +26,8 @@
         let activationFile: URL
         let artifactDirectories: [HistoryRetentionArtifactDirectory]
         let prepare: () throws -> Void
+        /// Root of the targeted-deletion journal, whose expired entries go with the data.
+        var targetedDeletionJournalRoot: URL? = nil
 
         static var live: HistoryRetentionStorage {
             let computerHistoryDirectories = ComputerHistoryStore.retentionDirectories(
@@ -98,7 +100,8 @@
                 policyFile: AppPaths.retentionPolicyFile,
                 activationFile: AppPaths.retentionPolicyActivationFile,
                 artifactDirectories: artifacts,
-                prepare: { try AppPaths.prepare() }
+                prepare: { try AppPaths.prepare() },
+                targetedDeletionJournalRoot: AppPaths.applicationSupportDirectory
             )
         }
     }
@@ -270,6 +273,7 @@
                 policy: policy,
                 now: now
             )
+            purgeTargetedDeletionJournal(now: now)
             let today = Calendar.current.startOfDay(for: now)
             for decision in decisions where decision.shouldDelete {
                 guard decision.artifact.end < today else { continue }
@@ -312,6 +316,22 @@
                         "Retention cleanup could not remove \(decision.artifact.localPath): \(error)"
                     )
                 }
+            }
+        }
+
+        /// The journal keeps event and snapshot identifiers with their times: an entry
+        /// that reaches before the detailed or semantic cutoff expires with that data.
+        private func purgeTargetedDeletionJournal(now: Date) {
+            guard let root = storage.targetedDeletionJournalRoot,
+                let cutoff = [
+                    policy.detailedEvents.cutoff(relativeTo: now),
+                    policy.semanticSnapshots.cutoff(relativeTo: now),
+                ].compactMap({ $0 }).max()
+            else { return }
+            do {
+                try TargetedHistoryDeletionJournal(rootDirectory: root).removeEntries(before: cutoff)
+            } catch {
+                diagnose("Retention cleanup could not purge the targeted deletion journal: \(error)")
             }
         }
 

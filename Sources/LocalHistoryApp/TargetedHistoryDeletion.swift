@@ -177,9 +177,14 @@
     /// Resolved selections whose deletion started but did not finish. A retry of the same
     /// request replays the stored selection, because the partly deleted source can no longer
     /// be resolved. Holds only opaque identifiers and dates, never content.
+    ///
+    /// Entries never outlive the data they point to: « Tout effacer » removes the file,
+    /// « Effacer depuis » and retention remove the entries of the erased period, and every
+    /// entry expires after `maximumAge`. A later retry then resolves the source again.
     struct TargetedHistoryDeletionJournal {
         static let fileName = "targeted-deletion-pending.json"
         static let maximumEntries = 64
+        static let maximumAge: TimeInterval = 7 * 24 * 60 * 60
 
         private struct Entry: Codable {
             let recordedAt: Date
@@ -187,9 +192,11 @@
         }
 
         let fileURL: URL
+        private let now: () -> Date
 
-        init(rootDirectory: URL) {
+        init(rootDirectory: URL, now: @escaping () -> Date = Date.init) {
             fileURL = rootDirectory.appendingPathComponent(Self.fileName)
+            self.now = now
         }
 
         func pendingSelection(for key: String) -> TargetedHistoryDeletionSelection? {
@@ -198,7 +205,7 @@
 
         func record(_ selection: TargetedHistoryDeletionSelection, for key: String) throws {
             var all = entries()
-            all[key] = Entry(recordedAt: Date(), selection: selection)
+            all[key] = Entry(recordedAt: now(), selection: selection)
             if all.count > Self.maximumEntries {
                 for stale in all.sorted(by: { $0.value.recordedAt < $1.value.recordedAt })
                     .prefix(all.count - Self.maximumEntries)
@@ -210,16 +217,49 @@
         }
 
         func remove(_ key: String) throws {
-            var all = entries()
-            guard all.removeValue(forKey: key) != nil else { return }
-            if all.isEmpty {
-                do { try FileManager.default.removeItem(at: fileURL) } catch CocoaError.fileNoSuchFile {}
-            } else {
-                try write(all)
-            }
+            try removeEntries { stored, _ in stored == key }
         }
 
+        /// « Tout effacer »: the whole journal goes with the history.
+        func removeAll() throws {
+            do { try FileManager.default.removeItem(at: fileURL) } catch CocoaError.fileNoSuchFile {}
+        }
+
+        /// « Effacer depuis »: drops every entry that reaches the erased period.
+        func removeEntries(since cutoff: Date) throws {
+            try removeEntries { _, selection in selection.end >= cutoff }
+        }
+
+        /// Retention: drops every entry that reaches before the cutoff.
+        func removeEntries(before cutoff: Date) throws {
+            try removeEntries { _, selection in selection.start < cutoff }
+        }
+
+        private func removeEntries(
+            where shouldRemove: (String, TargetedHistoryDeletionSelection) -> Bool
+        ) throws {
+            let all = entries()
+            let kept = all.filter { !shouldRemove($0.key, $0.value.selection) }
+            guard kept.count != all.count else { return }
+            if kept.isEmpty { try removeAll() } else { try write(kept) }
+        }
+
+        /// Live entries only. Expired ones are dropped from disk on the way.
         private func entries() -> [String: Entry] {
+            let stored = storedEntries()
+            let oldest = now().addingTimeInterval(-Self.maximumAge)
+            let live = stored.filter { $0.value.recordedAt >= oldest }
+            if live.count != stored.count {
+                do {
+                    if live.isEmpty { try removeAll() } else { try write(live) }
+                } catch {
+                    Diagnostics.write("Expired targeted deletion journal entries not removed: \(error)")
+                }
+            }
+            return live
+        }
+
+        private func storedEntries() -> [String: Entry] {
             guard let data = try? Data(contentsOf: fileURL) else { return [:] }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601

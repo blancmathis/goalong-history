@@ -417,6 +417,109 @@
             assertNothingDeletedOrRetryCompletes(fixture)
         }
 
+        /// Content goes first: when the raw step fails, the item's snapshots and derived
+        /// files are already gone, and only the opaque raw rows wait for the retry.
+        func testRawEventFailureComesAfterSnapshotsAndDerivedFilesAreGone() throws {
+            let fixture = try makeEpisodeFixture()
+            let eventFile = fixture.root.appendingPathComponent("events/2026-08-23.jsonl")
+            try setImmutable(eventFile, true)
+            defer { try? setImmutable(eventFile, false) }
+
+            XCTAssertThrowsError(try commit(fixture.request, fixture: fixture).get())
+            let loaded = HistoryLocalStoreReader(rootDirectory: fixture.root).load()
+            XCTAssertTrue(fixture.deletedEventIDs.isSubset(of: Set(loaded.events.map(\.id))), "raw step failed")
+            XCTAssertEqual(Set(loaded.semanticSnapshots.keys), fixture.keptSnapshotIDs)
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: fixture.root.appendingPathComponent("computer-history/2026-08-23.computer-history.json").path
+                )
+            )
+            try setImmutable(eventFile, false)
+            assertNothingDeletedOrRetryCompletes(fixture)
+        }
+
+        func testDerivedFailureIsCompletedByRetry() throws {
+            let fixture = try makeEpisodeFixture()
+            let derived = fixture.root.appendingPathComponent("computer-history/2026-08-23.computer-history.json")
+            try setImmutable(derived, true)
+            defer { try? setImmutable(derived, false) }
+
+            XCTAssertThrowsError(try commit(fixture.request, fixture: fixture).get())
+            let loaded = HistoryLocalStoreReader(rootDirectory: fixture.root).load()
+            XCTAssertEqual(Set(loaded.semanticSnapshots.keys), fixture.keptSnapshotIDs, "failure after the snapshots")
+            XCTAssertTrue(fixture.deletedEventIDs.isSubset(of: Set(loaded.events.map(\.id))), "raw events go last")
+            try setImmutable(derived, false)
+            assertNothingDeletedOrRetryCompletes(fixture)
+        }
+
+        // MARK: Journal lifetime: entries never outlive the data they point to.
+
+        func testFullClearRemovesTheJournal() throws {
+            let fixture = try makeEpisodeFixture()
+            let journal = TargetedHistoryDeletionJournal(rootDirectory: fixture.root)
+            try journal.record(journalSelection(hour: 12), for: "a")
+            try journal.record(journalSelection(hour: -240), for: "b")
+
+            _ = try DerivedHistoryCleaner(rootDirectory: fixture.root, codexMemoryDirectory: fixture.codex)
+                .prepareDeletion(since: nil).execute()
+
+            XCTAssertFalse(FileManager.default.fileExists(atPath: journal.fileURL.path))
+        }
+
+        func testClearSinceRemovesTheJournalEntriesOfTheErasedPeriod() throws {
+            let fixture = try makeEpisodeFixture()
+            let journal = TargetedHistoryDeletionJournal(rootDirectory: fixture.root)
+            try journal.record(journalSelection(hour: 12), for: "erased")
+            try journal.record(journalSelection(hour: -240), for: "kept")
+
+            _ = try DerivedHistoryCleaner(rootDirectory: fixture.root, codexMemoryDirectory: fixture.codex)
+                .prepareDeletion(since: makeDate(hour: 0)).execute()
+
+            XCTAssertNil(journal.pendingSelection(for: "erased"))
+            XCTAssertEqual(journal.pendingSelection(for: "kept"), journalSelection(hour: -240))
+        }
+
+        func testRetentionRemovesTheJournalEntriesOlderThanItsCutoff() throws {
+            let fixture = try makeEpisodeFixture()
+            let journal = TargetedHistoryDeletionJournal(rootDirectory: fixture.root)
+            try journal.record(journalSelection(hour: -240), for: "expired")
+            try journal.record(journalSelection(hour: -12), for: "kept")
+            let store = HistoryRetentionStore(
+                legacyRetentionDays: 0,
+                storage: HistoryRetentionStorage(
+                    policyFile: fixture.root.appendingPathComponent("retention-policy.json"),
+                    activationFile: fixture.root.appendingPathComponent("retention-policy-activated"),
+                    artifactDirectories: [],
+                    prepare: {},
+                    targetedDeletionJournalRoot: fixture.root
+                )
+            )
+            try store.updateDetailedRetention(fromLegacyDays: 7)
+
+            store.applyCleanup(now: makeDate(hour: 12))
+
+            XCTAssertNil(journal.pendingSelection(for: "expired"))
+            XCTAssertEqual(journal.pendingSelection(for: "kept"), journalSelection(hour: -12))
+        }
+
+        func testJournalEntryExpiresAfterSevenDaysAndRetryResolvesAgain() throws {
+            let fixture = try makeEpisodeFixture()
+            let semanticFile = fixture.root.appendingPathComponent("semantic/2026-08-23.semantic.jsonl")
+            try setImmutable(semanticFile, true)
+            defer { try? setImmutable(semanticFile, false) }
+            XCTAssertThrowsError(try commit(fixture.request, fixture: fixture).get())
+            try setImmutable(semanticFile, false)
+            let key = fixture.request.journalKey
+            XCTAssertNotNil(TargetedHistoryDeletionJournal(rootDirectory: fixture.root).pendingSelection(for: key))
+
+            let later = TargetedHistoryDeletionJournal(rootDirectory: fixture.root) {
+                Date().addingTimeInterval(TargetedHistoryDeletionJournal.maximumAge + 3_600)
+            }
+            XCTAssertNil(later.pendingSelection(for: key))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: later.fileURL.path), "expired entry left on disk")
+            assertNothingDeletedOrRetryCompletes(fixture)
+        }
+
         func testTargetedDeletionRemovesLaterDayProfileAnalysisQuotingTheDeletedDay() throws {
             let fixture = try makeEpisodeFixture()
             let directory = fixture.root.appendingPathComponent("chatgpt/profile-analyses", isDirectory: true)
@@ -550,6 +653,14 @@
                 root: root, codex: codex, request: .computerHistoryEpisode(id: episode.id, day: start),
                 keptEventIDs: [unrelated.id], keptSnapshotIDs: [retainedPayload.id],
                 deletedEventIDs: [targeted.id]
+            )
+        }
+
+        private func journalSelection(hour: Int) -> TargetedHistoryDeletionSelection {
+            TargetedHistoryDeletionSelection(
+                eventIDs: ["journal-\(hour)"], semanticSnapshotIDs: [],
+                start: makeDate(hour: hour), end: makeDate(hour: hour + 1),
+                affectedDays: [], semanticDays: []
             )
         }
 

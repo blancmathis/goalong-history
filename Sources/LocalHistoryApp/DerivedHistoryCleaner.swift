@@ -497,6 +497,9 @@
         fileprivate var proofDirectoryPlans: [OwnedFileDeletionPlan] = []
         fileprivate var evidenceStore: AnalysisEvidenceCapsuleStore?
         fileprivate var evidenceExecutionIDs: [String] = []
+        /// Period clears only: the targeted-deletion journal entries of the erased period
+        /// (all of them on a full clear, `cutoff == nil`). Targeted clears manage their own entry.
+        fileprivate var targetedJournalPurge: (journal: TargetedHistoryDeletionJournal, cutoff: Date?)?
 
         var expectedResult: DerivedHistoryDeletionResult {
             DerivedHistoryDeletionResult(
@@ -552,6 +555,13 @@
             if clearSummaryDirectory, let plan = activitySummaryPlans.first ?? activityTemporaryPlans.first {
                 try Self.removeEmptyDirectory(plan)
             }
+            if let purge = targetedJournalPurge {
+                if let cutoff = purge.cutoff {
+                    try purge.journal.removeEntries(since: cutoff)
+                } else {
+                    try purge.journal.removeAll()
+                }
+            }
             if let keychainError { throw keychainError }
             return expectedResult
         }
@@ -606,7 +616,9 @@
         /// semantic history so an unsafe derived target cannot cause a partial clear.
         func prepareDeletion(since cutoff: Date?) throws -> DerivedHistoryDeletionPlan {
             let cutoffKey = cutoff.map(dayString)
-            return try prepareDeletion(cutoffKey: cutoffKey, matchingDayKeys: nil)
+            var plan = try prepareDeletion(cutoffKey: cutoffKey, matchingDayKeys: nil)
+            plan.targetedJournalPurge = (TargetedHistoryDeletionJournal(rootDirectory: rootDirectory), cutoff)
+            return plan
         }
 
         func prepareDeletion(days: Set<Date>) throws -> DerivedHistoryDeletionPlan {
