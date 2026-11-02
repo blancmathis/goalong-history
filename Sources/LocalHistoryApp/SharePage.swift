@@ -41,6 +41,14 @@
                 UsageRulesList(model: model, showsDefaultRule: true,
                                recordingEnabled: consents.isEnabled(.localComputerHistory))
                     .frame(maxHeight: .infinity)
+                    // R8-2: a soft fade says the list goes on under the export bar.
+                    .overlay(alignment: .bottom) {
+                        LinearGradient(colors: [LHTheme.cardBackground.opacity(0), LHTheme.cardBackground],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: 36)
+                            .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 13, bottomTrailingRadius: 13, style: .continuous))
+                            .allowsHitTesting(false)
+                    }
 
                 exportBar
             }
@@ -115,7 +123,7 @@
                 // the settings are the only way forward and take the lime.
                 switch proof.action {
                 case .openRecordingSettings?:
-                    Button("Ouvrir les réglages") { model.openRecordingSettings() }
+                    Button("Ouvrir les réglages d’enregistrement") { model.openRecordingSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                         // R-265: VoiceOver says which settings open.
                         .accessibilityLabel("Ouvrir les réglages d’enregistrement")
@@ -184,7 +192,7 @@
                         action: nil, canExport: false)
                     : ShareProofStatus(
                         title: "Enregistrement désactivé",
-                        detail: "Goalong n’observe aucune minute. Activez l’enregistrement pour partager.",
+                        detail: "Goalong n’observe aucune minute pour l’instant.",
                         action: .openRecordingSettings, canExport: false)
             }
             // R7 (32/55, UI-17A): plain words, no « signé » or « écart »; the line next to the held-back button says

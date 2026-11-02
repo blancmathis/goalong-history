@@ -1138,3 +1138,13 @@ sante/import-lecture--   # O5 CUT-GAL : idem
 sante/import-reussi--   # O5 CUT-GAL : la feuille n'est plus coupée à 720 pt (contenu entier)
 sante/import-erreur--   # O5 CUT-GAL : idem
 settings-sheets/comprendre-mon-travail--   # O5 CUT-GAL : capture en hauteur du contenu (écran 11), plus fitWidth coupé
+settings-sheets/conservation-   # R8-1 : cadre 700x780 (hauteur de la feuille), « En savoir plus » entier
+partage/avec-donnees-   # R8-2 : fondu sous la liste « Applications »
+partage/vide-   # R8-8 : un seul « Activez… », bouton « Ouvrir les réglages d’enregistrement »
+settings/accueil-   # R8-3 : état connu (ouverture à la session activée) ; R8-4 : cadre ≥ contenu avec barre de retour
+settings/applications-   # R8-4 : cadre ≥ contenu (barre de retour comptée)
+settings/enregistrement-   # R8-4 : cadre ≥ contenu (barre de retour comptée)
+settings/accueil-ouverture-activee-   # R8-3 : retiré, doublon de settings/accueil
+mises-a-jour/   # R8-4 : cadre ≥ contenu, dernière carte entière
+braise/page-fenetre-   # R8-5 : élément Braise sélectionné dans la barre latérale
+permissions/temps-ecran-a-configurer-   # R8-7 : étape 2 « Activer Temps d’écran »

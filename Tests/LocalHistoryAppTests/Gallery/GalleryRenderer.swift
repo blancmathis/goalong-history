@@ -261,7 +261,9 @@ struct GalleryImage {
         host.layoutSubtreeIfNeeded()
         guard let scroll = largestScrollView(in: host), let document = scroll.documentView else { return nil }
         let extra = host.bounds.height - scroll.frame.height
-        let height = document.frame.height + max(0, extra)
+        // R8-4: a top or bottom bar (« Retour aux réglages ») is a content inset of the scroll view, not part of the
+        // document: without it the last card lost its bottom edge.
+        let height = document.frame.height + max(0, extra) + (extra > 0 ? 0 : scroll.contentInsets.top + scroll.contentInsets.bottom)
         return height > 1 ? ceil(height) : nil
     }
 

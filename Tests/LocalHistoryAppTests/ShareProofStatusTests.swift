@@ -35,7 +35,8 @@
             let empty = ShareProofStatus.make(observedMinutes: 0, sealedMinutes: 0, recordingEnabled: false)
             XCTAssertEqual(empty.action, .openRecordingSettings)
             XCTAssertEqual(empty.title, "Enregistrement désactivé")
-            XCTAssertTrue(empty.detail.contains("Activez l’enregistrement"))
+            // R8-8: the empty list already says « Activez l’enregistrement… »; the bar does not repeat it.
+            XCTAssertFalse(empty.detail.contains("Activez"))
         }
 
         func testEmptyDayWithRecordingOnSuggestsAnotherDay() {

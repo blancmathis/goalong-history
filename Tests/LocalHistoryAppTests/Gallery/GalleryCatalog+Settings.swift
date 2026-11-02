@@ -14,8 +14,12 @@ extension GalleryCatalog {
             ("stockage", .storage), ("avance", .advanced), ("outils", .tools),
         ]
         var entries: [GalleryEntry] = [
+            // R8-3: the normal state (open at login known and on); « État inconnu » has its own entry.
             dashboard("settings/accueil", section: .settings, pane: .home, sizes: [.window, .full(1240)],
-                      themes: GalleryTheme.withContrast),
+                      themes: GalleryTheme.withContrast, prepare: { ctx in
+                LaunchAtLoginManager.galleryState = .enabled
+                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
+            }),
         ]
         // UI-9 (32, 44): --full too, so the bottom of « Règles d'usage » and « Titres et adresses » can be seen.
         entries += panes.map { name, pane in
@@ -35,12 +39,7 @@ extension GalleryCatalog {
                 LaunchAtLoginManager.galleryState = .unavailable
                 ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
             }),
-            // UI-13C (59): the normal states too, open at login on and off.
-            dashboard("settings/accueil-ouverture-activee", section: .settings, pane: .home, sizes: [.full(1240)],
-                      prepare: { ctx in
-                LaunchAtLoginManager.galleryState = .enabled
-                ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
-            }),
+            // UI-13C (59): the off state too; the on state is settings/accueil (R8-3).
             dashboard("settings/accueil-ouverture-desactivee", section: .settings, pane: .home, sizes: [.full(1240)],
                       prepare: { ctx in
                 LaunchAtLoginManager.galleryState = .disabled
@@ -63,7 +62,7 @@ extension GalleryCatalog {
                 }.toggleStyle(.goalongSwitch).padding(24))
             },
             panel("settings-sheets/connexion-jev", width: 560) { _ in AnyView(JevConnectionSheet()) },
-            panel("settings-sheets/conservation", width: 700, height: 670) { _ in AnyView(HistoryRetentionSettingsSheet()) },
+            panel("settings-sheets/conservation", width: 700, height: HistoryRetentionSettingsSheet.idealHeight) { _ in AnyView(HistoryRetentionSettingsSheet()) },
             panel("settings-sheets/partage-site", width: 740, clock: .injected) { _ in AnyView(GoalongWebsiteSharingSheet()) },
             // UI-9 (11, 29): the two analysis windows opened from Réglages › Stockage; both inits are inert until a button is pressed.
             panel("settings-sheets/comprendre-mon-travail", width: 760, scrolling: true, clock: .injected) { _ in
