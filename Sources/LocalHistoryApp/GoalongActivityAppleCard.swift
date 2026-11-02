@@ -35,6 +35,8 @@ struct GoalongActivityAppleCard: View {
                 SourceActivationToggle(capability: .appleScreenTime, activateButtonTitle: "Activer…") {
                     GoalongEmptyState(title: GoalongScreenTimeOffCopy.title,
                                       message: GoalongScreenTimeOffCopy.message(accessRevoked: accessDenied))
+                        // « Activer… » follows the sentence at 24 pt, as on the « Temps d’écran Apple » page (UI-17C, écran 15).
+                        .padding(.bottom, -24)
                 }
             }
         }

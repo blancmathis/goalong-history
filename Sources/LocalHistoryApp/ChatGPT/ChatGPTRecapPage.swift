@@ -41,6 +41,11 @@
                         proofCard(proof, report: recapRuntime.proofReport)
                     }
 
+                    // A failed read of the sources comes before the ChatGPT card: it is what blocks the day (UI-17C, 34).
+                    if readErrorLeads {
+                        emptyDataCard
+                    }
+
                     // One ChatGPT card, one action: the connection card replaces the data card until connected.
                     // The report is this page's focus, so it comes first (UI-13C, screen 34); the update button stays secondary.
                     if consents.isEnabled(.chatGPTAnalysis), !isConnected {
@@ -73,7 +78,10 @@
                         coverageCard(overview)
                     } else if recapRuntime.isLoadingDayOverview {
                         loadingDataCard
-                    } else if recapRuntime.dayOverviewError != nil || recapRuntime.recap != nil {
+                    } else if recapRuntime.dayOverviewError != nil {
+                        // Already shown above the ChatGPT card (readErrorLeads).
+                        EmptyView()
+                    } else if recapRuntime.recap != nil {
                         emptyDataCard
                     } else if consents.isEnabled(.chatGPTAnalysis) {
                         // The report's empty state already speaks for the day: one plain line, not a second empty state.
@@ -260,7 +268,8 @@
             ) {
                 // The reason for a greyed « Générer » sits under the buttons inside the header layout,
                 // so it takes its own line instead of running into the next card (UI-9 C).
-                VStack(alignment: .trailing, spacing: 6) {
+                // The reason is a caption: left-aligned under the controls (DESIGN §7, UI-17C 34).
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
                         // The dashboard day is the page's day (T-045 H1-01): Historique and a return here keep the choice.
                         DateSelectionControl(date: recapRuntime.selectedDay, onChange: { day in
@@ -292,7 +301,9 @@
                         .accessibilityHint(generationBlockedReason ?? "")
                     }
                     // Analyses off: the report's empty state already says it (one message, UI-13C).
-                    if let reason = generationBlockedReason, !recapRuntime.isGenerating, consents.isEnabled(.chatGPTAnalysis) {
+                    // Not connected and no report: the report's empty state says it too, so it is said once (UI-17C, 34).
+                    if let reason = generationBlockedReason, !recapRuntime.isGenerating, consents.isEnabled(.chatGPTAnalysis),
+                       isConnected || recapRuntime.recap != nil {
                         Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize().accessibilityHidden(true)
                     }
@@ -339,7 +350,7 @@
                                 .font(.system(size: 12))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Label("Preuves solides : \(GoalongUIFormat.percent(confidence))", systemImage: "checkmark.shield")
+                            Label("Minutes confirmées : \(GoalongUIFormat.percent(confidence))", systemImage: "checkmark.shield")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(LHTheme.secondaryText)
                             Text(isToday ? "La journée est encore en cours" : "Bilan de la journée terminée")
@@ -428,17 +439,26 @@
                         detail: "D’après Mon travail"
                     )
                     bandDivider
-                    metric(
-                        title: "Temps d’écran",
-                        value: duration(overview.screenTimeSeconds),
-                        detail: "\(overview.screenTimeDevices.count) appareil\(overview.screenTimeDevices.count > 1 ? "s" : "") Apple"
-                    )
+                    // A source with nothing read is absent, not a zero (PRODUCT.md, UI-17C 34).
+                    if overview.screenTimeDevices.isEmpty && overview.screenTimeSeconds == 0 {
+                        metric(title: "Temps d’écran", value: "—", detail: "Non lu")
+                    } else {
+                        metric(
+                            title: "Temps d’écran",
+                            value: duration(overview.screenTimeSeconds),
+                            detail: "\(overview.screenTimeDevices.count) appareil\(overview.screenTimeDevices.count > 1 ? "s" : "") Apple"
+                        )
+                    }
                     bandDivider
-                    metric(
-                        title: "Conversations IA",
-                        value: "\(overview.agentSessions)",
-                        detail: GoalongUIFormat.count(overview.agentMessages, "message")
-                    )
+                    if overview.agentSessions == 0 && overview.agentMessages == 0 {
+                        metric(title: "Conversations IA", value: "—", detail: "Non lues")
+                    } else {
+                        metric(
+                            title: "Conversations IA",
+                            value: "\(overview.agentSessions)",
+                            detail: GoalongUIFormat.count(overview.agentMessages, "message")
+                        )
+                    }
                 }
             }
         }
@@ -630,6 +650,12 @@
                     .buttonStyle(LHSecondaryButtonStyle())
                 }
             }
+        }
+
+        /// The read of the day failed and no measures replace it: the error leads the page (UI-17C, 34).
+        private var readErrorLeads: Bool {
+            recapRuntime.dayOverviewError != nil && !recapRuntime.isLoadingDayOverview
+                && !(consents.isEnabled(.chatGPTAnalysis) && recapRuntime.dayOverview != nil)
         }
 
         private var canGenerate: Bool { generationBlockedReason == nil }

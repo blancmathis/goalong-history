@@ -71,9 +71,8 @@ import AgentActivity
                     .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("analysis-footer-note")
                 Spacer(minLength: 8)
                 if needsSourceSetup {
-                    // Nothing can be sent yet: the one useful action is the lime one (R4, screens 8 and 27),
-                    // on the Données tab only; elsewhere the tab's own content leads (UI-15B, 8).
-                    Button("Configurer les sources", action: configureSources).modifier(GoalongMainActionStyle(primary: tab == 0))
+                    // Same footer, same action, same style on every tab (UI-17C, 8): secondary, never lime by tab.
+                    Button("Configurer les sources", action: configureSources).buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("analysis-configure-sources")
                 } else {
                     if tab != 3 { Button("Vérifier l’aperçu") { tab = 3; preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(catalogLoading || installedApps.loading || !selection.hasSources) }
@@ -271,7 +270,7 @@ import AgentActivity
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Remplacer avant l’envoi").font(.system(size: 20, weight: .semibold)).accessibilityIdentifier("analysis-replacements-title")
+                    Text("Remplacer avant l’envoi").font(.system(size: 17, weight: .semibold)).accessibilityIdentifier("analysis-replacements-title")
                     Text("Appliqué sur le Mac. L’historique original reste inchangé.").font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
@@ -283,11 +282,8 @@ import AgentActivity
             }
             GoalongSettingsGroup(title: "Tester vos remplacements") {
                 TextField("Texte d’exemple", text: $sampleText, axis: .vertical).textFieldStyle(GoalongFieldStyle()).lineLimit(2...4)
-                if !rules.wrappedValue.isEmpty && rules.wrappedValue.allSatisfy({ $0.search.isEmpty }) {
-                    // An empty rule is already on screen: it says it alone (UI-15B, 8).
-                    EmptyView()
-                } else if rules.wrappedValue.allSatisfy({ $0.search.isEmpty }) {
-                    // No usable rule yet: an empty-state line, not a result (R4, screen 8).
+                if rules.wrappedValue.allSatisfy({ $0.search.isEmpty }) {
+                    // No usable rule yet, empty rule or none: the same empty-state line in both themes (R4 and UI-17C, screen 8).
                     Label(transformedExample, systemImage: "arrow.left.arrow.right")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -311,7 +307,7 @@ import AgentActivity
     private var instructions: some View {
         // One title, in the same style as the other tabs (UI-62).
         VStack(alignment: .leading, spacing: 18) {
-            Text("Comment rédiger le bilan").font(.system(size: 20, weight: .semibold)).accessibilityIdentifier("analysis-guidance-title")
+            Text("Comment rédiger le bilan").font(.system(size: 17, weight: .semibold)).accessibilityIdentifier("analysis-guidance-title")
             GoalongSettingsGroup(title: "") {
                 GoalongTextArea(text: Binding(get: { selection.outputGuidance ?? "" }, set: { selection.outputGuidance = String($0.prefix(4000)) }),
                                 placeholder: "Concentre-toi sur les progrès de mes projets…", minHeight: 190)
@@ -330,7 +326,7 @@ import AgentActivity
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Ce que ChatGPT recevra").font(.system(size: 21, weight: .semibold))
+                    Text("Ce que ChatGPT recevra").font(.system(size: 17, weight: .semibold))
                     Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
