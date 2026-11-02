@@ -34,7 +34,7 @@
         /// Controls and inputs: raised buttons, sunken fields, quiet inset notes.
         static let controlBackground = adaptive(light: 0xFFFFFF, dark: 0x1B251E)
         /// Edge of fields, checkboxes and raised buttons: ≥ 3:1 on the field, page, card and group (déc. 3, T-043 R-4).
-        static let controlBorder = adaptive(light: 0x7D8571, dark: 0x64746A, highLight: 0x666E5C, highDark: 0x8AA08E)
+        static let controlBorder = adaptive(light: 0x7D8571, dark: 0x76887B, highLight: 0x666E5C, highDark: 0x8AA08E)
         static let fieldBackground = adaptive(light: 0xFFFFFF, dark: 0x0C120E)
         static let insetBackground = adaptive(light: 0xEFEEE4, dark: 0x18211B)
         static let segmentSelected = adaptive(light: 0xFFFFFF, dark: 0x2A3A2E)
