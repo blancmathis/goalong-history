@@ -151,6 +151,21 @@ final class T043R4dATests: XCTestCase {
         XCTAssertTrue(off.contains("Ambiance"), "the row itself stays: \(off.sorted())")
     }
 
+    // R4d-9 (height): with or without the pill, the Ambiance row is as tall as the other rows of the bar (34 pt content).
+    func testAmbianceRowKeepsTheHeightOfTheOtherRows() {
+        func height(title: String, pill: String?) -> CGFloat {
+            let view = NSHostingView(rootView: GoalongSidebarRowLabel(title: title, symbol: "waveform", selected: false, pill: pill)
+                .frame(width: 208).environment(\.goalongReduceMotion, true).goalongControls())
+            view.frame = NSRect(x: 0, y: 0, width: 208, height: 200)
+            view.layoutSubtreeIfNeeded()
+            return view.fittingSize.height
+        }
+        let plain = height(title: "Aperçu", pill: nil)
+        XCTAssertEqual(plain, 34, accuracy: 0.5, "the other rows are 34 pt tall")
+        XCTAssertEqual(height(title: "Ambiance", pill: nil), plain, accuracy: 0.5)
+        XCTAssertEqual(height(title: "Ambiance", pill: "Téléchargement…"), plain, accuracy: 0.5, "the pill must not grow the row")
+    }
+
     // R4d-24 (view side): a missing own file offers « Localiser… » on its row; a present one does not.
     func testMissingOwnFileOffersLocate() {
         let sources = GalleryFixtures.ambianceSources(orchestra: true, textures: true, files: true)

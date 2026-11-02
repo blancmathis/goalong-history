@@ -245,31 +245,7 @@
             selected: Bool,
             pill: String? = nil
         ) -> some View {
-            HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(selected ? LHTheme.accent : LHTheme.secondaryText)
-                    .frame(width: 20)
-                // R4d-9: the pill sits under the title; beside it, the narrow bar cut « Ambiance » to « … ».
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let pill {
-                        Text(pill).font(.system(size: 10, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                            .lineLimit(1).fixedSize()
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Capsule().fill(LHTheme.selectionBackground))
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(selected ? LHTheme.text : LHTheme.secondaryText)
-            .padding(.leading, 16).padding(.trailing, 10)
-            .frame(maxWidth: .infinity, minHeight: 34)
-            .contentShape(Rectangle())
+            GoalongSidebarRowLabel(title: title, symbol: symbol, selected: selected, pill: pill)
         }
 
         /// The banner's own slot rule (GoalongAttentionBanner.currentStorageSlot): the banner names a storage failure when the slot is .storage.
@@ -463,3 +439,39 @@
         }
     }
 #endif
+
+/// One row of the sidebar. Internal so a test can measure it: with or without the pill, it keeps the height of the other rows.
+struct GoalongSidebarRowLabel: View {
+    let title: String
+    let symbol: String
+    let selected: Bool
+    var pill: String?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(selected ? LHTheme.accent : LHTheme.secondaryText)
+                .frame(width: 20)
+            // R4d-9: the pill sits under the title (1 pt apart: the row keeps the height of the others, 34 pt content); beside it, the narrow bar cut « Ambiance » to « … ».
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let pill {
+                    Text(pill).font(.system(size: 10, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                        .lineLimit(1).fixedSize()
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(LHTheme.selectionBackground))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(selected ? LHTheme.text : LHTheme.secondaryText)
+        .padding(.leading, 16).padding(.trailing, 10)
+        .frame(maxWidth: .infinity, minHeight: 34)
+        .contentShape(Rectangle())
+    }
+}
