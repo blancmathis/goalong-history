@@ -61,7 +61,7 @@ struct ConcentrationHubHeader: View {
 
     var body: some View {
         // UI-11A (2): same empty state as Activité and Temps d’écran, with a title that says what is off.
-        GoalongEmptyState(title: "Le module \(module.title) est désactivé", message: text) {
+        GoalongEmptyState(title: "Le module \(module.title) est désactivé", kind: .notYet, message: text) {
             Button("Activer \(module.title)") { GoalongModuleStore.shared.setEnabled(module, true) }
                 .buttonStyle(LHPrimaryButtonStyle())
                 .accessibilityIdentifier("module-enable-\(module.rawValue)")

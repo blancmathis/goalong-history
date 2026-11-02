@@ -307,6 +307,7 @@
                     if let reason = event.suppressionReason {
                         StatusPill(
                             title: ActivityEventLabels.reason(reason),
+                            kind: .unavailable,
                             symbol: "eye.slash",
                             tint: LHTheme.privateTint
                         )

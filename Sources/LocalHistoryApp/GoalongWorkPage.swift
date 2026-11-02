@@ -339,7 +339,7 @@ import SwiftUI
             if let error = review.error {
                 Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
             } else if review.loadedDay != nil && review.rows.isEmpty && !review.loading {
-                GoalongEmptyState(title: "Rien à classer ce jour-là",
+                GoalongEmptyState(title: "Rien à classer ce jour-là", kind: .empty,
                                   message: "Aucune activité attribuable n’a été observée. Choisissez un autre jour avec le sélecteur ci-dessus.")
             }
             ForEach(groups) { group in groupView(group) }
@@ -435,7 +435,7 @@ import SwiftUI
             }
             Spacer(minLength: 8)
             if assignment?.byOwner == true {
-                StatusPill(title: "Corrigé", symbol: "checkmark", tint: LHTheme.success)
+                StatusPill(title: "Corrigé", kind: .ready, symbol: "checkmark", tint: LHTheme.success)
                     .accessibilityLabel("Corrigé par vous")
             }
             Text(GoalongAnalyticsFormatting.duration(row.seconds)).font(.system(size: 12)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)

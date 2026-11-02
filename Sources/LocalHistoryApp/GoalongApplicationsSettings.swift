@@ -258,7 +258,7 @@ enum GoalongKnownApplications {
             Button("Fermer", role: .cancel) {}
         } message: { Text(exclusions.error ?? "") }
     }
-    private var empty: some View { GoalongEmptyState(title: "Aucun résultat", message: "Essayez un autre nom d’application.").padding(24) }
+    private var empty: some View { GoalongEmptyState(title: "Aucun résultat", kind: .empty, message: "Essayez un autre nom d’application.").padding(24) }
     private func isExcluded(_ app: GoalongApplicationChoice) -> Bool { exclusions.policy.excludes(appID: app.id) || model.isApplicationExcludedFromCapture(app.id) }
     /// The rule, other than the host itself, that excludes this host (« example.fr » for docs.example.fr).
     /// Same matching as `URLRedactor.domain`: lowercase, surrounding dots and spaces trimmed, suffix after a dot.

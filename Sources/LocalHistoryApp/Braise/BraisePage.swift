@@ -32,12 +32,12 @@ import SwiftUI
         VStack(alignment: .leading, spacing: 24) {
             Text("Braise").goalongPageTitle()
             if let error {
-                GoalongEmptyState(title: "Braise n’a pas pu démarrer", message: error) {
+                GoalongEmptyState(title: "Braise n’a pas pu démarrer", kind: .unavailable, message: error) {
                     Button("Réessayer", action: onRetry).buttonStyle(LHPrimaryButtonStyle())
                     Button("Ouvrir Réglages › Modules › Braise", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
                 }
             } else {
-                GoalongEmptyState(title: "Braise est désactivée",
+                GoalongEmptyState(title: "Braise est désactivée", kind: .notYet,
                                   message: "Le filtre rouge du soir s’active ici, ou dans Réglages › Modules.") {
                     Button("Activer Braise", action: onEnable).buttonStyle(LHPrimaryButtonStyle())
                         .accessibilityIdentifier("braise-enable")
@@ -96,7 +96,7 @@ import SwiftUI
                 }
                 GoalongSection(title: "Horaires", subtitle: "Une plage qui passe minuit compte pour le jour où elle commence.") {
                     VStack(alignment: .leading, spacing: 12) {
-                        if controller.preferences.rules.isEmpty { GoalongEmptyState(title: "Aucun horaire", message: "Ajoutez une plage pour le mode Auto.") }
+                        if controller.preferences.rules.isEmpty { GoalongEmptyState(title: "Aucun horaire", kind: .empty, message: "Ajoutez une plage pour le mode Auto.") }
                         ForEach(controller.preferences.rules) { rule in
                             HStack(spacing: 12) {
                                 Button { editingRule = rule } label: {

@@ -704,7 +704,7 @@ struct GoalongAnalyticsContent: View {
                                         + GoalongProfileAnalysis.modules.map { ($0, GoalongProfileAnalysis.labels[$0] ?? $0) })
                         .frame(maxWidth: 260, alignment: .leading)
                     if cards.isEmpty {
-                        GoalongEmptyState(title: "Rien dans cette rubrique",
+                        GoalongEmptyState(title: "Rien dans cette rubrique", kind: .empty,
                                           message: "Aucun élément enregistré dans cette rubrique.") {
                             Button("Voir tous les éléments") { module = "all" }.buttonStyle(LHSecondaryButtonStyle())
                         }
@@ -812,7 +812,7 @@ struct GoalongAnalyticsContent: View {
             purged: isDay && current.days.first?.dayReason == .purgedWithoutSummary, recording: recording,
             storage: storageStop)
         VStack(alignment: .leading, spacing: 12) {
-            GoalongEmptyState(title: copy.title, message: copy.message) {
+            GoalongEmptyState(title: copy.title, kind: .notYet, message: copy.message) {
                 if copy.offersHistory {
                     Button("Consulter l’historique", action: onHistory).buttonStyle(LHSecondaryButtonStyle()).disabled(payload.isPreview)
                 }

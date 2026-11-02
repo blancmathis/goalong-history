@@ -935,7 +935,7 @@
         @ViewBuilder private var timelineCard: some View {
             if tenMinuteGroups.isEmpty && !isPreparingTimeline {
                 GoalongEmptyState(
-                    title: emptyTimelineTitle,
+                    title: emptyTimelineTitle, kind: .notYet,
                     message: storageStopTitle != nil || ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
                         ? emptyTimelineMessage : "Les activités apparaîtront ici dès qu’elles seront enregistrées.")
                 // R-86: no « Actualiser » here; the day header above already holds the refresh button.
@@ -989,7 +989,7 @@
                         .frame(maxWidth: .infinity, minHeight: 240)
                         .padding(24)
                     } else if visibleTimelineGroups.isEmpty {
-                        GoalongEmptyState(title: "Aucune activité correspondante",
+                        GoalongEmptyState(title: "Aucune activité correspondante", kind: .empty,
                                           message: "Essayez un autre nom d’app ou un mot du contexte enregistré.") {
                             Button("Effacer la recherche") { timelineSearch = "" }
                                 .buttonStyle(LHSecondaryButtonStyle())

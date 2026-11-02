@@ -264,13 +264,16 @@ struct FocusComposerDraft: Equatable {
         LHCard {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 10) {
-                    TextField("", text: $draft.intent)
-                        // 17 pt medium text is 20 pt high: 8 + 20 + 8 makes the field 36 pt, 2 pt taller than a standard one.
-                        .textFieldStyle(GoalongFieldStyle(textFont: .medium17))
-                        .goalongPlaceholder("Sur quoi travaillez-vous ?", isEmpty: draft.intent.isEmpty, textFont: .medium17)
-                        .onSubmit { if !intent.isEmpty { begin() } }
-                        .accessibilityLabel("Ce que vous faites pendant la séance")
-                        .accessibilityIdentifier("concentration-intent")
+                    // R-287 22: the question stays visible once the field is filled (a placeholder alone vanishes).
+                    GoalongFormField(title: "Sur quoi travaillez-vous ?") {
+                        TextField("", text: $draft.intent)
+                            // 17 pt medium text is 20 pt high: 8 + 20 + 8 makes the field 36 pt, 2 pt taller than a standard one.
+                            .textFieldStyle(GoalongFieldStyle(textFont: .medium17))
+                            .goalongPlaceholder("Ex. : relire le contrat", isEmpty: draft.intent.isEmpty, textFont: .medium17)
+                            .onSubmit { if !intent.isEmpty { begin() } }
+                            .accessibilityLabel("Sur quoi travaillez-vous ?")
+                            .accessibilityIdentifier("concentration-intent")
+                    }
                     if !openItems.isEmpty {
                         BlockingFlow(spacing: 6) {
                             ForEach(openItems) { item in
@@ -605,9 +608,8 @@ struct FocusSessionThread: View {
                     let b = max(a + 8, x(segment.end))
                     let capsule = Path(roundedRect: CGRect(x: a, y: mid - 4, width: b - a, height: 8), cornerRadius: 4)
                     guard let now else {
-                        // A preview is a plan, not progress: dashed outlines, never a filled bar.
-                        context.stroke(capsule, with: .color(LHTheme.text.opacity(0.45)),
-                                       style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])); continue
+                        // A preview is a plan, not progress: the quiet « to come » fill, no dashed outline (R-287 22).
+                        context.fill(capsule, with: .color(LHTheme.text.opacity(0.18))); continue
                     }
                     context.fill(capsule, with: .color(LHTheme.text.opacity(0.18)))
                     let split = min(b, max(a, x(now)))
@@ -866,31 +868,37 @@ struct FocusThreadModel: Equatable {
 
     private var addRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+            HStack(alignment: .bottom, spacing: 8) {
                 Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
-                    .frame(width: 20).accessibilityHidden(true)
-                TextField("", text: $newTitle)
-                    .textFieldStyle(GoalongFieldStyle())
-                    .planPlaceholder(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche", isEmpty: newTitle.isEmpty)
-                    .focused(addFocused)
-                    .onSubmit(add)
-                    .onChange(of: newTitle) { _ in addError = nil }
-                    .accessibilityLabel(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche")
-                    .accessibilityIdentifier("concentration-add-item")
-                TextField("", text: $newProject)
-                    .textFieldStyle(GoalongFieldStyle())
-                    .planPlaceholder("Projet", isEmpty: newProject.isEmpty)
-                    .frame(width: 120)
-                    .accessibilityLabel("Projet")
-                    .onSubmit(add)
-                    .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
-                TextField("", text: $newEstimate)
-                    .textFieldStyle(GoalongFieldStyle())
-                    .planPlaceholder("min", isEmpty: newEstimate.isEmpty)
-                    .frame(width: 64)
-                    .onSubmit(add)
-                    .help("Estimation, facultative : de 5 à 600 minutes.")
-                    .accessibilityLabel("Estimation en minutes")
+                    .frame(width: 20, height: 34).accessibilityHidden(true)
+                addField(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche") {
+                    TextField("", text: $newTitle)
+                        .textFieldStyle(GoalongFieldStyle())
+                        .planPlaceholder("Ex. : relire le contrat", isEmpty: newTitle.isEmpty)
+                        .focused(addFocused)
+                        .onSubmit(add)
+                        .onChange(of: newTitle) { _ in addError = nil }
+                        .accessibilityLabel(plan.items.isEmpty ? "Première tâche du jour" : "Ajouter une tâche")
+                        .accessibilityIdentifier("concentration-add-item")
+                }
+                addField("Projet") {
+                    TextField("", text: $newProject)
+                        .textFieldStyle(GoalongFieldStyle())
+                        .planPlaceholder("Facultatif", isEmpty: newProject.isEmpty)
+                        .frame(width: 120)
+                        .accessibilityLabel("Projet")
+                        .onSubmit(add)
+                        .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
+                }
+                addField("Durée (min)") {
+                    TextField("", text: $newEstimate)
+                        .textFieldStyle(GoalongFieldStyle())
+                        .planPlaceholder("5 à 600", isEmpty: newEstimate.isEmpty)
+                        .frame(width: 64)
+                        .onSubmit(add)
+                        .help("Estimation, facultative : de 5 à 600 minutes.")
+                        .accessibilityLabel("Estimation en minutes")
+                }
                 if let ratio = controller.estimateRatio {
                     Text("×\(FocusUIFormat.decimal(ratio))")
                         .font(.system(size: 12, weight: .medium).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
@@ -908,6 +916,14 @@ struct FocusThreadModel: Equatable {
             }
         }
         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 12)
+    }
+
+    /// A field with its name always visible above it (R-287 22): a placeholder alone disappears once typed over.
+    private func addField<Field: View>(_ title: String, @ViewBuilder field: () -> Field) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+            field()
+        }
     }
 
     private var tomorrow: String {
@@ -1188,6 +1204,9 @@ struct FocusThreadModel: Equatable {
             labels("Fin de journée", controller.settings.limits.endMinute != nil
                    ? "Prévient à cette heure, ces jours-là." : "Choisissez d’abord une heure de fin.")
             Spacer(minLength: 12)
+            // R-94: « Jours » and « Heure » are named above their controls, the chosen days are outlined.
+            VStack(alignment: .leading, spacing: 3) {
+            Text("Jours").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             HStack(spacing: 3) {
                 ForEach(1...7, id: \.self) { day in
                     let on = weekdays.contains(day)
@@ -1203,6 +1222,8 @@ struct FocusThreadModel: Equatable {
                             .foregroundStyle(on ? LHTheme.onAccent : LHTheme.text)
                             .background(on ? LHTheme.actionBackground : LHTheme.insetBackground,
                                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(on ? LHTheme.text.opacity(0.6) : LHTheme.separator, lineWidth: on ? 1.5 : 1))
                     }
                     .buttonStyle(.plain)
                     // Not `.disabled`: the system dims a disabled letter until it cannot be read.
@@ -1213,14 +1234,18 @@ struct FocusThreadModel: Equatable {
             }
             .opacity(controller.settings.limits.endMinute == nil ? 0.85 : 1)
             .accessibilityHint(controller.settings.limits.endMinute == nil ? "Indisponible : choisissez d’abord une heure de fin." : "")
-            TextField("", text: $end)
-                .textFieldStyle(GoalongFieldStyle())
-                .goalongPlaceholder("hh:mm", isEmpty: end.isEmpty, alignment: .trailing)
-                .frame(width: 72)
-                .multilineTextAlignment(.trailing)
-                .onSubmit(commitLimits)
-                .onChange(of: end) { _ in commitLimits() }
-                .accessibilityLabel("Heure de fin de journée")
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Heure").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                TextField("", text: $end)
+                    .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("hh:mm", isEmpty: end.isEmpty, alignment: .trailing)
+                    .frame(width: 72)
+                    .multilineTextAlignment(.trailing)
+                    .onSubmit(commitLimits)
+                    .onChange(of: end) { _ in commitLimits() }
+                    .accessibilityLabel("Heure de fin de journée")
+            }
         }
         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10).frame(minHeight: 52)
     }

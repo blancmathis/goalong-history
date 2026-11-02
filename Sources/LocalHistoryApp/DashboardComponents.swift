@@ -232,16 +232,13 @@
         /// Shown when a caller passes an empty title: a pill always has words, and never stops the app (R281-10).
         static let fallbackTitle = "Statut"
 
-        init(title: String, symbol: String, tint: Color, accessibilityLabel: String? = nil) {
+        /// `kind` is required (T-043 R4d-7); `symbol` replaces the glyph of the sort when a state has its own.
+        init(title: String, kind: GoalongStateKind, symbol: String? = nil, tint: Color = LHTheme.secondaryText,
+             accessibilityLabel: String? = nil) {
             self.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.fallbackTitle : title
-            self.symbol = symbol
+            self.symbol = symbol ?? kind.symbol
             self.tint = tint
             self.accessibilityLabel = accessibilityLabel
-        }
-
-        init(title: String, kind: GoalongStateKind, tint: Color = LHTheme.secondaryText,
-             accessibilityLabel: String? = nil) {
-            self.init(title: title, symbol: kind.symbol, tint: tint, accessibilityLabel: accessibilityLabel)
         }
 
         var body: some View {

@@ -274,7 +274,7 @@ struct GoalongSiteAnalysisSheet: View {
             HStack(alignment: .center, spacing: 12) {
                 Text("Analyser une demande du site").font(LHTheme.sheetTitleFont)
                 Spacer(minLength: 0)
-                StatusPill(title: model.accountLabel, symbol: model.connected ? "checkmark.circle.fill" : "circle.dashed",
+                StatusPill(title: model.accountLabel, kind: model.connected ? .ready : .notYet, symbol: model.connected ? "checkmark.circle.fill" : "circle.dashed",
                            tint: model.connected ? LHTheme.success : LHTheme.secondaryText)
             }.padding(24)
             Divider()

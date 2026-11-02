@@ -29,6 +29,7 @@ import LocalHistoryCore
                             let enabled = consents.isEnabled(capability)
                             let paused = enabled && pause.blocksActivity
                             StatusPill(title: Self.sourceStateTitle(capability, enabled: enabled, paused: pause.blocksActivity),
+                                       kind: enabled && !paused ? .ready : .unavailable,
                                        symbol: paused ? "pause.circle" : enabled ? "checkmark.circle.fill" : "minus.circle",
                                        tint: enabled && !paused ? LHTheme.success : LHTheme.secondaryText)
                         }

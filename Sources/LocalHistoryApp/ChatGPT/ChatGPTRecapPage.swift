@@ -376,6 +376,7 @@
                                 if recap.verifiesLocalAttestation {
                                     StatusPill(
                                         title: "Signé localement",
+                                        kind: .ready,
                                         symbol: "signature",
                                         tint: LHTheme.success
                                     )
@@ -385,6 +386,7 @@
                                 } else {
                                     StatusPill(
                                         title: "Rapport non vérifié",
+                                        kind: .attention,
                                         symbol: "clock.arrow.circlepath",
                                         tint: LHTheme.warning
                                     )
@@ -434,7 +436,7 @@
                     }
                     .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
                 } else {
-                    GoalongEmptyState(title: "Aucun rapport pour ce jour", message: emptyReportMessage)
+                    GoalongEmptyState(title: "Aucun rapport pour ce jour", kind: .empty, message: emptyReportMessage)
                 }
             }
         }

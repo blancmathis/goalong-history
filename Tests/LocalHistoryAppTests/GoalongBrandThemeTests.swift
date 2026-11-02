@@ -178,8 +178,8 @@ final class GoalongBrandThemeTests: XCTestCase {
     }
     /// R281-10: an empty title never stops the app, even in debug; the pill and the action say something.
     func testEmptyTitlesFallBackInsteadOfCrashing() {
-        XCTAssertEqual(StatusPill(title: " ", symbol: "circle", tint: LHTheme.secondaryText).title, StatusPill.fallbackTitle)
-        XCTAssertEqual(StatusPill(title: "Actif", symbol: "circle", tint: LHTheme.secondaryText).title, "Actif")
+        XCTAssertEqual(StatusPill(title: " ", kind: .notYet, symbol: "circle", tint: LHTheme.secondaryText).title, StatusPill.fallbackTitle)
+        XCTAssertEqual(StatusPill(title: "Actif", kind: .ready, symbol: "circle", tint: LHTheme.secondaryText).title, "Actif")
         XCTAssertEqual(GoalongEmptyStateAction(title: "", action: {}).title, GoalongEmptyStateAction.fallbackTitle)
     }
     func testLockedSwitchSpeaksItsPosition() {

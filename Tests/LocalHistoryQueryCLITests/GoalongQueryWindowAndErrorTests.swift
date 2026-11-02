@@ -72,7 +72,7 @@ final class GoalongQueryWindowAndErrorTests: XCTestCase {
         let known: [String: String] = [
             "Apple Screen Time is off": "Temps d’écran Apple",
             "No saved Screen Time data": "Aucune donnée Apple",
-            "Computer History is off": "historique de ce Mac",
+            "Computer History is off": "Activez l’enregistrement",
             "Website details are unavailable": "sites ne sont pas disponibles",
             "Saved ChatGPT analysis access is off": "analyses ChatGPT",
             "No saved recap exists for day": "Aucun récap",

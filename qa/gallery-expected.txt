@@ -2324,8 +2324,6 @@ compte/acces-refuse--dark.png   # R4d-B t2 : bouton désactivé
 compte/acces-refuse--light.png   # R4d-B t2 : bouton désactivé
 conversations-ia/lecture-en-cours--dark--1100x900.png   # R4d-B t2 : bouton désactivé
 conversations-ia/lecture-en-cours--light--1100x900.png   # R4d-B t2 : bouton désactivé
-enregistrement/journal--dark.png   # R4d-B t2 : bouton désactivé
-enregistrement/journal--light.png   # R4d-B t2 : bouton désactivé
 fenetre/espace-faible--dark--full.png   # R4d-B t2 : bouton désactivé
 fenetre/espace-faible--dark.png   # R4d-B t2 : bouton désactivé
 fenetre/espace-faible--light--full.png   # R4d-B t2 : bouton désactivé

@@ -95,6 +95,7 @@
                         Spacer()
                         StatusPill(
                             title: capabilities.edition.displayName,
+                            kind: .ready,
                             symbol: "internaldrive.fill",
                             tint: LHTheme.success
                         )
@@ -502,6 +503,7 @@
                     HStack {
                         StatusPill(
                             title: model.runtime.verificationEnabled ? "Vérification activée" : "Aucune vérification externe",
+                            kind: model.runtime.verificationEnabled ? .ready : .unavailable,
                             symbol: model.runtime.verificationEnabled ? "checkmark.seal.fill" : "internaldrive",
                             tint: model.runtime.verificationEnabled ? LHTheme.accent : Color.secondary
                         )
