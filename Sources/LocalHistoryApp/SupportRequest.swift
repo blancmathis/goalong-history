@@ -391,7 +391,7 @@ struct SupportRequestView: View {
             }
             .fixedSize()
             .accessibilityIdentifier("support-share")
-            if Self.showsSaveCopyInBar(emailUnavailable: controller.emailUnavailable) {
+            if controller.emailUnavailable {
                 // R-81 (R9B-44): with no mail app, the copy the message points to takes the e-mail button's place.
                 Button("Enregistrer une copie…") { controller.saveCopy() }
                     .buttonStyle(LHSecondaryButtonStyle())
@@ -413,8 +413,6 @@ struct SupportRequestView: View {
             }
         }
     }
-
-    static func showsSaveCopyInBar(emailUnavailable: Bool) -> Bool { emailUnavailable }
 
     private var emailButton: some View {
         Button {

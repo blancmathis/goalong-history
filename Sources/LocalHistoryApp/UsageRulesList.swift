@@ -48,8 +48,6 @@
             Self.summariesBySubjectID(websiteSummaries)
         }
 
-        static func showsControls(trackedCount: Int) -> Bool { trackedCount > 0 }
-
         /// Two hosts can normalise to the same subject key; the first summary wins instead of trapping.
         static func summariesBySubjectID(_ summaries: [ActivitySiteSummary]) -> [String: ActivitySiteSummary] {
             Dictionary(
@@ -61,7 +59,7 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
                 // R-87 (R9C-50): no search or default rule over a list that has nothing to filter.
-                if Self.showsControls(trackedCount: model.snapshot.trackedUsage.count) {
+                if !model.snapshot.trackedUsage.isEmpty {
                     controls
                 }
                 if filteredItems.isEmpty {

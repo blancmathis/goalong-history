@@ -13,6 +13,8 @@ import LocalHistoryQueryCLI
     @Published private(set) var error: String?
     /// A failed background measurement. The controller keeps working without measurements.
     @Published private(set) var measurementError: String?
+    /// R-77: whether the store holds anything « Supprimer les données… » would remove. Read once per change, not per render.
+    @Published private(set) var hasStoredData = false
     lazy var statusHub = GoalongFocusStatusHub()
     var onOpen: (() -> Void)?
     /// The phase and the minutes left, for the menu bar; `nil` when no session runs.
@@ -37,6 +39,7 @@ import LocalHistoryQueryCLI
     init(storeFactory: @escaping () -> FocusStore = { .standard }, factory: ((FocusStore) throws -> ConcentrationController)? = nil, blockingProvider: @escaping @MainActor () -> BlockingController? = { BlockingRuntime.shared.controller }, presentsPanels: Bool = true, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) { // wall: the raw clock of the controller
         self.storeFactory = storeFactory; self.factory = factory; self.blockingProvider = blockingProvider; self.presentsPanels = presentsPanels
         self.clock = clock; self.calendar = calendar
+        refreshHasData()
     }
     func start(modules: GoalongModuleStore = .shared, monitor: ContextMonitor? = nil) {
         self.modules = modules; self.monitor = monitor
@@ -50,8 +53,12 @@ import LocalHistoryQueryCLI
                 let store = storeFactory()
                 let value = try factory?(store) ?? ConcentrationController(store: store, clock: clock, calendar: calendar, blocking: blockingProvider, audio: audio, runsTimers: true)
                 controller = value; error = nil
+                refreshHasData()
                 NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
-                value.onStatusChange = { [weak self] status in if let data = try? FocusJSON.encode(status) { self?.statusHub.publish(data) } }
+                value.onStatusChange = { [weak self] status in
+                    if let data = try? FocusJSON.encode(status) { self?.statusHub.publish(data) }
+                    self?.refreshHasData() // a status line is a write
+                }
                 statusHub.publish(try FocusJSON.encode(value.status))
                 value.onPanelChange = { [weak self, weak value] panel in
                     guard let self, let value, self.presentsPanels else { return }
@@ -116,8 +123,11 @@ import LocalHistoryQueryCLI
         RunLoop.main.add(timer, forMode: .common)
         menuBarTimer = timer
     }
-    /// R-77 (R9C-54): whether the store holds anything « Supprimer les données… » would remove.
-    func hasData() -> Bool { storeFactory().hasData }
+    /// Reads the disk once and publishes the answer; the page observes it (R-77, R280-5).
+    func refreshHasData() {
+        let value = storeFactory().hasData
+        if value != hasStoredData { hasStoredData = value }
+    }
 
     func deleteData() throws {
         error = nil
@@ -131,9 +141,11 @@ import LocalHistoryQueryCLI
             // Re-enable first: `apply(enabled: true)` resets `error`, which must keep the failure.
             if wasEnabled { apply(enabled: true) }
             self.error = FocusUIError.message(error)
+            refreshHasData()
             throw error
         }
         if wasEnabled { apply(enabled: true) }
+        refreshHasData()
     }
     private func refreshMeasurements() {
         guard measurementTask == nil, let controller else { return }
