@@ -242,9 +242,7 @@
                     )
 
                     Spacer(minLength: 8)
-                    Text("\(filteredEvents.count)")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(LHTheme.secondaryText)
+                    GoalongRuleCount(filteredEvents.count)
                 }
 
                 if inspector.isLoading {

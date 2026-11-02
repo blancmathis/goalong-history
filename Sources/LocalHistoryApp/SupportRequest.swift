@@ -94,17 +94,25 @@ enum SupportReportStore {
         prepare()
     }
 
-    func prepare() {
-        guard phase != .preparing else { return }
-        phase = .preparing; feedback = nil; emailUnavailable = false
+    /// R4d-3: a rebuild asked while one is running (the journal was just switched on) runs once the first one ends.
+    private(set) var rebuildPending = false
+    /// Reports built so far; a test reads it to see that the queued rebuild really ran.
+    private(set) var buildCount = 0
+    /// Where the report file goes; a test points it at a throwaway folder.
+    var reportDirectory: URL = SupportReportStore.directory
+
+    func prepare(keepingFeedback: Bool = false) {
+        guard phase != .preparing else { rebuildPending = true; return }
+        phase = .preparing; if !keepingFeedback { feedback = nil }; emailUnavailable = false; buildCount += 1
         let live = SupportDiagnosticsRuntime.shared.snapshot()
         let previousBuild = SupportDiagnosticsRuntime.shared.previousWorkingBuildProvider?()
+        let directory = reportDirectory
         Task {
             let result = await Task.detached(priority: .userInitiated) { () -> Result<(URL, SupportReport, Int), Error> in
                 Result {
                     let report = SupportReport.build(live: live, previousWorkingBuild: previousBuild)
                     let data = try report.data()
-                    return (try SupportReportStore.save(data, createdAt: report.createdAt), report, data.count)
+                    return (try SupportReportStore.save(data, createdAt: report.createdAt, in: directory), report, data.count)
                 }
             }.value
             switch result {
@@ -115,6 +123,7 @@ enum SupportReportStore {
                 SupportDiagnostics.shared.failure(error, component: .support)
                 phase = .failed("Le rapport n’a pas pu être préparé (\(StorageHealth.failureKind(for: error) == .diskFull ? "disque plein" : "erreur d’écriture")). Rien n’a été envoyé.")
             }
+            if rebuildPending { rebuildPending = false; prepare(keepingFeedback: true) }
         }
     }
 

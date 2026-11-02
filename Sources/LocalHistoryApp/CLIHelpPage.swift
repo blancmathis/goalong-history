@@ -36,9 +36,6 @@
                             "Interrogez votre historique depuis le Terminal, ou donnez à un agent des instructions prêtes à coller."
                     )
 
-                    // UI-17B (36): the state pill sits here in every state, not beside the title in one and under it in another.
-                    StatusPill(title: statusTitle, symbol: statusSymbol, tint: statusTint)
-
                     readinessBanner
                     if installationReport.canInstall || installOutcome != nil { installRow }
                     if let command = installationReport.linkCommand {
@@ -67,8 +64,10 @@
         }
 
         private var readinessBanner: some View {
-            GoalongBanner(symbol: "terminal", title: readinessTitle,
-                          detail: readinessDetail) {
+            // R4d-23: the state (was a pill above) is the banner's title; the card keeps the guidance beneath it.
+            GoalongBanner(symbol: statusSymbol, title: statusTitle,
+                          detail: "\(readinessTitle). \(readinessDetail)",
+                          tone: installationReport.state == .conflict ? .warning : .neutral) {
                 Button {
                     installationReport = GoalongCLIInstallation.inspect()
                 } label: {
@@ -281,16 +280,6 @@
             case .missing: return "Commande non installée"
             case .conflict: return "Conflit de commande"
             case .development: return "Commande de Goalong installé"
-            }
-        }
-
-        // Goalong Dev never owns the command: a normal state, shown neutral rather than as a warning.
-        private var statusTint: Color {
-            switch installationReport.state {
-            case .ready: return LHTheme.success
-            // UI-15A (36): a command not installed yet is a normal first state, said in a neutral tone.
-            case .development, .missing: return LHTheme.secondaryText
-            case .conflict: return LHTheme.warning
             }
         }
 
