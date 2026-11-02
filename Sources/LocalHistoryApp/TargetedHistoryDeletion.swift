@@ -7,7 +7,7 @@
         case activitySession(ActivitySession)
     }
 
-    struct TargetedHistoryDeletionSelection: Equatable {
+    struct TargetedHistoryDeletionSelection: Equatable, Codable {
         let eventIDs: Set<String>
         let semanticSnapshotIDs: Set<String>
         let start: Date
@@ -149,6 +149,257 @@
                 affectedDays: Set(events.map { calendar.startOfDay(for: $0.timestamp) }),
                 semanticDays: semanticDays
             )
+        }
+    }
+
+    extension TargetedHistoryDeletionRequest {
+        /// Stable identity of the request. Hashed so the journal never stores titles or hosts.
+        var journalKey: String {
+            switch self {
+            case .computerHistoryEpisode(let id, let day):
+                return SHA256Digest.hashHex(
+                    "episode\u{1F}\(id)\u{1F}\(AppPaths.localDayString(for: day))"
+                )
+            case .activitySession(let session):
+                return SHA256Digest.hashHex(
+                    [
+                        "session",
+                        String(session.start.timeIntervalSinceReferenceDate),
+                        String(session.end.timeIntervalSinceReferenceDate),
+                        String(session.eventCount),
+                        DashboardDataReader.sessionSourceKey(for: session),
+                    ].joined(separator: "\u{1F}")
+                )
+            }
+        }
+    }
+
+    /// Resolved selections whose deletion started but did not finish. A retry of the same
+    /// request replays the stored selection, because the partly deleted source can no longer
+    /// be resolved. Holds only opaque identifiers and dates, never content.
+    struct TargetedHistoryDeletionJournal {
+        static let fileName = "targeted-deletion-pending.json"
+        static let maximumEntries = 64
+
+        private struct Entry: Codable {
+            let recordedAt: Date
+            let selection: TargetedHistoryDeletionSelection
+        }
+
+        let fileURL: URL
+
+        init(rootDirectory: URL) {
+            fileURL = rootDirectory.appendingPathComponent(Self.fileName)
+        }
+
+        func pendingSelection(for key: String) -> TargetedHistoryDeletionSelection? {
+            entries()[key]?.selection
+        }
+
+        func record(_ selection: TargetedHistoryDeletionSelection, for key: String) throws {
+            var all = entries()
+            all[key] = Entry(recordedAt: Date(), selection: selection)
+            if all.count > Self.maximumEntries {
+                for stale in all.sorted(by: { $0.value.recordedAt < $1.value.recordedAt })
+                    .prefix(all.count - Self.maximumEntries)
+                {
+                    all.removeValue(forKey: stale.key)
+                }
+            }
+            try write(all)
+        }
+
+        func remove(_ key: String) throws {
+            var all = entries()
+            guard all.removeValue(forKey: key) != nil else { return }
+            if all.isEmpty {
+                do { try FileManager.default.removeItem(at: fileURL) } catch CocoaError.fileNoSuchFile {}
+            } else {
+                try write(all)
+            }
+        }
+
+        private func entries() -> [String: Entry] {
+            guard let data = try? Data(contentsOf: fileURL) else { return [:] }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            guard let decoded = try? decoder.decode([String: Entry].self, from: data) else {
+                Diagnostics.write("Unreadable targeted deletion journal ignored")
+                return [:]
+            }
+            return decoded
+        }
+
+        private func write(_ all: [String: Entry]) throws {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys]
+            try encoder.encode(all).write(to: fileURL, options: [.atomic])
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: fileURL.path
+            )
+        }
+    }
+
+    struct TargetedHistoryDeletionOutcome: Equatable {
+        let rawCount: Int
+        let semanticCount: Int
+        let derived: DerivedHistoryDeletionResult
+
+        var total: Int { rawCount + semanticCount + derived.total }
+    }
+
+    /// Commits one targeted deletion. The caller owns the derived-writer barrier. Work runs
+    /// off the main thread; `completion` runs on main.
+    ///
+    /// Contract: either nothing is deleted, or the commit reports a failure and a retry of
+    /// the same request completes it. Content goes first (semantic snapshots, then derived
+    /// files), raw events last, and the resolved selection is journaled before the first
+    /// deletion: a retry replays it even when the partly deleted source no longer resolves.
+    final class TargetedHistoryDeletionCommitter {
+        private let rootDirectory: URL
+        private let rawStore: JSONLStore
+        private let semanticStore: SemanticContextStore
+        private let derivedCleaner: DerivedHistoryCleaner
+        private let journal: TargetedHistoryDeletionJournal
+        /// Test seam: rewrites the raw outcome to simulate a source change during the commit.
+        private let transformRawOutcome: ((JSONLTargetedDeletionOutcome) -> JSONLTargetedDeletionOutcome)?
+
+        init(
+            rootDirectory: URL = AppPaths.applicationSupportDirectory,
+            rawStore: JSONLStore,
+            semanticStore: SemanticContextStore,
+            derivedCleaner: DerivedHistoryCleaner,
+            transformRawOutcome: ((JSONLTargetedDeletionOutcome) -> JSONLTargetedDeletionOutcome)? = nil
+        ) {
+            self.rootDirectory = rootDirectory.standardizedFileURL
+            self.rawStore = rawStore
+            self.semanticStore = semanticStore
+            self.derivedCleaner = derivedCleaner
+            journal = TargetedHistoryDeletionJournal(rootDirectory: self.rootDirectory)
+            self.transformRawOutcome = transformRawOutcome
+        }
+
+        func commit(
+            _ request: TargetedHistoryDeletionRequest,
+            completion: @escaping (Result<TargetedHistoryDeletionOutcome, Error>) -> Void
+        ) {
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                let key = request.journalKey
+                let selection: TargetedHistoryDeletionSelection
+                let derivedPlan: DerivedHistoryDeletionPlan
+                let isRetry: Bool
+                do {
+                    let pending = journal.pendingSelection(for: key)
+                    isRetry = pending != nil
+                    selection = try pending
+                        ?? TargetedHistoryDeletionResolver(rootDirectory: rootDirectory)
+                        .resolve(request)
+                    try semanticStore.preflightSnapshotDeletion(
+                        withIDs: selection.semanticSnapshotIDs,
+                        on: selection.semanticDays
+                    )
+                    derivedPlan = try derivedCleaner.prepareDeletion(days: selection.affectedDays)
+                    if !isRetry { try journal.record(selection, for: key) }
+                } catch {
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                    return
+                }
+                semanticStore.deleteSnapshots(
+                    withIDs: selection.semanticSnapshotIDs,
+                    on: selection.semanticDays
+                ) { [self] semanticResult in
+                    let semanticCount: Int
+                    let derived: DerivedHistoryDeletionResult
+                    do {
+                        semanticCount = try semanticResult.get()
+                        derived = try derivedPlan.execute()
+                    } catch {
+                        completion(.failure(error))
+                        return
+                    }
+                    deleteRawEvents(
+                        selection: selection,
+                        key: key,
+                        isRetry: isRetry
+                    ) { [self] rawResult in
+                        completion(
+                            rawResult.flatMap { rawCount in
+                                finish(key: key)
+                                return .success(
+                                    TargetedHistoryDeletionOutcome(
+                                        rawCount: rawCount,
+                                        semanticCount: semanticCount,
+                                        derived: derived
+                                    )
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        /// Raw events go last. A retry tolerates identifiers an earlier attempt removed.
+        private func deleteRawEvents(
+            selection: TargetedHistoryDeletionSelection,
+            key: String,
+            isRetry: Bool,
+            completion: @escaping (Result<Int, Error>) -> Void
+        ) {
+            rawStore.deleteEvents(
+                withIDs: selection.eventIDs,
+                from: selection.start,
+                through: selection.end,
+                requireEveryID: !isRetry
+            ) { [self] rawResult in
+                let raw: JSONLTargetedDeletionOutcome
+                do {
+                    let outcome = try rawResult.get()
+                    raw = transformRawOutcome?(outcome) ?? outcome
+                } catch {
+                    completion(.failure(error))
+                    return
+                }
+                guard isRetry || raw.eventCount >= selection.eventIDs.count else {
+                    completion(.failure(TargetedHistoryDeletionError.sourceChangedDuringCommit))
+                    return
+                }
+                // Rows can only reference the selected snapshots; any other one is removed
+                // too, after the journal learns it so a retry still covers it.
+                let extra = raw.semanticSnapshotIDs.subtracting(selection.semanticSnapshotIDs)
+                guard !extra.isEmpty else {
+                    completion(.success(raw.eventCount))
+                    return
+                }
+                do {
+                    try journal.record(
+                        TargetedHistoryDeletionSelection(
+                            eventIDs: selection.eventIDs,
+                            semanticSnapshotIDs: selection.semanticSnapshotIDs.union(extra),
+                            start: selection.start,
+                            end: selection.end,
+                            affectedDays: selection.affectedDays,
+                            semanticDays: selection.semanticDays
+                        ),
+                        for: key
+                    )
+                } catch {
+                    completion(.failure(error))
+                    return
+                }
+                semanticStore.deleteSnapshots(withIDs: extra, on: nil) { result in
+                    completion(result.map { _ in raw.eventCount })
+                }
+            }
+        }
+
+        private func finish(key: String) {
+            do { try journal.remove(key) } catch {
+                // Everything is deleted; a stale entry only makes a later retry a no-op replay.
+                Diagnostics.write("Targeted deletion journal entry not removed: \(error)")
+            }
         }
     }
 

@@ -330,6 +330,249 @@
             )
         }
 
+        // MARK: Failure paths: nothing deleted, or a failure and a retry that completes.
+
+        func testSemanticFailureAfterPreflightIsCompletedByRetry() throws {
+            let fixture = try makeEpisodeFixture()
+            let semanticFile = fixture.root.appendingPathComponent("semantic/2026-08-23.semantic.jsonl")
+            try setImmutable(semanticFile, true)
+            defer { try? setImmutable(semanticFile, false) }
+
+            XCTAssertThrowsError(try commit(fixture.request, fixture: fixture).get())
+            try setImmutable(semanticFile, false)
+            assertNothingDeletedOrRetryCompletes(fixture)
+        }
+
+        func testSourceChangedDuringCommitIsCompletedByRetry() throws {
+            let fixture = try makeEpisodeFixture()
+            let first = commit(fixture.request, fixture: fixture) { outcome in
+                JSONLTargetedDeletionOutcome(
+                    eventCount: outcome.eventCount - 1,
+                    semanticSnapshotIDs: outcome.semanticSnapshotIDs
+                )
+            }
+            XCTAssertThrowsError(try first.get()) { error in
+                guard case TargetedHistoryDeletionError.sourceChangedDuringCommit? =
+                    error as? TargetedHistoryDeletionError
+                else { return XCTFail("unexpected error \(error)") }
+            }
+            assertNothingDeletedOrRetryCompletes(fixture)
+        }
+
+        func testSecondDayEventFileFailureIsCompletedByRetry() throws {
+            let root = try makeRoot()
+            let codex = root.appendingPathComponent("codex-memory", isDirectory: true)
+            try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("computer-history", isDirectory: true),
+                withIntermediateDirectories: true
+            )
+            let app = AppSnapshot(name: "TextEdit", bundleIdentifier: "com.apple.TextEdit", processIdentifier: 42)
+            let other = AppSnapshot(name: "Safari", bundleIdentifier: "com.apple.Safari", processIdentifier: 43)
+            let window = WindowSnapshot(title: "Midnight work", role: nil, subrole: nil)
+            let late = makeDate(hour: 23).addingTimeInterval(50 * 60)
+            let early = late.addingTimeInterval(20 * 60)
+            let latePayload = semanticPayload(id: "midnight-late", timestamp: late)
+            let earlyPayload = semanticPayload(id: "midnight-early", timestamp: early)
+            let lateEvent = HistoryEvent(
+                id: "midnight-late-event", sessionID: "midnight", timestamp: late, kind: .mouseClick,
+                app: app, window: window,
+                pointer: PointerSnapshot(button: "left", x: 10, y: 10, clickCount: 1),
+                semanticContext: latePayload.reference
+            )
+            let earlyEvent = HistoryEvent(
+                id: "midnight-early-event", sessionID: "midnight", timestamp: early, kind: .mouseClick,
+                app: app, window: window,
+                pointer: PointerSnapshot(button: "left", x: 10, y: 10, clickCount: 1),
+                semanticContext: earlyPayload.reference
+            )
+            let unrelated = HistoryEvent(
+                id: "midnight-unrelated", sessionID: "midnight", timestamp: early, kind: .mouseClick,
+                app: other, window: WindowSnapshot(title: "Other", role: nil, subrole: nil),
+                pointer: PointerSnapshot(button: "left", x: 20, y: 20, clickCount: 1)
+            )
+            try write(
+                events: [lateEvent, earlyEvent, unrelated],
+                payloads: [latePayload, earlyPayload],
+                root: root
+            )
+            let session = ActivitySession(
+                id: "midnight-session", start: late, end: early, appName: app.name,
+                bundleIdentifier: app.bundleIdentifier, windowTitle: window.title, host: nil,
+                category: nil, isWork: nil, confidence: nil, suppressionReason: nil,
+                eventCount: 2, inputEventCount: 2, softwareAttributedEventCount: 0,
+                kindCounts: [EventKind.mouseClick.rawValue: 2], latestMessage: nil
+            )
+            let fixture = EpisodeFixture(
+                root: root, codex: codex, request: .activitySession(session),
+                keptEventIDs: [unrelated.id], keptSnapshotIDs: [],
+                deletedEventIDs: [lateEvent.id, earlyEvent.id]
+            )
+            let secondDay = root.appendingPathComponent("events/2026-08-24.jsonl")
+            try setImmutable(secondDay, true)
+            defer { try? setImmutable(secondDay, false) }
+
+            XCTAssertThrowsError(try commit(fixture.request, fixture: fixture).get())
+            try setImmutable(secondDay, false)
+            assertNothingDeletedOrRetryCompletes(fixture)
+        }
+
+        func testTargetedDeletionRemovesLaterDayProfileAnalysisQuotingTheDeletedDay() throws {
+            let fixture = try makeEpisodeFixture()
+            let directory = fixture.root.appendingPathComponent("chatgpt/profile-analyses", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let quoting = directory.appendingPathComponent("quoting.analysis.json")
+            let unrelated = directory.appendingPathComponent("unrelated.analysis.json")
+            try profileAnalysis(date: "2026-08-25", evidence: [makeDate(hour: 12), makeDate(hour: 36)])
+                .write(to: quoting)
+            try profileAnalysis(date: "2026-08-25", evidence: [makeDate(hour: 36)])
+                .write(to: unrelated)
+
+            _ = try commit(fixture.request, fixture: fixture).get()
+
+            XCTAssertFalse(FileManager.default.fileExists(atPath: quoting.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+        }
+
+        private struct EpisodeFixture {
+            let root: URL
+            let codex: URL
+            let request: TargetedHistoryDeletionRequest
+            let keptEventIDs: [String]
+            let keptSnapshotIDs: Set<String>
+            let deletedEventIDs: Set<String>
+        }
+
+        /// The rule: after a reported failure, either nothing was deleted, or a retry of the
+        /// same request succeeds and leaves no event, snapshot, or derived file of the item.
+        private func assertNothingDeletedOrRetryCompletes(
+            _ fixture: EpisodeFixture,
+            file: StaticString = #filePath,
+            line: UInt = #line
+        ) {
+            let loaded = HistoryLocalStoreReader(rootDirectory: fixture.root).load()
+            let nothingDeleted = fixture.deletedEventIDs.isSubset(of: Set(loaded.events.map(\.id)))
+                && loaded.semanticSnapshots.count == fixture.keptSnapshotIDs.count + fixture.deletedEventIDs.count
+            let journal = fixture.root.appendingPathComponent(TargetedHistoryDeletionJournal.fileName)
+            XCTAssertTrue(
+                nothingDeleted || FileManager.default.fileExists(atPath: journal.path),
+                "a partial deletion must leave its selection for the retry", file: file, line: line
+            )
+            let retry = commit(fixture.request, fixture: fixture)
+            XCTAssertNoThrow(try retry.get(), "retry of the same request must complete", file: file, line: line)
+            let after = HistoryLocalStoreReader(rootDirectory: fixture.root).load()
+            XCTAssertEqual(after.events.map(\.id).sorted(), fixture.keptEventIDs.sorted(), file: file, line: line)
+            XCTAssertEqual(Set(after.semanticSnapshots.keys), fixture.keptSnapshotIDs, file: file, line: line)
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: fixture.root.appendingPathComponent("computer-history/2026-08-23.computer-history.json").path
+                ),
+                file: file, line: line
+            )
+            XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path), file: file, line: line)
+        }
+
+        private func commit(
+            _ request: TargetedHistoryDeletionRequest,
+            fixture: EpisodeFixture,
+            transformRawOutcome: ((JSONLTargetedDeletionOutcome) -> JSONLTargetedDeletionOutcome)? = nil
+        ) -> Result<TargetedHistoryDeletionOutcome, Error> {
+            let committer: TargetedHistoryDeletionCommitter
+            do {
+                committer = TargetedHistoryDeletionCommitter(
+                    rootDirectory: fixture.root,
+                    rawStore: try JSONLStore(
+                        retentionDays: 0,
+                        eventsDirectory: fixture.root.appendingPathComponent("events", isDirectory: true),
+                        prepareApplicationStorage: false
+                    ),
+                    semanticStore: SemanticContextStore(
+                        semanticDirectory: fixture.root.appendingPathComponent("semantic", isDirectory: true)
+                    ),
+                    derivedCleaner: DerivedHistoryCleaner(
+                        rootDirectory: fixture.root,
+                        codexMemoryDirectory: fixture.codex
+                    ),
+                    transformRawOutcome: transformRawOutcome
+                )
+            } catch {
+                return .failure(error)
+            }
+            let done = expectation(description: "targeted commit")
+            var result: Result<TargetedHistoryDeletionOutcome, Error> = .failure(
+                TargetedHistoryDeletionError.sourceIncomplete
+            )
+            committer.commit(request) {
+                result = $0
+                done.fulfill()
+            }
+            wait(for: [done], timeout: 10)
+            return result
+        }
+
+        private func makeEpisodeFixture() throws -> EpisodeFixture {
+            let root = try makeRoot()
+            let codex = root.appendingPathComponent("codex-memory", isDirectory: true)
+            let computerHistory = root.appendingPathComponent("computer-history", isDirectory: true)
+            try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: computerHistory, withIntermediateDirectories: true)
+            let start = makeDate(hour: 12)
+            let app = AppSnapshot(name: "TextEdit", bundleIdentifier: "com.apple.TextEdit", processIdentifier: 42)
+            let targetedPayload = semanticPayload(id: "commit-targeted", timestamp: start)
+            let retainedPayload = semanticPayload(id: "commit-retained", timestamp: start.addingTimeInterval(3_600))
+            let targeted = HistoryEvent(
+                id: "commit-targeted-event", sessionID: "commit", timestamp: start, kind: .mouseClick,
+                app: app, window: WindowSnapshot(title: "Targeted work", role: nil, subrole: nil),
+                pointer: PointerSnapshot(button: "left", x: 10, y: 10, clickCount: 1),
+                semanticContext: targetedPayload.reference
+            )
+            let unrelated = HistoryEvent(
+                id: "commit-unrelated-event", sessionID: "commit", timestamp: start.addingTimeInterval(3_600),
+                kind: .mouseClick, app: app, window: WindowSnapshot(title: "Unrelated work", role: nil, subrole: nil),
+                pointer: PointerSnapshot(button: "left", x: 20, y: 20, clickCount: 1),
+                semanticContext: retainedPayload.reference
+            )
+            try write(events: [targeted, unrelated], payloads: [targetedPayload, retainedPayload], root: root)
+            for key in ["2026-08-23", "2026-08-24"] {
+                try Data("derived-\(key)".utf8).write(
+                    to: computerHistory.appendingPathComponent("\(key).computer-history.json")
+                )
+            }
+            let memory = ComputerHistoryEngine.analyze(
+                events: [targeted, unrelated],
+                semanticSnapshots: [targetedPayload.id: targetedPayload, retainedPayload.id: retainedPayload],
+                day: start
+            )
+            let episode = try XCTUnwrap(
+                memory.episodes.first(where: { $0.provenance.sourceEventIDs.contains(targeted.id) })
+            )
+            return EpisodeFixture(
+                root: root, codex: codex, request: .computerHistoryEpisode(id: episode.id, day: start),
+                keptEventIDs: [unrelated.id], keptSnapshotIDs: [retainedPayload.id],
+                deletedEventIDs: [targeted.id]
+            )
+        }
+
+        private func setImmutable(_ url: URL, _ immutable: Bool) throws {
+            try FileManager.default.setAttributes([.immutable: immutable], ofItemAtPath: url.path)
+        }
+
+        private func profileAnalysis(date: String, evidence: [Date]) throws -> Data {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let rows = evidence.enumerated().map { index, time -> [String: Any] in
+                let stamp = formatter.string(from: time)
+                return ["id": "e\(index + 1)", "start": stamp, "end": stamp, "application": "TextEdit", "text": "{}"]
+            }
+            let context = try JSONSerialization.data(
+                withJSONObject: ["date": date, "timezone": TimeZone.current.identifier, "modules": [String](),
+                    "instructions": "", "evidence": rows]
+            )
+            return try JSONSerialization.data(
+                withJSONObject: ["request": ["context_json": String(decoding: context, as: UTF8.self)]]
+            )
+        }
+
         private func makeRoot() throws -> URL {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(
                 "goalong-targeted-deletion-\(UUID().uuidString)",

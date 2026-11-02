@@ -518,7 +518,8 @@
 
         /// Raw events are already gone but the semantic clear failed: still remove the derived
         /// views so no derived data of the deleted period survives. Errors are only logged;
-        /// the caller reports the semantic failure (a retry is idempotent).
+        /// the caller reports the semantic failure. Only for period clears (since a cutoff, or
+        /// all), whose retry is idempotent; a targeted clear replays its journaled selection.
         @discardableResult
         func executeAfterSemanticFailure() -> DerivedHistoryDeletionResult? {
             do {
@@ -686,7 +687,11 @@
                 cutoffKey: cutoffKey, matchingDayKeys: matchingDayKeys)
             let profileAnalysisPlan = try deletionPlan(in: profileAnalysesDirectory,
                 trustedAncestor: trustedAncestor, suffixes: [], cutoffKey: cutoffKey,
-                matchingDayKeys: matchingDayKeys, nameKey: { [self] name in profileAnalysisDayKey(name, in: profileAnalysesDirectory) })
+                matchingDayKeys: matchingDayKeys, nameKey: { [self] name in
+                    // An analysis covers up to 31 days and quotes their text: it goes with any of them.
+                    let keys = profileAnalysisDayKeys(name, in: profileAnalysesDirectory)
+                    return keys.first(where: { matchingDayKeys?.contains($0) == true }) ?? keys.max()
+                })
             let analysisPlans = [analysisPlan, developerPlan, chatGPTRecapPlan, profileAnalysisPlan].compactMap { $0 }
             // The day note is user-written content for a whole day, not activity of a
             // period: only a full history clear removes it. Calls and developer counts
@@ -792,21 +797,34 @@
         /// Analysed day of a saved profile analysis (`<uuid>.request.json` or `.analysis.json`): the
         /// `date` of its context, else the file's modification day (never before the analysed day).
         /// Other names are not ours and stay.
-        private func profileAnalysisDayKey(_ name: String, in directory: URL) -> String? {
-            guard name.hasSuffix(".request.json") || name.hasSuffix(".analysis.json") else { return nil }
+        /// Days a saved profile analysis quotes: its `date` and the day of every evidence row.
+        private func profileAnalysisDayKeys(_ name: String, in directory: URL) -> Set<String> {
+            guard name.hasSuffix(".request.json") || name.hasSuffix(".analysis.json") else { return [] }
             let url = directory.appendingPathComponent(name)
             if let data = try? ChatGPTHistoryStore.readStableSource(at: url, maximumBytes: 1_048_576),
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             {
                 let request = (object["request"] as? [String: Any]) ?? object
                 if let text = request["context_json"] as? String,
-                    let context = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
-                    let key = (context["date"] as? String).flatMap(validDayKey)
+                    let context = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
                 {
-                    return key
+                    let formatter = ISO8601DateFormatter()
+                    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    let plainFormatter = ISO8601DateFormatter()
+                    var keys = Set([(context["date"] as? String).flatMap(validDayKey)].compactMap { $0 })
+                    for row in context["evidence"] as? [[String: Any]] ?? [] {
+                        for field in ["start", "end"] {
+                            guard let stamp = row[field] as? String,
+                                let date = formatter.date(from: stamp)
+                                    ?? plainFormatter.date(from: stamp)
+                            else { continue }
+                            keys.insert(dayString(date))
+                        }
+                    }
+                    if !keys.isEmpty { return keys }
                 }
             }
-            return modificationDayKey(of: url)
+            return Set([modificationDayKey(of: url)].compactMap { $0 })
         }
 
         /// Execution id of the proof a recap JSON references, only when it is a valid UUID.
