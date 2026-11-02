@@ -4,6 +4,7 @@ import Combine
 import Foundation
 import LocalHistoryCore
 import LocalHistoryQueryCLI
+import AppleScreenTime
 
 struct JevRecentCheck: Identifiable {
     let id = UUID()
@@ -58,8 +59,8 @@ struct JevRecentCheck: Identifiable {
 
     var enabled: Bool { consents.isEnabled(.jevMonitoring) }
     var includeText: Bool {
-        UserDefaults.standard.bool(forKey: Self.excerptKey)
-            && UserDefaults.standard.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey)
+        GoalongDefaults.standard.bool(forKey: Self.excerptKey)
+            && GoalongDefaults.standard.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey)
     }
     /// One name for an unreadable break.json, in the monitor error and in the pause controls.
     static let unreadableBreakNotice = "Minuterie illisible : Jev suspendu, historique inchangé."
@@ -176,7 +177,7 @@ struct JevRecentCheck: Identifiable {
         reconfigure()
     }
     func setIncludeText(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: Self.excerptKey)
+        GoalongDefaults.standard.set(value, forKey: Self.excerptKey)
         reconfigure()
     }
     func setScope(_ value: JevMonitoringScope) {

@@ -354,13 +354,44 @@ static NSString *realHomeDirectory(void) {
     return entry && entry->pw_dir ? [NSString stringWithUTF8String:entry->pw_dir] : NSHomeDirectory();
 }
 
+// T-043 T1 tour 3: every suite a test names (`UserDefaults(suiteName: "goalong-permission-tests-<UUID>")`, the
+// gallery's `goalong-gallery-<UUID>`, …) lives in the throwaway HOME, never in ~/Library/Preferences, where cfprefsd
+// writes the plist seconds after the process exits, out of reach of any cleanup. A bare name becomes
+// `<throwaway HOME>/goalong-test-preferences/<name>` in initWithSuiteName: and in the persistent-domain methods, so
+// `removePersistentDomain(forName:)` with the bare name reaches the same file. Absolute names, NSGlobalDomain, the
+// other NS*Domain names, `com.apple.*`, `kCFPreferences*` and `.GlobalPreferences` stay as they are.
+static NSString *testPreferencesFolder;
+
+static NSString *throwawayPreferencesFolder(void) {
+    const char *home = getenv("GOALONG_TEST_HOME");
+    if (!home || !*home) home = getenv("CFFIXED_USER_HOME");
+    NSString *base = (home && *home) ? [NSString stringWithUTF8String:home] : NSTemporaryDirectory();
+    return [base stringByAppendingPathComponent:@"goalong-test-preferences"];
+}
+
+static BOOL keepsItsDomain(NSString *name) {
+    if (![name isKindOfClass:NSString.class] || name.length == 0) return YES;
+    if ([name hasPrefix:@"/"] || [name hasPrefix:@"~"] || [name hasPrefix:@"."] || [name containsString:@"/"]) return YES;
+    return [name isEqualToString:NSGlobalDomain] || [name isEqualToString:NSArgumentDomain]
+        || [name isEqualToString:NSRegistrationDomain] || [name hasPrefix:@"com.apple."] || [name hasPrefix:@"kCFPreferences"];
+}
+
+static NSString *isolatedDomainName(NSString *name) {
+    if (!testPreferencesFolder || keepsItsDomain(name)) return name;
+    return [testPreferencesFolder stringByAppendingPathComponent:name];
+}
+
 static NSString *suitePlistPath(NSString *name) {
     if ([name containsString:@"/"] || name.length == 0) return nil;
+    NSString *isolated = isolatedDomainName(name);
+    if (isolated != name) return [isolated stringByAppendingString:@".plist"];
     return [[realHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences"]
         stringByAppendingPathComponent:[name stringByAppendingString:@".plist"]];
 }
 
 static void trackSuites(void) {
+    testPreferencesFolder = throwawayPreferencesFolder();
+    [NSFileManager.defaultManager createDirectoryAtPath:testPreferencesFolder withIntermediateDirectories:YES attributes:nil error:nil];
     createdSuites = [NSMutableSet set];
     suiteLock = [[NSLock alloc] init];
     static id (*initSuite)(id, SEL, NSString *);
@@ -376,11 +407,69 @@ static void trackSuites(void) {
             }
             [suiteLock unlock];
         }
-        return initSuite(d, @selector(initWithSuiteName:), name);
+        return initSuite(d, @selector(initWithSuiteName:), isolatedDomainName(name));
+    });
+    static NSDictionary *(*getDomain)(id, SEL, NSString *);
+    getDomain = (void *)replace(NSUserDefaults.class, @selector(persistentDomainForName:), ^NSDictionary *(NSUserDefaults *d, NSString *name) {
+        return getDomain(d, @selector(persistentDomainForName:), isolatedDomainName(name));
+    });
+    static void (*setDomain)(id, SEL, NSDictionary *, NSString *);
+    setDomain = (void *)replace(NSUserDefaults.class, @selector(setPersistentDomain:forName:), ^(NSUserDefaults *d, NSDictionary *domain, NSString *name) {
+        setDomain(d, @selector(setPersistentDomain:forName:), domain, isolatedDomainName(name));
+    });
+    static void (*removeDomain)(id, SEL, NSString *);
+    removeDomain = (void *)replace(NSUserDefaults.class, @selector(removePersistentDomainForName:), ^(NSUserDefaults *d, NSString *name) {
+        removeDomain(d, @selector(removePersistentDomainForName:), isolatedDomainName(name));
+    });
+    static void (*addSuite)(id, SEL, NSString *);
+    addSuite = (void *)replace(NSUserDefaults.class, @selector(addSuiteNamed:), ^(NSUserDefaults *d, NSString *name) {
+        addSuite(d, @selector(addSuiteNamed:), isolatedDomainName(name));
+    });
+    static void (*removeSuite)(id, SEL, NSString *);
+    removeSuite = (void *)replace(NSUserDefaults.class, @selector(removeSuiteNamed:), ^(NSUserDefaults *d, NSString *name) {
+        removeSuite(d, @selector(removeSuiteNamed:), isolatedDomainName(name));
     });
 }
 
 NSString *GoalongHeadlessSuitePlistPath(NSString *name) { return suitePlistPath(name); }
+
+// R-286 F1: a `goalong-tests-defaults-*` plist left in the account's ~/Library/Preferences by a test process that
+// is gone (older builds wrote the throwaway suite there; cfprefsd writes it seconds after exit, and SIGKILL skips
+// every cleanup). Only that prefix, only regular files, only when the writer is surely gone: `<pid>-…` with a dead
+// pid, or the older UUID-only name untouched for 2 minutes. The file is unlinked and cfprefsd is not asked to
+// empty the domain: that request makes it write an empty plist back a few seconds later.
+NSInteger GoalongHeadlessSweepOrphanedTestPreferences(void) {
+    static NSRegularExpression *withPid, *uuidOnly;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        // Strict (tour 3): `<pid>-[<tag>-]<UUID>` or the legacy `<UUID>`, nothing else. The legacy name is tried
+        // first, so a UUID whose first block is all digits (`12345678-…`) is never read as a pid.
+        withPid = [NSRegularExpression regularExpressionWithPattern:@"^goalong-tests-defaults-([0-9]{1,9})-(?:[A-Za-z]+-)?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\.plist$" options:0 error:nil];
+        uuidOnly = [NSRegularExpression regularExpressionWithPattern:@"^goalong-tests-defaults-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\.plist$" options:0 error:nil];
+    });
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *folder = [realHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences"];
+    NSInteger removed = 0;
+    for (NSString *file in [files contentsOfDirectoryAtPath:folder error:nil]) {
+        if (![file hasPrefix:@"goalong-tests-defaults-"]) continue;
+        NSString *path = [folder stringByAppendingPathComponent:file];
+        NSDictionary *attributes = [files attributesOfItemAtPath:path error:nil];
+        if (![attributes.fileType isEqualToString:NSFileTypeRegular]) continue;
+        NSRange all = NSMakeRange(0, file.length);
+        BOOL orphan = NO;
+        NSTextCheckingResult *match = nil;
+        if ([uuidOnly firstMatchInString:file options:0 range:all]) {
+            NSDate *modified = attributes.fileModificationDate;
+            orphan = modified && -modified.timeIntervalSinceNow > 120;
+        } else if ((match = [withPid firstMatchInString:file options:0 range:all])) {
+            long long pid = [[file substringWithRange:[match rangeAtIndex:1]] longLongValue];
+            // pid 0 would signal the whole process group: never call kill() with it.
+            orphan = pid <= 0 || pid > INT_MAX || (kill((pid_t)pid, 0) != 0 && errno == ESRCH);
+        }
+        if (orphan && unlink(path.fileSystemRepresentation) == 0) removed++;
+    }
+    return removed;
+}
 
 // Deletes the plist files only. Asking cfprefsd to remove the domain (removePersistentDomain) makes it
 // write the empty domain back a moment later, which re-creates the file after the cleanup.
@@ -400,7 +489,9 @@ void GoalongHeadlessCleanLeakedDefaultSuites(void) {
 }
 
 // At exit a write already queued in cfprefsd can still land: look again once after a short pause.
+// Orphans of other test processes that ended during this run go too.
 static void cleanAtExit(void) {
+    GoalongHeadlessSweepOrphanedTestPreferences();
     [suiteLock lock];
     NSArray<NSString *> *names = createdSuites.allObjects;
     [suiteLock unlock];
@@ -426,6 +517,35 @@ static void cleanOnSignal(int sig) {
     }
     signal(sig, SIG_DFL);
     raise(sig);
+}
+
+// Preferences (T-043 T1): under `swift test`, +[NSUserDefaults standardUserDefaults] is xctest's real domain
+// on this Mac (cfprefsd ignores CFFIXED_USER_HOME). For the whole run it returns one throwaway suite instead.
+// `GoalongDefaults.standard` calls +standardUserDefaults (GOALONG_TEST_DEFAULTS_HOOK=1), so SwiftUI `@AppStorage`,
+// AppKit, app and test code share that suite and the gallery guards see every read. Installed before them.
+// R-286 F1: the suite name is an absolute path inside the throwaway HOME, so cfprefsd writes its plist there, never
+// in ~/Library/Preferences (where it landed seconds after exit, out of reach of any cleanup); the HOME goes at the end.
+static NSUserDefaults *isolatedStandardSuite;
+static IMP replaceClassMethod(Class cls, SEL sel, id block);
+
+// `<throwaway HOME>/goalong-test-preferences/goalong-tests-defaults-<pid>-<tag><UUID>` (cfprefsd adds `.plist`).
+// Never `…/Library/Preferences/<name>`: when that path lies under the account's home (CI puts the throwaway HOME in
+// /Users/runner/work/_temp), cfprefsd maps it to the plain domain `<name>` in ~/Library/Preferences.
+static NSString *throwawaySuiteName(NSString *tag) {
+    NSString *file = [NSString stringWithFormat:@"goalong-tests-defaults-%d-%@%@", getpid(), tag, NSUUID.UUID.UUIDString];
+    return [throwawayPreferencesFolder() stringByAppendingPathComponent:file];
+}
+
+static void isolateStandardDefaults(void) {
+    // Always this process's own suite: a test process started by another one never shares its parent's.
+    NSString *name = throwawaySuiteName(@"");
+    setenv("GOALONG_TEST_DEFAULTS_SUITE", name.fileSystemRepresentation, 1);
+    isolatedStandardSuite = [[NSUserDefaults alloc] initWithSuiteName:name];
+    if (!isolatedStandardSuite) return;
+    replaceClassMethod(NSUserDefaults.class, @selector(standardUserDefaults), ^id(id cls) {
+        return isolatedStandardSuite;
+    });
+    setenv("GOALONG_TEST_DEFAULTS_HOOK", "1", 1);
 }
 
 // Gallery guards (`make gallery`, `GallerySmokeTests`). Installed once at load, active only between
@@ -593,8 +713,8 @@ static void installGalleryGuards(void) {
 }
 
 void GoalongGalleryGuardsBegin(void) {
-    // A fresh, empty suite each session (UUID name: the suite tracker deletes its plist).
-    NSString *name = [@"goalong-gallery-standard-" stringByAppendingString:NSUUID.UUID.UUIDString];
+    // A fresh, empty suite each session, inside the throwaway HOME like the process-wide one.
+    NSString *name = throwawaySuiteName(@"gallery-");
     NSUserDefaults *suite = [[NSUserDefaults alloc] initWithSuiteName:name];
     [galleryLock lock];
     [galleryViolations removeAllObjects];
@@ -650,6 +770,8 @@ static void useThrowawayHomeIfNone(void) {
     if (!NSClassFromString(@"XCTestCase") && !environment[@"XCTestConfigurationFilePath"]) return;
     useThrowawayHomeIfNone();
     trackSuites();
+    GoalongHeadlessSweepOrphanedTestPreferences();
+    isolateStandardDefaults();
     atexit(failIfWindowsShowed);   // atexit runs in reverse: this exits 1 after the suite cleanup
     atexit(cleanAtExit);
     static const int signals[] = {SIGINT, SIGTERM, SIGHUP, SIGABRT, SIGTRAP, SIGSEGV, SIGBUS, SIGILL};

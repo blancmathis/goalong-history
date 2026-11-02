@@ -2,6 +2,7 @@
 import AppKit
 import LocalHistoryQueryCLI
 import LocalHistoryCore
+import AppleScreenTime
 
 @MainActor
 final class GoalongWebsitePairingCoordinator {
@@ -16,7 +17,7 @@ final class GoalongWebsitePairingCoordinator {
         GoalongWebsiteAutoSender.shared.forget()
         let deleted = GoalongSitePairing.discardManagedToken(path: path, directory: connectionsDirectory)
         for key in ["goalong.website.accountID", "goalong.website.accountCredentialFingerprint", GoalongWebsiteAutoSender.refusedCredentialKey] {
-            UserDefaults.standard.removeObject(forKey: key)
+            GoalongDefaults.standard.removeObject(forKey: key)
         }
         return deleted
     }
@@ -96,7 +97,7 @@ final class GoalongWebsitePairingCoordinator {
         do {
             if url.host == "share" {
                 let requested = try GoalongSiteSharingLink.destination(url: url)
-                let defaults = UserDefaults.standard
+                let defaults = GoalongDefaults.standard
                 let savedOrigin = defaults.string(forKey: "goalong.website.origin") ?? ""
                 let savedAccount = defaults.string(forKey: "goalong.website.accountID") ?? ""
                 let fingerprint = defaults.string(forKey: "goalong.website.accountCredentialFingerprint") ?? ""
@@ -114,15 +115,15 @@ final class GoalongWebsitePairingCoordinator {
             let confirmation = NSAlert()
             confirmation.messageText = "Relier ce Mac à votre compte Goalong ?"
             let notice = Self.scheduleNotice(planOrigin: GoalongWebsiteAutoSender.shared.savedConfiguration?.origin,
-                savedOrigin: UserDefaults.standard.string(forKey: "goalong.website.origin") ?? "",
-                savedAccountID: UserDefaults.standard.string(forKey: "goalong.website.accountID") ?? "",
+                savedOrigin: GoalongDefaults.standard.string(forKey: "goalong.website.origin") ?? "",
+                savedAccountID: GoalongDefaults.standard.string(forKey: "goalong.website.accountID") ?? "",
                 newOrigin: pairing.origin)
             confirmation.informativeText = Self.confirmationText(origin: pairing.origin, notice: notice)
             confirmation.addButton(withTitle: "Relier mon Mac")
             confirmation.addButton(withTitle: "Annuler")
             guard await present(confirmation, on: window) == .alertFirstButtonReturn else { return false }
             let directory = Self.connectionsDirectory
-            let previousTokenPath = UserDefaults.standard.string(forKey: "goalong.website.tokenFilePath") ?? ""
+            let previousTokenPath = GoalongDefaults.standard.string(forKey: "goalong.website.tokenFilePath") ?? ""
             let saved = try await Task.detached(priority: .userInitiated) {
                 let response = try pairing.exchange()
                 let accountID = try GoalongSitePairing.accountID(response: response)
@@ -132,8 +133,8 @@ final class GoalongWebsitePairingCoordinator {
             }.value
             // A schedule approved for another account must not survive re-pairing. The same
             // account keeps it, bound to the new access and paused until the user reviews it.
-            let previousOrigin = UserDefaults.standard.string(forKey: "goalong.website.origin") ?? ""
-            let previousAccount = UserDefaults.standard.string(forKey: "goalong.website.accountID") ?? ""
+            let previousOrigin = GoalongDefaults.standard.string(forKey: "goalong.website.origin") ?? ""
+            let previousAccount = GoalongDefaults.standard.string(forKey: "goalong.website.accountID") ?? ""
             if Self.keepsSchedule(savedOrigin: previousOrigin, savedAccountID: previousAccount,
                                   newOrigin: pairing.origin, newAccountID: saved.accountID ?? ""),
                GoalongWebsiteAutoSender.shared.savedConfiguration?.origin == pairing.origin {
@@ -141,11 +142,11 @@ final class GoalongWebsitePairingCoordinator {
             } else {
                 GoalongWebsiteAutoSender.shared.forget()
             }
-            UserDefaults.standard.removeObject(forKey: GoalongWebsiteAutoSender.refusedCredentialKey)
-            UserDefaults.standard.set(pairing.origin, forKey: "goalong.website.origin")
-            UserDefaults.standard.set(saved.file.path, forKey: "goalong.website.tokenFilePath")
-            UserDefaults.standard.set(saved.accountID, forKey: "goalong.website.accountID")
-            UserDefaults.standard.set(saved.fingerprint, forKey: "goalong.website.accountCredentialFingerprint")
+            GoalongDefaults.standard.removeObject(forKey: GoalongWebsiteAutoSender.refusedCredentialKey)
+            GoalongDefaults.standard.set(pairing.origin, forKey: "goalong.website.origin")
+            GoalongDefaults.standard.set(saved.file.path, forKey: "goalong.website.tokenFilePath")
+            GoalongDefaults.standard.set(saved.accountID, forKey: "goalong.website.accountID")
+            GoalongDefaults.standard.set(saved.fingerprint, forKey: "goalong.website.accountCredentialFingerprint")
             // The replaced credential is deleted only now that the new one is saved and selected.
             if previousTokenPath != saved.file.path {
                 GoalongSitePairing.discardManagedToken(path: previousTokenPath, directory: directory)

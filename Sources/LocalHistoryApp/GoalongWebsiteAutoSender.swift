@@ -3,6 +3,7 @@ import Foundation
 import Combine
 import LocalHistoryQueryCLI
 import LocalHistoryCore
+import AppleScreenTime
 
 /// A local, explicitly enabled schedule. No daemon, collection or audience change. Missed days
 /// are caught up at most 3 days back. Future text is never authorized by a past paragraph index.
@@ -67,7 +68,7 @@ import LocalHistoryCore
             && (!options.includeRecap || GoalongCapabilityConsentStore.shared.isEnabled(.chatGPTAnalysis))
     }
 
-    init(defaults: UserDefaults = .standard, root: URL = AppPaths.applicationSupportDirectory,
+    init(defaults: UserDefaults = GoalongDefaults.standard, root: URL = AppPaths.applicationSupportDirectory,
          exporter: @escaping (URL, String, GoalongSiteExportOptions) throws -> Data = { try GoalongQueryCLI.siteExportPayload(rootDirectory: $0, day: $1, options: $2) },
          sender: ((Data, String, URL, String?) throws -> Data)? = nil,
          sourceConsent: @escaping @MainActor (GoalongSiteExportOptions) -> Bool = { GoalongWebsiteAutoSender.sourcesAllowed($0) },
@@ -201,7 +202,7 @@ import LocalHistoryCore
         defaults.set(fingerprint, forKey: Self.refusedCredentialKey)
     }
     /// True when the site refused the access stored in this token file.
-    static func accessWasRefused(tokenPath: String, defaults: UserDefaults = .standard) -> Bool {
+    static func accessWasRefused(tokenPath: String, defaults: UserDefaults = GoalongDefaults.standard) -> Bool {
         guard let refused = defaults.string(forKey: refusedCredentialKey), !tokenPath.isEmpty,
               let token = try? GoalongSiteSubmission.readToken(file: URL(fileURLWithPath: tokenPath)) else { return false }
         return SHA256Digest.hashHex(Data(token.utf8)) == refused

@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Ambiance
@@ -252,7 +253,7 @@
             refreshScheduler: DashboardRefreshScheduler = DashboardRefreshScheduler(),
             dataReader: DashboardDataReader = DashboardDataReader(),
             now: @escaping () -> Date = Date.init,
-            defaults: UserDefaults = .standard,
+            defaults: UserDefaults = GoalongDefaults.standard,
             availableBytes: @escaping () -> Int64? = { StorageHealth.availableBytes() },
             analyticsReader: GoalongAnalyticsReader = .shared,
             shareExportWriter: ShareExportWriter? = nil,
@@ -875,7 +876,7 @@
         /// profile rather than marking an unrecorded proposal as reviewed.
         @discardableResult
         func applyRecordingSetup(_ proposal: GoalongRecordingSetup.Proposal,
-                                 defaults: UserDefaults = .standard,
+                                 defaults: UserDefaults = GoalongDefaults.standard,
                                  flushPreferences: (() -> Bool)? = nil,
                                  notifyRuntime: Bool = true) -> Bool {
             let original = configManager.config

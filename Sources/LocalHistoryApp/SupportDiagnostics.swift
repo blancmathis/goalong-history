@@ -1,6 +1,7 @@
 #if os(macOS)
 import Foundation
 import Darwin
+import AppleScreenTime
 
 // This is an allowlist, not a regex-based scrubber. No API accepts user strings,
 // URLs, error descriptions, prompts, file contents, or an arbitrary dictionary.
@@ -206,7 +207,7 @@ final class SupportDiagnostics {
         sink: { [weak self] date, text in self?.persist(text, at: date) }
     )
 
-    init(root: URL, defaults: UserDefaults = .standard, clock: @escaping () -> Date = Date.init) {
+    init(root: URL, defaults: UserDefaults = GoalongDefaults.standard, clock: @escaping () -> Date = Date.init) {
         self.root = root; self.defaults = defaults; self.clock = clock
         let sourceRevision = Bundle.main.object(forInfoDictionaryKey: "GoalongSourceRevision") as? String
         revision = SupportRecord.revisionIsSafe(sourceRevision) ? sourceRevision : nil

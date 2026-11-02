@@ -57,7 +57,7 @@ let package = Package(
                 cSettings: [.unsafeFlags(["-Os"], .when(configuration: .release))]),
         .target(name: "OndeCore", dependencies: ["OndeDSP"], path: "Features/Ambiance/Engine/OndeCore",
                 exclude: ["GenerativeRenderer.swift", "TransitionRenderer.swift", "PlaybackSelection.swift"]),
-        .target(name: "Ambiance", dependencies: ["OndeCore", "OndeDSP"], path: "Features/Ambiance/Sources"),
+        .target(name: "Ambiance", dependencies: ["OndeCore", "OndeDSP", "AppleScreenTime"], path: "Features/Ambiance/Sources"),
         .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore", "GoalongHeadlessTestSupport"], path: "Features/Ambiance/Tests"),
         .executableTarget(name: "GoalongRelauncher", path: "Sources/GoalongRelauncher"),
         // Kill protection during a severe block (spec K): pure logic shared by the guard and the app.
@@ -75,7 +75,7 @@ let package = Package(
         .executableTarget(name: "GoalongGuardTestHost", path: "Sources/GoalongGuardTestHost"),
         .testTarget(
             name: "GoalongGuardCoreTests",
-            dependencies: ["GoalongGuardCore", "LocalHistoryCore"],
+            dependencies: ["GoalongGuardCore", "LocalHistoryCore", "GoalongHeadlessTestSupport"],
             path: "Tests/GoalongGuardCoreTests"
         ),
         .target(

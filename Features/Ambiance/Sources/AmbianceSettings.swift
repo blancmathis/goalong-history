@@ -1,10 +1,11 @@
 import Foundation
+import AppleScreenTime
 
 /// Preferences only: no runtime, directory lookup, observation or audio preparation.
 public struct AmbianceSettings {
     public static let enabledKey = "goalong.module.ambiance.enabled"
     private let defaults: UserDefaults
-    public init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    public init(defaults: UserDefaults = GoalongDefaults.standard) { self.defaults = defaults }
     public var isEnabled: Bool {
         get { defaults.bool(forKey: Self.enabledKey) }
         nonmutating set { defaults.set(newValue, forKey: Self.enabledKey) }

@@ -1,3 +1,4 @@
+import AppleScreenTime
 #if os(macOS)
     import AgentActivity
     import AppKit
@@ -84,7 +85,7 @@
     }
 
     if CommandLine.arguments.contains("--reset-onboarding") {
-        UserDefaults.standard.removeObject(forKey: "didShowLocalHistoryConsentOnboardingV5")
+        GoalongDefaults.standard.removeObject(forKey: "didShowLocalHistoryConsentOnboardingV5")
         exit(0)
     }
 

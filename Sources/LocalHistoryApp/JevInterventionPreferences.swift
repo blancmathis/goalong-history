@@ -2,6 +2,7 @@
 import Combine
 import Foundation
 import LocalHistoryCore
+import AppleScreenTime
 
 extension Notification.Name {
     static let jevInterventionsDidChange = Notification.Name("goalong.jev.interventions.changed")
@@ -15,7 +16,7 @@ extension Notification.Name {
     @Published private(set) var settings: JevInterventionSettings
     @Published private(set) var error: String?
     private let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = GoalongDefaults.standard) {
         self.defaults = defaults
         settings = .init()
         if defaults.object(forKey: Self.storageKey) != nil {

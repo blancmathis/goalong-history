@@ -2,6 +2,7 @@
     import Foundation
     import XCTest
     @testable import LocalHistoryApp
+    import AppleScreenTime
 
     final class ChatGPTRecapRuntimeBehaviorTests: XCTestCase {
         private func makeContainer() throws -> URL {
@@ -295,8 +296,8 @@
             let container = try makeContainer()
             defer { try? FileManager.default.removeItem(at: container) }
             let key = "chatgptRecap.automaticEnabled"
-            let saved = UserDefaults.standard.object(forKey: key)
-            defer { UserDefaults.standard.set(saved, forKey: key) }
+            let saved = GoalongDefaults.standard.object(forKey: key)
+            defer { GoalongDefaults.standard.set(saved, forKey: key) }
             let runtime = makeRuntime(
                 container: container, executable: container.appendingPathComponent("codex"),
                 sessionFactory: { _ in throw CodexAppServerError.homeBusy })
