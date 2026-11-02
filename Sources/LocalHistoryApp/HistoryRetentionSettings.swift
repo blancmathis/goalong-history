@@ -161,9 +161,8 @@ extension HistoryRetentionPolicy {
                     }
                 }.fixedSize(horizontal: false, vertical: true).padding(24)
             }
-            // CUT-28 (28): the footer covers the end of the list; a visible scroller says « more below ».
-            .scrollIndicators(.visible)
-            // A soft fade shows that the list continues under the footer.
+            // CUT-28 (28): the footer covers the end of the list; a soft fade says « more below ».
+            // (No `.scrollIndicators(.visible)`: with the overlay scroller style it shows nothing.)
             .overlay(alignment: .bottom) {
                 LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground], startPoint: .top, endPoint: .bottom)
                     .frame(height: 18).allowsHitTesting(false)

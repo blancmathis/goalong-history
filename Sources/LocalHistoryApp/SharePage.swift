@@ -6,6 +6,9 @@
         @ObservedObject var model: DashboardViewModel
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
+        /// VoiceOver says which settings open; it starts with the visible « Ouvrir ».
+        static let openRecordingSettingsAccessibilityLabel = "Ouvrir les réglages d’enregistrement"
+
         private var proof: ShareProofStatus {
             ShareProofStatus.make(observedMinutes: model.snapshot.activeMinutes,
                                   sealedMinutes: model.snapshot.sealedMinutes,
@@ -118,7 +121,7 @@
                     Button("Ouvrir les réglages") { model.openRecordingSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                         // R-265: VoiceOver says which settings open.
-                        .accessibilityLabel("Ouvrir les réglages d’enregistrement")
+                        .accessibilityLabel(Self.openRecordingSettingsAccessibilityLabel)
                 case .reportProblem?:
                     Button("Signaler un problème…") { model.openDiagnostics() }
                         .buttonStyle(LHSecondaryButtonStyle())

@@ -310,7 +310,10 @@ final class T046C3RenderTests: XCTestCase {
 
     /// Renders off screen: a hosting view with no window, so nothing is shown and nothing takes the focus.
     @MainActor private func host(_ root: some View) -> NSView {
-        let view = NSHostingView(rootView: root.environment(\.goalongReduceMotion, true).goalongControls())
+        let view = NSHostingView(rootView: root.environment(\.goalongReduceMotion, true)
+            // No real probe of the Screen Time store: the page must not depend on this Mac's disk permissions.
+            .environment(\.sourceAccessCheck, { _, done in done(.ready) })
+            .goalongControls())
         view.frame = NSRect(x: 0, y: 0, width: 900, height: 1600)
         view.layoutSubtreeIfNeeded()
         // The conversations page first shows « Vérification des accès… » while it checks the sources.

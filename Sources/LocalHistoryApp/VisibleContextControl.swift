@@ -5,6 +5,8 @@ import SwiftUI
 struct VisibleContextControl: View {
     @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey) private var enabled = false
     @State private var confirming = false
+    /// One text for the line under the title and for the switch's VoiceOver hint (R-264, P-9).
+    static let warning = "Facultatif, sur ce Mac. Peut contenir des messages et documents personnels."
     var body: some View {
         LHCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -12,7 +14,7 @@ struct VisibleContextControl: View {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Texte affiché").font(.system(size: 13, weight: .semibold))
-                        Text("Facultatif, sur ce Mac. Peut contenir des messages et documents personnels.")
+                        Text(Self.warning)
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -21,7 +23,7 @@ struct VisibleContextControl: View {
                     }))
                     .labelsHidden().toggleStyle(.goalongSwitchOnly).accessibilityIdentifier("recording-visible-text")
                     // R-264: the warning under the title is not read with the switch.
-                    .accessibilityHint("Facultatif, sur ce Mac. Peut contenir des messages et documents personnels.")
+                    .accessibilityHint(Self.warning)
                 }.frame(minHeight: 44)
                 if enabled {
                     Text("Activé, les anciennes données sont conservées après arrêt.")

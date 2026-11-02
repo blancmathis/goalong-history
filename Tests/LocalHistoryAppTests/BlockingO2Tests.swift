@@ -53,5 +53,15 @@ final class BlockingO2Tests: XCTestCase {
                                                                         state: "Bloqué jusqu’à 18:00"),
                        "Ensuite, Réseaux sociaux, Vidéo : bloqué jusqu’à 18:00")
     }
+
+    // P-14: a secondary row's buttons name their lists for VoiceOver; the leading row keeps the bare word.
+    func testSecondaryRowButtonsNameTheirLists() {
+        let lists = [BlockList(id: social, name: "Réseaux sociaux"), BlockList(id: video, name: "Vidéo")]
+        XCTAssertEqual(BlockingStateHero.actionAccessibilityLabel("Arrêter", lists: lists, named: true),
+                       "Arrêter le blocage de Réseaux sociaux, Vidéo")
+        XCTAssertEqual(BlockingStateHero.actionAccessibilityLabel("Débloquer", lists: lists, named: true),
+                       "Débloquer Réseaux sociaux, Vidéo")
+        XCTAssertEqual(BlockingStateHero.actionAccessibilityLabel("Arrêter", lists: lists, named: false), "Arrêter")
+    }
 }
 #endif

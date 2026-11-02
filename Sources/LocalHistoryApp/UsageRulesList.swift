@@ -81,8 +81,8 @@
                         // The export bar sits under the list, not over it: a small margin is enough (UI-15B, 32/55).
                         .padding(.bottom, 12)
                     }
-                    // CUT-55 (55): the export bar cuts the last row; a visible scroller and a soft fade say « more below ».
-                    .scrollIndicators(.visible)
+                    // CUT-55 (55): the export bar cuts the last row; a soft fade says « more below ».
+                    // (No `.scrollIndicators(.visible)`: with the overlay scroller style it shows nothing.)
                     .overlay(alignment: .bottom) {
                         LinearGradient(colors: [LHTheme.pageBackground.opacity(0), LHTheme.pageBackground], startPoint: .top, endPoint: .bottom)
                             .frame(height: 16).allowsHitTesting(false)

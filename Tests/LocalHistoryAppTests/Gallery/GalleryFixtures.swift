@@ -195,6 +195,17 @@ import SwiftUI
         return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 }, runningApps: noApps)
     }
 
+    /// A typed-lock block on the social list, with the list's weekday program (free, until 18:00) running under it: same
+    /// lists, no stricter lock, so the program folds into one « Ensuite : … » line (BlockingPage.folds, R-266, P-15).
+    static func blockingContinued() -> BlockingController {
+        let now = blockingNow
+        var document = BlockingDocument()
+        document.lists = [socialList, videoList, focusList]
+        document.sessions = [BlockSession(listIDs: [socialID], start: now.addingTimeInterval(-20 * 60),
+                                          end: now.addingTimeInterval(84 * 60), lock: .typing)]
+        return BlockingController(document: document, clock: { now }, continuous: { now.timeIntervalSince1970 }, runningApps: noApps)
+    }
+
     static func blockingTriggered() -> BlockingController {
         let now = blockingNow
         var document = BlockingDocument()

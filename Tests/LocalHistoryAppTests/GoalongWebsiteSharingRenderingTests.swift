@@ -7,6 +7,12 @@ import LocalHistoryQueryCLI
 
 /// Real native views, entirely synthetic data and an isolated preferences home.
 final class GoalongWebsiteSharingRenderingTests: XCTestCase {
+    /// P-6: the test writes the token path and the origin into the shared preferences; they never outlive it.
+    override func tearDown() {
+        for key in ["goalong.website.tokenFilePath", "goalong.website.origin"] { UserDefaults.standard.removeObject(forKey: key) }
+        super.tearDown()
+    }
+
     @MainActor func testRenderSharingWindow() async throws {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["GOALONG_SHARING_SNAPSHOTS"], let home = env["GOALONG_SHARING_TEST_HOME"] else {
