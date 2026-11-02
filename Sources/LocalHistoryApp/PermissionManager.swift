@@ -292,10 +292,24 @@
         }
 
         private static func liveStatus() -> PermissionStatus {
-            probeStatus(includeFunctionalCheck: true)
+            guardedProbe(includeFunctionalCheck: true)
+        }
+
+        /// Times the real system (TCC, other processes' windows) was read. Stays 0 under XCTest.
+        nonisolated(unsafe) static var systemReadCount = 0
+
+        /// Under XCTest nothing is read from this Mac: every grant answers « not granted », whatever the machine's TCC says.
+        static func guardedProbe(includeFunctionalCheck: Bool) -> PermissionStatus {
+            if GoalongTestEnvironment.isXCTest {
+                return PermissionStatus.resolved(accessibilityPreflight: false, accessibilityFunctionalProbe: false,
+                                                 inputMonitoringDirectlyGranted: false,
+                                                 accessibilityCrossProcessProbe: false, accessibilityProbeError: nil)
+            }
+            return probeStatus(includeFunctionalCheck: includeFunctionalCheck)
         }
 
         private static func probeStatus(includeFunctionalCheck: Bool) -> PermissionStatus {
+            systemReadCount += 1
             let started = ProcessInfo.processInfo.systemUptime
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
             let preflight = AXIsProcessTrustedWithOptions(options)

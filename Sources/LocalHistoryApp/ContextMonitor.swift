@@ -97,7 +97,7 @@
             self.memoryStore = memoryStore
             accessibilityEventMonitor = AccessibilityEventMonitor(
                 isAccessibilityAvailable: { [weak self, weak permissions] in
-                    permissions?.currentStatus.accessibilityUsable == true || (self?.blockingObservationEnabled == true && AXIsProcessTrusted())
+                    permissions?.currentStatus.accessibilityUsable == true || (self?.blockingObservationEnabled == true && GoalongAccessibilityTrust.isTrusted)
                 },
                 onChange: { [weak self] trigger in
                     self?.sampleNow { snapshot in

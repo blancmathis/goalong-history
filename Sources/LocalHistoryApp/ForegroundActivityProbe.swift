@@ -83,7 +83,7 @@ final class ForegroundActivityProbe {
 
         guard Self.hasVisibleWindow(pid: front.processIdentifier) else { return nil }
         let browser = Self.isBrowser(context)
-        let controls = labelsEnabled && AXIsProcessTrusted() ? ForegroundPlaybackControls.probe(context) : .unknown
+        let controls = labelsEnabled && GoalongAccessibilityTrust.isTrusted ? ForegroundPlaybackControls.probe(context) : .unknown
         let holdsDisplay = Self.holdsDisplayAssertion(pid: front.processIdentifier, bundleURL: front.bundleURL)
         let evidence = Self.resolve(
             isBrowser: browser,

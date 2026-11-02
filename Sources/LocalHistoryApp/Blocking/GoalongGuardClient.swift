@@ -45,7 +45,9 @@ enum GoalongGuardGate {
     }
 
     /// The account's real home, not `CFFIXED_USER_HOME`.
-    private static var realHome: URL {
+    /// Under XCTest the account's real home is never read: the throwaway home stands in for it.
+    static var realHome: URL {
+        if GoalongTestEnvironment.isXCTest { return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true) }
         guard let entry = getpwuid(getuid()), let directory = entry.pointee.pw_dir else { return URL(fileURLWithPath: NSHomeDirectory()) }
         return URL(fileURLWithPath: String(cString: directory), isDirectory: true)
     }
