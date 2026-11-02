@@ -556,12 +556,31 @@
 
     /// Pure display strings of the Computer History page, kept testable.
     enum ComputerHistoryPageCopy {
-        /// DEF-07: today, writes refused → the cause and its time, above a timeline that stops there. Nil otherwise.
-        static func storageStopNote(isToday: Bool, failure: CaptureStorageFailureKind?, since: Date?) -> String? {
+        /// DEF-07: today, writes refused → the stop and its time, above a timeline that stops there. Nil otherwise.
+        /// R8-6: the cause is said once per screen. When the top banner names the storage alert (`bannerNamesStorage`),
+        /// the page says only the effect; it keeps the cause only when the banner shows another one (recording stopped).
+        static func storageStopNote(isToday: Bool, failure: CaptureStorageFailureKind?, since: Date?,
+                                    bannerNamesStorage: Bool) -> String? {
             guard isToday, let failure else { return nil }
-            let cause = GoalongActivityEmptyCopy.storageCause(failure)
+            if bannerNamesStorage { return storageEffect(since: since) + "." }
             let start = since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
-            return "\(start) : \(cause). Rien de plus n’est enregistré avant la reprise, qui est automatique."
+            return "\(start) : \(GoalongActivityEmptyCopy.storageCause(failure)). Rien de plus n’est enregistré avant la reprise, qui est automatique."
+        }
+
+        /// What the page says when the banner already names the cause: the effect and its time, as Activité does.
+        static func storageEffect(since: Date?) -> String {
+            since.map { "Aucune donnée depuis \(GoalongUIFormat.time($0))" } ?? "Aucune nouvelle donnée"
+        }
+
+        /// Empty day, writes refused today.
+        static func storageEmptyTitle(since: Date?, bannerNamesStorage: Bool) -> String {
+            bannerNamesStorage ? storageEffect(since: since)
+                : since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
+        }
+
+        static func storageEmptyMessage(failure: CaptureStorageFailureKind, bannerNamesStorage: Bool) -> String {
+            bannerNamesStorage ? "Cette coupure restera indiquée ici."
+                : "Rien n’est enregistré tant que \(GoalongActivityEmptyCopy.storageCause(failure)). La reprise est automatique et la coupure restera indiquée ici."
         }
 
         /// "12 périodes", or "3 sur 12 périodes" while a search filters the timeline.
@@ -624,6 +643,15 @@
         @State private var newestFirst = true
         @State private var hasRetried = false
         @Environment(\.goalongRecordingModel) private var recordingModel
+        @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+
+        /// R8-6: the banner's own slot rule (one source). Without a model (preview), the page keeps the cause.
+        private var bannerNamesStorage: Bool {
+            guard let recordingModel else { return false }
+            return GoalongAttentionBanner.currentStorageSlot(model: recordingModel,
+                localEnabled: consents.isEnabled(.localComputerHistory),
+                globallyPaused: GoalongGlobalPause.load().blocksActivity, section: .history) == .storage
+        }
 
         var body: some View {
             ScrollView {
@@ -923,7 +951,8 @@
                 // DEF-07: a day with traces still names the stop and its cause above the timeline.
                 if let stop = ComputerHistoryPageCopy.storageStopNote(
                     isToday: GoalongToday.isToday(day), failure: recordingModel?.runtime.storageFailure,
-                    since: recordingModel?.runtime.storageInterruptedSince) {
+                    since: recordingModel?.runtime.storageInterruptedSince,
+                    bannerNamesStorage: bannerNamesStorage) {
                     GoalongNote(stop, tone: .warning)
                         .accessibilityIdentifier("history-storage-stop")
                 }
@@ -1012,8 +1041,8 @@
         /// Writes refused today: the empty day has a known cause and a start time.
         private var storageStopTitle: String? {
             guard GoalongToday.isToday(day), let runtime = recordingModel?.runtime, runtime.storageFailure != nil else { return nil }
-            return runtime.storageInterruptedSince.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" }
-                ?? "Enregistrement interrompu"
+            return ComputerHistoryPageCopy.storageEmptyTitle(since: runtime.storageInterruptedSince,
+                                                             bannerNamesStorage: bannerNamesStorage)
         }
 
         private var emptyTimelineTitle: String {
@@ -1038,7 +1067,7 @@
 
         private var emptyTimelineMessage: String {
             if storageStopTitle != nil, let kind = recordingModel?.runtime.storageFailure {
-                return "Rien n’est enregistré tant que \(GoalongActivityEmptyCopy.storageCause(kind)). La reprise est automatique et la coupure restera indiquée ici."
+                return ComputerHistoryPageCopy.storageEmptyMessage(failure: kind, bannerNamesStorage: bannerNamesStorage)
             }
             switch model.sourceStatus {
             case .inaccessible:

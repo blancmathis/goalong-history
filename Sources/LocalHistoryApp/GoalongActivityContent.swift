@@ -921,11 +921,12 @@ enum GoalongActivityEmptyCopy {
             }
             return Copy(title: "Aucune activité enregistrée aujourd’hui", message: reason, offersHistory: false)
         }
-        // Writes refused today: one empty state names the cause and its time, never a promise of minutes to come.
-        // P-1: a stopped recording comes first (above), as in the top banner: nothing is written then, the failure may be old.
+        // Writes refused today: the page says the effect and its time, never a promise of minutes to come.
+        // R8-6: the cause is said once per screen, by the top banner, which holds the action (« Gérer le stockage… »).
+        // P-1: a stopped recording comes first (above): only then can the banner show the storage alert, so it always does here.
         if isDay && isToday, let storage {
-            let stop = storage.since.map { "Enregistrement interrompu depuis \(GoalongUIFormat.time($0))" } ?? "Enregistrement interrompu"
-            let message = "Rien n’est enregistré tant que \(storageCause(storage.kind)). La reprise est automatique et la coupure restera indiquée dans votre historique."
+            let stop = storage.since.map { "Aucune donnée depuis \(GoalongUIFormat.time($0))" } ?? "Aucune nouvelle donnée"
+            let message = "L’enregistrement reprendra seul. Cette coupure restera indiquée dans votre historique."
             // P-2: an unreadable day still says so, with the stop.
             if incompleteDays > 0 {
                 return Copy(title: "Lecture incomplète",
