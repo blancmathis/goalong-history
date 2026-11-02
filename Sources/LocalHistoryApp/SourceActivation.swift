@@ -27,8 +27,8 @@ import LocalHistoryCore
 
         var actionTitle: String {
             switch self {
-            case .accessibility: return "Autoriser l’accessibilité"
-            case .inputMonitoring: return "Autoriser la surveillance de l’entrée"
+            case .accessibility: return "Ouvrir Réglages Système…"
+            case .inputMonitoring: return "Ouvrir Réglages Système…"
             case .fullDiskAccess: return "Ouvrir Réglages Système…"
             case .screenTimeSetup: return "Ouvrir Temps d’écran"
             case .ready, .unavailable: return "Réessayer"
@@ -49,13 +49,14 @@ import LocalHistoryCore
             }
         }
 
-        var message: String { message(appName: ProductIdentity.displayName) }
+        /// The macOS privacy list shows the bundle name (« Goalong History », « Goalong Dev »), not « Goalong ».
+        var message: String { message(appName: PermissionSetupCopy.macOSListName()) }
 
         func message(appName: String) -> String {
             switch self {
             case .ready: return "L’accès nécessaire est disponible."
             case .accessibility: return "Autorisez \(appName) dans Confidentialité et sécurité → Accessibilité, puis revenez dans Goalong pour terminer. Vos réglages de partage sont inchangés."
-            case .inputMonitoring: return "Autorisez Goalong dans Réglages Système → Surveillance de l’entrée, puis revenez ici pour vérifier l’accès."
+            case .inputMonitoring: return "Autorisez \(appName) dans Réglages Système → Surveillance de l’entrée, puis revenez ici pour vérifier l’accès."
             case .fullDiskAccess: return "Autorisez \(appName) dans Confidentialité et sécurité → Accès complet au disque. Si macOS le propose, choisissez Quitter et rouvrir : Goalong reviendra à cette étape. Vous pouvez continuer sans cette source."
             case .screenTimeSetup: return "Aucune donnée Temps d’écran n’est encore disponible. Activez « Activité des apps et des sites web » dans Temps d’écran de macOS, puis vérifiez à nouveau."
             case .unavailable(let message): return message
@@ -111,7 +112,7 @@ import LocalHistoryCore
 
         private static func probe(_ capability: GoalongCapability) -> SourceAccessStatus {
             guard !PermissionManager.shared.isRepairInProgress else {
-                return .unavailable("Une réparation d’autorisation est en cours. Aucun nouvel accès n’est confirmé.")
+                return .unavailable("Une réparation d’autorisation est en cours. Patientez, puis choisissez « Vérifier l’accès ».")
             }
             guard !GoalongGlobalPause.isPaused() else { return .unavailable("Pause globale : reprenez Goalong pour vérifier cet accès.") }
             switch capability {
@@ -213,7 +214,7 @@ import LocalHistoryCore
                 self.generation += 1
                 self.checking = false
                 self.completedCheckCount += 1
-                let message = "La vérification d’accès n’a pas abouti. Rien n’a été activé. Relancez Goalong History puis réessayez."
+                let message = "La vérification d’accès n’a pas abouti. Rien n’a été activé. Relancez Goalong puis réessayez."
                 self.feedback = message
                 if self.result == nil { self.result = .unavailable(message) }
             }
@@ -229,7 +230,7 @@ import LocalHistoryCore
                 self.result = status
                 guard status == .ready else {
                     self.feedback = status.isMacPermission
-                        ? "Vérification \(self.completedCheckCount) : l’accès n’est pas encore confirmé pour cette copie de Goalong History. La source n’est pas activée."
+                        ? "Vérification \(self.completedCheckCount) : l’accès n’est pas encore confirmé pour cette copie de Goalong. La source n’est pas activée."
                         : "Vérification \(self.completedCheckCount) : cette source n’est pas prête. Rien n’a été activé."
                     return
                 }
@@ -467,7 +468,7 @@ import LocalHistoryCore
         private var primaryTitle: String {
             if restarting { return "Préparation du redémarrage…" }
             if flow.checking { return "Vérification de l’accès…" }
-            if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Terminé" : copy.activateTitle }
+            if ready { return GoalongCapabilityConsentStore.shared.isEnabled(capability) ? "Terminer" : copy.activateTitle }
             if needsRestart { return "Quitter et rouvrir" }
             if !openedSettings && access.hasSettingsAction { return "Ouvrir Réglages Système…" }
             return "Vérifier l’accès"
@@ -696,7 +697,7 @@ import LocalHistoryCore
                                     Button(status.actionTitle) { PermissionRecovery.rememberSetup(capability); SourceAccessService.openAccess(status) }
                                         .buttonStyle(LHPrimaryButtonStyle())
                                 }
-                                Button("Vérifier l’accès à nouveau") { validate() }.buttonStyle(LHSecondaryButtonStyle())
+                                Button("Vérifier l’accès") { validate() }.buttonStyle(LHSecondaryButtonStyle())
                             }
                         }.fixedSize(horizontal: false, vertical: true)
                     }.padding(LHTheme.pageInset)
@@ -720,7 +721,7 @@ import LocalHistoryCore
             // An empty state on the page, like the empty day of the same screen, not in a group (DESIGN §9, UI-17C écran 22).
             // The explanation is the switch's own label: no second, floating title.
             SourceActivationToggle(capability: .localComputerHistory, activateButtonTitle: "Activer…") {
-                GoalongEmptyState(title: "L’historique de ce Mac est désactivé",
+                GoalongEmptyState(title: "L’enregistrement est désactivé",
                     message: "Activez l’enregistrement local pour afficher cette chronologie. Goalong vous explique et vérifie d’abord les accès macOS nécessaires.")
                     // « Activer… » follows the sentence at 24 pt, as on the « Temps d’écran Apple » page (UI-13B).
                     .padding(.bottom, -24)

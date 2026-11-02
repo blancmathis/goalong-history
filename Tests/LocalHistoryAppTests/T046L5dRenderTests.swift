@@ -88,7 +88,7 @@ final class T046L5dRenderTests: XCTestCase {
         XCTAssertTrue(seen.contains("Comprendre mon travail"), "saw \(seen.sorted())")
         XCTAssertTrue(seen.contains("Fermer"))
         XCTAssertTrue(seen.contains("Ouvrir une analyse ou une sélection enregistrée…"))
-        XCTAssertTrue(seen.contains("Activité depuis le"), "The computer history is on by default; saw \(seen.sorted())")
+        XCTAssertTrue(seen.contains("Activité à partir du"), "The computer history is on by default; saw \(seen.sorted())")
         for key in GoalongProfileAnalysis.modules where key != "ai" {
             XCTAssertTrue(seen.contains(GoalongProfileAnalysis.labels[key] ?? key), "A switch for the module \(key); saw \(seen.sorted())")
         }
@@ -126,12 +126,12 @@ final class T046L5dRenderTests: XCTestCase {
         let titles = menu.items.map(\.title)
         XCTAssertEqual(titles.first, JevMonitor.shared.status, "The first line states the monitoring status")
         XCTAssertFalse(menu.items[0].isEnabled, "The status line is not clickable")
-        XCTAssertTrue(titles.contains("Ouvrir la surveillance…"), "saw \(titles)")
-        let open = try XCTUnwrap(menu.items.first { $0.title == "Ouvrir la surveillance…" })
+        XCTAssertTrue(titles.contains("Ouvrir Jev…"), "saw \(titles)")
+        let open = try XCTUnwrap(menu.items.first { $0.title == "Ouvrir Jev…" })
         _ = open.target?.perform(open.action)
         XCTAssertEqual(opened, 1, "The item opens the monitoring page")
         let enabled = JevMonitor.shared.enabled
-        XCTAssertEqual(titles.contains("Désactiver la surveillance"), enabled, "Disabling is offered only while monitoring runs")
+        XCTAssertEqual(titles.contains("Désactiver Jev"), enabled, "Disabling is offered only while monitoring runs")
         XCTAssertEqual(titles.contains { $0.hasPrefix("Pause de ") }, enabled && JevMonitor.shared.timedBreak == nil,
                        "Breaks are offered only while monitoring runs and no break is active")
     }
@@ -182,7 +182,7 @@ final class T046L5dRenderTests: XCTestCase {
         for label in ["Relier votre compte Goalong", "1. Votre compte Goalong", "Relier depuis le site", "Connexion manuelle et options avancées",
                       "2. Choisir vos données", "3. Vérifier avant l’envoi", "Terminé", "Noms des applications et durées",
                       "Répartition par heure, si elle est enregistrée", "Sites observés sur ce Mac", "Résumé d’analyse enregistré",
-                      "Rapport structuré de productivité", "Calculer le rythme à partir de l’historique de ce Mac", "Partage ponctuel avancé"] {
+                      "Rapport structuré de productivité", "Calculer le rythme à partir de l’enregistrement de ce Mac", "Partage ponctuel avancé"] {
             XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
         }
         XCTAssertFalse(seen.contains("Accès enregistré sur ce Mac"), "No access file is chosen")
@@ -221,7 +221,7 @@ final class T046L5dRenderTests: XCTestCase {
         settle()
         XCTAssertTrue(strings(of: rendered).contains { $0.hasPrefix("Les mêmes durées deviennent un rapport modifiable") }, "The note appears with the switch")
         XCTAssertFalse(seen.contains("Inclure l’heure de début précise"), "The rhythm choices wait for the switch")
-        XCTAssertTrue(press("Calculer le rythme à partir de l’historique de ce Mac", in: rendered))
+        XCTAssertTrue(press("Calculer le rythme à partir de l’enregistrement de ce Mac", in: rendered))
         settle()
         seen = strings(of: rendered)
         for label in ["Analyser le contexte d’une session…", "Inclure les épisodes simplifiés", "Inclure l’heure de début précise",

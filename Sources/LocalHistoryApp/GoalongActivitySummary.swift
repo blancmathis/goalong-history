@@ -266,11 +266,10 @@ struct GoalongActivitySummary {
 
     static func duration(_ seconds: TimeInterval) -> String { GoalongAnalyticsFormatting.duration(seconds) }
     static func time(_ date: Date) -> String {
-        date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+        GoalongUIFormat.time(date)
     }
     static func clock(_ secondsAfterMidnight: TimeInterval) -> String {
-        let minutes = Int((secondsAfterMidnight / 60).rounded()) % (24 * 60)
-        return String(format: "%02d:%02d", minutes / 60, minutes % 60)
+        GoalongUIFormat.time(minuteOfDay: Int((secondsAfterMidnight / 60).rounded()) % (24 * 60))
     }
     static func weekdayDate(_ date: Date) -> String {
         date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).weekday(.abbreviated).day().month(.abbreviated))

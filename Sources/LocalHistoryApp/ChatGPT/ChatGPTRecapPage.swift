@@ -390,7 +390,7 @@
                                     )
                                     .help("Ce rapport est antérieur aux analyses signées. Régénérez-le pour détecter toute modification.")
                                 }
-                                Text(recap.generatedAt.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(GoalongUIFormat.locale)))
+                                Text("\(GoalongUIFormat.dayAbbreviated(recap.generatedAt)) à \(GoalongUIFormat.time(recap.generatedAt))")
                                     .font(.system(size: 12))
                                     .foregroundStyle(LHTheme.secondaryText)
                             }
@@ -449,7 +449,7 @@
                     )
                     bandDivider
                     metric(
-                        title: "Classé travail",
+                        title: "Classé comme travail",
                         value: duration(overview.workSeconds),
                         detail: "D’après Mon travail"
                     )
@@ -569,9 +569,9 @@
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 18)
-                    collaborationMetric("Sessions", overview.agentSessions)
-                    collaborationMetric("Messages", overview.agentMessages)
-                    collaborationMetric("Actions des agents", overview.agentToolCalls)
+                    collaborationMetric("Conversations", overview.agentSessions)
+                    collaborationMetric("Demandes et réponses", overview.agentMessages)
+                    collaborationMetric("Outils utilisés", overview.agentToolCalls)
                     collaborationMetric("Erreurs", overview.agentErrors)
                 }
             }
@@ -724,7 +724,7 @@ enum ChatGPTRecapMetricCopy {
 
     static func aiConversations(enabled: Bool, read: Bool = true, sessions: Int, messages: Int) -> Figure {
         guard enabled, read else { return Figure(value: "—", detail: "Non lues") }
-        return Figure(value: "\(sessions)", detail: GoalongUIFormat.count(messages, "message"))
+        return Figure(value: "\(sessions)", detail: GoalongUIFormat.count(messages, "demande ou réponse", plural: "demandes et réponses"))
     }
 
     static func spoken(title: String, value: String, detail: String) -> String {

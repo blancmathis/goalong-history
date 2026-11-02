@@ -1761,7 +1761,7 @@ import AppleScreenTime
         private func presentFatalError(_ error: Error) {
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert(error: error)
-            alert.messageText = "Goalong History n’a pas pu démarrer"
+            alert.messageText = "Goalong n’a pas pu démarrer"
             alert.informativeText = StorageHealth.failureKind(for: error) == .diskFull
                 ? "Le disque est plein. Libérez de l’espace puis relancez Goalong : votre historique n’a pas été modifié."
                 : "Votre historique n’a pas été modifié. Envoyez un rapport pour qu’on puisse corriger le problème, puis relancez Goalong."

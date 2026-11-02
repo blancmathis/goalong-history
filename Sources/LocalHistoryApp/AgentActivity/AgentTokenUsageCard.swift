@@ -55,7 +55,7 @@ struct AgentTokenUsageCard: View {
             Text("Usage de l’IA du jour sélectionné, d’après les journaux locaux. Les jetons ne correspondent ni à un quota d’abonnement ni à une facture.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             if let analyzedAt {
-                Text("Analysé à \(analyzedAt.formatted(.dateTime.hour().minute().locale(Self.locale))). Actualisez la journée pour mettre à jour.")
+                Text("Analysé à \(GoalongUIFormat.time(analyzedAt)). Actualisez la journée pour mettre à jour.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             if summary.showsPartialCoverage {

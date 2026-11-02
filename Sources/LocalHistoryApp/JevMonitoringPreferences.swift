@@ -27,7 +27,7 @@ extension Notification.Name {
         guard let data = defaults.data(forKey: Self.storageKey), data.count <= 1024,
               let value = try? JSONDecoder().decode(Document.self, from: data), value.schema == 1 else {
             scope = .sessionsOnly
-            error = "Périmètre de surveillance illisible : enregistrez à nouveau votre choix."
+            error = "Périmètre de Jev illisible : enregistrez à nouveau votre choix."
             return
         }
         scope = value.scope

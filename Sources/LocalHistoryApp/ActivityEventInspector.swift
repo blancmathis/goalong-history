@@ -53,7 +53,7 @@
         static func loadIssueWarning(count: Int) -> String {
             count == 1
                 ? "1 ligne locale n’a pas pu être lue. Ces lacunes restent signalées, jamais ignorées en silence."
-                : "\(count) lignes locales n’ont pas pu être lues. Ces lacunes restent signalées, jamais ignorées en silence."
+                : "\(GoalongUIFormat.number(count)) lignes locales n’ont pas pu être lues. Ces lacunes restent signalées, jamais ignorées en silence."
         }
 
         static func button(_ raw: String) -> String {

@@ -67,7 +67,7 @@ import AppleScreenTime
             case .enabled:
                 return "\(ProductIdentity.displayName) sera prêt après chaque ouverture de session."
             case .requiresApproval:
-                return "Autorisez \(ProductIdentity.displayName) dans \(LoginItemsPanel.path)."
+                return "Autorisez \(PermissionSetupCopy.macOSListName()) dans \(LoginItemsPanel.path)."
             case .disabled:
                 return "Vous pouvez toujours ouvrir \(ProductIdentity.displayName) vous-même à tout moment."
             case .unavailable:

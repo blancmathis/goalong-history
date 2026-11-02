@@ -23,10 +23,10 @@ enum GoalongActivityDetail: String, CaseIterable, Identifiable {
 
     func title(isDay: Bool) -> String {
         switch self {
-        case .rhythm: return isDay ? "Heure par heure" : "Jour par jour"
+        case .rhythm: return isDay ? "Rythme" : "Jour par jour"
         case .usage: return "Applications et sites"
-        case .sessions: return "Sessions et focus"
-        case .texture: return "Écriture, lecture et appels"
+        case .sessions: return "Séances et concentration"
+        case .texture: return "Clavier et lecture"
         case .agenda: return "Appels et agenda"
         case .code: return "Agents et code"
         case .sleep: return "Sommeil et activité"
@@ -202,7 +202,7 @@ struct GoalongAnalyticsContent: View {
             return kind == .other ? summary.otherSeconds : summary.unclassifiedSeconds
         }
         let active = isDay ? current.activeSeconds : (summary.averageActivePerDay ?? 0)
-        var parts = ["sur \(duration(active)) actives"]
+        var parts = ["sur \(duration(active)) de temps actif"]
         if value(.other) >= 60 { parts.append("\(duration(value(.other))) hors travail") }
         if value(.unclassified) >= 60 { parts.append("\(duration(value(.unclassified))) à classer") }
         return parts.joined(separator: ", ")
@@ -214,19 +214,19 @@ struct GoalongAnalyticsContent: View {
             // Gaps inside the day change how its figures read; the night around it does not.
             let missing = current.days.first.map { GoalongActivityGaps(day: $0, from: bounds.start, to: bounds.end).unobservedSeconds } ?? 0
             lines.append("De \(GoalongActivitySummary.time(bounds.start)) à \(GoalongActivitySummary.time(bounds.end))"
-                + (missing >= 600 ? ", dont \(duration(missing)) sans observation" : ""))
+                + (missing >= 600 ? ", dont \(duration(missing)) non observées" : ""))
         } else if isDay {
             lines.append("Activité observée au premier plan")
         } else {
             let days = current.daysWithObservations
-            lines.append("\(duration(current.activeSeconds)) actives sur \(days) jour\(days > 1 ? "s" : "") observé\(days > 1 ? "s" : "")"
+            lines.append("\(duration(current.activeSeconds)) de temps actif sur \(days) jour\(days > 1 ? "s" : "") observé\(days > 1 ? "s" : "")"
                 + (summary.averageExcludesToday ? ", moyenne sans aujourd’hui" : ""))
         }
         if let line = summary.comparison?.headlineLine(isDay: isDay) { lines.append(line) }
         return lines
     }
 
-    /// The figures of « Sessions et focus »: plain columns, no tiles.
+    /// The figures of « Séances et concentration »: plain columns, no tiles.
     private func sessionFigures(_ summary: GoalongActivitySummary) -> some View {
         HStack(alignment: .top, spacing: 24) {
             concentrationFigure(summary); switchesFigure(summary)
@@ -256,7 +256,7 @@ struct GoalongAnalyticsContent: View {
         }
         let sameTask = current.sameTaskChanges
         return figure("Changements d’app", value: "\(Int(perHour.rounded()))", unit: "/ h",
-                      detail: "Un toutes les \(GoalongActivitySummary.shortInterval(every))",
+                      detail: "Un changement toutes les \(GoalongActivitySummary.shortInterval(every))",
                       help: "\(FrenchCount.count(summary.contextChanges, "changement", "changements")) d’app ou de site au total"
                         + (sameTask > 0 ? ", dont \(sameTask) sans quitter la tâche." : "."))
     }
@@ -401,7 +401,7 @@ struct GoalongAnalyticsContent: View {
                         .accessibilityIdentifier("activity-tasks-definition")
                     Text("·").font(.system(size: 13, weight: .semibold)).foregroundStyle(LHTheme.tertiaryText)
                         .accessibilityHidden(true)
-                    Button("Corriger") { onReview(nil) }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+                    Button("Corriger l’attribution") { onReview(nil) }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                         .help(isDay ? "Corriger le classement d’une tâche de cette journée"
                               : "Corriger le classement d’une tâche du \(shortDate(anchorDay))")
                         .accessibilityIdentifier("activity-tasks-review")
@@ -740,7 +740,7 @@ struct GoalongAnalyticsContent: View {
     }
 
     private func sessionsSection(_ summary: GoalongActivitySummary) -> some View {
-        GoalongSection(title: "Sessions et focus") {
+        GoalongSection(title: "Séances et concentration") {
             VStack(alignment: .leading, spacing: 18) {
                 sessionFigures(summary)
                 GoalongFocusExplanation(hasFocus: !focus.isEmpty, minimumMinutes: $focusMinutes)
@@ -872,7 +872,7 @@ struct GoalongAnalyticsContent: View {
     }
     private func duration(_ value: Double) -> String { GoalongAnalyticsFormatting.duration(value) }
     private func percent(_ share: Double) -> String { "\(Int((max(0, min(1, share)) * 100).rounded()))\u{00A0}%" }
-    private func time(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).hour().minute()) }
+    private func time(_ date: Date) -> String { GoalongUIFormat.time(date) }
     private func shortDate(_ date: Date) -> String { date.formatted(.dateTime.locale(Locale(identifier: "fr_FR")).day().month(.abbreviated)) }
     private func cardDay(_ value: String) -> Date? {
         GoalongDayParser.date(value)
@@ -958,7 +958,7 @@ enum GoalongActivityEmptyCopy {
         }
         if eventCount > 0 {
             return Copy(title: "Les premières traces sont reçues",
-                message: "La durée devient mesurable dès que deux observations d’activité sont assez proches. Aucune minute n’est inventée entre des traces isolées.",
+                message: "La durée devient mesurable dès que deux observations d’activité sont assez proches. Aucune durée n’est estimée entre des traces isolées.",
                 showsObservationCount: true)
         }
         if isDay && isToday {

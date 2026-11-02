@@ -33,9 +33,9 @@ import XCTest
 
     func testScheduleShowsAFrenchTimeNotTheRawZoneIdentifier() {
         let label = GoalongWebsiteSettings.scheduleLabel(hour: 8, minute: 0, zone: "Europe/Paris")
-        XCTAssertTrue(label.hasPrefix("8 h 00"), label)
+        XCTAssertTrue(label.hasPrefix("08:00"), label)
         XCTAssertFalse(label.contains("Europe/Paris"), label)
-        XCTAssertEqual(GoalongWebsiteSettings.scheduleLabel(hour: 18, minute: 5, zone: nil), "18 h 05")
+        XCTAssertEqual(GoalongWebsiteSettings.scheduleLabel(hour: 18, minute: 5, zone: nil), "18:05")
     }
 }
 #endif

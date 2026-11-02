@@ -9,7 +9,7 @@ import LocalHistoryCore
     @State private var confirming = false
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Text("Effacer de l’historique").font(LHTheme.sheetTitleFont)
+            Text("Effacer l’historique").font(LHTheme.sheetTitleFont)
             Picker("Période", selection: $seconds) {
                 Text("Les dix dernières minutes").tag(600)
                 Text("La dernière heure").tag(3600)

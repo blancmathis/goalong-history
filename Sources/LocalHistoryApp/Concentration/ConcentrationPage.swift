@@ -268,7 +268,7 @@ struct FocusComposerDraft: Equatable {
                     TextField("", text: $draft.intent)
                         // 17 pt medium text is 20 pt high: 8 + 20 + 8 makes the field 36 pt, 2 pt taller than a standard one.
                         .textFieldStyle(GoalongFieldStyle(textFont: .medium17))
-                        .goalongPlaceholder("Je fais…", isEmpty: draft.intent.isEmpty, textFont: .medium17)
+                        .goalongPlaceholder("Sur quoi travaillez-vous ?", isEmpty: draft.intent.isEmpty, textFont: .medium17)
                         .onSubmit { if !intent.isEmpty { begin() } }
                         .accessibilityLabel("Ce que vous faites pendant la séance")
                         .accessibilityIdentifier("concentration-intent")
@@ -560,8 +560,9 @@ struct FocusPlanChip: View {
 
     private var blockingWords: String {
         let names = lists.map(\.name).joined(separator: ", ")
-        if !phase.isWork && !session.blockDuringBreaks { return "\(names) : libre pendant la pause" }
-        return lists.allSatisfy { $0.effectiveAction == .slowDown } ? "\(names) : \(lists.count > 1 ? "ralentis" : "ralenti")" : "\(names) : \(lists.count > 1 ? "bloqués" : "bloqué")"
+        // R-84: the state first, then the group (« Bloqué : Réseaux sociaux, Vidéo »).
+        if !phase.isWork && !session.blockDuringBreaks { return "Libre pendant la pause : \(names)" }
+        return lists.allSatisfy { $0.effectiveAction == .slowDown } ? "Ralenti : \(names)" : "Bloqué : \(names)"
     }
 
     private func act(_ action: () throws -> Void) {
@@ -1060,7 +1061,7 @@ struct FocusThreadModel: Equatable {
                 LHCard(padding: 0) {
                     VStack(spacing: 0) {
                         switchRow("Détecter la concentration",
-                                  detail: "Hors séance, le statut passe à « concentré » après 16 minutes actives sur 20, sans l’étiquette « hors travail ».",
+                                  detail: "Hors séance, le statut passe à « concentré » après 16 minutes actives sur les 20 dernières, sans l’étiquette « hors travail ».",
                                   isOn: setting(\.detectionEnabled))
                         GoalongRowDivider(inset: LHTheme.cardInset)
                         switchRow("Son au changement de phase", detail: nil, isOn: setting(\.phaseSound))
@@ -1089,7 +1090,7 @@ struct FocusThreadModel: Equatable {
                     if let limitError {
                         Text(limitError).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                     }
-                    Text("Sans valeur, pas de limite. Goalong prévient une fois, sans jamais bloquer le travail. Le travail suit votre définition ; sans définition, le temps actif.")
+                    Text("Sans valeur, pas de limite. Goalong prévient une fois, sans jamais bloquer le travail. Le travail compté suit votre définition dans Mon travail ; sans définition, Goalong compte tout le temps actif.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1100,15 +1101,15 @@ struct FocusThreadModel: Equatable {
                         HStack(alignment: .center, spacing: 12) {
                             labels("Jokers par mois", "Un joker garde la série et lève l’enjeu d’une période non tenue.")
                             Spacer(minLength: 12)
-                            Stepper(value: joker(\.day), in: 0...5) { Text("\(controller.settings.jokerSettings.day) pour les jours").monospacedDigit() }
+                            Stepper(value: joker(\.day), in: 0...5) { Text("Jour : \(controller.settings.jokerSettings.day)").monospacedDigit() }
                                 .fixedSize()
-                            Stepper(value: joker(\.week), in: 0...2) { Text("\(controller.settings.jokerSettings.week) pour les semaines").monospacedDigit() }
+                            Stepper(value: joker(\.week), in: 0...2) { Text("Semaine : \(controller.settings.jokerSettings.week)").monospacedDigit() }
                                 .fixedSize()
                         }
                         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10).frame(minHeight: 52)
                     }
                 }
-                GoalongNote("Tout se pilote aussi avec la commande goalong : session, plan, review, commitment, focus watch. Voir la page Terminal.",
+                GoalongNote("Tout se pilote aussi avec la commande goalong : séances, plan, bilan, engagements et suivi. Voir la page Terminal.",
                             symbol: "terminal")
             }
             .padding(.top, 14)
@@ -1227,21 +1228,13 @@ struct FocusThreadModel: Equatable {
 
     /// Empty means no limit. A partial entry waits silently; a complete invalid one says why.
     private func commitLimits() {
-        var next = controller.settings
-        let dailyValue = daily.trimmingCharacters(in: .whitespaces), weeklyValue = weekly.trimmingCharacters(in: .whitespaces)
-        if dailyValue.isEmpty { next.limits.dailyHours = nil } else if let value = Int(dailyValue), (2...16).contains(value) {
-            next.limits.dailyHours = value
-        } else if dailyValue.count >= 2 || Int(dailyValue) == nil { limitError = "Travail par jour : de 2 à 16 h."; return } else { return }
-        if weeklyValue.isEmpty { next.limits.weeklyHours = nil } else if let value = Int(weeklyValue), (10...80).contains(value) {
-            next.limits.weeklyHours = value
-        } else if weeklyValue.count >= 2 || Int(weeklyValue) == nil { limitError = "Travail par semaine : de 10 à 80 h."; return } else { return }
-        let endValue = end.trimmingCharacters(in: .whitespaces)
-        if endValue.isEmpty { next.limits.endMinute = nil } else if let minute = FocusUIFormat.minute(endValue) {
-            next.limits.endMinute = minute
-            if next.limits.weekdays.isEmpty { next.limits.weekdays = Set(1...5) }
-        } else if endValue.count >= 4 { limitError = "Fin de journée : écrivez l’heure au format 18:30."; return } else { return }
-        guard next != controller.settings else { limitError = nil; return }
-        save(next)
+        switch FocusLimitsEditing.committed(controller.settings, daily: daily, weekly: weekly, end: end) {
+        case .wait: return
+        case .error(let message): limitError = message
+        case .save(let next):
+            guard next != controller.settings else { limitError = nil; return }
+            save(next)
+        }
     }
 
     private func labels(_ title: String, _ detail: String?) -> some View {
@@ -1267,6 +1260,26 @@ struct FocusThreadModel: Equatable {
 // MARK: - Words
 
 enum FocusLimitsEditing {
+    enum Commit: Equatable { case save(FocusSettings), error(String), wait }
+    /// The three limit fields read back. Empty means no limit. A partial entry waits silently; a complete invalid one says why.
+    static func committed(_ settings: FocusSettings, daily: String, weekly: String, end: String) -> Commit {
+        var next = settings
+        let dailyValue = daily.trimmingCharacters(in: .whitespaces), weeklyValue = weekly.trimmingCharacters(in: .whitespaces)
+        if dailyValue.isEmpty { next.limits.dailyHours = nil } else if let value = Int(dailyValue), (2...16).contains(value) {
+            next.limits.dailyHours = value
+        } else if dailyValue.count >= 2 || Int(dailyValue) == nil { return .error("Travail par jour : de 2 à 16 h.") } else { return .wait }
+        if weeklyValue.isEmpty { next.limits.weeklyHours = nil } else if let value = Int(weeklyValue), (10...80).contains(value) {
+            next.limits.weeklyHours = value
+        } else if weeklyValue.count >= 2 || Int(weeklyValue) == nil { return .error("Travail par semaine : de 10 à 80 h.") } else { return .wait }
+        let endValue = end.trimmingCharacters(in: .whitespaces)
+        if endValue.isEmpty { next.limits.endMinute = nil } else if let minute = FocusUIFormat.minute(endValue) {
+            next.limits.endMinute = minute
+            if next.limits.weekdays.isEmpty { next.limits.weekdays = Set(1...5) }
+        } else if endValue.count >= 4 {
+            return .error("Fin de journée : écrivez l’heure au format \(GoalongUIFormat.time(minuteOfDay: 18 * 60 + 30)).")
+        } else { return .wait }
+        return .save(next)
+    }
     /// One weekday of « Fin de journée » switched; the last one cannot be switched off.
     static func toggled(_ settings: FocusSettings, day: Int) -> (settings: FocusSettings, error: String?) {
         var next = settings
@@ -1304,9 +1317,24 @@ enum FocusUIFormat {
         }
     }
 
-    /// « 18:30 », « 18h30 », « 18 h », « 1830 ».
+    /// « 18:30 », « 18h30 », « 18 h », « 1830 », and the 12 h short time the field shows when the user chose it
+    /// (« 6:30 PM », « 6pm », « 12:15 AM »).
     static func minute(_ raw: String) -> Int? {
-        let digits = raw.lowercased().replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "h", with: ":")
+        var digits = raw.lowercased().replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\u{202F}", with: "")
+            .replacingOccurrences(of: "\u{00A0}", with: "").replacingOccurrences(of: ".", with: "")
+        var meridiem: String?
+        for suffix in ["am", "pm"] where digits.hasSuffix(suffix) { meridiem = suffix; digits.removeLast(2) }
+        digits = digits.replacingOccurrences(of: "h", with: ":")
+        if let meridiem {
+            guard let value = minute24(digits) else { return nil }
+            let hour = value / 60
+            guard (1...12).contains(hour) else { return nil }
+            return (hour % 12 + (meridiem == "pm" ? 12 : 0)) * 60 + value % 60
+        }
+        return minute24(digits)
+    }
+
+    private static func minute24(_ digits: String) -> Int? {
         let parts = digits.split(separator: ":", omittingEmptySubsequences: false)
         var hour: Int?, minute = 0
         if parts.count == 1, let value = Int(parts[0]) {

@@ -372,10 +372,10 @@
         @ObservedObject var model: MenuBarPanelModel
 
         private var meta: String {
-            var parts: [String] = []
-            if let cycle = run.cycle, let cycles = run.cycles { parts.append("Cycle \(cycle) sur \(cycles)") }
-            if let next = run.nextBreak, !run.isPaused { parts.append("pause à \(GoalongUIFormat.time(next))") }
-            if run.isPaused { parts.append("en pause") }
+            // Decision 15: the big clock says what it counts.
+            var parts: [String] = [run.isPaused ? "En pause" : run.remaining != nil ? "Temps restant" : "Temps écoulé"]
+            if let cycle = run.cycle, let cycles = run.cycles { parts.append("cycle \(cycle) sur \(cycles)") }
+            if let next = run.nextBreak, !run.isPaused { parts.append("pause dans \(GoalongUIFormat.timerLength(next.timeIntervalSince(GoalongToday.now)))") }
             return parts.joined(separator: ", ")
         }
 
@@ -537,7 +537,7 @@
         private var subtitle: String {
             guard let current = model.ambianceCurrent else { return "Choisissez un son ci-dessous" }
             if model.ambianceLoading { return "Chargement du son…" }  // R-73 (R9A-24)
-            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en cours" : "\(kindTitle(current.kind)), écouté en dernier"
+            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en cours" : "Dernier son écouté"
         }
 
         private var volume: some View {
@@ -677,7 +677,7 @@
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 8)
                 if list.isLocked {
-                    Button("Arrêter…") { model.requestStopBlocking(list.id) }
+                    Button("Arrêter le blocage…") { model.requestStopBlocking(list.id) }
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
                         .accessibilityLabel("Demander l’arrêt de \(list.title)")
                 } else {

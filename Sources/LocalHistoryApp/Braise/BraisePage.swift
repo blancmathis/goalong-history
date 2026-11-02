@@ -32,16 +32,16 @@ import SwiftUI
         VStack(alignment: .leading, spacing: 24) {
             Text("Braise").goalongPageTitle()
             if let error {
-                GoalongEmptyState(title: "Braise ne répond pas", message: error) {
+                GoalongEmptyState(title: "Braise n’a pas pu démarrer", message: error) {
                     Button("Réessayer", action: onRetry).buttonStyle(LHPrimaryButtonStyle())
-                    Button("Ouvrir Réglages › Modules", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
+                    Button("Ouvrir Réglages › Modules › Braise", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
                 }
             } else {
                 GoalongEmptyState(title: "Braise est désactivée",
                                   message: "Le filtre rouge du soir s’active ici, ou dans Réglages › Modules.") {
                     Button("Activer Braise", action: onEnable).buttonStyle(LHPrimaryButtonStyle())
                         .accessibilityIdentifier("braise-enable")
-                    Button("Ouvrir Réglages › Modules", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
+                    Button("Ouvrir Réglages › Modules › Braise", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
                 }
             }
         }
@@ -167,7 +167,7 @@ import SwiftUI
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text(existed ? "Modifier l’horaire" : "Ajouter un horaire").font(LHTheme.sheetTitleFont).tracking(-0.4)
-            Text("Jours de début de la plage").foregroundStyle(LHTheme.secondaryText)
+            Text("Jours concernés").foregroundStyle(LHTheme.secondaryText)
             HStack(spacing: 10) {
                 ForEach(days, id: \.0) { day in
                     Toggle(day.1, isOn: Binding(get: { draft.weekdays.contains(day.0) }, set: { on in
@@ -180,7 +180,7 @@ import SwiftUI
                                                                              set: { if let preset = $0 { draft.weekdays = preset.weekdays } }),
                                     options: BraiseDayPreset.allCases.map(Optional.some), title: { $0?.title ?? "" })
             HStack(spacing: 24) { time("Activation", minute: $draft.startMinute); time("Désactivation", minute: $draft.endMinute) }
-            Text(!draft.isValid ? "Choisissez au moins un jour et deux heures différentes." : draft.crossesMidnight ? "La désactivation a lieu le lendemain." : "La plage commence et se termine le même jour.")
+            Text(!draft.isValid ? "Choisissez au moins un jour et deux heures différentes." : draft.crossesMidnight ? "La désactivation a lieu le lendemain à \(GoalongUIFormat.time(minuteOfDay: draft.endMinute))." : "La plage commence et se termine le même jour.")
                 .foregroundStyle(LHTheme.secondaryText)
             if let error { Text(error).foregroundStyle(LHTheme.secondaryText) }
             HStack {

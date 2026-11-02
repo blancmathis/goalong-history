@@ -555,9 +555,9 @@
         /// « Le 23 octobre 2026 : 12 sessions, 340 messages et 85 actions des agents. »
         private var metricsDetail: String {
             let day = DashboardFormatters.dayTitle.string(from: agents.selectedDay)
-            let sessions = GoalongUIFormat.count(Int(agents.overview.sessionCount), "session")
-            let messages = GoalongUIFormat.count(Int(agents.overview.messageCount), "message")
-            let actions = GoalongUIFormat.count(Int(agents.overview.toolCallCount), "action d’agent", plural: "actions d’agents")
+            let sessions = GoalongUIFormat.count(Int(agents.overview.sessionCount), "conversation")
+            let messages = GoalongUIFormat.count(Int(agents.overview.messageCount), "demande ou réponse", plural: "demandes et réponses")
+            let actions = GoalongUIFormat.count(Int(agents.overview.toolCallCount), "outil utilisé", plural: "outils utilisés")
             return "\(day) : \(sessions), \(messages) et \(actions)."
         }
 
@@ -794,7 +794,7 @@
                             GoalongMenuPicker("Outil", selection: $providerFilter, options: providerOptions)
                                 .frame(width: 165)
                         }
-                        GoalongSearchField("Rechercher sessions, fichiers, modèles ou outils", text: $search)
+                        GoalongSearchField("Rechercher conversations, fichiers, modèles ou outils", text: $search)
                             .frame(width: 285)
                     }
 
@@ -883,7 +883,7 @@
                             tint: LHTheme.success,
                             title: "Index léger des sources",
                             subtitle:
-                                "Seules des métadonnées limitées sont conservées dans le dossier privé de Goalong History."
+                                "Seules des métadonnées limitées sont conservées dans le dossier privé de Goalong."
                         )
                         detailLine("Espace total utilisé", value: formatBytes(agents.storageBytes))
                         detailLine("Fichier d’index", value: formatBytes(agents.overview.indexBytes))

@@ -14,7 +14,7 @@ enum AgentActivityPathLabel {
 /// 6-CODEX: Codex has one row; its sessions folder state is one line in it.
 enum AgentActivityCodexFolder {
     static func label(found: Bool, enabled: Bool) -> String {
-        guard found else { return "Dossier des sessions non détecté" }
-        return enabled ? "Dossier des sessions suivi" : "Dossier des sessions détecté, désactivé"
+        guard found else { return "Dossier des conversations non détecté" }
+        return enabled ? "Dossier des conversations lu" : "Dossier des conversations détecté, désactivé"
     }
 }
