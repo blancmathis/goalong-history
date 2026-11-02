@@ -255,6 +255,12 @@
             .contentShape(Rectangle())
         }
 
+        /// The banner's own slot rule (GoalongAttentionBanner.currentStorageSlot): the banner names a storage failure when the slot is .storage.
+        private var storageNamedByBanner: Bool {
+            GoalongAttentionBanner.currentStorageSlot(model: model, localEnabled: consents.isEnabled(.localComputerHistory),
+                globallyPaused: globalPause.blocksActivity, section: model.selectedSection) == .storage
+        }
+
         private var statusRow: some View {
             Button {
                 if !consents.isEnabled(.localComputerHistory) {
@@ -272,7 +278,8 @@
                     // UI-15A: one short line (≤ 20 characters), never two; switched off is not a pause
                     // (as SharePage and UsageRulesList), and the global pause says so.
                     Text(model.runtime.sidebarTitle(recordingEnabled: consents.isEnabled(.localComputerHistory),
-                                                    globallyPaused: globalPause.blocksActivity))
+                                                    globallyPaused: globalPause.blocksActivity,
+                                                    storageNamedByBanner: storageNamedByBanner))
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                     Spacer()
