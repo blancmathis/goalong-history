@@ -2638,3 +2638,11 @@ concentration-engagements/barres--   # R13b : image nouvelle, barres d'engagemen
 bilan/rapport--   # R13b O11 : ligne d'aide sous la bande quand un chiffre vaut « — »
 bilan/non-connecte--   # R13b O11 : ligne d'aide sous la bande quand un chiffre vaut « — »
 sante/import-reussi--   # R13b : un seul bouton de fermeture (« Terminé »), « Fermer » du haut retiré
+activite/jour-realiste--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
+activite/non-classe--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
+activite/journee-vide--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
+activite/mode-developpeur--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
+activite/traces-isolees--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
+agenda/acces-refuse--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
+agenda/jour-avec-donnees--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
+fenetre/espace-faible--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
