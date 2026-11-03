@@ -136,7 +136,10 @@ import AppleScreenTime
         @Published private(set) var freeDiskBytes: Int64?
         private var freeDiskCheckedAt: Date?
         @Published private(set) var snapshot: DashboardDaySnapshot
-        @Published private(set) var snapshotGeneration: UInt64 = 0
+        /// Counts the reads shown. Not published: it moves only with `snapshot`, which publishes once for both.
+        private(set) var snapshotGeneration: UInt64 = 0
+        /// False while `snapshot` is the placeholder of a hidden or new window: the next read is then always shown.
+        private var snapshotIsRead = false
         @Published private(set) var isRefreshing = false
         @Published private(set) var isExportingShare = false
         // R14b: no view reads these three (searched by name in Sources and Tests): they do not publish.
@@ -658,8 +661,20 @@ import AppleScreenTime
         }
 
         private func discardVisibleSnapshot() {
-            snapshot = .empty(day: selectedDay)
             snapshotGeneration &+= 1
+            snapshotIsRead = false
+            snapshot = .empty(day: selectedDay)
+        }
+
+        /// R14b: shows a read unless it equals the shown one on every field (the 60 s pass on a quiet day publishes
+        /// nothing). The first read after the placeholder is always shown, so the generation tells a read from it.
+        @discardableResult
+        func publishSnapshot(_ next: DashboardDaySnapshot) -> Bool {
+            guard next != snapshot || !snapshotIsRead else { return false }
+            snapshotGeneration &+= 1
+            snapshotIsRead = true
+            snapshot = next
+            return true
         }
 
         func togglePause() {
@@ -1136,8 +1151,7 @@ import AppleScreenTime
                         self.refreshData(force: true)
                         return
                     }
-                    self.snapshot = next
-                    self.snapshotGeneration &+= 1
+                    self.publishSnapshot(next)
                     if let selected = self.selectedSessionID,
                         !self.filteredSessions.contains(where: { $0.id == selected })
                     {
@@ -1172,8 +1186,10 @@ import AppleScreenTime
                     guard self.metadataRequestSequence == requestSequence else { return }
                     self.activeMetadataRequest = nil
                     guard self.dashboardIsVisible, !token.isCancelled, updated else { return }
-                    self.snapshot = self.dataReader.applyingCachedMetadata(to: self.snapshot)
+                    let next = self.dataReader.applyingCachedMetadata(to: self.snapshot)
+                    guard next != self.snapshot else { return }
                     self.snapshotGeneration &+= 1
+                    self.snapshot = next
                 }
             }
             activeMetadataRequest = (token, workItem)

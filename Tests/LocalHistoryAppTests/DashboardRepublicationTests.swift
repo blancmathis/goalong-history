@@ -24,6 +24,37 @@ final class DashboardRepublicationTests: XCTestCase {
         XCTAssertGreaterThan(publications, 0, "a section change still publishes")
     }
 
+    /// Step 2: the 60 s pass publishes nothing on a quiet day (equal snapshot, every field compared), and exactly once
+    /// when one deep field changed. The first read after the placeholder is always shown, even when empty.
+    func testEqualSnapshotDoesNotPublish() throws {
+        let model = try dashboardModel()
+        let day = Calendar.current.startOfDay(for: Date())
+        XCTAssertTrue(model.publishSnapshot(.empty(day: model.selectedDay)), "the first read is shown, even an empty one")
+        XCTAssertTrue(model.publishSnapshot(Self.snapshot(day: day, latestMessage: "a")))
+        var publications = 0
+        let watch = model.objectWillChange.sink { publications += 1 }
+        defer { watch.cancel() }
+        let generation = model.snapshotGeneration
+        XCTAssertFalse(model.publishSnapshot(Self.snapshot(day: day, latestMessage: "a")), "an equal read was shown")
+        XCTAssertEqual(publications, 0, "an equal read published")
+        XCTAssertEqual(model.snapshotGeneration, generation)
+        XCTAssertTrue(model.publishSnapshot(Self.snapshot(day: day, latestMessage: "b")), "a changed message was dropped")
+        XCTAssertEqual(publications, 1, "a changed read publishes exactly once")
+        XCTAssertEqual(model.snapshotGeneration, generation &+ 1)
+        XCTAssertEqual(model.snapshot.sessions.first?.latestMessage, "b")
+    }
+
+    static func snapshot(day: Date, latestMessage: String) -> DashboardDaySnapshot {
+        let session = ActivitySession(id: "s1", start: day.addingTimeInterval(3600), end: day.addingTimeInterval(4200),
+            appName: "Safari", bundleIdentifier: "com.apple.Safari", windowTitle: "Page", host: "example.org",
+            category: nil, isWork: true, confidence: 0.9, suppressionReason: nil, eventCount: 12, inputEventCount: 10,
+            softwareAttributedEventCount: 0, kindCounts: ["app": 12], latestMessage: latestMessage)
+        return DashboardDaySnapshot(day: day, eventCount: 12, activeMinutes: 10, workMinutes: 10, sealedMinutes: 0,
+            liveAnchoredMinutes: 0, privateMinutes: 0, softwareAttributedEvents: 0, sessions: [session],
+            appUsage: [AppUsage(appName: "Safari", bundleIdentifier: "com.apple.Safari", eventCount: 12)],
+            trackedUsage: [], timeline: [], storageBytes: 4096, availableDays: [day])
+    }
+
     // MARK: Helpers
 
     func dashboardModel() throws -> DashboardViewModel {
