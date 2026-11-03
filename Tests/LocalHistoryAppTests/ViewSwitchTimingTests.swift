@@ -70,17 +70,33 @@ final class ViewSwitchTimingTests: XCTestCase {
                     samples.append(measure(section.rawValue, pass: pass, press: button, host: host, model: model))
                 }
             }
+            // R14a: one model publication (`objectWillChange`) on each view, every page already visited: the cost a
+            // periodic republication adds to the shown page (pages kept alive must not add theirs).
+            var republish: [String: Double] = [:]
+            for target in ["activite-28j", "activite-7j", "activite-1j"] + sections.map(\.rawValue) {
+                let period = target.hasPrefix("activite-") ? String(target.dropFirst(9).dropLast()) : nil
+                if period != nil, model.selectedSection != .overview, let back = node("sidebar-overview", in: host) {
+                    _ = measure("overview", pass: -1, press: back, host: host, model: model)
+                }
+                guard let button = period.map({ periodButton($0, in: host) }) ?? node("sidebar-\(target)", in: host) else { continue }
+                _ = measure(target, pass: -1, press: button, host: host, model: model)
+                republish[target] = self.republish(host, model: model)
+            }
             let directory = URL(fileURLWithPath: output, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(samples).write(to: directory.appendingPathComponent("switch-timing.json"))
+            try encoder.encode(republish).write(to: directory.appendingPathComponent("switch-republish.json"))
+            // R14a: the columns of the T-043 report. Block = click + layout on the main thread (no draw);
+            // first = first drawn frame (CPU bitmap draw included); complete = data read + frame; republish = one publication.
+            log("view             block  first  complete  republish | cold block first complete")
             for view in Set(samples.map(\.view)).sorted() {
                 let rows = samples.filter { $0.view == view }
                 let warm = rows.filter { $0.pass > 0 }
-                log(String(format: "%-16@ cold first %6.1f complete %7.1f | warm first med %6.1f (%5.1f–%5.1f) complete med %7.1f stall med %6.1f",
-                           view as NSString, rows.first?.firstMs ?? 0, rows.first?.completeMs ?? 0,
-                           median(warm.map(\.firstMs)), warm.map(\.firstMs).min() ?? 0, warm.map(\.firstMs).max() ?? 0,
-                           median(warm.map(\.completeMs)), median(warm.map(\.maxStallMs))))
+                log(String(format: "%-16@ %6.1f %6.1f %8.1f %9.1f | %6.1f %6.1f %8.1f",
+                           view as NSString, median(warm.compactMap(\.firstLayoutMs)), median(warm.map(\.firstMs)),
+                           median(warm.map(\.completeMs)), republish[view] ?? -1,
+                           rows.first?.firstLayoutMs ?? 0, rows.first?.firstMs ?? 0, rows.first?.completeMs ?? 0))
             }
         }
     }
@@ -103,6 +119,20 @@ final class ViewSwitchTimingTests: XCTestCase {
         let total = (idleAt ?? frame) - started + (ProcessInfo.processInfo.systemUptime - frame)
         return Sample(view: view, pass: pass, firstMs: first * 1_000, completeMs: total * 1_000, maxStallMs: max(stall, first) * 1_000,
                       firstLayoutMs: layout * 1_000)
+    }
+
+    /// One publication of the model with the page laid out and displayed: median of 3, minus nothing (an idle turn
+    /// is logged beside it, ~1 ms). Same method as the T-043 report.
+    @MainActor private func republish(_ host: NSView, model: DashboardViewModel) -> Double {
+        func once(_ send: Bool) -> Double {
+            let started = ProcessInfo.processInfo.systemUptime
+            if send { model.objectWillChange.send() }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.001))
+            host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+            return (ProcessInfo.processInfo.systemUptime - started) * 1_000
+        }
+        _ = once(false)
+        return (0..<3).map { _ in once(true) }.sorted()[1]
     }
 
     /// Runs the main loop in 2 ms slices until every read is over and no loading view is left for five slices.
