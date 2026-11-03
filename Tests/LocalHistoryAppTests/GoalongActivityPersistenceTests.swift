@@ -300,20 +300,20 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         await model.load(day: day, count: 7)
         XCTAssertEqual(model.payload?.current.days.count, 7)
         // Back to the day: shown at once, and no read is needed while nothing changed.
-        XCTAssertTrue(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertTrue(shown) }
         XCTAssertEqual(model.payload?.current.days.count, 1)
         XCTAssertEqual(model.payload?.updatedAt, first.updatedAt)
         await model.load(day: day, count: 7)
         // A changed journal (an import, a correction, a deletion of rows) is never shown from memory.
         let handle = try FileHandle(forWritingTo: events); try handle.seekToEnd(); try handle.write(contentsOf: Data("\n".utf8))
         try handle.close()
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
         XCTAssertEqual(model.payload?.current.days.count, 7)
         // A history clear (new barrier generation) and any change notification empty the memory too.
         await model.load(day: day, count: 1)
         await model.load(day: day, count: 7)
         DerivedHistoryWriteBarrier.shared.resume(DerivedHistoryWriteBarrier.shared.suspend())
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
         await model.load(day: day, count: 1)
         await model.load(day: day, count: 7)
         let generation = model.snapshotGeneration
@@ -321,7 +321,7 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         // Delivery hops to the main queue (R13d): wait for it.
         let deadline = Date().addingTimeInterval(5)
         while model.snapshotGeneration == generation, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
     }
 
     /// R13d: the day and time-zone notifications come from a system thread; the model must not trap there.
@@ -341,7 +341,7 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         let deadline = Date().addingTimeInterval(5)
         while model.snapshotGeneration < before + 2, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(model.snapshotGeneration, before + 2)
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
     }
 
     /// R13d: a read that started before `forgetSnapshots()` cannot put its result back in the memory.
@@ -355,10 +355,10 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         XCTAssertGreaterThan(model.snapshotGeneration, old)
         model.storeSnapshot(payload, day: day, count: 1, verdicts: GoalongWorkVerdicts(),
                             admission: DerivedHistoryWriteBarrier.shared.admission(), generation: old)
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
         model.storeSnapshot(payload, day: day, count: 1, verdicts: GoalongWorkVerdicts(),
                             admission: DerivedHistoryWriteBarrier.shared.admission(), generation: model.snapshotGeneration)
-        XCTAssertTrue(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertTrue(shown) }
     }
 
     @MainActor func testActivityPageShowsPauseStateInsteadOfARetryableError() async throws {

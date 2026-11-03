@@ -106,8 +106,25 @@ final class ViewSwitchTimingTests: XCTestCase {
     @MainActor private func measure(_ view: String, pass: Int, press: NSObject, host: NSView, model: DashboardViewModel) -> Sample {
         let started = ProcessInfo.processInfo.systemUptime
         XCTAssertTrue(ViewSwitchAX.flag(press, "accessibilityPerformPress") == true, "press \(view)")
-        host.layoutSubtreeIfNeeded()
-        let layout = ProcessInfo.processInfo.systemUptime - started
+        let layout: Double
+        if GoalongAnalyticsModel.selectionsPending > 0 {
+            // R14a: a period seen before waits for its off-main source check, then goes on screen in one layout.
+            // Blocage = the longest main-thread block from the press to that layout; 1re image counts the whole wait.
+            var block = ProcessInfo.processInfo.systemUptime - started
+            let deadline = started + 5
+            while GoalongAnalyticsModel.selectionsPending > 0, ProcessInfo.processInfo.systemUptime < deadline {
+                let slice = ProcessInfo.processInfo.systemUptime
+                RunLoop.current.run(until: Date().addingTimeInterval(0.001))
+                block = max(block, ProcessInfo.processInfo.systemUptime - slice - 0.001)
+            }
+            XCTAssertEqual(GoalongAnalyticsModel.selectionsPending, 0, "\(view): the selection never committed")
+            let commit = ProcessInfo.processInfo.systemUptime
+            host.layoutSubtreeIfNeeded()
+            layout = max(block, ProcessInfo.processInfo.systemUptime - commit)
+        } else {
+            host.layoutSubtreeIfNeeded()
+            layout = ProcessInfo.processInfo.systemUptime - started
+        }
         draw(host)
         let first = ProcessInfo.processInfo.systemUptime - started
         var stall = 0.0

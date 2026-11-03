@@ -451,14 +451,24 @@ actor GoalongAnalyticsReader {
         "\(calendar.startOfDay(for: day).timeIntervalSinceReferenceDate)|\(count)"
     }
 
-    /// Puts the last complete read of this period on screen at once, if it still describes the sources.
+    /// R14a: selections of Activité waiting for their stored read's file check, off the main thread. The view-switch
+    /// timing waits for 0 before it times the frame that shows the new period.
+    static var selectionsPending = 0
+
+    /// True when a complete read of this period is stored: the page then checks it before it shows the new period.
+    func hasSnapshot(day: Date, count: Int) -> Bool { snapshots[Self.snapshotKey(day: day, count: count)] != nil }
+
+    /// Puts the last complete read of this period on screen, if it still describes the sources.
     /// Returns false (and drops the entry) otherwise; the normal read then runs.
     @discardableResult
-    func showSnapshot(day: Date, count: Int, verdicts: GoalongWorkVerdicts) -> Bool {
-        snapshotMatch(day: day, count: count, verdicts: verdicts) != .changed
+    func showSnapshot(day: Date, count: Int, verdicts: GoalongWorkVerdicts) async -> Bool {
+        let match = await verifySnapshot(day: day, count: count, verdicts: verdicts)
+        return showVerified(day: day, count: count, match: match)
     }
 
-    private func snapshotMatch(day: Date, count: Int, verdicts: GoalongWorkVerdicts) -> GoalongAnalyticsReader.SourceMatch {
+    /// R14a: checks the stored read of this period against its files on a background thread (a few hundred `stat`
+    /// for 28 days). The result holds only for this generation and this entry: any change since gives `.changed`.
+    func verifySnapshot(day: Date, count: Int, verdicts: GoalongWorkVerdicts) async -> GoalongAnalyticsReader.SourceMatch {
         let key = Self.snapshotKey(day: day, count: count)
         guard let stored = snapshots[key] else { return .changed }
         let now = reader.now()
@@ -468,20 +478,35 @@ actor GoalongAnalyticsReader {
               let sources = stored.payload.sources
         else { snapshots[key] = nil; return .changed }
         // The click shows the snapshot, then the page's read asks again a few ms later: one file check for both.
-        let clock = ProcessInfo.processInfo.systemUptime
         var match: GoalongAnalyticsReader.SourceMatch
         if let recent = recentMatch, recent.key == key, recent.updatedAt == stored.payload.updatedAt,
-           clock - recent.at < 0.5 {
+           ProcessInfo.processInfo.systemUptime - recent.at < 0.5 {
             match = recent.match
         } else {
-            match = GoalongAnalyticsReader.match(sources, root: reader.root, now: now, calendar: .current)
-            recentMatch = (key, stored.payload.updatedAt, match, clock)
+            let generation = snapshotGeneration, root = reader.root
+            Self.loadsInFlight += 1
+            match = await Task.detached(priority: .userInitiated) {
+                GoalongAnalyticsReader.match(sources, root: root, now: now, calendar: .current)
+            }.value
+            Self.loadsInFlight -= 1
+            // Emptied, replaced or cleared during the check: never shown.
+            guard generation == snapshotGeneration, snapshots[key]?.payload.updatedAt == stored.payload.updatedAt,
+                  DerivedHistoryWriteBarrier.shared.isCurrent(stored.admission) else { return .changed }
+            recentMatch = (key, stored.payload.updatedAt, match, ProcessInfo.processInfo.systemUptime)
         }
         guard match != .changed else { snapshots[key] = nil; return .changed }
         // Today's figures also follow the clock (the day so far): past one minute, shown and then read again.
         let start = Calendar.current.date(byAdding: .day, value: 1 - count, to: Calendar.current.startOfDay(for: day)) ?? day
         let end = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: day)) ?? day
         if match == .same, start <= now, now < end, now.throttleElapsed(since: stored.payload.updatedAt) > 60 { match = .grown }
+        return match
+    }
+
+    /// Shows the stored read checked by `verifySnapshot` (same main-actor turn as the new selection: one layout).
+    @discardableResult
+    func showVerified(day: Date, count: Int, match: GoalongAnalyticsReader.SourceMatch) -> Bool {
+        let key = Self.snapshotKey(day: day, count: count)
+        guard match != .changed, let stored = snapshots[key] else { return false }
         snapshotUses += 1; snapshots[key]?.use = snapshotUses
         let shown = payload.map { value in
             value.updatedAt == stored.payload.updatedAt && value.current.days.count == count && !value.isPreview
@@ -491,7 +516,7 @@ actor GoalongAnalyticsReader {
             payload = stored.payload
         }
         error = nil; paused = false
-        return match
+        return true
     }
 
     func storeSnapshot(_ value: GoalongAnalyticsPayload, day: Date, count: Int, verdicts: GoalongWorkVerdicts,
@@ -571,10 +596,14 @@ actor GoalongAnalyticsReader {
             } ?? false
         }
         // Keep a valid same-period snapshot during refresh, never across dates or preview boundaries.
-        if !force, !preview, snapshotMatch(day: day, count: count, verdicts: verdicts) == .same {
-            // Every source is as read: a new read gives the same payload. Nothing to read again.
-            busy = false
-            return
+        if !force, !preview {
+            let match = await verifySnapshot(day: day, count: count, verdicts: verdicts)
+            guard operation == id, !Task.isCancelled else { if operation == id { busy = false }; return }
+            if showVerified(day: day, count: count, match: match), match == .same {
+                // Every source is as read: a new read gives the same payload. Nothing to read again.
+                busy = false
+                return
+            }
         }
         if !sameSelection() { payload = nil }
         do {

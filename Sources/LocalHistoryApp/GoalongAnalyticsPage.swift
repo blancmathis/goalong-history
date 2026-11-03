@@ -42,6 +42,8 @@ struct GoalongAnalyticsPage: View {
     @State private var showingPreview = false
     #endif
     @State private var previewNavigation = GoalongActivityNavigation()
+    /// R14a: the latest selection asked; a check that ends after a newer click is dropped.
+    @State private var pendingSelection = 0
     private let refreshTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     /// Automatic refreshes of today wait at least ten times the last read duration, so a
     /// very busy day never keeps a core busy while the page is simply left open.
@@ -540,12 +542,25 @@ struct GoalongAnalyticsPage: View {
     }
 
     private func updateSelection(_ change: (inout GoalongActivityNavigation) -> Void) {
-        if previewActive { change(&previewNavigation) }
-        else {
-            change(&navigation); model.selectDay(navigation.day)
-            // R13c: the last complete read of the new period goes on screen in this same frame, read again after.
-            analytics.showSnapshot(day: navigation.day, count: navigation.period, verdicts: work.verdicts)
+        if previewActive { change(&previewNavigation); return }
+        var next = navigation; change(&next)
+        pendingSelection += 1
+        let token = pendingSelection
+        guard analytics.hasSnapshot(day: next.day, count: next.period) else { commitSelection(next); return }
+        // R14a: the last complete read of the new period is checked against its files off the main thread, then
+        // goes on screen in the same turn as the new selection (one layout, never a stale figure); read again after.
+        GoalongAnalyticsModel.selectionsPending += 1
+        let verdicts = work.verdicts
+        Task { @MainActor in
+            defer { GoalongAnalyticsModel.selectionsPending -= 1 }
+            let match = await analytics.verifySnapshot(day: next.day, count: next.period, verdicts: verdicts)
+            guard token == pendingSelection else { return }  // a newer click won
+            commitSelection(next)
+            analytics.showVerified(day: next.day, count: next.period, match: match)
         }
+    }
+    private func commitSelection(_ next: GoalongActivityNavigation) {
+        navigation = next; model.selectDay(next.day)
     }
     private func openHistory(_ day: Date) {
         guard !previewActive else { return }
