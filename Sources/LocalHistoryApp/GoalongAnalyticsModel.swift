@@ -321,6 +321,8 @@ actor GoalongAnalyticsReader {
     private var operation = UUID()
     /// Reads started and not finished, all pages together. The gallery waits for 0 before it captures Activité.
     private(set) static var loadsInFlight = 0
+    /// Every read started, for the view-switch budget test (R13a).
+    private(set) static var loadsStarted = 0
     init() { reader = .shared }
 
     /// Called by the existing 10-minute analysis timer: no wake-up of its own.
@@ -364,7 +366,7 @@ actor GoalongAnalyticsReader {
     func load(day: Date, count: Int, force: Bool = false, preview: Bool = false,
               verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) async {
         let id = UUID(); operation = id; busy = true; error = nil; paused = false
-        Self.loadsInFlight += 1
+        Self.loadsInFlight += 1; Self.loadsStarted += 1
         defer { Self.loadsInFlight -= 1 }
         let sameSelection = payload.map {
             $0.isPreview == preview && $0.current.days.count == count

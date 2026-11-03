@@ -79,7 +79,10 @@ struct GoalongAnalyticsPage: View {
                     // R-265, UI-17A M3: one bound for the calendar, « précédent » and every period's step.
                     earliestDay: earliestDay,
                     onDay: { day in updateSelection { $0.selectDay(day) } },
-                    onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
+                    onPeriod: { period in
+                        GoalongSwitchTiming.begin("activite-\(period)j")
+                        updateSelection { $0.selectPeriod(period) }
+                    },
                     onStep: { direction in
                         updateSelection { analytics.step(&$0, direction, macDays: model.snapshot.availableDays, preview: previewActive) }
                     },
@@ -236,6 +239,10 @@ struct GoalongAnalyticsPage: View {
             let started = ProcessInfo.processInfo.systemUptime
             await analytics.load(request, force: force, verdicts: work.verdicts)
             lastReadSeconds = ProcessInfo.processInfo.systemUptime - started
+            if !Task.isCancelled, !request.isPreview {
+                GoalongSwitchTiming.end("activite-\(request.count)j", stage: "data", last: true)
+                GoalongSwitchTiming.end(DashboardSection.overview.rawValue, stage: "data", last: true)
+            }
             // Contexts seen for the first time are classified in the background, at most
             // once per day shown (today: every 15 minutes), only with the user's consent.
             if !request.isPreview, let payload = analytics.payload, !Task.isCancelled {

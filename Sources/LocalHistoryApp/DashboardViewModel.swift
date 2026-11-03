@@ -515,6 +515,7 @@ import AppleScreenTime
                 secondaryReturn = nil
             }
             if section == .settings { settingsPane = .home }
+            if section != previousSection { GoalongSwitchTiming.begin(section.rawValue) }
             selectedSection = section
             if dashboardIsVisible, section == .agentActivity {
                 agentActivityRuntime.scanNow(

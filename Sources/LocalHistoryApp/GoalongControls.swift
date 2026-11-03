@@ -608,6 +608,8 @@
         }
 
         @Namespace private var pill
+        /// While set, the raised pill stays on this value; then it slides to `selection`.
+        @State private var pillHold: Value?
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
@@ -615,7 +617,7 @@
                 ForEach(options, id: \.self) { option in
                     let selected = selection == option
                     Button {
-                        withAnimation(reduceMotion ? nil : LHTheme.settle) { selection = option }
+                        choose(option)
                     } label: {
                         Text(title(option)).lineLimit(1)
                             .frame(maxWidth: fills ? .infinity : nil)
@@ -623,7 +625,7 @@
                     .buttonStyle(GoalongSegmentStyle(selected: selected))
                     // The raised pill slides between segments instead of jumping.
                     .background {
-                        if selected {
+                        if (pillHold ?? selection) == option {
                             GoalongSurface(corner: LHTheme.controlRadius - 2, fill: LHTheme.segmentSelected, highlighted: true)
                                 .matchedGeometryEffect(id: "selection", in: pill)
                         }
@@ -637,6 +639,19 @@
             .fixedSize(horizontal: !fills, vertical: true)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(label)
+        }
+
+        /// R13a: the new value goes out without an animated transaction. Any animation in that transaction (even the
+        /// pill's own) held back every `.task(id:)` of the page it drives: Activité read its period ~300 ms late.
+        /// The pill slides on the next turn of the main loop, once those reads have started.
+        private func choose(_ option: Value) {
+            guard option != selection else { return }
+            if !reduceMotion { pillHold = selection }
+            selection = option
+            guard !reduceMotion else { return }
+            DispatchQueue.main.async {
+                withAnimation(LHTheme.settle) { pillHold = nil }
+            }
         }
     }
 
