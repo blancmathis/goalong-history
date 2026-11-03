@@ -120,7 +120,16 @@ struct GoalongAnalyticsContent: View {
         GoalongActivityProjection.usage(current, grouping: grouping, previous: payload.previous)
     }
 
+    #if DEBUG
+    /// Tests only (R14c): bodies evaluated per period length. The view-switch timing checks that a click on a period
+    /// built that period inside its measured window: a measure that saw no work fails, it never passes silently.
+    @MainActor static var builtPeriods: [Int: Int] = [:]
+    #endif
+
     var body: some View {
+        #if DEBUG
+        let _ = Self.builtPeriods[current.days.count, default: 0] += 1
+        #endif
         let summary = self.summary
         let tasks = payload.tasks
         // R14a: lazy inside the page's lazy stack: the sections under the window are built when scrolled to.

@@ -199,11 +199,16 @@ final class ViewSwitchBudgetTests: XCTestCase {
                 let rows = samples.filter { $0.view == view }
                 XCTAssertEqual(rows.count, 5, "\(view) was not measured")
                 let warm = ViewSwitchTimingTests.median(rows.filter { $0.pass > 0 }.compactMap(\.firstLayoutMs))
-                let cold = rows.first { $0.pass == 0 }?.firstLayoutMs ?? .infinity
+                // R14c: the first click is guarded from the click to « complet » (its longest main-thread block). A cold
+                // period lays its content out when its data come in, after the selection's own layout: the former
+                // window (press + that layout) saw 2 ms for a 28-day first click on CI (dc8d178).
+                let cold = rows.first { $0.pass == 0 }?.longestMs ?? .infinity
                 let warmBudget = ratio.warm * reference, coldBudget = ratio.cold * reference
-                Self.budgetLog(String(format: "run %d %@ warm %.1f ms / budget %.1f ms (%.2f × ref, margin %.0f %%), cold %.1f ms / budget %.1f ms (%.2f × ref, margin %.0f %%)",
+                Self.budgetLog(String(format: "run %d %@ warm %.1f ms / budget %.1f ms (%.2f × ref, margin %.0f %%), cold %.1f ms / budget %.1f ms (%.2f × ref, margin %.0f %%, block at the click %.1f ms%@)",
                     attempt, view, warm, warmBudget, warm / reference, (1 - warm / warmBudget) * 100,
-                    cold, coldBudget, cold / reference, (1 - cold / coldBudget) * 100))
+                    cold, coldBudget, cold / reference, (1 - cold / coldBudget) * 100,
+                    rows.first { $0.pass == 0 }?.firstLayoutMs ?? -1,
+                    rows.first { $0.pass == 0 }?.fromStore == true ? ", stored read" : ""))
                 if !(warm < warmBudget) { over.append("\(view): a warm click blocks \(Int(warm)) ms, budget \(Int(warmBudget)) ms") }
                 if !(cold < coldBudget) { over.append("\(view): the first click blocks \(Int(cold)) ms, budget \(Int(coldBudget)) ms") }
             }
