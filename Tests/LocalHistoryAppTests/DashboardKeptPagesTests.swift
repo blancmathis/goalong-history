@@ -140,7 +140,7 @@ import XCTest
     func testThePagesNotVisitedYetAreBuiltAtRestAndStayInertUntilTheirFirstVisit() throws {
         try GalleryRenderer.withPreparedApplication {
             let delay = DashboardKeptPagesView.preheatDelay
-            DashboardKeptPagesView.preheatDelay = 0.1
+            DashboardKeptPagesView.preheatDelay = 0.3
             defer { DashboardKeptPagesView.preheatDelay = delay }
             let source = Source(), counts = Counts()
             let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
@@ -149,12 +149,15 @@ import XCTest
             defer { window.contentView = nil; window.close() }
             let host = DashboardWindowContent(rootView: PreheatRoot(source: source, selected: "a", counts: counts))
             window.contentView = host
-            spin(host)
+            host.layoutSubtreeIfNeeded()
             let pages = try XCTUnwrap(Self.keptView(in: host))
-            // Not in the click: only once the window has been quiet for the delay.
+            let shown = Date()
+            // Not in the click: only once the window has been quiet for the delay (no fixed sleep: a loaded machine
+            // stretches every turn of the run loop).
             XCTAssertNil(pages.hosts["b"])
-            spin(host, 0.4)
+            while pages.hosts["b"] == nil && Date().timeIntervalSince(shown) < 10 { spin(host, 0.02) }
             let built = try XCTUnwrap(pages.hosts["b"], "the page was not built at rest")
+            XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(shown), 0.3, "the page was built before the window was quiet")
             XCTAssertEqual(pages.preheatPending, 0)
             XCTAssertNil(built.superview, "a page built at rest went into the window")
             XCTAssertNil(ViewSwitchAX.first(in: host) { $0 == "probe-b" })
