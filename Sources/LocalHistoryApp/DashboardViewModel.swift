@@ -125,8 +125,9 @@ import AppleScreenTime
         @Published var selectedSection: DashboardSection = .overview
         @Published var settingsPane: SettingsPane = .home
         /// Where a secondary page (Temps d’écran, Confidentialité, Terminal…) returns:
-        /// the page, and Settings pane, it was opened from.
-        @Published private(set) var secondaryReturn: DashboardSecondaryReturn?
+        /// the page, and Settings pane, it was opened from. Not published: it changes only in `selectSection`,
+        /// with `selectedSection`, which publishes.
+        private(set) var secondaryReturn: DashboardSecondaryReturn?
         @Published var showingWebsiteShare = false
         /// The profile studio outlives any settings pane or page that opens it.
         @MainActor lazy var profileStudio = GoalongProfileStudioHost()
@@ -138,9 +139,10 @@ import AppleScreenTime
         @Published private(set) var snapshotGeneration: UInt64 = 0
         @Published private(set) var isRefreshing = false
         @Published private(set) var isExportingShare = false
-        @Published var selectedSessionID: String?
-        @Published var activitySearch = ""
-        @Published var activityFilter: ActivityFilter = .all
+        // R14b: no view reads these three (searched by name in Sources and Tests): they do not publish.
+        var selectedSessionID: String?
+        var activitySearch = ""
+        var activityFilter: ActivityFilter = .all
         @Published var usageSearch = ""
         @Published private(set) var sharingRules: [String: SharingVisibility]
         @Published private(set) var defaultSharingVisibility: SharingVisibility
@@ -155,7 +157,8 @@ import AppleScreenTime
         @Published private(set) var deviceTrustTier: String
         @Published private(set) var deviceAlgorithm: String
         @Published private(set) var deviceProtectionTitle: String
-        @Published private(set) var deviceProtectionSummary: String
+        /// R14b: no view reads it (searched by name): it does not publish.
+        private(set) var deviceProtectionSummary: String
         /// Changed or degraded trust state (rotation, sealing suspended), shown in the integrity section.
         @Published private(set) var trustNotices: [String] = []
         /// Shown in Settings while config.json is unreadable.
@@ -216,6 +219,7 @@ import AppleScreenTime
         private let shareQueue = DispatchQueue(label: "ai.goalong.localhistory.dashboard-share", qos: .userInitiated)
         @Published private(set) var dashboardIsVisible = false
         /// The window can be seen, with or without the keyboard: only the cheap status is kept live.
+        /// Still published: views read it through `recordingStatusIsLive`.
         @Published private(set) var dashboardStatusIsVisible = false
         /// The recording status is fresh: the banner and the page bodies show it only then.
         var recordingStatusIsLive: Bool { dashboardIsVisible || dashboardStatusIsVisible }
