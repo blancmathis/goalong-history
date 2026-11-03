@@ -395,6 +395,27 @@ import XCTest
         XCTAssertEqual(offending, [], "appear logic outside the gate of its page (use onAppearWhenShown / taskWhenShown)")
     }
 
+    /// N2: two quick « jour suivant » while the first is checked give J+2, not J+1.
+    func testTwoQuickClicksBothCount() {
+        let calendar = Calendar.current
+        let now = calendar.startOfDay(for: Date())
+        let day = calendar.date(byAdding: .day, value: -5, to: now)!
+        let shown = GoalongActivityNavigation(day: day, period: 1, now: now, calendar: calendar)
+        let chain = GoalongSelectionChain()
+        var first = chain.base(shown); first.step(1, earliest: nil, now: now, calendar: calendar)
+        chain.ask(first, token: 1)
+        // The second click comes before the first is committed: the page still shows J.
+        var second = chain.base(shown); second.step(1, earliest: nil, now: now, calendar: calendar)
+        chain.ask(second, token: 2)
+        XCTAssertEqual(second.day, calendar.date(byAdding: .day, value: 2, to: day))
+        // The first click's check ends late: it lost, nothing is cleared.
+        chain.committed(token: 1)
+        XCTAssertEqual(chain.asked, second)
+        chain.committed(token: 2)
+        XCTAssertNil(chain.asked)
+        XCTAssertEqual(chain.base(second), second)
+    }
+
     private static func keptView(in view: NSView) -> DashboardKeptPagesView? {
         if let kept = view as? DashboardKeptPagesView { return kept }
         for child in view.subviews { if let kept = keptView(in: child) { return kept } }

@@ -44,6 +44,9 @@ struct GoalongAnalyticsPage: View {
     @State private var previewNavigation = GoalongActivityNavigation()
     /// R14a: the latest selection asked; a check that ends after a newer click is dropped.
     @State private var pendingSelection = 0
+    /// The selection the last click asked for, while its check runs: the next click starts from it (R14a, N2: two quick
+    /// « jour suivant » give J+2). A reference, so that a click does not update the page by itself.
+    @State private var latestSelection = GoalongSelectionChain()
     private let refreshTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     /// Automatic refreshes of today wait at least ten times the last read duration, so a
     /// very busy day never keeps a core busy while the page is simply left open.
@@ -544,10 +547,11 @@ struct GoalongAnalyticsPage: View {
 
     private func updateSelection(_ change: (inout GoalongActivityNavigation) -> Void) {
         if previewActive { change(&previewNavigation); return }
-        var next = navigation; change(&next)
+        var next = latestSelection.base(navigation); change(&next)
         pendingSelection += 1
         let token = pendingSelection
-        guard analytics.hasSnapshot(day: next.day, count: next.period) else { commitSelection(next); return }
+        latestSelection.ask(next, token: token)
+        guard analytics.hasSnapshot(day: next.day, count: next.period) else { commitSelection(next, token: token); return }
         // R14a: the last complete read of the new period is checked against its files off the main thread, then
         // goes on screen in the same turn as the new selection (one layout, never a stale figure); read again after.
         GoalongAnalyticsModel.selectionsPending += 1
@@ -556,11 +560,12 @@ struct GoalongAnalyticsPage: View {
             defer { GoalongAnalyticsModel.selectionsPending -= 1 }
             let match = await analytics.verifySnapshot(day: next.day, count: next.period, verdicts: verdicts)
             guard token == pendingSelection else { return }  // a newer click won
-            commitSelection(next)
+            commitSelection(next, token: token)
             analytics.showVerified(day: next.day, count: next.period, match: match)
         }
     }
-    private func commitSelection(_ next: GoalongActivityNavigation) {
+    private func commitSelection(_ next: GoalongActivityNavigation, token: Int) {
+        latestSelection.committed(token: token)
         navigation = next; model.selectDay(next.day)
     }
     private func openHistory(_ day: Date) {
@@ -607,4 +612,19 @@ struct GoalongAnalyticsPreviewBanner: View {
 enum GoalongAgentSourceCopy {
     static let off = "Codex, Claude Code et T3 Code : nombre de conversations et de demandes par projet. Les messages sont lus sur ce Mac et restent dans leurs fichiers."
     static let on = "Codex et Claude Code : nombre de conversations par projet. Les messages sont lus sur ce Mac et restent dans leurs fichiers."
+}
+
+/// R14a (N2): the selection a click asked for while its check runs off the main thread. The next click starts from it,
+/// not from the selection still on screen, so two quick « jour suivant » give J+2. Cleared once the latest click is
+/// committed.
+final class GoalongSelectionChain {
+    private(set) var asked: GoalongActivityNavigation?
+    private var token = 0
+
+    /// Where the next click starts: the selection asked for last, or the one on screen.
+    func base(_ shown: GoalongActivityNavigation) -> GoalongActivityNavigation { asked ?? shown }
+
+    func ask(_ next: GoalongActivityNavigation, token: Int) { asked = next; self.token = token }
+
+    func committed(token: Int) { if token == self.token { asked = nil } }
 }
