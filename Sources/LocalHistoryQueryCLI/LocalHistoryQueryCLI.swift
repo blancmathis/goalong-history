@@ -3299,10 +3299,11 @@ public enum GoalongQueryCLI {
     /// report the version from their signed enclosing bundle instead of a misleading development
     /// fallback.
     private static func executableBundleInfoDictionary() -> [String: Any]? {
-        guard let argument = CommandLine.arguments.first, !argument.isEmpty else { return nil }
-        let executable = URL(fileURLWithPath: argument, isDirectory: false)
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
+        guard let executable = GoalongCLIExecutableResolver.resolve(
+            argv0: CommandLine.arguments.first,
+            path: ProcessInfo.processInfo.environment["PATH"],
+            currentDirectory: FileManager.default.currentDirectoryPath
+        ) else { return nil }
         let infoPlist = executable
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -4082,4 +4083,33 @@ public enum GoalongQueryCLI {
     }()
 
     private static var usage: String { GoalongCLIContract.usageText }
+}
+
+/// Resolves the physical executable behind `argv[0]`. A shell passes a bare command name (found
+/// through `PATH`) as-is, so treating it as a path relative to the working directory misses the
+/// enclosing app bundle and reports the "development" fallback version.
+enum GoalongCLIExecutableResolver {
+    static func resolve(
+        argv0: String?,
+        path: String?,
+        currentDirectory: String,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let argv0, !argv0.isEmpty else { return nil }
+        let candidate: URL
+        if argv0.contains("/") {
+            candidate = URL(fileURLWithPath: argv0, relativeTo: URL(fileURLWithPath: currentDirectory, isDirectory: true))
+        } else {
+            let found = (path ?? "").split(separator: ":", omittingEmptySubsequences: false)
+                .map { directory -> URL in
+                    let base = directory.isEmpty ? currentDirectory : String(directory)
+                    return URL(fileURLWithPath: base, relativeTo: URL(fileURLWithPath: currentDirectory, isDirectory: true))
+                        .appendingPathComponent(argv0, isDirectory: false)
+                }
+                .first { fileManager.isExecutableFile(atPath: $0.path) }
+            guard let found else { return nil }
+            candidate = found
+        }
+        return candidate.standardizedFileURL.resolvingSymlinksInPath()
+    }
 }
