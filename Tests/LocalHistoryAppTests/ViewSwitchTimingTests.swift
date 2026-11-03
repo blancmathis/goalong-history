@@ -20,7 +20,9 @@ final class ViewSwitchTimingTests: XCTestCase {
         var fromStore: Bool? = nil
         /// R14c: main-thread CPU time from the click to the first layout (draw excluded). Far below `firstLayoutMs`
         /// means the thread waited (preempted on a loaded Mac, or blocked), not that SwiftUI worked.
-        var blockCpuMs: Double? = nil }
+        var blockCpuMs: Double? = nil
+        /// R14c: main-thread CPU inside the one slice timed as the block (wall `firstLayoutMs`).
+        var blockSliceCpuMs: Double? = nil }
 
     @MainActor func testMeasureViewSwitches() throws {
         let environment = ProcessInfo.processInfo.environment
@@ -164,24 +166,30 @@ final class ViewSwitchTimingTests: XCTestCase {
         let started = ProcessInfo.processInfo.systemUptime
         XCTAssertTrue(ViewSwitchAX.flag(press, "accessibilityPerformPress") == true, "press \(view)")
         let layout: Double
+        var blockCpuSlice = 0.0
         let fromStore = GoalongAnalyticsModel.selectionsPending > 0
         if fromStore {
             // R14a: a period seen before waits for its off-main source check, then goes on screen in one layout.
             // Blocage = the longest main-thread block from the press to that layout; 1re image counts the whole wait.
             var block = ProcessInfo.processInfo.systemUptime - started
+            blockCpuSlice = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1e9
             let deadline = started + 5
             while GoalongAnalyticsModel.selectionsPending > 0, ProcessInfo.processInfo.systemUptime < deadline {
-                let slice = ProcessInfo.processInfo.systemUptime
+                let slice = ProcessInfo.processInfo.systemUptime, sliceCpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
                 RunLoop.current.run(until: Date().addingTimeInterval(0.001))
-                block = max(block, ProcessInfo.processInfo.systemUptime - slice - 0.001)
+                let wall = ProcessInfo.processInfo.systemUptime - slice - 0.001
+                if wall > block { block = wall; blockCpuSlice = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - sliceCpu) / 1e9 }
             }
             XCTAssertEqual(GoalongAnalyticsModel.selectionsPending, 0, "\(view): the selection never committed")
-            let commit = ProcessInfo.processInfo.systemUptime
+            let commit = ProcessInfo.processInfo.systemUptime, commitCpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             host.layoutSubtreeIfNeeded()
-            layout = max(block, ProcessInfo.processInfo.systemUptime - commit)
+            let after = ProcessInfo.processInfo.systemUptime - commit
+            if after > block { blockCpuSlice = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - commitCpu) / 1e9 }
+            layout = max(block, after)
         } else {
             host.layoutSubtreeIfNeeded()
             layout = ProcessInfo.processInfo.systemUptime - started
+            blockCpuSlice = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1e9
         }
         let blockCpu = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1e9
         draw(host)
@@ -201,7 +209,7 @@ final class ViewSwitchTimingTests: XCTestCase {
                                  "\(view): its \(period)-day content was not built between the click and complete; nothing measured")
         }
         return Sample(view: view, pass: pass, firstMs: first * 1_000, completeMs: total * 1_000, maxStallMs: max(stall, first) * 1_000,
-                      firstLayoutMs: layout * 1_000, longestMs: max(layout, stall) * 1_000, fromStore: fromStore, blockCpuMs: blockCpu * 1_000)
+                      firstLayoutMs: layout * 1_000, longestMs: max(layout, stall) * 1_000, fromStore: fromStore, blockCpuMs: blockCpu * 1_000, blockSliceCpuMs: blockCpuSlice * 1_000)
     }
 
     /// One publication of the model with the page laid out and displayed: median of 3, minus nothing (an idle turn
