@@ -416,6 +416,8 @@ actor GoalongAnalyticsReader {
     }
     private var snapshots: [String: Snapshot] = [:]
     private var snapshotUses = 0
+    /// Raised by `forgetSnapshots()`; `storeSnapshot` refuses a read that started under an older value.
+    private(set) var snapshotGeneration = 0
     private var recentMatch: (key: String, updatedAt: Date, match: GoalongAnalyticsReader.SourceMatch, at: TimeInterval)?
     /// Bound: about 72 days of data in total (for example 28 + 7 + 1 for two dates).
     static let snapshotDayLimit = 72
@@ -436,11 +438,14 @@ actor GoalongAnalyticsReader {
             .goalongExclusionsDidChange, .goalongAnalysisSelectionDidChange, .NSCalendarDayChanged,
             .NSSystemTimeZoneDidChange]
         invalidation = Publishers.MergeMany(names.map { NotificationCenter.default.publisher(for: $0) })
+            // The system posts the day and time-zone notifications on its own thread: hop to main first.
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetSnapshots() } }
     }
 
     /// Empties every stored period. Called on any change of data or classification, and before a forced read.
-    func forgetSnapshots() { snapshots.removeAll(); recentMatch = nil }
+    /// A read or a preload in flight keeps the generation it started with: its result is dropped if this moved.
+    func forgetSnapshots() { snapshots.removeAll(); recentMatch = nil; snapshotGeneration += 1 }
 
     private static func snapshotKey(day: Date, count: Int, calendar: Calendar = .current) -> String {
         "\(calendar.startOfDay(for: day).timeIntervalSinceReferenceDate)|\(count)"
@@ -489,9 +494,10 @@ actor GoalongAnalyticsReader {
         return match
     }
 
-    private func storeSnapshot(_ value: GoalongAnalyticsPayload, day: Date, count: Int, verdicts: GoalongWorkVerdicts,
-                               admission: DerivedHistoryWriteBarrier.Admission?) {
-        guard let admission, value.sources != nil, !value.isPreview, !value.comparisonPending,
+    func storeSnapshot(_ value: GoalongAnalyticsPayload, day: Date, count: Int, verdicts: GoalongWorkVerdicts,
+                       admission: DerivedHistoryWriteBarrier.Admission?, generation: Int) {
+        guard generation == snapshotGeneration, let admission, value.sources != nil, !value.isPreview,
+              !value.comparisonPending,
               DerivedHistoryWriteBarrier.shared.isCurrent(admission) else { return }
         snapshotUses += 1
         snapshots[Self.snapshotKey(day: day, count: count)] =
@@ -509,11 +515,12 @@ actor GoalongAnalyticsReader {
             guard !Task.isCancelled else { return }
             guard snapshots[Self.snapshotKey(day: day, count: other)] == nil else { continue }
             let admission = DerivedHistoryWriteBarrier.shared.admission()
+            let generation = snapshotGeneration
             do {
                 var value = try await reader.read(ending: day, count: other, force: false, preview: false, verdicts: verdicts)
                 if value.comparisonPending { value = try await reader.comparison(for: value, verdicts: verdicts) }
                 try Task.checkCancellation()
-                storeSnapshot(value, day: day, count: other, verdicts: verdicts, admission: admission)
+                storeSnapshot(value, day: day, count: other, verdicts: verdicts, admission: admission, generation: generation)
             } catch { return }
         }
     }
@@ -556,6 +563,7 @@ actor GoalongAnalyticsReader {
         defer { Self.loadsInFlight -= 1 }
         if force { forgetSnapshots() }
         let admission = DerivedHistoryWriteBarrier.shared.admission()
+        let generation = snapshotGeneration
         func sameSelection() -> Bool {
             payload.map {
                 $0.isPreview == preview && $0.current.days.count == count
@@ -580,7 +588,7 @@ actor GoalongAnalyticsReader {
                 guard operation == id else { return }
                 payload = compared
             }
-            if !preview, let payload { storeSnapshot(payload, day: day, count: count, verdicts: verdicts, admission: admission) }
+            if !preview, let payload { storeSnapshot(payload, day: day, count: count, verdicts: verdicts, admission: admission, generation: generation) }
             busy = false
         } catch is CancellationError {
             if operation == id { busy = false }

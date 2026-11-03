@@ -2,7 +2,8 @@
 import Foundation
 import os
 
-/// R13a: one light line per view change, for `log show` (category `view-switch`).
+/// R13a: one light line per view change, at debug level (not kept on disk). Read it live with
+/// `log stream --level debug --predicate 'category == "view-switch"'`.
 /// It carries a view name from a fixed list and a duration, never any content.
 enum GoalongSwitchTiming {
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "ai.goalong.localhistory",
@@ -28,7 +29,7 @@ enum GoalongSwitchTiming {
         }
         guard let start else { return }
         let ms = Int(((ProcessInfo.processInfo.systemUptime - start) * 1_000).rounded())
-        logger.log("switch \(view, privacy: .public) \(stage, privacy: .public) \(ms, privacy: .public) ms")
+        logger.debug("switch \(view, privacy: .public) \(stage, privacy: .public) \(ms, privacy: .public) ms")
     }
 }
 #endif
