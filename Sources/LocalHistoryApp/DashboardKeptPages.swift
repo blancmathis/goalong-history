@@ -16,6 +16,8 @@
     struct DashboardKeptPages<Page: View>: View {
         /// One kept page per key (section and device).
         let key: String
+        /// What the keys belong to (the device): when it changes, the pages of the former one are freed (N3).
+        var scope = ""
         /// False: the page is released once left (secondary pages, rarely opened). Bounds the memory kept.
         var keep = true
         /// Every value the page takes by value from the caller (not through an object it observes). The shown page
@@ -44,7 +46,7 @@
         @Environment(\.sourceAccessCheck) private var accessCheck
 
         var body: some View {
-            DashboardKeptPagesRepresentable(key: key, keep: keep, inputs: inputs, preheat: preheat, onShown: onShown, page: page, environment: .init(
+            DashboardKeptPagesRepresentable(key: key, scope: scope, keep: keep, inputs: inputs, preheat: preheat, onShown: onShown, page: page, environment: .init(
                 locale: locale, timeZone: timeZone, calendar: calendar, layoutDirection: layoutDirection,
                 colorScheme: colorScheme, contrast: contrast, controlActiveState: controlActiveState,
                 reduceMotion: reduceMotion, defaults: defaults, recording: recording, accessCheck: accessCheck))
@@ -53,6 +55,7 @@
 
     private struct DashboardKeptPagesRepresentable<Page: View>: NSViewRepresentable {
         let key: String
+        let scope: String
         let keep: Bool
         let inputs: any Equatable
         let preheat: [DashboardKeptPageSeed]
@@ -66,7 +69,7 @@
             // Not run here: a hosting view created or updated inside the dashboard's update stays linked to it, and every
             // later update of the dashboard re-evaluated the hidden page (measured, DashboardKeptPagesTests). The pages
             // view runs it in its own layout, in the same frame.
-            slot.pages.request(key: key, keep: keep, inputs: inputs, page: AnyView(page()), environment: environment,
+            slot.pages.request(key: key, scope: scope, keep: keep, inputs: inputs, page: AnyView(page()), environment: environment,
                                onShown: onShown)
             slot.pages.seeds = preheat
         }
@@ -272,6 +275,7 @@
         let pages = DashboardKeptPagesView()
         private(set) weak var content: DashboardWindowContent?
         private var inside = false
+        private var wasInWindow = false
         private var watched: [NSObjectProtocol] = []
 
         override init(frame: NSRect) {
@@ -290,10 +294,16 @@
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            if window == nil, wasInWindow {
+                // Out of the window (window closed, onboarding shown in its place): every kept page is freed now and the
+                // timer of the pages built at rest stops, even if SwiftUI never dismantles this view (N3). Back in a
+                // window, the page last asked for is built again.
+                pages.releaseKeepingRequest()
+            }
+            wasInWindow = window != nil
             resolve(final: window != nil)
             guard let content else { return }
             if window == nil {
-                // Out of the window (window closed, onboarding shown in its place): the pages leave with this view.
                 pages.removeFromSuperview()
             } else if pages.superview !== content.pageLayer {
                 content.pageLayer.addSubview(pages)
@@ -374,8 +384,13 @@
         private(set) var hosts: [String: DashboardKeptHost] = [:]
         private(set) var shownKey: String?
         weak var slot: DashboardKeptPagesSlot?
-        private var requested: (key: String, keep: Bool, inputs: any Equatable, page: AnyView,
-                                environment: DashboardCarriedEnvironment, onShown: () -> Void)?
+        private typealias Request = (key: String, scope: String, keep: Bool, inputs: any Equatable, page: AnyView,
+                                     environment: DashboardCarriedEnvironment, onShown: () -> Void)
+        private var requested: Request?
+        /// The latest request, kept to build the page again if this view comes back to a window after leaving it.
+        private var lastRequest: Request?
+        /// The scope of the pages kept (`DashboardKeptPages.scope`).
+        private var scope: String?
         /// Keys of pages released once left.
         private var released: Set<String> = []
         /// Pages released by the last click, freed after its frame (freeing a page tree is not free).
@@ -394,17 +409,18 @@
         override var isFlipped: Bool { true }
 
         /// Asks for `show` at the next layout of this view.
-        func request(key: String, keep: Bool = true, inputs: any Equatable = 0, page: AnyView,
+        func request(key: String, scope: String = "", keep: Bool = true, inputs: any Equatable = 0, page: AnyView,
                      environment: DashboardCarriedEnvironment, onShown: @escaping () -> Void) {
-            requested = (key, keep, inputs, page, environment, onShown)
+            requested = (key, scope, keep, inputs, page, environment, onShown)
+            lastRequest = requested
             needsLayout = true
         }
 
         func applyRequest() {
             guard slot?.placed == true, let request = requested else { return }
             requested = nil
-            if show(key: request.key, keep: request.keep, inputs: request.inputs, page: request.page,
-                    environment: request.environment) {
+            if show(key: request.key, scope: request.scope, keep: request.keep, inputs: request.inputs,
+                    page: request.page, environment: request.environment) {
                 DispatchQueue.main.async(execute: request.onShown)
             }
         }
@@ -412,8 +428,19 @@
         /// Only the shown page is given a new root, and only when what it is built from changed: the hidden ones keep
         /// the one they had when they left. Returns true when another page went into the window.
         @discardableResult
-        func show(key: String, keep: Bool = true, inputs: any Equatable = 0, page: AnyView,
+        func show(key: String, scope: String = "", keep: Bool = true, inputs: any Equatable = 0, page: AnyView,
                   environment: DashboardCarriedEnvironment) -> Bool {
+            if let former = self.scope, former != scope {
+                // Another device: the pages of the former one are freed after this frame (N3).
+                for (oldKey, old) in hosts where oldKey != key {
+                    old.gate.open.send(false); old.frozen = true; old.removeFromSuperview()
+                    hosts[oldKey] = nil; leaving.append(old)
+                }
+                if let shown = shownKey, hosts[shown] == nil { shownKey = nil }
+                released.removeAll()
+                afterThisFrame { [weak self] in self?.leaving.removeAll() }
+            }
+            self.scope = scope
             if keep { released.remove(key) } else { released.insert(key) }
             let host: DashboardKeptHost
             if let kept = hosts[key] {
@@ -523,8 +550,20 @@
         func releaseAll() {
             preheatTimer?.invalidate(); preheatTimer = nil
             for host in hosts.values { host.gate.open.send(false); host.removeFromSuperview() }
-            hosts.removeAll(); shownKey = nil; requested = nil; released.removeAll(); leaving.removeAll()
+            hosts.removeAll(); shownKey = nil; requested = nil; lastRequest = nil; released.removeAll(); leaving.removeAll()
+            scope = nil
         }
+
+        /// Frees every page and stops the timer, but keeps what was asked last: back in a window, it is built again.
+        func releaseKeepingRequest() {
+            let last = lastRequest
+            releaseAll()
+            requested = last; lastRequest = last
+            if last != nil { needsLayout = true }
+        }
+
+        /// True while the timer that builds pages at rest is set (DashboardKeptPagesTests).
+        var preheatScheduled: Bool { preheatTimer != nil }
     }
 
     private extension Equatable {

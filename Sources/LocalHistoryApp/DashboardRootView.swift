@@ -33,6 +33,8 @@
                         // R14a: each page visited stays alive, out of the window while hidden; coming back shows it as
                         // it was left, at once. No crossfade: it kept two pages laid out and drawn for 0.16 s.
                         DashboardKeptPages(key: key(model.selectedSection),
+                                           // Another device frees the pages of the former one.
+                                           scope: model.knownDeviceID ?? "",
                                            keep: model.selectedSection.keepsPage,
                                            // What `page` takes by value; the rest comes through `model`.
                                            inputs: inputs(model.selectedSection),

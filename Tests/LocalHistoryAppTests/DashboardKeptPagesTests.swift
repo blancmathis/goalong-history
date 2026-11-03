@@ -395,6 +395,86 @@ import XCTest
         XCTAssertEqual(offending, [], "appear logic outside the gate of its page (use onAppearWhenShown / taskWhenShown)")
     }
 
+    struct CloseRoot: View {
+        @ObservedObject var source: Source
+        let selected: String
+        let counts: Counts
+        var body: some View {
+            // « c » is never built in this test (long delay): the timer stays set.
+            DashboardKeptPages(key: selected, preheat: [DashboardKeptPageSeed(key: "c", inputs: 0) {
+                AnyView(Probe(name: "c", source: source, counts: counts))
+            }]) { Probe(name: selected, source: source, counts: counts) }
+        }
+    }
+
+    /// N3: the window closes (its content leaves it, as `windowWillClose` does) with no `dismantleNSView`: every kept
+    /// page is freed and the timer of the pages built at rest stops. Back in a window, the page asked for last returns.
+    func testClosingTheWindowFreesEveryPageAndStopsTheTimer() throws {
+        try GalleryRenderer.withPreparedApplication {
+            let delay = DashboardKeptPagesView.preheatDelay
+            DashboardKeptPagesView.preheatDelay = 60
+            defer { DashboardKeptPagesView.preheatDelay = delay }
+            let source = Source(), counts = Counts()
+            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                       styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            defer { window.contentView = nil; window.close() }
+            let host = DashboardWindowContent(rootView: CloseRoot(source: source, selected: "a", counts: counts))
+            window.contentView = host
+            spin(host)
+            host.setRootView(CloseRoot(source: source, selected: "b", counts: counts))
+            spin(host)
+            let pages = try XCTUnwrap(Self.keptView(in: host))
+            XCTAssertEqual(Set(pages.hosts.keys), ["a", "b"])
+            XCTAssertTrue(pages.preheatScheduled)
+            weak var former = pages.hosts["a"]
+            window.contentView = nil
+            XCTAssertTrue(pages.hosts.isEmpty, "a kept page outlived its window")
+            XCTAssertFalse(pages.preheatScheduled, "the timer of the pages built at rest outlived the window")
+            spin(host, 0.05)
+            XCTAssertNil(former, "a kept page is still in memory once its window closed")
+            window.contentView = host
+            spin(host)
+            XCTAssertEqual(pages.shownKey, "b")
+            XCTAssertTrue(pages.hosts["b"]?.superview === pages, "the page asked for last did not come back")
+        }
+    }
+
+    struct ScopeRoot: View {
+        @ObservedObject var source: Source
+        let selected: String
+        let device: String
+        let counts: Counts
+        var body: some View {
+            DashboardKeptPages(key: "\(selected)|\(device)", scope: device) {
+                Probe(name: "\(selected)|\(device)", source: source, counts: counts)
+            }
+        }
+    }
+
+    /// N3: another device frees the pages of the former one.
+    func testAnotherDeviceFreesThePagesOfTheFormerOne() throws {
+        try GalleryRenderer.withPreparedApplication {
+            let source = Source(), counts = Counts()
+            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                       styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            defer { window.contentView = nil; window.close() }
+            let host = DashboardWindowContent(rootView: ScopeRoot(source: source, selected: "a", device: "1", counts: counts))
+            window.contentView = host
+            spin(host)
+            host.setRootView(ScopeRoot(source: source, selected: "b", device: "1", counts: counts))
+            spin(host)
+            let pages = try XCTUnwrap(Self.keptView(in: host))
+            XCTAssertEqual(Set(pages.hosts.keys), ["a|1", "b|1"])
+            host.setRootView(ScopeRoot(source: source, selected: "b", device: "2", counts: counts))
+            spin(host)
+            XCTAssertEqual(Set(pages.hosts.keys), ["b|2"], "the pages of the former device stayed in memory")
+            XCTAssertEqual(pages.shownKey, "b|2")
+            XCTAssertTrue(pages.hosts["b|2"]?.superview === pages)
+        }
+    }
+
     /// N2: two quick « jour suivant » while the first is checked give J+2, not J+1.
     func testTwoQuickClicksBothCount() {
         let calendar = Calendar.current
