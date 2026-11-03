@@ -197,7 +197,10 @@ struct FocusCommitmentGauge: View {
             } else if kind == .sessions || kind == .plan, (1...12).contains(target) {
                 HStack(spacing: 3) {
                     ForEach(0..<target, id: \.self) { index in
-                        if Double(index) < measured.rounded(.down) { Capsule().fill(LHTheme.workData) } else { track }
+                        // One Capsule whose fill changes: no cross-fade between two views when a session fills (R12c).
+                        let filled = Double(index) < measured.rounded(.down)
+                        Capsule().fill(filled ? LHTheme.workData : LHTheme.insetBackground)
+                            .overlay(Capsule().strokeBorder(filled ? Color.clear : LHTheme.idleMarkEdge, lineWidth: 1))
                     }
                 }
             } else {

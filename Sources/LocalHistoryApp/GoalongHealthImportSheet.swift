@@ -75,7 +75,11 @@ struct GoalongHealthImportSheet: View {
                         .font(.subheadline).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction).disabled(busy)
+                // One closing button per state: « Terminé » (footer) replaces it once the import is finished.
+                if !(finished && !busy) {
+                    Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction).disabled(busy)
+                        .help(busy ? "Disponible quand la lecture est finie" : "")
+                }
             }.padding(24)
             Divider()
             ScrollView {
@@ -111,13 +115,13 @@ struct GoalongHealthImportSheet: View {
                 }
                 Spacer(minLength: 0)
                 // Once an outcome is in, closing is the next step: the lime moves here, unless sending is chosen.
-                if !busy, message != nil {
-                    if finished { Button("Terminé") { dismiss() }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction) }
-                    else { Button("Terminé") { dismiss() }.buttonStyle(LHSecondaryButtonStyle()) }
+                if !busy, message != nil, finished {
+                    Button("Terminé") { dismiss() }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
                 }
             }
         }
         .frame(minWidth: 690, idealWidth: 800, maxWidth: 950, minHeight: 550, idealHeight: 720)
+        .onExitCommand { if !busy { dismiss() } }  // Escape still closes when « Fermer » is hidden.
         .background(GoalongWebsiteWindowReader(host: host))
         .onAppear { savedDates = (try? GoalongHealthArchive.dates(root: AppPaths.applicationSupportDirectory)) ?? [] }
         .onChange(of: from) { _ in invalidate() }

@@ -277,9 +277,9 @@ def window_guard() -> Path:
     return binary
 
 
-def render(run: Path, shards: int, only: str | None, homes: Homes) -> list[str]:
+def render(run: Path, shards: int, only: str | None, homes: Homes) -> tuple[list[str], int]:
     """Runs the shards in parallel; a shard that ends with code 3 (watchdog, or a field mis-measured in a whole process)
-    restarts with a fresh HOME.
+    restarts with a fresh HOME. Returns the problems and the number of relaunches (kept in the manifest, shown in summary.md).
     The window guard watches every shard: a window on screen or a focus change kills it and fails the run."""
     problems: list[str] = []
     guard_log = open(run / "window-guard.log", "w", encoding="utf-8")
@@ -332,7 +332,7 @@ def render(run: Path, shards: int, only: str | None, homes: Homes) -> list[str]:
         guard_log.close()
         if guard_code != 0:
             problems.append("fenêtre de test visible ou focus pris (voir window-guard.log)")
-    return problems
+    return problems, sum(relaunches.values())
 
 
 def merge_results(run: Path) -> tuple[list[dict], dict]:
@@ -400,7 +400,7 @@ def command_run(args: argparse.Namespace) -> int:
     started = time.time()
     log(f"gallery: rendu dans {run} ({args.shards} shard(s){', ONLY=' + args.only if args.only else ''})")
     try:
-        problems = render(run, args.shards, args.only, homes)
+        problems, relaunch_count = render(run, args.shards, args.only, homes)
     finally:
         homes.remove_all()
         for sig, handler in previous.items():
@@ -419,7 +419,7 @@ def command_run(args: argparse.Namespace) -> int:
         "windowScale": environment.get("windowScale"), "locale": environment.get("locale"),
         "timeZone": environment.get("timeZone"), "clock": environment.get("clock"),
         "clockProbe": environment.get("clockProbe", 0), "guards": environment.get("guards", False),
-        "shards": args.shards, "only": args.only or "", "duration": duration, "problems": problems,
+        "shards": args.shards, "only": args.only or "", "duration": duration, "problems": problems, "relaunches": relaunch_count,
         "images": [manifest_image(entry) for entry in results],
     }
     manifest["duplicates"] = duplicate_groups(manifest["images"])
@@ -678,6 +678,7 @@ def compare_summary(state: dict) -> str:
              f"{state['headSeconds']} s, code {state['headCode']}",
              f"- Durée totale : {state['seconds']} s ; clé env {state.get('envKey') or '?'} ; "
              f"{state.get('same', 0)} image(s) identique(s)",
+             f"- Relances « processus neuf » : base {state.get('baseRelaunches', '?')}, tête {state.get('headRelaunches', '?')}",
              f"- Écarts déclarés ({EXPECTED_FILE}, lignes ajoutées) : "
              + (", ".join(f"`{prefix}`" for prefix in state["prefixes"]) or "aucun")]
     for problem in state.get("problems", []):
@@ -732,6 +733,7 @@ def command_compare(args: argparse.Namespace) -> int:
     if base_run is None or not (base_run / "manifest.json").exists():
         state["problems"].append("rendu de la base sans manifest")
     else:
+        state["baseRelaunches"] = read_json(base_run / "manifest.json").get("relaunches", "?")
         if state["baseCode"] != 0:
             state["problems"].append("rendu de la base en échec (images non ok ou problème, voir base/latest)")
         state["headCode"], head_run, state["headSeconds"] = render_side(CHECKOUT, root / "head", base_run, args)
@@ -740,7 +742,7 @@ def command_compare(args: argparse.Namespace) -> int:
         else:
             report = read_json(head_run / "diff.json")
             manifest = read_json(head_run / "manifest.json")
-            state.update(envKey=manifest.get("envKey"), same=report.get("same", 0), headRun=str(head_run))
+            state.update(headRelaunches=manifest.get("relaunches", 0), envKey=manifest.get("envKey"), same=report.get("same", 0), headRun=str(head_run))
             state["problems"] += [f"tête : {problem}" for problem in manifest.get("problems", [])]
             if report.get("noBase"):
                 state["problems"].append(f"diff de la tête : {report.get('message', '')}")
