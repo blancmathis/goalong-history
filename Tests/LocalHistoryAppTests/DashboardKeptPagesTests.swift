@@ -56,6 +56,12 @@ import XCTest
         }
     }
 
+    /// Spins until `done` holds, 3 s at most (the caller asserts after it).
+    private func spin(_ host: NSView, until done: () -> Bool) {
+        let end = Date().addingTimeInterval(3)
+        while !done() && Date() < end { spin(host, 0.02) }
+    }
+
     func testHiddenPageIsNotEvaluatedTimedOrReachableAndKeepsItsState() throws {
         try GalleryRenderer.withPreparedApplication {
             let source = Source(), counts = Counts()
@@ -101,6 +107,8 @@ import XCTest
             XCTAssertEqual(counts.appears["a"], 2)
             XCTAssertEqual(counts.tasks["a"], 2)
             XCTAssertNotNil(ViewSwitchAX.first(in: host) { ($0 as String).hasPrefix("a 5 kept 1") })
+            // The timer fires every 20 ms; a loaded runner can spend a whole spin in layout, so wait (bounded) for it.
+            spin(host, until: { (counts.ticks["a"] ?? 0) > ticks })
             XCTAssertGreaterThan(counts.ticks["a"] ?? 0, ticks, "the shown page's timer is idle")
         }
     }
@@ -177,7 +185,8 @@ import XCTest
             spin(host)
             XCTAssertEqual(counts.appears["b"], 2); XCTAssertEqual(counts.tasks["b"], 2)
             XCTAssertNotNil(ViewSwitchAX.first(in: host) { $0 == "b 3 kept 0" }, "the page showed stale values")
-            XCTAssertGreaterThan(counts.ticks["b"] ?? 0, 0)
+            spin(host, until: { (counts.ticks["b"] ?? 0) > 0 })
+            XCTAssertGreaterThan(counts.ticks["b"] ?? 0, 0, "the page's timer never started on its first visit")
         }
     }
 
