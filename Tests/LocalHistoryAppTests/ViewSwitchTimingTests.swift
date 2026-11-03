@@ -53,6 +53,21 @@ final class ViewSwitchTimingTests: XCTestCase {
             defer { window.contentView = nil; window.close() }
             draw(host)
             XCTAssertNotNil(settle(host, model: model, timeout: 30), "Activité never finished its first read")
+            // R14a: the main pages are built at rest after launch. The member's first click comes after that (a member
+            // reads Activité first); the time it takes, its longest block and its memory are logged.
+            if let pages = keptPages(in: host), pages.preheatPending > 0 {
+                let before = Self.footprintMB(), start = ProcessInfo.processInfo.systemUptime
+                var longest = 0.0
+                let deadline = start + 30
+                while pages.preheatPending > 0, ProcessInfo.processInfo.systemUptime < deadline {
+                    _ = settle(host, model: model, timeout: 0.05) { longest = max(longest, $0) }
+                }
+                XCTAssertEqual(pages.preheatPending, 0, "the main pages were never built at rest")
+                _ = settle(host, model: model, timeout: 10) { longest = max(longest, $0) }
+                log(String(format: "preheat: %d pages in %.0f ms after the first read, longest block %.0f ms, footprint %.0f -> %.0f MB",
+                           pages.hosts.count - 1, (ProcessInfo.processInfo.systemUptime - start) * 1_000, longest * 1_000,
+                           before, Self.footprintMB()))
+            }
 
             var samples: [Sample] = []
             // Sidebar destinations present for this member, then the periods of Activité.
@@ -88,6 +103,9 @@ final class ViewSwitchTimingTests: XCTestCase {
             try encoder.encode(republish).write(to: directory.appendingPathComponent("switch-republish.json"))
             // R14a: the columns of the T-043 report. Block = click + layout on the main thread (no draw);
             // first = first drawn frame (CPU bitmap draw included); complete = data read + frame; republish = one publication.
+            if let pages = keptPages(in: host) {
+                log(String(format: "kept pages: %d, footprint at the end %.0f MB", pages.hosts.count, Self.footprintMB()))
+            }
             log("view             block  first  complete  republish | cold block first complete")
             for view in Set(samples.map(\.view)).sorted() {
                 let rows = samples.filter { $0.view == view }
@@ -101,6 +119,22 @@ final class ViewSwitchTimingTests: XCTestCase {
     }
 
     // MARK: Measure
+    @MainActor private func keptPages(in view: NSView) -> DashboardKeptPagesView? {
+        if let pages = view as? DashboardKeptPagesView { return pages }
+        for child in view.subviews { if let pages = keptPages(in: child) { return pages } }
+        return nil
+    }
+
+    /// The process's memory as Activity Monitor counts it (phys_footprint).
+    static func footprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    }
+
 
     @MainActor private func measure(_ view: String, pass: Int, press: NSObject, host: NSView, model: DashboardViewModel) -> Sample {
         let started = ProcessInfo.processInfo.systemUptime

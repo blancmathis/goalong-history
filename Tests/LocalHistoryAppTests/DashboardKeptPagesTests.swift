@@ -126,6 +126,58 @@ import XCTest
         }
     }
 
+    struct PreheatRoot: View {
+        @ObservedObject var source: Source
+        let selected: String
+        let counts: Counts
+        var body: some View {
+            DashboardKeptPages(key: selected, preheat: ["a", "b"].filter { $0 != selected }.map { name in
+                DashboardKeptPageSeed(key: name, inputs: 0) { AnyView(Probe(name: name, source: source, counts: counts)) }
+            }) { Probe(name: selected, source: source, counts: counts) }
+        }
+    }
+
+    func testThePagesNotVisitedYetAreBuiltAtRestAndStayInertUntilTheirFirstVisit() throws {
+        try GalleryRenderer.withPreparedApplication {
+            let delay = DashboardKeptPagesView.preheatDelay
+            DashboardKeptPagesView.preheatDelay = 0.1
+            defer { DashboardKeptPagesView.preheatDelay = delay }
+            let source = Source(), counts = Counts()
+            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                       styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            defer { window.contentView = nil; window.close() }
+            let host = DashboardWindowContent(rootView: PreheatRoot(source: source, selected: "a", counts: counts))
+            window.contentView = host
+            spin(host)
+            let pages = try XCTUnwrap(Self.keptView(in: host))
+            // Not in the click: only once the window has been quiet for the delay.
+            XCTAssertNil(pages.hosts["b"])
+            spin(host, 0.4)
+            let built = try XCTUnwrap(pages.hosts["b"], "the page was not built at rest")
+            XCTAssertEqual(pages.preheatPending, 0)
+            XCTAssertNil(built.superview, "a page built at rest went into the window")
+            XCTAssertNil(ViewSwitchAX.first(in: host) { $0 == "probe-b" })
+            // Built as a page visited then left at once: its `onAppear` and `.task` ran once, then it left (its task is
+            // cancelled). Inert until shown: no timer, no evaluation by a publication.
+            XCTAssertEqual(counts.appears["b"], 1); XCTAssertEqual(counts.disappears["b"], 1)
+            let bodies = counts.bodies["b"] ?? 0
+            XCTAssertGreaterThan(bodies, 0)
+            for _ in 0..<3 { source.value += 1; spin(host, 0.05) }
+            XCTAssertEqual(counts.bodies["b"] ?? 0, bodies, "a publication evaluated a page built at rest")
+            XCTAssertNil(counts.ticks["b"], "a timer of a page built at rest fired")
+            // The first visit is a return: the same hosting view, its reads start, its values are today's.
+            host.setRootView(PreheatRoot(source: source, selected: "b", counts: counts))
+            host.layoutSubtreeIfNeeded()
+            XCTAssertTrue(pages.hosts["b"] === built)
+            XCTAssertTrue(built.superview === pages)
+            spin(host)
+            XCTAssertEqual(counts.appears["b"], 2); XCTAssertEqual(counts.tasks["b"], 2)
+            XCTAssertNotNil(ViewSwitchAX.first(in: host) { $0 == "b 3 kept 0" }, "the page showed stale values")
+            XCTAssertGreaterThan(counts.ticks["b"] ?? 0, 0)
+        }
+    }
+
     struct Labeled: View {
         let label: String
         @ObservedObject var source: Source

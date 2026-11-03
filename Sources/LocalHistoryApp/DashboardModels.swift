@@ -42,6 +42,9 @@
             }
         }
 
+        /// R14a: the main pages built at rest after launch (DashboardKeptPages `preheat`), in this order.
+        static let preheated: [DashboardSection] = [.overview, .history, .work, .concentration, .settings]
+
         var title: String {
             switch self {
             case .overview: return "Activité"

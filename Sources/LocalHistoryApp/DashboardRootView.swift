@@ -32,20 +32,22 @@
                             .frame(width: 1)
                         // R14a: each page visited stays alive, out of the window while hidden; coming back shows it as
                         // it was left, at once. No crossfade: it kept two pages laid out and drawn for 0.16 s.
-                        DashboardKeptPages(key: "\(model.selectedSection.keptPage)|\(model.knownDeviceID ?? "")",
+                        DashboardKeptPages(key: key(model.selectedSection),
                                            keep: model.selectedSection.keepsPage,
                                            // What `page` takes by value; the rest comes through `model`.
-                                           inputs: DashboardPageInputs(section: model.selectedSection,
-                                                                       navigation: activityNavigation,
-                                                                       day: model.selectedDay,
-                                                                       returnTitle: model.secondaryReturnTitle),
+                                           inputs: inputs(model.selectedSection),
+                                           // The main pages not shown yet are built at rest after launch: the first
+                                           // click on one of them is a return.
+                                           preheat: preheated.compactMap { section in
+                                               section.keptPage == model.selectedSection.keptPage ? nil : DashboardKeptPageSeed(
+                                                   key: key(section), inputs: inputs(section)) { AnyView(styled(page(for: section))) }
+                                           },
                                            onShown: {
                             // Activité closes its measure once its period is read (GoalongAnalyticsPage).
                             let section = model.selectedSection
                             GoalongSwitchTiming.end(section.rawValue, stage: "shown", last: section != .overview)
                         }) {
-                            // A kept page has its own hosting view: the styles of the window are applied again.
-                            page.foregroundStyle(LHTheme.text).tint(LHTheme.accent).accentColor(LHTheme.accent).goalongControls()
+                            styled(page(for: model.selectedSection))
                         }
                             .safeAreaInset(edge: .top, spacing: 0) {
                                 VStack(spacing: 0) {
@@ -98,8 +100,27 @@
             }
         }
 
-        @ViewBuilder private var page: some View {
-            switch model.selectedSection {
+        /// The kept page of a section: one per page and known device (another device never shows this one's data).
+        private func key(_ section: DashboardSection) -> String { "\(section.keptPage)|\(model.knownDeviceID ?? "")" }
+
+        /// The main pages this member reaches from the sidebar (a module turned off is not built).
+        private var preheated: [DashboardSection] {
+            let shown = DashboardSection.sidebarSections(modules: GoalongModuleStore.shared.enabled, showing: model.selectedSection)
+            return DashboardSection.preheated.filter(shown.contains)
+        }
+
+        private func inputs(_ section: DashboardSection) -> DashboardPageInputs {
+            DashboardPageInputs(section: section, navigation: activityNavigation, day: model.selectedDay,
+                                returnTitle: model.secondaryReturnTitle)
+        }
+
+        /// A kept page has its own hosting view: the styles of the window are applied again.
+        private func styled<Page: View>(_ page: Page) -> some View {
+            page.foregroundStyle(LHTheme.text).tint(LHTheme.accent).accentColor(LHTheme.accent).goalongControls()
+        }
+
+        @ViewBuilder private func page(for section: DashboardSection) -> some View {
+            switch section {
             case .overview, .analytics:
                 GoalongAnalyticsPage(model: model, navigation: $activityNavigation, analytics: activity)
             case .work:

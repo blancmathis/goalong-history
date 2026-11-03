@@ -23,6 +23,8 @@
         /// observes updates it once, by its own observation (measured: re-rooting it on every publication doubled the
         /// cost, Activité 28 j 17 → 38 ms).
         var inputs: any Equatable = 0
+        /// Pages to build at rest, out of the window, before their first visit (`DashboardKeptPagesView.preheat`).
+        var preheat: [DashboardKeptPageSeed] = []
         /// After a different page is put in the window (the former `onAppear` of each new page).
         var onShown: () -> Void = {}
         @ViewBuilder let page: () -> Page
@@ -42,7 +44,7 @@
         @Environment(\.sourceAccessCheck) private var accessCheck
 
         var body: some View {
-            DashboardKeptPagesRepresentable(key: key, keep: keep, inputs: inputs, onShown: onShown, page: page, environment: .init(
+            DashboardKeptPagesRepresentable(key: key, keep: keep, inputs: inputs, preheat: preheat, onShown: onShown, page: page, environment: .init(
                 locale: locale, timeZone: timeZone, calendar: calendar, layoutDirection: layoutDirection,
                 colorScheme: colorScheme, contrast: contrast, controlActiveState: controlActiveState,
                 reduceMotion: reduceMotion, defaults: defaults, recording: recording, accessCheck: accessCheck))
@@ -53,6 +55,7 @@
         let key: String
         let keep: Bool
         let inputs: any Equatable
+        let preheat: [DashboardKeptPageSeed]
         let onShown: () -> Void
         let page: () -> Page
         let environment: DashboardCarriedEnvironment
@@ -65,9 +68,17 @@
             // view runs it in its own layout, in the same frame.
             slot.pages.request(key: key, keep: keep, inputs: inputs, page: AnyView(page()), environment: environment,
                                onShown: onShown)
+            slot.pages.seeds = preheat
         }
 
         static func dismantleNSView(_ slot: DashboardKeptPagesSlot, coordinator: ()) { slot.release() }
+    }
+
+    /// A kept page that can be built before its first visit. `page` is only called at rest, out of any SwiftUI update.
+    struct DashboardKeptPageSeed {
+        let key: String
+        let inputs: any Equatable
+        let page: () -> AnyView
     }
 
     extension EnvironmentValues {
@@ -317,6 +328,14 @@
         private var leaving: [DashboardKeptHost] = []
         /// Number of roots given to a page (DashboardKeptPagesTests).
         private(set) var rootCount = 0
+        /// The latest pages to build at rest (`preheat`).
+        var seeds: [DashboardKeptPageSeed] = [] { didSet { if seeds.contains(where: { hosts[$0.key] == nil }) { schedulePreheat() } } }
+        /// Pause before a page is built at rest: after launch or a click, the window is left to settle first.
+        static var preheatDelay: TimeInterval = 1.5
+        private var preheatTimer: Timer?
+        private var lastShow = ProcessInfo.processInfo.systemUptime
+        /// Seeds not built yet; zero once every main page is ready (bench and tests).
+        var preheatPending: Int { slot?.placed == true ? seeds.filter { hosts[$0.key] == nil }.count : seeds.count }
 
         override var isFlipped: Bool { true }
 
@@ -371,10 +390,48 @@
                 }
             }
             shownKey = key
+            lastShow = ProcessInfo.processInfo.systemUptime
             host.frozen = false
             host.gate.open.send(true)
             mountShown()
             return true
+        }
+
+        /// Builds one page not visited yet, then waits again: one page per quiet moment, never in a click. The page is
+        /// laid out hidden in this view, then taken out in the same turn (no frame shows it): it is then a page visited
+        /// and left, frozen with its gate closed until shown. Its `onAppear` and `.task` run once now (its task is
+        /// cancelled as it leaves) and again on its first visit. Laid out with no window instead, it stayed linked to
+        /// every publication (measured, DashboardKeptPagesTests).
+        private func schedulePreheat() {
+            guard preheatTimer == nil else { return }
+            let timer = Timer(timeInterval: Self.preheatDelay / 3, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.preheatOne() }
+            }
+            RunLoop.main.add(timer, forMode: .default)
+            preheatTimer = timer
+        }
+
+        private func preheatOne() {
+            guard ProcessInfo.processInfo.systemUptime - lastShow >= Self.preheatDelay, slot?.placed == true,
+                  window != nil, let environment = hosts[shownKey ?? ""]?.environment else { return }
+            // At rest only: no event waiting, no mouse button down.
+            if NSEvent.pressedMouseButtons != 0 { return }
+            guard let seed = seeds.first(where: { hosts[$0.key] == nil }) else {
+                preheatTimer?.invalidate(); preheatTimer = nil; return
+            }
+            let host = DashboardKeptHost(rootView: AnyView(EmptyView()))
+            host.gate.open.send(false)
+            give(host, seed.page(), seed.inputs, environment)
+            host.sizingOptions = []
+            host.autoresizingMask = [.width, .height]
+            host.frame = bounds
+            host.isHidden = true
+            addSubview(host, positioned: .below, relativeTo: nil)
+            host.layoutSubtreeIfNeeded()
+            host.frozen = true
+            host.removeFromSuperview()
+            host.isHidden = false
+            hosts[seed.key] = host
         }
 
         private func give(_ host: DashboardKeptHost, _ page: AnyView, _ inputs: any Equatable,
@@ -410,6 +467,7 @@
         }
 
         func releaseAll() {
+            preheatTimer?.invalidate(); preheatTimer = nil
             for host in hosts.values { host.gate.open.send(false); host.removeFromSuperview() }
             hosts.removeAll(); shownKey = nil; requested = nil; released.removeAll(); leaving.removeAll()
         }
