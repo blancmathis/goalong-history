@@ -78,36 +78,64 @@ public enum GoalongLocalAnalytics {
         public var firstObservation: Date? = nil
         public var lastObservation: Date? = nil
         public var recordedBreakdown: GoalongActivityBreakdown? = nil
+        /// R13a: the totals below are read dozens of times per drawn frame (a 28-day page holds
+        /// ~20,000 segments). `segments` is a `let`: they are computed once, where the day is built
+        /// (off the main thread, in the analytics reader), never again while SwiftUI lays the page out.
+        private let totals: Totals
+
+        public init(date: Date, end: Date, state: State, segments: [Segment], eventCount: Int,
+                    classifierVersions: Set<String>, origin: GoalongDayOrigin = .journal, hasDetailedSource: Bool = true,
+                    dayReason: GoalongCoverageReason? = nil, firstObservation: Date? = nil, lastObservation: Date? = nil,
+                    recordedBreakdown: GoalongActivityBreakdown? = nil) {
+            self.date = date; self.end = end; self.state = state; self.segments = segments
+            self.eventCount = eventCount; self.classifierVersions = classifierVersions
+            self.origin = origin; self.hasDetailedSource = hasDetailedSource; self.dayReason = dayReason
+            self.firstObservation = firstObservation; self.lastObservation = lastObservation
+            self.recordedBreakdown = recordedBreakdown
+            self.totals = Totals(segments)
+        }
+
         public var id: Date { date }
-        public var activeSeconds: TimeInterval { seconds(.work) + seconds(.other) + seconds(.unclassified) }
-        public var observedSeconds: TimeInterval { segments.filter { $0.kind != .unobserved }.reduce(0) { $0 + $1.seconds } }
-        public func seconds(_ kind: Kind) -> TimeInterval { segments.filter { $0.kind == kind }.reduce(0) { $0 + $1.seconds } }
-        public var contextChanges: Int {
-            zip(segments, segments.dropFirst()).filter { a, b in
-                a.kind.isActive && b.kind.isActive && a.end == b.start && a.context != b.context
-            }.count
-        }
+        public var activeSeconds: TimeInterval { totals.active }
+        public var observedSeconds: TimeInterval { totals.observed }
+        public func seconds(_ kind: Kind) -> TimeInterval { totals.byKind[kind] ?? 0 }
+        public var contextChanges: Int { totals.contextChanges }
         /// Application switches that stayed on the same task.
-        public var sameTaskChanges: Int {
-            zip(segments, segments.dropFirst()).filter { a, b in
-                a.kind == .work && b.kind == .work && a.end == b.start && a.task != nil && a.task == b.task
-                    && a.context != b.context
-            }.count
-        }
+        public var sameTaskChanges: Int { totals.sameTaskChanges }
         /// Same task (whatever the applications), otherwise same application + domain;
         /// never across a gap or idle state.
-        public var sequences: [Focus] {
-            var result: [Focus] = []
-            for segment in segments where segment.kind.isActive {
-                guard let application = segment.application, let context = segment.focusKey else { continue }
-                if let last = result.last, last.end == segment.start, last.context == context {
-                    result[result.count - 1].end = segment.end
-                } else {
-                    result.append(Focus(start: segment.start, end: segment.end, application: application,
-                        host: segment.host, context: context, task: segment.kind == .work ? segment.task : nil))
+        public var sequences: [Focus] { totals.sequences }
+
+        /// Derived from `segments` only, so two equal days have equal totals.
+        private struct Totals: Equatable, Sendable {
+            var byKind: [Kind: TimeInterval] = [:]
+            var active: TimeInterval = 0
+            var observed: TimeInterval = 0
+            var contextChanges = 0
+            var sameTaskChanges = 0
+            var sequences: [Focus] = []
+
+            init(_ segments: [Segment]) {
+                for segment in segments {
+                    // Same order of additions as the former filter-and-reduce: identical sums.
+                    byKind[segment.kind, default: 0] += segment.seconds
+                }
+                active = (byKind[.work] ?? 0) + (byKind[.other] ?? 0) + (byKind[.unclassified] ?? 0)
+                observed = segments.filter { $0.kind != .unobserved }.reduce(0) { $0 + $1.seconds }
+                for (a, b) in zip(segments, segments.dropFirst()) where a.end == b.start && a.context != b.context {
+                    if a.kind.isActive && b.kind.isActive { contextChanges += 1 }
+                    if a.kind == .work && b.kind == .work && a.task != nil && a.task == b.task { sameTaskChanges += 1 }
+                }
+                for segment in segments where segment.kind.isActive {
+                    guard let application = segment.application, let context = segment.focusKey else { continue }
+                    if let last = sequences.last, last.end == segment.start, last.context == context {
+                        sequences[sequences.count - 1].end = segment.end
+                    } else {
+                        sequences.append(Focus(start: segment.start, end: segment.end, application: application,
+                            host: segment.host, context: context, task: segment.kind == .work ? segment.task : nil))
+                    }
                 }
             }
-            return result
         }
         public func focus(minimumMinutes: Int) -> [Focus] {
             sequences.filter { $0.seconds >= Double(max(1, minimumMinutes)) * 60 }

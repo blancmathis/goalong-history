@@ -444,29 +444,37 @@
         }
 
         private func metricsBand(_ overview: ChatGPTRecapDayOverview) -> some View {
-            GoalongPlainBlock {
-                HStack(spacing: 0) {
-                    metric(
-                        title: "Activité de l’ordinateur",
-                        value: duration(overview.activeSeconds),
-                        detail: "\(overview.focusBlockCount) bloc\(overview.focusBlockCount > 1 ? "s" : "") de concentration"
-                    )
-                    bandDivider
-                    metric(
-                        title: "Classé comme travail",
-                        value: duration(overview.workSeconds),
-                        detail: "D’après Mon travail"
-                    )
-                    bandDivider
-                    // A source with nothing read is absent, not a zero (PRODUCT.md, UI-17C 34). R-266: « absent » when the
-                    // source is not allowed or was never read; a source read with nothing that day is a real zero.
-                    let screen = ChatGPTRecapMetricCopy.screenTime(enabled: consents.isEnabled(.appleScreenTime), read: overview.screenTimeRead,
-                        seconds: overview.screenTimeSeconds, devices: overview.screenTimeDevices.count, duration: duration)
-                    metric(title: "Temps d’écran", value: screen.value, detail: screen.detail)
-                    bandDivider
-                    let ai = ChatGPTRecapMetricCopy.aiConversations(enabled: consents.isEnabled(.aiConversations), read: overview.agentActivityRead,
-                        sessions: overview.agentSessions, messages: overview.agentMessages)
-                    metric(title: "Conversations IA", value: ai.value, detail: ai.detail)
+            // A source with nothing read is absent, not a zero (PRODUCT.md, UI-17C 34). R-266: « absent » when the
+            // source is not allowed or was never read; a source read with nothing that day is a real zero.
+            let screen = ChatGPTRecapMetricCopy.screenTime(enabled: consents.isEnabled(.appleScreenTime), read: overview.screenTimeRead,
+                seconds: overview.screenTimeSeconds, devices: overview.screenTimeDevices.count, duration: duration)
+            let ai = ChatGPTRecapMetricCopy.aiConversations(enabled: consents.isEnabled(.aiConversations), read: overview.agentActivityRead,
+                sessions: overview.agentSessions, messages: overview.agentMessages)
+            return GoalongPlainBlock {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 0) {
+                        metric(
+                            title: "Activité de l’ordinateur",
+                            value: duration(overview.activeSeconds),
+                            detail: "\(overview.focusBlockCount) bloc\(overview.focusBlockCount > 1 ? "s" : "") de concentration"
+                        )
+                        bandDivider
+                        metric(
+                            title: "Classé comme travail",
+                            value: duration(overview.workSeconds),
+                            detail: "D’après Mon travail"
+                        )
+                        bandDivider
+                        metric(title: "Temps d’écran", value: screen.value, detail: screen.detail)
+                        bandDivider
+                        metric(title: "Conversations IA", value: ai.value, detail: ai.detail)
+                    }
+                    if screen.value == ChatGPTRecapMetricCopy.dash || ai.value == ChatGPTRecapMetricCopy.dash {
+                        // O11 (R13b): one line says what « — » means; it is not a zero.
+                        Text(ChatGPTRecapMetricCopy.dashHelp)
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .padding(.horizontal, 14).padding(.top, 8)
+                    }
                 }
             }
         }
@@ -725,6 +733,9 @@
 /// The recap band's figures: « — » for a source not allowed or never read; a source read with nothing that day says 0.
 enum ChatGPTRecapMetricCopy {
     struct Figure: Equatable { let value: String; let detail: String }
+    static let dash = "—"
+    /// Under the band when a figure shows « — »: the source is off or was never read (R13b, O11).
+    static let dashHelp = "« — » : source non autorisée ou pas encore lue."
 
     static func screenTime(enabled: Bool, read: Bool = true, seconds: Int, devices: Int, duration: (Int) -> String) -> Figure {
         guard enabled, read else { return Figure(value: "—", detail: "Non lu") }

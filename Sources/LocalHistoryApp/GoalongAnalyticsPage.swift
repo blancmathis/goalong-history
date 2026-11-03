@@ -79,7 +79,10 @@ struct GoalongAnalyticsPage: View {
                     // R-265, UI-17A M3: one bound for the calendar, « précédent » and every period's step.
                     earliestDay: earliestDay,
                     onDay: { day in updateSelection { $0.selectDay(day) } },
-                    onPeriod: { period in updateSelection { $0.selectPeriod(period) } },
+                    onPeriod: { period in
+                        GoalongSwitchTiming.begin("activite-\(period)j")
+                        updateSelection { $0.selectPeriod(period) }
+                    },
                     onStep: { direction in
                         updateSelection { analytics.step(&$0, direction, macDays: model.snapshot.availableDays, preview: previewActive) }
                     },
@@ -236,10 +239,22 @@ struct GoalongAnalyticsPage: View {
             let started = ProcessInfo.processInfo.systemUptime
             await analytics.load(request, force: force, verdicts: work.verdicts)
             lastReadSeconds = ProcessInfo.processInfo.systemUptime - started
+            if !Task.isCancelled, !request.isPreview {
+                GoalongSwitchTiming.end("activite-\(request.count)j", stage: "data", last: true)
+                // Overview shows this page too: its measure closes only on a read made for it (R13c).
+                if model.selectedSection == .overview {
+                    GoalongSwitchTiming.end(DashboardSection.overview.rawValue, stage: "data", last: true)
+                }
+            }
             // Contexts seen for the first time are classified in the background, at most
             // once per day shown (today: every 15 minutes), only with the user's consent.
             if !request.isPreview, let payload = analytics.payload, !Task.isCancelled {
                 agent.classifyIfNeeded(payload.current.days)
+            }
+            // R13c: the other periods of this day are read once in the background, so that a first switch to them
+            // is shown from memory too. A new selection cancels this task and the preload with it.
+            if !request.isPreview, !Task.isCancelled, analytics.error == nil, !analytics.paused {
+                await analytics.preloadOtherPeriods(day: request.day, count: request.count, verdicts: work.verdicts)
             }
         }
         .task(id: laneKey) {
@@ -526,7 +541,11 @@ struct GoalongAnalyticsPage: View {
 
     private func updateSelection(_ change: (inout GoalongActivityNavigation) -> Void) {
         if previewActive { change(&previewNavigation) }
-        else { change(&navigation); model.selectDay(navigation.day) }
+        else {
+            change(&navigation); model.selectDay(navigation.day)
+            // R13c: the last complete read of the new period goes on screen in this same frame, read again after.
+            analytics.showSnapshot(day: navigation.day, count: navigation.period, verdicts: work.verdicts)
+        }
     }
     private func openHistory(_ day: Date) {
         guard !previewActive else { return }

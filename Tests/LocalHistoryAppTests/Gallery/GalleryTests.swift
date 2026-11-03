@@ -11,6 +11,10 @@ import XCTest
 /// screen facts in `env-<i>.json`. A relaunched shard skips the images already in its results file.
 final class GalleryTests: XCTestCase {
     static let watchdogSeconds: TimeInterval = 10
+    /// New processes an image gets when its one-line field stays sized from another font in all of one process's
+    /// renders (O16). That fault sticks to the process: on 2026-11-02 and 11-03 `conversations-ia/analyse-partielle`
+    /// kept « 15.0 pt for 16.0 » in six renders of one shard, then rendered right in the next process.
+    static let freshProcessTries = 2
 
     @MainActor func testRenderGallery() throws {
         let environment = ProcessInfo.processInfo.environment
@@ -33,6 +37,7 @@ final class GalleryTests: XCTestCase {
 
         let results = GalleryResults(url: directory.appendingPathComponent("results-\(shard).jsonl"))
         let done = results.keys()
+        let freshProcesses = GalleryResults(url: directory.appendingPathComponent("fresh-\(shard).jsonl"))
         let watchdog = GalleryWatchdog(seconds: Self.watchdogSeconds, results: results)
         defer { watchdog.stop() }
         for entry in entries {
@@ -51,6 +56,13 @@ final class GalleryTests: XCTestCase {
                     }
                     line["ms"] = Int(Date().timeIntervalSince(started) * 1_000)
                     watchdog.disarm()
+                    if line.removeValue(forKey: "misMeasured") != nil,
+                       freshProcesses.count(of: file) < Self.freshProcessTries {
+                        // Not recorded: the script relaunches the shard (exit 3), which starts again at this image.
+                        freshProcesses.append(["key": file, "detail": line["detail"] ?? ""])
+                        FileHandle.standardError.write(Data("[gallery] new process for \(file): \(line["detail"] ?? "")\n".utf8))
+                        exit(3)
+                    }
                     results.append(line)
                 }
             }
@@ -90,6 +102,7 @@ final class GalleryTests: XCTestCase {
             return ["status": GalleryImage.Status.failed.rawValue, "detail": "PNG not written: \(error)"]
         }
         line["status"] = image.status.rawValue
+        if image.status == .unstable && !image.misMeasuredFields.isEmpty { line["misMeasured"] = true }
         line["detail"] = image.detail ?? ""
         line["hash"] = image.pixelHash
         line["pointWidth"] = Int(image.pointSize.width.rounded()); line["pointHeight"] = Int(image.pointSize.height.rounded())
@@ -134,11 +147,16 @@ final class GalleryResults: @unchecked Sendable {
 
     init(url: URL) { self.url = url }
 
-    func keys() -> Set<String> {
+    func keys() -> Set<String> { Set(lineKeys()) }
+
+    /// How many lines name `key`.
+    func count(of key: String) -> Int { lineKeys().filter { $0 == key }.count }
+
+    private func lineKeys() -> [String] {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
-        return Set(text.split(separator: "\n").compactMap { line in
+        return text.split(separator: "\n").compactMap { line in
             (try? JSONSerialization.jsonObject(with: Data(line.utf8))) .flatMap { ($0 as? [String: Any])?["key"] as? String }
-        })
+        }
     }
 
     func append(_ line: [String: Any]) {

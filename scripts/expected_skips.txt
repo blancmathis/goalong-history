@@ -60,6 +60,7 @@ LocalHistoryAppTests.PerformanceProbeTests/testAnalysisFullDay  # GOALONG_PERF_R
 LocalHistoryAppTests.PerformanceProbeTests/testAnalysisPhaseMemory  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
 LocalHistoryAppTests.PerformanceProbeTests/testHistoryPage  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
 LocalHistoryAppTests.SelectedSiteAnalysisTests/testOptInInstalledCodexSandboxConfinesSelectedAnalysisWithoutAnAccount  # GOALONG_SITE_SANDBOX_CODEX
+LocalHistoryAppTests.ViewSwitchTimingTests/testMeasureViewSwitches  # GOALONG_SWITCH_TIMING (R13a view-switch timing)
 LocalHistoryCoreTests.GoalongLocalAnalyticsFoldPerformanceTests/testPerformanceFoldStateAndRefresh  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
 LocalHistoryCoreTests.GoalongLocalAnalyticsTests/testOptInReadOnlyLocalAnalyticsProbe  # other: Opt-in read-only local analytics probe; logs aggregate counts only
 LocalHistoryCoreTests.GoalongSiteAnalysisTests/testSelectedBrowserExportFixtureWhenExplicitlyProvided  # GOALONG_SITE_ANALYSIS_FIXTURE

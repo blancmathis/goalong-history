@@ -53,7 +53,7 @@ struct GoalongActivityHeader: View {
 
     private var period: some View {
         GoalongSegmentedControl("Période", selection: Binding(get: { selection.period }, set: onPeriod),
-                                options: [1, 7, 28]) { $0 == 1 ? "Jour" : GoalongUIFormat.count($0, "jour") }
+                                options: [1, 7, 28], animatesContent: false) { $0 == 1 ? "Jour" : GoalongUIFormat.count($0, "jour") }
             .accessibilityIdentifier("analytics-period")
     }
 

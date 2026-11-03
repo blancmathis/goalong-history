@@ -39,7 +39,7 @@ extension GalleryCatalog {
             page("concentration-maintenant/vide", height: 1_100, themes: GalleryTheme.withContrast) { f in
                 tab(.concentration, ConcentrationPageContent(controller: try f.empty(), now: now, measures: [], draft: draft))
             },
-            page("concentration-maintenant/plan-du-jour", height: 1_700) { f in
+            page("concentration-maintenant/plan-du-jour", height: 1_700, themes: GalleryTheme.withContrast) { f in
                 let planned = try f.planned()
                 return tab(.concentration, ConcentrationPageContent(controller: planned.controller, now: now,
                                                                     measures: planned.measures, draft: pomodoroDraft))
@@ -108,6 +108,16 @@ extension GalleryCatalog {
             panel("concentration-engagements/vide", width: 824, clock: .injected) { _ in
                 AnyView(FocusCommitmentsSection(controller: try GalleryConcentrationFixtures().empty(), now: now,
                                                 onEdit: { _ in }).padding(32))
+            },
+            // R13b: the partly filled and the filled bars, in Increase Contrast too (R12c review, point 1).
+            panel("concentration-engagements/barres", width: 420, themes: GalleryTheme.withContrast) { _ in
+                AnyView(VStack(alignment: .leading, spacing: 14) {
+                    FocusCommitmentGauge(measured: 3, target: 5, kind: .sessions)
+                    FocusCommitmentGauge(measured: 5, target: 5, kind: .sessions)
+                    FocusCommitmentGauge(measured: 600, target: 1_200, kind: .work)
+                    FocusCommitmentGauge(measured: 1_200, target: 1_200, kind: .work)
+                    FocusCommitmentGauge(empty: true)
+                }.padding(24))
             },
             panel("concentration-engagements/nouvel-engagement", width: 600, clock: .injected) { _ in
                 let empty = try GalleryConcentrationFixtures().empty()

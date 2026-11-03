@@ -597,17 +597,23 @@
         let options: [Value]
         let title: (Value) -> String
         var fills = false
+        /// False only where the value drives a whole page read (Activité's period): the content changes without
+        /// animation and only the pill slides. Elsewhere the content keeps its animated change (R13c).
+        var animatesContent = true
 
         init(_ label: String, selection: Binding<Value>, options: [Value], fills: Bool = false,
-             title: @escaping (Value) -> String) {
+             animatesContent: Bool = true, title: @escaping (Value) -> String) {
             self.label = label
             _selection = selection
             self.options = options
             self.fills = fills
+            self.animatesContent = animatesContent
             self.title = title
         }
 
         @Namespace private var pill
+        /// While set, the raised pill stays on this value; then it slides to `selection`.
+        @State private var pillHold: Value?
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
@@ -615,7 +621,7 @@
                 ForEach(options, id: \.self) { option in
                     let selected = selection == option
                     Button {
-                        withAnimation(reduceMotion ? nil : LHTheme.settle) { selection = option }
+                        choose(option)
                     } label: {
                         Text(title(option)).lineLimit(1)
                             .frame(maxWidth: fills ? .infinity : nil)
@@ -623,7 +629,7 @@
                     .buttonStyle(GoalongSegmentStyle(selected: selected))
                     // The raised pill slides between segments instead of jumping.
                     .background {
-                        if selected {
+                        if (pillHold ?? selection) == option {
                             GoalongSurface(corner: LHTheme.controlRadius - 2, fill: LHTheme.segmentSelected, highlighted: true)
                                 .matchedGeometryEffect(id: "selection", in: pill)
                         }
@@ -637,6 +643,24 @@
             .fixedSize(horizontal: !fills, vertical: true)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(label)
+        }
+
+        /// With `animatesContent`, the value and everything it changes move with the settle animation. Without it
+        /// (R13a), the new value goes out without an animated transaction, so a whole page does not animate its new
+        /// data, and the pill slides on the next turn of the main loop. R13c: the ~300 ms read delay seen in R13a came
+        /// from the window's SwiftUI sizing (`DashboardWindowController.hostingSizing`), not from this transaction.
+        private func choose(_ option: Value) {
+            guard option != selection else { return }
+            guard !animatesContent else {
+                withAnimation(reduceMotion ? nil : LHTheme.settle) { selection = option }
+                return
+            }
+            if !reduceMotion { pillHold = selection }
+            selection = option
+            guard !reduceMotion else { return }
+            DispatchQueue.main.async {
+                withAnimation(LHTheme.settle) { pillHold = nil }
+            }
         }
     }
 

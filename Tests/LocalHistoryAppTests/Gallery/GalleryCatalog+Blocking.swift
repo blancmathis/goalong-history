@@ -23,7 +23,7 @@ extension GalleryCatalog {
         }
         var entries: [GalleryEntry] = [
             page("programme/vide", height: 900, themes: GalleryTheme.withContrast) { F.blockingEmpty() },
-            page("programme/pret", height: 1_500, at: { F.sunday }) { F.blockingIdle() },
+            page("programme/pret", height: 1_500, themes: GalleryTheme.withContrast, at: { F.sunday }) { F.blockingIdle() },
             page("programme/blocage-actif", height: 1_500) { F.blockingActive() },
             page("programme/blocage-ensuite", height: 1_500) { F.blockingContinued() },
             page("programme/declenche", height: 1_500) { F.blockingTriggered() },

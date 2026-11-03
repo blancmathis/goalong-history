@@ -3300,6 +3300,7 @@ public enum GoalongQueryCLI {
     /// fallback.
     private static func executableBundleInfoDictionary() -> [String: Any]? {
         guard let executable = GoalongCLIExecutableResolver.resolve(
+            kernelPath: GoalongCLIExecutableResolver.kernelExecutablePath(),
             argv0: CommandLine.arguments.first,
             path: ProcessInfo.processInfo.environment["PATH"],
             currentDirectory: FileManager.default.currentDirectoryPath
@@ -4085,28 +4086,52 @@ public enum GoalongQueryCLI {
     private static var usage: String { GoalongCLIContract.usageText }
 }
 
-/// Resolves the physical executable behind `argv[0]`. A shell passes a bare command name (found
+/// Resolves the physical executable. The kernel's own answer (`_NSGetExecutablePath` + `realpath`)
+/// comes first: it does not depend on `argv[0]` or `PATH`, which launchd, `Process` and `exec -a`
+/// can set to anything. `argv[0]`/`PATH` stays as the fallback. A shell passes a bare command name (found
 /// through `PATH`) as-is, so treating it as a path relative to the working directory misses the
 /// enclosing app bundle and reports the "development" fallback version.
 enum GoalongCLIExecutableResolver {
+    /// Real path of the running binary, or nil when the kernel call or `realpath` fails.
+    static func kernelExecutablePath() -> String? {
+        var size: UInt32 = 0
+        _ = _NSGetExecutablePath(nil, &size)
+        guard size > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: Int(size))
+        guard _NSGetExecutablePath(&buffer, &size) == 0 else { return nil }
+        guard let resolved = realpath(buffer, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
     static func resolve(
+        kernelPath: String? = nil,
         argv0: String?,
         path: String?,
         currentDirectory: String,
         fileManager: FileManager = .default
     ) -> URL? {
+        if let kernelPath, !kernelPath.isEmpty, fileManager.isExecutableFile(atPath: kernelPath) {
+            return URL(fileURLWithPath: kernelPath).standardizedFileURL.resolvingSymlinksInPath()
+        }
         guard let argv0, !argv0.isEmpty else { return nil }
         let candidate: URL
         if argv0.contains("/") {
             candidate = URL(fileURLWithPath: argv0, relativeTo: URL(fileURLWithPath: currentDirectory, isDirectory: true))
         } else {
-            let found = (path ?? "").split(separator: ":", omittingEmptySubsequences: false)
+            // PATH unset: execvp falls back to the default search path, never the working directory.
+            let found = (path ?? "/usr/bin:/bin").split(separator: ":", omittingEmptySubsequences: false)
                 .map { directory -> URL in
                     let base = directory.isEmpty ? currentDirectory : String(directory)
                     return URL(fileURLWithPath: base, relativeTo: URL(fileURLWithPath: currentDirectory, isDirectory: true))
                         .appendingPathComponent(argv0, isDirectory: false)
                 }
-                .first { fileManager.isExecutableFile(atPath: $0.path) }
+                .first { url in
+                    // A directory with the x bit is "executable" too; the shell skips it, so do we.
+                    var isDirectory: ObjCBool = false
+                    return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                        && !isDirectory.boolValue && fileManager.isExecutableFile(atPath: url.path)
+                }
             guard let found else { return nil }
             candidate = found
         }

@@ -290,6 +290,77 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("activity-days").path))
     }
 
+    /// R13c: a period seen before goes on screen from memory, only while every source it was read from is unchanged.
+    @MainActor func testActivitySnapshotIsShownOnlyWhileItsSourcesAreUnchanged() async throws {
+        let root = try root(); let events = try writeEvents(root: root)
+        let model = GoalongAnalyticsModel(root: root)
+        await model.load(day: day, count: 1)
+        let first = try XCTUnwrap(model.payload)
+        XCTAssertNotNil(first.sources)
+        await model.load(day: day, count: 7)
+        XCTAssertEqual(model.payload?.current.days.count, 7)
+        // Back to the day: shown at once, and no read is needed while nothing changed.
+        XCTAssertTrue(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        XCTAssertEqual(model.payload?.current.days.count, 1)
+        XCTAssertEqual(model.payload?.updatedAt, first.updatedAt)
+        await model.load(day: day, count: 7)
+        // A changed journal (an import, a correction, a deletion of rows) is never shown from memory.
+        let handle = try FileHandle(forWritingTo: events); try handle.seekToEnd(); try handle.write(contentsOf: Data("\n".utf8))
+        try handle.close()
+        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        XCTAssertEqual(model.payload?.current.days.count, 7)
+        // A history clear (new barrier generation) and any change notification empty the memory too.
+        await model.load(day: day, count: 1)
+        await model.load(day: day, count: 7)
+        DerivedHistoryWriteBarrier.shared.resume(DerivedHistoryWriteBarrier.shared.suspend())
+        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        await model.load(day: day, count: 1)
+        await model.load(day: day, count: 7)
+        let generation = model.snapshotGeneration
+        NotificationCenter.default.post(name: .goalongWorkVerdictsDidChange, object: nil)
+        // Delivery hops to the main queue (R13d): wait for it.
+        let deadline = Date().addingTimeInterval(5)
+        while model.snapshotGeneration == generation, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+    }
+
+    /// R13d: the day and time-zone notifications come from a system thread; the model must not trap there.
+    @MainActor func testDayAndTimeZoneNotificationsFromABackgroundThreadEmptyTheMemory() async throws {
+        let root = try root(); _ = try writeEvents(root: root)
+        let model = GoalongAnalyticsModel(root: root)
+        await model.load(day: day, count: 1)
+        await model.load(day: day, count: 7)
+        let before = model.snapshotGeneration
+        let posted = expectation(description: "posted from background")
+        DispatchQueue.global().async {
+            NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
+            NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+            posted.fulfill()
+        }
+        await fulfillment(of: [posted], timeout: 5)
+        let deadline = Date().addingTimeInterval(5)
+        while model.snapshotGeneration < before + 2, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(model.snapshotGeneration, before + 2)
+        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+    }
+
+    /// R13d: a read that started before `forgetSnapshots()` cannot put its result back in the memory.
+    @MainActor func testReadStartedBeforeForgetCannotStoreItsSnapshot() async throws {
+        let root = try root(); _ = try writeEvents(root: root)
+        let model = GoalongAnalyticsModel(root: root)
+        await model.load(day: day, count: 1)
+        let payload = try XCTUnwrap(model.payload)
+        let old = model.snapshotGeneration
+        model.forgetSnapshots()
+        XCTAssertGreaterThan(model.snapshotGeneration, old)
+        model.storeSnapshot(payload, day: day, count: 1, verdicts: GoalongWorkVerdicts(),
+                            admission: DerivedHistoryWriteBarrier.shared.admission(), generation: old)
+        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        model.storeSnapshot(payload, day: day, count: 1, verdicts: GoalongWorkVerdicts(),
+                            admission: DerivedHistoryWriteBarrier.shared.admission(), generation: model.snapshotGeneration)
+        XCTAssertTrue(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+    }
+
     @MainActor func testActivityPageShowsPauseStateInsteadOfARetryableError() async throws {
         // R4-historique-03: during the global pause, Activité showed « Impossible de lire » + Réessayer.
         let root = try root(); _ = try writeEvents(root: root)

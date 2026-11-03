@@ -860,6 +860,8 @@ struct BlockingLockExplainer: View {
                 ForEach(0..<4) { index in
                     RoundedRectangle(cornerRadius: 1.5)
                         .fill(index < level ? LHTheme.text : LHTheme.text.opacity(0.16))
+                        // Increase Contrast: an inactive segment gets a ≥ 3:1 edge (R12b); clear in normal mode.
+                        .overlay(RoundedRectangle(cornerRadius: 1.5).strokeBorder(index < level ? .clear : LHTheme.idleMarkEdge, lineWidth: 1))
                         .frame(width: 14, height: 4)
                 }
             }

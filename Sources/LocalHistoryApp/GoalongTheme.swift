@@ -55,6 +55,15 @@
             case (dark: false, high: false): return LHTheme.rgb(0x5E6859)
             }
         })
+        /// Increase Contrast only (R12b, WCAG 1.4.11): the 1 pt edge that outlines an empty track (engagement bars) and an
+        /// inactive segment (stop-strength indicator), ≥ 3:1 on page, card and inset. Clear otherwise: normal mode is unchanged.
+        static let idleMarkEdge = Color(nsColor: NSColor(name: nil) { appearance in
+            switch style(of: appearance) {
+            case (dark: true, high: true): return LHTheme.rgb(0x8FA592)
+            case (dark: false, high: true): return LHTheme.rgb(0x5E6655)
+            default: return .clear
+            }
+        })
         /// T-043 R-3: ≥ 4.6:1 on the field (and page/card), still clearly paler than typed text (text is 15:1 / 11:1).
         static let placeholder = adaptive(light: 0x666F61, dark: 0x828F85, highLight: 0x535D4F, highDark: 0xA3B1A6)
         /// Chart axes and the resting thread: quieter than secondary text, never body copy. T-043 R-1: ≥ 4.6:1 on

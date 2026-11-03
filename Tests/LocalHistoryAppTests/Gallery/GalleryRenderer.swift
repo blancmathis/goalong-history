@@ -154,7 +154,8 @@ struct GalleryImage {
     /// Renders one image. SwiftUI sizes a one-line field once, while it builds it, and now and then from another
     /// field's font: 15 pt for a 13 pt field, 16 pt for a 12 pt one (about one image in 40 for
     /// programme/feuille-liste-verrouillee, in any process, loaded or not). It never measures it again, so the text
-    /// or every row below it sits half a point or a point off. Such a render is made again from a new view.
+    /// or every row below it sits half a point or a point off. Such a render is made again from a new view; when all
+    /// six keep the fault, it sticks to the process and the shard starts a new one (`GalleryTests.freshProcessTries`).
     static func render(_ entry: GalleryEntry, theme: GalleryTheme, size: GallerySize, ctx: GalleryContext) throws -> GalleryImage {
         var image = try renderOnce(entry, theme: theme, size: size, ctx: ctx)
         for _ in 1..<6 where image.status == .ok && !image.misMeasuredFields.isEmpty {

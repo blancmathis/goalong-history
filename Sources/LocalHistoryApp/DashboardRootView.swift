@@ -33,6 +33,11 @@
                         page
                             // Changing destination is a short crossfade, never a slide.
                             .id("\(model.selectedSection)|\(model.knownDeviceID ?? "")")
+                            .onAppear {
+                                // Activité closes its measure once its period is read (GoalongAnalyticsPage).
+                                let section = model.selectedSection
+                                GoalongSwitchTiming.end(section.rawValue, stage: "shown", last: section != .overview)
+                            }
                             .transition(.opacity)
                             .animation(reduceMotion ? nil : LHTheme.ease(0.16), value: model.selectedSection)
                             .safeAreaInset(edge: .top, spacing: 0) {
