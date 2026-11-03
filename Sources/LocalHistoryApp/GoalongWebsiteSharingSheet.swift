@@ -78,7 +78,7 @@ import LocalHistoryQueryCLI
         .environment(\.timeZone, sharingCalendar.timeZone)
         .environment(\.calendar, sharingCalendar)
         .interactiveDismissDisabled(model.busy)
-        .task { if model.catalog == nil { await model.loadCatalog() } }
+        .taskWhenShown { if model.catalog == nil { await model.loadCatalog() } }
         .onChange(of: model.draft.date) { _ in Task { await model.loadCatalog() } }
         .onChange(of: model.draft.includeWebsites) { _ in Task { await model.includeWebsitesChanged() } }
         .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in model.connectionChanged() }

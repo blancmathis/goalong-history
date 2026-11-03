@@ -98,9 +98,20 @@
     /// Open while its page is in the window. A reference, set once per page: closing it stops the page's timers at
     /// once, with no SwiftUI update of the page (measured: the update that told the old page it was hidden ran in the
     /// click, 5 ms for Réglages, 48 ms the first time for Activité).
-    final class KeptPageGate {
+    ///
+    /// The rule of every kept page (R14a correction): a page built at rest and never shown acts on nothing outside
+    /// itself. It writes nothing in a model (day, chosen session), opens no Codex session, starts no sync or scan,
+    /// consumes no request and posts no notification. So the appear logic of every view of a page goes through its gate:
+    /// `onAppearWhenShown` and `taskWhenShown` instead of `onAppear` and `.task`. Closed at rest, they do nothing; the
+    /// page's first real showing runs them, as a visit did before pages were kept, and so does each return (a return
+    /// re-runs `onAppear` and `.task`, measured). Outside a kept page the gate is always open: no change. Only a view
+    /// that writes its own state from its own layout keeps a plain `onAppear` (marked `// own layout`); a test scans the
+    /// sources for any other (DashboardKeptPagesTests).
+    final class KeptPageGate: @unchecked Sendable {
         static let alwaysOpen = KeptPageGate()
         let open = CurrentValueSubject<Bool, Never>(true)
+        /// Main thread only, like the page.
+        var isOpen: Bool { open.value }
     }
 
     private struct KeptPageGateKey: EnvironmentKey { static let defaultValue = KeptPageGate.alwaysOpen }
@@ -111,6 +122,49 @@
         func onReceiveWhileShown<P: Publisher>(_ publisher: P, perform action: @escaping (P.Output) -> Void) -> some View
         where P.Failure == Never {
             modifier(KeptPageReceive(publisher: publisher, action: action))
+        }
+    }
+
+    extension View {
+        /// `onAppear` under the rule of kept pages (`KeptPageGate`): skipped while the page is built at rest, run at its
+        /// first real showing and at each return.
+        func onAppearWhenShown(perform action: @escaping () -> Void) -> some View {
+            modifier(KeptPageAppear(action: action))
+        }
+
+        /// `.task` under the rule of kept pages (`KeptPageGate`).
+        func taskWhenShown(priority: TaskPriority = .userInitiated,
+                           _ action: @escaping @MainActor @Sendable () async -> Void) -> some View {
+            modifier(KeptPageTask(id: 0, priority: priority, action: action))
+        }
+
+        /// `.task(id:)` under the rule of kept pages (`KeptPageGate`).
+        func taskWhenShown<ID: Equatable>(id: ID, priority: TaskPriority = .userInitiated,
+                                          _ action: @escaping @MainActor @Sendable () async -> Void) -> some View {
+            modifier(KeptPageTask(id: id, priority: priority, action: action))
+        }
+    }
+
+    private struct KeptPageAppear: ViewModifier {
+        @Environment(\.keptPageGate) private var gate
+        let action: () -> Void
+        func body(content: Content) -> some View {
+            let gate = self.gate
+            return content.onAppear { if gate.isOpen { action() } }
+        }
+    }
+
+    private struct KeptPageTask<ID: Equatable>: ViewModifier {
+        @Environment(\.keptPageGate) private var gate
+        let id: ID
+        let priority: TaskPriority
+        let action: @MainActor @Sendable () async -> Void
+        func body(content: Content) -> some View {
+            let gate = self.gate, action = self.action
+            return content.task(id: id, priority: priority) { @MainActor in
+                guard gate.isOpen else { return }
+                await action()
+            }
         }
     }
 
@@ -399,9 +453,9 @@
 
         /// Builds one page not visited yet, then waits again: one page per quiet moment, never in a click. The page is
         /// laid out hidden in this view, then taken out in the same turn (no frame shows it): it is then a page visited
-        /// and left, frozen with its gate closed until shown. Its `onAppear` and `.task` run once now (its task is
-        /// cancelled as it leaves) and again on its first visit. Laid out with no window instead, it stayed linked to
-        /// every publication (measured, DashboardKeptPagesTests).
+        /// and left, frozen with its gate closed until shown. Its gate stays closed throughout, so its appear logic
+        /// (`onAppearWhenShown`, `taskWhenShown`) waits for its first visit (`KeptPageGate`). Laid out with no window
+        /// instead, it stayed linked to every publication (measured, DashboardKeptPagesTests).
         private func schedulePreheat() {
             guard preheatTimer == nil else { return }
             let timer = Timer(timeInterval: Self.preheatDelay / 3, repeats: true) { [weak self] _ in

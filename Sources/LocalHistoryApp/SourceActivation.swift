@@ -344,7 +344,7 @@ import LocalHistoryCore
                 }
                 }.goalongControls()
             }
-            .onAppear {
+            .onAppearWhenShown {
                 if PermissionRecovery.takeSetupReturn(for: capability) {
                     resumingAfterRestart = true
                     activationStatus = nil
@@ -569,7 +569,7 @@ import LocalHistoryCore
                 }
                 }.goalongControls()
             }
-            .onAppear {
+            .onAppearWhenShown {
                 openedSettings = resumingAfterRestart
                 if flow.result == nil { check() }
             }
@@ -704,7 +704,7 @@ import LocalHistoryCore
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .onAppear { validate() }
+            .onAppearWhenShown { validate() }
             .onChange(of: consents.isEnabled(capability)) { _ in validate() }
             .onChange(of: knownAccessIssue) { issue in
                 if let issue { validation.report(issue) } else { validate() }

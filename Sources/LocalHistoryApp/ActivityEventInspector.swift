@@ -268,7 +268,7 @@
                     }
                 }
             }
-            .onAppear { inspector.load(session: session) }
+            .onAppearWhenShown { inspector.load(session: session) }
             .onChange(of: session.id) { _ in inspector.load(session: session) }
         }
 

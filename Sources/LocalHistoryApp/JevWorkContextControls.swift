@@ -43,7 +43,7 @@ import LocalHistoryCore
             Button("Annuler", role: .cancel) { changeWarning = nil }
             Button("Enregistrer") { changeWarning = nil; saveDraft() }
         } message: { Text(changeWarning ?? "") }
-        .onAppear {
+        .onAppearWhenShown {
             if !editing { loadDraft() }
             // Former per-app choices become a starting point, never a silent rule.
             if purpose == .workDefinition, store.context.isEmpty, draft.isEmpty, applications.isEmpty,

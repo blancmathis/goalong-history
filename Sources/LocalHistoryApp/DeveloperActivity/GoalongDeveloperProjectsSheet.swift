@@ -69,7 +69,7 @@ import SwiftUI
         }
         .frame(minWidth: 560, idealWidth: 620)
         .background(Button("") { dismiss() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
-        .task(id: revision) { if readsAgents { await developer.refresh(day: GoalongToday.now) } }
+        .taskWhenShown(id: revision) { if readsAgents { await developer.refresh(day: GoalongToday.now) } }
         .accessibilityIdentifier("developer-projects-sheet")
     }
 

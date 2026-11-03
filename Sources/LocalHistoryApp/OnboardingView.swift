@@ -75,7 +75,7 @@
                     .goalongControls()
             }
             .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pauseRevision += 1 }
-            .onAppear {
+            .onAppearWhenShown {
                 if step == .welcome || !privacyReviewed { step = .privacy }
                 if !loadedProposal {
                     let previouslyReviewed = GoalongRecordingSetup.hasReviewedChoices(defaults: defaults)

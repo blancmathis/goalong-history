@@ -601,7 +601,7 @@ import SwiftUI
                     }
                 }
             } else {
-                Color.clear.onAppear(perform: onDone)
+                Color.clear.onAppearWhenShown(perform: onDone)
             }
         }
         .frame(width: 600).frame(minHeight: 420, idealHeight: maxHeight.isFinite ? min(640, maxHeight) : nil, maxHeight: maxHeight)
@@ -906,7 +906,7 @@ struct BlockingListChip: View {
             .frame(height: 300)
         }
         .padding(14).frame(width: 300)
-        .task { if fixedApps == nil { apps = await BlockingController.installedApps() } }
+        .taskWhenShown { if fixedApps == nil { apps = await BlockingController.installedApps() } }
         .goalongControls()
     }
 }

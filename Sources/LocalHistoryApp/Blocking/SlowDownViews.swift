@@ -65,7 +65,7 @@ struct SlowDownCountdown: View {
             TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 20, paused: ready)) { context in
                 labelled(at: GoalongToday.timeline(context.date))
             }
-            .task {
+            .taskWhenShown {
                 let wait = presentation.readyAt.timeIntervalSinceNow // wall: display wait; the controller sends readyAt in the wall frame and decides with its own clock
                 if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
                 ready = true

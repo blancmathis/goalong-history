@@ -11,6 +11,8 @@ import XCTest
     final class Counts {
         var bodies: [String: Int] = [:], ticks: [String: Int] = [:], appears: [String: Int] = [:], disappears: [String: Int] = [:]
         var tasks: [String: Int] = [:], timeline: [String: Int] = [:]
+        /// The appear logic under the rule of kept pages (`onAppearWhenShown`, `taskWhenShown`).
+        var shownAppears: [String: Int] = [:], shownTasks: [String: Int] = [:]
     }
 
     struct Probe: View {
@@ -30,9 +32,11 @@ import XCTest
                 }
             }
             .onReceiveWhileShown(timer) { _ in counts.ticks[name, default: 0] += 1 }
-            .onAppear { counts.appears[name, default: 0] += 1 }
+            .onAppear { counts.appears[name, default: 0] += 1 }  // own layout: measures the plain modifiers
             .onDisappear { counts.disappears[name, default: 0] += 1 }
-            .task { counts.tasks[name, default: 0] += 1 }
+            .task { counts.tasks[name, default: 0] += 1 }  // own layout: measures the plain modifiers
+            .onAppearWhenShown { counts.shownAppears[name, default: 0] += 1 }
+            .taskWhenShown { counts.shownTasks[name, default: 0] += 1 }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("probe-\(name)")
         }
@@ -106,6 +110,7 @@ import XCTest
             // Back as when the page was opened before R14a: its `onAppear` and `.task` run again (fresh data).
             XCTAssertEqual(counts.appears["a"], 2)
             XCTAssertEqual(counts.tasks["a"], 2)
+            XCTAssertEqual(counts.shownAppears["a"], 2); XCTAssertEqual(counts.shownTasks["a"], 2)
             XCTAssertNotNil(ViewSwitchAX.first(in: host) { ($0 as String).hasPrefix("a 5 kept 1") })
             // The timer fires every 20 ms; a loaded runner can spend a whole spin in layout, so wait (bounded) for it.
             spin(host, until: { (counts.ticks["a"] ?? 0) > ticks })
@@ -172,6 +177,9 @@ import XCTest
             // Built as a page visited then left at once: its `onAppear` and `.task` ran once, then it left (its task is
             // cancelled). Inert until shown: no timer, no evaluation by a publication.
             XCTAssertEqual(counts.appears["b"], 1); XCTAssertEqual(counts.disappears["b"], 1)
+            // R14a correction: its appear logic did not run (the rule of kept pages, `KeptPageGate`).
+            XCTAssertNil(counts.shownAppears["b"], "a page built at rest ran its appear logic")
+            XCTAssertNil(counts.shownTasks["b"], "a page built at rest ran its task")
             let bodies = counts.bodies["b"] ?? 0
             XCTAssertGreaterThan(bodies, 0)
             for _ in 0..<3 { source.value += 1; spin(host, 0.05) }
@@ -184,6 +192,8 @@ import XCTest
             XCTAssertTrue(built.superview === pages)
             spin(host)
             XCTAssertEqual(counts.appears["b"], 2); XCTAssertEqual(counts.tasks["b"], 2)
+            // Its first real showing runs its appear logic, as a visit did before pages were kept.
+            XCTAssertEqual(counts.shownAppears["b"], 1); XCTAssertEqual(counts.shownTasks["b"], 1)
             XCTAssertNotNil(ViewSwitchAX.first(in: host) { $0 == "b 3 kept 0" }, "the page showed stale values")
             spin(host, until: { (counts.ticks["b"] ?? 0) > 0 })
             XCTAssertGreaterThan(counts.ticks["b"] ?? 0, 0, "the page's timer never started on its first visit")
@@ -312,6 +322,77 @@ import XCTest
             XCTAssertEqual(snapshots.values["root"]?.scheme, .light)
             XCTAssertEqual(snapshots.values["a"], snapshots.values["root"], "the page came back with the old appearance")
         }
+    }
+
+    // MARK: R14a correction (review of 2026-11-04)
+
+    /// B1 + N1: the real dashboard, reopened on Réglages with a past day J chosen in Activité. The main pages are built
+    /// at rest: the day stays J, the chosen session stays, no permission guide is announced. Activité's first real
+    /// showing then runs its appear logic (it follows today, as a visit did before pages were kept).
+    func testPagesBuiltAtRestActOnNothingOutsideThemselves() throws {
+        try GalleryRenderer.withPreparedApplication {
+            let ctx = GalleryContext()
+            try GalleryStateReset.all(home: ctx.home)
+            defer { ctx.finish() }
+            let delay = DashboardKeptPagesView.preheatDelay
+            // Nothing is built at rest before the day J and its session are chosen (checked below).
+            DashboardKeptPagesView.preheatDelay = 6
+            defer { DashboardKeptPagesView.preheatDelay = delay }
+            let (model, window, host, _, _) = try ViewSwitchTimingTests.memberDashboard(ctx, days: 8, section: .settings)
+            defer { window.contentView = nil; window.close() }
+            var guides = 0
+            let observer = NotificationCenter.default.addObserver(forName: .goalongPermissionGuideDidOpen, object: nil,
+                                                                  queue: nil) { _ in guides += 1 }
+            defer { NotificationCenter.default.removeObserver(observer) }
+            let calendar = Calendar.current
+            let pastDay = try XCTUnwrap(calendar.date(byAdding: .day, value: -3, to: calendar.startOfDay(for: model.now())))
+            // The window reopened on Réglages: Activité has not been shown since, and its day starts on today.
+            model.selectDay(pastDay)
+            ViewSwitchTimingTests.draw(host)
+            let pages = try XCTUnwrap(ViewSwitchTimingTests.keptPages(in: host))
+            spin(host, until: { model.filteredSessions.count > 1 })
+            // A session of J other than the first: the model would fall back to the first one, or to none.
+            let session = try XCTUnwrap(model.filteredSessions.last?.id, "no session on the day J")
+            model.selectSession(session)
+            spin(host, 0.2)
+            XCTAssertEqual(model.selectedSessionID, session)
+            XCTAssertEqual(Array(pages.hosts.keys.map { String($0.prefix(while: { $0 != "|" })) }), ["settings"], "a page was built at rest before the day J and its session were chosen")
+            let settingsGuides = guides
+            let started = Date()
+            while pages.preheatPending > 0, Date().timeIntervalSince(started) < 60 { spin(host, 0.05) }
+            XCTAssertEqual(pages.preheatPending, 0, "the main pages were not built at rest")
+            XCTAssertNotNil(pages.hosts.keys.first { $0.hasPrefix("activity|") }, "Activité was not built at rest")
+            spin(host, 0.3)
+            XCTAssertEqual(model.selectedDay, pastDay, "a page built at rest changed the day")
+            XCTAssertEqual(model.selectedSessionID, session, "a page built at rest changed the chosen session")
+            XCTAssertEqual(guides, settingsGuides, "a page built at rest announced the permission guide")
+            // First real showing of Activité: its appear logic runs now.
+            model.selectSection(.overview)
+            spin(host, 0.3)
+            XCTAssertTrue(calendar.isDate(model.selectedDay, inSameDayAs: model.now()),
+                          "Activité's appear logic did not run on its first showing")
+        }
+    }
+
+    /// N1, every page: no appear logic of the app runs outside the gate of its page (`KeptPageGate`). A plain
+    /// `onAppear` or `.task` is allowed only on a view that writes its own state from its own layout (`// own layout`).
+    func testEveryAppearLogicGoesThroughTheGateOfItsPage() throws {
+        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/LocalHistoryApp")
+        let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" && $0.lastPathComponent != "DashboardKeptPages.swift" }
+        XCTAssertGreaterThan(files.count, 50)
+        let plain = try NSRegularExpression(pattern: #"\.onAppear\s*[({]|(^\s*(\}\s*)?|\))\.task\s*[({]"#)
+        var offending: [String] = []
+        for file in files {
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() where !line.contains("// own layout") {
+                if plain.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil {
+                    offending.append("\(file.lastPathComponent):\(index + 1)")
+                }
+            }
+        }
+        XCTAssertEqual(offending, [], "appear logic outside the gate of its page (use onAppearWhenShown / taskWhenShown)")
     }
 
     private static func keptView(in view: NSView) -> DashboardKeptPagesView? {

@@ -28,7 +28,7 @@ struct ChatGPTAccountConnectionCard: View {
                 }
             }
         }
-        .onAppear { runtime.refreshAccount(userInitiated: true) }
+        .onAppearWhenShown { runtime.refreshAccount(userInitiated: true) }
     }
     private var updateButton: some View {
         Button("Mettre Goalong à jour") { SoftwareUpdateManager.shared.showAvailableUpdate() }

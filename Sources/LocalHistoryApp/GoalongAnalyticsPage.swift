@@ -224,17 +224,17 @@ struct GoalongAnalyticsPage: View {
         } message: {
             Text("Choisissez le type d’analyse. Les sources et les autorisations restent à vérifier avant toute génération.")
         }
-        .onAppear {
+        .onAppearWhenShown {
             // The page is rebuilt on each section change: a day that turned while it was away counts too.
             followCalendarDay()
             model.selectDay(navigation.day)
         }
-        .task(id: "\(revision)|\(laneRevision)") {
+        .taskWhenShown(id: "\(revision)|\(laneRevision)") {
             // A Santé import or a new Temps d’écran day can move the first day back (R-265), read in the
             // model's own data folder, never AppPaths directly (R272b-2).
             await analytics.refreshImportedFirstDay()
         }
-        .task(id: loadRequest) {
+        .taskWhenShown(id: loadRequest) {
             let request = loadRequest
             guard request.permitsLoading else { return }
             let force = forceNextRead
@@ -260,14 +260,14 @@ struct GoalongAnalyticsPage: View {
                 await analytics.preloadOtherPeriods(day: request.day, count: request.count, verdicts: work.verdicts)
             }
         }
-        .task(id: laneKey) {
+        .taskWhenShown(id: laneKey) {
             // Day-only sources, read beside the observations; never mixed into active time.
             guard loadRequest.permitsLoading, !previewActive, selection.period == 1,
                   consents.isEnabled(.aiConversations) || consents.isEnabled(.developerActivity) else { return }
             let day = selection.day, overview = model.agentActivityRuntime.overview
             await developer.refresh(day: day, agents: Calendar.current.isDate(overview.day, inSameDayAs: day) ? overview : nil)
         }
-        .task(id: systemKey) {
+        .taskWhenShown(id: systemKey) {
             // Calls, agenda, other devices, Health and the note; the Mac's day gives its gaps.
             guard loadRequest.permitsLoading, let day = observedDay else { return }
             await system.refresh(day: day)

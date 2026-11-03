@@ -46,7 +46,7 @@ import UniformTypeIdentifiers
                 removeFile: { controller.removeOwnFile($0) }
             )
         )
-        .onAppear { controller.refresh(); AmbianceDownloadSignal.shared.follow(controller) }
+        .onAppearWhenShown { controller.refresh(); AmbianceDownloadSignal.shared.follow(controller) }
     }
 }
 

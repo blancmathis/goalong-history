@@ -228,7 +228,7 @@
                     .padding(.bottom, 16)
             }
             .background(LHTheme.sidebarBackground)
-            .onAppear {
+            .onAppearWhenShown {
                 updates.refreshAvailableUpdate()
             }
         }

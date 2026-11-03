@@ -679,7 +679,7 @@ struct BlockingMeter: View {
                     }
                 }
             }
-            .onAppear { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
+            .onAppearWhenShown { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
             .alert((pending ?? plan(at: now)).lockTitle(lock), isPresented: $confirmingLock) {
                 Button("Annuler", role: .cancel) {}
                 Button(lock == .password ? "Protéger" : "Verrouiller") { if let pending { start(pending) } }

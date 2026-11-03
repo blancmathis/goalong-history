@@ -288,7 +288,7 @@ struct ScheduleTimeField: View {
             Stepper(title, value: Binding(get: { minute }, set: { minute = (($0 % 1440) + 1440) % 1440 }), in: -5...1445, step: 5)
                 .labelsHidden()
         }
-        .onAppear { text = Self.format(minute) }
+        .onAppearWhenShown { text = Self.format(minute) }
         .onChange(of: text) { typed($0) }
         .onChange(of: minute) { if Self.parse(text) != $0 { text = Self.format($0); onValidity(true) } }
     }

@@ -83,7 +83,7 @@ import AgentActivity
         }
         .frame(minWidth: 740, idealWidth: 940, maxWidth: 1080, minHeight: 580, idealHeight: 760, maxHeight: 980)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
-        .task { await initialize() }
+        .taskWhenShown { await initialize() }
         .onChange(of: installedApps.loading) { isLoading in
             if !isLoading && tab == 3 && previewText == nil && !previewBusy { preparePreview() }
         }

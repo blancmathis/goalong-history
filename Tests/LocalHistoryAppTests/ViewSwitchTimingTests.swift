@@ -97,7 +97,7 @@ final class ViewSwitchTimingTests: XCTestCase {
     // MARK: Measure
     /// The busy member's dashboard (R13a): `days` days of journals and their summaries, the real window content,
     /// a window never ordered on screen. Shared by the timing (opt-in) and its CI guard (ViewSwitchBudgetTests).
-    @MainActor static func memberDashboard(_ ctx: GalleryContext, days: Int) throws
+    @MainActor static func memberDashboard(_ ctx: GalleryContext, days: Int, section: DashboardSection = .overview) throws
         -> (DashboardViewModel, GalleryWindow, NSView, (events: Int, bytes: Int), Int) {
         try AppPaths.prepareApplicationStorage(applicationSupportDirectory: AppPaths.applicationSupportDirectory)
         GalleryFixtureHome.enableRecording()
@@ -110,7 +110,7 @@ final class ViewSwitchTimingTests: XCTestCase {
 
         ctx.environment.usedBytes = Int64(written.bytes)
         var options = GalleryFixtures.DashboardOptions()
-        options.section = .overview
+        options.section = section
         let model = try GalleryFixtures.dashboardModel(ctx, options)
         let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 790),
                                    styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)

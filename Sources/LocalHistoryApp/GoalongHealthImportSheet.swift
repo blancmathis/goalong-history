@@ -123,7 +123,7 @@ struct GoalongHealthImportSheet: View {
         .frame(minWidth: 690, idealWidth: 800, maxWidth: 950, minHeight: 550, idealHeight: 720)
         .onExitCommand { if !busy { dismiss() } }  // Escape still closes when « Fermer » is hidden.
         .background(GoalongWebsiteWindowReader(host: host))
-        .onAppear { savedDates = (try? GoalongHealthArchive.dates(root: AppPaths.applicationSupportDirectory)) ?? [] }
+        .onAppearWhenShown { savedDates = (try? GoalongHealthArchive.dates(root: AppPaths.applicationSupportDirectory)) ?? [] }
         .onChange(of: from) { _ in invalidate() }
         .onChange(of: through) { _ in invalidate() }
         .onChange(of: selected) { _ in invalidate() }

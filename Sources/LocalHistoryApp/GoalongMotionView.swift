@@ -59,9 +59,9 @@ struct GoalongActivityMark: View {
         .frame(width: width, height: width * 18 / 26)
         .background(GoalongMotionVisibility { windowVisible = $0 })
         .accessibilityHidden(true)
-        .onAppear { mounted = true }
+        .onAppearWhenShown { mounted = true }
         .onDisappear { mounted = false; ticking = false }
-        .task(id: isActive) {
+        .taskWhenShown(id: isActive) {
             guard isActive || motion.busy else { motion.settle(); ticking = false; return }
             motion.setBusy(isActive, at: time)
             ticking = true

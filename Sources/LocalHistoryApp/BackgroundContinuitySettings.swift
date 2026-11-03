@@ -95,7 +95,7 @@
                     }.fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .onAppear { login.refresh() }
+            .onAppearWhenShown { login.refresh() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 login.refresh()
             }

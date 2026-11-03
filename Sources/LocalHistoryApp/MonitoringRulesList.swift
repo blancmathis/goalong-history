@@ -63,7 +63,7 @@
                     }
                 }
             }
-            .onAppear { model.refreshEverything() }
+            .onAppearWhenShown { model.refreshEverything() }
         }
 
         private var explanationCard: some View {

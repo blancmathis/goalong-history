@@ -145,7 +145,7 @@
                 .padding(.bottom, 50)
             }
             .background(LHTheme.pageBackground)
-            .onAppear {
+            .onAppearWhenShown {
                 followDashboardDay()
                 if consents.isEnabled(.aiConversations) {
                     agents.scanNow(

@@ -82,7 +82,7 @@
             XCTAssertTrue(activity.contains("openSourceJSON: model.revealTodayJSON"))
             XCTAssertTrue(activity.contains("snapshotGeneration: model.snapshotGeneration"))
             XCTAssertTrue(activity.contains("isSnapshotLoading: model.isRefreshing"))
-            XCTAssertTrue(computerHistory.contains(".task(id: timelineRefreshID)"))
+            XCTAssertTrue(computerHistory.contains(".taskWhenShown(id: timelineRefreshID)"))
             XCTAssertTrue(computerHistory.contains("isSnapshotLoading || timelineModel.isLoading"))
             XCTAssertTrue(dashboardModel.contains("activateFileViewerSelecting([file])"))
         }

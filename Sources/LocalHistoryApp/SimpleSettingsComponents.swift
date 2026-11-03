@@ -185,7 +185,7 @@ enum GoalongHomeRows {
                 else { Button("Configurer") { showing = true }.buttonStyle(LHSecondaryButtonStyle()) }
             }
         }
-        .onAppear { check() }
+        .onAppearWhenShown { check() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in check() }
         .onDisappear { validation.cancel() }
         .sheet(isPresented: $showing, onDismiss: check) {
