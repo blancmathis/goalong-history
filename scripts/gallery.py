@@ -278,7 +278,8 @@ def window_guard() -> Path:
 
 
 def render(run: Path, shards: int, only: str | None, homes: Homes) -> list[str]:
-    """Runs the shards in parallel; a shard stopped by the watchdog (code 3) restarts with a fresh HOME.
+    """Runs the shards in parallel; a shard that ends with code 3 (watchdog, or a field mis-measured in a whole process)
+    restarts with a fresh HOME.
     The window guard watches every shard: a window on screen or a focus change kills it and fails the run."""
     problems: list[str] = []
     guard_log = open(run / "window-guard.log", "w", encoding="utf-8")
@@ -309,7 +310,7 @@ def render(run: Path, shards: int, only: str | None, homes: Homes) -> list[str]:
                 del running[shard]
                 if code == 3 and relaunches[shard] < MAX_RELAUNCHES:
                     relaunches[shard] += 1
-                    log(f"gallery: shard {shard} relancé après le chien de garde ({relaunches[shard]})")
+                    log(f"gallery: shard {shard} relancé (chien de garde ou processus neuf, {relaunches[shard]})")
                     start(shard)
                 elif code != 0:
                     problems.append(f"shard {shard} : code {code} (voir shard-{shard}.log)")
