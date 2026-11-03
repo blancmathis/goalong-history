@@ -46,4 +46,10 @@ build="$(GOALONG_VERSION_FLOOR=0.6.0 GOALONG_CURRENT_ROLLING_VERSION=0.6.50 \
 test "$build" = "30000000.3655750.331501"
 accept localhistory_validate_build_number "$build"
 
+# R10 O1: the local deploy controller builds in the release namespace with the hosted run's real ID, so it must
+# declare GITHUB_ACTIONS=true next to GITHUB_RUN_ID, or the policy above refuses its own number (the launchd
+# agent stays disabled; this keeps the path correct when it is switched back on).
+grep -q '"GITHUB_ACTIONS": "true"' "$ROOT_DIR/scripts/local_auto_deploy.py" || {
+  echo "local_auto_deploy.py must set GITHUB_ACTIONS=true with GITHUB_RUN_ID" >&2; exit 1; }
+
 echo "Build number policy passed."

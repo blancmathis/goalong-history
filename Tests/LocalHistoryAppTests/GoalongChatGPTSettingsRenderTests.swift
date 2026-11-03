@@ -68,7 +68,10 @@ final class GoalongChatGPTSettingsRenderTests: XCTestCase {
         if let dir = ProcessInfo.processInfo.environment["R282_PNG_DIR"], let png = rep.representation(using: .png, properties: [:]) {
             try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("chatgpt-consentement.png"))
         }
-        // The switches sit at the trailing edge; a track is a solid run of 25+ pixels, thinner than any glyph there.
+        // The switches sit at the trailing edge; a track is a solid run of 25+ pixels (12.5 pt at 2x), thinner than any
+        // glyph there today. Limit (R11 O19): 2x halves the threshold in points, so a future horizontal glyph stroke
+        // of 12.5 pt or more in the right 110 pt would count as a track; if a text change ever trips this, raise the
+        // run length or crop to the switch column instead of reading the ink counts as proof.
         let usable = solidRows(rep, near: (0x0D, 0x10, 0x0E)), locked = solidRows(rep, near: (0x56, 0x62, 0x52))
         XCTAssertGreaterThan(usable, 10, "R282-1: the consent switch is ON; its track must be full ink, usable to withdraw (usable \(usable), locked \(locked))")
         XCTAssertEqual(locked, 0, "R282-1: the ON consent switch is drawn locked (usable \(usable), locked \(locked))")

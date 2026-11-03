@@ -4100,13 +4100,19 @@ enum GoalongCLIExecutableResolver {
         if argv0.contains("/") {
             candidate = URL(fileURLWithPath: argv0, relativeTo: URL(fileURLWithPath: currentDirectory, isDirectory: true))
         } else {
-            let found = (path ?? "").split(separator: ":", omittingEmptySubsequences: false)
+            // PATH unset: execvp falls back to the default search path, never the working directory.
+            let found = (path ?? "/usr/bin:/bin").split(separator: ":", omittingEmptySubsequences: false)
                 .map { directory -> URL in
                     let base = directory.isEmpty ? currentDirectory : String(directory)
                     return URL(fileURLWithPath: base, relativeTo: URL(fileURLWithPath: currentDirectory, isDirectory: true))
                         .appendingPathComponent(argv0, isDirectory: false)
                 }
-                .first { fileManager.isExecutableFile(atPath: $0.path) }
+                .first { url in
+                    // A directory with the x bit is "executable" too; the shell skips it, so do we.
+                    var isDirectory: ObjCBool = false
+                    return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                        && !isDirectory.boolValue && fileManager.isExecutableFile(atPath: url.path)
+                }
             guard let found else { return nil }
             candidate = found
         }
