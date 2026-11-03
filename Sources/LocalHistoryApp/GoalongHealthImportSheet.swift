@@ -62,13 +62,16 @@ struct GoalongHealthImportSheet: View {
         }
     }
 
+    /// R11-O8: the note on values sits in the header, so the four states (empty, reading, done, error) all carry it.
+    static let subtitle = "Sommeil, récupération et activité. Les valeurs sont reprises d’Apple Santé telles quelles. Rien n’est envoyé sans votre accord."
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
                 Image(systemName: "heart.text.clipboard").font(.title).foregroundStyle(LHTheme.secondaryText)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Apple Santé").font(LHTheme.sheetTitleFont).tracking(-0.4)
-                    Text("Sommeil, récupération et activité. Rien n’est envoyé sans votre accord.")
+                    Text(Self.subtitle)
                         .font(.subheadline).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -105,7 +108,7 @@ struct GoalongHealthImportSheet: View {
                 } else if let message {
                     Label(message, systemImage: "checkmark.circle").foregroundStyle(LHTheme.success).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                } else { Text("Valeurs reprises telles quelles d’Apple Santé, sans note.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
+                }
                 Spacer(minLength: 0)
                 // Once an outcome is in, closing is the next step: the lime moves here, unless sending is chosen.
                 if !busy, message != nil {
