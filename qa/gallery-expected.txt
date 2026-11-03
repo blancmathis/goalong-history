@@ -2609,3 +2609,4 @@ bilan/non-connecte--light--full.png   # T-043 R4e : kind obligatoire : pastille 
 fenetre/espace-faible--dark--full.png   # T-043 R4e : kind obligatoire : pastille et état vide gardent leur icône par état (R4d-7)
 fenetre/espace-faible--light--full.png   # T-043 R4e : kind obligatoire : pastille et état vide gardent leur icône par état (R4d-7)
 concentration-maintenant/reglages-jour-choisi--   # T-043 R4e tour 2 (R-94) : état galerie avec jours choisis ; « Jours » et « Heure de fin » alignés
+historique/journee-passee-vide--   # R4e-suite B : nouvelle image : un jour passé sans donnée affiche « vide » (icône plateau) ; le jour en cours (historique/journee-vide) reste « pas encore »

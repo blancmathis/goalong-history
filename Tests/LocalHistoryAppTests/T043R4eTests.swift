@@ -116,5 +116,36 @@ final class T043R4eTests: XCTestCase {
             XCTAssertFalse(try source(path).lowercased().contains("séquence"), path)
         }
     }
+
+    // R4e-suite A: the `kind` reaches the screen. Source checks (like the gauge) + the stopped-recording branch.
+    func testActivityPageGivesTheCopyKindToTheEmptyState() throws {
+        let text = try source("Sources/LocalHistoryApp/GoalongActivityContent.swift")
+        XCTAssertTrue(text.contains("GoalongEmptyState(title: copy.title, kind: copy.kind, message: copy.message)"),
+                      "the Activité empty state must receive copy.kind")
+    }
+
+    func testHistoryPageGivesTheTimelineKindToTheEmptyState() throws {
+        let text = try source("Sources/LocalHistoryApp/ComputerHistoryPage.swift")
+        XCTAssertTrue(text.contains("kind: ComputerHistoryPageCopy.emptyTimelineKind("),
+                      "the Historique empty state must receive emptyTimelineKind")
+    }
+
+    func testActivityStoppedRecordingIsUnavailable() {
+        for recording in [GoalongRecordingStateNotice.Kind.off, .paused, .permissions] {
+            let copy = GoalongActivityEmptyCopy.copy(isDay: true, isToday: true, eventCount: 0, incompleteDays: 0, purged: false,
+                                                     recording: recording)
+            XCTAssertEqual(copy.kind, .unavailable, "\(recording)")
+        }
+        let few = GoalongActivityEmptyCopy.copy(isDay: true, isToday: true, eventCount: 3, incompleteDays: 0, purged: false, recording: .off)
+        XCTAssertEqual(few.kind, .unavailable)
+    }
+
+    // R4e-suite B: a past day without data is « vide »; today or a future day stays « pas encore ».
+    func testHistoryEmptyDayKindFollowsTheDay() {
+        XCTAssertEqual(ComputerHistoryPageCopy.emptyTimelineKind(storageStopped: false, status: .available, dayIsPast: true), .empty)
+        XCTAssertEqual(ComputerHistoryPageCopy.emptyTimelineKind(storageStopped: false, status: .available, dayIsPast: false), .notYet)
+        XCTAssertEqual(ComputerHistoryPageCopy.emptyTimelineKind(storageStopped: true, status: .available, dayIsPast: true), .unavailable)
+        XCTAssertEqual(ComputerHistoryPageCopy.emptyTimelineKind(storageStopped: false, status: .inaccessible("x"), dayIsPast: true), .unavailable)
+    }
 }
 #endif
