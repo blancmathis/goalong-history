@@ -17,7 +17,10 @@ final class ViewSwitchTimingTests: XCTestCase {
         /// A cold period click lays its content out when its data come in, after the selection's own layout.
         var longestMs: Double? = nil
         /// R14c: the click showed a stored read of the period (checked off the main thread) rather than its loading state.
-        var fromStore: Bool? = nil }
+        var fromStore: Bool? = nil
+        /// R14c: main-thread CPU time from the click to the first layout (draw excluded). Far below `firstLayoutMs`
+        /// means the thread waited (preempted on a loaded Mac, or blocked), not that SwiftUI worked.
+        var blockCpuMs: Double? = nil }
 
     @MainActor func testMeasureViewSwitches() throws {
         let environment = ProcessInfo.processInfo.environment
@@ -157,6 +160,7 @@ final class ViewSwitchTimingTests: XCTestCase {
         // R14c: a period click must build that period's content inside the measured window (see below).
         let period = view.hasPrefix("activite-") ? Int(view.dropFirst(9).dropLast()) : nil
         let builtBefore = period.map { GoalongAnalyticsContent.builtPeriods[$0, default: 0] } ?? 0
+        let cpuStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
         let started = ProcessInfo.processInfo.systemUptime
         XCTAssertTrue(ViewSwitchAX.flag(press, "accessibilityPerformPress") == true, "press \(view)")
         let layout: Double
@@ -179,6 +183,7 @@ final class ViewSwitchTimingTests: XCTestCase {
             host.layoutSubtreeIfNeeded()
             layout = ProcessInfo.processInfo.systemUptime - started
         }
+        let blockCpu = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1e9
         draw(host)
         let first = ProcessInfo.processInfo.systemUptime - started
         var stall = 0.0
@@ -196,7 +201,7 @@ final class ViewSwitchTimingTests: XCTestCase {
                                  "\(view): its \(period)-day content was not built between the click and complete; nothing measured")
         }
         return Sample(view: view, pass: pass, firstMs: first * 1_000, completeMs: total * 1_000, maxStallMs: max(stall, first) * 1_000,
-                      firstLayoutMs: layout * 1_000, longestMs: max(layout, stall) * 1_000, fromStore: fromStore)
+                      firstLayoutMs: layout * 1_000, longestMs: max(layout, stall) * 1_000, fromStore: fromStore, blockCpuMs: blockCpu * 1_000)
     }
 
     /// One publication of the model with the page laid out and displayed: median of 3, minus nothing (an idle turn
