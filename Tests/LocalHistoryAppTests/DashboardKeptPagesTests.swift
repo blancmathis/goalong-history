@@ -475,6 +475,35 @@ import XCTest
         }
     }
 
+    /// N4: Tab never enters a hidden page. The window recalculates its key-view loop (as the app window does,
+    /// `autorecalculatesKeyViewLoop`); walking the whole loop meets the shown page and never a hidden one. Limit: the
+    /// focus moves inside a SwiftUI page are not NSViews and need a key window on screen, which tests never show.
+    func testTheKeyViewLoopNeverEntersAHiddenPage() throws {
+        try GalleryRenderer.withPreparedApplication {
+            let source = Source(), counts = Counts()
+            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                       styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            window.autorecalculatesKeyViewLoop = true
+            defer { window.contentView = nil; window.close() }
+            let host = DashboardWindowContent(rootView: Root(source: source, selected: "a", counts: counts))
+            window.contentView = host
+            spin(host)
+            host.setRootView(Root(source: source, selected: "b", counts: counts))
+            spin(host)
+            let pages = try XCTUnwrap(Self.keptView(in: host))
+            let hidden = try XCTUnwrap(pages.hosts["a"]), shown = try XCTUnwrap(pages.hosts["b"])
+            window.recalculateKeyViewLoop()
+            var loop: [NSView] = [], view: NSView? = host
+            while let current = view, loop.count < 500, !loop.contains(where: { $0 === current }) {
+                loop.append(current); view = current.nextKeyView
+            }
+            XCTAssertTrue(loop.contains { $0 === shown || $0.isDescendant(of: shown) }, "the shown page is out of the key-view loop")
+            XCTAssertFalse(loop.contains { $0 === hidden || $0.isDescendant(of: hidden) }, "Tab can enter a hidden page")
+            XCTAssertNil(hidden.window)
+        }
+    }
+
     /// N2: two quick « jour suivant » while the first is checked give J+2, not J+1.
     func testTwoQuickClicksBothCount() {
         let calendar = Calendar.current
