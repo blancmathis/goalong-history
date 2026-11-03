@@ -10,7 +10,7 @@
         /// Activité's days stay read while the window is open, so coming back to the page
         /// shows them at once; closing the window releases them.
         @StateObject private var activity: GoalongAnalyticsModel
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @Environment(\.dashboardToastsAbovePages) private var toastsAbovePages
 
         /// `activityPeriod` (1, 7 or 28 days) lets the gallery open Activité on a week or a month.
         init(model: DashboardViewModel, activityPeriod: Int = 1) {
@@ -30,16 +30,18 @@
                         Rectangle()
                             .fill(LHTheme.separator)
                             .frame(width: 1)
-                        page
-                            // Changing destination is a short crossfade, never a slide.
-                            .id("\(model.selectedSection)|\(model.knownDeviceID ?? "")")
-                            .onAppear {
-                                // Activité closes its measure once its period is read (GoalongAnalyticsPage).
-                                let section = model.selectedSection
-                                GoalongSwitchTiming.end(section.rawValue, stage: "shown", last: section != .overview)
-                            }
-                            .transition(.opacity)
-                            .animation(reduceMotion ? nil : LHTheme.ease(0.16), value: model.selectedSection)
+                        // R14a: each page visited stays alive, out of the window while hidden; coming back shows it as
+                        // it was left, at once. No crossfade: it kept two pages laid out and drawn for 0.16 s.
+                        DashboardKeptPages(key: "\(model.selectedSection.keptPage)|\(model.knownDeviceID ?? "")",
+                                           keep: model.selectedSection.keepsPage,
+                                           onShown: {
+                            // Activité closes its measure once its period is read (GoalongAnalyticsPage).
+                            let section = model.selectedSection
+                            GoalongSwitchTiming.end(section.rawValue, stage: "shown", last: section != .overview)
+                        }) {
+                            // A kept page has its own hosting view: the styles of the window are applied again.
+                            page.foregroundStyle(LHTheme.text).tint(LHTheme.accent).accentColor(LHTheme.accent).goalongControls()
+                        }
                             .safeAreaInset(edge: .top, spacing: 0) {
                                 VStack(spacing: 0) {
                                     GoalongGlobalPauseBanner(model: model)
@@ -70,7 +72,8 @@
                 }
             }
             .safeAreaInset(edge: .top, spacing: 0) { GoalongDevBanner() }
-            .overlay { GoalongToastHost() }
+            // In the app window the toasts sit above the kept pages (DashboardWindowContent).
+            .overlay { if !toastsAbovePages { GoalongToastHost() } }
             .environment(\.goalongRecordingModel, model)
             .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay).goalongControls() }
             .onReceive(NotificationCenter.default.publisher(for: .goalongOpenRecordingSettings)) { _ in model.openRecordingSettings() }

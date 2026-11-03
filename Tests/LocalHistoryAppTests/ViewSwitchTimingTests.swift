@@ -47,8 +47,7 @@ final class ViewSwitchTimingTests: XCTestCase {
                 .environment(\.locale, GalleryClock.locale)
                 .environment(\.timeZone, GalleryClock.timeZone)
                 .environment(\.calendar, GalleryClock.calendar)
-            let host = NSHostingView(rootView: root)
-            host.sizingOptions = DashboardWindowController.hostingSizing
+            let host = DashboardWindowContent(rootView: root)
             window.contentView = host
             window.setContentSize(NSSize(width: 1180, height: 790))
             defer { window.contentView = nil; window.close() }

@@ -1,0 +1,135 @@
+#if os(macOS)
+import AppKit
+import Combine
+import SwiftUI
+import XCTest
+@testable import LocalHistoryApp
+
+/// R14a: pages already visited stay alive while hidden, and a hidden page costs nothing.
+@MainActor final class DashboardKeptPagesTests: XCTestCase {
+    final class Source: ObservableObject { @Published var value = 0 }
+    final class Counts {
+        var bodies: [String: Int] = [:], ticks: [String: Int] = [:], appears: [String: Int] = [:], disappears: [String: Int] = [:]
+        var tasks: [String: Int] = [:], timeline: [String: Int] = [:]
+    }
+
+    struct Probe: View {
+        let name: String
+        @ObservedObject var source: Source
+        let counts: Counts
+        @State private var kept = 0
+        private let timer = Timer.publish(every: 0.02, on: .main, in: .common).autoconnect()
+        var body: some View {
+            counts.bodies[name, default: 0] += 1
+            return VStack {
+                Text("\(name) \(source.value) kept \(kept)").accessibilityIdentifier("\(name) \(source.value) kept \(kept)")
+                Button("plus") { kept += 1 }.accessibilityIdentifier("\(name)-plus")
+                TimelineView(.periodic(from: Date(), by: 0.02)) { context in
+                    let _ = counts.timeline[name, default: 0] += 1
+                    Text("t \(context.date.timeIntervalSince1970)")
+                }
+            }
+            .onReceiveWhileShown(timer) { _ in counts.ticks[name, default: 0] += 1 }
+            .onAppear { counts.appears[name, default: 0] += 1 }
+            .onDisappear { counts.disappears[name, default: 0] += 1 }
+            .task { counts.tasks[name, default: 0] += 1 }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("probe-\(name)")
+        }
+    }
+
+    struct Root: View {
+        @ObservedObject var source: Source
+        let selected: String
+        let counts: Counts
+        var keep = true
+        var body: some View {
+            DashboardKeptPages(key: selected, keep: keep) { Probe(name: selected, source: source, counts: counts) }
+        }
+    }
+
+    private func spin(_ host: NSView, _ seconds: TimeInterval = 0.1) {
+        let end = Date().addingTimeInterval(seconds)
+        while Date() < end {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.005))
+            host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+        }
+    }
+
+    func testHiddenPageIsNotEvaluatedTimedOrReachableAndKeepsItsState() throws {
+        try GalleryRenderer.withPreparedApplication {
+            let source = Source(), counts = Counts()
+            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                       styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            defer { window.contentView = nil; window.close() }
+            // As in the app window: the kept pages sit beside the dashboard's hosting view.
+            let host = DashboardWindowContent(rootView: Root(source: source, selected: "a", counts: counts))
+            window.contentView = host
+            spin(host)
+            let pages = try XCTUnwrap(Self.keptView(in: host))
+            // « a » gets a state of its own, then « b » is shown.
+            let plus = try XCTUnwrap(ViewSwitchAX.first(in: host) { $0 == "a-plus" })
+            XCTAssertEqual(ViewSwitchAX.flag(plus, "accessibilityPerformPress"), true)
+            spin(host)
+            host.setRootView(Root(source: source, selected: "b", counts: counts))
+            // The new page is in the window after one layout pass, with no turn of the main loop: no frame shows the
+            // old page under the new selection.
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(pages.shownKey, "b")
+            XCTAssertTrue(pages.hosts["b"]?.superview === pages)
+            spin(host)
+            XCTAssertEqual(pages.hosts.count, 2)
+            XCTAssertTrue(pages.superview === host.pageLayer, "the pages are not beside the dashboard's hosting view")
+            XCTAssertNil(ViewSwitchAX.first(in: host) { $0 == "probe-a" }, "a hidden page left in the accessibility tree")
+            let bodies = counts.bodies["a"] ?? 0, ticks = counts.ticks["a"] ?? 0
+            let timeline = counts.timeline["a"] ?? 0
+            for _ in 0..<5 { source.value += 1; spin(host, 0.05) }
+            spin(host, 0.2)
+            XCTAssertEqual(counts.bodies["a"] ?? 0, bodies, "a publication evaluated the hidden page")
+            XCTAssertEqual(counts.ticks["a"] ?? 0, ticks, "a timer of the hidden page fired")
+            XCTAssertGreaterThan(counts.bodies["b"] ?? 0, 1)
+            XCTAssertEqual(counts.timeline["a"] ?? 0, timeline, "a TimelineView of the hidden page ran")
+            // Hidden as when the page was left before R14a: its `onDisappear` ran and its `.task` was cancelled.
+            XCTAssertEqual(counts.disappears["a"], 1)
+            // Back to « a »: its own state, the new value, the same hosting view.
+            let before = pages.hosts["a"]
+            host.setRootView(Root(source: source, selected: "a", counts: counts))
+            spin(host)
+            XCTAssertTrue(pages.hosts["a"] === before)
+            // Back as when the page was opened before R14a: its `onAppear` and `.task` run again (fresh data).
+            XCTAssertEqual(counts.appears["a"], 2)
+            XCTAssertEqual(counts.tasks["a"], 2)
+            XCTAssertNotNil(ViewSwitchAX.first(in: host) { ($0 as String).hasPrefix("a 5 kept 1") })
+            XCTAssertGreaterThan(counts.ticks["a"] ?? 0, ticks, "the shown page's timer is idle")
+        }
+    }
+
+    func testASecondaryPageIsReleasedOnceLeft() throws {
+        try GalleryRenderer.withPreparedApplication {
+            let source = Source(), counts = Counts()
+            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                       styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            defer { window.contentView = nil; window.close() }
+            let host = DashboardWindowContent(rootView: Root(source: source, selected: "a", counts: counts))
+            window.contentView = host
+            spin(host)
+            host.setRootView(Root(source: source, selected: "x", counts: counts, keep: false))
+            spin(host)
+            let pages = try XCTUnwrap(Self.keptView(in: host))
+            XCTAssertEqual(Set(pages.hosts.keys), ["a", "x"])
+            host.setRootView(Root(source: source, selected: "a", counts: counts))
+            spin(host)
+            XCTAssertEqual(Set(pages.hosts.keys), ["a"], "a secondary page stayed alive once left")
+            XCTAssertEqual(pages.shownKey, "a")
+        }
+    }
+
+    private static func keptView(in view: NSView) -> DashboardKeptPagesView? {
+        if let kept = view as? DashboardKeptPagesView { return kept }
+        for child in view.subviews { if let kept = keptView(in: child) { return kept } }
+        return nil
+    }
+}
+#endif

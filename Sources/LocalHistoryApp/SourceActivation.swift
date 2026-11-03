@@ -585,7 +585,7 @@ import LocalHistoryCore
                 // Resumed from this sheet: check again at once instead of leaving the old pause message.
                 if wasPaused && !globalPause.blocksActivity && !flow.checking && !ready && !restarting { check() }
             }
-            .onReceive(refreshTimer) { now in
+            .onReceiveWhileShown(refreshTimer) { now in
                 if openedSettings && now < watchUntil && NSApplication.shared.isActive && !flow.checking && !ready && !restarting { check() }
             }
             .onDisappear { flow.cancel() }

@@ -71,13 +71,12 @@ final class ViewSwitchBudgetTests: XCTestCase {
             let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 790),
                                        styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true)
             DashboardWindowController.configure(window)
-            let host = NSHostingView(rootView: LocalHistoryDashboardView(model: model)
+            let host = DashboardWindowContent(rootView: LocalHistoryDashboardView(model: model)
                 .defaultAppStorage(ctx.defaults)
                 .environment(\.goalongDefaults, ctx.defaults)
                 .environment(\.locale, GalleryClock.locale)
                 .environment(\.timeZone, GalleryClock.timeZone)
                 .environment(\.calendar, GalleryClock.calendar))
-            host.sizingOptions = DashboardWindowController.hostingSizing
             window.contentView = host
             window.setContentSize(NSSize(width: 1180, height: 790))
             defer { window.contentView = nil; window.close() }

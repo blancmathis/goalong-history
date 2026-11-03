@@ -178,15 +178,18 @@
 
         override func loadWindow() {
             let rootView = LocalHistoryDashboardView(model: viewModel)
-            let hostingController = NSHostingController(rootView: rootView.environment(\.locale, GoalongUIFormat.locale))
-            hostingController.sizingOptions = Self.hostingSizing
-            let window = NSWindow(contentViewController: hostingController)
+            // R14a: the kept pages sit beside the dashboard's hosting view, not in it (DashboardKeptPages).
+            let content = NSViewController()
+            content.view = DashboardWindowContent(rootView: rootView.environment(\.locale, GoalongUIFormat.locale))
+            let window = NSWindow(contentViewController: content)
             Self.configure(window)
             window.level = .normal
             window.collectionBehavior = [.managed, .fullScreenPrimary, .participatesInCycle]
             window.animationBehavior = .documentWindow
             window.tabbingMode = .disallowed
             window.hidesOnDeactivate = false
+            // R14a: the page has its own hosting view beside the sidebar's; Tab goes from one to the other in reading order.
+            window.autorecalculatesKeyViewLoop = true
 
             let restoredCurrentFrame = window.setFrameUsingName(Self.frameAutosaveName)
             let restoredLegacyFrame =

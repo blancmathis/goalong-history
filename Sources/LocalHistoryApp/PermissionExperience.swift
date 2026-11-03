@@ -247,7 +247,7 @@ extension Notification.Name {
                 DispatchQueue.main.async { signatureValid = valid; refreshAdvice() }
             }
         }
-        .onReceive(timer) { _ in refreshAdvice() }
+        .onReceiveWhileShown(timer) { _ in refreshAdvice() }
         .onChange(of: status) { _ in refreshAdvice() }
     }
 

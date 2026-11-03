@@ -301,7 +301,7 @@ struct GoalongAnalyticsPage: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
             followCalendarDay()
         }
-        .onReceive(refreshTimer) { _ in
+        .onReceiveWhileShown(refreshTimer) { _ in
             // Also catches a missed day-change notification (sleep across midnight).
             followCalendarDay()
             // Visible-page refresh only. Completed days reuse the existing cache.
