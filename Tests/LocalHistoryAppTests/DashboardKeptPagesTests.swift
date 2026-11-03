@@ -126,6 +126,46 @@ import XCTest
         }
     }
 
+    struct Labeled: View {
+        let label: String
+        @ObservedObject var source: Source
+        var body: some View { Text("\(label) \(source.value)").accessibilityIdentifier("\(label) \(source.value)") }
+    }
+
+    struct InputsRoot: View {
+        @ObservedObject var source: Source
+        let label: String
+        var body: some View {
+            // `label` reaches the page by value: it is declared as an input.
+            DashboardKeptPages(key: "a", inputs: label) { Labeled(label: label, source: source) }
+        }
+    }
+
+    func testTheShownPageGetsANewRootOnlyWhenWhatItTakesByValueChanges() throws {
+        try GalleryRenderer.withPreparedApplication {
+            let source = Source()
+            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                       styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            defer { window.contentView = nil; window.close() }
+            let host = DashboardWindowContent(rootView: InputsRoot(source: source, label: "x"))
+            window.contentView = host
+            spin(host)
+            let pages = try XCTUnwrap(Self.keptView(in: host))
+            let roots = pages.rootCount
+            // A publication of an object the page observes: the page updates itself, no new root.
+            for _ in 0..<3 { source.value += 1; spin(host, 0.05) }
+            XCTAssertEqual(pages.rootCount, roots, "a publication gave the shown page a new root")
+            XCTAssertNotNil(ViewSwitchAX.first(in: host) { $0 == "x 3" })
+            // A value passed by value changes: a new root, in the same layout pass.
+            host.setRootView(InputsRoot(source: source, label: "y"))
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(pages.rootCount, roots + 1)
+            spin(host)
+            XCTAssertNotNil(ViewSwitchAX.first(in: host) { $0 == "y 3" }, "the page kept a stale input")
+        }
+    }
+
     /// What a page reads from its environment, compared between the dashboard's hosting view and a kept page.
     struct Snapshot: Equatable {
         let scheme: ColorScheme, contrast: ColorSchemeContrast, reduceMotion: Bool, systemReduceMotion: Bool

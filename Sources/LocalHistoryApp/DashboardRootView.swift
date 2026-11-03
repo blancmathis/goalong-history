@@ -34,6 +34,11 @@
                         // it was left, at once. No crossfade: it kept two pages laid out and drawn for 0.16 s.
                         DashboardKeptPages(key: "\(model.selectedSection.keptPage)|\(model.knownDeviceID ?? "")",
                                            keep: model.selectedSection.keepsPage,
+                                           // What `page` takes by value; the rest comes through `model`.
+                                           inputs: DashboardPageInputs(section: model.selectedSection,
+                                                                       navigation: activityNavigation,
+                                                                       day: model.selectedDay,
+                                                                       returnTitle: model.secondaryReturnTitle),
                                            onShown: {
                             // Activité closes its measure once its period is read (GoalongAnalyticsPage).
                             let section = model.selectedSection
@@ -140,6 +145,15 @@
         private var secondaryReturnBar: some View {
             SettingsBackBar(title: model.secondaryReturnTitle) { model.returnFromSecondaryPage() }
         }
+    }
+
+    /// The values `DashboardRootView.page` passes to a page by value: a change gives the shown page a new root
+    /// (DashboardKeptPages). A new value passed by value must be added here, or the page would keep the old one.
+    struct DashboardPageInputs: Equatable {
+        let section: DashboardSection
+        let navigation: GoalongActivityNavigation
+        let day: Date
+        let returnTitle: String
     }
 
     private struct DashboardSidebar: View {

@@ -5,7 +5,7 @@
 
     /// R14a: the pages already visited stay alive, like tabs. Each one has its own hosting view; only the page shown is
     /// in the window. A hidden page keeps its state (day chosen, scroll position) but is not updated, laid out or drawn:
-    /// a model publication does not evaluate it, its timers stop (`keptPageShown`), and it is out of the accessibility
+    /// a model publication does not evaluate it, its timers stop (`KeptPageGate`), and it is out of the accessibility
     /// tree and the key-view loop. Coming back puts the same hosting view in the window again: one update with what
     /// changed while it was away, no new page.
     ///
@@ -18,6 +18,11 @@
         let key: String
         /// False: the page is released once left (secondary pages, rarely opened). Bounds the memory kept.
         var keep = true
+        /// Every value the page takes by value from the caller (not through an object it observes). The shown page
+        /// gets a new root only when these, its key or its environment change: a publication of a model the page
+        /// observes updates it once, by its own observation (measured: re-rooting it on every publication doubled the
+        /// cost, Activité 28 j 17 → 38 ms).
+        var inputs: any Equatable = 0
         /// After a different page is put in the window (the former `onAppear` of each new page).
         var onShown: () -> Void = {}
         @ViewBuilder let page: () -> Page
@@ -37,7 +42,7 @@
         @Environment(\.sourceAccessCheck) private var accessCheck
 
         var body: some View {
-            DashboardKeptPagesRepresentable(key: key, keep: keep, onShown: onShown, page: page, environment: .init(
+            DashboardKeptPagesRepresentable(key: key, keep: keep, inputs: inputs, onShown: onShown, page: page, environment: .init(
                 locale: locale, timeZone: timeZone, calendar: calendar, layoutDirection: layoutDirection,
                 colorScheme: colorScheme, contrast: contrast, controlActiveState: controlActiveState,
                 reduceMotion: reduceMotion, defaults: defaults, recording: recording, accessCheck: accessCheck))
@@ -47,6 +52,7 @@
     private struct DashboardKeptPagesRepresentable<Page: View>: NSViewRepresentable {
         let key: String
         let keep: Bool
+        let inputs: any Equatable
         let onShown: () -> Void
         let page: () -> Page
         let environment: DashboardCarriedEnvironment
@@ -57,17 +63,18 @@
             // Not run here: a hosting view created or updated inside the dashboard's update stays linked to it, and every
             // later update of the dashboard re-evaluated the hidden page (measured, DashboardKeptPagesTests). The pages
             // view runs it in its own layout, in the same frame.
-            slot.pages.request(key: key, keep: keep, page: AnyView(page()), environment: environment, onShown: onShown)
+            slot.pages.request(key: key, keep: keep, inputs: inputs, page: AnyView(page()), environment: environment,
+                               onShown: onShown)
         }
 
         static func dismantleNSView(_ slot: DashboardKeptPagesSlot, coordinator: ()) { slot.release() }
     }
 
     extension EnvironmentValues {
-        /// False while a kept page is out of the window: its timers, `TimelineView`s and rereads stop.
-        var keptPageShown: Bool {
-            get { self[KeptPageShownKey.self] }
-            set { self[KeptPageShownKey.self] = newValue }
+        /// The gate of the kept page this view is in: closed while the page is out of the window (its timers stop).
+        var keptPageGate: KeptPageGate {
+            get { self[KeptPageGateKey.self] }
+            set { self[KeptPageGateKey.self] = newValue }
         }
 
         /// True inside `DashboardWindowContent`, which shows the toasts above the kept pages.
@@ -77,7 +84,15 @@
         }
     }
 
-    private struct KeptPageShownKey: EnvironmentKey { static let defaultValue = true }
+    /// Open while its page is in the window. A reference, set once per page: closing it stops the page's timers at
+    /// once, with no SwiftUI update of the page (measured: the update that told the old page it was hidden ran in the
+    /// click, 5 ms for Réglages, 48 ms the first time for Activité).
+    final class KeptPageGate {
+        static let alwaysOpen = KeptPageGate()
+        let open = CurrentValueSubject<Bool, Never>(true)
+    }
+
+    private struct KeptPageGateKey: EnvironmentKey { static let defaultValue = KeptPageGate.alwaysOpen }
 
     extension View {
         /// `onReceive` for a timer of a page: it stops while the page is kept out of the window (DashboardKeptPages).
@@ -89,11 +104,16 @@
     }
 
     private struct KeptPageReceive<P: Publisher>: ViewModifier where P.Failure == Never {
-        @Environment(\.keptPageShown) private var shown
+        @Environment(\.keptPageGate) private var gate
         let publisher: P
         let action: (P.Output) -> Void
         func body(content: Content) -> some View {
-            content.onReceive(shown ? publisher.eraseToAnyPublisher() : Empty().eraseToAnyPublisher(), perform: action)
+            // Closing the gate cancels the subscription to the timer (an autoconnected timer then stops); opening it
+            // subscribes again.
+            let publisher = self.publisher
+            return content.onReceive(gate.open.removeDuplicates().map { open in
+                open ? publisher.eraseToAnyPublisher() : Empty(completeImmediately: false).eraseToAnyPublisher()
+            }.switchToLatest(), perform: action)
         }
     }
     private struct DashboardToastsAbovePagesKey: EnvironmentKey { static let defaultValue = false }
@@ -110,7 +130,15 @@
         let reduceMotion: Bool, defaults: UserDefaults, recording: DashboardViewModel?
         let accessCheck: SourceAccessService.Check
 
-        func apply(to page: AnyView, shown: Bool) -> AnyView {
+        /// Same values (objects by identity). The access check is a function, set once above the dashboard: not compared.
+        func same(as other: DashboardCarriedEnvironment) -> Bool {
+            locale == other.locale && timeZone == other.timeZone && calendar == other.calendar
+                && layoutDirection == other.layoutDirection && colorScheme == other.colorScheme && contrast == other.contrast
+                && controlActiveState == other.controlActiveState && reduceMotion == other.reduceMotion
+                && defaults === other.defaults && recording === other.recording
+        }
+
+        func apply(to page: AnyView, gate: KeptPageGate) -> AnyView {
             AnyView(page
                 .defaultAppStorage(defaults).environment(\.goalongDefaults, defaults)
                 .environment(\.locale, locale).environment(\.timeZone, timeZone).environment(\.calendar, calendar)
@@ -118,7 +146,7 @@
                 .environment(\.colorScheme, colorScheme).environment(\._colorSchemeContrast, contrast)
                 .environment(\.controlActiveState, controlActiveState).environment(\.goalongReduceMotion, reduceMotion)
                 .environment(\.goalongRecordingModel, recording).environment(\.sourceAccessCheck, accessCheck)
-                .environment(\.keptPageShown, shown))
+                .environment(\.keptPageGate, gate))
         }
     }
 
@@ -270,72 +298,102 @@
     /// A page's hosting view. Out of the window it is frozen: no update is run even if SwiftUI asks for one.
     final class DashboardKeptHost: NSHostingView<AnyView> {
         var frozen = false
+        let gate = KeptPageGate()
+        /// What its root was built from: a new root is given only when one of them changes.
+        var inputs: any Equatable = 0
+        var environment: DashboardCarriedEnvironment?
         override func layout() { if !frozen { super.layout() } }
     }
 
     final class DashboardKeptPagesView: NSView {
         private(set) var hosts: [String: DashboardKeptHost] = [:]
         private(set) var shownKey: String?
-        private var pages: [String: (AnyView, DashboardCarriedEnvironment)] = [:]
         weak var slot: DashboardKeptPagesSlot?
-        private var requested: (key: String, keep: Bool, page: AnyView, environment: DashboardCarriedEnvironment,
-                                onShown: () -> Void)?
+        private var requested: (key: String, keep: Bool, inputs: any Equatable, page: AnyView,
+                                environment: DashboardCarriedEnvironment, onShown: () -> Void)?
         /// Keys of pages released once left.
         private var released: Set<String> = []
+        /// Pages released by the last click, freed after its frame (freeing a page tree is not free).
+        private var leaving: [DashboardKeptHost] = []
+        /// Number of roots given to a page (DashboardKeptPagesTests).
+        private(set) var rootCount = 0
 
         override var isFlipped: Bool { true }
 
         /// Asks for `show` at the next layout of this view.
-        func request(key: String, keep: Bool = true, page: AnyView, environment: DashboardCarriedEnvironment,
-                     onShown: @escaping () -> Void) {
-            requested = (key, keep, page, environment, onShown)
+        func request(key: String, keep: Bool = true, inputs: any Equatable = 0, page: AnyView,
+                     environment: DashboardCarriedEnvironment, onShown: @escaping () -> Void) {
+            requested = (key, keep, inputs, page, environment, onShown)
             needsLayout = true
         }
 
         func applyRequest() {
             guard slot?.placed == true, let request = requested else { return }
             requested = nil
-            if show(key: request.key, keep: request.keep, page: request.page, environment: request.environment) {
+            if show(key: request.key, keep: request.keep, inputs: request.inputs, page: request.page,
+                    environment: request.environment) {
                 DispatchQueue.main.async(execute: request.onShown)
             }
         }
 
-        /// Only the shown page is given a new root: the hidden ones keep the one they had when they left.
-        /// Returns true when another page went into the window.
+        /// Only the shown page is given a new root, and only when what it is built from changed: the hidden ones keep
+        /// the one they had when they left. Returns true when another page went into the window.
         @discardableResult
-        func show(key: String, keep: Bool = true, page: AnyView, environment: DashboardCarriedEnvironment) -> Bool {
-            pages[key] = (page, environment)
+        func show(key: String, keep: Bool = true, inputs: any Equatable = 0, page: AnyView,
+                  environment: DashboardCarriedEnvironment) -> Bool {
             if keep { released.remove(key) } else { released.insert(key) }
             let host: DashboardKeptHost
             if let kept = hosts[key] {
                 host = kept
-                host.frozen = false
-                host.rootView = root(page, environment, shown: true)
+                if !Self.equal(host.inputs, inputs) || host.environment.map({ !$0.same(as: environment) }) ?? true {
+                    give(host, page, inputs, environment)
+                }
             } else {
-                host = DashboardKeptHost(rootView: root(page, environment, shown: true))
+                host = DashboardKeptHost(rootView: AnyView(EmptyView()))
+                give(host, page, inputs, environment)
                 // The page fills the space SwiftUI gives the slot; it never sizes the window.
                 host.sizingOptions = []
                 host.autoresizingMask = [.width, .height]
                 hosts[key] = host
             }
             guard shownKey != key else { return false }
-            if let oldKey = shownKey, let old = hosts[oldKey], let (oldPage, oldEnvironment) = pages[oldKey] {
-                // One last update tells the page it is hidden (timers off), then it is frozen out of the window.
-                old.rootView = root(oldPage, oldEnvironment, shown: false)
-                old.layoutSubtreeIfNeeded()
+            if let oldKey = shownKey, let old = hosts[oldKey] {
+                // Out of the window with no update of its own: its gate stops its timers, and freezing it stops any
+                // update a publication would ask for. Its `onDisappear` runs, its `.task` is cancelled and its
+                // `TimelineView`s wait (measured).
+                old.gate.open.send(false)
                 old.frozen = true
                 old.removeFromSuperview()
-                if released.contains(oldKey) { hosts[oldKey] = nil; pages[oldKey] = nil; released.remove(oldKey) }
+                if released.contains(oldKey) {
+                    hosts[oldKey] = nil; released.remove(oldKey)
+                    leaving.append(old)
+                    afterThisFrame { [weak self] in self?.leaving.removeAll() }
+                }
             }
             shownKey = key
+            host.frozen = false
+            host.gate.open.send(true)
             mountShown()
             return true
         }
 
-        private func root(_ page: AnyView, _ environment: DashboardCarriedEnvironment, shown: Bool) -> AnyView {
-            let view = environment.apply(to: page, shown: shown)
-            guard slot?.content?.pagesWithoutAnimation == true else { return view }
-            return AnyView(view.transaction { $0.disablesAnimations = true; $0.animation = nil })
+        private func give(_ host: DashboardKeptHost, _ page: AnyView, _ inputs: any Equatable,
+                          _ environment: DashboardCarriedEnvironment) {
+            host.inputs = inputs
+            host.environment = environment
+            rootCount += 1
+            let view = environment.apply(to: page, gate: host.gate)
+            host.rootView = slot?.content?.pagesWithoutAnimation == true
+                ? AnyView(view.transaction { $0.disablesAnimations = true; $0.animation = nil }) : view
+        }
+
+        private static func equal(_ a: any Equatable, _ b: any Equatable) -> Bool { a.isEqual(to: b) }
+
+        /// Runs `work` at the next turn of the main loop, once this one has drawn its frame (a main-queue block would
+        /// run before the frame is committed).
+        private func afterThisFrame(_ work: @escaping () -> Void) {
+            let timer = Timer(timeInterval: 0, repeats: false) { _ in MainActor.assumeIsolated(work) }
+            RunLoop.main.add(timer, forMode: .common)
         }
 
         /// Puts the shown page in this view, once the slot has placed it.
@@ -352,8 +410,12 @@
         }
 
         func releaseAll() {
-            for host in hosts.values { host.removeFromSuperview() }
-            hosts.removeAll(); pages.removeAll(); shownKey = nil; requested = nil; released.removeAll()
+            for host in hosts.values { host.gate.open.send(false); host.removeFromSuperview() }
+            hosts.removeAll(); shownKey = nil; requested = nil; released.removeAll(); leaving.removeAll()
         }
+    }
+
+    private extension Equatable {
+        func isEqual(to other: any Equatable) -> Bool { (other as? Self) == self }
     }
 #endif
