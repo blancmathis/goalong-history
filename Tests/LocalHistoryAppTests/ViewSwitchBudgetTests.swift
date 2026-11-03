@@ -132,14 +132,15 @@ final class ViewSwitchBudgetTests: XCTestCase {
     /// first use (fonts, type metadata) depends on the tests run before it: alone it costs up to ×2 more than in the
     /// full suite, where CI sees cold ≈ warm.
     /// Ratios = highest ratio seen / 0.7 (≥ 30 % margin), over 5 runs on this Mac (debug build, test alone, so the
-    /// coldest) and PR CI. Highest warm/cold ratios seen, Mac | CI 35251da:
-    /// 1 j 2.43/6.5 | 1.56/1.52 · 7 j 2.15/9.1 | 1.51/1.79 · 28 j 4.6/13.7 | 3.48/3.66 · overview 1.22/3.5 | 0.91/0.87
-    /// settings 1.1/0.92 | 0.78/0.42 · history 1.39/0.58 | 0.68/0.40 · work 0.73/0.61 | 0.50/0.33 · concentration 0.43/0.42 | 0.24/0.22
+    /// coldest), 1 full `make check` and PR CI. Highest warm/cold ratios seen, Mac | CI 35251da:
+    /// 1 j 2.48/6.8 | 1.56/1.52 · 7 j 2.15/9.8 | 1.51/1.79 · 28 j 4.64/13.7 | 3.48/3.66 · overview 1.29/7.2 | 0.91/0.87
+    /// settings 1.12/0.92 | 0.78/0.42 · history 1.39/0.58 | 0.68/0.40 · work 0.77/0.61 | 0.50/0.33 · concentration 0.52/0.42 | 0.24/0.22
+    /// The cold overview is two-moded (2.9-3.3 or 7.2 × ref: 45 or 95 ms), hence its wide budget.
     /// The Mac bounds every ratio: a click ~45 % slower fails here, about ×2 slower on CI.
     static let switchBudgetRatios: [String: (warm: Double, cold: Double)] = [
-        "activite-1j": (warm: 3.6, cold: 9.6), "activite-7j": (warm: 3.3, cold: 13.5), "activite-28j": (warm: 6.8, cold: 20),
-        "overview": (warm: 1.9, cold: 5.2), "settings": (warm: 1.7, cold: 1.5), "history": (warm: 2.1, cold: 0.9),
-        "work": (warm: 1.1, cold: 1.0), "concentration": (warm: 0.65, cold: 0.65),
+        "activite-1j": (warm: 3.6, cold: 9.7), "activite-7j": (warm: 3.3, cold: 14), "activite-28j": (warm: 6.8, cold: 20),
+        "overview": (warm: 1.9, cold: 10.3), "settings": (warm: 1.7, cold: 1.5), "history": (warm: 2.1, cold: 0.9),
+        "work": (warm: 1.15, cold: 1.0), "concentration": (warm: 0.75, cold: 0.65),
     ]
 
     @MainActor func testEachViewSwitchStaysWithinItsBudget() throws {
