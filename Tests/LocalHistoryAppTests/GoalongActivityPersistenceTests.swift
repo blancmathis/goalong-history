@@ -324,6 +324,31 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
     }
 
+    /// R14a step 4: the 30 s reread of a page whose sources did not change publishes nothing, so the shown page is
+    /// neither re-evaluated nor laid out; a changed journal is still read and shown.
+    @MainActor func testRereadOfUnchangedSourcesPublishesNothingAndAChangeIsStillShown() async throws {
+        let root = try root(); let events = try writeEvents(root: root)
+        let model = GoalongAnalyticsModel(root: root)
+        await model.load(day: day, count: 1)
+        let first = try XCTUnwrap(model.payload)
+        var publications = 0
+        let watch = model.objectWillChange.sink { publications += 1 }
+        defer { watch.cancel() }
+        await model.load(day: day, count: 1)
+        await model.load(day: day, count: 1)
+        XCTAssertEqual(publications, 0, "an unchanged reread published and laid out the page")
+        XCTAssertEqual(model.payload?.updatedAt, first.updatedAt)
+        XCTAssertFalse(model.busy); XCTAssertNil(model.error); XCTAssertFalse(model.paused)
+        let handle = try FileHandle(forWritingTo: events); try handle.seekToEnd(); try handle.write(contentsOf: Data("\n".utf8))
+        try handle.close()
+        // The click and the page's own read share one file check for 0.5 s (R13c); a reread comes later.
+        try await Task.sleep(nanoseconds: 600_000_000)
+        await model.load(day: day, count: 1)
+        XCTAssertGreaterThan(publications, 0, "a changed journal must be read again and shown")
+        XCTAssertNotEqual(model.payload?.updatedAt, first.updatedAt)
+        XCTAssertFalse(model.busy)
+    }
+
     /// R13d: the day and time-zone notifications come from a system thread; the model must not trap there.
     @MainActor func testDayAndTimeZoneNotificationsFromABackgroundThreadEmptyTheMemory() async throws {
         let root = try root(); _ = try writeEvents(root: root)

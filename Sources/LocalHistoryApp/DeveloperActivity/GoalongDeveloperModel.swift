@@ -93,14 +93,21 @@ actor GoalongDeveloperReader {
     }
     func refresh(day: Date, agents: AgentActivityOverview? = nil) async {
         let ai = consents.isEnabled(.aiConversations), developer = consents.isEnabled(.developerActivity)
-        t3Discovered = ai && !GoalongGlobalPause.isPaused(in: root) && T3CodeMetadataReader.isDiscovered()
+        // R14a: each value is set only when it changes, so a reread of the same day does not lay out Activité.
+        let discovered = ai && !GoalongGlobalPause.isPaused(in: root) && T3CodeMetadataReader.isDiscovered()
+        if t3Discovered != discovered { t3Discovered = discovered }
         do {
             let result = try await reader.read(day: day, agents: agents ?? .init(day: day), aiEnabled: ai, developerEnabled: developer)
             guard consents.isEnabled(.aiConversations) == ai, consents.isEnabled(.developerActivity) == developer,
-                  !GoalongGlobalPause.isPaused(in: root) else { value = nil; status = .disabled; return }
-            value = result; selectedProjects = result.selectedProjects; status = result.developerStatus
+                  !GoalongGlobalPause.isPaused(in: root) else { publish(nil, status: .disabled); return }
+            publish(result, status: result.developerStatus)
+            if selectedProjects != result.selectedProjects { selectedProjects = result.selectedProjects }
         } catch is CancellationError { }
-        catch { status = .failed("Le contexte de développement n’a pas pu être chargé.") }
+        catch { publish(value, status: .failed("Le contexte de développement n’a pas pu être chargé.")) }
+    }
+    private func publish(_ day: GoalongDeveloperDay?, status: GoalongDeveloperLaneStatus) {
+        if value != day { value = day }
+        if self.status != status { self.status = status }
     }
     @discardableResult func setEnabled(_ enabled: Bool) -> Bool {
         let saved = consents.set(.developerActivity, enabled: enabled, surface: .settings)

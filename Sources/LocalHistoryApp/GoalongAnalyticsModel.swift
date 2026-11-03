@@ -515,7 +515,9 @@ actor GoalongAnalyticsReader {
         if !shown {
             payload = stored.payload
         }
-        error = nil; paused = false
+        // R14a: a @Published set publishes even with the same value; the shown page is laid out only on a change.
+        if error != nil { error = nil }
+        if paused { paused = false }
         return true
     }
 
@@ -583,7 +585,11 @@ actor GoalongAnalyticsReader {
 
     func load(day: Date, count: Int, force: Bool = false, preview: Bool = false,
               verdicts: GoalongWorkVerdicts = GoalongWorkVerdicts()) async {
-        let id = UUID(); operation = id; busy = true; error = nil; paused = false
+        // R14a: nothing is published before something changes. A check of unchanged sources (the 30 s reread)
+        // neither shows the progress mark nor lays out the page; `busy` rises only when a read really starts.
+        let id = UUID(); operation = id
+        if error != nil { error = nil }
+        if paused { paused = false }
         Self.loadsInFlight += 1; Self.loadsStarted += 1
         defer { Self.loadsInFlight -= 1 }
         if force { forgetSnapshots() }
@@ -598,14 +604,15 @@ actor GoalongAnalyticsReader {
         // Keep a valid same-period snapshot during refresh, never across dates or preview boundaries.
         if !force, !preview {
             let match = await verifySnapshot(day: day, count: count, verdicts: verdicts)
-            guard operation == id, !Task.isCancelled else { if operation == id { busy = false }; return }
+            guard operation == id, !Task.isCancelled else { if operation == id, busy { busy = false }; return }
             if showVerified(day: day, count: count, match: match), match == .same {
                 // Every source is as read: a new read gives the same payload. Nothing to read again.
-                busy = false
+                if busy { busy = false }
                 return
             }
         }
-        if !sameSelection() { payload = nil }
+        if !busy { busy = true }
+        if payload != nil, !sameSelection() { payload = nil }
         do {
             let value = try await reader.read(ending: day, count: count, force: force, preview: preview, verdicts: verdicts)
             try Task.checkCancellation()
