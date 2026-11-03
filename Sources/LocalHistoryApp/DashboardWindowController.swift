@@ -156,7 +156,8 @@
         static let minimumContentSize = NSSize(width: 900, height: 620)
         /// R13c: no window size from SwiftUI. With the default (min, ideal and max size), the hosting view measures the
         /// whole page again at every animation frame (about 40 ms on Activité) and a page's data wait behind those frames.
-        /// `minimumContentSize` and the root's `.frame(minWidth:minHeight:)` keep the same smallest window.
+        /// The window alone keeps the root's smallest size (`.frame(minWidth:minHeight:)`): `configure` sets
+        /// `minimumContentSize` as the content minimum.
         static let hostingSizing: NSHostingSizingOptions = []
 
         /// The look of the dashboard window (title, title bar, background, sizes). Shared with the
@@ -168,7 +169,9 @@
             window.titlebarAppearsTransparent = true
             window.backgroundColor = NSColor(LHTheme.pageBackground)
             window.isMovableByWindowBackground = false
-            window.minSize = minimumContentSize
+            // A content minimum, not a frame minimum: `minSize` counts the title bar, so 620 there left 592 pt for a
+            // page that needs 620 once SwiftUI no longer sizes the window (R13c).
+            window.contentMinSize = minimumContentSize
             window.setContentSize(defaultContentSize)
             window.isReleasedWhenClosed = false
         }

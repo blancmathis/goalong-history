@@ -117,6 +117,16 @@ final class ViewSwitchBudgetTests: XCTestCase {
         XCTAssertEqual(DashboardWindowController.hostingSizing, [])
     }
 
+    /// Without SwiftUI sizing, the window alone keeps the root's smallest size (`.frame(minWidth: 900, minHeight: 620)`
+    /// in DashboardRootView). `minSize` counts the title bar: 620 there left 592 pt and cut the page at the smallest window.
+    @MainActor func testDashboardWindowKeepsTheRootSmallestContentSize() {
+        let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 790),
+                                   styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true)
+        defer { window.close() }
+        DashboardWindowController.configure(window)
+        XCTAssertEqual(window.contentMinSize, DashboardWindowController.minimumContentSize)
+    }
+
     @MainActor private func spin(_ host: NSView) {
         RunLoop.current.run(until: Date().addingTimeInterval(0.002))
         host.layoutSubtreeIfNeeded()
