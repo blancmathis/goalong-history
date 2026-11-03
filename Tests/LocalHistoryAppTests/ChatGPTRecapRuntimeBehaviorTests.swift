@@ -44,6 +44,39 @@
             )
         }
 
+        /// R14a (review, point 5): the click that opens Mon travail checks the account; Codex is looked for on disk off
+        /// the main thread.
+        func testTheAccountCheckLooksForCodexOffTheMainThread() throws {
+            let container = try makeContainer()
+            defer { try? FileManager.default.removeItem(at: container) }
+            let searched = expectation(description: "Codex looked for")
+            let onMain = LockedFlag()
+            let runtime = ChatGPTRecapRuntime(
+                chatHistoryStore: ChatGPTHistoryStore(rootDirectory: container.appendingPathComponent("history", isDirectory: true)),
+                recapsDirectory: container.appendingPathComponent("recaps", isDirectory: true),
+                executableLocator: { onMain.set(Thread.isMainThread); searched.fulfill(); return nil },
+                directoryOpener: { _ in }, fileRevealer: { _ in },
+                delayedAutomaticScheduler: { _ in }, automaticRetryScheduler: { _, _ in },
+                analysisConsentProvider: { true },
+                dayOverviewReader: { _ in throw CodexAppServerError.generationFailed("journée de test") })
+            runtime.refreshAccount()
+            wait(for: [searched], timeout: 5)
+            XCTAssertEqual(onMain.value, false, "Codex was looked for on the main thread")
+            let end = Date().addingTimeInterval(5)
+            while runtime.connectionState != .codexUnavailable, Date() < end {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+            }
+            XCTAssertEqual(runtime.connectionState, .codexUnavailable)
+            XCTAssertFalse(runtime.isCheckingAccount)
+        }
+
+        private final class LockedFlag: @unchecked Sendable {
+            private let lock = NSLock()
+            private var stored: Bool?
+            func set(_ value: Bool) { lock.lock(); stored = value; lock.unlock() }
+            var value: Bool? { lock.lock(); defer { lock.unlock() }; return stored }
+        }
+
         func testDayChangeKeepsAutomaticRunButStopsManualRun() throws {
             let container = try makeContainer()
             defer { try? FileManager.default.removeItem(at: container) }

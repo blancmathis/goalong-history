@@ -861,13 +861,18 @@ import AppleScreenTime
             guard !isCheckingAccount, !isConnecting, !isGenerating else { return }
             // The work agent shares this Codex home; keep the last known state until it is done.
             guard !(Thread.isMainThread && MainActor.assumeIsolated { GoalongWorkAgent.shared.isRunning }) else { return }
-            guard let executable = executableLocator() else {
-                connectionState = .codexUnavailable
-                return
-            }
             isCheckingAccount = true
+            // R14a: Codex is looked for on disk off the main thread (this runs in the click that opens Mon travail).
+            let locate = executableLocator
             workQueue.async { [weak self] in
                 guard let self else { return }
+                guard let executable = locate() else {
+                    DispatchQueue.main.async {
+                        self.isCheckingAccount = false
+                        self.connectionState = .codexUnavailable
+                    }
+                    return
+                }
                 do {
                     let session = try self.makeSession(executableURL: executable, role: .account)
                     defer { self.closeSession(session) }
