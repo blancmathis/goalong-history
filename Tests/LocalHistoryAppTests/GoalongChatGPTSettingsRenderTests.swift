@@ -62,8 +62,9 @@ final class GoalongChatGPTSettingsRenderTests: XCTestCase {
         host.appearance = NSAppearance(named: .aqua)
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
         host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
-        let rep = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: rep)
+        // A fixed 2x sRGB bitmap, not the screen's: a CI Mac without Retina gives a 1x window, where the ink
+        // left of the knob is ~17 px, under the 25 px run, so neither track counted (release 41553934058).
+        let rep = try render(host, scale: 2)
         if let dir = ProcessInfo.processInfo.environment["R282_PNG_DIR"], let png = rep.representation(using: .png, properties: [:]) {
             try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("chatgpt-consentement.png"))
         }
@@ -71,6 +72,16 @@ final class GoalongChatGPTSettingsRenderTests: XCTestCase {
         let usable = solidRows(rep, near: (0x0D, 0x10, 0x0E)), locked = solidRows(rep, near: (0x56, 0x62, 0x52))
         XCTAssertGreaterThan(usable, 10, "R282-1: the consent switch is ON; its track must be full ink, usable to withdraw (usable \(usable), locked \(locked))")
         XCTAssertEqual(locked, 0, "R282-1: the ON consent switch is drawn locked (usable \(usable), locked \(locked))")
+    }
+
+    @MainActor private func render(_ view: NSView, scale: CGFloat) throws -> NSBitmapImageRep {
+        let plain = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * scale),
+            pixelsHigh: Int(view.bounds.height * scale), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .calibratedRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let rep = try XCTUnwrap(plain.retagging(with: .sRGB))
+        rep.size = view.bounds.size
+        view.cacheDisplay(in: view.bounds, to: rep)
+        return rep
     }
 
     private func solidRows(_ rep: NSBitmapImageRep, near rgb: (Int, Int, Int)) -> Int {
