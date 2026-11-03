@@ -152,7 +152,7 @@ struct SlowDownVeil: View {
                 VStack(spacing: 8) {
                     Text(presentation.name).font(LHTheme.pageTitleFont).tracking(LHTheme.pageTitleTracking)
                         .multilineTextAlignment(.center).lineLimit(2)
-                    Label("Ralenti", systemImage: "hourglass").font(.system(size: 15, weight: .medium))
+                    Label(SlowDownText.siteStatus, systemImage: "hourglass").font(.system(size: 15, weight: .medium))
                 }
                 SlowDownCountdown(presentation: presentation, now: now, ready: $ready).frame(width: 320)
                 SlowDownActions(presentation: presentation, now: now, ready: ready, onRenounce: onRenounce, onContinue: onContinue)
@@ -195,7 +195,7 @@ struct SlowDownAppCard: View {
                 BlockingIconStack(items: [item], size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(presentation.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                    Text("Ralenti pour la \(FocusUIFormat.ordinal(presentation.occurrence)) fois aujourd’hui")
+                    Text(SlowDownText.appOccurrence(presentation.occurrence))
                         .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer(minLength: 0)
@@ -215,3 +215,10 @@ struct SlowDownAppCard: View {
     }
 }
 #endif
+
+/// R11-O9: the « Ralentir » moment says what happens, not a bare « Ralenti » status. The Blocking page keeps
+/// « Ralenti »/« Bloqué » (type of protection), and « Renoncer » stays (decisions 3 and 7).
+enum SlowDownText {
+    static let siteStatus = "Prenez un instant"
+    static func appOccurrence(_ n: Int) -> String { "\(FocusUIFormat.ordinal(n)) ouverture aujourd’hui" }
+}

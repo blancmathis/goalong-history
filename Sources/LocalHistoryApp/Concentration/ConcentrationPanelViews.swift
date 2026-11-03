@@ -310,6 +310,8 @@ struct FocusLimitPanelView: View {
 /// The evening review: each item gets an answer, then tomorrow's first step and a note.
 @MainActor struct ConcentrationReviewSheet: View {
     enum Choice: Hashable { case unset, done, partly, notDone, tomorrow }
+    /// R11-O7: same form as the other field helps, on two short sentences.
+    static let noteHelp = "Facultative. 500 caractères au plus."
 
     @ObservedObject var controller: ConcentrationController
     let plan: FocusPlan
@@ -400,7 +402,7 @@ struct FocusLimitPanelView: View {
                     .accessibilityLabel("Demain, je commence par")
                     .accessibilityIdentifier("concentration-tomorrow-first")
             }
-            GoalongFormField(title: "Note", detail: "Facultative, jusqu’à 500 caractères.") {
+            GoalongFormField(title: "Note", detail: ConcentrationReviewSheet.noteHelp) {
                 GoalongTextArea(text: $note, placeholder: "Ce que vous voulez garder de la journée", minHeight: 64)
             }
             if let error {
