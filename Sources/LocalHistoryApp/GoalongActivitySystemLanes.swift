@@ -307,6 +307,13 @@ struct GoalongSleepDay: Equatable {
     }
 }
 
+extension GoalongSleepDay {
+    /// The sentence shown under the sleep stages: the label has no final full stop, this adds the only one.
+    static func note(label: String) -> String {
+        "\(label). Données importées depuis Apple Santé : Goalong ne lit pas Santé en continu, et ce sommeil ne compte pas dans le temps actif."
+    }
+}
+
 struct GoalongSleepSection: View {
     let sleep: GoalongSleepDay
 
@@ -328,7 +335,7 @@ struct GoalongSleepSection: View {
                     }
                     .accessibilityElement(children: .combine)
                 }
-                Text("\(sleep.label). Données importées depuis Apple Santé : Goalong ne lit pas Santé en continu, et ce sommeil ne compte pas dans le temps actif.")
+                Text(GoalongSleepDay.note(label: sleep.label))
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }

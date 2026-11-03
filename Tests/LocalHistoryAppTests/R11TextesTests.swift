@@ -17,6 +17,17 @@ final class R11TextesTests: XCTestCase {
         XCTAssertEqual(sentences.count, 2)
         XCTAssertTrue(sentences.allSatisfy { $0.count <= 60 }, label)
         XCTAssertTrue(label.contains("minuit"))
+        // The sentence the member reads: the view adds the full stop, so none may be doubled.
+        let shown = GoalongSleepDay.note(label: label)
+        XCTAssertFalse(shown.contains(".."), shown)
+        XCTAssertTrue(shown.contains("l’import. Données importées"), shown)
+        XCTAssertFalse(label.hasSuffix("."))
+    }
+
+    /// O6 (review 1, point 2): the developer preview shows the same sleep note as a real import.
+    func testDeveloperPreviewUsesTheSleepNote() throws {
+        XCTAssertFalse(try source("Sources/LocalHistoryApp/GoalongAnalyticsPreview.swift").contains("réparti à minuit"))
+        XCTAssertTrue(try source("Sources/LocalHistoryApp/GoalongAnalyticsPreview.swift").contains("GoalongHealthLane(status: .partial).sleepLabel"))
     }
 
     /// O7 (R9A-49): the note help reads as two short sentences.
@@ -33,9 +44,15 @@ final class R11TextesTests: XCTestCase {
 
     /// O9 (R9A-53): the slowdown views no longer show a bare « Ralenti » status; « Renoncer » stays.
     func testSlowDownViewsHaveNoBareRalentiStatus() throws {
-        XCTAssertNotEqual(SlowDownText.siteStatus, "Ralenti")
-        XCTAssertEqual(SlowDownText.appOccurrence(1), "1ʳᵉ ouverture aujourd’hui")
-        XCTAssertEqual(SlowDownText.appOccurrence(3), "3ᵉ ouverture aujourd’hui")
+        XCTAssertNotEqual(SlowDownText.siteStatus(ready: false), "Ralenti")
+        XCTAssertEqual(SlowDownText.siteStatus(ready: false), "Prenez un instant")
+        XCTAssertEqual(SlowDownText.siteStatus(ready: true), "Attente terminée")
+        XCTAssertEqual(SlowDownText.attempt(1), "1ʳᵉ tentative d’ouverture aujourd’hui")
+        XCTAssertEqual(SlowDownText.attempt(3), "3ᵉ tentative d’ouverture aujourd’hui")
+        var feedback = BlockingListFeedback(listID: UUID(), reason: nil, attemptsToday: 2, earnedMinutesToday: 0)
+        XCTAssertEqual(feedback.attemptLine, SlowDownText.attempt(2))
+        feedback.attemptsToday = 1
+        XCTAssertNil(feedback.attemptLine)
         let views = try source("Sources/LocalHistoryApp/Blocking/SlowDownViews.swift")
         XCTAssertFalse(views.contains("Label(\"Ralenti\""))
         XCTAssertFalse(views.contains("\"Ralenti pour la"))

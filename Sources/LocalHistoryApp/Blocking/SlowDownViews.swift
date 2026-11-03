@@ -144,6 +144,9 @@ struct SlowDownVeil: View {
     var onContinue: () -> Void = {}
     @State private var ready = false
 
+    /// Same test as the buttons: a frozen clock (gallery) or a full bar both count as ready.
+    private var isReady: Bool { ready || presentation.readyAt <= (now ?? GoalongToday.now) }
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 24)
@@ -152,13 +155,13 @@ struct SlowDownVeil: View {
                 VStack(spacing: 8) {
                     Text(presentation.name).font(LHTheme.pageTitleFont).tracking(LHTheme.pageTitleTracking)
                         .multilineTextAlignment(.center).lineLimit(2)
-                    Label(SlowDownText.siteStatus, systemImage: "hourglass").font(.system(size: 15, weight: .medium))
+                    Label(SlowDownText.siteStatus(ready: isReady), systemImage: isReady ? "checkmark.circle" : "hourglass").font(.system(size: 15, weight: .medium))
                 }
                 SlowDownCountdown(presentation: presentation, now: now, ready: $ready).frame(width: 320)
                 SlowDownActions(presentation: presentation, now: now, ready: ready, onRenounce: onRenounce, onContinue: onContinue)
                 // The wait hint goes once the bar is full; the count sits on its own line, so no word is left alone.
                 // Same test as the buttons: a frozen clock (gallery) or a full bar both count as ready.
-                Text((ready || presentation.readyAt <= (now ?? GoalongToday.now) ? "Ce site est ralenti." : "Ce site est ralenti : attendez la fin de la barre, ou renoncez.")
+                Text((isReady ? "Ce site est ralenti." : "Ce site est ralenti : attendez la fin de la barre, ou renoncez.")
                      + "\n\(FocusUIFormat.ordinal(presentation.occurrence)) fois aujourd’hui.")
                     .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                     .multilineTextAlignment(.center).frame(maxWidth: 420).fixedSize(horizontal: false, vertical: true)
@@ -195,7 +198,7 @@ struct SlowDownAppCard: View {
                 BlockingIconStack(items: [item], size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(presentation.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                    Text(SlowDownText.appOccurrence(presentation.occurrence))
+                    Text(SlowDownText.attempt(presentation.occurrence))
                         .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer(minLength: 0)
@@ -219,6 +222,8 @@ struct SlowDownAppCard: View {
 /// R11-O9: the « Ralentir » moment says what happens, not a bare « Ralenti » status. The Blocking page keeps
 /// « Ralenti »/« Bloqué » (type of protection), and « Renoncer » stays (decisions 3 and 7).
 enum SlowDownText {
-    static let siteStatus = "Prenez un instant"
-    static func appOccurrence(_ n: Int) -> String { "\(FocusUIFormat.ordinal(n)) ouverture aujourd’hui" }
+    /// Same width of line in both states, so the veil does not jump when the wait ends.
+    static func siteStatus(ready: Bool) -> String { ready ? "Attente terminée" : "Prenez un instant" }
+    /// One sentence for the app card and the block feedback: a count of attempts, not of openings.
+    static func attempt(_ n: Int) -> String { "\(FocusUIFormat.ordinal(n)) tentative d’ouverture aujourd’hui" }
 }
