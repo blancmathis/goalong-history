@@ -164,6 +164,17 @@ final class ViewSwitchBudgetTests: XCTestCase {
                 }
             }
             Self.budgetLog(String(format: "reference %.1f ms (median of 7 builds of the reference page)", reference))
+            // R14a calibration probe (temporary): candidate references, to keep the one whose ratios hold across machines.
+            let candidates = [("lazy", Self.lazyReferenceMs()), ("state", Self.stateReferenceMs()), ("cpu", Self.cpuReferenceMs())]
+            for (name, ms) in candidates {
+                let ratios = Self.switchBudgetRatios.keys.sorted().map { view -> String in
+                    let rows = samples.filter { $0.view == view }
+                    let warm = ViewSwitchTimingTests.median(rows.filter { $0.pass > 0 }.compactMap(\.firstLayoutMs))
+                    let cold = rows.first { $0.pass == 0 }?.firstLayoutMs ?? .infinity
+                    return String(format: "%@ %.2f/%.2f", view, warm / ms, cold / ms)
+                }
+                Self.budgetLog(String(format: "candidate %@ %.2f ms: ", name, ms) + ratios.joined(separator: ", "))
+            }
             for (view, ratio) in Self.switchBudgetRatios.sorted(by: { $0.key < $1.key }) {
                 let rows = samples.filter { $0.view == view }
                 XCTAssertEqual(rows.count, 5, "\(view) was not measured")
@@ -213,6 +224,108 @@ final class ViewSwitchBudgetTests: XCTestCase {
             host.rootView = ReferencePage(seed: seed)
             host.layoutSubtreeIfNeeded()
             if seed > 2 { times.append((ProcessInfo.processInfo.systemUptime - start) * 1_000) }
+        }
+        return ViewSwitchTimingTests.median(times)
+    }
+
+    /// Candidate: the same rows in a lazy stack under a scroll view (only the rows in the window are built).
+    private struct LazyReferencePage: View {
+        let seed: Int
+        var body: some View {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(0..<240, id: \.self) { row in
+                        HStack(spacing: 8) {
+                            Image(systemName: row % 2 == 0 ? "clock" : "folder").frame(width: 14)
+                            Text("Contexte \(row + seed) · application \(row % 9)").lineLimit(1)
+                            Spacer(minLength: 8)
+                            Button("\(row * 7 + seed) min") {}.buttonStyle(.plain).monospacedDigit()
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .id(seed)
+        }
+    }
+
+    @MainActor private static func lazyReferenceMs() -> Double {
+        let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+                                   styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: LazyReferencePage(seed: 0))
+        window.contentView = host
+        defer { window.contentView = nil; window.close() }
+        host.layoutSubtreeIfNeeded()
+        var times: [Double] = []
+        for seed in 1...9 {
+            let start = ProcessInfo.processInfo.systemUptime
+            host.rootView = LazyReferencePage(seed: seed)
+            host.layoutSubtreeIfNeeded()
+            if seed > 2 { times.append((ProcessInfo.processInfo.systemUptime - start) * 1_000) }
+        }
+        return ViewSwitchTimingTests.median(times)
+    }
+
+    /// Candidate: one page kept, its content swapped by a published value (as a period change), laid out.
+    private final class ReferenceState: ObservableObject { @Published var period = 0 }
+    private struct StateReferencePage: View {
+        @ObservedObject var state: ReferenceState
+        var body: some View {
+            let count = [7, 28, 1][state.period % 3]
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(0..<count, id: \.self) { row in
+                    HStack(spacing: 8) {
+                        Text("Jour \(row + 1)").frame(width: 64, alignment: .leading)
+                        ForEach(0..<6, id: \.self) { band in
+                            Button {} label: { Color.gray.frame(width: Self.width(row, band, state.period), height: 10) }
+                                .buttonStyle(.plain).help("Bande \(band)")
+                        }
+                        Spacer(minLength: 8)
+                        Text("\(row * 7 + state.period) min").monospacedDigit()
+                    }
+                }
+            }
+            .padding(20)
+        }
+        static func width(_ row: Int, _ band: Int, _ period: Int) -> CGFloat { CGFloat(10 + (row * 7 + band * 3 + period) % 40) }
+    }
+
+    @MainActor private static func stateReferenceMs() -> Double {
+        let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+                                   styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let state = ReferenceState()
+        let host = NSHostingView(rootView: StateReferencePage(state: state))
+        window.contentView = host
+        defer { window.contentView = nil; window.close() }
+        host.layoutSubtreeIfNeeded()
+        var times: [Double] = []
+        for step in 1...11 {
+            let start = ProcessInfo.processInfo.systemUptime
+            state.period = step
+            RunLoop.current.run(until: Date().addingTimeInterval(0.001))
+            host.layoutSubtreeIfNeeded()
+            if step > 2 { times.append((ProcessInfo.processInfo.systemUptime - start) * 1_000) }
+        }
+        return ViewSwitchTimingTests.median(times)
+    }
+
+    /// Candidate: plain CPU work, no UI (sort of a fixed pseudo-random array), median of 7.
+    private static func cpuReferenceMs() -> Double {
+        var times: [Double] = []
+        for run in 0..<9 {
+            var x: UInt64 = 0x9E3779B97F4A7C15
+            var values: [UInt64] = []
+            values.reserveCapacity(200_000)
+            for _ in 0..<200_000 {
+                x ^= x << 13; x ^= x >> 7; x ^= x << 17
+                values.append(x)
+            }
+            let start = ProcessInfo.processInfo.systemUptime
+            let sorted = values.sorted()
+            if run > 1 { times.append((ProcessInfo.processInfo.systemUptime - start) * 1_000) }
+            XCTAssertEqual(sorted.count, values.count)
         }
         return ViewSwitchTimingTests.median(times)
     }
