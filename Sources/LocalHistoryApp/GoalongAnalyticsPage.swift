@@ -100,7 +100,8 @@ struct GoalongAnalyticsPage: View {
             }
             ScrollViewReader { scroller in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
+                    // R14a: lazy, so a click builds and measures what the window shows, not the whole period.
+                    LazyVStack(alignment: .leading, spacing: 24) {
                         Color.clear.frame(height: 0).id("activity-top")
                         if !previewActive {
                             GoalongRecordingStateNotice(model: model)

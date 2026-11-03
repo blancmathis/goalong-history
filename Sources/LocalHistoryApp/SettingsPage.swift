@@ -35,7 +35,7 @@ import AppKit
     }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: 24) {
                 // UI-9 (38, 42): a title, then its sentence close under it (DESIGN §7, §9).
                 VStack(alignment: .leading, spacing: 6) {
                     Text(pane.title).goalongPageTitle()
