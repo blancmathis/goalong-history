@@ -126,6 +126,90 @@ import XCTest
         }
     }
 
+    /// What a page reads from its environment, compared between the dashboard's hosting view and a kept page.
+    struct Snapshot: Equatable {
+        let scheme: ColorScheme, contrast: ColorSchemeContrast, reduceMotion: Bool, systemReduceMotion: Bool
+        let locale: String, timeZone: String, calendar: Calendar.Identifier, direction: LayoutDirection
+        let active: ControlActiveState, defaults: ObjectIdentifier, enabled: Bool, scale: CGFloat
+        init(_ env: EnvironmentValues) {
+            scheme = env.colorScheme; contrast = env.colorSchemeContrast; reduceMotion = env.goalongReduceMotion
+            systemReduceMotion = env.accessibilityReduceMotion; locale = env.locale.identifier
+            timeZone = env.timeZone.identifier; calendar = env.calendar.identifier; direction = env.layoutDirection
+            active = env.controlActiveState; defaults = ObjectIdentifier(env.goalongDefaults); enabled = env.isEnabled
+            scale = env.displayScale
+        }
+    }
+
+    final class Snapshots { var values: [String: Snapshot] = [:] }
+
+    struct EnvironmentProbe: View {
+        @Environment(\.self) private var environment
+        let name: String
+        let snapshots: Snapshots
+        var body: some View {
+            snapshots.values[name] = Snapshot(environment)
+            return Text(name)
+        }
+    }
+
+    struct EnvironmentRoot: View {
+        let selected: String
+        let snapshots: Snapshots
+        let defaults: UserDefaults
+        var body: some View {
+            VStack {
+                EnvironmentProbe(name: "root", snapshots: snapshots)
+                DashboardKeptPages(key: selected) { EnvironmentProbe(name: selected, snapshots: snapshots) }
+            }
+            // Values set above the pages, as the gallery and the app do: each one must reach the page.
+            .environment(\._colorSchemeContrast, .increased)
+            .environment(\.goalongReduceMotion, true)
+            .environment(\.goalongDefaults, defaults)
+            .environment(\.controlActiveState, .key)
+            .environment(\.locale, Locale(identifier: "fr_FR"))
+            .environment(\.timeZone, TimeZone(identifier: "Pacific/Auckland")!)
+            .environment(\.calendar, Calendar(identifier: .buddhist))
+        }
+    }
+
+    func testAKeptPageHasTheDashboardsEnvironmentAndFollowsAnAppearanceChangeEvenHidden() throws {
+        try GalleryRenderer.withPreparedApplication {
+            let snapshots = Snapshots(), defaults = UserDefaults(suiteName: "kept-pages-\(UUID().uuidString)")!
+            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                       styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: .aqua)
+            defer { window.contentView = nil; window.close() }
+            func root(_ selected: String) -> EnvironmentRoot { EnvironmentRoot(selected: selected, snapshots: snapshots, defaults: defaults) }
+            let host = DashboardWindowContent(rootView: root("a"))
+            window.contentView = host
+            spin(host)
+            let pages = try XCTUnwrap(Self.keptView(in: host))
+            XCTAssertTrue(pages.superview === host.pageLayer, "the page is not in the layer of kept pages")
+            let first = try XCTUnwrap(snapshots.values["root"])
+            XCTAssertEqual(first.contrast, .increased); XCTAssertEqual(first.calendar, .buddhist)
+            XCTAssertEqual(first.scheme, .light); XCTAssertEqual(first.active, .key)
+            XCTAssertEqual(snapshots.values["a"], first)
+            // The shown page follows a change of appearance.
+            window.appearance = NSAppearance(named: .darkAqua)
+            spin(host)
+            XCTAssertEqual(snapshots.values["root"]?.scheme, .dark)
+            XCTAssertEqual(snapshots.values["a"], snapshots.values["root"])
+            // A hidden page follows it too: on its return, in the very layout that shows it again.
+            host.setRootView(root("b"))
+            spin(host)
+            XCTAssertEqual(snapshots.values["b"], snapshots.values["root"])
+            window.appearance = NSAppearance(named: .aqua)
+            spin(host)
+            XCTAssertEqual(snapshots.values["a"]?.scheme, .dark, "the hidden page was updated")
+            host.setRootView(root("a"))
+            host.layoutSubtreeIfNeeded()
+            XCTAssertEqual(pages.shownKey, "a")
+            XCTAssertEqual(snapshots.values["root"]?.scheme, .light)
+            XCTAssertEqual(snapshots.values["a"], snapshots.values["root"], "the page came back with the old appearance")
+        }
+    }
+
     private static func keptView(in view: NSView) -> DashboardKeptPagesView? {
         if let kept = view as? DashboardKeptPagesView { return kept }
         for child in view.subviews { if let kept = keptView(in: child) { return kept } }

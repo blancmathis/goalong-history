@@ -193,7 +193,17 @@ struct GalleryImage {
         }
         window.minSize = NSSize(width: 100, height: 100)
         window.appearance = theme.appearance
-        let host = NSHostingView(rootView: try root(entry, ctx, size: size))
+        // R14a: the dashboard window renders as the app does, through its layer of kept pages (DashboardWindowContent);
+        // a bare hosting view would only reach their fallback, which the app never uses.
+        let content = try root(entry, ctx, size: size)
+        let host: NSView
+        if entry.dashboardWindow {
+            let dashboard = DashboardWindowContent(rootView: content, sizing: .standardBounds)
+            dashboard.pagesWithoutAnimation = true
+            host = dashboard
+        } else {
+            host = NSHostingView(rootView: content)
+        }
         window.contentView = host
         window.setContentSize(start)
         defer {
@@ -268,8 +278,10 @@ struct GalleryImage {
         guard let scroll = largestScrollView(in: host), let document = scroll.documentView else { return nil }
         let extra = host.bounds.height - scroll.frame.height
         // R8-4: a top or bottom bar (« Retour aux réglages ») is a content inset of the scroll view, not part of the
-        // document: without it the last card lost its bottom edge.
-        let height = document.frame.height + max(0, extra) + (extra > 0 ? 0 : scroll.contentInsets.top + scroll.contentInsets.bottom)
+        // document: without it the last card lost its bottom edge. R14a: in the dashboard window the page's scroll view
+        // starts below the pause banner (outside it: `extra`) and keeps its own bar as an inset: both count.
+        let insets = scroll.contentInsets.top + scroll.contentInsets.bottom
+        let height = document.frame.height + max(0, extra) + (extra > 0 && !(host is DashboardWindowContent) ? 0 : insets)
         return height > 1 ? ceil(height) : nil
     }
 

@@ -13,7 +13,7 @@
     /// view stays linked to it after it leaves the window, and every update of the dashboard re-evaluates it. So in the
     /// app window (`DashboardWindowContent`) the pages sit in a layer beside the dashboard's hosting view, over the place
     /// SwiftUI gives this view. Anywhere else (gallery renders) they sit inside this view.
-    struct DashboardKeptPages<Page: View>: NSViewRepresentable {
+    struct DashboardKeptPages<Page: View>: View {
         /// One kept page per key (section and device).
         let key: String
         /// False: the page is released once left (secondary pages, rarely opened). Bounds the memory kept.
@@ -21,6 +21,35 @@
         /// After a different page is put in the window (the former `onAppear` of each new page).
         var onShown: () -> Void = {}
         @ViewBuilder let page: () -> Page
+        // Each value a page takes from above, read here one by one: SwiftUI does not update a representable for an
+        // environment value its parent never reads (measured: the page kept the old appearance), and reading the whole
+        // environment would also update the page on every focus change.
+        @Environment(\.locale) private var locale
+        @Environment(\.timeZone) private var timeZone
+        @Environment(\.calendar) private var calendar
+        @Environment(\.layoutDirection) private var layoutDirection
+        @Environment(\.colorScheme) private var colorScheme
+        @Environment(\.colorSchemeContrast) private var contrast
+        @Environment(\.controlActiveState) private var controlActiveState
+        @Environment(\.goalongReduceMotion) private var reduceMotion
+        @Environment(\.goalongDefaults) private var defaults
+        @Environment(\.goalongRecordingModel) private var recording
+        @Environment(\.sourceAccessCheck) private var accessCheck
+
+        var body: some View {
+            DashboardKeptPagesRepresentable(key: key, keep: keep, onShown: onShown, page: page, environment: .init(
+                locale: locale, timeZone: timeZone, calendar: calendar, layoutDirection: layoutDirection,
+                colorScheme: colorScheme, contrast: contrast, controlActiveState: controlActiveState,
+                reduceMotion: reduceMotion, defaults: defaults, recording: recording, accessCheck: accessCheck))
+        }
+    }
+
+    private struct DashboardKeptPagesRepresentable<Page: View>: NSViewRepresentable {
+        let key: String
+        let keep: Bool
+        let onShown: () -> Void
+        let page: () -> Page
+        let environment: DashboardCarriedEnvironment
 
         func makeNSView(context: Context) -> DashboardKeptPagesSlot { DashboardKeptPagesSlot() }
 
@@ -28,8 +57,7 @@
             // Not run here: a hosting view created or updated inside the dashboard's update stays linked to it, and every
             // later update of the dashboard re-evaluated the hidden page (measured, DashboardKeptPagesTests). The pages
             // view runs it in its own layout, in the same frame.
-            slot.pages.request(key: key, keep: keep, page: AnyView(page()),
-                               environment: DashboardCarriedEnvironment(context.environment), onShown: onShown)
+            slot.pages.request(key: key, keep: keep, page: AnyView(page()), environment: environment, onShown: onShown)
         }
 
         static func dismantleNSView(_ slot: DashboardKeptPagesSlot, coordinator: ()) { slot.release() }
@@ -70,26 +98,25 @@
     }
     private struct DashboardToastsAbovePagesKey: EnvironmentKey { static let defaultValue = false }
 
-    /// What a kept page takes from the environment above it. Not the whole environment (`\.self`): it would override the
-    /// page's own `keptPageShown`. System values (appearance, contrast, Reduce Motion, control size) come from the page's
-    /// own window; styles are applied again by the caller.
+    /// What a kept page takes from the environment above it (DashboardKeptPagesTests compares each one with the
+    /// dashboard's). Not the whole environment (`\.self`): it also holds the dashboard hosting view's own plumbing
+    /// (focus bridge, accessibility focus requests, its window, undo manager), and carried over it hid the page from
+    /// accessibility (measured). Appearance-derived values are carried too, so that a value set above (the gallery's
+    /// contrast and key state) reaches the page as it reached it inside one hosting view; styles are applied again by
+    /// the caller.
     struct DashboardCarriedEnvironment {
-        let locale: Locale, timeZone: TimeZone, calendar: Calendar, colorScheme: ColorScheme
+        let locale: Locale, timeZone: TimeZone, calendar: Calendar, layoutDirection: LayoutDirection
+        let colorScheme: ColorScheme, contrast: ColorSchemeContrast, controlActiveState: ControlActiveState
         let reduceMotion: Bool, defaults: UserDefaults, recording: DashboardViewModel?
         let accessCheck: SourceAccessService.Check
-
-        init(_ environment: EnvironmentValues) {
-            locale = environment.locale; timeZone = environment.timeZone; calendar = environment.calendar
-            colorScheme = environment.colorScheme; reduceMotion = environment.goalongReduceMotion
-            defaults = environment.goalongDefaults; recording = environment.goalongRecordingModel
-            accessCheck = environment.sourceAccessCheck
-        }
 
         func apply(to page: AnyView, shown: Bool) -> AnyView {
             AnyView(page
                 .defaultAppStorage(defaults).environment(\.goalongDefaults, defaults)
                 .environment(\.locale, locale).environment(\.timeZone, timeZone).environment(\.calendar, calendar)
-                .environment(\.colorScheme, colorScheme).environment(\.goalongReduceMotion, reduceMotion)
+                .environment(\.layoutDirection, layoutDirection)
+                .environment(\.colorScheme, colorScheme).environment(\._colorSchemeContrast, contrast)
+                .environment(\.controlActiveState, controlActiveState).environment(\.goalongReduceMotion, reduceMotion)
                 .environment(\.goalongRecordingModel, recording).environment(\.sourceAccessCheck, accessCheck)
                 .environment(\.keptPageShown, shown))
         }
@@ -99,6 +126,9 @@
     final class DashboardWindowContent: NSView {
         let root: NSHostingView<AnyView>
         let pageLayer = DashboardPassThroughView()
+        /// Gallery renders: the pages run with animations off, as the dashboard does under the renderer's `.transaction`
+        /// (a transaction does not cross into another hosting view). The app leaves it false.
+        var pagesWithoutAnimation = false
         private let toasts: DashboardToastLayer
 
         init<Root: View>(rootView: Root, sizing: NSHostingSizingOptions = DashboardWindowController.hostingSizing) {
@@ -147,7 +177,7 @@
     /// hosting view once stays linked to it after it moves (measured, DashboardKeptPagesTests).
     final class DashboardKeptPagesSlot: NSView {
         let pages = DashboardKeptPagesView()
-        private weak var content: DashboardWindowContent?
+        private(set) weak var content: DashboardWindowContent?
         private var inside = false
         private var watched: [NSObjectProtocol] = []
 
@@ -280,9 +310,9 @@
             if let kept = hosts[key] {
                 host = kept
                 host.frozen = false
-                host.rootView = environment.apply(to: page, shown: true)
+                host.rootView = root(page, environment, shown: true)
             } else {
-                host = DashboardKeptHost(rootView: environment.apply(to: page, shown: true))
+                host = DashboardKeptHost(rootView: root(page, environment, shown: true))
                 // The page fills the space SwiftUI gives the slot; it never sizes the window.
                 host.sizingOptions = []
                 host.autoresizingMask = [.width, .height]
@@ -291,7 +321,7 @@
             guard shownKey != key else { return false }
             if let oldKey = shownKey, let old = hosts[oldKey], let (oldPage, oldEnvironment) = pages[oldKey] {
                 // One last update tells the page it is hidden (timers off), then it is frozen out of the window.
-                old.rootView = oldEnvironment.apply(to: oldPage, shown: false)
+                old.rootView = root(oldPage, oldEnvironment, shown: false)
                 old.layoutSubtreeIfNeeded()
                 old.frozen = true
                 old.removeFromSuperview()
@@ -300,6 +330,12 @@
             shownKey = key
             mountShown()
             return true
+        }
+
+        private func root(_ page: AnyView, _ environment: DashboardCarriedEnvironment, shown: Bool) -> AnyView {
+            let view = environment.apply(to: page, shown: shown)
+            guard slot?.content?.pagesWithoutAnimation == true else { return view }
+            return AnyView(view.transaction { $0.disablesAnimations = true; $0.animation = nil })
         }
 
         /// Puts the shown page in this view, once the slot has placed it.
