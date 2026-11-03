@@ -10,7 +10,9 @@ import XCTest
 /// for each main view, on a busy synthetic member (35 days), in a window never ordered on screen.
 /// Opt-in: `GOALONG_SWITCH_TIMING=<output dir>` [`GOALONG_SWITCH_TIMING_PASSES=11`]. Writes `switch-timing.json`.
 final class ViewSwitchTimingTests: XCTestCase {
-    struct Sample: Codable { let view: String; let pass: Int; let firstMs: Double; let completeMs: Double; let maxStallMs: Double }
+    struct Sample: Codable { let view: String; let pass: Int; let firstMs: Double; let completeMs: Double; let maxStallMs: Double
+        /// R13c: the first frame's layout alone (SwiftUI's own work), without the CPU bitmap draw of `cacheDisplay`.
+        var firstLayoutMs: Double? = nil }
 
     @MainActor func testMeasureViewSwitches() throws {
         let environment = ProcessInfo.processInfo.environment
@@ -46,6 +48,7 @@ final class ViewSwitchTimingTests: XCTestCase {
                 .environment(\.timeZone, GalleryClock.timeZone)
                 .environment(\.calendar, GalleryClock.calendar)
             let host = NSHostingView(rootView: root)
+            host.sizingOptions = DashboardWindowController.hostingSizing
             window.contentView = host
             window.setContentSize(NSSize(width: 1180, height: 790))
             defer { window.contentView = nil; window.close() }
@@ -87,6 +90,8 @@ final class ViewSwitchTimingTests: XCTestCase {
     @MainActor private func measure(_ view: String, pass: Int, press: NSObject, host: NSView, model: DashboardViewModel) -> Sample {
         let started = ProcessInfo.processInfo.systemUptime
         XCTAssertTrue(ViewSwitchAX.flag(press, "accessibilityPerformPress") == true, "press \(view)")
+        host.layoutSubtreeIfNeeded()
+        let layout = ProcessInfo.processInfo.systemUptime - started
         draw(host)
         let first = ProcessInfo.processInfo.systemUptime - started
         var stall = 0.0
@@ -96,7 +101,8 @@ final class ViewSwitchTimingTests: XCTestCase {
         let frame = ProcessInfo.processInfo.systemUptime
         draw(host)
         let total = (idleAt ?? frame) - started + (ProcessInfo.processInfo.systemUptime - frame)
-        return Sample(view: view, pass: pass, firstMs: first * 1_000, completeMs: total * 1_000, maxStallMs: max(stall, first) * 1_000)
+        return Sample(view: view, pass: pass, firstMs: first * 1_000, completeMs: total * 1_000, maxStallMs: max(stall, first) * 1_000,
+                      firstLayoutMs: layout * 1_000)
     }
 
     /// Runs the main loop in 2 ms slices until every read is over and no loading view is left for five slices.

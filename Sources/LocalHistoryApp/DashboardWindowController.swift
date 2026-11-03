@@ -154,6 +154,10 @@
         /// Real size of the dashboard window, and its smallest size.
         static let defaultContentSize = NSSize(width: 1240, height: 790)
         static let minimumContentSize = NSSize(width: 900, height: 620)
+        /// R13c: no window size from SwiftUI. With the default (min, ideal and max size), the hosting view measures the
+        /// whole page again at every animation frame (about 40 ms on Activité) and a page's data wait behind those frames.
+        /// `minimumContentSize` and the root's `.frame(minWidth:minHeight:)` keep the same smallest window.
+        static let hostingSizing: NSHostingSizingOptions = []
 
         /// The look of the dashboard window (title, title bar, background, sizes). Shared with the
         /// test gallery, which renders the same window without ever showing it.
@@ -172,6 +176,7 @@
         override func loadWindow() {
             let rootView = LocalHistoryDashboardView(model: viewModel)
             let hostingController = NSHostingController(rootView: rootView.environment(\.locale, GoalongUIFormat.locale))
+            hostingController.sizingOptions = Self.hostingSizing
             let window = NSWindow(contentViewController: hostingController)
             Self.configure(window)
             window.level = .normal

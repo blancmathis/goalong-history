@@ -515,7 +515,11 @@ import AppleScreenTime
                 secondaryReturn = nil
             }
             if section == .settings { settingsPane = .home }
-            if section != previousSection { GoalongSwitchTiming.begin(section.rawValue) }
+            if section != previousSection {
+                // R13c: a measure left open never closes on another page's read.
+                GoalongSwitchTiming.cancel(previousSection.rawValue)
+                GoalongSwitchTiming.begin(section.rawValue)
+            }
             selectedSection = section
             if dashboardIsVisible, section == .agentActivity {
                 agentActivityRuntime.scanNow(

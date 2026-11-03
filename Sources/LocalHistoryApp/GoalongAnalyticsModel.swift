@@ -42,6 +42,15 @@ struct GoalongAnalyticsCard: Identifiable, Sendable {
     let status: String
     let caveat: String
 }
+/// R13c: what a payload was read from. While none of it changed, the payload can go on screen again at once.
+struct GoalongAnalyticsSources: Sendable, Equatable {
+    /// Each day of the period and of its comparison, with its source revision taken before the read.
+    var days: [Date: String]
+    /// The days whose saved daily recap is shown, and the stamp of the recaps and saved analyses.
+    let cardDays: [Date]
+    let cards: String
+}
+
 struct GoalongAnalyticsPayload: Sendable {
     let current: GoalongLocalAnalytics.Period
     let previous: GoalongLocalAnalytics.Period
@@ -51,18 +60,22 @@ struct GoalongAnalyticsPayload: Sendable {
     let isPreview: Bool
     /// The selected period is shown first; its comparison (an empty `previous`) follows.
     let comparisonPending: Bool
+    /// Nil for the preview and the gallery's fixed payloads: never shown again from memory.
+    let sources: GoalongAnalyticsSources?
 
     init(current: GoalongLocalAnalytics.Period, previous: GoalongLocalAnalytics.Period,
          cards: [GoalongAnalyticsCard], archiveNotice: String?, updatedAt: Date, isPreview: Bool = false,
-         comparisonPending: Bool = false) {
+         comparisonPending: Bool = false, sources: GoalongAnalyticsSources? = nil) {
         self.current = current; self.previous = previous; self.cards = cards
         self.archiveNotice = archiveNotice; self.updatedAt = updatedAt; self.isPreview = isPreview
-        self.comparisonPending = comparisonPending
+        self.comparisonPending = comparisonPending; self.sources = sources
     }
 
-    func with(previous: GoalongLocalAnalytics.Period) -> Self {
-        Self(current: current, previous: previous, cards: cards, archiveNotice: archiveNotice,
-             updatedAt: updatedAt, isPreview: isPreview)
+    func with(previous: GoalongLocalAnalytics.Period, revisions: [Date: String]) -> Self {
+        var sources = sources
+        sources?.days.merge(revisions) { _, new in new }
+        return Self(current: current, previous: previous, cards: cards, archiveNotice: archiveNotice,
+                    updatedAt: updatedAt, isPreview: isPreview, sources: sources)
     }
 }
 
@@ -76,6 +89,10 @@ actor GoalongAnalyticsReader {
     private var cache: [Date: (String, GoalongLocalAnalytics.Day)] = [:]
     private var lastUse: [Date: Int] = [:]
     private var uses = 0
+    /// Cached days with the user's verdicts applied, for the same source revision (R13c): applying them to 56 days
+    /// took ~55 ms per read. Same bound as `cache`; emptied when the verdicts change.
+    private var applied: [Date: (String, GoalongLocalAnalytics.Day)] = [:]
+    private var appliedVerdicts = GoalongWorkVerdicts()
     /// Today's journal is read once, then only the lines appended since. The checkpoint
     /// holds derived segments and the last 15 minutes of rows (about 2 MB on a busy day).
     private var today: (date: Date, revision: String, state: GoalongLocalAnalytics.ResumableDayState)?
@@ -84,7 +101,7 @@ actor GoalongAnalyticsReader {
     /// The data folder this reader was given; the page lists the imported days here, never in the real folder (R272b-2).
     let root: URL
     /// The real clock in the app; a fixed one in tests and the gallery.
-    private let now: @Sendable () -> Date
+    nonisolated let now: @Sendable () -> Date
     init(root: URL, now: @escaping @Sendable () -> Date = { GoalongToday.now }) { self.root = root; self.now = now }
 
     /// Focus reuses the same validated day cache and bounded current-day fold, without
@@ -92,7 +109,7 @@ actor GoalongAnalyticsReader {
     func focusDay(_ day: Date, verdicts: GoalongWorkVerdicts) throws -> GoalongLocalAnalytics.Day {
         try Task.checkCancellation()
         let value = try days(ending: Calendar.current.startOfDay(for: day), count: 1, now: now(), calendar: .current)[0]
-        return value.applying(verdicts)
+        return value.day.applying(verdicts)
     }
 
     func read(ending day: Date, count: Int, force: Bool, preview: Bool,
@@ -104,22 +121,41 @@ actor GoalongAnalyticsReader {
         let calendar = Calendar.current, now = self.now()
         let count = [1, 7, 28].contains(count) ? count : 7
         let last = calendar.startOfDay(for: day)
-        if force { cache.removeAll(); lastUse.removeAll(); today = nil }
+        if force { cache.removeAll(); lastUse.removeAll(); applied.removeAll(); today = nil }
         let current = try days(ending: last, count: count, now: now, calendar: calendar)
         let previousLast = calendar.date(byAdding: .day, value: -count, to: last) ?? last
         // A comparison that needs a journal read waits for `comparison(for:)`: the selected
         // period goes on screen first.
         let previous = cachedDays(ending: previousLast, count: count, now: now, calendar: calendar)
-        let saved = try readCards(start: current.first?.date ?? last, end: current.last?.end ?? now)
-        let recaps = try readDailyRecaps(days: current, calendar: calendar)
+        let cardDays = current.prefix(28).map(\.date)
+        let cardsStamp = Self.cardsStamp(root: root, days: cardDays)
+        let saved = try readCards(start: current.first?.day.date ?? last, end: current.last?.day.end ?? now)
+        let recaps = try readDailyRecaps(days: current.map(\.day), calendar: calendar)
         let cards = (saved.0 + recaps.0).sorted { a, b in a.day == b.day ? a.id < b.id : a.day > b.day }
         let notices = [saved.1, recaps.1].compactMap { $0 }
+        let revisions = Dictionary((current + (previous ?? [])).map { ($0.date, $0.revision) }) { _, new in new }
         // The cache keeps raw days; the verdicts of the user's work definition are applied on
         // every read, so a new verdict or correction never requires reading the journals again.
-        return GoalongAnalyticsPayload(current: GoalongLocalAnalytics.Period(days: current).applying(verdicts),
-            previous: GoalongLocalAnalytics.Period(days: previous ?? []).applying(verdicts),
+        return GoalongAnalyticsPayload(current: applying(verdicts, to: current, now: now, calendar: calendar),
+            previous: applying(verdicts, to: previous ?? [], now: now, calendar: calendar),
             cards: cards, archiveNotice: notices.isEmpty ? nil : notices.joined(separator: " "), updatedAt: now,
-            comparisonPending: previous == nil)
+            comparisonPending: previous == nil,
+            sources: GoalongAnalyticsSources(days: revisions, cardDays: cardDays, cards: cardsStamp))
+    }
+
+    /// A day read before is applied the verdicts once per source revision; today always again.
+    private func applying(_ verdicts: GoalongWorkVerdicts, to days: [ReadDay], now: Date,
+                          calendar: Calendar) -> GoalongLocalAnalytics.Period {
+        if verdicts != appliedVerdicts { applied.removeAll(); appliedVerdicts = verdicts }
+        return GoalongLocalAnalytics.Period(days: days.map { item in
+            // The value is the cached one only when the cache holds it under the revision taken before the read.
+            let revision = item.cacheRevision
+            let reusable = revision != nil && cache[item.date]?.0 == revision
+            if reusable, let held = applied[item.date], held.0 == revision { return held.1 }
+            let value = item.day.applying(verdicts)
+            if reusable, let revision { applied[item.date] = (revision, value) }
+            return value
+        })
     }
 
     /// Reads the previous period of the same length, after the selected one is on screen.
@@ -129,15 +165,23 @@ actor GoalongAnalyticsReader {
               let previousLast = calendar.date(byAdding: .day, value: -1, to: first.date) else { return payload }
         let previous = try days(ending: previousLast, count: payload.current.days.count,
             now: payload.updatedAt, calendar: calendar)
-        return payload.with(previous: GoalongLocalAnalytics.Period(days: previous).applying(verdicts))
+        return payload.with(previous: applying(verdicts, to: previous, now: payload.updatedAt, calendar: calendar),
+                            revisions: Dictionary(previous.map { ($0.date, $0.revision) }) { _, new in new })
     }
 
-    private func days(ending last: Date, count: Int, now: Date, calendar: Calendar) throws -> [GoalongLocalAnalytics.Day] {
+    /// A day as read, with the source revision taken before reading it.
+    private struct ReadDay {
+        let date: Date; let revision: String; let day: GoalongLocalAnalytics.Day
+        /// The reader cache's revision when `day` is the cached value, else nil (today, an incomplete day).
+        let cacheRevision: String?
+    }
+
+    private func days(ending last: Date, count: Int, now: Date, calendar: Calendar) throws -> [ReadDay] {
         let pause = try GoalongGlobalPause.admit(in: root)
         let barrier = DerivedHistoryWriteBarrier.shared
         guard let permit = barrier.beginJob() else { throw CancellationError() }
         defer { barrier.endJob(permit) }
-        var days: [GoalongLocalAnalytics.Day] = []
+        var days: [ReadDay] = []
         for offset in (0..<count).reversed() {
             try Task.checkCancellation()
             guard let date = calendar.date(byAdding: .day, value: -offset, to: last) else { continue }
@@ -157,7 +201,13 @@ actor GoalongAnalyticsReader {
                 try Task.checkCancellation()
                 if value.state != .incomplete { cache[date] = (sourceRevision(date, calendar: calendar), value) }
             }
-            days.append(value)
+            // The read itself may write the day's summary and checkpoint: those parts are taken after it. The journal
+            // part stays the one taken before, so rows written during the read always count as a change.
+            let after = sourceRevision(date, calendar: calendar)
+            let stamp = (revision.components(separatedBy: "|summary|").first ?? revision) + "|summary|"
+                + (after.components(separatedBy: "|summary|").dropFirst().joined(separator: "|summary|"))
+            let fromCache = !calendar.isDate(date, inSameDayAs: now) && value.state != .incomplete
+            days.append(ReadDay(date: date, revision: stamp, day: value, cacheRevision: fromCache ? cache[date]?.0 : nil))
             uses += 1
             if cache[date] != nil { lastUse[date] = uses }
         }
@@ -165,7 +215,7 @@ actor GoalongAnalyticsReader {
         guard barrier.isCurrent(permit) else { throw CancellationError() }
         if cache.count > Self.maximumCachedDays {
             let evicted = cache.keys.sorted { (lastUse[$0] ?? 0) < (lastUse[$1] ?? 0) }.prefix(cache.count - Self.maximumCachedDays)
-            for date in evicted { cache[date] = nil; lastUse[date] = nil }
+            for date in evicted { cache[date] = nil; lastUse[date] = nil; applied[date] = nil }
         }
         return days
     }
@@ -194,7 +244,7 @@ actor GoalongAnalyticsReader {
         return loaded.day
     }
 
-    private static func canResumeInMemory(from previous: String, to current: String) -> Bool {
+    static func canResumeInMemory(from previous: String, to current: String) -> Bool {
         if previous == current { return true }
         let old = previous.split(separator: "|"), new = current.split(separator: "|")
         // sourceRevision: device, inode, size, mtime, ctime, timezone.
@@ -212,13 +262,13 @@ actor GoalongAnalyticsReader {
     }
 
     /// The period's days when none needs a journal read, nil otherwise.
-    private func cachedDays(ending last: Date, count: Int, now: Date, calendar: Calendar) -> [GoalongLocalAnalytics.Day]? {
-        var days: [GoalongLocalAnalytics.Day] = []
+    private func cachedDays(ending last: Date, count: Int, now: Date, calendar: Calendar) -> [ReadDay]? {
+        var days: [ReadDay] = []
         for offset in (0..<count).reversed() {
             guard let date = calendar.date(byAdding: .day, value: -offset, to: last),
                   !calendar.isDate(date, inSameDayAs: now), let cached = cache[date],
                   cached.0 == sourceRevision(date, calendar: calendar) else { return nil }
-            days.append(cached.1)
+            days.append(ReadDay(date: date, revision: cached.0, day: cached.1, cacheRevision: cached.0))
             uses += 1
             lastUse[date] = uses
         }
@@ -254,6 +304,37 @@ actor GoalongAnalyticsReader {
 
     private func sourceRevision(_ day: Date, calendar: Calendar) -> String {
         GoalongActivityDayReader.sourceRevision(root: root, day: day, calendar: calendar)
+    }
+
+    /// Saved analyses (any file added, removed or replaced changes the folder) and each shown day's recap.
+    static func cardsStamp(root: URL, days: [Date]) -> String {
+        let recaps = root.appendingPathComponent("chatgpt/recaps", isDirectory: true)
+        return ([root.appendingPathComponent("chatgpt/profile-analyses", isDirectory: true), recaps]
+            + days.map { ChatGPTRecapPersistence.jsonURL(for: $0, in: recaps) }).map { url -> String in
+            var info = stat()
+            guard lstat(url.path, &info) == 0 else { return "-" }
+            return "\(info.st_ino)|\(info.st_size)|\(info.st_mtimespec.tv_sec).\(info.st_mtimespec.tv_nsec)|\(info.st_ctimespec.tv_sec).\(info.st_ctimespec.tv_nsec)"
+        }.joined(separator: ";")
+    }
+
+    enum SourceMatch { case changed, grown, same }
+
+    /// `.same` while every source of `sources` is unchanged: a new read would give the same payload. `.grown` when
+    /// only today's journal grew (rows appended since the read, shown by the read that follows). A few hundred
+    /// `stat` calls for 28 days and their comparison.
+    nonisolated static func match(_ sources: GoalongAnalyticsSources, root: URL, now: Date,
+                                  calendar: Calendar) -> SourceMatch {
+        var result = SourceMatch.same
+        for (date, stored) in sources.days {
+            let current = GoalongActivityDayReader.sourceRevision(root: root, day: date, calendar: calendar)
+            guard current != stored else { continue }
+            guard calendar.isDate(date, inSameDayAs: now),
+                  let old = stored.components(separatedBy: "|summary|").first,
+                  let new = current.components(separatedBy: "|summary|").first,
+                  canResumeInMemory(from: old, to: new) else { return .changed }
+            result = .grown
+        }
+        return cardsStamp(root: root, days: sources.cardDays) == sources.cards ? result : .changed
     }
 
     static func savedAnalysesNotice(truncated: Bool, rejected: Int) -> String? {
@@ -323,14 +404,119 @@ actor GoalongAnalyticsReader {
     private(set) static var loadsInFlight = 0
     /// Every read started, for the view-switch budget test (R13a).
     private(set) static var loadsStarted = 0
-    init() { reader = .shared }
+
+    /// R13c: the last complete read of each period (key: last day and count), shown again at once when the user
+    /// comes back to it, then read again. An entry is shown only while its verdicts, its day, the history-clear
+    /// generation and every source it was read from are the same. Any change of data or classification empties it.
+    private struct Snapshot {
+        let payload: GoalongAnalyticsPayload
+        let verdicts: GoalongWorkVerdicts
+        let admission: DerivedHistoryWriteBarrier.Admission
+        var use: Int
+    }
+    private var snapshots: [String: Snapshot] = [:]
+    private var snapshotUses = 0
+    private var recentMatch: (key: String, updatedAt: Date, match: GoalongAnalyticsReader.SourceMatch, at: TimeInterval)?
+    /// Bound: about 72 days of data in total (for example 28 + 7 + 1 for two dates).
+    static let snapshotDayLimit = 72
+    private var invalidation: AnyCancellable?
+
+    init() { reader = .shared; observeChanges() }
 
     /// Called by the existing 10-minute analysis timer: no wake-up of its own.
     nonisolated static func advanceToday() {
         Task.detached(priority: .utility) { await GoalongAnalyticsReader.shared.advanceToday() }
     }
-    init(root: URL) { reader = GoalongAnalyticsReader(root: root) }
-    init(reader: GoalongAnalyticsReader) { self.reader = reader }
+    init(root: URL) { reader = GoalongAnalyticsReader(root: root); observeChanges() }
+    init(reader: GoalongAnalyticsReader) { self.reader = reader; observeChanges() }
+
+    private func observeChanges() {
+        let names: [Notification.Name] = [.goalongWorkVerdictsDidChange, .goalongRecordingChoicesDidChange,
+            .goalongGlobalPauseDidChange, .goalongRetentionPolicyDidChange, .goalongProfileAnalysisDidSave,
+            .goalongExclusionsDidChange, .goalongAnalysisSelectionDidChange, .NSCalendarDayChanged,
+            .NSSystemTimeZoneDidChange]
+        invalidation = Publishers.MergeMany(names.map { NotificationCenter.default.publisher(for: $0) })
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.forgetSnapshots() } }
+    }
+
+    /// Empties every stored period. Called on any change of data or classification, and before a forced read.
+    func forgetSnapshots() { snapshots.removeAll(); recentMatch = nil }
+
+    private static func snapshotKey(day: Date, count: Int, calendar: Calendar = .current) -> String {
+        "\(calendar.startOfDay(for: day).timeIntervalSinceReferenceDate)|\(count)"
+    }
+
+    /// Puts the last complete read of this period on screen at once, if it still describes the sources.
+    /// Returns false (and drops the entry) otherwise; the normal read then runs.
+    @discardableResult
+    func showSnapshot(day: Date, count: Int, verdicts: GoalongWorkVerdicts) -> Bool {
+        snapshotMatch(day: day, count: count, verdicts: verdicts) != .changed
+    }
+
+    private func snapshotMatch(day: Date, count: Int, verdicts: GoalongWorkVerdicts) -> GoalongAnalyticsReader.SourceMatch {
+        let key = Self.snapshotKey(day: day, count: count)
+        guard let stored = snapshots[key] else { return .changed }
+        let now = reader.now()
+        guard stored.verdicts == verdicts,
+              Calendar.current.isDate(stored.payload.updatedAt, inSameDayAs: now),
+              DerivedHistoryWriteBarrier.shared.isCurrent(stored.admission),
+              let sources = stored.payload.sources
+        else { snapshots[key] = nil; return .changed }
+        // The click shows the snapshot, then the page's read asks again a few ms later: one file check for both.
+        let clock = ProcessInfo.processInfo.systemUptime
+        var match: GoalongAnalyticsReader.SourceMatch
+        if let recent = recentMatch, recent.key == key, recent.updatedAt == stored.payload.updatedAt,
+           clock - recent.at < 0.5 {
+            match = recent.match
+        } else {
+            match = GoalongAnalyticsReader.match(sources, root: reader.root, now: now, calendar: .current)
+            recentMatch = (key, stored.payload.updatedAt, match, clock)
+        }
+        guard match != .changed else { snapshots[key] = nil; return .changed }
+        // Today's figures also follow the clock (the day so far): past one minute, shown and then read again.
+        let start = Calendar.current.date(byAdding: .day, value: 1 - count, to: Calendar.current.startOfDay(for: day)) ?? day
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: day)) ?? day
+        if match == .same, start <= now, now < end, now.throttleElapsed(since: stored.payload.updatedAt) > 60 { match = .grown }
+        snapshotUses += 1; snapshots[key]?.use = snapshotUses
+        let shown = payload.map { value in
+            value.updatedAt == stored.payload.updatedAt && value.current.days.count == count && !value.isPreview
+                && value.current.days.last.map { Calendar.current.isDate($0.date, inSameDayAs: day) } == true
+        } ?? false
+        if !shown {
+            payload = stored.payload
+        }
+        error = nil; paused = false
+        return match
+    }
+
+    private func storeSnapshot(_ value: GoalongAnalyticsPayload, day: Date, count: Int, verdicts: GoalongWorkVerdicts,
+                               admission: DerivedHistoryWriteBarrier.Admission?) {
+        guard let admission, value.sources != nil, !value.isPreview, !value.comparisonPending,
+              DerivedHistoryWriteBarrier.shared.isCurrent(admission) else { return }
+        snapshotUses += 1
+        snapshots[Self.snapshotKey(day: day, count: count)] =
+            Snapshot(payload: value, verdicts: verdicts, admission: admission, use: snapshotUses)
+        while snapshots.values.reduce(0, { $0 + $1.payload.current.days.count }) > Self.snapshotDayLimit,
+              let oldest = snapshots.min(by: { $0.value.use < $1.value.use })?.key {
+            snapshots[oldest] = nil
+        }
+    }
+
+    /// After the first display: reads the other periods of the same day in the background, so that the first
+    /// switch to them is shown from memory too. Not counted as a page read; stops with the calling task.
+    func preloadOtherPeriods(day: Date, count: Int, verdicts: GoalongWorkVerdicts, counts: [Int] = [1, 7, 28]) async {
+        for other in counts where other != count {
+            guard !Task.isCancelled else { return }
+            guard snapshots[Self.snapshotKey(day: day, count: other)] == nil else { continue }
+            let admission = DerivedHistoryWriteBarrier.shared.admission()
+            do {
+                var value = try await reader.read(ending: day, count: other, force: false, preview: false, verdicts: verdicts)
+                if value.comparisonPending { value = try await reader.comparison(for: value, verdicts: verdicts) }
+                try Task.checkCancellation()
+                storeSnapshot(value, day: day, count: other, verdicts: verdicts, admission: admission)
+            } catch { return }
+        }
+    }
 
     /// Oldest day imported from Temps d’écran or Santé (R-265), listed in the reader's own folder (R272b-2):
     /// the gallery and the tests never list the real data folder.
@@ -368,12 +554,21 @@ actor GoalongAnalyticsReader {
         let id = UUID(); operation = id; busy = true; error = nil; paused = false
         Self.loadsInFlight += 1; Self.loadsStarted += 1
         defer { Self.loadsInFlight -= 1 }
-        let sameSelection = payload.map {
-            $0.isPreview == preview && $0.current.days.count == count
-                && $0.current.days.last.map { Calendar.current.isDate($0.date, inSameDayAs: day) } == true
-        } ?? false
+        if force { forgetSnapshots() }
+        let admission = DerivedHistoryWriteBarrier.shared.admission()
+        func sameSelection() -> Bool {
+            payload.map {
+                $0.isPreview == preview && $0.current.days.count == count
+                    && $0.current.days.last.map { Calendar.current.isDate($0.date, inSameDayAs: day) } == true
+            } ?? false
+        }
         // Keep a valid same-period snapshot during refresh, never across dates or preview boundaries.
-        if !sameSelection { payload = nil }
+        if !force, !preview, snapshotMatch(day: day, count: count, verdicts: verdicts) == .same {
+            // Every source is as read: a new read gives the same payload. Nothing to read again.
+            busy = false
+            return
+        }
+        if !sameSelection() { payload = nil }
         do {
             let value = try await reader.read(ending: day, count: count, force: force, preview: preview, verdicts: verdicts)
             try Task.checkCancellation()
@@ -385,6 +580,7 @@ actor GoalongAnalyticsReader {
                 guard operation == id else { return }
                 payload = compared
             }
+            if !preview, let payload { storeSnapshot(payload, day: day, count: count, verdicts: verdicts, admission: admission) }
             busy = false
         } catch is CancellationError {
             if operation == id { busy = false }

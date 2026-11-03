@@ -15,6 +15,11 @@ enum GoalongSwitchTiming {
         lock.withLock { started[view] = ProcessInfo.processInfo.systemUptime }
     }
 
+    /// The user left `view` before its measure closed: nothing is logged for it.
+    static func cancel(_ view: String) {
+        lock.withLock { started[view] = nil }
+    }
+
     /// `shown` when the page appears, `data` when its data are in. `last` closes the measure.
     static func end(_ view: String, stage: String, last: Bool) {
         let start: TimeInterval? = lock.withLock {

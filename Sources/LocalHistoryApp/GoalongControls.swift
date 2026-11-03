@@ -597,13 +597,17 @@
         let options: [Value]
         let title: (Value) -> String
         var fills = false
+        /// False only where the value drives a whole page read (Activité's period): the content changes without
+        /// animation and only the pill slides. Elsewhere the content keeps its animated change (R13c).
+        var animatesContent = true
 
         init(_ label: String, selection: Binding<Value>, options: [Value], fills: Bool = false,
-             title: @escaping (Value) -> String) {
+             animatesContent: Bool = true, title: @escaping (Value) -> String) {
             self.label = label
             _selection = selection
             self.options = options
             self.fills = fills
+            self.animatesContent = animatesContent
             self.title = title
         }
 
@@ -641,11 +645,16 @@
             .accessibilityLabel(label)
         }
 
-        /// R13a: the new value goes out without an animated transaction. Any animation in that transaction (even the
-        /// pill's own) held back every `.task(id:)` of the page it drives: Activité read its period ~300 ms late.
-        /// The pill slides on the next turn of the main loop, once those reads have started.
+        /// With `animatesContent`, the value and everything it changes move with the settle animation. Without it
+        /// (R13a), the new value goes out without an animated transaction, so a whole page does not animate its new
+        /// data, and the pill slides on the next turn of the main loop. R13c: the ~300 ms read delay seen in R13a came
+        /// from the window's SwiftUI sizing (`DashboardWindowController.hostingSizing`), not from this transaction.
         private func choose(_ option: Value) {
             guard option != selection else { return }
+            guard !animatesContent else {
+                withAnimation(reduceMotion ? nil : LHTheme.settle) { selection = option }
+                return
+            }
             if !reduceMotion { pillHold = selection }
             selection = option
             guard !reduceMotion else { return }

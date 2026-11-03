@@ -77,6 +77,7 @@ final class ViewSwitchBudgetTests: XCTestCase {
                 .environment(\.locale, GalleryClock.locale)
                 .environment(\.timeZone, GalleryClock.timeZone)
                 .environment(\.calendar, GalleryClock.calendar))
+            host.sizingOptions = DashboardWindowController.hostingSizing
             window.contentView = host
             window.setContentSize(NSSize(width: 1180, height: 790))
             defer { window.contentView = nil; window.close() }
@@ -85,7 +86,17 @@ final class ViewSwitchBudgetTests: XCTestCase {
                   GoalongAnalyticsModel.loadsStarted == 0 || GoalongAnalyticsModel.loadsInFlight > 0 {
                 spin(host)
             }
-            for _ in 0..<20 { spin(host) }
+            // R13c: the budget follows the runner's speed. One quiet main-loop turn (2 ms wait, layout, display)
+            // is timed first; the read must start within 200 ms, or 12 such turns on a slower runner, never above
+            // 280 ms (the old control held the read back ~300 ms on a fast Mac, longer on a slow one).
+            var turns: [Double] = []
+            for _ in 0..<20 {
+                let turn = ProcessInfo.processInfo.systemUptime
+                spin(host)
+                turns.append(ProcessInfo.processInfo.systemUptime - turn)
+            }
+            let quietTurn = turns.sorted()[turns.count / 2]
+            let budget = min(0.28, max(0.2, 12 * quietTurn))
             let button = try XCTUnwrap(ViewSwitchAX.first(in: host) {
                 $0.replacingOccurrences(of: "\u{00A0}", with: " ") == "28 jours" })
             let before = GoalongAnalyticsModel.loadsStarted
@@ -94,9 +105,16 @@ final class ViewSwitchBudgetTests: XCTestCase {
             while GoalongAnalyticsModel.loadsStarted == before, ProcessInfo.processInfo.systemUptime - pressed < 2 { spin(host) }
             let delay = ProcessInfo.processInfo.systemUptime - pressed
             XCTAssertGreaterThan(GoalongAnalyticsModel.loadsStarted, before, "the 28-day read never started")
-            XCTAssertLessThan(delay, 0.2, "the 28-day read started \(Int(delay * 1_000)) ms after the click")
-            FileHandle.standardError.write(Data("[switch-budget] 28-day read started \(Int(delay * 1_000)) ms after the click\n".utf8))
+            XCTAssertLessThan(delay, budget, "the 28-day read started \(Int(delay * 1_000)) ms after the click")
+            FileHandle.standardError.write(Data(("[switch-budget] 28-day read started \(Int(delay * 1_000)) ms after the click"
+                + " (budget \(Int(budget * 1_000)) ms, quiet turn \(Int(quietTurn * 1_000)) ms)\n").utf8))
         }
+    }
+
+    /// R13c: with SwiftUI's default sizing (min, ideal and max size), the dashboard's hosting view measured the whole
+    /// page at every animation frame (~40 ms on Activité): the period read then started 140-380 ms after the click.
+    func testDashboardHostingViewDoesNotSizeTheWindowFromSwiftUI() {
+        XCTAssertEqual(DashboardWindowController.hostingSizing, [])
     }
 
     @MainActor private func spin(_ host: NSView) {
