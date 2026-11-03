@@ -39,7 +39,7 @@ extension GalleryCatalog {
             page("concentration-maintenant/vide", height: 1_100, themes: GalleryTheme.withContrast) { f in
                 tab(.concentration, ConcentrationPageContent(controller: try f.empty(), now: now, measures: [], draft: draft))
             },
-            page("concentration-maintenant/plan-du-jour", height: 1_700) { f in
+            page("concentration-maintenant/plan-du-jour", height: 1_700, themes: GalleryTheme.withContrast) { f in
                 let planned = try f.planned()
                 return tab(.concentration, ConcentrationPageContent(controller: planned.controller, now: now,
                                                                     measures: planned.measures, draft: pomodoroDraft))

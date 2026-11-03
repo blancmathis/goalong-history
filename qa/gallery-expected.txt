@@ -2616,3 +2616,8 @@ sante/import-   # R11-O8 : note « valeurs reprises telles quelles » dans l’e
 ralentissement/app--   # R11-O9 : « 1ʳᵉ tentative d’ouverture aujourd’hui » au lieu de « Ralenti pour la 1ʳᵉ fois »
 ralentissement/site-attente--   # R11-O9 : « Prenez un instant » au lieu du statut « Ralenti » ; R11 tour 3 : ligne du compte « Nᵉ tentative d’ouverture aujourd’hui. » au lieu de « Nᵉ fois aujourd’hui. »
 ralentissement/site-pret--   # R11-O9 : état prêt « À vous de choisir » (la barre dit « Attente terminée » à VoiceOver), ligne « Nᵉ tentative d’ouverture aujourd’hui. »
+mises-a-jour/   # R12b : galerie en contraste élevé (images nouvelles --light-contrast / --dark-contrast)
+concentration-maintenant/vide--   # R12b O20 : piste vide des barres d'engagement cerclée en contraste élevé seulement
+concentration-maintenant/plan-du-jour--   # R12b : image contraste élevé nouvelle (état actif de « Commencer »)
+programme/vide--   # R12b O21 : segments inactifs de l'indicateur d'arrêt cerclés en contraste élevé seulement
+programme/pret--   # R12b : image contraste élevé nouvelle (état actif de « Bloquer ») ; indicateur d'arrêt cerclé

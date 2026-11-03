@@ -22,7 +22,7 @@ extension GalleryCatalog {
     private static func updateEntry(_ name: String, note: String, isConfigured: Bool = true, isChecking: Bool = false,
                                     availableVersion: String? = nil, result: SupportState = .unknown,
                                     message: String, checkedAt: Date? = nil, automatic: Bool = true) -> GalleryEntry {
-        dashboard("mises-a-jour/\(name)", section: .settings, pane: .advanced, sizes: [.full(1240)], note: note,
+        dashboard("mises-a-jour/\(name)", section: .settings, pane: .advanced, sizes: [.full(1240)], themes: GalleryTheme.withContrast, note: note,
                   configure: { _, ctx in
             let restore = SoftwareUpdateManager.shared.galleryShow(
                 isConfigured: isConfigured, isChecking: isChecking, availableVersion: availableVersion, result: result,

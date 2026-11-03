@@ -184,22 +184,27 @@ struct FocusCommitmentGauge: View {
     var kind: FocusCommitment.Kind = .work
     var empty = false
 
+    /// The empty track: its edge shows only with Increase Contrast (R12b, WCAG 1.4.11).
+    private var track: some View {
+        Capsule().fill(LHTheme.insetBackground).overlay(Capsule().strokeBorder(LHTheme.idleMarkEdge, lineWidth: 1))
+    }
+
     var body: some View {
         Group {
             if empty {
                 // Nothing measured and nothing taken: the empty track, solid (no decorative dots; decision 9).
-                Capsule().fill(LHTheme.insetBackground)
+                track
             } else if kind == .sessions || kind == .plan, (1...12).contains(target) {
                 HStack(spacing: 3) {
                     ForEach(0..<target, id: \.self) { index in
-                        Capsule().fill(Double(index) < measured.rounded(.down) ? LHTheme.workData : LHTheme.insetBackground)
+                        if Double(index) < measured.rounded(.down) { Capsule().fill(LHTheme.workData) } else { track }
                     }
                 }
             } else {
                 GeometryReader { proxy in
                     let fraction = min(1, max(0, measured / Double(max(1, target))))
                     ZStack(alignment: .leading) {
-                        Capsule().fill(LHTheme.insetBackground)
+                        track
                         if fraction > 0 { Capsule().fill(LHTheme.workData).frame(width: max(6, proxy.size.width * fraction)) }
                     }
                 }
