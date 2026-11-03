@@ -46,7 +46,9 @@ final class R11TextesTests: XCTestCase {
     func testSlowDownViewsHaveNoBareRalentiStatus() throws {
         XCTAssertNotEqual(SlowDownText.siteStatus(ready: false), "Ralenti")
         XCTAssertEqual(SlowDownText.siteStatus(ready: false), "Prenez un instant")
-        XCTAssertEqual(SlowDownText.siteStatus(ready: true), "Attente terminée")
+        XCTAssertEqual(SlowDownText.siteStatus(ready: true), "À vous de choisir")
+        XCTAssertEqual(SlowDownText.siteNote(ready: true, occurrence: 3), "Ce site est ralenti.\n3ᵉ tentative d’ouverture aujourd’hui.")
+        XCTAssertEqual(SlowDownText.siteNote(ready: false, occurrence: 1), "Ce site est ralenti : attendez la fin de la barre, ou renoncez.\n1ʳᵉ tentative d’ouverture aujourd’hui.")
         XCTAssertEqual(SlowDownText.attempt(1), "1ʳᵉ tentative d’ouverture aujourd’hui")
         XCTAssertEqual(SlowDownText.attempt(3), "3ᵉ tentative d’ouverture aujourd’hui")
         var feedback = BlockingListFeedback(listID: UUID(), reason: nil, attemptsToday: 2, earnedMinutesToday: 0)
@@ -54,6 +56,9 @@ final class R11TextesTests: XCTestCase {
         feedback.attemptsToday = 1
         XCTAssertNil(feedback.attemptLine)
         let views = try source("Sources/LocalHistoryApp/Blocking/SlowDownViews.swift")
+        XCTAssertTrue(views.contains("Text(SlowDownText.siteNote(ready: isReady, occurrence: presentation.occurrence))"))
+        XCTAssertTrue(views.contains("Label(SlowDownText.siteStatus(ready: isReady)"))
+        XCTAssertFalse(views.contains("fois aujourd’hui."))
         XCTAssertFalse(views.contains("Label(\"Ralenti\""))
         XCTAssertFalse(views.contains("\"Ralenti pour la"))
         XCTAssertTrue(views.contains("Renoncer"))

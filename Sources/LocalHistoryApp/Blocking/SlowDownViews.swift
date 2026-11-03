@@ -161,8 +161,7 @@ struct SlowDownVeil: View {
                 SlowDownActions(presentation: presentation, now: now, ready: ready, onRenounce: onRenounce, onContinue: onContinue)
                 // The wait hint goes once the bar is full; the count sits on its own line, so no word is left alone.
                 // Same test as the buttons: a frozen clock (gallery) or a full bar both count as ready.
-                Text((isReady ? "Ce site est ralenti." : "Ce site est ralenti : attendez la fin de la barre, ou renoncez.")
-                     + "\n\(FocusUIFormat.ordinal(presentation.occurrence)) fois aujourd’hui.")
+                Text(SlowDownText.siteNote(ready: isReady, occurrence: presentation.occurrence))
                     .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                     .multilineTextAlignment(.center).frame(maxWidth: 420).fixedSize(horizontal: false, vertical: true)
             }
@@ -223,7 +222,11 @@ struct SlowDownAppCard: View {
 /// « Ralenti »/« Bloqué » (type of protection), and « Renoncer » stays (decisions 3 and 7).
 enum SlowDownText {
     /// Same width of line in both states, so the veil does not jump when the wait ends.
-    static func siteStatus(ready: Bool) -> String { ready ? "Attente terminée" : "Prenez un instant" }
+    static func siteStatus(ready: Bool) -> String { ready ? "À vous de choisir" : "Prenez un instant" }
+    /// The two lines under the site card: the wait hint (gone once ready), then the attempt count with one final full stop.
+    static func siteNote(ready: Bool, occurrence: Int) -> String {
+        (ready ? "Ce site est ralenti." : "Ce site est ralenti : attendez la fin de la barre, ou renoncez.") + "\n" + attempt(occurrence) + "."
+    }
     /// One sentence for the app card and the block feedback: a count of attempts, not of openings.
     static func attempt(_ n: Int) -> String { "\(FocusUIFormat.ordinal(n)) tentative d’ouverture aujourd’hui" }
 }

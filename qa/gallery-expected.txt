@@ -2615,5 +2615,5 @@ activite/apercu-developpeur--   # R11-O6 : l’aperçu développeur prend la mê
 concentration-panneaux/feuille-bilan--   # R11-O7 : aide de la note « Facultative. 500 caractères au plus. »
 sante/import-   # R11-O8 : note « valeurs reprises telles quelles » dans l’en-tête des quatre états
 ralentissement/app--   # R11-O9 : « 1ʳᵉ tentative d’ouverture aujourd’hui » au lieu de « Ralenti pour la 1ʳᵉ fois »
-ralentissement/site-attente--   # R11-O9 : « Prenez un instant » au lieu du statut « Ralenti »
-ralentissement/site-pret--   # R11-O9 : « Attente terminée » à la place de « Prenez un instant » à l’état prêt
+ralentissement/site-attente--   # R11-O9 : « Prenez un instant » au lieu du statut « Ralenti » ; R11 tour 3 : ligne du compte « Nᵉ tentative d’ouverture aujourd’hui. » au lieu de « Nᵉ fois aujourd’hui. »
+ralentissement/site-pret--   # R11-O9 : « Attente terminée » à la place de « Prenez un instant » à l’état prêt ; R11 tour 3 : statut « À vous de choisir » (la barre dit déjà « Attente terminée » à VoiceOver) et ligne « Nᵉ tentative d’ouverture aujourd’hui. »
