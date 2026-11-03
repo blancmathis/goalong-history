@@ -55,6 +55,14 @@ final class ViewSwitchTimingTests: XCTestCase {
                            before, Self.footprintMB()))
             }
 
+            // R14c: a trace of the clicks alone (GOALONG_SWITCH_GATE=<dir>): « ready » written here, clicks once « go » exists.
+            if let gate = environment["GOALONG_SWITCH_GATE"], !gate.isEmpty {
+                FileManager.default.createFile(atPath: gate + "/ready", contents: nil)
+                let deadline = ProcessInfo.processInfo.systemUptime + 60
+                while !FileManager.default.fileExists(atPath: gate + "/go"), ProcessInfo.processInfo.systemUptime < deadline {
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                }
+            }
             var samples: [Sample] = []
             // Sidebar destinations present for this member, then the periods of Activité.
             let sections: [DashboardSection] = [.settings, .history, .work, .concentration, .ambiance, .overview]
