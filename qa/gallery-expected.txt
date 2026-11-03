@@ -2634,3 +2634,7 @@ programme/vide--light-contrast--   # R12b O21 : segments inactifs de l'indicateu
 programme/vide--dark-contrast--   # R12b O21 : segments inactifs de l'indicateur d'arrêt cerclés
 programme/pret--light-contrast--   # R12b : image nouvelle, état actif de « Bloquer »
 programme/pret--dark-contrast--   # R12b : image nouvelle, état actif de « Bloquer »
+concentration-engagements/barres--   # R13b : image nouvelle, barres d'engagement partielle et remplie, contraste élevé compris
+bilan/rapport--   # R13b O11 : ligne d'aide sous la bande quand un chiffre vaut « — »
+bilan/non-connecte--   # R13b O11 : ligne d'aide sous la bande quand un chiffre vaut « — »
+sante/import-reussi--   # R13b : un seul bouton de fermeture (« Terminé »), « Fermer » du haut retiré
