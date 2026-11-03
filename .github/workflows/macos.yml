@@ -67,8 +67,8 @@ jobs:
       - name: Tests
         shell: bash
         env:
-          GOALONG_TEST_HOME: ${{ runner.temp }}/goalong-test-home
-          CFFIXED_USER_HOME: ${{ runner.temp }}/goalong-test-home
+          GOALONG_TEST_HOME: /tmp/goalong-test-${{ github.run_id }}-${{ github.run_attempt }}
+          CFFIXED_USER_HOME: /tmp/goalong-test-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
           mkdir -p "$GOALONG_TEST_HOME"
