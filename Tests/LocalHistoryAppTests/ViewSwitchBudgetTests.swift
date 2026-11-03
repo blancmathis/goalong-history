@@ -120,19 +120,45 @@ final class ViewSwitchBudgetTests: XCTestCase {
     }
 
     /// R14a: the main-thread block of each click (press + layout, the bench's « blocage »), per view, on the busy
-    /// member of the bench (35 days). Never opt-in, never skipped: it runs on every `swift test`, PR CI included.
+    /// member of the bench (35 days). Never opt-in, never skipped: it runs on every `swift test`, PR CI included
+    /// (and release.yml, which runs the same tests through build_app.sh).
     ///
-    /// Budget = ratio × reference. The reference is timed in the same run, on the same runner: the median of 7 builds
-    /// of a fixed SwiftUI page of text rows (the same kind of work as a page switch). The ratios are written below
-    /// with what they were set from; each one keeps ≥ 30 % margin over the slowest median seen on this Mac (debug
-    /// build) and on PR CI. Warm = median of the passes after the first; cold = the first click of each view.
+    /// Budget = ratio × reference. The reference is timed in the same run, on the same runner, after each pass of clicks
+    /// (median of the 5): each time the median of 7 rebuilds of a fixed lazy page (scroll view, lazy stack, rows of text
+    /// and plain buttons), the same kind of work as a page switch. Chosen out of four candidates measured on this Mac and
+    /// on PR CI (35251da): its ratios move least between the two (CI/Mac 0.5-0.76 per view); an eager 240-row stack
+    /// moved ×0.35, a kept page swapped by state ×0.7 (same as lazy), a plain CPU sort ×1.4-1.7.
+    /// Warm = median of passes 1-4. Cold = pass 0, the first click of each view on a new dashboard; its process-wide
+    /// first use (fonts, type metadata) depends on the tests run before it: alone it costs up to ×2 more than in the
+    /// full suite, where CI sees cold ≈ warm.
+    /// Ratios = highest ratio seen / 0.7 (≥ 30 % margin), over 5 runs on this Mac (debug build, test alone, so the
+    /// coldest) and PR CI. Highest warm/cold ratios seen, Mac | CI 35251da:
+    /// 1 j 2.43/6.5 | 1.56/1.52 · 7 j 2.15/9.1 | 1.51/1.79 · 28 j 4.6/13.7 | 3.48/3.66 · overview 1.22/3.5 | 0.91/0.87
+    /// settings 1.1/0.92 | 0.78/0.42 · history 1.39/0.58 | 0.68/0.40 · work 0.73/0.61 | 0.50/0.33 · concentration 0.43/0.42 | 0.24/0.22
+    /// The Mac bounds every ratio: a click ~45 % slower fails here, about ×2 slower on CI.
     static let switchBudgetRatios: [String: (warm: Double, cold: Double)] = [
-        "activite-1j": (warm: 6, cold: 12), "activite-7j": (warm: 6, cold: 12), "activite-28j": (warm: 8, cold: 16),
-        "overview": (warm: 6, cold: 12), "settings": (warm: 6, cold: 12), "history": (warm: 6, cold: 12),
-        "work": (warm: 6, cold: 12), "concentration": (warm: 6, cold: 12),
+        "activite-1j": (warm: 3.6, cold: 9.6), "activite-7j": (warm: 3.3, cold: 13.5), "activite-28j": (warm: 6.8, cold: 20),
+        "overview": (warm: 1.9, cold: 5.2), "settings": (warm: 1.7, cold: 1.5), "history": (warm: 2.1, cold: 0.9),
+        "work": (warm: 1.1, cold: 1.0), "concentration": (warm: 0.65, cold: 0.65),
     ]
 
     @MainActor func testEachViewSwitchStaysWithinItsBudget() throws {
+        // A real regression is slow every time; a busy runner (or Mac) is slow now and then. So a run over budget is
+        // measured again, from a new dashboard, up to 3 runs in all; the test fails only if every run is over budget.
+        // Each run is logged: a retry is never silent.
+        var over: [String] = []
+        for attempt in 1...3 {
+            over = try Self.measureSwitchBudgets(attempt: attempt)
+            if over.isEmpty { break }
+            Self.budgetLog("run \(attempt) over budget: " + over.joined(separator: "; "))
+        }
+        for failure in over { XCTFail(failure) }
+    }
+
+    /// One run: a new member dashboard, 5 passes over the views, the reference timed after each pass (same load as the
+    /// clicks around it; its median is used). Returns the views over budget.
+    @MainActor private static func measureSwitchBudgets(attempt: Int) throws -> [String] {
+        var over: [String] = []
         try GalleryRenderer.withPreparedApplication {
             let ctx = GalleryContext()
             try GalleryStateReset.all(home: ctx.home)
@@ -148,9 +174,9 @@ final class ViewSwitchBudgetTests: XCTestCase {
             }
             XCTAssertEqual(pages.preheatPending, 0, "the main pages were never built at rest")
             _ = ViewSwitchTimingTests.settle(host, model: model, timeout: 20)
-            let reference = Self.referenceMs()
 
             var samples: [ViewSwitchTimingTests.Sample] = []
+            var references: [Double] = []
             let sections: [DashboardSection] = [.settings, .history, .work, .concentration, .overview]
             for pass in 0..<5 {
                 for period in ["7", "28", "1"] {
@@ -162,74 +188,32 @@ final class ViewSwitchBudgetTests: XCTestCase {
                                                "no sidebar entry \(section.rawValue)")
                     samples.append(ViewSwitchTimingTests.measure(section.rawValue, pass: pass, press: button, host: host, model: model))
                 }
+                references.append(Self.referenceMs())
             }
-            Self.budgetLog(String(format: "reference %.1f ms (median of 7 builds of the reference page)", reference))
-            // R14a calibration probe (temporary): candidate references, to keep the one whose ratios hold across machines.
-            let candidates = [("lazy", Self.lazyReferenceMs()), ("state", Self.stateReferenceMs()), ("cpu", Self.cpuReferenceMs())]
-            for (name, ms) in candidates {
-                let ratios = Self.switchBudgetRatios.keys.sorted().map { view -> String in
-                    let rows = samples.filter { $0.view == view }
-                    let warm = ViewSwitchTimingTests.median(rows.filter { $0.pass > 0 }.compactMap(\.firstLayoutMs))
-                    let cold = rows.first { $0.pass == 0 }?.firstLayoutMs ?? .infinity
-                    return String(format: "%@ %.2f/%.2f", view, warm / ms, cold / ms)
-                }
-                Self.budgetLog(String(format: "candidate %@ %.2f ms: ", name, ms) + ratios.joined(separator: ", "))
-            }
+            let reference = ViewSwitchTimingTests.median(references)
+            XCTAssertTrue(reference.isFinite && reference > 0, "the reference page was not timed")
+            Self.budgetLog(String(format: "run %d reference %.2f ms (median of 5 passes: %@)", attempt, reference,
+                                  references.map { String(format: "%.1f", $0) }.joined(separator: " ")))
             for (view, ratio) in Self.switchBudgetRatios.sorted(by: { $0.key < $1.key }) {
                 let rows = samples.filter { $0.view == view }
                 XCTAssertEqual(rows.count, 5, "\(view) was not measured")
                 let warm = ViewSwitchTimingTests.median(rows.filter { $0.pass > 0 }.compactMap(\.firstLayoutMs))
                 let cold = rows.first { $0.pass == 0 }?.firstLayoutMs ?? .infinity
                 let warmBudget = ratio.warm * reference, coldBudget = ratio.cold * reference
-                Self.budgetLog(String(format: "%@ warm %.1f ms / budget %.0f ms (%.1f × ref, margin %.0f %%), cold %.1f ms / budget %.0f ms (%.1f × ref, margin %.0f %%)",
-                    view, warm, warmBudget, warm / reference, (1 - warm / warmBudget) * 100,
+                Self.budgetLog(String(format: "run %d %@ warm %.1f ms / budget %.1f ms (%.2f × ref, margin %.0f %%), cold %.1f ms / budget %.1f ms (%.2f × ref, margin %.0f %%)",
+                    attempt, view, warm, warmBudget, warm / reference, (1 - warm / warmBudget) * 100,
                     cold, coldBudget, cold / reference, (1 - cold / coldBudget) * 100))
-                XCTAssertLessThan(warm, warmBudget, "\(view): a warm click blocks \(Int(warm)) ms, budget \(Int(warmBudget)) ms")
-                XCTAssertLessThan(cold, coldBudget, "\(view): the first click blocks \(Int(cold)) ms, budget \(Int(coldBudget)) ms")
+                if !(warm < warmBudget) { over.append("\(view): a warm click blocks \(Int(warm)) ms, budget \(Int(warmBudget)) ms") }
+                if !(cold < coldBudget) { over.append("\(view): the first click blocks \(Int(cold)) ms, budget \(Int(coldBudget)) ms") }
             }
         }
+        return over
     }
 
-    /// The calibration page: 240 rows of icon and texts, rebuilt under a new identity each time (as a page switch builds
-    /// its page), laid out in a window never on screen. Median of 7 after 2 untimed builds.
+    /// The calibration page: 240 rows of icon, text and a plain button in a lazy stack under a scroll view (only the
+    /// rows in the window are built), rebuilt under a new identity each time as a page switch builds its page, laid
+    /// out in a window never on screen. Median of 7 after 2 untimed builds.
     private struct ReferencePage: View {
-        let seed: Int
-        var body: some View {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(0..<240, id: \.self) { row in
-                    HStack(spacing: 8) {
-                        Image(systemName: row % 2 == 0 ? "clock" : "folder").frame(width: 14)
-                        Text("Contexte \(row + seed) · application \(row % 9)").lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text("\(row * 7 + seed) min").monospacedDigit()
-                    }
-                }
-            }
-            .padding(20)
-            .id(seed)
-        }
-    }
-
-    @MainActor private static func referenceMs() -> Double {
-        let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
-                                   styleMask: [.titled], backing: .buffered, defer: true)
-        window.isReleasedWhenClosed = false
-        let host = NSHostingView(rootView: ReferencePage(seed: 0))
-        window.contentView = host
-        defer { window.contentView = nil; window.close() }
-        host.layoutSubtreeIfNeeded()
-        var times: [Double] = []
-        for seed in 1...9 {
-            let start = ProcessInfo.processInfo.systemUptime
-            host.rootView = ReferencePage(seed: seed)
-            host.layoutSubtreeIfNeeded()
-            if seed > 2 { times.append((ProcessInfo.processInfo.systemUptime - start) * 1_000) }
-        }
-        return ViewSwitchTimingTests.median(times)
-    }
-
-    /// Candidate: the same rows in a lazy stack under a scroll view (only the rows in the window are built).
-    private struct LazyReferencePage: View {
         let seed: Int
         var body: some View {
             ScrollView {
@@ -249,83 +233,20 @@ final class ViewSwitchBudgetTests: XCTestCase {
         }
     }
 
-    @MainActor private static func lazyReferenceMs() -> Double {
+    @MainActor private static func referenceMs() -> Double {
         let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
                                    styleMask: [.titled], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
-        let host = NSHostingView(rootView: LazyReferencePage(seed: 0))
+        let host = NSHostingView(rootView: ReferencePage(seed: 0))
         window.contentView = host
         defer { window.contentView = nil; window.close() }
         host.layoutSubtreeIfNeeded()
         var times: [Double] = []
         for seed in 1...9 {
             let start = ProcessInfo.processInfo.systemUptime
-            host.rootView = LazyReferencePage(seed: seed)
+            host.rootView = ReferencePage(seed: seed)
             host.layoutSubtreeIfNeeded()
             if seed > 2 { times.append((ProcessInfo.processInfo.systemUptime - start) * 1_000) }
-        }
-        return ViewSwitchTimingTests.median(times)
-    }
-
-    /// Candidate: one page kept, its content swapped by a published value (as a period change), laid out.
-    private final class ReferenceState: ObservableObject { @Published var period = 0 }
-    private struct StateReferencePage: View {
-        @ObservedObject var state: ReferenceState
-        var body: some View {
-            let count = [7, 28, 1][state.period % 3]
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(0..<count, id: \.self) { row in
-                    HStack(spacing: 8) {
-                        Text("Jour \(row + 1)").frame(width: 64, alignment: .leading)
-                        ForEach(0..<6, id: \.self) { band in
-                            Button {} label: { Color.gray.frame(width: Self.width(row, band, state.period), height: 10) }
-                                .buttonStyle(.plain).help("Bande \(band)")
-                        }
-                        Spacer(minLength: 8)
-                        Text("\(row * 7 + state.period) min").monospacedDigit()
-                    }
-                }
-            }
-            .padding(20)
-        }
-        static func width(_ row: Int, _ band: Int, _ period: Int) -> CGFloat { CGFloat(10 + (row * 7 + band * 3 + period) % 40) }
-    }
-
-    @MainActor private static func stateReferenceMs() -> Double {
-        let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
-                                   styleMask: [.titled], backing: .buffered, defer: true)
-        window.isReleasedWhenClosed = false
-        let state = ReferenceState()
-        let host = NSHostingView(rootView: StateReferencePage(state: state))
-        window.contentView = host
-        defer { window.contentView = nil; window.close() }
-        host.layoutSubtreeIfNeeded()
-        var times: [Double] = []
-        for step in 1...11 {
-            let start = ProcessInfo.processInfo.systemUptime
-            state.period = step
-            RunLoop.current.run(until: Date().addingTimeInterval(0.001))
-            host.layoutSubtreeIfNeeded()
-            if step > 2 { times.append((ProcessInfo.processInfo.systemUptime - start) * 1_000) }
-        }
-        return ViewSwitchTimingTests.median(times)
-    }
-
-    /// Candidate: plain CPU work, no UI (sort of a fixed pseudo-random array), median of 7.
-    private static func cpuReferenceMs() -> Double {
-        var times: [Double] = []
-        for run in 0..<9 {
-            var x: UInt64 = 0x9E3779B97F4A7C15
-            var values: [UInt64] = []
-            values.reserveCapacity(200_000)
-            for _ in 0..<200_000 {
-                x ^= x << 13; x ^= x >> 7; x ^= x << 17
-                values.append(x)
-            }
-            let start = ProcessInfo.processInfo.systemUptime
-            let sorted = values.sorted()
-            if run > 1 { times.append((ProcessInfo.processInfo.systemUptime - start) * 1_000) }
-            XCTAssertEqual(sorted.count, values.count)
         }
         return ViewSwitchTimingTests.median(times)
     }
