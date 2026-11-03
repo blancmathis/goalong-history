@@ -71,6 +71,19 @@ final class DashboardRepublicationTests: XCTestCase {
         XCTAssertEqual(model.deviceStore.deviceID, "r14b-other")
     }
 
+    /// Step 4: the alert lives in its own object; clearing an absent alert publishes nothing, a new one publishes.
+    func testAlertCenterPublishesOnlyAChange() throws {
+        let model = try dashboardModel()
+        var publications = 0
+        let watch = model.alertStore.objectWillChange.sink { publications += 1 }
+        defer { watch.cancel() }
+        model.alert = nil
+        XCTAssertEqual(publications, 0, "nil over nil published")
+        model.alert = DashboardAlert(kind: .error, title: "R14b", message: "test")
+        XCTAssertEqual(publications, 1)
+        XCTAssertEqual(model.alertStore.alert?.title, "R14b")
+    }
+
     // MARK: Helpers
 
     func dashboardModel() throws -> DashboardViewModel {

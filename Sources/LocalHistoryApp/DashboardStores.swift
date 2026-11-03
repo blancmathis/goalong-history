@@ -42,4 +42,15 @@
             if trustNotices != notices { trustNotices = notices }
         }
     }
+
+    /// The dashboard's alert, and the signed export running behind it.
+    final class DashboardAlertCenter: ObservableObject {
+        /// Set by the model on an error; a view's `.alert(item:)` clears it.
+        @Published var alert: DashboardAlert?
+        @Published private(set) var isExportingShare = false
+
+        func setExportingShare(_ exporting: Bool) {
+            if isExportingShare != exporting { isExportingShare = exporting }
+        }
+    }
 #endif

@@ -141,7 +141,6 @@ import AppleScreenTime
         /// False while `snapshot` is the placeholder of a hidden or new window: the next read is then always shown.
         private var snapshotIsRead = false
         @Published private(set) var isRefreshing = false
-        @Published private(set) var isExportingShare = false
         // R14b: no view reads these three (searched by name in Sources and Tests): they do not publish.
         var selectedSessionID: String?
         var activitySearch = ""
@@ -150,7 +149,17 @@ import AppleScreenTime
         @Published private(set) var sharingRules: [String: SharingVisibility]
         @Published private(set) var defaultSharingVisibility: SharingVisibility
         @Published var settingsDraft: DashboardSettingsDraft
-        @Published var alert: DashboardAlert?
+        /// R14b: the alert and the export flag. A view reads them through its own `@ObservedObject`.
+        let alertStore = DashboardAlertCenter()
+        // R14b façade (removed at step 8). Setting the same alert, or nil over nil, publishes nothing.
+        var alert: DashboardAlert? {
+            get { alertStore.alert }
+            set { if newValue?.id != alertStore.alert?.id { alertStore.alert = newValue } }
+        }
+        private(set) var isExportingShare: Bool {
+            get { alertStore.isExportingShare }
+            set { alertStore.setExportingShare(newValue) }
+        }
         @Published var showWelcome: Bool
         @Published private(set) var historyDeletionGeneration = 0
 
@@ -377,7 +386,7 @@ import AppleScreenTime
 
         /// R14b façade (removed at step 8): a store's publication republishes the model, for the views not migrated.
         private func relayStores() {
-            let stores: [ObservableObjectPublisher] = [deviceStore.objectWillChange]
+            let stores: [ObservableObjectPublisher] = [deviceStore.objectWillChange, alertStore.objectWillChange]
             storeRelays = stores.map { $0.sink { [weak self] _ in self?.objectWillChange.send() } }
         }
 
