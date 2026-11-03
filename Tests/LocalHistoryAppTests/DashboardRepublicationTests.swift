@@ -55,6 +55,22 @@ final class DashboardRepublicationTests: XCTestCase {
             trackedUsage: [], timeline: [], storageBytes: 4096, availableDays: [day])
     }
 
+    /// Step 3: the device identity lives in its own object; an unchanged identity publishes nothing.
+    func testDeviceStorePublishesOnlyAChange() throws {
+        let model = try dashboardModel()
+        let info = DeviceIdentityInfo(deviceID: "r14b-fixture", publicKeyBase64: "", trustTier: "test", algorithm: "test")
+        var publications = 0
+        let watch = model.deviceStore.objectWillChange.sink { publications += 1 }
+        defer { watch.cancel() }
+        model.updateDeviceInfo(info)
+        model.refreshTrustNotices()
+        XCTAssertEqual(publications, 0, "an unchanged identity published")
+        model.updateDeviceInfo(DeviceIdentityInfo(deviceID: "r14b-other", publicKeyBase64: "", trustTier: "test",
+            algorithm: "test"))
+        XCTAssertGreaterThan(publications, 0, "a new device ID did not publish")
+        XCTAssertEqual(model.deviceStore.deviceID, "r14b-other")
+    }
+
     // MARK: Helpers
 
     func dashboardModel() throws -> DashboardViewModel {

@@ -154,16 +154,18 @@ import AppleScreenTime
         @Published var showWelcome: Bool
         @Published private(set) var historyDeletionGeneration = 0
 
-        @Published private(set) var deviceID: String
-        /// Nil while the identity is degraded and no earlier device ID is known: Screen Time and ChatGPT stay off.
-        @Published private(set) var knownDeviceID: String?
-        @Published private(set) var deviceTrustTier: String
-        @Published private(set) var deviceAlgorithm: String
-        @Published private(set) var deviceProtectionTitle: String
-        /// R14b: no view reads it (searched by name): it does not publish.
-        private(set) var deviceProtectionSummary: String
-        /// Changed or degraded trust state (rotation, sealing suspended), shown in the integrity section.
-        @Published private(set) var trustNotices: [String] = []
+        /// R14b: what this Mac is identified as. A view reads it through its own `@ObservedObject`.
+        let deviceStore: DashboardDeviceState
+        // R14b façade (removed at step 8): read-only forwarders, the store publishes through the relay.
+        var deviceID: String { deviceStore.deviceID }
+        var knownDeviceID: String? { deviceStore.knownDeviceID }
+        var deviceTrustTier: String { deviceStore.deviceTrustTier }
+        var deviceAlgorithm: String { deviceStore.deviceAlgorithm }
+        var deviceProtectionTitle: String { deviceStore.deviceProtectionTitle }
+        var deviceProtectionSummary: String { deviceStore.deviceProtectionSummary }
+        var trustNotices: [String] { deviceStore.trustNotices }
+        /// R14b façade: each store's publication is relayed to the model until step 8.
+        private var storeRelays: [AnyCancellable] = []
         /// Shown in Settings while config.json is unreadable.
         @Published private(set) var configNotice: String?
         /// config.json was unreadable at launch: recording is paused and saves are refused.
@@ -276,12 +278,7 @@ import AppleScreenTime
             self.sharingRules = sharingRulesStore.rules
             self.defaultSharingVisibility = sharingRulesStore.defaultVisibility
             self.onRetryKeychain = onRetryKeychain
-            self.deviceID = deviceInfo.deviceID
-            self.knownDeviceID = deviceInfo.knownDeviceID
-            self.deviceTrustTier = deviceInfo.trustTier
-            self.deviceAlgorithm = deviceInfo.algorithm
-            self.deviceProtectionTitle = deviceInfo.protectionTitle
-            self.deviceProtectionSummary = deviceInfo.protectionSummary
+            self.deviceStore = DashboardDeviceState(deviceInfo)
             self.eventTapStatus = eventTapStatus
             self.currentSuppression = currentSuppression
             self.captureHealthSnapshot = captureHealthSnapshot
@@ -309,6 +306,7 @@ import AppleScreenTime
             settingsDraft = draft
             savedSettingsDraft = draft
             showWelcome = !defaults.bool(forKey: "didShowLocalHistoryConsentOnboardingV5")
+            relayStores()
             refreshTrustNotices()
             trustObserver = NotificationCenter.default.addObserver(
                 forName: DeviceTrustState.didChange, object: nil, queue: .main
@@ -377,20 +375,21 @@ import AppleScreenTime
             refreshRuntime()
         }
 
+        /// R14b façade (removed at step 8): a store's publication republishes the model, for the views not migrated.
+        private func relayStores() {
+            let stores: [ObservableObjectPublisher] = [deviceStore.objectWillChange]
+            storeRelays = stores.map { $0.sink { [weak self] _ in self?.objectWillChange.send() } }
+        }
+
         func refreshTrustNotices() {
-            trustNotices = [
+            deviceStore.setTrustNotices([
                 DeviceTrustState.shared.sealingSuspendedNotice,
                 DeviceIdentityRotation.load(defaults: defaults)?.notice,
-            ].compactMap { $0 }
+            ].compactMap { $0 })
         }
 
         func updateDeviceInfo(_ info: DeviceIdentityInfo) {
-            deviceID = info.deviceID
-            knownDeviceID = info.knownDeviceID
-            deviceTrustTier = info.trustTier
-            deviceAlgorithm = info.algorithm
-            deviceProtectionTitle = info.protectionTitle
-            deviceProtectionSummary = info.protectionSummary
+            deviceStore.update(info)
         }
 
         deinit {
