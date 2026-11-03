@@ -95,4 +95,38 @@ final class GoalongCLIExecutableResolverTests: XCTestCase {
         XCTAssertEqual(GoalongCLIExecutableResolver.resolve(
             argv0: "goalong", path: "/nonexistent-r12a:", currentDirectory: root.path)?.path, local.path)
     }
+
+    /// R12a tour 2, O18 point 3: the kernel path wins over a misleading argv[0] and PATH.
+    func testKernelPathWinsOverArgv0AndPath() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let real = root.appendingPathComponent("App.app/Contents/MacOS/Goalong History")
+        try makeExecutable(real)
+        let decoy = root.appendingPathComponent("bin/goalong")
+        try makeExecutable(decoy)
+        let found = GoalongCLIExecutableResolver.resolve(
+            kernelPath: real.path, argv0: "goalong", path: decoy.deletingLastPathComponent().path, currentDirectory: root.path)
+        XCTAssertEqual(found?.path, real.path)
+    }
+
+    /// An unusable kernel path (missing file) falls back to argv[0]/PATH.
+    func testUnusableKernelPathFallsBackToArgv0() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let decoy = root.appendingPathComponent("bin/goalong")
+        try makeExecutable(decoy)
+        XCTAssertEqual(GoalongCLIExecutableResolver.resolve(
+            kernelPath: root.appendingPathComponent("missing").path, argv0: "goalong",
+            path: decoy.deletingLastPathComponent().path, currentDirectory: root.path)?.path, decoy.path)
+        XCTAssertEqual(GoalongCLIExecutableResolver.resolve(
+            kernelPath: nil, argv0: "goalong",
+            path: decoy.deletingLastPathComponent().path, currentDirectory: root.path)?.path, decoy.path)
+    }
+
+    /// The real kernel call returns the running test binary, a regular file.
+    func testKernelExecutablePathIsTheRunningBinary() throws {
+        let path = try XCTUnwrap(GoalongCLIExecutableResolver.kernelExecutablePath())
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: path))
+        XCTAssertTrue(path.hasPrefix("/"))
+    }
 }
