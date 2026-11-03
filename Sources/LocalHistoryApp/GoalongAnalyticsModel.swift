@@ -62,6 +62,9 @@ struct GoalongAnalyticsPayload: Sendable {
     let comparisonPending: Bool
     /// Nil for the preview and the gallery's fixed payloads: never shown again from memory.
     let sources: GoalongAnalyticsSources?
+    /// R14a: the tasks of `current`, computed once with the payload (where it is built, off the click), not by each
+    /// evaluation of the page: a period shown again re-evaluates its page in the click.
+    let tasks: [GoalongWorkTask]
 
     init(current: GoalongLocalAnalytics.Period, previous: GoalongLocalAnalytics.Period,
          cards: [GoalongAnalyticsCard], archiveNotice: String?, updatedAt: Date, isPreview: Bool = false,
@@ -69,6 +72,7 @@ struct GoalongAnalyticsPayload: Sendable {
         self.current = current; self.previous = previous; self.cards = cards
         self.archiveNotice = archiveNotice; self.updatedAt = updatedAt; self.isPreview = isPreview
         self.comparisonPending = comparisonPending; self.sources = sources
+        tasks = current.tasks
     }
 
     func with(previous: GoalongLocalAnalytics.Period, revisions: [Date: String]) -> Self {

@@ -122,7 +122,7 @@ struct GoalongAnalyticsContent: View {
 
     var body: some View {
         let summary = self.summary
-        let tasks = current.tasks
+        let tasks = payload.tasks
         // R14a: lazy inside the page's lazy stack: the sections under the window are built when scrolled to.
         LazyVStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
             if let shown = detail.wrappedValue, isAvailable(shown) {
