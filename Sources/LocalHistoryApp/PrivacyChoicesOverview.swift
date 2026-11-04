@@ -3,7 +3,13 @@ import SwiftUI
 import LocalHistoryCore
 
 @MainActor struct PrivacyChoicesOverview: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var settingsStore: DashboardSettingsState
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+    }
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
     @ObservedObject private var exclusions = GoalongExclusionStore.shared
@@ -37,9 +43,9 @@ import LocalHistoryCore
                     Divider()
                     // With every source off, the recording summary would describe a capture that does not happen.
                     Text(pause.blocksActivity ? "Tout le suivi en pause."
-                         : Self.sources.contains { consents.isEnabled($0) } ? model.appliedSettings.recordingSummary : "Aucune source activée.")
+                         : Self.sources.contains { consents.isEnabled($0) } ? settingsStore.appliedSettings.recordingSummary : "Aucune source activée.")
                         .font(.system(size: 13))
-                    Text(model.appliedSettings.capturePrivateBrowsing
+                    Text(settingsStore.appliedSettings.capturePrivateBrowsing
                          ? "Fenêtres privées détectées : incluses selon votre choix."
                          : "Fenêtres privées détectées : exclues. La détection dépend du navigateur ; la pause reste le plus sûr pour une activité sensible.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -105,7 +111,7 @@ import LocalHistoryCore
         .onReceive(NotificationCenter.default.publisher(for: .goalongRetentionPolicyDidChange)) { _ in refreshRetention() }
         .sheet(isPresented: $showingSharing) { GoalongWebsiteSharingSheet().goalongControls() }
         .sheet(isPresented: $showingRetention, onDismiss: refreshRetention) {
-            HistoryRetentionSettingsSheet(legacyRetentionDays: model.appliedSettings.retentionDays).goalongControls()
+            HistoryRetentionSettingsSheet(legacyRetentionDays: settingsStore.appliedSettings.retentionDays).goalongControls()
         }
     }
     private static let sources: [GoalongCapability] = [.localComputerHistory, .appleScreenTime, .aiConversations]
@@ -127,7 +133,7 @@ import LocalHistoryCore
             : "L’analyse ChatGPT est désactivée. L’activer est un choix distinct de l’enregistrement local."
     }
     private func refreshRetention() {
-        let store = HistoryRetentionStore(legacyRetentionDays: model.appliedSettings.retentionDays)
+        let store = HistoryRetentionStore(legacyRetentionDays: settingsStore.appliedSettings.retentionDays)
         retentionEnabled = store.isAutomaticCleanupEnabled
         retentionSummary = store.policy.retentionDescription
     }

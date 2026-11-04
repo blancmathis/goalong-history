@@ -37,12 +37,12 @@ final class GoalongTrustRenderingTests: XCTestCase {
             onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
             onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
             onDeleteTargetedDetails: { _, done in done(.success(0)) })
-        model.showWelcome = false
+        model.navigationStore.showWelcome = false
         XCTAssertTrue(GoalongCapabilityConsentStore.shared.set(.localComputerHistory, enabled: true, surface: .settings))
         health.markStorageInterrupted(.diskFull, at: Date().addingTimeInterval(-600))
         model.dashboardDidBecomeVisible()
         pump()
-        XCTAssertEqual(model.runtime.storageFailure, .diskFull)
+        XCTAssertEqual(model.runtimeStore.runtime.storageFailure, .diskFull)
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 790),
             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -54,7 +54,7 @@ final class GoalongTrustRenderingTests: XCTestCase {
                                           ("settings-home-trust", .settings, .home),
                                           ("settings-storage-trust", .settings, .storage),
                                           ("settings-advanced-trust", .settings, .advanced)] {
-                model.selectedSection = section; model.settingsPane = pane
+                model.navigationStore.selectedSection = section; model.navigationStore.settingsPane = pane
                 let controller = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
                 window.contentViewController = controller
                 window.setContentSize(NSSize(width: 1240, height: 790))
@@ -67,7 +67,7 @@ final class GoalongTrustRenderingTests: XCTestCase {
         XCTAssertTrue(GoalongCapabilityConsentStore.shared.set(.calendar, enabled: true, surface: .settings))
         for dark in [true, false] {
             window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-            model.selectedSection = .settings; model.settingsPane = .recording
+            model.navigationStore.selectedSection = .settings; model.navigationStore.settingsPane = .recording
             let controller = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
             window.contentViewController = controller
             window.setContentSize(NSSize(width: 1240, height: 1500))
@@ -102,7 +102,7 @@ final class GoalongTrustRenderingTests: XCTestCase {
 
         health.markStorageRestored()
         model.dashboardDidBecomeHidden(); model.dashboardDidBecomeVisible(); pump()
-        XCTAssertNil(model.runtime.storageFailure)
+        XCTAssertNil(model.runtimeStore.runtime.storageFailure)
     }
 
     @MainActor private static func firstScrollView(in view: NSView) -> NSScrollView? {

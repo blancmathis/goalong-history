@@ -3,7 +3,9 @@
     import SwiftUI
 
     struct ActivityPage: View {
-        @ObservedObject var model: DashboardViewModel
+        let model: DashboardViewModel
+        @ObservedObject var navigationStore: DashboardNavigation
+        @ObservedObject var snapshotStore: DashboardSnapshotStore
         @Environment(\.accessibilityReduceMotion) var reduceMotion
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @StateObject var computerHistoryModel = ComputerHistoryPageModel()
@@ -17,6 +19,8 @@
             showsHeader: Bool = true
         ) {
             self.model = model
+            _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+            _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
             self.showsHeader = showsHeader
         }
 
@@ -37,12 +41,13 @@
                     } else {
                         ComputerHistoryPage(
                             model: computerHistoryModel,
-                            day: model.selectedDay,
-                            snapshot: model.snapshot,
-                            snapshotGeneration: model.snapshotGeneration,
-                            isSnapshotLoading: model.isRefreshing,
+                            day: navigationStore.selectedDay,
+                            snapshot: snapshotStore.snapshot,
+                            snapshotGeneration: snapshotStore.snapshotGeneration,
+                            isSnapshotLoading: snapshotStore.isRefreshing,
                             fullContextEnabled: richContextEnabled,
-                            openSourceJSON: model.revealTodayJSON
+                            openSourceJSON: model.revealTodayJSON,
+                            runtimeStore: model.runtimeStore
                         )
                     }
                 }
@@ -53,19 +58,19 @@
             .padding(.bottom, 22)
             .background(LHTheme.pageBackground)
             .onAppearWhenShown {
-                refreshVisibleAnalysis(day: model.selectedDay)
+                refreshVisibleAnalysis(day: navigationStore.selectedDay)
             }
-            .onChange(of: model.selectedDay) { day in
+            .onChange(of: navigationStore.selectedDay) { day in
                 refreshVisibleAnalysis(day: day)
             }
             .onChange(of: consents.document) { _ in
-                refreshVisibleAnalysis(day: model.selectedDay)
+                refreshVisibleAnalysis(day: navigationStore.selectedDay)
             }
             .onChange(of: richContextEnabled) { _ in
                 ActivityAnalysisRuntime.shared.richContextPreferenceDidChange()
             }
-            .onChange(of: model.historyDeletionGeneration) { _ in
-                refreshVisibleAnalysis(day: model.selectedDay, forceRebuild: true)
+            .onChange(of: snapshotStore.historyDeletionGeneration) { _ in
+                refreshVisibleAnalysis(day: navigationStore.selectedDay, forceRebuild: true)
             }
         }
 

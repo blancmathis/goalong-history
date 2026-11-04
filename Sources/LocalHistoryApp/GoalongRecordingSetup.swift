@@ -90,7 +90,9 @@ struct GoalongVisibleTextChoice: View {
 /// Used by initial activation AND by completion of an older partial profile.
 /// Merely opening or cancelling this view never changes recording or sharing.
 struct GoalongRecordingSetupSheet: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var alertStore: DashboardAlertCenter
+    @ObservedObject var settingsStore: DashboardSettingsState
     var activating = false
     let onSaved: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -98,8 +100,9 @@ struct GoalongRecordingSetupSheet: View {
     @State private var error: String?
     init(model: DashboardViewModel, activating: Bool = false, complete: Bool = false,
          onSaved: @escaping () -> Void = {}) {
-        self.model = model; self.activating = activating; self.onSaved = onSaved
-        _proposal = State(initialValue: GoalongRecordingSetup.proposal(from: model.appliedSettings,
+        let settings = model.settingsStore
+        self.model = model; _alertStore = ObservedObject(wrappedValue: model.alertStore); _settingsStore = ObservedObject(wrappedValue: model.settingsStore); self.activating = activating; self.onSaved = onSaved
+        _proposal = State(initialValue: GoalongRecordingSetup.proposal(from: settings.appliedSettings,
             visibleText: ActivityAnalysisPreferences.richContextEnabled, complete: complete))
     }
     var body: some View {
@@ -131,8 +134,8 @@ struct GoalongRecordingSetupSheet: View {
                 Spacer()
                 Button(activating ? "Valider et activer" : "Enregistrer mes choix") {
                     guard model.applyRecordingSetup(proposal) else {
-                        error = model.alert?.message ?? "Les choix n’ont pas été enregistrés. Réessayez."
-                        model.alert = nil; return
+                        error = alertStore.alert?.message ?? "Les choix n’ont pas été enregistrés. Réessayez."
+                        alertStore.alert = nil; return
                     }
                     onSaved(); dismiss()
                     if !activating { GoalongToastCenter.shared.show("Choix d’enregistrement mis à jour") }
@@ -144,7 +147,7 @@ struct GoalongRecordingSetupSheet: View {
 }
 
 struct GoalongCompleteRecordingButton: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
     @State private var showing = false
     var body: some View {
         Button("Configurer l’enregistrement complet") { showing = true }
@@ -157,7 +160,17 @@ struct GoalongCompleteRecordingButton: View {
 /// Says on the landing page why no new activity arrives, with the one useful action.
 /// The global privacy stop and storage failures keep their own banners.
 struct GoalongRecordingStateNotice: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var navigationStore: DashboardNavigation
+    @ObservedObject var settingsStore: DashboardSettingsState
+    @ObservedObject var runtimeStore: DashboardRuntimeState
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+        _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
+    }
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @State private var globalPause = GoalongGlobalPause.load()
 
@@ -181,8 +194,8 @@ struct GoalongRecordingStateNotice: View {
     private var kind: Kind? {
         Self.kind(localEnabled: consents.isEnabled(.localComputerHistory),
                   globallyPaused: globalPause.blocksActivity,
-                  dashboardVisible: model.recordingStatusIsLive, runtime: model.runtime.state,
-                  captureHealth: model.runtime.captureHealth?.state)
+                  dashboardVisible: runtimeStore.recordingStatusIsLive, runtime: runtimeStore.runtime.state,
+                  captureHealth: runtimeStore.runtime.captureHealth?.state)
     }
 
     var body: some View {
@@ -192,7 +205,7 @@ struct GoalongRecordingStateNotice: View {
                 GoalongBanner(symbol: symbol(kind), title: title(kind), detail: detail(kind),
                               tone: kind == .permissions || kind == .input ? .warning : .neutral) {
                     // One lime per screen: pending changes own the primary action (UI-42).
-                    if model.settingsHaveChanges {
+                    if settingsStore.settingsHaveChanges {
                         Button(actionTitle(kind)) { perform(kind) }
                             .buttonStyle(LHSecondaryButtonStyle())
                             .accessibilityIdentifier("activity-recording-action")
@@ -245,14 +258,22 @@ struct GoalongRecordingStateNotice: View {
         switch kind {
         case .off: model.openRecordingSettings()
         case .paused: model.togglePause()
-        case .permissions, .input: model.selectSection(.settings); model.settingsPane = .permissions
+        case .permissions, .input: model.selectSection(.settings); navigationStore.settingsPane = .permissions
         }
     }
 }
 
 struct GoalongRecordingCoverageNotice: View {
     static let dismissedProfileKey = "goalong.activity.coverageNoticeDismissedProfile"
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var settingsStore: DashboardSettingsState
+
+    init(model: DashboardViewModel, dismissible: Bool = false, hidden: Bool = false) {
+        self.model = model
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+        self.dismissible = dismissible
+        self.hidden = hidden
+    }
     /// On Activité a deliberate custom profile can be acknowledged once; Settings always shows it.
     var dismissible = false
     /// Activité shows one banner only: a stopped or broken recording outranks a choice of details.
@@ -264,8 +285,8 @@ struct GoalongRecordingCoverageNotice: View {
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @AppStorage(ActivityAnalysisPreferences.richContextEnabledKey) private var visibleText = false
     @AppStorage(GoalongRecordingCoverageNotice.dismissedProfileKey) private var dismissedProfile = ""
-    private var count: Int { GoalongRecordingSetup.enabledCount(model.appliedSettings, visibleText: visibleText) }
-    private var profile: String { GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText) }
+    private var count: Int { GoalongRecordingSetup.enabledCount(settingsStore.appliedSettings, visibleText: visibleText) }
+    private var profile: String { GoalongRecordingSetup.profile(settingsStore.appliedSettings, visibleText: visibleText) }
     var body: some View {
         if !hidden && consents.isEnabled(.localComputerHistory) && count < 8 && !(dismissible && dismissedProfile == profile) {
             // A note is a tinted block without a border (DESIGN §8).

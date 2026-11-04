@@ -222,28 +222,28 @@ final class GoalongUXOptimizationTests: XCTestCase {
 
     @MainActor func testSecondaryPageReturnsToTheExactPageItWasOpenedFrom() throws {
         let model = try isolatedModel()
-        model.selectSection(.settings); model.settingsPane = .advanced
+        model.selectSection(.settings); model.navigationStore.settingsPane = .advanced
         model.selectSection(.privacy)
-        XCTAssertEqual(model.highlightedSidebarSection, .settings)
-        XCTAssertEqual(model.secondaryReturnTitle, "Retour aux réglages")
+        XCTAssertEqual(model.navigationStore.highlightedSidebarSection, .settings)
+        XCTAssertEqual(model.navigationStore.secondaryReturnTitle, "Retour aux réglages")
         model.returnFromSecondaryPage()
-        XCTAssertEqual(model.selectedSection, .settings)
-        XCTAssertEqual(model.settingsPane, .advanced, "Back returns to Avancé, not to the Settings home")
+        XCTAssertEqual(model.navigationStore.selectedSection, .settings)
+        XCTAssertEqual(model.navigationStore.settingsPane, .advanced, "Back returns to Avancé, not to the Settings home")
 
         model.selectSection(.history)
         model.selectSection(.agentActivity)
-        XCTAssertEqual(model.highlightedSidebarSection, .history)
-        XCTAssertEqual(model.secondaryReturnTitle, "Retour à l’historique")
+        XCTAssertEqual(model.navigationStore.highlightedSidebarSection, .history)
+        XCTAssertEqual(model.navigationStore.secondaryReturnTitle, "Retour à l’historique")
         model.selectSection(.agentActivity) // e.g. reopening the window keeps the origin
         model.returnFromSecondaryPage()
-        XCTAssertEqual(model.selectedSection, .history)
+        XCTAssertEqual(model.navigationStore.selectedSection, .history)
 
         model.selectSection(.overview)
         model.selectSection(.screenTime)
-        XCTAssertEqual(model.secondaryReturnTitle, "Activité")
+        XCTAssertEqual(model.navigationStore.secondaryReturnTitle, "Activité")
         model.returnFromSecondaryPage()
-        XCTAssertEqual(model.selectedSection, .overview)
-        XCTAssertNil(model.secondaryReturn)
+        XCTAssertEqual(model.navigationStore.selectedSection, .overview)
+        XCTAssertNil(model.navigationStore.secondaryReturn)
     }
 
     // MARK: - French presentation
@@ -257,8 +257,8 @@ final class GoalongUXOptimizationTests: XCTestCase {
     @MainActor func testExclusionsShortcutOpensTheApplicationsPane() throws {
         let model = try isolatedModel()
         model.openApplicationsSettings()
-        XCTAssertEqual(model.selectedSection, .settings)
-        XCTAssertEqual(model.settingsPane, .applications)
+        XCTAssertEqual(model.navigationStore.selectedSection, .settings)
+        XCTAssertEqual(model.navigationStore.settingsPane, .applications)
         XCTAssertEqual(SettingsPane.applications.title, "Apps et sites")
     }
 
@@ -267,24 +267,24 @@ final class GoalongUXOptimizationTests: XCTestCase {
         let success = try isolatedModel(deleteTargeted: { _, done in done(.success(3)) })
         success.deleteTargetedDetails(request, successMessage: "Supprimé.")
         try await waitForAlert(success)
-        XCTAssertEqual(success.alert?.message, "Supprimé. 3 éléments locaux supprimés.")
-        XCTAssertFalse(success.alert?.message.contains("Removed") ?? true)
+        XCTAssertEqual(success.alertStore.alert?.message, "Supprimé. 3 éléments locaux supprimés.")
+        XCTAssertFalse(success.alertStore.alert?.message.contains("Removed") ?? true)
 
         let failure = try isolatedModel(deleteTargeted: { _, done in done(.failure(TargetedHistoryDeletionError.selectionExceedsLimit(10, 5))) })
         failure.deleteTargetedDetails(request, successMessage: "Supprimé.")
         try await waitForAlert(failure)
-        XCTAssertEqual(failure.alert?.message, TargetedHistoryDeletionError.selectionExceedsLimit(10, 5).errorDescription)
-        XCTAssertFalse(failure.alert?.message.contains("selectionExceedsLimit") ?? true)
+        XCTAssertEqual(failure.alertStore.alert?.message, TargetedHistoryDeletionError.selectionExceedsLimit(10, 5).errorDescription)
+        XCTAssertFalse(failure.alertStore.alert?.message.contains("selectionExceedsLimit") ?? true)
 
         let wide = try isolatedModel(deleteDetails: { _, done in done(.failure(TargetedHistoryDeletionError.sourceIncomplete)) })
         wide.deleteDetails(since: nil)
         try await waitForAlert(wide)
-        XCTAssertEqual(wide.alert?.message, TargetedHistoryDeletionError.sourceIncomplete.errorDescription)
+        XCTAssertEqual(wide.alertStore.alert?.message, TargetedHistoryDeletionError.sourceIncomplete.errorDescription)
     }
 
     @MainActor private func waitForAlert(_ model: DashboardViewModel) async throws {
-        for _ in 0..<100 where model.alert == nil { try await Task.sleep(nanoseconds: 20_000_000) }
-        XCTAssertNotNil(model.alert)
+        for _ in 0..<100 where model.alertStore.alert == nil { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertNotNil(model.alertStore.alert)
     }
 
     func testEveryCaptureHealthStateHasAFrenchExplanation() {

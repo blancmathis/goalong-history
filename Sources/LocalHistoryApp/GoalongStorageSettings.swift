@@ -4,7 +4,17 @@ import LocalHistoryCore
 import Foundation
 
 @MainActor struct GoalongStorageSettings: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var settingsStore: DashboardSettingsState
+    @ObservedObject var runtimeStore: DashboardRuntimeState
+    @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+        _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
+        _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+    }
     @State private var retention = false
     @State private var deletion = false
     @State private var retentionSummary = ""
@@ -14,9 +24,9 @@ import Foundation
                 HStack {
                     Text("Espace utilisé par Goalong")
                     Spacer()
-                    Text(GoalongUIFormat.bytes(model.snapshot.storageBytes))
+                    Text(GoalongUIFormat.bytes(snapshotStore.snapshot.storageBytes))
                 }
-                if let free = model.freeDiskBytes {
+                if let free = runtimeStore.freeDiskBytes {
                     Divider()
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -53,17 +63,23 @@ import Foundation
         .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls() }
         .onAppearWhenShown(perform: refresh)
         .sheet(isPresented: $retention, onDismiss: refresh) {
-            HistoryRetentionSettingsSheet(legacyRetentionDays: model.appliedSettings.retentionDays).goalongControls()
+            HistoryRetentionSettingsSheet(legacyRetentionDays: settingsStore.appliedSettings.retentionDays).goalongControls()
         }
     }
     private func refresh() {
-        let store = HistoryRetentionStore(legacyRetentionDays: model.appliedSettings.retentionDays)
+        let store = HistoryRetentionStore(legacyRetentionDays: settingsStore.appliedSettings.retentionDays)
         retentionSummary = HistoryRetentionPolicy.automaticCleanupSummary(enabled: store.isAutomaticCleanupEnabled)
     }
 }
 
 @MainActor struct GoalongAdvancedTools: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+    }
     @State private var advancedShare = false
     @State private var siteAnalysis = false
     @State private var health = false
@@ -82,7 +98,7 @@ import Foundation
             }
             GoalongSettingsList(title: "Analyser") {
                 GoalongSettingsLink(title: "Comprendre mon travail", value: "", symbol: "chart.bar.doc.horizontal",
-                                    detail: "Vos projets et vos tâches, sur une période choisie.") { model.profileStudio.show(earliestDay: model.snapshot.availableDays.min()) }
+                                    detail: "Vos projets et vos tâches, sur une période choisie.") { model.profileStudio.show(earliestDay: snapshotStore.snapshot.availableDays.min()) }
                 GoalongRowDivider()
                 GoalongSettingsLink(title: "Analyser une demande du site…", value: "", symbol: "magnifyingglass",
                                     detail: "Une demande du site Goalong, traitée avec votre ChatGPT.") { siteAnalysis = true }

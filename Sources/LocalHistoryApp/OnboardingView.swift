@@ -4,7 +4,15 @@
     struct LocalHistoryOnboardingView: View {
         @Environment(\.colorSchemeContrast) var contrast
         @Environment(\.accessibilityReduceMotion) var reduceMotion
-        @ObservedObject var model: DashboardViewModel
+        let model: DashboardViewModel
+        @ObservedObject var alertStore: DashboardAlertCenter
+        @ObservedObject var settingsStore: DashboardSettingsState
+
+        init(model: DashboardViewModel) {
+            self.model = model
+            _alertStore = ObservedObject(wrappedValue: model.alertStore)
+            _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+        }
         @StateObject var launchAtLogin = LaunchAtLoginManager()
         @ObservedObject var consents = GoalongCapabilityConsentStore.shared
         @AppStorage("goalongOnboardingStep") var step: SetupStep = .privacy
@@ -79,9 +87,9 @@
                 if step == .welcome || !privacyReviewed { step = .privacy }
                 if !loadedProposal {
                     let previouslyReviewed = GoalongRecordingSetup.hasReviewedChoices(defaults: defaults)
-                    let proposed = GoalongRecordingSetup.proposal(from: model.appliedSettings,
+                    let proposed = GoalongRecordingSetup.proposal(from: settingsStore.appliedSettings,
                         visibleText: defaults.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey), defaults: defaults)
-                    model.settingsDraft = proposed.settings
+                    settingsStore.settingsDraft = proposed.settings
                     visibleTextDraft = proposed.visibleText
                     localRecordingDraft = previouslyReviewed ? consents.isEnabled(.localComputerHistory) : true
                     loadedProposal = true
@@ -161,15 +169,15 @@
                     else {
                         if step == .privacy {
                             // Return in the exclusion field can reach this default button: never drop the typed site.
-                            if GoalongOnboardingExclusionEdit.commitPendingWebsite(&pendingWebsite, to: &model.settingsDraft) == .invalid {
+                            if GoalongOnboardingExclusionEdit.commitPendingWebsite(&pendingWebsite, to: &settingsStore.settingsDraft) == .invalid {
                                 note = "Le site saisi dans les exclusions n’est pas valide (exemple : exemple.fr). Corrigez-le ou videz le champ."
                                 return
                             }
-                            let choices = GoalongRecordingSetup.Proposal(settings: model.settingsDraft,
+                            let choices = GoalongRecordingSetup.Proposal(settings: settingsStore.settingsDraft,
                                 visibleText: visibleTextDraft)
                             guard model.applyRecordingSetup(choices) else {
-                                note = model.alert?.message ?? "Les choix n’ont pas pu être enregistrés. Réessayez."
-                                model.alert = nil; return
+                                note = alertStore.alert?.message ?? "Les choix n’ont pas pu être enregistrés. Réessayez."
+                                alertStore.alert = nil; return
                             }
                             privacyReviewed = true
                             if !localRecordingDraft && consents.isEnabled(.localComputerHistory) {

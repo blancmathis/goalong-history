@@ -51,7 +51,7 @@
 
         @MainActor private func waitUntilExportEnds(_ model: DashboardViewModel) {
             let deadline = Date().addingTimeInterval(10)
-            while model.isExportingShare, Date() < deadline {
+            while model.alertStore.isExportingShare, Date() < deadline {
                 RunLoop.current.run(until: Date().addingTimeInterval(0.02))
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
@@ -65,7 +65,7 @@
             let file = try destination()
             model.dashboardDidBecomeVisible()
             model.startShareExport(to: file)
-            XCTAssertTrue(model.isExportingShare)
+            XCTAssertTrue(model.alertStore.isExportingShare)
             XCTAssertEqual(writer.started.wait(timeout: .now() + 5), .success)
 
             model.dashboardDidBecomeHidden(discardContents: false)  // window resigns key
@@ -75,8 +75,8 @@
 
             XCTAssertEqual(writer.sawCancellation, false)
             XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
-            XCTAssertFalse(model.isExportingShare)
-            XCTAssertEqual(model.alert?.title, "Fichier signé exporté")
+            XCTAssertFalse(model.alertStore.isExportingShare)
+            XCTAssertEqual(model.alertStore.alert?.title, "Fichier signé exporté")
             XCTAssertEqual(revealed, [file])
         }
 
@@ -92,15 +92,15 @@
 
             model.dashboardDidBecomeHidden(discardContents: false)
             model.dashboardWillClose()
-            XCTAssertFalse(model.isExportingShare)
+            XCTAssertFalse(model.alertStore.isExportingShare)
             writer.release.signal()
             waitUntilExportEnds(model)
 
             XCTAssertEqual(writer.sawCancellation, true)
             XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
-            XCTAssertEqual(model.alert?.kind, .error)
-            XCTAssertEqual(model.alert?.title, "Export interrompu")
-            XCTAssertEqual(model.alert?.message, "La fenêtre a été fermée avant la fin de l’export. Relancez-le.")
+            XCTAssertEqual(model.alertStore.alert?.kind, .error)
+            XCTAssertEqual(model.alertStore.alert?.title, "Export interrompu")
+            XCTAssertEqual(model.alertStore.alert?.message, "La fenêtre a été fermée avant la fin de l’export. Relancez-le.")
             XCTAssertEqual(revealed, [])
         }
 

@@ -2,7 +2,6 @@ import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Ambiance
-    import Combine
     import Foundation
     import LocalHistoryCore
     import UniformTypeIdentifiers
@@ -114,7 +113,9 @@ import AppleScreenTime
 
     typealias ShareExportWriter = (_ job: ShareExportJob, _ cancellation: @escaping () -> Bool) throws -> Void
 
-    final class DashboardViewModel: ObservableObject {
+    /// R14b: the model acts; no view observes it. Each view observes the stores its body reads (`navigationStore`,
+    /// `snapshotStore`…), so a publication re-evaluates only the views that show it.
+    final class DashboardViewModel {
         typealias SaveConfiguration = (RecorderConfig) throws -> RecorderConfig
         typealias DeleteDetails = (Date?, @escaping (Result<Int, Error>) -> Void) -> Void
         typealias DeleteTargetedDetails = (
@@ -124,28 +125,29 @@ import AppleScreenTime
 
         /// R14b: page, Settings pane, day, welcome and sheet. A view reads it through its own `@ObservedObject`.
         let navigationStore: DashboardNavigation
-        // R14b façade (removed at step 8). Setting an unchanged value publishes nothing.
-        var selectedSection: DashboardSection {
+        // R14b: shortcuts for this file only (a view reads the store, so it observes it). An unchanged value
+        // publishes nothing.
+        private var selectedSection: DashboardSection {
             get { navigationStore.selectedSection }
             set { if navigationStore.selectedSection != newValue { navigationStore.selectedSection = newValue } }
         }
-        var settingsPane: SettingsPane {
+        private var settingsPane: SettingsPane {
             get { navigationStore.settingsPane }
             set { if navigationStore.settingsPane != newValue { navigationStore.settingsPane = newValue } }
         }
-        var showingWebsiteShare: Bool {
+        private var showingWebsiteShare: Bool {
             get { navigationStore.showingWebsiteShare }
             set { if navigationStore.showingWebsiteShare != newValue { navigationStore.showingWebsiteShare = newValue } }
         }
-        var showWelcome: Bool {
+        private var showWelcome: Bool {
             get { navigationStore.showWelcome }
             set { if navigationStore.showWelcome != newValue { navigationStore.showWelcome = newValue } }
         }
-        private(set) var selectedDay: Date {
+        private var selectedDay: Date {
             get { navigationStore.selectedDay }
             set { navigationStore.setSelectedDay(newValue) }
         }
-        private(set) var secondaryReturn: DashboardSecondaryReturn? {
+        private var secondaryReturn: DashboardSecondaryReturn? {
             get { navigationStore.secondaryReturn }
             set { navigationStore.setSecondaryReturn(newValue) }
         }
@@ -157,69 +159,68 @@ import AppleScreenTime
         private var freeDiskCheckedAt: Date?
         /// R14b: the selected day's data. A view reads it through its own `@ObservedObject`.
         let snapshotStore: DashboardSnapshotStore
-        // R14b façade (removed at step 8): read-only forwarders, the stores publish through the relay.
-        var runtime: RuntimePresentation { runtimeStore.runtime }
-        var freeDiskBytes: Int64? { runtimeStore.freeDiskBytes }
-        var snapshot: DashboardDaySnapshot { snapshotStore.snapshot }
-        var snapshotGeneration: UInt64 { snapshotStore.snapshotGeneration }
-        var isRefreshing: Bool { snapshotStore.isRefreshing }
-        var historyDeletionGeneration: Int { snapshotStore.historyDeletionGeneration }
-        var dashboardIsVisible: Bool { runtimeStore.dashboardIsVisible }
-        var dashboardStatusIsVisible: Bool { runtimeStore.dashboardStatusIsVisible }
+        // R14b: shortcuts for this file only (a view reads the store, so it observes it).
+        private var runtime: RuntimePresentation { runtimeStore.runtime }
+        private var freeDiskBytes: Int64? { runtimeStore.freeDiskBytes }
+        private var snapshot: DashboardDaySnapshot { snapshotStore.snapshot }
+        private var snapshotGeneration: UInt64 { snapshotStore.snapshotGeneration }
+        private var isRefreshing: Bool { snapshotStore.isRefreshing }
+        private var historyDeletionGeneration: Int { snapshotStore.historyDeletionGeneration }
+        private var dashboardIsVisible: Bool { runtimeStore.dashboardIsVisible }
+        private var dashboardStatusIsVisible: Bool { runtimeStore.dashboardStatusIsVisible }
         // R14b: no view reads these three (searched by name in Sources and Tests): they do not publish.
         var selectedSessionID: String?
         var activitySearch = ""
         var activityFilter: ActivityFilter = .all
         /// R14b: settings draft, sharing rules and config.json state. A view reads it through its own `@ObservedObject`.
         let settingsStore: DashboardSettingsState
-        // R14b façade (removed at step 8). Setting an unchanged value publishes nothing.
-        var usageSearch: String {
+        // R14b: shortcuts for this file only (a view reads the store, so it observes it). An unchanged value
+        // publishes nothing.
+        private var usageSearch: String {
             get { settingsStore.usageSearch }
             set { if settingsStore.usageSearch != newValue { settingsStore.usageSearch = newValue } }
         }
-        var settingsDraft: DashboardSettingsDraft {
+        private var settingsDraft: DashboardSettingsDraft {
             get { settingsStore.settingsDraft }
             set { if settingsStore.settingsDraft != newValue { settingsStore.settingsDraft = newValue } }
         }
-        private(set) var sharingRules: [String: SharingVisibility] {
+        private var sharingRules: [String: SharingVisibility] {
             get { settingsStore.sharingRules }
             set { settingsStore.setSharing(rules: newValue) }
         }
-        private(set) var defaultSharingVisibility: SharingVisibility {
+        private var defaultSharingVisibility: SharingVisibility {
             get { settingsStore.defaultSharingVisibility }
             set { settingsStore.setSharing(rules: settingsStore.sharingRules, defaultVisibility: newValue) }
         }
-        private(set) var savedSettingsDraft: DashboardSettingsDraft {
+        private var savedSettingsDraft: DashboardSettingsDraft {
             get { settingsStore.savedSettingsDraft }
             set { settingsStore.setSavedSettingsDraft(newValue) }
         }
-        var configNotice: String? { settingsStore.configNotice }
-        var configLocked: Bool { settingsStore.configLocked }
-        var configBackupName: String? { settingsStore.configBackupName }
+        private var configNotice: String? { settingsStore.configNotice }
+        private var configLocked: Bool { settingsStore.configLocked }
+        private var configBackupName: String? { settingsStore.configBackupName }
         /// R14b: the alert and the export flag. A view reads them through its own `@ObservedObject`.
         let alertStore = DashboardAlertCenter()
-        // R14b façade (removed at step 8). Setting the same alert, or nil over nil, publishes nothing.
-        var alert: DashboardAlert? {
+        // R14b: shortcuts for this file only. Setting the same alert, or nil over nil, publishes nothing.
+        private var alert: DashboardAlert? {
             get { alertStore.alert }
             set { if newValue?.id != alertStore.alert?.id { alertStore.alert = newValue } }
         }
-        private(set) var isExportingShare: Bool {
+        private var isExportingShare: Bool {
             get { alertStore.isExportingShare }
             set { alertStore.setExportingShare(newValue) }
         }
 
         /// R14b: what this Mac is identified as. A view reads it through its own `@ObservedObject`.
         let deviceStore: DashboardDeviceState
-        // R14b façade (removed at step 8): read-only forwarders, the store publishes through the relay.
-        var deviceID: String { deviceStore.deviceID }
-        var knownDeviceID: String? { deviceStore.knownDeviceID }
-        var deviceTrustTier: String { deviceStore.deviceTrustTier }
-        var deviceAlgorithm: String { deviceStore.deviceAlgorithm }
-        var deviceProtectionTitle: String { deviceStore.deviceProtectionTitle }
-        var deviceProtectionSummary: String { deviceStore.deviceProtectionSummary }
-        var trustNotices: [String] { deviceStore.trustNotices }
-        /// R14b façade: each store's publication is relayed to the model until step 8.
-        private var storeRelays: [AnyCancellable] = []
+        // R14b: shortcuts for this file only (a view reads the store, so it observes it).
+        private var deviceID: String { deviceStore.deviceID }
+        private var knownDeviceID: String? { deviceStore.knownDeviceID }
+        private var deviceTrustTier: String { deviceStore.deviceTrustTier }
+        private var deviceAlgorithm: String { deviceStore.deviceAlgorithm }
+        private var deviceProtectionTitle: String { deviceStore.deviceProtectionTitle }
+        private var deviceProtectionSummary: String { deviceStore.deviceProtectionSummary }
+        private var trustNotices: [String] { deviceStore.trustNotices }
         private var configObserver: NSObjectProtocol?
         private let onReloadConfiguration: () -> Bool
         private let onResetConfiguration: () throws -> String?
@@ -269,7 +270,7 @@ import AppleScreenTime
         )
         private let shareQueue = DispatchQueue(label: "ai.goalong.localhistory.dashboard-share", qos: .userInitiated)
         /// The recording status is fresh: the banner and the page bodies show it only then.
-        var recordingStatusIsLive: Bool { runtimeStore.recordingStatusIsLive }
+        private var recordingStatusIsLive: Bool { runtimeStore.recordingStatusIsLive }
         private var dataRequestSequence: UInt64 = 0
         private var metadataRequestSequence: UInt64 = 0
         private var activeDataRequest:
@@ -346,7 +347,6 @@ import AppleScreenTime
             settingsStore = DashboardSettingsState(
                 draft: DashboardSettingsDraft(config: configManager.config), sharingRules: sharingRulesStore.rules,
                 defaultSharingVisibility: sharingRulesStore.defaultVisibility)
-            relayStores()
             refreshTrustNotices()
             trustObserver = NotificationCenter.default.addObserver(
                 forName: DeviceTrustState.didChange, object: nil, queue: .main
@@ -415,12 +415,6 @@ import AppleScreenTime
             refreshRuntime()
         }
 
-        /// R14b façade (removed at step 8): a store's publication republishes the model, for the views not migrated.
-        private func relayStores() {
-            let stores: [ObservableObjectPublisher] = [deviceStore.objectWillChange, alertStore.objectWillChange, navigationStore.objectWillChange,
-                settingsStore.objectWillChange, runtimeStore.objectWillChange, snapshotStore.objectWillChange]
-            storeRelays = stores.map { $0.sink { [weak self] _ in self?.objectWillChange.send() } }
-        }
 
         func refreshTrustNotices() {
             deviceStore.setTrustNotices([
@@ -443,7 +437,7 @@ import AppleScreenTime
             cancelShareExport()
         }
 
-        var isTodaySelected: Bool { navigationStore.isTodaySelected }
+        private var isTodaySelected: Bool { navigationStore.isTodaySelected }
 
         var filteredSessions: [ActivitySession] {
             let query = activitySearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -505,7 +499,7 @@ import AppleScreenTime
             }
         }
 
-        var settingsHaveChanges: Bool { settingsStore.settingsHaveChanges }
+        private var settingsHaveChanges: Bool { settingsStore.settingsHaveChanges }
 
         /// After midnight or a time zone change, a page left on the old « aujourd’hui » moves to the new one.
         /// A day chosen by the user keeps its date: after a time zone change it moves to that date's new midnight.
@@ -590,8 +584,8 @@ import AppleScreenTime
             if destination.section == .settings { settingsPane = destination.pane }
         }
 
-        var secondaryReturnTitle: String { navigationStore.secondaryReturnTitle }
-        var highlightedSidebarSection: DashboardSection { navigationStore.highlightedSidebarSection }
+        private var secondaryReturnTitle: String { navigationStore.secondaryReturnTitle }
+        private var highlightedSidebarSection: DashboardSection { navigationStore.highlightedSidebarSection }
 
         func refreshEverything() {
             guard dashboardIsVisible else { return }
@@ -972,9 +966,6 @@ import AppleScreenTime
             }
         }
 
-        /// The Privacy screen reports persisted choices, never an unsaved editor draft.
-        var appliedSettings: DashboardSettingsDraft { savedSettingsDraft }
-
         @discardableResult
         func saveOnboardingRecordingChoices() -> Bool {
             do {
@@ -1031,7 +1022,7 @@ import AppleScreenTime
             count <= 1 ? "\(count) élément local supprimé." : "\(count) éléments locaux supprimés."
         }
 
-        var mostRecentActivitySession: ActivitySession? {
+        private var mostRecentActivitySession: ActivitySession? {
             snapshot.sessions.first
         }
 

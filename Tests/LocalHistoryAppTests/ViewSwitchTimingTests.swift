@@ -89,7 +89,7 @@ final class ViewSwitchTimingTests: XCTestCase {
             let republished = environment["GOALONG_SWITCH_SKIP_REPUBLISH"] == nil
             for target in ["activite-28j", "activite-7j", "activite-1j"] + sections.map(\.rawValue) where republished {
                 let period = target.hasPrefix("activite-") ? String(target.dropFirst(9).dropLast()) : nil
-                if period != nil, model.selectedSection != .overview, let back = Self.node("sidebar-overview", in: host) {
+                if period != nil, model.navigationStore.selectedSection != .overview, let back = Self.node("sidebar-overview", in: host) {
                     _ = Self.measure("overview", pass: -1, press: back, host: host, model: model)
                 }
                 guard let button = period.map({ Self.periodButton($0, in: host) }) ?? Self.node("sidebar-\(target)", in: host) else { continue }
@@ -123,7 +123,8 @@ final class ViewSwitchTimingTests: XCTestCase {
     // MARK: Measure
     /// The busy member's dashboard (R13a): `days` days of journals and their summaries, the real window content,
     /// a window never ordered on screen. Shared by the timing (opt-in) and its CI guard (ViewSwitchBudgetTests).
-    @MainActor static func memberDashboard(_ ctx: GalleryContext, days: Int, section: DashboardSection = .overview) throws
+    @MainActor static func memberDashboard(_ ctx: GalleryContext, days: Int, section: DashboardSection = .overview,
+                                          scheduler: DashboardRefreshScheduler? = nil) throws
         -> (DashboardViewModel, GalleryWindow, NSView, (events: Int, bytes: Int), Int) {
         try AppPaths.prepareApplicationStorage(applicationSupportDirectory: AppPaths.applicationSupportDirectory)
         GalleryFixtureHome.enableRecording()
@@ -137,6 +138,7 @@ final class ViewSwitchTimingTests: XCTestCase {
         ctx.environment.usedBytes = Int64(written.bytes)
         var options = GalleryFixtures.DashboardOptions()
         options.section = section
+        options.refreshScheduler = scheduler
         let model = try GalleryFixtures.dashboardModel(ctx, options)
         let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 790),
                                    styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)
@@ -251,7 +253,7 @@ final class ViewSwitchTimingTests: XCTestCase {
     @MainActor static func republish(_ host: NSView, model: DashboardViewModel) -> Double {
         func once(_ send: Bool) -> Double {
             let started = ProcessInfo.processInfo.systemUptime
-            if send { model.objectWillChange.send() }
+            if send { model.snapshotStore.objectWillChange.send() }
             RunLoop.current.run(until: Date().addingTimeInterval(0.001))
             host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
             return (ProcessInfo.processInfo.systemUptime - started) * 1_000
@@ -273,7 +275,7 @@ final class ViewSwitchTimingTests: XCTestCase {
             host.displayIfNeeded()
             let end = ProcessInfo.processInfo.systemUptime
             stall(max(0, end - slice - 0.002))
-            let idle = GoalongAnalyticsModel.loadsInFlight == 0 && !model.isRefreshing
+            let idle = GoalongAnalyticsModel.loadsInFlight == 0 && !model.snapshotStore.isRefreshing
                 && ComputerHistoryPageModel.refreshesInFlight == 0 && GoalongWorkReviewModel.loadsInFlight == 0
             if idle && quiet == 0 { quietSince = end }
             quiet = idle ? quiet + 1 : 0

@@ -3,14 +3,22 @@
     import SwiftUI
 
     struct MonitoringRulesList: View {
-        @ObservedObject var model: DashboardViewModel
+        let model: DashboardViewModel
+        @ObservedObject var settingsStore: DashboardSettingsState
+        @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+        init(model: DashboardViewModel) {
+            self.model = model
+            _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+            _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+        }
 
         @State private var query = ""
         @State private var filter: MonitoringSubjectFilter = .all
 
         private var filteredItems: [TrackedUsageItem] {
             let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return model.snapshot.trackedUsage.filter { item in
+            return snapshotStore.snapshot.trackedUsage.filter { item in
                 let matchesFilter: Bool
                 switch filter {
                 case .all:
@@ -42,8 +50,8 @@
                     LHCard {
                         EmptyStateView(
                             symbol: "switch.2",
-                            title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site pour l’instant" : "Aucun résultat",
-                            message: model.snapshot.trackedUsage.isEmpty
+                            title: snapshotStore.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site pour l’instant" : "Aucun résultat",
+                            message: snapshotStore.snapshot.trackedUsage.isEmpty
                                 ? "Laissez Goalong actif : chaque app et site observé apparaîtra ici avec son propre réglage."
                                 : "Essayez une autre recherche ou un autre filtre."
                         )
@@ -214,7 +222,7 @@
                     )
                 }
                 return MonitoringState(
-                    enabled: !model.isApplicationExcludedFromCapture(bundleIdentifier),
+                    enabled: !settingsStore.isApplicationExcludedFromCapture(bundleIdentifier),
                     editable: true,
                     help: "Détermine si les détails futurs de cette app peuvent être enregistrés."
                 )
@@ -226,7 +234,7 @@
                         help: "Ce site n’a pas d’adresse stable : Goalong ne peut pas lui associer une règle permanente."
                     )
                 }
-                if let parent = model.excludingParentDomain(for: host) {
+                if let parent = settingsStore.excludingParentDomain(for: host) {
                     return MonitoringState(
                         enabled: false,
                         editable: false,
@@ -234,7 +242,7 @@
                     )
                 }
                 return MonitoringState(
-                    enabled: !model.isDomainExcludedFromCapture(host),
+                    enabled: !settingsStore.isDomainExcludedFromCapture(host),
                     editable: true,
                     help: "Détermine si les détails futurs de ce site peuvent être enregistrés."
                 )

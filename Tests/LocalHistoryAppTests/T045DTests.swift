@@ -79,7 +79,7 @@
                 delayedAutomaticScheduler: { _ in })
             let picked = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: -3, to: Calendar.current.startOfDay(for: Date())))
             ChatGPTRecapPage.chooseDay(picked, model: model, runtime: runtime)
-            XCTAssertEqual(model.selectedDay, picked)
+            XCTAssertEqual(model.navigationStore.selectedDay, picked)
             XCTAssertEqual(runtime.selectedDay, picked)
         }
     }

@@ -716,7 +716,7 @@ import LocalHistoryCore
     }
 
     struct ComputerHistoryActivationCard: View {
-        @ObservedObject var model: DashboardViewModel
+        let model: DashboardViewModel
         var body: some View {
             // An empty state on the page, like the empty day of the same screen, not in a group (DESIGN §9, UI-17C écran 22).
             // The explanation is the switch's own label: no second, floating title.

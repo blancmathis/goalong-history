@@ -80,8 +80,8 @@
             }
             XCTAssertFalse(privacy.contains("Seuls les événements locaux de cette session"))
             XCTAssertTrue(activity.contains("openSourceJSON: model.revealTodayJSON"))
-            XCTAssertTrue(activity.contains("snapshotGeneration: model.snapshotGeneration"))
-            XCTAssertTrue(activity.contains("isSnapshotLoading: model.isRefreshing"))
+            XCTAssertTrue(activity.contains("snapshotGeneration: snapshotStore.snapshotGeneration"))
+            XCTAssertTrue(activity.contains("isSnapshotLoading: snapshotStore.isRefreshing"))
             XCTAssertTrue(computerHistory.contains(".taskWhenShown(id: timelineRefreshID)"))
             XCTAssertTrue(computerHistory.contains("isSnapshotLoading || timelineModel.isLoading"))
             XCTAssertTrue(dashboardModel.contains("activateFileViewerSelecting([file])"))
@@ -98,7 +98,7 @@
                 encoding: .utf8
             )
 
-            XCTAssertTrue(source.contains("private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled, showing: model.selectedSection) }"))
+            XCTAssertTrue(source.contains("private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled, showing: navigationStore.selectedSection) }"))
             XCTAssertTrue(
                 source.contains(
                     "static let primarySections: [DashboardSection] = [.overview, .work, .history, .concentration, .settings]"
@@ -123,7 +123,7 @@
             XCTAssertTrue(history.contains("@State private var source: HistorySource = .computer"))
             XCTAssertTrue(history.contains("presentation: .history"))
             XCTAssertTrue(history.contains("DayNavigationHeader("))
-            XCTAssertTrue(history.contains("onShare: { model.showingWebsiteShare = true }"))
+            XCTAssertTrue(history.contains("onShare: { navigationStore.showingWebsiteShare = true }"))
             let dayHeader = try String(
                 contentsOf: repositoryRoot.appendingPathComponent("Sources/LocalHistoryApp/DayNavigationHeader.swift"),
                 encoding: .utf8

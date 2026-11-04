@@ -4,20 +4,29 @@
     import SwiftUI
 
     struct UnifiedHistoryPage: View {
-        @ObservedObject private var model: DashboardViewModel
+        private let model: DashboardViewModel
+        @ObservedObject var deviceStore: DashboardDeviceState
+        @ObservedObject var navigationStore: DashboardNavigation
+        @ObservedObject var runtimeStore: DashboardRuntimeState
+        @ObservedObject var snapshotStore: DashboardSnapshotStore
         @ObservedObject private var agents: AgentActivityRuntime
         @StateObject private var screenTime: AppleScreenTimeDashboardModel
         @State private var source: HistorySource = .computer
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
         init(model: DashboardViewModel) {
-            _model = ObservedObject(wrappedValue: model)
+            let deviceStore = model.deviceStore, navigationStore = model.navigationStore
+            self.model = model
+            _deviceStore = ObservedObject(wrappedValue: deviceStore)
+            _navigationStore = ObservedObject(wrappedValue: navigationStore)
+            _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
+            _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
             _agents = ObservedObject(wrappedValue: model.agentActivityRuntime)
             _screenTime = StateObject(
                 wrappedValue: AppleScreenTimeDashboardModel(
                     rootDirectory: AppPaths.screenTimeDirectory,
-                    deviceID: model.deviceID,
-                    selectedDay: model.selectedDay,
+                    deviceID: deviceStore.deviceID,
+                    selectedDay: navigationStore.selectedDay,
                     accessEnabled: false
                 )
             )
@@ -39,8 +48,8 @@
             }
             .background(LHTheme.pageBackground)
             .onAppearWhenShown {
-                synchronizeSources(with: model.selectedDay)
-                screenTime.setActive(model.dashboardIsVisible && source == .screenTime)
+                synchronizeSources(with: navigationStore.selectedDay)
+                screenTime.setActive(runtimeStore.dashboardIsVisible && source == .screenTime)
                 if source == .conversations {
                     agents.scanNow(analyzeSelectedDay: true)
                 }
@@ -48,17 +57,17 @@
             .onDisappear {
                 screenTime.setActive(false)
             }
-            .onChange(of: model.dashboardIsVisible) { visible in
+            .onChange(of: runtimeStore.dashboardIsVisible) { visible in
                 screenTime.setActive(visible && source == .screenTime)
                 if visible && source == .conversations {
                     agents.scanNow(analyzeSelectedDay: true)
                 }
             }
-            .onChange(of: model.selectedDay) { day in
+            .onChange(of: navigationStore.selectedDay) { day in
                 synchronizeSources(with: day)
             }
             .onChange(of: source) { next in
-                screenTime.setActive(model.dashboardIsVisible && next == .screenTime)
+                screenTime.setActive(runtimeStore.dashboardIsVisible && next == .screenTime)
                 if next == .conversations {
                     agents.scanNow(analyzeSelectedDay: true)
                 }
@@ -67,14 +76,14 @@
 
         private var header: some View {
             DayNavigationHeader(
-                title: "Historique", day: model.selectedDay,
-                isRefreshing: model.isRefreshing || agents.isScanning || screenTime.isBusy,
+                title: "Historique", day: navigationStore.selectedDay,
+                isRefreshing: snapshotStore.isRefreshing || agents.isScanning || screenTime.isBusy,
                 onSelectDay: selectDay,
-                onShare: { model.showingWebsiteShare = true },
+                onShare: { navigationStore.showingWebsiteShare = true },
                 onRefresh: refresh,
                 // Same rule as Activité: an empty day greys the button instead of offering nothing.
                 // History off: nothing is recorded, so there is nothing to share either (UI-17C, écran 22).
-                sharingEnabled: historyEnabled && model.snapshot.eventCount > 0,
+                sharingEnabled: historyEnabled && snapshotStore.snapshot.eventCount > 0,
                 sharingDisabledReason: historyEnabled ? "Rien à partager ce jour-là" : "Enregistrement désactivé"
             )
         }

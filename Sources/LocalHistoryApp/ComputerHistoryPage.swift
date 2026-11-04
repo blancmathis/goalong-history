@@ -652,13 +652,13 @@
         @State private var timelineSearch = ""
         @State private var newestFirst = true
         @State private var hasRetried = false
-        @Environment(\.goalongRecordingModel) private var recordingModel
+        /// R14b: observed, so a storage stop or its end shows at once.
+        @ObservedObject var runtimeStore: DashboardRuntimeState
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
-        /// R8-6: the banner's own slot rule (one source). Without a model (preview), the page keeps the cause.
+        /// R8-6: the banner's own slot rule (one source).
         private var bannerNamesStorage: Bool {
-            guard let recordingModel else { return false }
-            return GoalongAttentionBanner.currentStorageSlot(model: recordingModel,
+            GoalongAttentionBanner.currentStorageSlot(runtime: runtimeStore,
                 localEnabled: consents.isEnabled(.localComputerHistory),
                 globallyPaused: GoalongGlobalPause.load().blocksActivity, section: .history) == .storage
         }
@@ -957,8 +957,8 @@
             } else {
                 // DEF-07: a day with traces still names the stop and its cause above the timeline.
                 if let stop = ComputerHistoryPageCopy.storageStopNote(
-                    isToday: GoalongToday.isToday(day), failure: recordingModel?.runtime.storageFailure,
-                    since: recordingModel?.runtime.storageInterruptedSince,
+                    isToday: GoalongToday.isToday(day), failure: runtimeStore.runtime.storageFailure,
+                    since: runtimeStore.runtime.storageInterruptedSince,
                     bannerNamesStorage: bannerNamesStorage) {
                     GoalongNote(stop, tone: .warning)
                         .accessibilityIdentifier("history-storage-stop")
@@ -1047,7 +1047,8 @@
 
         /// Writes refused today: the empty day has a known cause and a start time.
         private var storageStopTitle: String? {
-            guard GoalongToday.isToday(day), let runtime = recordingModel?.runtime, runtime.storageFailure != nil else { return nil }
+            let runtime = runtimeStore.runtime
+            guard GoalongToday.isToday(day), runtime.storageFailure != nil else { return nil }
             return ComputerHistoryPageCopy.storageEmptyTitle(since: runtime.storageInterruptedSince,
                                                              bannerNamesStorage: bannerNamesStorage)
         }
@@ -1073,7 +1074,7 @@
         }
 
         private var emptyTimelineMessage: String {
-            if storageStopTitle != nil, let kind = recordingModel?.runtime.storageFailure {
+            if storageStopTitle != nil, let kind = runtimeStore.runtime.storageFailure {
                 return ComputerHistoryPageCopy.storageEmptyMessage(failure: kind, bannerNamesStorage: bannerNamesStorage)
             }
             switch model.sourceStatus {

@@ -103,7 +103,17 @@ enum GoalongHomeRows {
 }
 
 @MainActor struct GoalongDataStatus: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var navigationStore: DashboardNavigation
+    @ObservedObject var settingsStore: DashboardSettingsState
+    @ObservedObject var runtimeStore: DashboardRuntimeState
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+        _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
+    }
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
     @ObservedObject private var analysis = ChatGPTRecapRuntime.shared
@@ -115,7 +125,7 @@ enum GoalongHomeRows {
     var body: some View {
         LHCard(padding: 0) {
             VStack(spacing: 0) {
-                row("Enregistrement", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : model.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(model.appliedSettings, visibleText: visibleText),
+                row("Enregistrement", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : runtimeStore.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(settingsStore.appliedSettings, visibleText: visibleText),
                     detail: "Ce que Goalong conserve sur ce Mac", symbol: GoalongHomeRows.recordingSymbol, pane: .recording)
                 GoalongRowDivider()
                 row("Envoyer au site Goalong", status: Self.websiteStatus(enabled: sender.enabled, hasPlan: sender.savedConfiguration != nil, pauseReason: sender.pauseReason),
@@ -153,7 +163,7 @@ enum GoalongHomeRows {
         // A disabled or unconfigured service is not "suspended": the global pause changes nothing for it.
         GoalongSettingsLink(title: title, value: pause.blocksActivity && !["Désactivé", "À configurer", "Non connecté"].contains(status) ? "Suspendu" : status,
                             symbol: symbol, detail: detail, valueTint: pause.blocksActivity ? nil : tint) {
-            model.selectSection(.settings); model.settingsPane = pane
+            model.selectSection(.settings); navigationStore.settingsPane = pane
         }
         .accessibilityIdentifier("settings-\(pane)")
     }

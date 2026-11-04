@@ -6,7 +6,15 @@ import SwiftUI
 /// One entry for everything that keeps attention: the session now, what distracts, the week's
 /// program and real-time monitoring. Each tab answers one question; the modules stay separate.
 @MainActor struct ConcentrationHubPage: View {
-    @ObservedObject var model: DashboardViewModel
+    /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+    var bodyProbe = DashboardBodyProbe("concentration")
+    let model: DashboardViewModel
+    @ObservedObject var navigationStore: DashboardNavigation
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+    }
 
     nonisolated static let tabs: [DashboardSection] = [.concentration, .distractions, .blocking]
 
@@ -18,7 +26,7 @@ import SwiftUI
         }
     }
 
-    private var tab: DashboardSection { Self.tabs.contains(model.selectedSection) ? model.selectedSection : .concentration }
+    private var tab: DashboardSection { Self.tabs.contains(navigationStore.selectedSection) ? navigationStore.selectedSection : .concentration }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

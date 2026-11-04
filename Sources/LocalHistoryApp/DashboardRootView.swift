@@ -4,7 +4,12 @@
     import LocalHistoryCore
 
     struct LocalHistoryDashboardView: View {
-        @ObservedObject var model: DashboardViewModel
+        /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+        var bodyProbe = DashboardBodyProbe("root")
+        let model: DashboardViewModel
+        @ObservedObject var deviceStore: DashboardDeviceState
+        @ObservedObject var alertStore: DashboardAlertCenter
+        @ObservedObject var navigationStore: DashboardNavigation
         /// Starts on the model's today (the real clock in the app, the frozen one in the gallery).
         @State private var activityNavigation: GoalongActivityNavigation
         /// Activité's days stay read while the window is open, so coming back to the page
@@ -14,14 +19,17 @@
 
         /// `activityPeriod` (1, 7 or 28 days) lets the gallery open Activité on a week or a month.
         init(model: DashboardViewModel, activityPeriod: Int = 1) {
-            _model = ObservedObject(wrappedValue: model)
+            self.model = model
+            _deviceStore = ObservedObject(wrappedValue: model.deviceStore)
+            _alertStore = ObservedObject(wrappedValue: model.alertStore)
+            _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
             _activity = StateObject(wrappedValue: GoalongAnalyticsModel(reader: model.analyticsReader))
             _activityNavigation = State(initialValue: GoalongActivityNavigation(day: model.now(), period: activityPeriod))
         }
 
         var body: some View {
             Group {
-                if model.showWelcome {
+                if navigationStore.showWelcome {
                     LocalHistoryOnboardingView(model: model)
                 } else {
                     HStack(spacing: 0) {
@@ -32,24 +40,24 @@
                             .frame(width: 1)
                         // R14a: each page visited stays alive, out of the window while hidden; coming back shows it as
                         // it was left, at once. No crossfade: it kept two pages laid out and drawn for 0.16 s.
-                        DashboardKeptPages(key: key(model.selectedSection),
+                        DashboardKeptPages(key: key(navigationStore.selectedSection),
                                            // Another device frees the pages of the former one.
-                                           scope: model.knownDeviceID ?? "",
-                                           keep: model.selectedSection.keepsPage,
+                                           scope: deviceStore.knownDeviceID ?? "",
+                                           keep: navigationStore.selectedSection.keepsPage,
                                            // What `page` takes by value; the rest comes through `model`.
-                                           inputs: inputs(model.selectedSection),
+                                           inputs: inputs(navigationStore.selectedSection),
                                            // The main pages not shown yet are built at rest after launch: the first
                                            // click on one of them is a return.
                                            preheat: preheated.compactMap { section in
-                                               section.keptPage == model.selectedSection.keptPage ? nil : DashboardKeptPageSeed(
+                                               section.keptPage == navigationStore.selectedSection.keptPage ? nil : DashboardKeptPageSeed(
                                                    key: key(section), inputs: inputs(section)) { AnyView(styled(page(for: section))) }
                                            },
                                            onShown: {
                             // Activité closes its measure once its period is read (GoalongAnalyticsPage).
-                            let section = model.selectedSection
+                            let section = navigationStore.selectedSection
                             GoalongSwitchTiming.end(section.rawValue, stage: "shown", last: section != .overview)
                         }) {
-                            styled(page(for: model.selectedSection))
+                            styled(page(for: navigationStore.selectedSection))
                         }
                             .safeAreaInset(edge: .top, spacing: 0) {
                                 VStack(spacing: 0) {
@@ -57,25 +65,7 @@
                                     GoalongAttentionBanner(model: model)
                                 }
                             }
-                            .safeAreaInset(edge: .bottom, spacing: 0) {
-                                if model.settingsHaveChanges && model.selectedSection != .settings {
-                                    HStack(spacing: 12) {
-                                        // R-80: say what is pending and apply it here; the settings stay one click away.
-                                        Label(DashboardSection.pendingChangeSummary(saved: model.savedSettingsDraft, draft: model.settingsDraft),
-                                              systemImage: "pencil.circle")
-                                            .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.tail)
-                                        Spacer()
-                                        Button("Voir dans Réglages") { model.openRecordingSettings() }
-                                            .buttonStyle(LHQuietButtonStyle())
-                                        Button("Abandonner") { model.discardSettingsChanges() }
-                                        Button("Appliquer") { model.saveSettings() }
-                                            .buttonStyle(LHPrimaryButtonStyle())
-                                    }
-                                    .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12)
-                                    .background(LHTheme.cardBackground)
-                                    .overlay(alignment: .top) { Rectangle().fill(LHTheme.separator).frame(height: 1) }
-                                }
-                            }
+                            .safeAreaInset(edge: .bottom, spacing: 0) { DashboardPendingChangesBar(model: model) }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
@@ -84,7 +74,7 @@
             // In the app window the toasts sit above the kept pages (DashboardWindowContent).
             .overlay { if !toastsAbovePages { GoalongToastHost() } }
             .environment(\.goalongRecordingModel, model)
-            .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay).goalongControls() }
+            .sheet(isPresented: $navigationStore.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: navigationStore.selectedDay).goalongControls() }
             .onReceive(NotificationCenter.default.publisher(for: .goalongOpenRecordingSettings)) { _ in model.openRecordingSettings() }
             .background(GoalongProfileShareHost(host: model.profileStudio))
             .background(LHTheme.pageBackground)
@@ -93,7 +83,7 @@
             .accentColor(LHTheme.accent)
             .goalongControls()
             .frame(minWidth: 900, minHeight: 620)
-            .alert(item: $model.alert) { item in
+            .alert(item: $alertStore.alert) { item in
                 Alert(
                     title: Text(item.title),
                     message: Text(item.message),
@@ -103,17 +93,17 @@
         }
 
         /// The kept page of a section: one per page and known device (another device never shows this one's data).
-        private func key(_ section: DashboardSection) -> String { "\(section.keptPage)|\(model.knownDeviceID ?? "")" }
+        private func key(_ section: DashboardSection) -> String { "\(section.keptPage)|\(deviceStore.knownDeviceID ?? "")" }
 
         /// The main pages this member reaches from the sidebar (a module turned off is not built).
         private var preheated: [DashboardSection] {
-            let shown = DashboardSection.sidebarSections(modules: GoalongModuleStore.shared.enabled, showing: model.selectedSection)
+            let shown = DashboardSection.sidebarSections(modules: GoalongModuleStore.shared.enabled, showing: navigationStore.selectedSection)
             return DashboardSection.preheated.filter(shown.contains)
         }
 
         private func inputs(_ section: DashboardSection) -> DashboardPageInputs {
-            DashboardPageInputs(section: section, navigation: activityNavigation, day: model.selectedDay,
-                                returnTitle: model.secondaryReturnTitle)
+            DashboardPageInputs(section: section, navigation: activityNavigation, day: navigationStore.selectedDay,
+                                returnTitle: navigationStore.secondaryReturnTitle)
         }
 
         /// A kept page has its own hosting view: the styles of the window are applied again.
@@ -139,7 +129,7 @@
                 GoalongScreenTimePage(model: model)
                     .safeAreaInset(edge: .top, spacing: 0) { secondaryReturnBar }
             case .agentActivity:
-                AgentActivityPage(agents: model.agentActivityRuntime, dashboardDay: model.selectedDay,
+                AgentActivityPage(agents: model.agentActivityRuntime, dashboardDay: navigationStore.selectedDay,
                                   onSelectDashboardDay: model.selectDay)
                     .safeAreaInset(edge: .top, spacing: 0) { secondaryReturnBar }
             case .chatGPTRecap:
@@ -166,7 +156,41 @@
 
         /// Returns to the page (and Settings pane) the secondary page was opened from.
         private var secondaryReturnBar: some View {
-            SettingsBackBar(title: model.secondaryReturnTitle) { model.returnFromSecondaryPage() }
+            SettingsBackBar(title: navigationStore.secondaryReturnTitle) { model.returnFromSecondaryPage() }
+        }
+    }
+
+    /// R14b: the bar of pending settings changes observes the settings and the page by itself, so typing in
+    /// Settings re-evaluates this bar, not the dashboard root.
+    private struct DashboardPendingChangesBar: View {
+        let model: DashboardViewModel
+        @ObservedObject var navigationStore: DashboardNavigation
+        @ObservedObject var settingsStore: DashboardSettingsState
+
+        init(model: DashboardViewModel) {
+            self.model = model
+            _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+            _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+        }
+
+        var body: some View {
+            if settingsStore.settingsHaveChanges && navigationStore.selectedSection != .settings {
+                HStack(spacing: 12) {
+                    // R-80: say what is pending and apply it here; the settings stay one click away.
+                    Label(DashboardSection.pendingChangeSummary(saved: settingsStore.savedSettingsDraft, draft: settingsStore.settingsDraft),
+                          systemImage: "pencil.circle")
+                        .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.tail)
+                    Spacer()
+                    Button("Voir dans Réglages") { model.openRecordingSettings() }
+                        .buttonStyle(LHQuietButtonStyle())
+                    Button("Abandonner") { model.discardSettingsChanges() }
+                    Button("Appliquer") { model.saveSettings() }
+                        .buttonStyle(LHPrimaryButtonStyle())
+                }
+                .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12)
+                .background(LHTheme.cardBackground)
+                .overlay(alignment: .top) { Rectangle().fill(LHTheme.separator).frame(height: 1) }
+            }
         }
     }
 
@@ -180,7 +204,17 @@
     }
 
     private struct DashboardSidebar: View {
-        @ObservedObject var model: DashboardViewModel
+        /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+        var bodyProbe = DashboardBodyProbe("sidebar")
+        let model: DashboardViewModel
+        @ObservedObject var navigationStore: DashboardNavigation
+        @ObservedObject var runtimeStore: DashboardRuntimeState
+
+        init(model: DashboardViewModel) {
+            self.model = model
+            _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+            _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
+        }
         @ObservedObject private var updates = SoftwareUpdateManager.shared
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
         @ObservedObject private var monitor = JevMonitor.shared
@@ -188,7 +222,7 @@
         @ObservedObject private var modules = GoalongModuleStore.shared
         @ObservedObject private var ambianceDownload = AmbianceDownloadSignal.shared
         @State private var globalPause = GoalongGlobalPause.load()
-        private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled, showing: model.selectedSection) }
+        private var primarySections: [DashboardSection] { DashboardSection.sidebarSections(modules: modules.enabled, showing: navigationStore.selectedSection) }
         @Namespace private var selection
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -205,7 +239,7 @@
                     }
                 }
                 .padding(.horizontal, 10)
-                .animation(reduceMotion ? nil : LHTheme.settle, value: model.highlightedSidebarSection)
+                .animation(reduceMotion ? nil : LHTheme.settle, value: navigationStore.highlightedSidebarSection)
 
                 if let version = updates.availableVersion {
                     updateButton(version: version)
@@ -260,14 +294,14 @@
                 navigationLabel(
                     title: section.simpleTitle,
                     symbol: section == .overview ? "chart.bar.xaxis" : section.symbol,
-                    selected: model.highlightedSidebarSection == section,
+                    selected: navigationStore.highlightedSidebarSection == section,
                     pill: section.sidebarPill(ambianceDownloading: ambianceDownload.downloading && modules.enabled.contains(.ambiance))
                 )
             }
             .buttonStyle(LHNavigationButtonStyle())
             // The selection glides between destinations, carrying a short piece of the thread.
             .background {
-                if model.highlightedSidebarSection == section {
+                if navigationStore.highlightedSidebarSection == section {
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous)
                             .fill(LHTheme.selectionBackground)
@@ -281,7 +315,7 @@
             .accessibilityIdentifier("sidebar-\(section.rawValue)")
             .accessibilityLabel([section.simpleTitle, section.sidebarPill(ambianceDownloading: ambianceDownload.downloading
                 && modules.enabled.contains(.ambiance))].compactMap { $0 }.joined(separator: ", "))
-            .accessibilityAddTraits(model.highlightedSidebarSection == section ? .isSelected : [])
+            .accessibilityAddTraits(navigationStore.highlightedSidebarSection == section ? .isSelected : [])
         }
 
         private func navigationLabel(
@@ -295,35 +329,35 @@
 
         /// The banner's own slot rule (GoalongAttentionBanner.currentStorageSlot): the banner names a storage failure when the slot is .storage.
         private var storageNamedByBanner: Bool {
-            GoalongAttentionBanner.currentStorageSlot(model: model, localEnabled: consents.isEnabled(.localComputerHistory),
-                globallyPaused: globalPause.blocksActivity, section: model.selectedSection) == .storage
+            GoalongAttentionBanner.currentStorageSlot(runtime: runtimeStore, localEnabled: consents.isEnabled(.localComputerHistory),
+                globallyPaused: globalPause.blocksActivity, section: navigationStore.selectedSection) == .storage
         }
 
         private var statusRow: some View {
             Button {
                 if !consents.isEnabled(.localComputerHistory) {
                     model.openRecordingSettings()
-                } else if model.runtime.state == .permissionsMissing || model.runtime.state == .inputTapUnavailable {
-                    model.selectSection(.settings); model.settingsPane = .permissions
-                } else if model.runtime.storageFailure != nil {
-                    model.selectSection(.settings); model.settingsPane = .storage
+                } else if runtimeStore.runtime.state == .permissionsMissing || runtimeStore.runtime.state == .inputTapUnavailable {
+                    model.selectSection(.settings); navigationStore.settingsPane = .permissions
+                } else if runtimeStore.runtime.storageFailure != nil {
+                    model.selectSection(.settings); navigationStore.settingsPane = .storage
                 } else { model.selectSection(.overview) }
             } label: {
                 HStack(spacing: 9) {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(consents.isEnabled(.localComputerHistory) ? model.runtime.displayTint : LHTheme.tertiaryText)
+                        .fill(consents.isEnabled(.localComputerHistory) ? runtimeStore.runtime.displayTint : LHTheme.tertiaryText)
                         .frame(width: 7, height: 7)
                     // UI-15A / T-043 R-24: short state (≤ 24 characters); switched off is not a pause, and the
                     // global pause says so. « Enregistrement désactivé » is wider than the 208 pt sidebar:
                     // it wraps to a second line instead of losing its end.
-                    Text(model.runtime.sidebarTitle(recordingEnabled: consents.isEnabled(.localComputerHistory),
+                    Text(runtimeStore.runtime.sidebarTitle(recordingEnabled: consents.isEnabled(.localComputerHistory),
                                                     globallyPaused: globalPause.blocksActivity,
                                                     storageNamedByBanner: storageNamedByBanner))
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                    if model.runtime.needsAttention {
+                    if runtimeStore.runtime.needsAttention {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(.tertiary)

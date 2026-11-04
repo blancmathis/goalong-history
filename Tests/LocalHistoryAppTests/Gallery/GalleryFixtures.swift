@@ -14,6 +14,8 @@ import SwiftUI
         var settingsPane: SettingsPane = .home
         var globallyPaused = false
         var showWelcome = false
+        /// R14b: the rest test fires the model's wakeups by hand.
+        var refreshScheduler: DashboardRefreshScheduler? = nil
     }
 
     /// The design audit's dashboard model, with the gallery's seams, made visible so its data loads.
@@ -91,16 +93,17 @@ import SwiftUI
             onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
             onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
             onDeleteTargetedDetails: { _, done in done(.success(0)) },
+            refreshScheduler: options.refreshScheduler ?? DashboardRefreshScheduler(),
             dataReader: DashboardDataReader(now: { GalleryClock.now }, storageBytes: { usedBytes }),
             now: { GalleryClock.now }, defaults: ctx.defaults, availableBytes: { freeBytes },
             analyticsReader: GoalongAnalyticsReader(root: AppPaths.applicationSupportDirectory, now: { GalleryClock.now }))
-        model.showWelcome = options.showWelcome
+        model.navigationStore.showWelcome = options.showWelcome
         if options.section == .monitoring {
             // Jev has no page of its own: the app routes it to Réglages › Jev.
             model.selectSection(.monitoring)
         } else {
-            model.selectedSection = options.section
-            model.settingsPane = options.settingsPane
+            model.navigationStore.selectedSection = options.section
+            model.navigationStore.settingsPane = options.settingsPane
         }
         model.dashboardDidBecomeVisible()
         ctx.keep(model)
@@ -112,11 +115,12 @@ import SwiftUI
     /// Default predicate of a page with data: a snapshot arrived, no refresh runs, the queues are empty.
     static func dashboardReady(_ model: DashboardViewModel) -> (GalleryContext) -> Bool {
         { _ in
-            guard model.snapshotGeneration > 0, !model.isRefreshing,
+            let data = model.snapshotStore
+            guard data.snapshotGeneration > 0, !data.isRefreshing,
                   ComputerHistoryPageModel.refreshesInFlight == 0,
                   GoalongAnalyticsModel.loadsInFlight == 0, GoalongWorkReviewModel.loadsInFlight == 0 else { return false }
             model.waitForPendingWorkForTesting()
-            return model.snapshotGeneration > 0 && !model.isRefreshing
+            return data.snapshotGeneration > 0 && !data.isRefreshing
         }
     }
 

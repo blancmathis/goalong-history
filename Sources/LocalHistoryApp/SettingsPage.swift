@@ -3,7 +3,17 @@ import SwiftUI
 import AppKit
 
 @MainActor struct SettingsPage: View {
-    @ObservedObject var model: DashboardViewModel
+    /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+    var bodyProbe = DashboardBodyProbe("reglages")
+    let model: DashboardViewModel
+    @ObservedObject var navigationStore: DashboardNavigation
+    @ObservedObject var settingsStore: DashboardSettingsState
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+    }
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var updates = SoftwareUpdateManager.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
@@ -13,11 +23,11 @@ import AppKit
     @State private var pendingPrivate = false
     @State private var pendingUnredacted = false
     private var pane: SettingsPane {
-        get { model.settingsPane }
-        nonmutating set { model.settingsPane = newValue }
+        get { navigationStore.settingsPane }
+        nonmutating set { if navigationStore.settingsPane != newValue { navigationStore.settingsPane = newValue } }
     }
     private var recording: Binding<DashboardSettingsDraft> {
-        Binding(get: { model.appliedSettings }, set: { _ = model.applyRecordingChoice($0) })
+        Binding(get: { settingsStore.appliedSettings }, set: { _ = model.applyRecordingChoice($0) })
     }
     @ViewBuilder private var calendarAccess: some View {
         let permissions = [system.calendarPermission, system.remindersPermission]
@@ -46,7 +56,7 @@ import AppKit
                 }
                 GoalongConfigStatusBanner(model: model)
                 // While config.json is unreadable, nothing may be saved over it.
-                content.disabled(model.configLocked && pane != .home)
+                content.disabled(settingsStore.configLocked && pane != .home)
             }
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
             .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, LHTheme.pageBottomInset)
@@ -64,11 +74,11 @@ import AppKit
         .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}
-            Button("Inclure") { var next = model.appliedSettings; next.capturePrivateBrowsing = true; _ = model.applyRecordingChoice(next) }
+            Button("Inclure") { var next = settingsStore.appliedSettings; next.capturePrivateBrowsing = true; _ = model.applyRecordingChoice(next) }
         } message: { Text("Les fenêtres privées détectées pourront être enregistrées sur ce Mac. Aucun envoi n’est autorisé par ce choix.") }
         .alert("Conserver les paramètres des adresses ?", isPresented: $pendingUnredacted) {
             Button("Annuler", role: .cancel) {}
-            Button("Conserver les valeurs") { var next = model.appliedSettings; next.redactAllURLQueryValues = false; _ = model.applyRecordingChoice(next) }
+            Button("Conserver les valeurs") { var next = settingsStore.appliedSettings; next.redactAllURLQueryValues = false; _ = model.applyRecordingChoice(next) }
         } message: { Text("Les paramètres peuvent contenir des recherches ou des informations personnelles. Ils seront conservés sur ce Mac lorsque l’enregistrement des adresses est activé.") }
     }
     @ViewBuilder private var content: some View {
@@ -136,7 +146,7 @@ import AppKit
                         Text("Sans interaction, continuer à compter").font(.system(size: 13))
                         Spacer(minLength: 12)
                         GoalongMenuPicker("Sans interaction, continuer à compter", selection: recording.foregroundIdleSeconds,
-                                          options: Self.idleOptions(current: model.appliedSettings.foregroundIdleSeconds))
+                                          options: Self.idleOptions(current: settingsStore.appliedSettings.foregroundIdleSeconds))
                             .fixedSize()
                             .accessibilityIdentifier("settings-foreground-idle-limit")
                     }.disabled(!consents.isEnabled(.localComputerHistory))
@@ -148,7 +158,7 @@ import AppKit
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true).padding(.top, 8)
                     }.font(.system(size: 12))
-                    if model.appliedSettings.foregroundIdleSeconds == 0 {
+                    if settingsStore.appliedSettings.foregroundIdleSeconds == 0 {
                         Label("Ce mode peut compter votre absence si vous laissez une fenêtre visible et le Mac déverrouillé.", systemImage: "exclamationmark.triangle")
                             .font(.callout).foregroundStyle(LHTheme.warning)
                     }
@@ -163,16 +173,16 @@ import AppKit
             GoalongDisclosureGroup("Confidentialité avancée") {
                 VStack(alignment: .leading, spacing: 14) {
                     Toggle("Inclure les fenêtres privées détectées", isOn: Binding(
-                        get: { model.appliedSettings.capturePrivateBrowsing },
+                        get: { settingsStore.appliedSettings.capturePrivateBrowsing },
                         set: { value in
                             if value { pendingPrivate = true }
-                            else { var next = model.appliedSettings; next.capturePrivateBrowsing = false; _ = model.applyRecordingChoice(next) }
+                            else { var next = settingsStore.appliedSettings; next.capturePrivateBrowsing = false; _ = model.applyRecordingChoice(next) }
                         })).toggleStyle(.goalongSwitch)
                     Toggle("Masquer les valeurs des paramètres d’URL", isOn: Binding(
-                        get: { model.appliedSettings.redactAllURLQueryValues },
+                        get: { settingsStore.appliedSettings.redactAllURLQueryValues },
                         set: { value in
                             if !value { pendingUnredacted = true }
-                            else { var next = model.appliedSettings; next.redactAllURLQueryValues = true; _ = model.applyRecordingChoice(next) }
+                            else { var next = settingsStore.appliedSettings; next.redactAllURLQueryValues = true; _ = model.applyRecordingChoice(next) }
                         }))
                         .toggleStyle(.goalongSwitch)
                     Text("La détection des fenêtres privées dépend du navigateur. Utilisez Pause pour une activité sensible. Pendant un blocage, Goalong lit l’adresse en mémoire pour appliquer vos listes ; il ne l’enregistre jamais.")
@@ -277,7 +287,7 @@ import AppKit
                 GoalongSettingsLink(title: "Diagnostic et preuves", value: "", symbol: "checkmark.shield") { model.selectSection(.privacy) }
                 GoalongRowDivider()
                 // UI-51: a row of the list, no longer a button alone under the last section.
-                GoalongSettingsLink(title: "Revoir le démarrage", value: "", symbol: "sparkles") { model.showWelcome = true }
+                GoalongSettingsLink(title: "Revoir le démarrage", value: "", symbol: "sparkles") { navigationStore.showWelcome = true }
                 GoalongRowDivider()
                 // UI-9 (54): a row of the list, no longer a bold link between two groups.
                 GoalongSettingsLink(title: "Ouvrir le fichier de configuration", value: "", symbol: "doc.text") { model.openConfiguration() }
@@ -423,11 +433,17 @@ enum SettingsPane: Hashable {
 /// Version, last check and the one relevant action, in plain words.
 /// config.json could not be read: says what is applied and offers the only ways out.
 @MainActor struct GoalongConfigStatusBanner: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var settingsStore: DashboardSettingsState
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+    }
     @State private var confirmingReset = false
 
     var body: some View {
-        if let notice = model.configNotice {
+        if let notice = settingsStore.configNotice {
             VStack(alignment: .leading, spacing: 10) {
                 Label(notice, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 13, weight: .medium))
@@ -435,7 +451,7 @@ enum SettingsPane: Hashable {
                 HStack(spacing: 10) {
                     Button("Ouvrir le fichier de configuration") { model.openConfiguration() }.buttonStyle(LHQuietButtonStyle())
                     Button("Recharger") { model.reloadConfigurationFromSettings() }.buttonStyle(LHSecondaryButtonStyle())
-                    if model.configLocked {
+                    if settingsStore.configLocked {
                         Button("Réinitialiser les réglages…") { confirmingReset = true }.buttonStyle(LHQuietButtonStyle())
                     }
                 }
@@ -449,7 +465,7 @@ enum SettingsPane: Hashable {
             } message: {
                 Text("Le fichier illisible est conservé à côté sous le nom config.damaged-<date>.json. Les réglages par défaut le remplacent.")
             }
-        } else if let backup = model.configBackupName {
+        } else if let backup = settingsStore.configBackupName {
             Text("Ancien fichier conservé : \(backup)")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityIdentifier("settings-config-backup")

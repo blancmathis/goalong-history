@@ -46,7 +46,12 @@
     /// The dashboard's alert, and the signed export running behind it.
     final class DashboardAlertCenter: ObservableObject {
         /// Set by the model on an error; a view's `.alert(item:)` clears it.
-        @Published var alert: DashboardAlert?
+        @Published private var storedAlert: DashboardAlert?
+        /// R14b: writing the shown value again publishes nothing.
+        var alert: DashboardAlert? {
+            get { storedAlert }
+            set { if newValue?.id != storedAlert?.id { storedAlert = newValue } }
+        }
         @Published private(set) var isExportingShare = false
 
         func setExportingShare(_ exporting: Bool) {
@@ -56,10 +61,30 @@
 
     /// Where the dashboard is: page, Settings pane, day, welcome and sheets. Changes on a click.
     final class DashboardNavigation: ObservableObject {
-        @Published var selectedSection: DashboardSection = .overview
-        @Published var settingsPane: SettingsPane = .home
-        @Published var showingWebsiteShare = false
-        @Published var showWelcome: Bool
+        @Published private var storedSelectedSection: DashboardSection = .overview
+        /// R14b: writing the shown value again publishes nothing.
+        var selectedSection: DashboardSection {
+            get { storedSelectedSection }
+            set { if newValue != storedSelectedSection { storedSelectedSection = newValue } }
+        }
+        @Published private var storedSettingsPane: SettingsPane = .home
+        /// R14b: writing the shown value again publishes nothing.
+        var settingsPane: SettingsPane {
+            get { storedSettingsPane }
+            set { if newValue != storedSettingsPane { storedSettingsPane = newValue } }
+        }
+        @Published private var storedShowingWebsiteShare = false
+        /// R14b: writing the shown value again publishes nothing.
+        var showingWebsiteShare: Bool {
+            get { storedShowingWebsiteShare }
+            set { if newValue != storedShowingWebsiteShare { storedShowingWebsiteShare = newValue } }
+        }
+        @Published private var storedShowWelcome: Bool
+        /// R14b: writing the shown value again publishes nothing.
+        var showWelcome: Bool {
+            get { storedShowWelcome }
+            set { if newValue != storedShowWelcome { storedShowWelcome = newValue } }
+        }
         /// The day the pages show (midnight in the current zone). The model moves it (`selectDay`, `followToday`).
         @Published private(set) var selectedDay: Date
         /// Where a secondary page (Temps d’écran, Confidentialité, Terminal…) returns: the page, and Settings pane,
@@ -69,7 +94,7 @@
 
         init(day: Date, showWelcome: Bool, now: @escaping () -> Date) {
             selectedDay = day
-            self.showWelcome = showWelcome
+            storedShowWelcome = showWelcome
             self.now = now
         }
 
@@ -104,10 +129,20 @@
 
     /// The recording settings being edited, the sharing rules and the state of config.json.
     final class DashboardSettingsState: ObservableObject {
-        @Published var settingsDraft: DashboardSettingsDraft
+        @Published private var storedSettingsDraft: DashboardSettingsDraft
+        /// R14b: writing the shown value again publishes nothing.
+        var settingsDraft: DashboardSettingsDraft {
+            get { storedSettingsDraft }
+            set { if newValue != storedSettingsDraft { storedSettingsDraft = newValue } }
+        }
         /// What config.json holds: the draft differs from it while changes are pending.
         @Published private(set) var savedSettingsDraft: DashboardSettingsDraft
-        @Published var usageSearch = ""
+        @Published private var storedUsageSearch = ""
+        /// R14b: writing the shown value again publishes nothing.
+        var usageSearch: String {
+            get { storedUsageSearch }
+            set { if newValue != storedUsageSearch { storedUsageSearch = newValue } }
+        }
         @Published private(set) var sharingRules: [String: SharingVisibility]
         @Published private(set) var defaultSharingVisibility: SharingVisibility
         /// Shown in Settings while config.json is unreadable.
@@ -118,13 +153,16 @@
         @Published private(set) var configBackupName: String?
 
         init(draft: DashboardSettingsDraft, sharingRules: [String: SharingVisibility], defaultSharingVisibility: SharingVisibility) {
-            settingsDraft = draft
+            storedSettingsDraft = draft
             savedSettingsDraft = draft
             self.sharingRules = sharingRules
             self.defaultSharingVisibility = defaultSharingVisibility
         }
 
         var settingsHaveChanges: Bool { settingsDraft != savedSettingsDraft }
+
+        /// The Privacy screen reports persisted choices, never an unsaved editor draft.
+        var appliedSettings: DashboardSettingsDraft { savedSettingsDraft }
 
         func sharingVisibility(for subjectID: String) -> SharingVisibility {
             sharingRules[subjectID] ?? defaultSharingVisibility

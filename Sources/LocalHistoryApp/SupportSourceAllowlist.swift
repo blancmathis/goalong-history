@@ -84,6 +84,7 @@ enum SupportSourceAllowlist {
         "ContextMonitor.swift",
         "ContextProvider.swift",
         "ContextReadParameters.swift",
+        "DashboardBodyProbe.swift",
         "DashboardComponents.swift",
         "DashboardDataReader.swift",
         "DashboardKeptPages.swift",

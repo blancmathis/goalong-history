@@ -4,7 +4,9 @@ import AppleScreenTime
 import SwiftUI
 
 struct GoalongScreenTimePage: View {
-    @ObservedObject private var dashboard: DashboardViewModel
+    private let dashboard: DashboardViewModel
+    @ObservedObject var navigationStore: DashboardNavigation
+    @ObservedObject var runtimeStore: DashboardRuntimeState
     @StateObject private var screenTime: AppleScreenTimeDashboardModel
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @State private var search = ""
@@ -15,11 +17,14 @@ struct GoalongScreenTimePage: View {
 
     init(model: DashboardViewModel, screenTimeModel: AppleScreenTimeDashboardModel? = nil,
          showsHeader: Bool = true) {
-        _dashboard = ObservedObject(wrappedValue: model)
+        self.dashboard = model
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+        _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
         self.showsHeader = showsHeader
+        let device = model.deviceStore, navigation = model.navigationStore
         _screenTime = StateObject(wrappedValue: screenTimeModel ?? AppleScreenTimeDashboardModel(
-            rootDirectory: AppPaths.screenTimeDirectory, deviceID: model.deviceID,
-            selectedDay: model.selectedDay,
+            rootDirectory: AppPaths.screenTimeDirectory, deviceID: device.deviceID,
+            selectedDay: navigation.selectedDay,
             accessEnabled: GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)))
     }
 
@@ -69,8 +74,8 @@ struct GoalongScreenTimePage: View {
         .onAppearWhenShown {
             accessRevoked = false
             screenTime.setAccessEnabled(consents.isEnabled(.appleScreenTime))
-            if screenTime.selectedDay != dashboard.selectedDay { screenTime.selectDay(dashboard.selectedDay) }
-            screenTime.setActive(dashboard.dashboardIsVisible)
+            if screenTime.selectedDay != navigationStore.selectedDay { screenTime.selectDay(navigationStore.selectedDay) }
+            screenTime.setActive(runtimeStore.dashboardIsVisible)
         }
         .onDisappear { screenTime.setActive(false) }
         .onChange(of: screenTime.needsFullDiskAccess) { if $0 { stopForMissingAccess() } }
@@ -78,8 +83,8 @@ struct GoalongScreenTimePage: View {
             if enabled { accessRevoked = false }
             screenTime.setAccessEnabled(enabled)
         }
-        .onChange(of: dashboard.dashboardIsVisible) { screenTime.setActive($0) }
-        .onChange(of: dashboard.selectedDay) { day in
+        .onChange(of: runtimeStore.dashboardIsVisible) { screenTime.setActive($0) }
+        .onChange(of: navigationStore.selectedDay) { day in
             showsAllUsage = false
             if screenTime.selectedDay != day { screenTime.selectDay(day) }
         }

@@ -123,7 +123,7 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
     @MainActor func testCompleteChoiceActuallyReachesPersistedRecorderAndPreservesRemoteConsents() throws {
         let preferences = defaults(), (model, config) = try isolatedModel()
         let remoteBefore = GoalongCapabilityConsentStore.shared.document
-        let proposal = GoalongRecordingSetup.proposal(from: model.appliedSettings, visibleText: false, defaults: preferences)
+        let proposal = GoalongRecordingSetup.proposal(from: model.settingsStore.appliedSettings, visibleText: false, defaults: preferences)
         XCTAssertTrue(model.applyRecordingSetup(proposal, defaults: preferences, notifyRuntime: false))
         let readBack = try RecorderConfig.load(from: AppPaths.configFile)
         XCTAssertEqual(config.config, readBack)
@@ -134,7 +134,7 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
     }
     @MainActor func testSavingOptOutThenReloadingDoesNotReenableIt() throws {
         let preferences = defaults(), (model, _) = try isolatedModel()
-        var proposal = GoalongRecordingSetup.proposal(from: model.appliedSettings, visibleText: false, defaults: preferences)
+        var proposal = GoalongRecordingSetup.proposal(from: model.settingsStore.appliedSettings, visibleText: false, defaults: preferences)
         proposal.settings.captureScroll = false; proposal.visibleText = false
         XCTAssertTrue(model.applyRecordingSetup(proposal, defaults: preferences, notifyRuntime: false))
         let stored = DashboardSettingsDraft(config: try RecorderConfig.load(from: AppPaths.configFile))
@@ -152,8 +152,8 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         try edited.write(to: AppPaths.configFile)
         XCTAssertNoThrow(try config.reload())
         model.reloadSettings(from: config.config)
-        XCTAssertEqual(model.appliedSettings, DashboardSettingsDraft(config: edited))
-        var next = model.appliedSettings
+        XCTAssertEqual(model.settingsStore.appliedSettings, DashboardSettingsDraft(config: edited))
+        var next = model.settingsStore.appliedSettings
         next.captureScroll.toggle()
         XCTAssertTrue(model.applyRecordingChoice(next))
         let saved = try RecorderConfig.load(from: AppPaths.configFile)
@@ -180,22 +180,22 @@ final class GoalongRecordingDefaultsTests: XCTestCase {
         let preferences = defaults()
         let (model, config) = try isolatedModel(save: { _ in throw CocoaError(.fileWriteNoPermission) })
         let original = config.config
-        let proposal = GoalongRecordingSetup.proposal(from: model.appliedSettings, visibleText: false, defaults: preferences)
+        let proposal = GoalongRecordingSetup.proposal(from: model.settingsStore.appliedSettings, visibleText: false, defaults: preferences)
         XCTAssertFalse(model.applyRecordingSetup(proposal, defaults: preferences, notifyRuntime: false))
         XCTAssertEqual(config.config, original)
         XCTAssertFalse(GoalongRecordingSetup.hasReviewedChoices(defaults: preferences))
         XCTAssertNil(preferences.object(forKey: ActivityAnalysisPreferences.richContextEnabledKey))
-        XCTAssertNotNil(model.alert)
+        XCTAssertNotNil(model.alertStore.alert)
     }
     @MainActor func testPreferencesFailureRollsBackAllRecordingChoices() throws {
         let preferences = defaults(), (model, config) = try isolatedModel()
         let original = config.config
-        let proposal = GoalongRecordingSetup.proposal(from: model.appliedSettings, visibleText: false, defaults: preferences)
+        let proposal = GoalongRecordingSetup.proposal(from: model.settingsStore.appliedSettings, visibleText: false, defaults: preferences)
         XCTAssertFalse(model.applyRecordingSetup(proposal, defaults: preferences, flushPreferences: { false }, notifyRuntime: false))
         XCTAssertEqual(config.config, original)
         XCTAssertFalse(GoalongRecordingSetup.hasReviewedChoices(defaults: preferences))
         XCTAssertNil(preferences.object(forKey: ActivityAnalysisPreferences.richContextEnabledKey))
-        XCTAssertFalse(model.appliedSettings.captureClicks)
+        XCTAssertFalse(model.settingsStore.appliedSettings.captureClicks)
     }
     func testEveryUIActivationPathUsesTheSameReviewGate() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

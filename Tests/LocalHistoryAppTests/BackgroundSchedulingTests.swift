@@ -642,13 +642,13 @@
 
             health.markStorageInterrupted(.diskFull)
             model.dashboardStatusDidBecomeVisible()
-            XCTAssertFalse(model.dashboardIsVisible)
-            XCTAssertEqual(model.runtime.storageFailure, .diskFull)
+            XCTAssertFalse(model.runtimeStore.dashboardIsVisible)
+            XCTAssertEqual(model.runtimeStore.runtime.storageFailure, .diskFull)
             XCTAssertEqual(virtual.activeIntervals, [DashboardRefreshScheduler.runtimeInterval])
 
             health.markStorageRestored()
             virtual.advance(by: DashboardRefreshScheduler.runtimeInterval)
-            XCTAssertNil(model.runtime.storageFailure)
+            XCTAssertNil(model.runtimeStore.runtime.storageFailure)
 
             // Key, then key lost while still visible: the status timer stays, the data timer stops.
             model.dashboardDidBecomeVisible()
@@ -656,7 +656,7 @@
             XCTAssertEqual(virtual.activeIntervals, [DashboardRefreshScheduler.runtimeInterval])
             health.markStorageInterrupted(.diskFull)
             virtual.advance(by: DashboardRefreshScheduler.runtimeInterval)
-            XCTAssertEqual(model.runtime.storageFailure, .diskFull)
+            XCTAssertEqual(model.runtimeStore.runtime.storageFailure, .diskFull)
 
             model.dashboardStatusDidBecomeHidden()
             XCTAssertTrue(virtual.activeIntervals.isEmpty)
@@ -672,12 +672,12 @@
 
             health.setPaused(true)
             model.dashboardStatusDidBecomeVisible()
-            XCTAssertFalse(model.dashboardIsVisible)
-            XCTAssertTrue(model.recordingStatusIsLive)
+            XCTAssertFalse(model.runtimeStore.dashboardIsVisible)
+            XCTAssertTrue(model.runtimeStore.recordingStatusIsLive)
             XCTAssertEqual(
                 GoalongRecordingStateNotice.kind(
                     localEnabled: true, globallyPaused: false,
-                    dashboardVisible: model.recordingStatusIsLive, runtime: model.runtime.state),
+                    dashboardVisible: model.runtimeStore.recordingStatusIsLive, runtime: model.runtimeStore.runtime.state),
                 .paused)
 
             let repositoryRoot = URL(fileURLWithPath: #filePath)
@@ -686,8 +686,8 @@
                 let source = try String(
                     contentsOf: repositoryRoot.appendingPathComponent("Sources/LocalHistoryApp/\(file)"),
                     encoding: .utf8)
-                XCTAssertTrue(source.contains("dashboardVisible: model.recordingStatusIsLive"), file)
-                XCTAssertFalse(source.contains("dashboardVisible: model.dashboardIsVisible"), file)
+                XCTAssertTrue(source.contains("dashboardVisible: runtimeStore.recordingStatusIsLive"), file)
+                XCTAssertFalse(source.contains("dashboardVisible: runtimeStore.dashboardIsVisible"), file)
             }
             model.dashboardStatusDidBecomeHidden()
             model.waitForPendingWorkForTesting()

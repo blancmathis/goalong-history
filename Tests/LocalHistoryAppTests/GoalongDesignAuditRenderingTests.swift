@@ -38,7 +38,7 @@ final class GoalongDesignAuditRenderingTests: XCTestCase {
             onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
             onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
             onDeleteTargetedDetails: { _, done in done(.success(0)) })
-        model.showWelcome = false
+        model.navigationStore.showWelcome = false
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 1500),
             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -68,21 +68,21 @@ final class GoalongDesignAuditRenderingTests: XCTestCase {
             let sections: [DashboardSection] = [.overview, .work, .history, .monitoring, .activity, .screenTime,
                                                 .agentActivity, .chatGPTRecap, .share, .privacy, .cli]
             for section in sections {
-                model.selectedSection = section
+                model.navigationStore.selectedSection = section
                 try render("page-\(section.rawValue)-\(suffix)", dashboard())
             }
-            model.selectedSection = .settings
+            model.navigationStore.selectedSection = .settings
             for pane in [SettingsPane.home] + SettingsPane.primary + [.advanced, .tools, .connections] {
-                model.settingsPane = pane
+                model.navigationStore.settingsPane = pane
                 try render("settings-\(pane)-\(suffix)", dashboard())
             }
-            model.settingsPane = .home
+            model.navigationStore.settingsPane = .home
             // Saved definition state of Mon travail.
             try JevWorkContextStore.shared.save("Goalong : app macOS et site. Atlas : préparer le lancement.",
                 applications: "Xcode et GitHub pour Goalong. T3 Code pour coder avec les agents.",
                 content: "Documentation Swift, e-mails clients, rédaction de posts Goalong.",
                 procrastination: "rekordbox, x.com, youtube.com")
-            model.selectedSection = .work
+            model.navigationStore.selectedSection = .work
             try render("page-work-saved-\(suffix)", dashboard())
             try JevWorkContextStore.shared.save("")
             try render("sheet-jev-connection-\(suffix)", sheet(JevConnectionSheet()), size: NSSize(width: 560, height: 420))
@@ -97,15 +97,15 @@ final class GoalongDesignAuditRenderingTests: XCTestCase {
         // A sheet presented by the real dashboard must inherit Goalong control chrome.
         if only == nil || only!.contains("presented") {
             app.appearance = NSAppearance(named: .darkAqua); window.appearance = app.appearance
-            model.selectedSection = .overview
+            model.navigationStore.selectedSection = .overview
             let host = NSHostingController(rootView: dashboard())
             window.contentViewController = host
             window.setContentSize(NSSize(width: 1240, height: 900)); pump()
-            model.showingWebsiteShare = true; pump(); pump()
+            model.navigationStore.showingWebsiteShare = true; pump(); pump()
             if let sheet = window.attachedSheet, let view = sheet.contentView {
                 try snapshot(view, to: output.appendingPathComponent("presented-sharing-dark.png"))
             } else { XCTFail("Sharing sheet was not presented") }
-            model.showingWebsiteShare = false; pump()
+            model.navigationStore.showingWebsiteShare = false; pump()
         }
         print("DESIGN_AUDIT rendered into \(output.path)")
     }

@@ -3,7 +3,13 @@ import SwiftUI
 import LocalHistoryQueryCLI
 
 @MainActor struct GoalongWebsiteSettings: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var navigationStore: DashboardNavigation
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+    }
     @ObservedObject private var sender = GoalongWebsiteAutoSender.shared
     @State private var presentation: GoalongWebsitePresentation?
     var body: some View {
@@ -32,9 +38,9 @@ import LocalHistoryQueryCLI
             }
             GoalongSettingsGroup(title: "Envoyer une journée") {
                 HStack {
-                    Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 14))
+                    Text(GoalongUIFormat.day(navigationStore.selectedDay)).font(.system(size: 14))
                     Spacer()
-                    Button("Choisir et voir l’aperçu") { presentation = .init(day: model.selectedDay) }.buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("website-open-selected-day")
+                    Button("Choisir et voir l’aperçu") { presentation = .init(day: navigationStore.selectedDay) }.buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("website-open-selected-day")
                 }
                 Text("Tout est préparé localement. Seul le bouton d’envoi transmet les données.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }

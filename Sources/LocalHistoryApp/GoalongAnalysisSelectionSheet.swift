@@ -6,7 +6,21 @@ import AgentActivity
 
 @MainActor struct GoalongAnalysisSelectionSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var deviceStore: DashboardDeviceState
+    @ObservedObject var navigationStore: DashboardNavigation
+    @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+    init(model: DashboardViewModel, selection: GoalongAnalysisSelection, initialTab: Int = 0,
+         onSave: @escaping (GoalongAnalysisSelection) -> Void) {
+        self.model = model
+        _selection = State(initialValue: selection)
+        self.initialTab = initialTab
+        _deviceStore = ObservedObject(wrappedValue: model.deviceStore)
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+        _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+        self.onSave = onSave
+    }
     @State var selection: GoalongAnalysisSelection
     var initialTab = 0
     let onSave: (GoalongAnalysisSelection) -> Void
@@ -34,7 +48,7 @@ import AgentActivity
     private var apps: [GoalongApplicationChoice] {
         var values: [String: GoalongApplicationChoice] = [:]
         for app in installedApps.apps { values[app.id.lowercased()] = .init(id: app.id.lowercased(), name: app.name) }
-        for app in model.snapshot.trackedUsage where app.kind == .application {
+        for app in snapshotStore.snapshot.trackedUsage where app.kind == .application {
             let key = GoalongAnalysisScope.key(id: app.bundleIdentifier, name: app.name)
             values[key] = .init(id: key, name: app.name)
         }
@@ -108,7 +122,7 @@ import AgentActivity
     }
     /// No source can be chosen until one is set up in Réglages › Enregistrement.
     private var needsSourceSetup: Bool { !selection.hasSources && unconfiguredSources > 0 }
-    private func configureSources() { dismiss(); model.selectSection(.settings); model.settingsPane = .recording }
+    private func configureSources() { dismiss(); model.selectSection(.settings); navigationStore.settingsPane = .recording }
     /// Sources listed in Données whose capability is off: one note and one link, not a link per row (UI-62).
     private var unconfiguredSources: Int {
         let developer: GoalongCapability = consents.isEnabled(.aiConversations) ? .aiConversations : .developerActivity
@@ -327,7 +341,7 @@ import AgentActivity
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Ce que ChatGPT recevra").font(LHTheme.sectionTitleFont).tracking(-0.2)
-                    Text(GoalongUIFormat.day(model.selectedDay)).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    Text(GoalongUIFormat.day(navigationStore.selectedDay)).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
                 Button(previewText == nil ? "Préparer l’aperçu local" : "Actualiser") { preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(previewBusy || catalogLoading || installedApps.loading)
@@ -372,7 +386,7 @@ import AgentActivity
             selection.scope = initial
         }
         installedApps.load()
-        let day = ActivityAnalysisPaths.dayString(model.selectedDay)
+        let day = ActivityAnalysisPaths.dayString(navigationStore.selectedDay)
         do {
             localCatalog = try await Task.detached(priority: .utility) {
                 try GoalongQueryCLI.siteSelectionCatalog(rootDirectory: AppPaths.applicationSupportDirectory, day: day)
@@ -446,7 +460,7 @@ import AgentActivity
     }
     private func preparePreview() {
         do {
-            let next = try finalized(), date = model.selectedDay, device = model.knownDeviceID ?? ""
+            let next = try finalized(), date = navigationStore.selectedDay, device = deviceStore.knownDeviceID ?? ""
             let ticket = UUID(); previewGeneration = ticket; previewBusy = true; error = nil
             previewTask?.cancel()
             previewTask = Task {

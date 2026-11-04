@@ -34,13 +34,13 @@ final class DashboardFollowTodayTests: XCTestCase {
     @MainActor func testPageLeftOnTodayMovesToTheNewDayAfterMidnight() throws {
         clock = at(day: 10, 23, 59)
         let model = try model()
-        XCTAssertEqual(model.selectedDay, calendar.startOfDay(for: at(day: 10, 0, 0)))
+        XCTAssertEqual(model.navigationStore.selectedDay, calendar.startOfDay(for: at(day: 10, 0, 0)))
         model.followToday()
-        XCTAssertEqual(model.selectedDay, calendar.startOfDay(for: at(day: 10, 0, 0)), "Same day: nothing moves")
+        XCTAssertEqual(model.navigationStore.selectedDay, calendar.startOfDay(for: at(day: 10, 0, 0)), "Same day: nothing moves")
         clock = at(day: 11, 0, 1)
         model.followToday()
-        XCTAssertEqual(model.selectedDay, calendar.startOfDay(for: at(day: 11, 0, 0)))
-        XCTAssertTrue(model.isTodaySelected)
+        XCTAssertEqual(model.navigationStore.selectedDay, calendar.startOfDay(for: at(day: 11, 0, 0)))
+        XCTAssertTrue(model.navigationStore.isTodaySelected)
     }
 
     @MainActor func testDayChangeNotificationMovesTheDayAndPastDayStays() throws {
@@ -48,12 +48,12 @@ final class DashboardFollowTodayTests: XCTestCase {
         let model = try model()
         clock = at(day: 11, 0, 1)
         NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
-        XCTAssertEqual(model.selectedDay, calendar.startOfDay(for: at(day: 11, 0, 0)))
+        XCTAssertEqual(model.navigationStore.selectedDay, calendar.startOfDay(for: at(day: 11, 0, 0)))
 
         model.selectDay(at(day: 8, 12, 0))
         clock = at(day: 12, 0, 1)
         NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
-        XCTAssertEqual(model.selectedDay, calendar.startOfDay(for: at(day: 8, 0, 0)), "A past day chosen by the user stays")
+        XCTAssertEqual(model.navigationStore.selectedDay, calendar.startOfDay(for: at(day: 8, 0, 0)), "A past day chosen by the user stays")
     }
 
     /// C13-11 (T-044 r13). Paris → New York while the member looks at a past day (25 October): the page keeps
@@ -76,12 +76,12 @@ final class DashboardFollowTodayTests: XCTestCase {
             NSTimeZone.default = zone // the observer resets the system zone; keep the test zone
             model.followToday()
             var local = Calendar(identifier: .gregorian); local.timeZone = zone
-            XCTAssertEqual(local.component(.day, from: model.selectedDay), 25, "\(zone.identifier): \(model.selectedDay)")
-            XCTAssertEqual(model.selectedDay, local.startOfDay(for: model.selectedDay), "\(zone.identifier): not a midnight")
+            XCTAssertEqual(local.component(.day, from: model.navigationStore.selectedDay), 25, "\(zone.identifier): \(model.navigationStore.selectedDay)")
+            XCTAssertEqual(model.navigationStore.selectedDay, local.startOfDay(for: model.navigationStore.selectedDay), "\(zone.identifier): not a midnight")
             // The Screen Time page reads this interval (AppleScreenTimeDashboardModel).
-            let interval = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: model.selectedDay))
+            let interval = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: model.navigationStore.selectedDay))
             XCTAssertEqual(local.component(.day, from: interval.start), 25, zone.identifier)
-            XCTAssertFalse(model.isTodaySelected)
+            XCTAssertFalse(model.navigationStore.isTodaySelected)
         }
     }
 
@@ -97,9 +97,9 @@ final class DashboardFollowTodayTests: XCTestCase {
         NSTimeZone.default = newYork
         model.followToday()
         var local = Calendar(identifier: .gregorian); local.timeZone = newYork
-        XCTAssertEqual(local.component(.day, from: model.selectedDay), 26)
-        XCTAssertEqual(model.selectedDay, local.startOfDay(for: clock))
-        XCTAssertTrue(model.isTodaySelected)
+        XCTAssertEqual(local.component(.day, from: model.navigationStore.selectedDay), 26)
+        XCTAssertEqual(model.navigationStore.selectedDay, local.startOfDay(for: clock))
+        XCTAssertTrue(model.navigationStore.isTodaySelected)
     }
 }
 #endif

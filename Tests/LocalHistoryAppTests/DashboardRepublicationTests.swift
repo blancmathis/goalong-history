@@ -13,14 +13,14 @@ final class DashboardRepublicationTests: XCTestCase {
     func testPropertiesWithoutReaderDoNotPublish() throws {
         let model = try dashboardModel()
         var publications = 0
-        let watch = model.objectWillChange.sink { publications += 1 }
-        defer { watch.cancel() }
+        let watch = Self.watchStores(of: model) { publications += 1 }
+        defer { watch.forEach { $0.cancel() } }
         model.activitySearch = "safari"
         model.activityFilter = .flagged
         model.selectedSessionID = "session"
         XCTAssertEqual(publications, 0, "a property without reader published")
         model.selectSection(.screenTime)
-        XCTAssertEqual(model.secondaryReturn?.section, .overview, "the origin of a secondary page is still kept")
+        XCTAssertEqual(model.navigationStore.secondaryReturn?.section, .overview, "the origin of a secondary page is still kept")
         XCTAssertGreaterThan(publications, 0, "a section change still publishes")
     }
 
@@ -29,19 +29,19 @@ final class DashboardRepublicationTests: XCTestCase {
     func testEqualSnapshotDoesNotPublish() throws {
         let model = try dashboardModel()
         let day = Calendar.current.startOfDay(for: Date())
-        XCTAssertTrue(model.publishSnapshot(.empty(day: model.selectedDay)), "the first read is shown, even an empty one")
+        XCTAssertTrue(model.publishSnapshot(.empty(day: model.navigationStore.selectedDay)), "the first read is shown, even an empty one")
         XCTAssertTrue(model.publishSnapshot(Self.snapshot(day: day, latestMessage: "a")))
         var publications = 0
-        let watch = model.objectWillChange.sink { publications += 1 }
-        defer { watch.cancel() }
-        let generation = model.snapshotGeneration
+        let watch = Self.watchStores(of: model) { publications += 1 }
+        defer { watch.forEach { $0.cancel() } }
+        let generation = model.snapshotStore.snapshotGeneration
         XCTAssertFalse(model.publishSnapshot(Self.snapshot(day: day, latestMessage: "a")), "an equal read was shown")
         XCTAssertEqual(publications, 0, "an equal read published")
-        XCTAssertEqual(model.snapshotGeneration, generation)
+        XCTAssertEqual(model.snapshotStore.snapshotGeneration, generation)
         XCTAssertTrue(model.publishSnapshot(Self.snapshot(day: day, latestMessage: "b")), "a changed message was dropped")
         XCTAssertEqual(publications, 1, "a changed read publishes exactly once")
-        XCTAssertEqual(model.snapshotGeneration, generation &+ 1)
-        XCTAssertEqual(model.snapshot.sessions.first?.latestMessage, "b")
+        XCTAssertEqual(model.snapshotStore.snapshotGeneration, generation &+ 1)
+        XCTAssertEqual(model.snapshotStore.snapshot.sessions.first?.latestMessage, "b")
     }
 
     static func snapshot(day: Date, latestMessage: String) -> DashboardDaySnapshot {
@@ -77,9 +77,9 @@ final class DashboardRepublicationTests: XCTestCase {
         var publications = 0
         let watch = model.alertStore.objectWillChange.sink { publications += 1 }
         defer { watch.cancel() }
-        model.alert = nil
+        model.alertStore.alert = nil
         XCTAssertEqual(publications, 0, "nil over nil published")
-        model.alert = DashboardAlert(kind: .error, title: "R14b", message: "test")
+        model.alertStore.alert = DashboardAlert(kind: .error, title: "R14b", message: "test")
         XCTAssertEqual(publications, 1)
         XCTAssertEqual(model.alertStore.alert?.title, "R14b")
     }
@@ -90,10 +90,10 @@ final class DashboardRepublicationTests: XCTestCase {
         var publications = 0
         let watch = model.navigationStore.objectWillChange.sink { publications += 1 }
         defer { watch.cancel() }
-        model.selectSection(model.selectedSection)
-        model.selectDay(model.selectedDay)
+        model.selectSection(model.navigationStore.selectedSection)
+        model.selectDay(model.navigationStore.selectedDay)
         XCTAssertEqual(publications, 0, "the same page or day published")
-        model.selectDay(Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDay)!)
+        model.selectDay(Calendar.current.date(byAdding: .day, value: -1, to: model.navigationStore.selectedDay)!)
         XCTAssertEqual(publications, 1, "a new day publishes once")
         XCTAssertFalse(model.navigationStore.isTodaySelected)
     }
@@ -106,10 +106,10 @@ final class DashboardRepublicationTests: XCTestCase {
         defer { watch.cancel() }
         model.refreshConfigStatus()
         model.configurationDidChange()
-        model.settingsDraft = model.settingsDraft
+        model.settingsStore.settingsDraft = model.settingsStore.settingsDraft
         XCTAssertEqual(publications, 0, "an unchanged config published")
         XCTAssertFalse(model.settingsStore.settingsHaveChanges)
-        model.usageSearch = "safari"
+        model.settingsStore.usageSearch = "safari"
         XCTAssertEqual(publications, 1)
     }
 
@@ -152,6 +152,14 @@ final class DashboardRepublicationTests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    /// Every store of the model: all a view can observe (the model itself is no longer observable).
+    static func watchStores(of model: DashboardViewModel, _ count: @escaping () -> Void) -> [AnyCancellable] {
+        let stores: [ObservableObjectPublisher] = [model.deviceStore.objectWillChange, model.alertStore.objectWillChange,
+            model.navigationStore.objectWillChange, model.settingsStore.objectWillChange,
+            model.runtimeStore.objectWillChange, model.snapshotStore.objectWillChange]
+        return stores.map { $0.sink { _ in count() } }
+    }
 
     func dashboardModel() throws -> DashboardViewModel {
         guard FileManager.default.homeDirectoryForCurrentUser.path.hasPrefix("/tmp/goalong-") else {

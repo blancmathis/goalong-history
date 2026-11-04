@@ -3,15 +3,28 @@
     import SwiftUI
 
     struct SharePage: View {
-        @ObservedObject var model: DashboardViewModel
-        @ObservedObject var consents = GoalongCapabilityConsentStore.shared
+        let model: DashboardViewModel
+        @ObservedObject var alertStore: DashboardAlertCenter
+        @ObservedObject var navigationStore: DashboardNavigation
+        @ObservedObject var settingsStore: DashboardSettingsState
+        @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+        init(model: DashboardViewModel, consents: GoalongCapabilityConsentStore = .shared) {
+            self.model = model
+            _alertStore = ObservedObject(wrappedValue: model.alertStore)
+            _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+            _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+            _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+            _consents = ObservedObject(wrappedValue: consents)
+        }
+        @ObservedObject var consents: GoalongCapabilityConsentStore
 
         /// VoiceOver says which settings open; it starts with the visible « Ouvrir ».
         static let openRecordingSettingsAccessibilityLabel = "Ouvrir les réglages d’enregistrement"
 
         private var proof: ShareProofStatus {
-            ShareProofStatus.make(observedMinutes: model.snapshot.activeMinutes,
-                                  sealedMinutes: model.snapshot.sealedMinutes,
+            ShareProofStatus.make(observedMinutes: snapshotStore.snapshot.activeMinutes,
+                                  sealedMinutes: snapshotStore.snapshot.sealedMinutes,
                                   recordingEnabled: consents.isEnabled(.localComputerHistory))
         }
 
@@ -28,8 +41,8 @@
                             StatusPill(title: "Enregistré sur ce Mac", kind: .ready, symbol: "internaldrive", tint: LHTheme.secondaryText)
                                 .padding(.trailing, 6)
                         }
-                        DateSelectionControl(date: model.selectedDay, onChange: model.selectDay,
-                                             earliest: model.snapshot.availableDays.min())
+                        DateSelectionControl(date: navigationStore.selectedDay, onChange: model.selectDay,
+                                             earliest: snapshotStore.snapshot.availableDays.min())
                         Button {
                             model.refreshEverything()
                         } label: {
@@ -37,7 +50,7 @@
                                 .frame(width: 28, height: 28)
                         }
                         .buttonStyle(LHSecondaryButtonStyle())
-                        .disabled(model.isRefreshing)
+                        .disabled(snapshotStore.isRefreshing)
                         .help("Actualiser")
                         .accessibilityLabel("Actualiser")
                     }
@@ -141,7 +154,7 @@
                 }
                 createButton
                     .modifier(GoalongMainActionStyle(primary: proof.action != .openRecordingSettings))
-                    .disabled(!proof.canExport || model.isExportingShare)
+                    .disabled(!proof.canExport || alertStore.isExportingShare)
                     // R-87 (R9C-48): the held-back button says why when hovered, as the line next to it does.
                     .help(proof.canExport ? "" : proof.detail)
             }
@@ -165,8 +178,8 @@
         }
 
         private func count(for visibility: SharingVisibility) -> Int {
-            model.snapshot.trackedUsage.filter {
-                model.sharingVisibility(for: $0.id) == visibility
+            snapshotStore.snapshot.trackedUsage.filter {
+                settingsStore.sharingVisibility(for: $0.id) == visibility
             }.count
         }
     }

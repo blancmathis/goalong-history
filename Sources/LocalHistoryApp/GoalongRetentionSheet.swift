@@ -3,7 +3,7 @@ import SwiftUI
 import LocalHistoryCore
 
 @MainActor struct GoalongDeletionSheet: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var seconds = 600
     @State private var confirming = false

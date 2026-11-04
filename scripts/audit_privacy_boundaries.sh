@@ -814,6 +814,46 @@ then
   failed=true
 fi
 
+# R14b: a view reads a dashboard store only through the store it observes. `model.<store>.<x>` in a view would read
+# a value without observing it, so the view would stay frozen when the value changes. Only the model, the stores and
+# the app shell (which own them) may reach a store through another object; a store kept in a view is observed.
+if ! python3 - "$ROOT_DIR" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+owners = {"DashboardStores.swift", "AppDelegate.swift", "DashboardWindowController.swift"}
+through = re.compile(r"(?<![\w.$])(?!self\b)\w+\??\.(navigation|runtime|snapshot|settings|alert|device)Store\??\.\$?[A-Za-z_]")
+kept = re.compile(r"^[ \t]*(?:(?:private|fileprivate|internal)(?:\(set\))?[ \t]+)*(?:let|var)[ \t]+\w+[ \t]*:[ \t]*"
+                  r"(?:DashboardNavigation|DashboardRuntimeState|DashboardSnapshotStore|DashboardSettingsState|"
+                  r"DashboardAlertCenter|DashboardDeviceState)\b[^\n]*$", re.M)
+
+def without_comments(text):
+    text = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+    return re.sub(r"//[^\n]*", "", text)
+
+bad = []
+for path in sorted((root / "Sources").rglob("*.swift")):
+    name = path.name
+    if name in owners or name.startswith("DashboardViewModel"):
+        continue
+    code = without_comments(path.read_text(encoding="utf-8", errors="replace"))
+    lines = code.splitlines()
+    for match in through.finditer(code):
+        number = code.count("\n", 0, match.start()) + 1
+        bad.append(f"{path.relative_to(root)}:{number}: store read without observing it: {lines[number - 1].strip()}")
+    for match in kept.finditer(code):
+        number = code.count("\n", 0, match.start()) + 1
+        previous = lines[number - 2].strip() if number > 1 else ""
+        if not re.fullmatch(r"@(ObservedObject|StateObject|EnvironmentObject)", previous):  # wrapper on the line above
+            bad.append(f"{path.relative_to(root)}:{number}: store kept without @ObservedObject: {lines[number - 1].strip()}")
+for entry in bad:
+    print(entry, file=sys.stderr)
+sys.exit(1 if bad else 0)
+PY
+then
+  echo "Dashboard store read without observing it (R14b: observe the store with @ObservedObject, set from model.<store> in init)." >&2
+  failed=true
+fi
+
 if [[ "$failed" == true ]]; then
   echo "Privacy-boundary audit failed. Review the matches above." >&2
   exit 1
