@@ -53,4 +53,52 @@
             if isExportingShare != exporting { isExportingShare = exporting }
         }
     }
+
+    /// Where the dashboard is: page, Settings pane, day, welcome and sheets. Changes on a click.
+    final class DashboardNavigation: ObservableObject {
+        @Published var selectedSection: DashboardSection = .overview
+        @Published var settingsPane: SettingsPane = .home
+        @Published var showingWebsiteShare = false
+        @Published var showWelcome: Bool
+        /// The day the pages show (midnight in the current zone). The model moves it (`selectDay`, `followToday`).
+        @Published private(set) var selectedDay: Date
+        /// Where a secondary page (Temps d’écran, Confidentialité, Terminal…) returns: the page, and Settings pane,
+        /// it was opened from. Not published: it changes only in `selectSection`, with `selectedSection`.
+        private(set) var secondaryReturn: DashboardSecondaryReturn?
+        private let now: () -> Date
+
+        init(day: Date, showWelcome: Bool, now: @escaping () -> Date) {
+            selectedDay = day
+            self.showWelcome = showWelcome
+            self.now = now
+        }
+
+        func setSelectedDay(_ day: Date) {
+            if selectedDay != day { selectedDay = day }
+        }
+
+        func setSecondaryReturn(_ destination: DashboardSecondaryReturn?) {
+            secondaryReturn = destination
+        }
+
+        var isTodaySelected: Bool {
+            Calendar.current.isDate(selectedDay, inSameDayAs: now())
+        }
+
+        var secondaryReturnTitle: String {
+            switch secondaryReturn?.section ?? selectedSection.defaultReturnSection {
+            case .settings: return "Retour aux réglages"
+            case .history: return "Retour à l’historique"
+            case .monitoring: return "Retour à Jev"
+            // Same « ‹ Activité » as the return inside Activity's own detail views (UI-13B).
+            default: return "Activité"
+            }
+        }
+
+        /// A secondary page keeps the sidebar on the destination it was opened from.
+        var highlightedSidebarSection: DashboardSection {
+            guard selectedSection.isSecondary else { return selectedSection.sidebarParent }
+            return (secondaryReturn?.section ?? selectedSection.defaultReturnSection).sidebarParent
+        }
+    }
 #endif

@@ -122,13 +122,33 @@ import AppleScreenTime
             @escaping (Result<Int, Error>) -> Void
         ) -> Void
 
-        @Published var selectedSection: DashboardSection = .overview
-        @Published var settingsPane: SettingsPane = .home
-        /// Where a secondary page (Temps d’écran, Confidentialité, Terminal…) returns:
-        /// the page, and Settings pane, it was opened from. Not published: it changes only in `selectSection`,
-        /// with `selectedSection`, which publishes.
-        private(set) var secondaryReturn: DashboardSecondaryReturn?
-        @Published var showingWebsiteShare = false
+        /// R14b: page, Settings pane, day, welcome and sheet. A view reads it through its own `@ObservedObject`.
+        let navigationStore: DashboardNavigation
+        // R14b façade (removed at step 8). Setting an unchanged value publishes nothing.
+        var selectedSection: DashboardSection {
+            get { navigationStore.selectedSection }
+            set { if navigationStore.selectedSection != newValue { navigationStore.selectedSection = newValue } }
+        }
+        var settingsPane: SettingsPane {
+            get { navigationStore.settingsPane }
+            set { if navigationStore.settingsPane != newValue { navigationStore.settingsPane = newValue } }
+        }
+        var showingWebsiteShare: Bool {
+            get { navigationStore.showingWebsiteShare }
+            set { if navigationStore.showingWebsiteShare != newValue { navigationStore.showingWebsiteShare = newValue } }
+        }
+        var showWelcome: Bool {
+            get { navigationStore.showWelcome }
+            set { if navigationStore.showWelcome != newValue { navigationStore.showWelcome = newValue } }
+        }
+        private(set) var selectedDay: Date {
+            get { navigationStore.selectedDay }
+            set { navigationStore.setSelectedDay(newValue) }
+        }
+        private(set) var secondaryReturn: DashboardSecondaryReturn? {
+            get { navigationStore.secondaryReturn }
+            set { navigationStore.setSecondaryReturn(newValue) }
+        }
         /// The profile studio outlives any settings pane or page that opens it.
         @MainActor lazy var profileStudio = GoalongProfileStudioHost()
         @Published private(set) var runtime: RuntimePresentation = .unavailable
@@ -160,7 +180,6 @@ import AppleScreenTime
             get { alertStore.isExportingShare }
             set { alertStore.setExportingShare(newValue) }
         }
-        @Published var showWelcome: Bool
         @Published private(set) var historyDeletionGeneration = 0
 
         /// R14b: what this Mac is identified as. A view reads it through its own `@ObservedObject`.
@@ -192,7 +211,6 @@ import AppleScreenTime
             supportDirectory: { AppPaths.applicationSupportDirectory }
         )
 
-        private(set) var selectedDay: Date
         /// The date of `selectedDay`. A time zone change moves `selectedDay` to this date's new midnight.
         private var selectedCalendarDay: GoalongCalendarDay
         /// The « aujourd’hui » this model last saw; `followToday` compares it with the clock.
@@ -307,14 +325,14 @@ import AppleScreenTime
             self.analyticsReader = analyticsReader
 
             let today = Calendar.current.startOfDay(for: now())
-            selectedDay = today
+            navigationStore = DashboardNavigation(
+                day: today, showWelcome: !defaults.bool(forKey: "didShowLocalHistoryConsentOnboardingV5"), now: now)
             selectedCalendarDay = GoalongCalendarDay(today)
             seenToday = selectedCalendarDay
             snapshot = .empty(day: today)
             let draft = DashboardSettingsDraft(config: configManager.config)
             settingsDraft = draft
             savedSettingsDraft = draft
-            showWelcome = !defaults.bool(forKey: "didShowLocalHistoryConsentOnboardingV5")
             relayStores()
             refreshTrustNotices()
             trustObserver = NotificationCenter.default.addObserver(
@@ -386,7 +404,7 @@ import AppleScreenTime
 
         /// R14b façade (removed at step 8): a store's publication republishes the model, for the views not migrated.
         private func relayStores() {
-            let stores: [ObservableObjectPublisher] = [deviceStore.objectWillChange, alertStore.objectWillChange]
+            let stores: [ObservableObjectPublisher] = [deviceStore.objectWillChange, alertStore.objectWillChange, navigationStore.objectWillChange]
             storeRelays = stores.map { $0.sink { [weak self] _ in self?.objectWillChange.send() } }
         }
 
@@ -411,9 +429,7 @@ import AppleScreenTime
             cancelShareExport()
         }
 
-        var isTodaySelected: Bool {
-            Calendar.current.isDate(selectedDay, inSameDayAs: now())
-        }
+        var isTodaySelected: Bool { navigationStore.isTodaySelected }
 
         var filteredSessions: [ActivitySession] {
             let query = activitySearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -562,21 +578,8 @@ import AppleScreenTime
             if destination.section == .settings { settingsPane = destination.pane }
         }
 
-        var secondaryReturnTitle: String {
-            switch secondaryReturn?.section ?? selectedSection.defaultReturnSection {
-            case .settings: return "Retour aux réglages"
-            case .history: return "Retour à l’historique"
-            case .monitoring: return "Retour à Jev"
-            // Same « ‹ Activité » as the return inside Activity's own detail views (UI-13B).
-            default: return "Activité"
-            }
-        }
-
-        /// A secondary page keeps the sidebar on the destination it was opened from.
-        var highlightedSidebarSection: DashboardSection {
-            guard selectedSection.isSecondary else { return selectedSection.sidebarParent }
-            return (secondaryReturn?.section ?? selectedSection.defaultReturnSection).sidebarParent
-        }
+        var secondaryReturnTitle: String { navigationStore.secondaryReturnTitle }
+        var highlightedSidebarSection: DashboardSection { navigationStore.highlightedSidebarSection }
 
         func refreshEverything() {
             guard dashboardIsVisible else { return }

@@ -84,6 +84,20 @@ final class DashboardRepublicationTests: XCTestCase {
         XCTAssertEqual(model.alertStore.alert?.title, "R14b")
     }
 
+    /// Step 5: navigation lives in its own object; it publishes on a click, never on the same value again.
+    func testNavigationPublishesOnlyAChange() throws {
+        let model = try dashboardModel()
+        var publications = 0
+        let watch = model.navigationStore.objectWillChange.sink { publications += 1 }
+        defer { watch.cancel() }
+        model.selectSection(model.selectedSection)
+        model.selectDay(model.selectedDay)
+        XCTAssertEqual(publications, 0, "the same page or day published")
+        model.selectDay(Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDay)!)
+        XCTAssertEqual(publications, 1, "a new day publishes once")
+        XCTAssertFalse(model.navigationStore.isTodaySelected)
+    }
+
     // MARK: Helpers
 
     func dashboardModel() throws -> DashboardViewModel {
