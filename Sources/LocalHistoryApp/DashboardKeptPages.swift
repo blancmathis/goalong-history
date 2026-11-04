@@ -379,6 +379,17 @@
         var inputs: any Equatable = 0
         var environment: DashboardCarriedEnvironment?
         override func layout() { if !frozen { super.layout() } }
+
+        /// Frees the page for good. Its gate's subject holds the page's own subscriptions (`onReceiveWhileShown`), whose
+        /// view graph holds this view back: a cycle macOS 15 does not break when the view leaves (CI, R14a N3; macOS 26
+        /// does). Ending the subject drops them, and an empty root drops the page's tree.
+        func retire() {
+            gate.open.send(false)
+            gate.open.send(completion: .finished)
+            frozen = true
+            removeFromSuperview()
+            rootView = AnyView(EmptyView())
+        }
     }
 
     final class DashboardKeptPagesView: NSView {
@@ -439,7 +450,7 @@
                 }
                 if let shown = shownKey, hosts[shown] == nil { shownKey = nil }
                 released.removeAll()
-                afterThisFrame { [weak self] in self?.leaving.removeAll() }
+                afterThisFrame { [weak self] in self?.freeLeaving() }
             }
             self.scope = scope
             if keep { released.remove(key) } else { released.insert(key) }
@@ -468,7 +479,7 @@
                 if released.contains(oldKey) {
                     hosts[oldKey] = nil; released.remove(oldKey)
                     leaving.append(old)
-                    afterThisFrame { [weak self] in self?.leaving.removeAll() }
+                    afterThisFrame { [weak self] in self?.freeLeaving() }
                 }
             }
             shownKey = key
@@ -548,10 +559,16 @@
             if let host = shownKey.flatMap({ hosts[$0] }), host.frame != bounds { host.frame = bounds }
         }
 
+        /// Frees the pages released by the last click (`leaving`).
+        private func freeLeaving() {
+            for host in leaving { host.retire() }
+            leaving.removeAll()
+        }
+
         func releaseAll() {
             preheatTimer?.invalidate(); preheatTimer = nil
-            for host in hosts.values { host.gate.open.send(false); host.removeFromSuperview() }
-            hosts.removeAll(); shownKey = nil; requested = nil; lastRequest = nil; released.removeAll(); leaving.removeAll()
+            for host in hosts.values { host.retire() }
+            hosts.removeAll(); shownKey = nil; requested = nil; lastRequest = nil; released.removeAll(); freeLeaving()
             scope = nil
         }
 

@@ -15,6 +15,22 @@ import XCTest
         var shownAppears: [String: Int] = [:], shownTasks: [String: Int] = [:]
     }
 
+    /// Writes what holds the object at `address` to the test log (`leaks --traceTree`), to name the retainer of a page
+    /// that outlived its window on a runner. Its output goes to a file: a pipe could fill while this process waits.
+    private static func traceRetainers(of address: String) {
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("kept-page-leaks-\(getpid()).txt")
+        FileManager.default.createFile(atPath: out.path, contents: nil)
+        guard let handle = try? FileHandle(forWritingTo: out) else { return }
+        let leaks = Process()
+        leaks.executableURL = URL(fileURLWithPath: "/usr/bin/leaks")
+        leaks.arguments = ["--traceTree=\(address)", "\(getpid())"]
+        leaks.standardOutput = handle; leaks.standardError = handle
+        do { try leaks.run(); leaks.waitUntilExit() } catch { print("leaks did not run: \(error)"); return }
+        try? handle.close()
+        let text = (try? String(contentsOf: out, encoding: .utf8)) ?? ""
+        print("leaks --traceTree=\(address) (exit \(leaks.terminationStatus)):\n" + String(text.prefix(20_000)))
+    }
+
     /// The visibility probe of a page's brand mark.
     private static func markProbe(in view: NSView) -> GoalongMotionVisibility.Probe? {
         if let probe = view as? GoalongMotionVisibility.Probe { return probe }
@@ -453,12 +469,17 @@ import XCTest
             XCTAssertTrue(pages.preheatScheduled)
             // In their own pools: a reference autoreleased here would live until the test ends, not the page.
             weak var former: DashboardKeptHost?
-            autoreleasepool { former = pages.hosts["a"] }
+            var address = ""
+            autoreleasepool {
+                former = pages.hosts["a"]
+                if let page = former { address = "\(Unmanaged.passUnretained(page).toOpaque())" }
+            }
             autoreleasepool { window.contentView = nil }
             XCTAssertTrue(pages.hosts.isEmpty, "a kept page outlived its window")
             XCTAssertFalse(pages.preheatScheduled, "the timer of the pages built at rest outlived the window")
             // Freed once SwiftUI ends its pending work (a loaded runner takes longer: wait for it, bounded).
             spin(host, until: { former == nil })
+            if former != nil { Self.traceRetainers(of: address) }
             XCTAssertNil(former, "a kept page is still in memory once its window closed")
             window.contentView = host
             spin(host)
