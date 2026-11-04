@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import EventKit
 import Foundation
 import LocalHistoryCore
@@ -70,10 +71,33 @@ final class GoalongEventKitBackend: GoalongCalendarBackend, @unchecked Sendable 
         default: return .noData // permission not yet requested, or calendar write-only access
         }
     }
+    /// R14c: `authorizationStatus` is a synchronous call to the calendar daemon (30–40 ms after a pause), and the
+    /// Activité page reads it several times per body. The answer is kept here and forgotten each time it can change:
+    /// app reactivation (the only way to reach System Settings), store change, and our own request. Forgetting is
+    /// immediate; a background re-read then fills it again, so a click after a return never waits and never sees an old answer.
+    private var known: [EKEntityType: GoalongSystemSourceStatus] = [:]
+    private var watchers: [NSObjectProtocol] = []
     func authorization(for entity: EKEntityType) -> GoalongSystemSourceStatus {
-        Self.status(EKEventStore.authorizationStatus(for: entity))
+        lock.lock(); let hit = known[entity]; let generation = forgotten; lock.unlock()
+        if let hit { return hit }
+        let status = Self.status(EKEventStore.authorizationStatus(for: entity))
+        lock.lock(); if forgotten == generation { known[entity] = status }; watchLocked(); lock.unlock()
+        return status
+    }
+    private var forgotten = 0
+    private func forget() {
+        lock.lock(); known = [:]; forgotten += 1; lock.unlock()
+        DispatchQueue.global(qos: .userInitiated).async { [self] in for entity in [EKEntityType.event, .reminder] { _ = authorization(for: entity) } }
+    }
+    private func watchLocked() {
+        guard watchers.isEmpty else { return }
+        let center = NotificationCenter.default
+        watchers = [NSApplication.didBecomeActiveNotification, .EKEventStoreChanged].map {
+            center.addObserver(forName: $0, object: nil, queue: nil) { [weak self] _ in self?.forget() }
+        }
     }
     func requestAccess(for entity: EKEntityType) async {
+        defer { forget() }
         let store = store
         _ = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             let done: (Bool, Error?) -> Void = { granted, _ in continuation.resume(returning: granted) }
