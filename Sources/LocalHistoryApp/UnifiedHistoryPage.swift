@@ -4,6 +4,8 @@
     import SwiftUI
 
     struct UnifiedHistoryPage: View {
+        /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+        var bodyProbe = DashboardBodyProbe("historique")
         private let model: DashboardViewModel
         @ObservedObject var deviceStore: DashboardDeviceState
         @ObservedObject var navigationStore: DashboardNavigation

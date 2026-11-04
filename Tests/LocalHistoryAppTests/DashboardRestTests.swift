@@ -9,8 +9,10 @@ import XCTest
 
 /// R14b § 5: at rest the dashboard republishes nothing. The model's two wakeups (status every 5 s, today's data every
 /// 60 s) run one minute on a virtual clock, on the busy member's real window content (never on screen): no store
-/// publishes, and neither the page shown nor the pages kept hidden evaluate their body. One real data change then
-/// publishes exactly once and leaves the hidden pages still. Pages: Activité, Concentration, Blocage, Réglages.
+/// publishes, and neither the page shown nor the pages kept hidden evaluate their body. Then, per page, one real change
+/// of a store the page shown observes publishes exactly once, updates that page exactly once and leaves the hidden pages
+/// still. Pages shown: Activité, Concentration, Blocage, Réglages; Historique and Travail are kept hidden (preheated).
+/// Every one has its own probe.
 final class DashboardRestTests: XCTestCase {
     /// The two wakeups of `DashboardRefreshScheduler`, fired by hand.
     private final class Wakeups {
@@ -50,6 +52,9 @@ final class DashboardRestTests: XCTestCase {
             let (model, window, host, _, _) = try ViewSwitchTimingTests.memberDashboard(ctx, days: 7,
                 scheduler: DashboardRefreshScheduler(schedule: wakeups.schedule))
             defer { window.contentView = nil; window.close(); DashboardBodyProbe.counting = false }
+            // The first build of every page is counted, so a probe that never runs cannot pass for a still page.
+            DashboardBodyProbe.reset()
+            DashboardBodyProbe.counting = true
             ViewSwitchTimingTests.draw(host)
             XCTAssertNotNil(ViewSwitchTimingTests.settle(host, model: model, timeout: 30), "Activité never finished its first read")
             if let pages = ViewSwitchTimingTests.keptPages(in: host) {
@@ -72,12 +77,40 @@ final class DashboardRestTests: XCTestCase {
                 XCTAssertNotNil(ViewSwitchTimingTests.settle(host, model: model, timeout: 20), "\(section) never completed")
                 pump()
             }
-            // Every variant visited once, so the others are kept hidden while one is shown.
-            let variants: [(DashboardSection, Set<String>)] = [
-                (.overview, ["activite"]), (.concentration, ["concentration", "concentration-maintenant"]),
-                (.blocking, ["concentration", "blocage"]), (.settings, ["reglages"]),
+            // Every variant visited once, so the others are kept hidden while one is shown. Per variant: the page shown
+            // (its probe must count exactly 1 for the control), the page inside it (at most 1), and the store of the
+            // control, one the page shown observes.
+            let variants: [(section: DashboardSection, page: String, inner: Set<String>, store: String)] = [
+                (.overview, "activite", [], "snapshot"),
+                (.concentration, "concentration", ["concentration-maintenant"], "navigation"),
+                (.blocking, "concentration", ["blocage"], "navigation"),
+                (.settings, "reglages", [], "settings"),
             ]
-            for (section, _) in variants { show(section) }
+            for variant in variants { show(variant.section) }
+            DashboardBodyProbe.counting = false
+            XCTAssertNotNil(ViewSwitchTimingTests.keptPages(in: host), "the pages are not kept")
+            for probe in ["activite", "concentration", "concentration-maintenant", "blocage", "reglages", "historique", "travail"] {
+                XCTAssertGreaterThan(DashboardBodyProbe.counts[probe] ?? 0, 0, "the page \(probe) was never built")
+            }
+
+            /// One real change of the store `name`, read by the page shown; returns its way back.
+            @MainActor func change(_ name: String) -> () -> Void {
+                switch name {
+                case "snapshot":  // the 60 s pass finds one more event
+                    let now = model.snapshotStore.snapshot
+                    XCTAssertTrue(model.publishSnapshot(Self.changed(now)), "a changed read was dropped")
+                    return { XCTAssertTrue(model.publishSnapshot(now)) }
+                case "navigation":  // another Réglages pane: the hub observes the navigation, and stays shown
+                    let pane = model.navigationStore.settingsPane
+                    model.navigationStore.settingsPane = pane == .modules ? .home : .modules
+                    return { model.navigationStore.settingsPane = pane }
+                default:  // a configuration notice, which Réglages shows
+                    let settings = model.settingsStore
+                    let (notice, locked, backup) = (settings.configNotice, settings.configLocked, settings.configBackupName)
+                    settings.setConfigStatus(notice: "R14b : témoin du test de repos.", locked: locked, backupName: backup)
+                    return { settings.setConfigStatus(notice: notice, locked: locked, backupName: backup) }
+                }
+            }
 
             var publications: [String: Int] = [:]
             let stores: [(String, ObservableObjectPublisher)] = [
@@ -88,7 +121,7 @@ final class DashboardRestTests: XCTestCase {
             let watches = stores.map { name, publisher in publisher.sink { publications[name, default: 0] += 1 } }
             defer { watches.forEach { $0.cancel() } }
 
-            for (section, shown) in variants {
+            for (section, page, inner, store) in variants {
                 show(section)
                 publications = [:]
                 DashboardBodyProbe.reset()
@@ -102,20 +135,23 @@ final class DashboardRestTests: XCTestCase {
                 XCTAssertEqual(DashboardBodyProbe.counts, [:], "\(section): a body was evaluated at rest")
                 log("\(section.rawValue) rest: publications \(publications) bodies \(DashboardBodyProbe.counts)")
 
-                // Control: one changed read publishes once; the shown page updates at most once, hidden pages not at all.
-                let now = model.snapshotStore.snapshot
+                // Control: one real change publishes once and updates the page shown exactly once (a page that stayed
+                // still would fail); the pages kept hidden are not evaluated at all.
                 DashboardBodyProbe.reset()
                 DashboardBodyProbe.counting = true
-                XCTAssertTrue(model.publishSnapshot(Self.changed(now)), "\(section): a changed read was dropped")
+                let undo = change(store)
                 for _ in 0..<5 { pump() }
                 DashboardBodyProbe.counting = false
-                XCTAssertEqual(publications, ["snapshot": 1], "\(section): one data change must publish exactly once")
-                let hidden = DashboardBodyProbe.counts.filter { !shown.contains($0.key) && $0.key != "root" && $0.key != "sidebar" }
+                XCTAssertEqual(publications, [store: 1], "\(section): one change must publish exactly once")
+                XCTAssertEqual(DashboardBodyProbe.counts[page], 1, "\(section): the page shown did not update exactly once")
+                let hidden = DashboardBodyProbe.counts.filter {
+                    $0.key != page && !inner.contains($0.key) && $0.key != "root" && $0.key != "sidebar"
+                }
                 XCTAssertEqual(hidden, [:], "\(section): a hidden page was evaluated")
                 XCTAssertTrue(DashboardBodyProbe.counts.values.allSatisfy { $0 <= 1 }, "\(section): \(DashboardBodyProbe.counts)")
                 log("\(section.rawValue) control: publications \(publications) bodies \(DashboardBodyProbe.counts)")
-                // Back to the real read before the next page (not counted).
-                XCTAssertTrue(model.publishSnapshot(now))
+                // Back to the state before the next page (not counted).
+                undo()
                 pump()
             }
         }

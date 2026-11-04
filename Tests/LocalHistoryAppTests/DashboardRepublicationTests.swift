@@ -151,6 +151,92 @@ final class DashboardRepublicationTests: XCTestCase {
         XCTAssertEqual(snapshots.snapshotGeneration, 2)
     }
 
+    /// Review point 3: hiding the window drops the day shown for a placeholder (R13: never stale on return). The
+    /// placeholder publishes once, a second hide publishes nothing, and the first read on return is shown even when it
+    /// equals the placeholder or the day dropped.
+    func testHiddenWindowShowsAPlaceholderThenTheFirstReadOnReturn() throws {
+        let model = try dashboardModel()
+        let store = model.snapshotStore
+        model.dashboardDidBecomeVisible()
+        defer { model.dashboardDidBecomeHidden() }
+        try waitForRead(model, after: 0)
+        let day = model.navigationStore.selectedDay
+        let read = Self.snapshot(day: day, latestMessage: "r14b")
+        model.publishSnapshot(read)
+        XCTAssertFalse(model.publishSnapshot(read), "an equal read was shown")
+        var publications = 0
+        let watch = store.objectWillChange.sink { publications += 1 }
+        defer { watch.cancel() }
+
+        let shown = store.snapshotGeneration
+        model.dashboardDidBecomeHidden()
+        XCTAssertFalse(model.runtimeStore.dashboardIsVisible)
+        XCTAssertEqual(store.snapshot, .empty(day: day), "the hidden window kept the day shown")
+        XCTAssertEqual(store.snapshotGeneration, shown + 1, "the placeholder must move the generation once")
+        let afterHide = publications
+        XCTAssertGreaterThanOrEqual(afterHide, 1, "the placeholder was not published")
+        model.dashboardDidBecomeHidden()
+        XCTAssertEqual(publications, afterHide, "a second hide published the placeholder again")
+        XCTAssertEqual(store.snapshotGeneration, shown + 1)
+
+        // The first read on return, equal to the day dropped: shown once, then the same read is silent again.
+        publications = 0
+        XCTAssertTrue(model.publishSnapshot(read), "the first read after the placeholder was dropped")
+        XCTAssertEqual(store.snapshot, read)
+        XCTAssertEqual(publications, 1)
+        XCTAssertFalse(model.publishSnapshot(read))
+        XCTAssertEqual(publications, 1)
+
+        // The real path: hidden, then shown again; the reader's first read (an empty day here, equal to the
+        // placeholder) is shown, so a page tells it from the placeholder by its generation.
+        model.dashboardDidBecomeHidden()
+        let placeholder = store.snapshotGeneration
+        XCTAssertEqual(store.snapshot, .empty(day: model.navigationStore.selectedDay))
+        model.dashboardDidBecomeVisible()
+        try waitForRead(model, after: placeholder)
+        XCTAssertFalse(model.publishSnapshot(store.snapshot), "the read on return was not taken as read")
+    }
+
+    /// Review point 4: the analysis sheet reads the conversation folders through its own observation. A folder added,
+    /// then disabled, while the sheet is open shows up, then goes, without reopening it. Off screen: the gallery's
+    /// window, never ordered in, so nothing is shown and nothing takes the focus.
+    func testAnalysisSheetFollowsTheConversationFoldersWhileOpen() throws {
+        let model = try dashboardModel()
+        let name = "r14b-sheet-folder"
+        let folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var selection = GoalongAnalysisSelection()
+        selection.conversations = true
+        let sheet = NSHostingView(rootView: GoalongAnalysisSelectionSheet(model: model, selection: selection) { _ in })
+        let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 1600),
+                                   styleMask: [.titled, .closable], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = sheet
+        defer { window.contentView = nil; window.close() }
+        func turn() { RunLoop.current.run(until: Date().addingTimeInterval(0.01)); sheet.layoutSubtreeIfNeeded(); sheet.displayIfNeeded() }
+        func spin(until condition: () -> Bool, _ message: String) {
+            let deadline = Date().addingTimeInterval(10)
+            while !condition(), Date() < deadline { turn() }
+            XCTAssertTrue(condition(), message)
+        }
+        let row: (String) -> Bool = { $0.hasSuffix(", \(name)") }
+        let empty: (String) -> Bool = { $0.hasPrefix("Aucun dossier activé") }
+        // The sheet's own loads end first (its save button turns on), so only the folder change can redraw it.
+        spin(until: { Self.texts(of: sheet, enabledOnly: true).contains("analysis-save-selection") }, "the sheet never loaded")
+        for _ in 0..<20 { turn() }
+        XCTAssertTrue(Self.texts(of: sheet).contains(where: empty), "no folder yet")
+        XCTAssertFalse(Self.texts(of: sheet).contains(where: row))
+
+        model.agentActivityRuntime.addFolder(folder, provider: .codex)
+        spin(until: { let seen = Self.texts(of: sheet); return seen.contains(where: row) && !seen.contains(where: empty) },
+             "a folder added while the sheet is open is not listed")
+        let id = try XCTUnwrap(model.agentActivityRuntime.configuration.watchedFolders.first { $0.displayName == name }?.id)
+        model.agentActivityRuntime.setFolderEnabled(false, id: id)
+        spin(until: { let seen = Self.texts(of: sheet); return !seen.contains(where: row) && seen.contains(where: empty) },
+             "a folder disabled while the sheet is open is still listed")
+    }
+
     // MARK: Helpers
 
     /// Every store of the model: all a view can observe (the model itself is no longer observable).
@@ -159,6 +245,36 @@ final class DashboardRepublicationTests: XCTestCase {
             model.navigationStore.objectWillChange, model.settingsStore.objectWillChange,
             model.runtimeStore.objectWillChange, model.snapshotStore.objectWillChange]
         return stores.map { $0.sink { _ in count() } }
+    }
+
+    /// Every identifier, label, title and value of a view's accessibility tree (only enabled elements if asked).
+    static func texts(of view: NSView, enabledOnly: Bool = false) -> [String] {
+        // The tree is built only while it is asked for, as in `ViewSwitchAX.first`.
+        let before = NSApplication.shared.accessibilityAttributeValue(ViewSwitchAX.enhancedUI)
+        NSApplication.shared.accessibilitySetValue(true, forAttribute: ViewSwitchAX.enhancedUI)
+        defer { NSApplication.shared.accessibilitySetValue(before ?? false, forAttribute: ViewSwitchAX.enhancedUI) }
+        var found: [String] = [], pending: [Any] = [view], visited = Set<ObjectIdentifier>()
+        while let value = pending.popLast(), visited.count < 20_000 {
+            guard let object = value as? NSObject, visited.insert(ObjectIdentifier(object)).inserted else { continue }
+            if !enabledOnly || ViewSwitchAX.flag(object, "isAccessibilityEnabled") != false {
+                for name in ["accessibilityIdentifier", "accessibilityLabel", "accessibilityTitle", "accessibilityValue"] {
+                    if let text = ViewSwitchAX.read(object, name) as? String, !text.isEmpty { found.append(text) }
+                }
+            }
+            pending.append(contentsOf: ViewSwitchAX.read(object, "accessibilityChildren") as? [Any] ?? [])
+            if let child = object as? NSView { pending.append(contentsOf: child.subviews) }
+        }
+        return found
+    }
+
+    /// Waits until the reader's first read after generation `after` is shown (10 s at most).
+    func waitForRead(_ model: DashboardViewModel, after generation: UInt64) throws {
+        let deadline = Date().addingTimeInterval(10)
+        while model.snapshotStore.snapshotGeneration <= generation || model.snapshotStore.isRefreshing, Date() < deadline {
+            model.waitForPendingWorkForTesting()
+        }
+        XCTAssertGreaterThan(model.snapshotStore.snapshotGeneration, generation, "the reader never showed its read")
+        for _ in 0..<5 { model.waitForPendingWorkForTesting() }  // the names and icons pass that follows a read
     }
 
     func dashboardModel() throws -> DashboardViewModel {

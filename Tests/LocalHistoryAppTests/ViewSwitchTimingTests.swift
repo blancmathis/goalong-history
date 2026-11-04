@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 import XCTest
@@ -249,11 +250,17 @@ final class ViewSwitchTimingTests: XCTestCase {
     }
 
     /// One publication of the model with the page laid out and displayed: median of 3, minus nothing (an idle turn
-    /// is logged beside it, ~1 ms). Same method as the T-043 report.
+    /// is logged beside it, ~1 ms). Same method as the T-043 report. R14b: the model publishes through its six stores, so
+    /// all six send at once, in the same turn: still everything the model can publish at once, as the model's own
+    /// publication was before. A view that now observes no store (it only calls the model) is no longer reached: that is
+    /// the gain of R14b, not a change of method.
     @MainActor static func republish(_ host: NSView, model: DashboardViewModel) -> Double {
+        let stores: [ObservableObjectPublisher] = [model.deviceStore.objectWillChange, model.alertStore.objectWillChange,
+            model.navigationStore.objectWillChange, model.settingsStore.objectWillChange,
+            model.runtimeStore.objectWillChange, model.snapshotStore.objectWillChange]
         func once(_ send: Bool) -> Double {
             let started = ProcessInfo.processInfo.systemUptime
-            if send { model.snapshotStore.objectWillChange.send() }
+            if send { stores.forEach { $0.send() } }
             RunLoop.current.run(until: Date().addingTimeInterval(0.001))
             host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
             return (ProcessInfo.processInfo.systemUptime - started) * 1_000

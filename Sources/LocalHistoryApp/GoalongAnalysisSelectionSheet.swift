@@ -10,6 +10,8 @@ import AgentActivity
     @ObservedObject var deviceStore: DashboardDeviceState
     @ObservedObject var navigationStore: DashboardNavigation
     @ObservedObject var snapshotStore: DashboardSnapshotStore
+    /// The conversation folders shown in tab 0 (R14b review: read only through this observation).
+    @ObservedObject var agents: AgentActivityRuntime
 
     init(model: DashboardViewModel, selection: GoalongAnalysisSelection, initialTab: Int = 0,
          onSave: @escaping (GoalongAnalysisSelection) -> Void) {
@@ -19,6 +21,7 @@ import AgentActivity
         _deviceStore = ObservedObject(wrappedValue: model.deviceStore)
         _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
         _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+        _agents = ObservedObject(wrappedValue: model.agentActivityRuntime)
         self.onSave = onSave
     }
     @State var selection: GoalongAnalysisSelection
@@ -256,7 +259,7 @@ import AgentActivity
     }
     private var conversationChoices: some View {
         GoalongSettingsGroup(title: "Conversations, choisir les dossiers et le contenu") {
-            let folders = model.agentActivityRuntime.configuration.watchedFolders.filter(\.isEnabled)
+            let folders = agents.configuration.watchedFolders.filter(\.isEnabled)
             ForEach(folders) { folder in
                 Toggle("\(folder.provider.displayName), \(folder.displayName)", isOn: Binding(get: { scope.wrappedValue.conversationFolderIDs?.contains(folder.id) ?? true }, set: { enabled in
                     var value = scope.wrappedValue; var ids = Set(value.conversationFolderIDs ?? folders.map(\.id))
@@ -420,7 +423,7 @@ import AgentActivity
         if value.applicationIDs == nil { value.applicationIDs = apps.filter { !exclusions.policy.excludes(appID: $0.id, name: $0.name) }.map(\.id) }
         if value.detailApplicationIDs == nil { value.detailApplicationIDs = value.applicationIDs }
         if value.deviceIDs == nil { value.deviceIDs = localCatalog?.devices.map(\.id) ?? [] }
-        if value.conversationFolderIDs == nil { value.conversationFolderIDs = model.agentActivityRuntime.configuration.watchedFolders.filter(\.isEnabled).map(\.id) }
+        if value.conversationFolderIDs == nil { value.conversationFolderIDs = agents.configuration.watchedFolders.filter(\.isEnabled).map(\.id) }
         value.applicationNames = Dictionary(apps.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         value.excludedDomains = try PrivacyScopeInput.domains(value.excludedDomains.joined(separator: "\n"))
         try value.validate()

@@ -7,6 +7,8 @@ import SwiftUI
 /// "Mon travail": the user's own definition of work, the agent that applies it, and the
 /// review where every verdict can be corrected. Goalong never rates an app or a site.
 @MainActor struct GoalongWorkPage: View {
+    /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+    var bodyProbe = DashboardBodyProbe("travail")
     /// R-45 (R4d-25): two sentences, the cause then what it changes.
     static let withheldTitlesNotice = "Vos choix « Données pour ChatGPT » excluent les titres de fenêtre. Le classement ne distingue alors deux usages d’une même app que par le site."
     let model: DashboardViewModel
