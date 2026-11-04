@@ -32,6 +32,8 @@ import XCTest
         let name: String
         @ObservedObject var source: Source
         let counts: Counts
+        /// With an active brand mark (the pages built at rest only; see the N3 test).
+        var mark = false
         @State private var kept = 0
         private let timer = Timer.publish(every: 0.02, on: .main, in: .common).autoconnect()
         var body: some View {
@@ -45,7 +47,7 @@ import XCTest
                 }
             }
             .overlay(alignment: .topTrailing) {
-                HStack { GoalongActivityMark(isActive: true, width: 16); MotionPausedProbe(name: name, counts: counts) }
+                if mark { HStack { GoalongActivityMark(isActive: true, width: 16); MotionPausedProbe(name: name, counts: counts) } }
             }
             .onReceiveWhileShown(timer) { _ in counts.ticks[name, default: 0] += 1 }
             .onAppear { counts.appears[name, default: 0] += 1 }  // own layout: measures the plain modifiers
@@ -164,8 +166,8 @@ import XCTest
         let counts: Counts
         var body: some View {
             DashboardKeptPages(key: selected, preheat: ["a", "b"].filter { $0 != selected }.map { name in
-                DashboardKeptPageSeed(key: name, inputs: 0) { AnyView(Probe(name: name, source: source, counts: counts)) }
-            }) { Probe(name: selected, source: source, counts: counts) }
+                DashboardKeptPageSeed(key: name, inputs: 0) { AnyView(Probe(name: name, source: source, counts: counts, mark: true)) }
+            }) { Probe(name: selected, source: source, counts: counts, mark: true) }
         }
     }
 
