@@ -7,19 +7,10 @@ import SwiftUI
 private struct GoalongReducedMotionKey: EnvironmentKey {
     static let defaultValue = false
 }
-/// True while the mark's page is hidden (a kept page out of the window, or built at rest): the mark then stays still,
-/// even mounted in a visible window. Set by the host of kept pages; this file stays compilable alone.
-private struct GoalongMotionPausedKey: EnvironmentKey {
-    static let defaultValue = false
-}
 extension EnvironmentValues {
     var goalongReduceMotion: Bool {
         get { self[GoalongReducedMotionKey.self] }
         set { self[GoalongReducedMotionKey.self] = newValue }
-    }
-    var goalongMotionPaused: Bool {
-        get { self[GoalongMotionPausedKey.self] }
-        set { self[GoalongMotionPausedKey.self] = newValue }
     }
 }
 
@@ -51,7 +42,6 @@ struct GoalongActivityMark: View {
     var width: CGFloat = 32
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.goalongReduceMotion) private var localReduceMotion
-    @Environment(\.goalongMotionPaused) private var pageHidden
     private var reduceMotion: Bool { systemReduceMotion || localReduceMotion }
     @State private var motion = GoalongMotion.State()
     @State private var mounted = false
@@ -60,7 +50,7 @@ struct GoalongActivityMark: View {
     private var time: Double { ProcessInfo.processInfo.systemUptime }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: pageHidden || !mounted || !windowVisible || !ticking || reduceMotion)) { _ in
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !mounted || !windowVisible || !ticking || reduceMotion)) { _ in
             let sample = reduceMotion ? GoalongMotion.Sample.rest : motion.sample(at: time)
             GoalongPassageShape(q: sample.p[0], b: sample.p[1])
                 .stroke(LHTheme.accent, style: StrokeStyle(lineWidth: 2.1 * width / 26, lineCap: .round, lineJoin: .round))
@@ -151,7 +141,9 @@ struct GoalongProgressViewStyle: ProgressViewStyle {
 
 /// Stop the display clock when the owning window is hidden, miniaturized or occluded.
 /// Observes only its own AppKit window; no process/service is installed.
-private struct GoalongMotionVisibility: NSViewRepresentable {
+/// Visible = in a visible window and not hidden: a page laid out hidden (a kept page built at rest) never animates its
+/// mark (R14a, N1).
+struct GoalongMotionVisibility: NSViewRepresentable {
     let change: (Bool) -> Void
     func makeNSView(context: Context) -> Probe { Probe(change: change) }
     func updateNSView(_ view: Probe, context: Context) { view.change = change }
@@ -159,6 +151,8 @@ private struct GoalongMotionVisibility: NSViewRepresentable {
     final class Probe: NSView {
         var change: (Bool) -> Void
         private var observations: [NSObjectProtocol] = []
+        /// The last visibility reported (tests).
+        private(set) var lastVisible: Bool?
         init(change: @escaping (Bool) -> Void) {
             self.change = change
             super.init(frame: .zero)
@@ -178,8 +172,12 @@ private struct GoalongMotionVisibility: NSViewRepresentable {
             }
             report()
         }
+        override func viewDidHide() { super.viewDidHide(); report() }
+        override func viewDidUnhide() { super.viewDidUnhide(); report() }
         private func report() {
-            let visible = window.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
+            let visible = !isHiddenOrHasHiddenAncestor
+                && (window.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false)
+            lastVisible = visible
             DispatchQueue.main.async { [weak self] in self?.change(visible) }
         }
         func stop() {

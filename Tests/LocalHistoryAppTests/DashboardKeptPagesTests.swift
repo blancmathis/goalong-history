@@ -13,19 +13,13 @@ import XCTest
         var tasks: [String: Int] = [:], timeline: [String: Int] = [:]
         /// The appear logic under the rule of kept pages (`onAppearWhenShown`, `taskWhenShown`).
         var shownAppears: [String: Int] = [:], shownTasks: [String: Int] = [:]
-        /// Each value of `goalongMotionPaused` the page's brand mark was evaluated with.
-        var motionPaused: [String: [Bool]] = [:]
     }
 
-    /// Records what the brand mark beside it reads.
-    struct MotionPausedProbe: View {
-        let name: String
-        let counts: Counts
-        @Environment(\.goalongMotionPaused) private var paused
-        var body: some View {
-            let _ = counts.motionPaused[name, default: []].append(paused)
-            return Color.clear.frame(width: 1, height: 1)
-        }
+    /// The visibility probe of a page's brand mark.
+    private static func markProbe(in view: NSView) -> GoalongMotionVisibility.Probe? {
+        if let probe = view as? GoalongMotionVisibility.Probe { return probe }
+        for child in view.subviews { if let probe = markProbe(in: child) { return probe } }
+        return nil
     }
 
     struct Probe: View {
@@ -47,7 +41,7 @@ import XCTest
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if mark { HStack { GoalongActivityMark(isActive: true, width: 16); MotionPausedProbe(name: name, counts: counts) } }
+                if mark { GoalongActivityMark(isActive: true, width: 16) }
             }
             .onReceiveWhileShown(timer) { _ in counts.ticks[name, default: 0] += 1 }
             .onAppear { counts.appears[name, default: 0] += 1 }  // own layout: measures the plain modifiers
@@ -191,7 +185,8 @@ import XCTest
             XCTAssertNil(pages.hosts["b"])
             while pages.hosts["b"] == nil && Date().timeIntervalSince(shown) < 10 { spin(host, 0.02) }
             let built = try XCTUnwrap(pages.hosts["b"], "the page was not built at rest")
-            XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(shown), 0.3, "the page was built before the window was quiet")
+            // Margin for the timer's tolerance (CI measured 0.2999 s for 0.3 s): a page built in the click would take ~0.
+            XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(shown), 0.25, "the page was built before the window was quiet")
             XCTAssertEqual(pages.preheatPending, 0)
             XCTAssertNil(built.superview, "a page built at rest went into the window")
             XCTAssertNil(ViewSwitchAX.first(in: host) { $0 == "probe-b" })
@@ -202,8 +197,8 @@ import XCTest
             XCTAssertNil(counts.shownAppears["b"], "a page built at rest ran its appear logic")
             XCTAssertNil(counts.shownTasks["b"], "a page built at rest ran its task")
             // Its active brand mark was paused from its first evaluation (no motion while built at rest).
-            XCTAssertFalse(counts.motionPaused["b", default: []].isEmpty)
-            XCTAssertFalse(counts.motionPaused["b", default: []].contains(false), "a page built at rest animated its mark")
+            // Its active brand mark saw a hidden page while laid out (it stays still).
+            XCTAssertEqual(Self.markProbe(in: built)?.lastVisible, false, "a page built at rest could animate its mark")
             let bodies = counts.bodies["b"] ?? 0
             XCTAssertGreaterThan(bodies, 0)
             for _ in 0..<3 { source.value += 1; spin(host, 0.05) }
@@ -218,7 +213,9 @@ import XCTest
             XCTAssertEqual(counts.appears["b"], 2); XCTAssertEqual(counts.tasks["b"], 2)
             // Its first real showing runs its appear logic, as a visit did before pages were kept.
             XCTAssertEqual(counts.shownAppears["b"], 1); XCTAssertEqual(counts.shownTasks["b"], 1)
-            XCTAssertEqual(counts.motionPaused["b"]?.last, false, "the mark stayed paused once its page was shown")
+            // Shown: no hidden ancestor any more (tests never show a window, so it does not move here).
+            let probe = try XCTUnwrap(Self.markProbe(in: built))
+            XCTAssertNotNil(probe.window); XCTAssertFalse(probe.isHiddenOrHasHiddenAncestor)
             XCTAssertNotNil(ViewSwitchAX.first(in: host) { $0 == "b 3 kept 0" }, "the page showed stale values")
             spin(host, until: { (counts.ticks["b"] ?? 0) > 0 })
             XCTAssertGreaterThan(counts.ticks["b"] ?? 0, 0, "the page's timer never started on its first visit")
