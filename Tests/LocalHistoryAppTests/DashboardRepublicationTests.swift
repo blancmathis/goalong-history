@@ -113,6 +113,44 @@ final class DashboardRepublicationTests: XCTestCase {
         XCTAssertEqual(publications, 1)
     }
 
+    /// Step 7: the runtime and the day's data publish only a change. Free space publishes only a change the user can
+    /// see, but the exact value is always kept; the placeholder of a hidden window is not published twice.
+    func testRuntimeAndSnapshotStoresPublishOnlyAChange() {
+        let runtime = DashboardRuntimeState()
+        var runtimePublications = 0
+        let watchRuntime = runtime.objectWillChange.sink { runtimePublications += 1 }
+        defer { watchRuntime.cancel() }
+        runtime.setRuntime(.unavailable)
+        runtime.setDashboardVisible(false)
+        runtime.setStatusVisible(false)
+        XCTAssertEqual(runtimePublications, 0, "an equal runtime published")
+        runtime.setFreeDiskBytes(100_000_000_000)
+        XCTAssertEqual(runtimePublications, 1, "the first free space was not published")
+        runtime.setFreeDiskBytes(100_000_004_096)
+        XCTAssertEqual(runtimePublications, 1, "a free space with the same text published")
+        XCTAssertEqual(runtime.freeDiskBytes, 100_000_004_096, "the exact free space was dropped")
+        runtime.setFreeDiskBytes(1_000_000)
+        XCTAssertEqual(runtimePublications, 2, "a low free space was not published")
+        runtime.setDashboardVisible(true)
+        XCTAssertEqual(runtimePublications, 3)
+        XCTAssertTrue(runtime.recordingStatusIsLive)
+
+        let day = Calendar.current.startOfDay(for: Date())
+        let snapshots = DashboardSnapshotStore(day: day)
+        var snapshotPublications = 0
+        let watchSnapshots = snapshots.objectWillChange.sink { snapshotPublications += 1 }
+        defer { watchSnapshots.cancel() }
+        snapshots.discard(day: day)
+        snapshots.setRefreshing(false)
+        XCTAssertEqual(snapshotPublications, 0, "the placeholder or an equal spinner published")
+        XCTAssertTrue(snapshots.show(.empty(day: day)), "the first read is shown, even an empty one")
+        XCTAssertFalse(snapshots.show(.empty(day: day)))
+        XCTAssertEqual(snapshotPublications, 1)
+        snapshots.discard(day: day)
+        XCTAssertEqual(snapshotPublications, 2, "hiding the window must drop the day shown")
+        XCTAssertEqual(snapshots.snapshotGeneration, 2)
+    }
+
     // MARK: Helpers
 
     func dashboardModel() throws -> DashboardViewModel {

@@ -145,4 +145,95 @@
             if configBackupName != backupName { configBackupName = backupName }
         }
     }
+    /// The recording status, the free space and the window's visibility. Read every 5 s while visible; publishes only
+    /// a change.
+    final class DashboardRuntimeState: ObservableObject {
+        @Published private(set) var runtime: RuntimePresentation = .unavailable
+        /// Free space of the history volume, read at most once a minute while visible. It moves by a few bytes with each
+        /// write: it publishes only a change the user can see (its rounded text, or the low-space state). A view always
+        /// reads the exact value.
+        private(set) var freeDiskBytes: Int64?
+        @Published private(set) var dashboardIsVisible = false
+        /// The window can be seen, with or without the keyboard: only the cheap status is kept live.
+        @Published private(set) var dashboardStatusIsVisible = false
+
+        /// The recording status is fresh: the banner and the page bodies show it only then.
+        var recordingStatusIsLive: Bool { dashboardIsVisible || dashboardStatusIsVisible }
+
+        func setRuntime(_ next: RuntimePresentation) {
+            if runtime != next { runtime = next }
+        }
+
+        func setFreeDiskBytes(_ bytes: Int64?) {
+            guard bytes != freeDiskBytes else { return }
+            if Self.shownFreeSpace(bytes) != Self.shownFreeSpace(freeDiskBytes) { objectWillChange.send() }
+            freeDiskBytes = bytes
+        }
+
+        /// What the banner and Settings show of a free space: its text, and whether it is low.
+        static func shownFreeSpace(_ bytes: Int64?) -> String? {
+            bytes.map { "\(StorageHealth.formatted($0)) \(StorageHealth.isLow($0))" }
+        }
+
+        func setDashboardVisible(_ visible: Bool) {
+            if dashboardIsVisible != visible { dashboardIsVisible = visible }
+        }
+
+        func setStatusVisible(_ visible: Bool) {
+            if dashboardStatusIsVisible != visible { dashboardStatusIsVisible = visible }
+        }
+    }
+
+    /// The selected day's data. The 60 s pass re-reads it; an equal snapshot (every field) publishes nothing.
+    final class DashboardSnapshotStore: ObservableObject {
+        @Published private(set) var snapshot: DashboardDaySnapshot
+        /// Counts the reads shown, so a page can tell a new read from the same one. Not published: it moves only with
+        /// `snapshot`, which publishes once for both.
+        private(set) var snapshotGeneration: UInt64 = 0
+        /// False while `snapshot` is the placeholder of a hidden or new window: the next read is then always shown.
+        private var snapshotIsRead = false
+        /// Only a forced read (a click, the window shown) turns it on; the 60 s pass stays silent.
+        @Published private(set) var isRefreshing = false
+        @Published private(set) var historyDeletionGeneration = 0
+
+        init(day: Date) {
+            snapshot = .empty(day: day)
+        }
+
+        /// Shows a read unless it equals the shown one on every field (the 60 s pass on a quiet day publishes nothing).
+        /// The first read after the placeholder is always shown, so the generation tells a read from it.
+        @discardableResult
+        func show(_ next: DashboardDaySnapshot) -> Bool {
+            guard next != snapshot || !snapshotIsRead else { return false }
+            snapshotGeneration &+= 1
+            snapshotIsRead = true
+            snapshot = next
+            return true
+        }
+
+        /// The same day with fresher names and icons: shown only if something changed.
+        func applyMetadata(_ next: DashboardDaySnapshot) {
+            guard next != snapshot else { return }
+            snapshotGeneration &+= 1
+            snapshot = next
+        }
+
+        /// The window was hidden: its day is dropped, so it is never shown stale on return (R13). The placeholder
+        /// already shown is not published again.
+        func discard(day: Date) {
+            let placeholder = DashboardDaySnapshot.empty(day: day)
+            guard snapshotIsRead || snapshot != placeholder else { return }
+            snapshotGeneration &+= 1
+            snapshotIsRead = false
+            snapshot = placeholder
+        }
+
+        func setRefreshing(_ refreshing: Bool) {
+            if isRefreshing != refreshing { isRefreshing = refreshing }
+        }
+
+        func historyWasDeleted() { historyDeletionGeneration &+= 1 }
+
+        var mostRecentActivitySession: ActivitySession? { snapshot.sessions.first }
+    }
 #endif

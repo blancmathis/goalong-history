@@ -151,16 +151,21 @@ import AppleScreenTime
         }
         /// The profile studio outlives any settings pane or page that opens it.
         @MainActor lazy var profileStudio = GoalongProfileStudioHost()
-        @Published private(set) var runtime: RuntimePresentation = .unavailable
-        /// Free space of the history volume, refreshed at most once a minute while visible.
-        @Published private(set) var freeDiskBytes: Int64?
+        /// R14b: the recording status, the free space and the window's visibility. A view reads them through its own
+        /// `@ObservedObject`.
+        let runtimeStore = DashboardRuntimeState()
         private var freeDiskCheckedAt: Date?
-        @Published private(set) var snapshot: DashboardDaySnapshot
-        /// Counts the reads shown. Not published: it moves only with `snapshot`, which publishes once for both.
-        private(set) var snapshotGeneration: UInt64 = 0
-        /// False while `snapshot` is the placeholder of a hidden or new window: the next read is then always shown.
-        private var snapshotIsRead = false
-        @Published private(set) var isRefreshing = false
+        /// R14b: the selected day's data. A view reads it through its own `@ObservedObject`.
+        let snapshotStore: DashboardSnapshotStore
+        // R14b façade (removed at step 8): read-only forwarders, the stores publish through the relay.
+        var runtime: RuntimePresentation { runtimeStore.runtime }
+        var freeDiskBytes: Int64? { runtimeStore.freeDiskBytes }
+        var snapshot: DashboardDaySnapshot { snapshotStore.snapshot }
+        var snapshotGeneration: UInt64 { snapshotStore.snapshotGeneration }
+        var isRefreshing: Bool { snapshotStore.isRefreshing }
+        var historyDeletionGeneration: Int { snapshotStore.historyDeletionGeneration }
+        var dashboardIsVisible: Bool { runtimeStore.dashboardIsVisible }
+        var dashboardStatusIsVisible: Bool { runtimeStore.dashboardStatusIsVisible }
         // R14b: no view reads these three (searched by name in Sources and Tests): they do not publish.
         var selectedSessionID: String?
         var activitySearch = ""
@@ -202,7 +207,6 @@ import AppleScreenTime
             get { alertStore.isExportingShare }
             set { alertStore.setExportingShare(newValue) }
         }
-        @Published private(set) var historyDeletionGeneration = 0
 
         /// R14b: what this Mac is identified as. A view reads it through its own `@ObservedObject`.
         let deviceStore: DashboardDeviceState
@@ -264,12 +268,8 @@ import AppleScreenTime
             qos: .utility
         )
         private let shareQueue = DispatchQueue(label: "ai.goalong.localhistory.dashboard-share", qos: .userInitiated)
-        @Published private(set) var dashboardIsVisible = false
-        /// The window can be seen, with or without the keyboard: only the cheap status is kept live.
-        /// Still published: views read it through `recordingStatusIsLive`.
-        @Published private(set) var dashboardStatusIsVisible = false
         /// The recording status is fresh: the banner and the page bodies show it only then.
-        var recordingStatusIsLive: Bool { dashboardIsVisible || dashboardStatusIsVisible }
+        var recordingStatusIsLive: Bool { runtimeStore.recordingStatusIsLive }
         private var dataRequestSequence: UInt64 = 0
         private var metadataRequestSequence: UInt64 = 0
         private var activeDataRequest:
@@ -342,7 +342,7 @@ import AppleScreenTime
                 day: today, showWelcome: !defaults.bool(forKey: "didShowLocalHistoryConsentOnboardingV5"), now: now)
             selectedCalendarDay = GoalongCalendarDay(today)
             seenToday = selectedCalendarDay
-            snapshot = .empty(day: today)
+            snapshotStore = DashboardSnapshotStore(day: today)
             settingsStore = DashboardSettingsState(
                 draft: DashboardSettingsDraft(config: configManager.config), sharingRules: sharingRulesStore.rules,
                 defaultSharingVisibility: sharingRulesStore.defaultVisibility)
@@ -418,7 +418,7 @@ import AppleScreenTime
         /// R14b façade (removed at step 8): a store's publication republishes the model, for the views not migrated.
         private func relayStores() {
             let stores: [ObservableObjectPublisher] = [deviceStore.objectWillChange, alertStore.objectWillChange, navigationStore.objectWillChange,
-                settingsStore.objectWillChange]
+                settingsStore.objectWillChange, runtimeStore.objectWillChange, snapshotStore.objectWillChange]
             storeRelays = stores.map { $0.sink { [weak self] _ in self?.objectWillChange.send() } }
         }
 
@@ -605,7 +605,7 @@ import AppleScreenTime
 
         func dashboardDidBecomeVisible() {
             guard !dashboardIsVisible else { return }
-            dashboardIsVisible = true
+            runtimeStore.setDashboardVisible(true)
             followToday()
             agentActivityRuntime.dashboardDidBecomeVisible()
             refreshRuntime()
@@ -624,7 +624,7 @@ import AppleScreenTime
         /// without the data and metadata readers that `dashboardDidBecomeVisible` starts.
         func dashboardStatusDidBecomeVisible() {
             guard !dashboardStatusIsVisible else { return }
-            dashboardStatusIsVisible = true
+            runtimeStore.setStatusVisible(true)
             // With the keyboard, dashboardDidBecomeVisible already read the status and armed the timers.
             guard !dashboardIsVisible else { return }
             refreshRuntime()
@@ -633,7 +633,7 @@ import AppleScreenTime
 
         func dashboardStatusDidBecomeHidden() {
             guard dashboardStatusIsVisible else { return }
-            dashboardStatusIsVisible = false
+            runtimeStore.setStatusVisible(false)
             guard !dashboardIsVisible else { return }
             updateRefreshSchedule()
         }
@@ -650,7 +650,7 @@ import AppleScreenTime
                 if discardContents { discardVisibleSnapshot() }
                 return
             }
-            dashboardIsVisible = false
+            runtimeStore.setDashboardVisible(false)
             refreshScheduler.deactivate()
             updateRefreshSchedule()
             dataRequestSequence &+= 1
@@ -661,7 +661,7 @@ import AppleScreenTime
             // or hiding the window is not a reason to drop it. Only a real close stops it.
             discardShareCache()
             dataRefreshPending = false
-            isRefreshing = false
+            snapshotStore.setRefreshing(false)
             if discardContents { discardVisibleSnapshot() }
             agentActivityRuntime.dashboardDidBecomeHidden()
             let reader = dataReader
@@ -684,20 +684,14 @@ import AppleScreenTime
         }
 
         private func discardVisibleSnapshot() {
-            snapshotGeneration &+= 1
-            snapshotIsRead = false
-            snapshot = .empty(day: selectedDay)
+            snapshotStore.discard(day: selectedDay)
         }
 
         /// R14b: shows a read unless it equals the shown one on every field (the 60 s pass on a quiet day publishes
         /// nothing). The first read after the placeholder is always shown, so the generation tells a read from it.
         @discardableResult
         func publishSnapshot(_ next: DashboardDaySnapshot) -> Bool {
-            guard next != snapshot || !snapshotIsRead else { return false }
-            snapshotGeneration &+= 1
-            snapshotIsRead = true
-            snapshot = next
-            return true
+            snapshotStore.show(next)
         }
 
         func togglePause() {
@@ -1050,7 +1044,7 @@ import AppleScreenTime
                     guard let self else { return }
                     switch result {
                     case .success(let count):
-                        self.historyDeletionGeneration &+= 1
+                        self.snapshotStore.historyWasDeleted()
                         self.selectedSessionID = nil
                         self.alert = DashboardAlert(
                             kind: .information,
@@ -1119,7 +1113,7 @@ import AppleScreenTime
             if freeDiskCheckedAt.map({ now().throttleElapsed(since: $0) >= 60 }) ?? true {
                 freeDiskCheckedAt = now()
                 let free = availableBytes()
-                if free != freeDiskBytes { freeDiskBytes = free }
+                runtimeStore.setFreeDiskBytes(free)
             }
 
             let next = RuntimePresentation(
@@ -1135,7 +1129,7 @@ import AppleScreenTime
                 captureHealth: health,
                 storageInterruptedSince: health.state == .storageUnavailable ? healthSnapshot.storageInterruptedSince : nil
             )
-            if next != runtime { runtime = next }
+            runtimeStore.setRuntime(next)
         }
 
         private func refreshData(force: Bool) {
@@ -1152,7 +1146,7 @@ import AppleScreenTime
             }
             // The 60 s timer pass (force == false) stays silent: toggling the spinner would
             // republish the whole dashboard twice a minute for no visible gain.
-            if force, !isRefreshing { isRefreshing = true }
+            if force { snapshotStore.setRefreshing(true) }
             dataRequestSequence &+= 1
             let requestSequence = dataRequestSequence
             let day = selectedDay
@@ -1166,7 +1160,7 @@ import AppleScreenTime
                 DispatchQueue.main.async {
                     guard self.dataRequestSequence == requestSequence else { return }
                     self.activeDataRequest = nil
-                    if self.isRefreshing { self.isRefreshing = false }
+                    self.snapshotStore.setRefreshing(false)
                     let shouldCatchUp = self.dataRefreshPending
                     self.dataRefreshPending = false
                     guard self.dashboardIsVisible, !token.isCancelled, let next else { return }
@@ -1209,10 +1203,7 @@ import AppleScreenTime
                     guard self.metadataRequestSequence == requestSequence else { return }
                     self.activeMetadataRequest = nil
                     guard self.dashboardIsVisible, !token.isCancelled, updated else { return }
-                    let next = self.dataReader.applyingCachedMetadata(to: self.snapshot)
-                    guard next != self.snapshot else { return }
-                    self.snapshotGeneration &+= 1
-                    self.snapshot = next
+                    self.snapshotStore.applyMetadata(self.dataReader.applyingCachedMetadata(to: self.snapshot))
                 }
             }
             activeMetadataRequest = (token, workItem)

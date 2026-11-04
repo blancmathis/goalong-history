@@ -762,7 +762,7 @@
             XCTAssertTrue(windowController.contains("NSApplication.didResignActiveNotification"))
             XCTAssertFalse(windowController.contains("NSApplication.didBecomeActiveNotification"))
             XCTAssertTrue(hidden.contains("refreshScheduler.deactivate()"))
-            XCTAssertTrue(hidden.contains("snapshot = .empty(day: selectedDay)"))
+            XCTAssertTrue(hidden.contains("snapshotStore.discard(day: selectedDay)"))
         }
 
         func testComputerHistoryPageScrollsLazily() throws {
