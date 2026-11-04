@@ -7,6 +7,8 @@ import LocalHistoryCore
 /// The whole module on one page: what is blocked now, start a block (or freeze the whole Mac),
 /// the lists and the week where programs are drawn. Protection sits in a pill by the title.
 @MainActor struct BlockingPage: View {
+    /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+    var bodyProbe = DashboardBodyProbe("blocage")
     var onOpenLists: () -> Void = {}
     @ObservedObject private var runtime = BlockingRuntime.shared
 

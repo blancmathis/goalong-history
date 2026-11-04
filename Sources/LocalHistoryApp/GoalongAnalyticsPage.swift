@@ -7,7 +7,23 @@ import LocalHistoryCore
 
 /// Daily review and longer-term perspective share one window-local selection.
 struct GoalongAnalyticsPage: View {
-    @ObservedObject var model: DashboardViewModel
+    /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+    var bodyProbe = DashboardBodyProbe("activite")
+    let model: DashboardViewModel
+    @ObservedObject var navigationStore: DashboardNavigation
+    @ObservedObject var settingsStore: DashboardSettingsState
+    @ObservedObject var runtimeStore: DashboardRuntimeState
+    @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+    init(model: DashboardViewModel, navigation: Binding<GoalongActivityNavigation>, analytics: GoalongAnalyticsModel) {
+        self.model = model
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+        _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
+        _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+        _navigation = navigation
+        _analytics = ObservedObject(wrappedValue: analytics)
+    }
     @Binding var navigation: GoalongActivityNavigation
     @ObservedObject var analytics: GoalongAnalyticsModel
     @ObservedObject private var work = GoalongWorkStore.shared
@@ -57,10 +73,10 @@ struct GoalongAnalyticsPage: View {
     /// First day of every source: this Mac's history and the imported days, which can be older (R-265).
     /// The model owns the bound and the step, so the page cannot drop it (R272b-1).
     private var earliestDay: Date? {
-        analytics.earliestDay(macDays: model.snapshot.availableDays, preview: previewActive)
+        analytics.earliestDay(macDays: snapshotStore.snapshot.availableDays, preview: previewActive)
     }
     /// Disk full or unwritable: « Gérer le stockage… » in the top banner stays the only action.
-    private var recordingInterrupted: Bool { !previewActive && model.runtime.storageFailure != nil }
+    private var recordingInterrupted: Bool { !previewActive && runtimeStore.runtime.storageFailure != nil }
     private var shareBlockedReason: String? {
         guard !previewActive else { return nil }
         // Paused: nothing is read, so there is nothing to share yet (same grey button as an empty day).
@@ -72,7 +88,7 @@ struct GoalongAnalyticsPage: View {
     private var selectionID: String { "\(selection.day.timeIntervalSince1970)|\(selection.period)|\(previewActive)" }
     private var loadRequest: GoalongAnalyticsLoadRequest {
         GoalongAnalyticsLoadRequest(day: selection.day, count: selection.period,
-            revision: revision, preview: previewActive, dashboardIsVisible: model.dashboardIsVisible)
+            revision: revision, preview: previewActive, dashboardIsVisible: runtimeStore.dashboardIsVisible)
     }
 
     var body: some View {
@@ -89,7 +105,7 @@ struct GoalongAnalyticsPage: View {
                         updateSelection { $0.selectPeriod(period) }
                     },
                     onStep: { direction in
-                        updateSelection { analytics.step(&$0, direction, macDays: model.snapshot.availableDays, preview: previewActive) }
+                        updateSelection { analytics.step(&$0, direction, macDays: snapshotStore.snapshot.availableDays, preview: previewActive) }
                     },
                     onToday: { updateSelection { $0.today() } },
                     onReturn: { updateSelection { $0.restorePeriod() } },
@@ -97,7 +113,7 @@ struct GoalongAnalyticsPage: View {
                     onShare: {
                         guard !previewActive else { return }
                         model.selectDay(selection.day)
-                        model.showingWebsiteShare = true
+                        navigationStore.showingWebsiteShare = true
                     })
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
             }
@@ -138,8 +154,8 @@ struct GoalongAnalyticsPage: View {
                                 lanes: lanes,
                                 workStatus: previewActive ? .preview : workStatus,
                                 recording: previewActive ? nil : recordingKind,
-                                storageStop: previewActive ? nil : model.runtime.storageFailure.map {
-                                    GoalongActivityEmptyCopy.StorageStop(kind: $0, since: model.runtime.storageInterruptedSince)
+                                storageStop: previewActive ? nil : runtimeStore.runtime.storageFailure.map {
+                                    GoalongActivityEmptyCopy.StorageStop(kind: $0, since: runtimeStore.runtime.storageInterruptedSince)
                                 },
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { model.selectSection(.work) },
@@ -221,7 +237,7 @@ struct GoalongAnalyticsPage: View {
             Button("Bilan quotidien et sources…") { openRecap(navigation.day) }
             Button("Projets et avancées…") {
                 guard !previewActive else { return }
-                model.profileStudio.show(localOnly: true, initialDay: navigation.day, earliestDay: model.snapshot.availableDays.min())
+                model.profileStudio.show(localOnly: true, initialDay: navigation.day, earliestDay: snapshotStore.snapshot.availableDays.min())
             }
             Button("Annuler", role: .cancel) {}
         } message: {
@@ -248,7 +264,7 @@ struct GoalongAnalyticsPage: View {
             if !Task.isCancelled, !request.isPreview {
                 GoalongSwitchTiming.end("activite-\(request.count)j", stage: "data", last: true)
                 // Overview shows this page too: its measure closes only on a read made for it (R13c).
-                if model.selectedSection == .overview {
+                if navigationStore.selectedSection == .overview {
                     GoalongSwitchTiming.end(DashboardSection.overview.rawValue, stage: "data", last: true)
                 }
             }
@@ -300,7 +316,7 @@ struct GoalongAnalyticsPage: View {
             if !previewActive { revision += 1 }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            if model.dashboardIsVisible && !previewActive { revision += 1 }
+            if runtimeStore.dashboardIsVisible && !previewActive { revision += 1 }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
             followCalendarDay()
@@ -309,7 +325,7 @@ struct GoalongAnalyticsPage: View {
             // Also catches a missed day-change notification (sleep across midnight).
             followCalendarDay()
             // Visible-page refresh only. Completed days reuse the existing cache.
-            guard model.dashboardIsVisible, !previewActive, !analytics.busy,
+            guard runtimeStore.dashboardIsVisible, !previewActive, !analytics.busy,
                   GoalongToday.isToday(navigation.day),
                   Date().throttleElapsed(since: lastAutomaticRefresh) >= max(30, lastReadSeconds * 10) else { return }
             lastAutomaticRefresh = Date()
@@ -337,7 +353,7 @@ struct GoalongAnalyticsPage: View {
     private var systemKey: String {
         [selection.day.timeIntervalSince1970.description, "\(laneRevision)", "\(manualRefreshRevision)",
          "\(loadRequest.permitsLoading)", observedDay.map { "\($0.segments.count)|\($0.lastObservation?.timeIntervalSince1970 ?? 0)" } ?? "-",
-         "\(model.appliedSettings.captureCallPresence)", "\(consents.isEnabled(.calendar))",
+         "\(settingsStore.appliedSettings.captureCallPresence)", "\(consents.isEnabled(.calendar))",
          "\(consents.isEnabled(.localComputerHistory))", "\(consents.isEnabled(.appleScreenTime))"].joined(separator: "|")
     }
 
@@ -384,12 +400,12 @@ struct GoalongAnalyticsPage: View {
         let isDay = selection.period == 1
         let value = isDay ? developer.value.flatMap { Calendar.current.isDate($0.day, inSameDayAs: selection.day) ? $0 : nil } : nil
         let macState = GoalongSourceRow.macState(consentEnabled: consents.isEnabled(.localComputerHistory),
-                                                 runtime: model.runtime.state)
+                                                 runtime: runtimeStore.runtime.state)
         var rows = [GoalongSourceRow(id: "mac", title: "Activité de ce Mac", state: macState,
                                      detail: "Applications, sites et saisie : la source du temps actif.",
                                      actionTitle: macState == .off ? "Activer…" : macState == .needsPermission ? "Autorisations…" : nil,
                                      action: macState == .off ? settings
-                                        : { model.selectSection(.settings); model.settingsPane = .permissions })]
+                                        : { model.selectSection(.settings); navigationStore.settingsPane = .permissions })]
         rows += systemRows(settings: settings)
         if !ai {
             rows.append(.init(id: "agents", title: "Conversations d’agents", state: .off,
@@ -443,7 +459,7 @@ struct GoalongAnalyticsPage: View {
         let value = systemValue
         var rows: [GoalongSourceRow] = []
         let callsPurpose = "L’heure et l’app qui utilise le micro ou la caméra. Ni son, ni image."
-        if !consents.isEnabled(.localComputerHistory) || !model.appliedSettings.captureCallPresence {
+        if !consents.isEnabled(.localComputerHistory) || !settingsStore.appliedSettings.captureCallPresence {
             rows.append(.init(id: "calls", title: "Appels", state: .off, detail: callsPurpose, actionTitle: "Activer…", action: settings))
         } else if let calls = value?.calls {
             let total = calls.unionSeconds >= 60 ? GoalongAnalyticsFormatting.duration(calls.unionSeconds) + " d’appels ce jour-là." : "Aucun appel enregistré ce jour-là."
@@ -513,8 +529,8 @@ struct GoalongAnalyticsPage: View {
     private var recordingKind: GoalongRecordingStateNotice.Kind? {
         GoalongRecordingStateNotice.kind(localEnabled: consents.isEnabled(.localComputerHistory),
             globallyPaused: analytics.paused,
-            dashboardVisible: model.recordingStatusIsLive, runtime: model.runtime.state,
-            captureHealth: model.runtime.captureHealth?.state)
+            dashboardVisible: runtimeStore.recordingStatusIsLive, runtime: runtimeStore.runtime.state,
+            captureHealth: runtimeStore.runtime.captureHealth?.state)
     }
 
     /// UI-52: one way in; the preview banner has the one way out. The mode is a plain neutral mark, not a capsule

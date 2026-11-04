@@ -113,7 +113,15 @@ enum GoalongKnownApplications {
 }
 
 @MainActor struct GoalongApplicationsSettings: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var settingsStore: DashboardSettingsState
+    @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+        _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+    }
     @ObservedObject private var exclusions = GoalongExclusionStore.shared
     @StateObject private var catalog = GoalongApplicationCatalog()
     @State private var search = ""
@@ -125,13 +133,13 @@ enum GoalongKnownApplications {
     @State private var notice: String?
     private var apps: [GoalongApplicationChoice] {
         var values = Dictionary(catalog.apps.map { ($0.id.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
-        for item in model.snapshot.trackedUsage where item.kind == .application {
+        for item in snapshotStore.snapshot.trackedUsage where item.kind == .application {
             if let id = item.bundleIdentifier { values[id.lowercased()] = .init(id: id, name: item.name) }
         }
         for (id, name) in exclusions.policy.applications where values[id.lowercased()] == nil {
             values[id.lowercased()] = Self.choice(id: id, storedName: name)
         }
-        for id in model.appliedSettings.excludedApplicationsText.components(separatedBy: .newlines) where !id.isEmpty && values[id.lowercased()] == nil {
+        for id in settingsStore.appliedSettings.excludedApplicationsText.components(separatedBy: .newlines) where !id.isEmpty && values[id.lowercased()] == nil {
             values[id.lowercased()] = Self.choice(id: id, storedName: nil)
         }
         // Absent applications (default password-manager exclusions…) only clutter the
@@ -158,8 +166,8 @@ enum GoalongKnownApplications {
         return .init(id: id, name: storedName ?? GoalongKnownApplications.name(for: id) ?? id, installed: false)
     }
     private var domains: [String] {
-        let observed = model.snapshot.trackedUsage.filter { $0.kind == .website }.compactMap(\.host)
-        let old = model.appliedSettings.excludedDomainsText.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        let observed = snapshotStore.snapshot.trackedUsage.filter { $0.kind == .website }.compactMap(\.host)
+        let old = settingsStore.appliedSettings.excludedDomainsText.components(separatedBy: .newlines).filter { !$0.isEmpty }
         return Array(Set(observed + exclusions.policy.domains + old)).filter {
             (search.isEmpty || $0.localizedStandardContains(search)) && (!excludedOnly || domainExcluded($0))
         }.sorted()
@@ -218,7 +226,7 @@ enum GoalongKnownApplications {
                                         Text(GoalongKnownApplications.isDefaultExclusion(app.id)
                                              ? "Non installée, protégée par défaut" : "Non installée sur ce Mac")
                                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                    } else if model.isApplicationExcludedFromCapture(app.id) && !exclusions.policy.excludes(appID: app.id) {
+                                    } else if settingsStore.isApplicationExcludedFromCapture(app.id) && !exclusions.policy.excludes(appID: app.id) {
                                         Text("Exclue de l’enregistrement").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                                     }
                                 }
@@ -259,7 +267,7 @@ enum GoalongKnownApplications {
         } message: { Text(exclusions.error ?? "") }
     }
     private var empty: some View { GoalongEmptyState(title: "Aucun résultat", kind: .empty, message: "Essayez un autre nom d’application.").padding(24) }
-    private func isExcluded(_ app: GoalongApplicationChoice) -> Bool { exclusions.policy.excludes(appID: app.id) || model.isApplicationExcludedFromCapture(app.id) }
+    private func isExcluded(_ app: GoalongApplicationChoice) -> Bool { exclusions.policy.excludes(appID: app.id) || settingsStore.isApplicationExcludedFromCapture(app.id) }
     /// The rule, other than the host itself, that excludes this host (« example.fr » for docs.example.fr).
     /// Same matching as `URLRedactor.domain`: lowercase, surrounding dots and spaces trimmed, suffix after a dot.
     nonisolated static func parentDomainRule(for host: String, in rules: [String]) -> String? {
@@ -268,11 +276,11 @@ enum GoalongKnownApplications {
             .first { !$0.isEmpty && host.hasSuffix("." + $0) }
     }
     private func parentRule(for domain: String) -> String? {
-        let draft = model.settingsDraft.excludedDomainsText.components(separatedBy: .newlines)
-        let applied = model.appliedSettings.excludedDomainsText.components(separatedBy: .newlines)
+        let draft = settingsStore.settingsDraft.excludedDomainsText.components(separatedBy: .newlines)
+        let applied = settingsStore.appliedSettings.excludedDomainsText.components(separatedBy: .newlines)
         return Self.parentDomainRule(for: domain, in: exclusions.policy.domains + draft + applied)
     }
-    private func domainExcluded(_ domain: String) -> Bool { exclusions.policy.excludes(domain: domain) || model.isDomainExcludedFromCapture(domain) }
+    private func domainExcluded(_ domain: String) -> Bool { exclusions.policy.excludes(domain: domain) || settingsStore.isDomainExcludedFromCapture(domain) }
     private func setApp(_ app: GoalongApplicationChoice, enabled: Bool) {
         if enabled {
             if exclusions.update({ policy in
@@ -336,17 +344,24 @@ enum GoalongOnboardingExclusionEdit {
 }
 
 @MainActor struct GoalongOnboardingExclusions: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var settingsStore: DashboardSettingsState
+
+    init(model: DashboardViewModel, website: Binding<String>) {
+        self.model = model
+        _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+        _website = website
+    }
     /// Owned by the onboarding so a site typed but not yet added is not lost when « Valider mes choix » is pressed.
     @Binding var website: String
     @State private var appText = ""
     @State private var message: String?
     private static let defaults = DashboardSettingsDraft(config: .default)
     private var domains: [String] {
-        GoalongOnboardingExclusionEdit.added(current: model.settingsDraft.excludedDomainsText, baseline: Self.defaults.excludedDomainsText)
+        GoalongOnboardingExclusionEdit.added(current: settingsStore.settingsDraft.excludedDomainsText, baseline: Self.defaults.excludedDomainsText)
     }
     private var applications: [String] {
-        GoalongOnboardingExclusionEdit.added(current: model.settingsDraft.excludedApplicationsText, baseline: Self.defaults.excludedApplicationsText)
+        GoalongOnboardingExclusionEdit.added(current: settingsStore.settingsDraft.excludedApplicationsText, baseline: Self.defaults.excludedApplicationsText)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -355,8 +370,8 @@ enum GoalongOnboardingExclusionEdit {
                     let picked = value.components(separatedBy: .newlines).filter { !$0.isEmpty }
                     guard !picked.isEmpty else { return }
                     appText = ""
-                    model.settingsDraft.excludedApplicationsText = GoalongOnboardingExclusionEdit.merged(
-                        model.settingsDraft.excludedApplicationsText, adding: picked)
+                    settingsStore.settingsDraft.excludedApplicationsText = GoalongOnboardingExclusionEdit.merged(
+                        settingsStore.settingsDraft.excludedApplicationsText, adding: picked)
                     announce("Application ajoutée à la liste d’exclusion.")
                 }
             HStack {
@@ -380,16 +395,16 @@ enum GoalongOnboardingExclusionEdit {
         NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: text])
     }
     private func remove(_ item: String) {
-        model.settingsDraft.excludedApplicationsText = GoalongOnboardingExclusionEdit.removing(item, from: model.settingsDraft.excludedApplicationsText)
-        model.settingsDraft.excludedDomainsText = GoalongOnboardingExclusionEdit.removing(item, from: model.settingsDraft.excludedDomainsText)
+        settingsStore.settingsDraft.excludedApplicationsText = GoalongOnboardingExclusionEdit.removing(item, from: settingsStore.settingsDraft.excludedApplicationsText)
+        settingsStore.settingsDraft.excludedDomainsText = GoalongOnboardingExclusionEdit.removing(item, from: settingsStore.settingsDraft.excludedDomainsText)
         announce("Exclusion retirée.")
     }
     private func add() {
         guard !website.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         do {
-            try GoalongOnboardingExclusionEdit.addDomains(website, to: &model.settingsDraft)
+            try GoalongOnboardingExclusionEdit.addDomains(website, to: &settingsStore.settingsDraft)
             website = ""
-            announce(model.settingsDraft.captureURLs
+            announce(settingsStore.settingsDraft.captureURLs
                 ? "Site ajouté. Il sera exclu une fois vos choix validés."
                 : "Site ajouté. La lecture des adresses est désactivée : le navigateur entier sera exclu une fois vos choix validés.")
         } catch { announce("Saisissez un site comme exemple.fr, sans espace ni chemin.") }

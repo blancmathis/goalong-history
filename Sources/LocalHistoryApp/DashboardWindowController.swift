@@ -138,7 +138,7 @@
             // launch stays in accessory mode, so it can keep recording without opening UI.
             DispatchQueue.main.async { [weak self] in
                 guard let self, NSApplication.shared.isActive, !self.isWindowLoaded else { return }
-                self.show(section: self.viewModel.selectedSection)
+                self.show(section: self.viewModel.navigationStore.selectedSection)
             }
         }
 
@@ -209,7 +209,7 @@
         func show(section: DashboardSection = .overview) {
             // Re-showing the current page (Dock click, ⌘, or a relaunch restore) keeps its
             // navigation, e.g. the Settings pane that was open.
-            if viewModel.selectedSection != section { viewModel.selectSection(section) }
+            if viewModel.navigationStore.selectedSection != section { viewModel.selectSection(section) }
 
             let application = NSApplication.shared
             application.setActivationPolicy(.regular)

@@ -814,6 +814,99 @@ then
   failed=true
 fi
 
+# R14b: a view reads a dashboard store only through the store it observes. `model.<store>.<x>` in a view would read
+# a value without observing it, so the view would stay frozen when the value changes. Only the model, the stores and
+# the app shell (which own them) may reach a store through another object; a store kept in a view is observed.
+# Every way to write such a read is caught: `self.model.<store>.<x>`, a line break before `.<x>`, `(model.<store>).<x>`
+# and a local alias of the store (allowed only in an `init`, to seed a value once, or in a file that observes the
+# store). The other observable objects of the model (the conversations runtime, the profile studio) follow the same
+# rule for their values; calling one of their methods is an action, not a read. The examples below must be caught
+# (or pass): the rule checks itself before it checks the sources.
+if ! python3 - "$ROOT_DIR" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+owners = {"DashboardStores.swift", "AppDelegate.swift", "DashboardWindowController.swift"}
+STORE_TYPES = {"navigation": "DashboardNavigation", "runtime": "DashboardRuntimeState", "snapshot": "DashboardSnapshotStore",
+               "settings": "DashboardSettingsState", "alert": "DashboardAlertCenter", "device": "DashboardDeviceState"}
+K = r"(?:" + "|".join(STORE_TYPES) + r")Store"
+CHAIN = r"(?:\w+\??\s*\.\s*)+"
+through = re.compile(r"(?<![\w$])(?!self\b)\w+\??\s*\.\s*" + K + r"\??\s*\.\s*\$?[A-Za-z_]")
+parenthesized = re.compile(r"\(\s*" + CHAIN + K + r"\??\s*\)\??\s*\.\s*\$?[A-Za-z_]")
+alias = re.compile(r"(?:\b(?:let|var)\s+|,\s*)(\w+)\s*=\s*" + CHAIN + r"(" + "|".join(STORE_TYPES) + r")Store\b(?!\s*\??\s*[.(])")
+other = re.compile(r"(?<![\w$])(?!self\b)\w+\??\s*\.\s*(?:agentActivityRuntime|profileStudio)\??\s*\.\s*(?!\w+\s*\()\$?[A-Za-z_]\w*")
+kept = re.compile(r"^[ \t]*(?:(?:private|fileprivate|internal)(?:\(set\))?[ \t]+)*(?:let|var)[ \t]+\w+[ \t]*:[ \t]*"
+                  r"(?:" + "|".join(STORE_TYPES.values()) + r")\b[^\n]*$", re.M)
+scope = re.compile(r"\binit\s*[(<]|\bfunc\s+\w|\bvar\s+\w+\s*:[^\n=]*\{")
+# Read once when the task starts (its id is the day and the lanes, as before R14b), not in the body.
+allowed = {("GoalongAnalyticsPage.swift", "model.agentActivityRuntime.overview")}
+
+def without_comments(text):
+    text = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+    return re.sub(r"//[^\n]*", "", text)
+
+def findings(name, code):
+    lines, found = code.splitlines(), []
+    def line(match): return code.count("\n", 0, match.start()) + 1
+    for rule, label in [(through, "store read without observing it"), (parenthesized, "store read without observing it"),
+                        (other, "model object read without observing it")]:
+        for match in rule.finditer(code):
+            text = re.sub(r"\s+", "", match.group(0))
+            if (name, text) not in allowed:
+                found.append((line(match), f"{label}: {text}"))
+    for match in alias.finditer(code):
+        scopes = list(scope.finditer(code, 0, match.start()))
+        in_init = bool(scopes) and scopes[-1].group(0).startswith("init")
+        observed = re.search(r"@(?:ObservedObject|StateObject|EnvironmentObject)\s+(?:(?:private|fileprivate|internal)\s+)?var\s+\w+\s*:\s*"
+                             + STORE_TYPES[match.group(2)] + r"\b", code)
+        if not in_init and not observed:
+            found.append((line(match), f"store alias without observing it: {match.group(0).strip(', ')}"))
+    for match in kept.finditer(code):
+        number = line(match)
+        previous = lines[number - 2].strip() if number > 1 else ""
+        if not re.fullmatch(r"@(ObservedObject|StateObject|EnvironmentObject)", previous):  # wrapper on the line above
+            found.append((number, f"store kept without @ObservedObject: {lines[number - 1].strip()}"))
+    return found
+
+VIEW = "struct Sample: View {\n    let model: DashboardViewModel\n    @ObservedObject var runtimeStore: DashboardRuntimeState\n%s\n}\n"
+caught = {
+    "self.model": "    var body: some View { Text(self.model.navigationStore.selectedDay.description) }",
+    "line break": "    var body: some View {\n        Text(model.snapshotStore\n            .snapshot.day.description)\n    }",
+    "parentheses": "    var body: some View { Text((model.snapshotStore).snapshot.day.description) }",
+    "local alias": "    var body: some View {\n        let navigation = model.navigationStore\n        return Text(navigation.selectedDay.description)\n    }",
+    "model object": "    var body: some View { Text(\"\\(model.agentActivityRuntime.configuration.watchedFolders.count)\") }",
+}
+passing = {
+    "observed": "    var body: some View { Text(runtimeStore.runtime.title) }",
+    "init seed": "    @State var day: Date\n    init(model: DashboardViewModel) {\n        self.model = model\n        let navigation = model.navigationStore\n"
+                 "        _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)\n        _day = State(initialValue: navigation.selectedDay)\n    }",
+    "action": "    var body: some View { Button(\"Lire\") { model.agentActivityRuntime.scanNow() } }",
+    "self": "    var body: some View { Text(self.runtimeStore.runtime.title) }",
+}
+broken = [f"self-test: the {case} example is not caught" for case, body in caught.items() if not findings("Sample.swift", VIEW % body)]
+broken += [f"self-test: the {case} example is caught: {findings('Sample.swift', VIEW % body)}"
+           for case, body in passing.items() if findings("Sample.swift", VIEW % body)]
+if broken:
+    print("\n".join(broken), file=sys.stderr)
+    sys.exit(1)
+
+bad = []
+for path in sorted((root / "Sources").rglob("*.swift")):
+    name = path.name
+    if name in owners or name.startswith("DashboardViewModel"):
+        continue
+    code = without_comments(path.read_text(encoding="utf-8", errors="replace"))
+    lines = code.splitlines()
+    for number, message in findings(name, code):
+        bad.append(f"{path.relative_to(root)}:{number}: {message} ({lines[number - 1].strip()})")
+for entry in bad:
+    print(entry, file=sys.stderr)
+sys.exit(1 if bad else 0)
+PY
+then
+  echo "Dashboard store read without observing it (R14b: observe the store with @ObservedObject, set from model.<store> in init)." >&2
+  failed=true
+fi
+
 if [[ "$failed" == true ]]; then
   echo "Privacy-boundary audit failed. Review the matches above." >&2
   exit 1

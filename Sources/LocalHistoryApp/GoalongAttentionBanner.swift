@@ -7,7 +7,9 @@ import SwiftUI
 /// being recorded, the disk is nearly full, or an update just finished. Each state
 /// says what happens next and offers the single most useful action.
 struct GoalongAttentionBanner: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var navigationStore: DashboardNavigation
+    @ObservedObject var runtimeStore: DashboardRuntimeState
     @ObservedObject private var updates = SoftwareUpdateManager.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     /// The global pause banner already says nothing is recorded: storage alerts wait for the resume.
@@ -26,17 +28,19 @@ struct GoalongAttentionBanner: View {
 
     init(model: DashboardViewModel, showing forcedNotice: Notice? = nil) {
         self.model = model
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+        _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
         self.forcedNotice = forcedNotice
     }
 
     private var notice: Notice? {
         if let forcedNotice { return forcedNotice }
-        let slot = Self.currentStorageSlot(model: model, localEnabled: consents.isEnabled(.localComputerHistory),
-            globallyPaused: globalPause.blocksActivity, section: model.selectedSection)
-        let storageProblem = model.runtime.storageFailure != nil || model.freeDiskBytes.map(StorageHealth.isLow) == true
+        let slot = Self.currentStorageSlot(runtime: runtimeStore, localEnabled: consents.isEnabled(.localComputerHistory),
+            globallyPaused: globalPause.blocksActivity, section: navigationStore.selectedSection)
+        let storageProblem = runtimeStore.runtime.storageFailure != nil || runtimeStore.freeDiskBytes.map(StorageHealth.isLow) == true
         if storageProblem, slot == .recordingCause { return .recordingCause }
-        if slot == .storage, let kind = model.runtime.storageFailure { return .storage(kind) }
-        if slot == .storage, let free = model.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
+        if slot == .storage, let kind = runtimeStore.runtime.storageFailure { return .storage(kind) }
+        if slot == .storage, let free = runtimeStore.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
         if let previous = updates.updatedFromVersion { return .updated(from: previous, to: updates.currentVersion) }
         return nil
     }
@@ -59,12 +63,12 @@ struct GoalongAttentionBanner: View {
     }
 
     /// The one reading of the slot, for the banner and for the pages that must not repeat it (R8-6).
-    static func currentStorageSlot(model: DashboardViewModel, localEnabled: Bool, globallyPaused: Bool,
-                                   section: DashboardSection) -> StorageSlot {
+    static func currentStorageSlot(runtime runtimeStore: DashboardRuntimeState, localEnabled: Bool,
+                                   globallyPaused: Bool, section: DashboardSection) -> StorageSlot {
         storageSlot(globallyPaused: globallyPaused,
             recording: GoalongRecordingStateNotice.kind(localEnabled: localEnabled, globallyPaused: globallyPaused,
-                dashboardVisible: model.recordingStatusIsLive, runtime: model.runtime.state,
-                captureHealth: model.runtime.captureHealth?.state),
+                dashboardVisible: runtimeStore.recordingStatusIsLive, runtime: runtimeStore.runtime.state,
+                captureHealth: runtimeStore.runtime.captureHealth?.state),
             recordingNoticeOnPage: pagesWithRecordingNotice.contains(section))
     }
 

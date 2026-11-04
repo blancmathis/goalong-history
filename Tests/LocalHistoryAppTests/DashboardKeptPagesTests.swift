@@ -401,13 +401,13 @@ import XCTest
             XCTAssertEqual(pages.preheatPending, 0, "the main pages were not built at rest")
             XCTAssertNotNil(pages.hosts.keys.first { $0.hasPrefix("activity|") }, "Activité was not built at rest")
             spin(host, 0.3)
-            XCTAssertEqual(model.selectedDay, pastDay, "a page built at rest changed the day")
+            XCTAssertEqual(model.navigationStore.selectedDay, pastDay, "a page built at rest changed the day")
             XCTAssertEqual(model.selectedSessionID, session, "a page built at rest changed the chosen session")
             XCTAssertEqual(guides, settingsGuides, "a page built at rest announced the permission guide")
             // First real showing of Activité: its appear logic runs now.
             model.selectSection(.overview)
             spin(host, 0.3)
-            XCTAssertTrue(calendar.isDate(model.selectedDay, inSameDayAs: model.now()),
+            XCTAssertTrue(calendar.isDate(model.navigationStore.selectedDay, inSameDayAs: model.now()),
                           "Activité's appear logic did not run on its first showing")
         }
     }

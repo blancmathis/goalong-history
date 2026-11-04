@@ -7,7 +7,20 @@
         static let ruleColumnWidth: CGFloat = 176
         /// Height of SharePage's export bar under the list.
         static let exportBarHeight: CGFloat = 56
-        @ObservedObject var model: DashboardViewModel
+        let model: DashboardViewModel
+        @ObservedObject var settingsStore: DashboardSettingsState
+        @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+        init(model: DashboardViewModel, showsDefaultRule: Bool = false, websiteSummaries: [ActivitySiteSummary] = [],
+             richContextEnabled: Bool = false, recordingEnabled: Bool = true) {
+            self.model = model
+            _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+            _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+            self.showsDefaultRule = showsDefaultRule
+            self.websiteSummaries = websiteSummaries
+            self.richContextEnabled = richContextEnabled
+            self.recordingEnabled = recordingEnabled
+        }
         var showsDefaultRule = false
         var websiteSummaries: [ActivitySiteSummary] = []
         var richContextEnabled = false
@@ -18,9 +31,9 @@
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         private var filteredItems: [TrackedUsageItem] {
-            let query = model.usageSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard !query.isEmpty else { return model.snapshot.trackedUsage }
-            return model.snapshot.trackedUsage.filter { item in
+            let query = settingsStore.usageSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !query.isEmpty else { return snapshotStore.snapshot.trackedUsage }
+            return snapshotStore.snapshot.trackedUsage.filter { item in
                 if item.searchableText.contains(query) { return true }
                 guard item.kind == .website,
                     let summary = websiteSummariesBySubjectID[item.id]
@@ -59,16 +72,16 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
                 // R-87 (R9C-50): no search or default rule over a list that has nothing to filter.
-                if !model.snapshot.trackedUsage.isEmpty {
+                if !snapshotStore.snapshot.trackedUsage.isEmpty {
                     controls
                 }
                 if filteredItems.isEmpty {
                     // Read-only state on the page, not in a card; the sentence adds to the title (UI-13B). The thread
                     // alone, on the leading edge like every other empty state (R7, UI-17A, 55: no dashed square).
                     GoalongEmptyState(
-                        title: model.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
+                        title: snapshotStore.snapshot.trackedUsage.isEmpty ? "Aucune app ni aucun site observé" : "Aucun résultat",
                         kind: .empty,
-                        message: model.snapshot.trackedUsage.isEmpty
+                        message: snapshotStore.snapshot.trackedUsage.isEmpty
                             ? (recordingEnabled
                                 ? "Laissez Goalong actif : les apps et sites apparaîtront au fil de votre activité."
                                 : "Activez l’enregistrement pour régler ici ce que chaque partage montre.")
@@ -97,7 +110,7 @@
 
         private var controls: some View {
             HStack(spacing: 12) {
-                GoalongSearchField("Rechercher des apps, sites, pages ou catégories", text: $model.usageSearch)
+                GoalongSearchField("Rechercher des apps, sites, pages ou catégories", text: $settingsStore.usageSearch)
 
                 if showsDefaultRule {
                     Text("Par défaut")
@@ -106,7 +119,7 @@
                     GoalongMenuPicker(
                         "Règle de partage par défaut",
                         selection: Binding(
-                            get: { model.defaultSharingVisibility },
+                            get: { settingsStore.defaultSharingVisibility },
                             set: model.setDefaultSharingVisibility
                         ),
                         options: SharingVisibility.allCases.map { ($0, $0.title) }
@@ -217,7 +230,20 @@
     }
 
     private struct UsageSubjectRow: View {
-        @ObservedObject var model: DashboardViewModel
+        let model: DashboardViewModel
+        @ObservedObject var settingsStore: DashboardSettingsState
+
+        init(model: DashboardViewModel, item: TrackedUsageItem, websiteSummary: ActivitySiteSummary?, expanded: Bool,
+            richContextEnabled: Bool, onToggleExpanded: @escaping () -> Void, sharedAppName: String? = nil) {
+            self.model = model
+            _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+            self.item = item
+            self.websiteSummary = websiteSummary
+            self.expanded = expanded
+            self.richContextEnabled = richContextEnabled
+            self.onToggleExpanded = onToggleExpanded
+            self.sharedAppName = sharedAppName
+        }
         let item: TrackedUsageItem
         let websiteSummary: ActivitySiteSummary?
         let expanded: Bool
@@ -253,7 +279,7 @@
                             .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                         CategoryBadge(category: item.category)
-                        if let host = item.host, model.isDomainExcludedFromCapture(host) {
+                        if let host = item.host, settingsStore.isDomainExcludedFromCapture(host) {
                             StatusPill(
                                 title: "Détails futurs exclus",
                                 kind: .unavailable,
@@ -285,7 +311,7 @@
                 GoalongMenuPicker(
                     "Visibilité de \(item.name)",
                     selection: Binding(
-                        get: { model.sharingVisibility(for: item.id) },
+                        get: { settingsStore.sharingVisibility(for: item.id) },
                         set: { model.setSharingVisibility($0, for: item.id) }
                     ),
                     options: SharingVisibility.allCases.map { ($0, $0.title) }
@@ -330,10 +356,10 @@
                         model.setSharingVisibility(.identity, for: item.id)
                     }
                     Divider()
-                    if let parent = model.excludingParentDomain(for: host) {
+                    if let parent = settingsStore.excludingParentDomain(for: host) {
                         Button("Exclu par la règle « \(parent) » (Réglages)") {}
                             .disabled(true)
-                    } else if model.isDomainExcludedFromCapture(host) {
+                    } else if settingsStore.isDomainExcludedFromCapture(host) {
                         Button("Autoriser de nouveau les détails") {
                             model.setDomainCaptureEnabled(true, host: host)
                         }
@@ -386,10 +412,10 @@
         private func websiteControls(_ detail: ActivitySiteSummary) -> some View {
             HStack(spacing: 14) {
                 if let host = item.host {
-                    let parent = model.excludingParentDomain(for: host)
+                    let parent = settingsStore.excludingParentDomain(for: host)
                     Toggle(
                         isOn: Binding(
-                            get: { !model.isDomainExcludedFromCapture(host) },
+                            get: { !settingsStore.isDomainExcludedFromCapture(host) },
                             set: { model.setDomainCaptureEnabled($0, host: host) }
                         )
                     ) {
@@ -653,7 +679,7 @@
             if item.kind == .website, !item.identityProofAvailable {
                 return "Certaines entrées sont antérieures aux preuves par site : elles ne partagent que la catégorie plutôt que l’adresse complète."
             }
-            return model.sharingVisibility(for: item.id).subtitle
+            return settingsStore.sharingVisibility(for: item.id).subtitle
         }
     }
 

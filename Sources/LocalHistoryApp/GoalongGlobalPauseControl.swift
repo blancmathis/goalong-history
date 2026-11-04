@@ -14,7 +14,15 @@ enum GoalongGlobalPauseText {
 }
 
 struct GoalongGlobalPauseControl: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var runtimeStore: DashboardRuntimeState
+
+    init(model: DashboardViewModel, compact: Bool = false, prominent: Bool = true) {
+        self.model = model
+        _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
+        self.compact = compact
+        self.prominent = prominent
+    }
     var compact = false
     /// Off where the window's pause banner already holds the lime « Reprendre » (DESIGN §9: one main action).
     var prominent = true
@@ -62,7 +70,7 @@ struct GoalongGlobalPauseControl: View {
         catch { self.error = GoalongUserFacingError.message(error) }
     }
     private func changePause(_ paused: Bool) {
-        do { pause = try GoalongGlobalPause.setPaused(paused, recordingWasPaused: model.runtime.state == .paused) }
+        do { pause = try GoalongGlobalPause.setPaused(paused, recordingWasPaused: runtimeStore.runtime.state == .paused) }
         catch { self.error = GoalongUserFacingError.message(error) }
     }
 }
@@ -75,7 +83,7 @@ private extension View {
 }
 
 struct GoalongGlobalPauseBanner: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
     @State private var pause = GoalongGlobalPause.load()
     var body: some View {
         Group {

@@ -45,7 +45,7 @@ extension GalleryCatalog {
         entries += [
             // The unsaved-changes banner shows once the member leaves Réglages.
             dashboard("settings/non-enregistre", section: .overview, configure: { model, _ in
-                model.settingsDraft.captureClicks.toggle()
+                model.settingsStore.settingsDraft.captureClicks.toggle()
             }),
             dashboard("settings/enregistrement-actif", section: .settings, pane: .recording, fixture: .realistic),
             dashboard("settings/stockage-avec-donnees", section: .settings, pane: .storage, fixture: .realistic),

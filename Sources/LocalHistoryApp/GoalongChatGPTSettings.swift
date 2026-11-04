@@ -4,7 +4,15 @@ import SwiftUI
 import LocalHistoryCore
 
 @MainActor struct GoalongChatGPTSettings: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var deviceStore: DashboardDeviceState
+    @ObservedObject var navigationStore: DashboardNavigation
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _deviceStore = ObservedObject(wrappedValue: model.deviceStore)
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+    }
     @ObservedObject private var runtime = ChatGPTRecapRuntime.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var exclusions = GoalongExclusionStore.shared
@@ -64,7 +72,7 @@ import LocalHistoryCore
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
-        .onAppearWhenShown { selection = .load(); runtime.configure(deviceID: model.knownDeviceID ?? "") }
+        .onAppearWhenShown { selection = .load(); runtime.configure(deviceID: deviceStore.knownDeviceID ?? "") }
         .sheet(item: $presentation) { request in
             GoalongAnalysisSelectionSheet(model: model, selection: selection, initialTab: request.tab) { selection = $0 }.id(request.id)
                 .goalongControls()
@@ -88,9 +96,9 @@ import LocalHistoryCore
 
     private var analyzeButton: some View {
         Button("Analyser cette journée") {
-            runtime.configure(deviceID: model.knownDeviceID ?? ""); runtime.selectDay(model.selectedDay)
+            runtime.configure(deviceID: deviceStore.knownDeviceID ?? ""); runtime.selectDay(navigationStore.selectedDay)
             runtime.generateRecap(); model.selectSection(.chatGPTRecap)
-        }.disabled(locked || !selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating || model.knownDeviceID == nil)
+        }.disabled(locked || !selection.isValid(for: exclusions.policy) || !consents.isEnabled(.chatGPTAnalysis) || !runtime.isAccountConnected || runtime.isGenerating || deviceStore.knownDeviceID == nil)
     }
     private var sourceSummary: String {
         guard selection.reviewed else { return "Choisir les apps et les types de données" }

@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// The whole module on one page: what plays, the pieces to choose from, the member's own
 /// music and the downloaded sounds. Nothing plays until the member presses a piece.
 @MainActor struct AmbiancePage: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
     @ObservedObject private var modules = GoalongModuleStore.shared
 
     var body: some View {

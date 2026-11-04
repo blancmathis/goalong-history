@@ -76,7 +76,7 @@ import AppleScreenTime
                     if connected && pendingWebsiteURL == nil {
                         GoalongDefaults.standard.set(true, forKey: "goalong.website.openAfterPairing")
                         controller.show(section: .settings)
-                        self.dashboardViewModel.settingsPane = .website
+                        self.dashboardViewModel.navigationStore.settingsPane = .website
                         // A share link only reveals the picker: the credential did not change, so a
                         // plan running in an open sheet must not be paused.
                         NotificationCenter.default.post(name: url.host == "share" ? .goalongWebsiteShareRequested : .goalongWebsiteConnected, object: nil)
@@ -343,7 +343,7 @@ import AppleScreenTime
                 // The share sheet lives on the dashboard: bring it back when the member sends with it closed.
                 dashboardViewModel.profileStudio.onNeedsPresentation = { [weak self] in
                     guard let controller = self?.dashboardWindowController else { return }
-                    controller.show(section: controller.viewModel.selectedSection)
+                    controller.show(section: controller.viewModel.navigationStore.selectedSection)
                 }
 
                 applicationMenuController = ApplicationMenuController(
@@ -478,7 +478,7 @@ import AppleScreenTime
             } else if CommandLine.arguments.contains(PermissionRecovery.completedArgument) || GoalongDefaults.standard.double(forKey: "goalong.restoreVisibleUntil") > Date().timeIntervalSince1970 {
                 GoalongDefaults.standard.removeObject(forKey: "goalong.restoreVisibleUntil")
                 let previousSection = GoalongDefaults.standard.string(forKey: "goalong.restoreVisibleSection")
-                    .flatMap(DashboardSection.init(rawValue:)) ?? dashboardViewModel.selectedSection
+                    .flatMap(DashboardSection.init(rawValue:)) ?? dashboardViewModel.navigationStore.selectedSection
                 dashboardWindowController?.show(section: previousSection)
             }
             // A URL can arrive before the dashboard exists on a cold launch.
@@ -694,7 +694,7 @@ import AppleScreenTime
             guard runtimeStarted else { return }
             if dashboardWindowController?.window?.isVisible == true {
                 GoalongDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
-                GoalongDefaults.standard.set(dashboardViewModel.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
+                GoalongDefaults.standard.set(dashboardViewModel.navigationStore.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
             MainActor.assumeIsolated { ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown() }
             SoftwareUpdateManager.shared.stop()
@@ -765,7 +765,7 @@ import AppleScreenTime
             _ sender: NSApplication,
             hasVisibleWindows flag: Bool
         ) -> Bool {
-            dashboardWindowController?.show(section: dashboardViewModel?.selectedSection ?? .overview)
+            dashboardWindowController?.show(section: dashboardViewModel?.navigationStore.selectedSection ?? .overview)
             return false
         }
 
@@ -1131,7 +1131,7 @@ import AppleScreenTime
         }
 
         private func showDashboardOnFirstConsentLaunch() {
-            guard dashboardViewModel.showWelcome else { return }
+            guard dashboardViewModel.navigationStore.showWelcome else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
                 self?.dashboardWindowController.show(section: .overview)
             }

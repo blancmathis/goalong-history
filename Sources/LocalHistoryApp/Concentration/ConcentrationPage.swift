@@ -6,6 +6,8 @@ import AppleScreenTime
 /// The module on one page: the session (start one, or the one running), today's plan, the
 /// engagements of the day and the week, today's sessions, then the settings, folded.
 @MainActor struct ConcentrationPage: View {
+    /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+    var bodyProbe = DashboardBodyProbe("concentration-maintenant")
     @ObservedObject private var runtime = ConcentrationRuntime.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
 

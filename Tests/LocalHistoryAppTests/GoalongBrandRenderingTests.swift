@@ -41,7 +41,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
             onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
             onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
             onDeleteTargetedDetails: { _, done in done(.success(0)) })
-        model.showWelcome = false
+        model.navigationStore.showWelcome = false
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 790),
             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.title = "Goalong — isolated design verification"
@@ -56,7 +56,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
             app.appearance = NSAppearance(named: appearance)
             window.appearance = app.appearance
             for (name, section) in scenarios {
-                model.selectedSection = section
+                model.navigationStore.selectedSection = section
                 let controller = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
                 window.contentViewController = controller
                 let host = controller.view
@@ -68,7 +68,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
         }
         app.appearance = NSAppearance(named: .darkAqua)
         window.appearance = app.appearance
-        model.selectedSection = .settings
+        model.navigationStore.selectedSection = .settings
         let controller = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
         window.contentViewController = controller
         let host = controller.view
@@ -88,8 +88,8 @@ final class GoalongBrandRenderingTests: XCTestCase {
         window.appearance = app.appearance
         window.contentViewController = controller; pump()
         for pane in SettingsPane.primary {
-            model.selectedSection = .settings
-            model.settingsPane = pane
+            model.navigationStore.selectedSection = .settings
+            model.navigationStore.settingsPane = pane
             let page = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
             window.contentViewController = page
             for size in [NSSize(width: 900, height: 620), NSSize(width: 1240, height: 790)] {
@@ -98,7 +98,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(page.view.bounds.width, 900)
             }
         }
-        model.settingsPane = .home
+        model.navigationStore.settingsPane = .home
         window.contentViewController = controller
         window.setContentSize(NSSize(width: 1080, height: 680)); pump()
         // Exercise actual native accessibility actions, not just the underlying callbacks.
@@ -112,17 +112,17 @@ final class GoalongBrandRenderingTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(frame.height, 52)
             XCTAssertTrue(control.accessibilityPerformPress(), "The real native card must respond")
             pump()
-            XCTAssertEqual(model.settingsPane, destination, "Cards must navigate to distinct functional pages")
+            XCTAssertEqual(model.navigationStore.settingsPane, destination, "Cards must navigate to distinct functional pages")
             let back = try XCTUnwrap(accessibleElement("settings-back", within: window))
             XCTAssertTrue(back.accessibilityPerformPress()); pump()
-            XCTAssertEqual(model.settingsPane, .home)
+            XCTAssertEqual(model.navigationStore.settingsPane, .home)
         }
         print("NATIVE_ACTIONS three primary cards and their back buttons passed")
         // First presentation must receive its action's date, not a stale optional
         // value captured before SwiftUI invalidated the parent view.
         let selectedDate = Calendar.current.date(from: DateComponents(year: 2026, month: 7, day: 2))!
         model.selectDay(selectedDate)
-        model.settingsPane = .website
+        model.navigationStore.settingsPane = .website
         pump()
         let chooseDate = try XCTUnwrap(accessibleElement("website-open-selected-day", within: window))
         XCTAssertTrue(chooseDate.accessibilityPerformPress())
@@ -139,7 +139,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
         // Each first-click shortcut owns its payload, including after a previous editor closes.
         for (action, title) in [("analysis-open-replacements", "analysis-replacements-title"),
                                 ("analysis-open-guidance", "analysis-guidance-title")] {
-            model.settingsPane = .chatGPT
+            model.navigationStore.settingsPane = .chatGPT
             pump()
             XCTAssertTrue(try XCTUnwrap(accessibleElement(action, within: window)).accessibilityPerformPress())
             pump(); pump()
@@ -149,7 +149,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
             pump()
             XCTAssertNil(window.attachedSheet)
         }
-        model.settingsPane = .home
+        model.navigationStore.settingsPane = .home
         model.selectDay(Date())
         pump()
         print("NATIVE_ACTIONS selected-day sheet and direct ChatGPT tabs passed")
@@ -186,28 +186,28 @@ final class GoalongBrandRenderingTests: XCTestCase {
         let filteredPreview = NSHostingController(rootView: ScrollView { GoalongAnalysisHumanPreview(text: syntheticPreview).padding(24) })
         window.contentViewController = filteredPreview; window.setContentSize(NSSize(width: 900, height: 620)); pump()
         try snapshot(filteredPreview.view, to: output.appendingPathComponent("analysis-filtered-preview.png"))
-        model.settingsPane = .home
+        model.navigationStore.settingsPane = .home
         window.contentViewController = controller
         window.setContentSize(NSSize(width: 1080, height: 680)); pump()
         // Exercise the existing transaction layer without claiming physical button activation.
-        let originalClicks = model.settingsDraft.captureClicks
-        model.settingsDraft.captureClicks.toggle(); pump()
-        XCTAssertTrue(model.settingsHaveChanges)
+        let originalClicks = model.settingsStore.settingsDraft.captureClicks
+        model.settingsStore.settingsDraft.captureClicks.toggle(); pump()
+        XCTAssertTrue(model.settingsStore.settingsHaveChanges)
         try snapshot(host, to: output.appendingPathComponent("settings-unsaved-dark-1080.png"))
         model.discardSettingsChanges(); pump()
-        XCTAssertFalse(model.settingsHaveChanges)
-        XCTAssertEqual(model.settingsDraft.captureClicks, originalClicks)
-        model.settingsDraft.captureClicks.toggle()
+        XCTAssertFalse(model.settingsStore.settingsHaveChanges)
+        XCTAssertEqual(model.settingsStore.settingsDraft.captureClicks, originalClicks)
+        model.settingsStore.settingsDraft.captureClicks.toggle()
         model.saveSettings(showConfirmation: false); pump()
-        XCTAssertFalse(model.settingsHaveChanges)
+        XCTAssertFalse(model.settingsStore.settingsHaveChanges)
         XCTAssertEqual(config.config.captureClicks, !originalClicks)
-        model.settingsDraft.captureClicks = originalClicks
+        model.settingsStore.settingsDraft.captureClicks = originalClicks
         model.saveSettings(showConfirmation: false); pump()
         XCTAssertEqual(config.config.captureClicks, originalClicks)
         model.selectSection(.history)
-        XCTAssertEqual(model.selectedSection, .history)
+        XCTAssertEqual(model.navigationStore.selectedSection, .history)
         model.selectSection(.overview)
-        XCTAssertEqual(model.selectedSection, .overview)
+        XCTAssertEqual(model.navigationStore.selectedSection, .overview)
         GoalongDefaults.standard.set(true, forKey: "goalongOnboardingPrivacyReviewedV1")
         for setupStep in SetupStep.allCases {
             let step = setupStep.rawValue
@@ -221,8 +221,8 @@ final class GoalongBrandRenderingTests: XCTestCase {
             XCTAssertEqual(onboarding.view.bounds.height, 680)
             try snapshot(onboarding.view, to: output.appendingPathComponent("onboarding-step-\(step)-dark-1080.png"))
         }
-        model.alert = nil
-        model.showWelcome = false
+        model.alertStore.alert = nil
+        model.navigationStore.showWelcome = false
         for dark in [true, false] {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             window.appearance = app.appearance
@@ -275,7 +275,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
                         GoalongRecordingSetup.explicitChoicesKey, "goalongOnboardingPrivacyReviewedV1",
                         ActivityAnalysisPreferences.richContextEnabledKey]
             let previousDefaults = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
-            let originalDraft = model.appliedSettings
+            let originalDraft = model.settingsStore.appliedSettings
             let originalLocalConsent = GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)
             let originalRemoteConsent = GoalongCapabilityConsentStore.shared.document.consent(for: .chatGPTAnalysis)
             defer {
@@ -288,12 +288,12 @@ final class GoalongBrandRenderingTests: XCTestCase {
                 _ = defaults.synchronize()
             }
             _ = GoalongCapabilityConsentStore.shared.set(.localComputerHistory, enabled: false, surface: .settings)
-            model.settingsDraft = DashboardSettingsDraft(config: .default)
+            model.settingsStore.settingsDraft = DashboardSettingsDraft(config: .default)
             model.saveSettings(showConfirmation: false)
-            model.alert = nil
+            model.alertStore.alert = nil
             for key in keys { defaults.removeObject(forKey: key) }
             defaults.set(false, forKey: ActivityAnalysisPreferences.richContextEnabledKey)
-            model.showWelcome = false; model.selectSection(.settings); model.settingsPane = .recording
+            model.navigationStore.showWelcome = false; model.selectSection(.settings); model.navigationStore.settingsPane = .recording
             let recordingHost = NSHostingController(rootView: LocalHistoryDashboardView(model: model)
                 .environment(\.sourceAccessCheck, { _, done in done(.ready) }))
             window.contentViewController = recordingHost
@@ -325,7 +325,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
             XCTAssertNil(window.attachedSheet)
             XCTAssertFalse(config.config.captureClicks, "Explicitly unchecked click capture must remain off")
             for signal in RecordingSignal.allCases where signal != .clicks {
-                XCTAssertTrue(model.appliedSettings[keyPath: signal.keyPath], signal.title)
+                XCTAssertTrue(model.settingsStore.appliedSettings[keyPath: signal.keyPath], signal.title)
             }
             XCTAssertTrue(ActivityAnalysisPreferences.richContextEnabled)
             XCTAssertTrue(GoalongRecordingSetup.hasReviewedChoices())
@@ -349,7 +349,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
             app.setActivationPolicy(.regular)
             window.title = "Goalong Journey QA — synthetic data only"
             GoalongDefaults.standard.set(0, forKey: "goalongOnboardingStep")
-            model.alert = nil; model.showWelcome = true
+            model.alertStore.alert = nil; model.navigationStore.showWelcome = true
             let interactive = NSHostingController(rootView: LocalHistoryDashboardView(model: model)
                 .environment(\.sourceAccessCheck, { _, done in done(.fullDiskAccess) }))
             window.contentViewController = interactive
@@ -398,7 +398,7 @@ final class GoalongBrandRenderingTests: XCTestCase {
             onBeginCaptureValidation: {}, onTogglePause: {}, onRequestPermissions: {},
             onSaveConfiguration: { try config.save($0) }, onDeleteDetails: { _, done in done(.success(0)) },
             onDeleteTargetedDetails: { _, done in done(.success(0)) })
-        model.showWelcome = false
+        model.navigationStore.showWelcome = false
         let monitor = JevMonitor.shared
         let consents = GoalongCapabilityConsentStore.shared
         let originalHistory = consents.isEnabled(.localComputerHistory)
@@ -422,8 +422,8 @@ final class GoalongBrandRenderingTests: XCTestCase {
         let entry = try XCTUnwrap(accessibleElement("settings-jev", within: window))
         XCTAssertGreaterThanOrEqual(entry.accessibilityFrame().height, 44)
         XCTAssertTrue(entry.accessibilityPerformPress()); pump()
-        XCTAssertEqual(model.selectedSection, .settings)
-        XCTAssertEqual(model.settingsPane, .jev)
+        XCTAssertEqual(model.navigationStore.selectedSection, .settings)
+        XCTAssertEqual(model.navigationStore.settingsPane, .jev)
         let offState = consents.document
         for dark in [true, false] {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -440,11 +440,11 @@ final class GoalongBrandRenderingTests: XCTestCase {
         XCTAssertEqual(consents.document, offState, "Opening or rendering the page must not grant consent")
         XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-open-recording", within: window)).accessibilityPerformPress())
         pump()
-        XCTAssertEqual(model.selectedSection, .settings)
-        XCTAssertEqual(model.settingsPane, .recording)
+        XCTAssertEqual(model.navigationStore.selectedSection, .settings)
+        XCTAssertEqual(model.navigationStore.settingsPane, .recording)
         // The old destination (menu bar, notifications) opens the same pane.
         model.selectSection(.monitoring); pump()
-        XCTAssertEqual(model.settingsPane, .jev)
+        XCTAssertEqual(model.navigationStore.settingsPane, .jev)
         XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-open-connection", within: window)).accessibilityPerformPress())
         pump(); pump()
         let sheet = try XCTUnwrap(window.attachedSheet)

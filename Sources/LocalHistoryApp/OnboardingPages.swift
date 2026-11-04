@@ -68,7 +68,7 @@
                         }
                         GoalongVisibleTextChoice(enabled: $visibleTextDraft)
                         Divider()
-                        RecordingChoicesView(draft: $model.settingsDraft)
+                        RecordingChoicesView(draft: $settingsStore.settingsDraft)
                     }
                 }
                 Text(localRecordingDraft ? "Valider démarre le suivi local avec ces choix, après les accès macOS nécessaires. Aucun envoi." : "Le suivi ne démarrera pas. Vos choix restent modifiables.")

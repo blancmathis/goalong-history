@@ -7,9 +7,17 @@ import SwiftUI
 /// "Mon travail": the user's own definition of work, the agent that applies it, and the
 /// review where every verdict can be corrected. Goalong never rates an app or a site.
 @MainActor struct GoalongWorkPage: View {
+    /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
+    var bodyProbe = DashboardBodyProbe("travail")
     /// R-45 (R4d-25): two sentences, the cause then what it changes.
     static let withheldTitlesNotice = "Vos choix « Données pour ChatGPT » excluent les titres de fenêtre. Le classement ne distingue alors deux usages d’une même app que par le site."
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+    }
     @ObservedObject private var work = GoalongWorkStore.shared
     @ObservedObject private var agent = GoalongWorkAgent.shared
     @ObservedObject private var definition = JevWorkContextStore.shared
@@ -37,7 +45,7 @@ import SwiftUI
                     agentCard
                     GoalongWorkReviewCard(review: review, focusTask: Self.reviewFocusTask,
                                           loadsOnAppear: Self.reviewFocusTask != nil,
-                                          earliestDay: model.snapshot.availableDays.min())
+                                          earliestDay: snapshotStore.snapshot.availableDays.min())
                 }
                 GoalongDisclosureGroup("Comment fonctionne le classement ?") { explanation.padding(.top, 10) }
                     .font(.system(size: 13))

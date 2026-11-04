@@ -186,7 +186,7 @@
         case future
     }
 
-    struct TimelineBucket: Identifiable {
+    struct TimelineBucket: Identifiable, Equatable {
         let start: Date
         let end: Date
         let kind: TimelineBucketKind
@@ -198,7 +198,7 @@
         var id: TimeInterval { start.timeIntervalSince1970 }
     }
 
-    struct AppUsage: Identifiable {
+    struct AppUsage: Identifiable, Equatable {
         let appName: String
         let bundleIdentifier: String?
         let eventCount: Int
@@ -206,7 +206,7 @@
         var id: String { bundleIdentifier ?? "name:\(appName)" }
     }
 
-    struct TrackedUsageItem: Identifiable {
+    struct TrackedUsageItem: Identifiable, Equatable {
         let id: String
         let kind: TrackedSubjectKind
         let name: String
@@ -240,7 +240,7 @@
         }
     }
 
-    struct ActivitySession: Identifiable {
+    struct ActivitySession: Identifiable, Equatable {
         let id: String
         let start: Date
         let end: Date
@@ -280,7 +280,8 @@
         }
     }
 
-    struct DashboardDaySnapshot {
+    /// R14b: Equatable on every field, so the 60 s pass publishes only a changed day (never a partial key).
+    struct DashboardDaySnapshot: Equatable {
         let day: Date
         let eventCount: Int
         let activeMinutes: Int

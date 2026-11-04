@@ -9,7 +9,9 @@
     import SwiftUI
 
     struct ChatGPTRecapPage: View {
-        @ObservedObject var model: DashboardViewModel
+        let model: DashboardViewModel
+        @ObservedObject var deviceStore: DashboardDeviceState
+        @ObservedObject var navigationStore: DashboardNavigation
         @ObservedObject private var recapRuntime: ChatGPTRecapRuntime
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
 
@@ -19,6 +21,8 @@
         /// `runtime` is the app's own; the gallery passes one with its sources replaced.
         init(model: DashboardViewModel, runtime: ChatGPTRecapRuntime? = nil) {
             self.model = model
+            _deviceStore = ObservedObject(wrappedValue: model.deviceStore)
+            _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
             _recapRuntime = ObservedObject(wrappedValue: runtime ?? Self.galleryRuntime ?? .shared)
         }
 
@@ -110,13 +114,13 @@
             }
             .background(LHTheme.pageBackground)
             .onAppearWhenShown {
-                recapRuntime.configure(deviceID: model.knownDeviceID ?? "")
-                recapRuntime.selectDay(model.selectedDay)
+                recapRuntime.configure(deviceID: deviceStore.knownDeviceID ?? "")
+                recapRuntime.selectDay(navigationStore.selectedDay)
                 if consents.isEnabled(.chatGPTAnalysis) {
                     recapRuntime.activate()
                 }
             }
-            .onChange(of: model.selectedDay) { next in
+            .onChange(of: navigationStore.selectedDay) { next in
                 recapRuntime.selectDay(next)
             }
             .onChange(of: consents.document) { _ in
@@ -156,7 +160,7 @@
         }
 
         private var chooseDataButton: some View {
-            Button("Choisir les données") { model.selectSection(.settings); model.settingsPane = .chatGPT }
+            Button("Choisir les données") { model.selectSection(.settings); navigationStore.settingsPane = .chatGPT }
         }
 
         private func proofCard(
@@ -626,7 +630,7 @@
             HStack {
                 Text("Fréquence et données : Réglages → Analyse ChatGPT").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 Spacer()
-                Button("Configurer") { model.selectSection(.settings); model.settingsPane = .chatGPT }.buttonStyle(LHQuietButtonStyle())
+                Button("Configurer") { model.selectSection(.settings); navigationStore.settingsPane = .chatGPT }.buttonStyle(LHQuietButtonStyle())
             }
         }
 

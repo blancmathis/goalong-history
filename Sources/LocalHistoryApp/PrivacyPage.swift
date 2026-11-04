@@ -3,7 +3,19 @@
     import SwiftUI
 
     struct PrivacyPage: View {
-        @ObservedObject var model: DashboardViewModel
+        let model: DashboardViewModel
+        @ObservedObject var deviceStore: DashboardDeviceState
+        @ObservedObject var settingsStore: DashboardSettingsState
+        @ObservedObject var runtimeStore: DashboardRuntimeState
+        @ObservedObject var snapshotStore: DashboardSnapshotStore
+
+        init(model: DashboardViewModel) {
+            self.model = model
+            _deviceStore = ObservedObject(wrappedValue: model.deviceStore)
+            _settingsStore = ObservedObject(wrappedValue: model.settingsStore)
+            _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore)
+            _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+        }
         @State private var deletionScope: DeletionScope?
         @State private var sessionPendingDeletion: ActivitySession?
 
@@ -26,7 +38,7 @@
                                 Label("Actualiser", systemImage: "arrow.clockwise")
                             }
                             .buttonStyle(LHSecondaryButtonStyle())
-                            .disabled(model.isRefreshing)
+                            .disabled(snapshotStore.isRefreshing)
                         }
                     }
 
@@ -177,7 +189,7 @@
                             symbol: "number.square.fill",
                             title: "3. Preuve enregistrée",
                             message: GoalongBuildCapabilities.permitsRemoteVerification
-                                ? (model.runtime.verificationEnabled
+                                ? (runtimeStore.runtime.verificationEnabled
                                     ? "Uniquement des preuves signées, sans contenu"
                                     : "Preuves conservées localement tant que la vérification n’est pas activée")
                                 : "Les preuves locales ne quittent jamais cette version"
@@ -223,7 +235,7 @@
                         permissionRow(
                             title: "Accessibilité",
                             message: "Lit le contexte au premier plan pour l’historique. Goalong n’ouvre Réglages Système qu’à votre demande et ne modifie jamais les autorisations à votre place.",
-                            granted: model.runtime.accessibilityGranted,
+                            granted: runtimeStore.runtime.accessibilityGranted,
                             grantedLabel: "Accordé",
                             buttonTitle: "Configuration guidée",
                             action: model.openAccessibilitySettings
@@ -231,7 +243,7 @@
                         permissionRow(
                             title: "Surveillance de l’entrée",
                             message: "Indique l’état de la surveillance de l’entrée. Un vrai événement reste nécessaire avant de considérer l’enregistrement comme fonctionnel.",
-                            granted: model.runtime.inputMonitoringGranted,
+                            granted: runtimeStore.runtime.inputMonitoringGranted,
                             grantedLabel: "Disponible",
                             buttonTitle: "Configuration guidée",
                             action: model.openInputMonitoringSettings
@@ -248,7 +260,7 @@
                         }.buttonStyle(LHSecondaryButtonStyle())
                     }
 
-                    if let health = model.runtime.captureHealth,
+                    if let health = runtimeStore.runtime.captureHealth,
                         [.permissionRequired, .permissionAppearsEnabledButStaleForBuild,
                          .accessibilityContextUnavailable].contains(health.state)
                     {
@@ -260,7 +272,7 @@
                             Button("Ouvrir la configuration guidée") { model.requestPermissions() }
                                 .buttonStyle(LHPrimaryButtonStyle())
                         }
-                    } else if let health = model.runtime.captureHealth, health.state == .inputTapUnavailable {
+                    } else if let health = runtimeStore.runtime.captureHealth, health.state == .inputTapUnavailable {
                         HStack {
                             Label(health.state.frenchDetail, systemImage: "exclamationmark.triangle.fill")
                                 .font(.system(size: 12, weight: .medium))
@@ -269,11 +281,11 @@
                             Button("Ouvrir la Surveillance de l’entrée") { model.openInputMonitoringSettings() }
                                 .buttonStyle(LHPrimaryButtonStyle())
                         }
-                    } else if let health = model.runtime.captureHealth, [.paused, .storageUnavailable].contains(health.state) {
+                    } else if let health = runtimeStore.runtime.captureHealth, [.paused, .storageUnavailable].contains(health.state) {
                         Label(health.state.frenchDetail, systemImage: health.state == .paused ? "pause.circle" : "externaldrive.badge.exclamationmark")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(LHTheme.warning)
-                    } else if model.runtime.captureHealth?.captureProven != true {
+                    } else if runtimeStore.runtime.captureHealth?.captureProven != true {
                         HStack {
                             Label(
                                 "Les autorisations semblent présentes, mais aucun vrai événement de saisie n’a encore été reçu.",
@@ -306,7 +318,7 @@
         }
 
         private func captureHealthDetails(snapshot: CaptureHealthSnapshot?) -> some View {
-            let assessment = model.runtime.captureHealth
+            let assessment = runtimeStore.runtime.captureHealth
             return VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: assessment?.captureProven == true ? "checkmark.shield.fill" : "waveform.path.ecg")
@@ -388,7 +400,7 @@
                 protectionCard(
                     symbol: "link.badge.plus",
                     title: "Adresses nettoyées",
-                    message: model.appliedSettings.redactAllURLQueryValues
+                    message: settingsStore.appliedSettings.redactAllURLQueryValues
                         ? "Les paramètres et fragments d’adresse sont retirés avant l’enregistrement."
                         : "Les paramètres sensibles sont masqués ; le masquage complet est désactivé.",
                     tint: LHTheme.accent
@@ -407,7 +419,7 @@
                     infoRow(
                         symbol: "externaldrive.fill",
                         title: "Taille actuelle",
-                        value: DashboardFormatters.byteCount.string(fromByteCount: model.snapshot.storageBytes)
+                        value: DashboardFormatters.byteCount.string(fromByteCount: snapshotStore.snapshot.storageBytes)
                     )
                     infoRow(
                         symbol: "calendar",
@@ -417,7 +429,7 @@
                     infoRow(
                         symbol: "doc.text",
                         title: "Jours disponibles",
-                        value: "\(model.snapshot.availableDays.count)"
+                        value: "\(snapshotStore.snapshot.availableDays.count)"
                     )
                     infoRow(
                         symbol: "lock.fill",
@@ -446,22 +458,22 @@
                     )
 
                     HStack(spacing: 13) {
-                        let suspended = model.deviceTrustTier == "unavailable"
+                        let suspended = deviceStore.deviceTrustTier == "unavailable"
                         let tint = suspended ? LHTheme.warning : LHTheme.success
                         Image(systemName: suspended ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
                             .font(.system(size: 23, weight: .semibold))
                             .foregroundStyle(tint)
                             .frame(width: 48, height: 48)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(model.deviceProtectionTitle)
+                            Text(deviceStore.deviceProtectionTitle)
                                 .font(.system(size: 13, weight: .semibold))
-                            Text(model.deviceAlgorithm)
+                            Text(deviceStore.deviceAlgorithm)
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(LHTheme.secondaryText)
                         }
                     }
 
-                    ForEach(model.trustNotices, id: \.self) { notice in
+                    ForEach(deviceStore.trustNotices, id: \.self) { notice in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 8) {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -490,7 +502,7 @@
                         Text("Identifiant de l’appareil")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(LHTheme.secondaryText)
-                        Text(model.knownDeviceID ?? "Indisponible (Trousseau inaccessible)")
+                        Text(deviceStore.knownDeviceID ?? "Indisponible (Trousseau inaccessible)")
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(LHTheme.secondaryText)
                             .lineLimit(2)
@@ -502,10 +514,10 @@
 
                     HStack {
                         StatusPill(
-                            title: model.runtime.verificationEnabled ? "Vérification activée" : "Aucune vérification externe",
-                            kind: model.runtime.verificationEnabled ? .ready : .unavailable,
-                            symbol: model.runtime.verificationEnabled ? "checkmark.seal.fill" : "internaldrive",
-                            tint: model.runtime.verificationEnabled ? LHTheme.accent : Color.secondary
+                            title: runtimeStore.runtime.verificationEnabled ? "Vérification activée" : "Aucune vérification externe",
+                            kind: runtimeStore.runtime.verificationEnabled ? .ready : .unavailable,
+                            symbol: runtimeStore.runtime.verificationEnabled ? "checkmark.seal.fill" : "internaldrive",
+                            tint: runtimeStore.runtime.verificationEnabled ? LHTheme.accent : Color.secondary
                         )
                         Spacer()
                     }
@@ -528,7 +540,7 @@
                     }
                     Spacer(minLength: 20)
                     Menu {
-                        if let recent = model.mostRecentActivitySession {
+                        if let recent = snapshotStore.mostRecentActivitySession {
                             Button("Dernière session d’application", role: .destructive) {
                                 sessionPendingDeletion = recent
                             }

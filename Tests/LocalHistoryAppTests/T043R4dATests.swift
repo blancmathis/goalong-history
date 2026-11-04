@@ -138,7 +138,7 @@ final class T043R4dATests: XCTestCase {
     // R4d-9 (view side): the sidebar reads the signal. Without that read, the pill never shows.
     func testSidebarReadsTheAmbianceDownloadSignal() throws {
         let model = try dashboardModel()
-        model.showWelcome = false
+        model.navigationStore.showWelcome = false
         let modules = GoalongModuleStore.shared, wasOn = modules.isEnabled(.ambiance)
         modules.setEnabled(.ambiance, true)
         defer { modules.setEnabled(.ambiance, wasOn); AmbianceDownloadSignal.shared.setForTesting(false) }

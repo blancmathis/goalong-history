@@ -2,25 +2,16 @@
     import Foundation
     import LocalHistoryCore
 
-    extension DashboardViewModel {
+    /// R14b: what the rules being edited exclude, read by the views that observe the settings.
+    extension DashboardSettingsState {
         func isDomainExcludedFromCapture(_ host: String) -> Bool {
             URLRedactor.domain(host, matches: configuredExcludedDomains)
                 || (!configuredIncludedDomains.isEmpty
                     && !URLRedactor.domain(host, matches: configuredIncludedDomains))
         }
 
-        /// The configured exclusion that covers `host` through a parent domain (suffix match), if any.
-        /// An entry equal to the host itself is not a parent: the switch can remove that one.
-        static func excludingParentDomain(for host: String, excluded: [String]) -> String? {
-            let normalized = SharingSubjectKey.normalizedHost(host)
-            return excluded.first {
-                SharingSubjectKey.normalizedHost($0) != normalized
-                    && URLRedactor.domain(host, matches: [$0])
-            }
-        }
-
         func excludingParentDomain(for host: String) -> String? {
-            Self.excludingParentDomain(for: host, excluded: configuredExcludedDomains)
+            DashboardViewModel.excludingParentDomain(for: host, excluded: configuredExcludedDomains)
         }
 
         func isApplicationExcludedFromCapture(_ bundleIdentifier: String) -> Bool {
@@ -37,6 +28,46 @@
                 })
         }
 
+        fileprivate var configuredExcludedDomains: [String] {
+            settingsDraft.excludedDomainsText
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+
+        fileprivate var configuredExcludedApplications: [String] {
+            settingsDraft.excludedApplicationsText
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+
+        fileprivate var configuredIncludedDomains: [String] {
+            settingsDraft.includedDomainsText
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+
+        fileprivate var configuredIncludedApplications: [String] {
+            settingsDraft.includedApplicationsText
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
+    }
+
+    extension DashboardViewModel {
+        /// The configured exclusion that covers `host` through a parent domain (suffix match), if any.
+        /// An entry equal to the host itself is not a parent: the switch can remove that one.
+        static func excludingParentDomain(for host: String, excluded: [String]) -> String? {
+            let normalized = SharingSubjectKey.normalizedHost(host)
+            return excluded.first {
+                SharingSubjectKey.normalizedHost($0) != normalized
+                    && URLRedactor.domain(host, matches: [$0])
+            }
+        }
+
         /// Updates the recorder's persistent excluded-domain list from the Activity screen.
         /// Existing sealed history is not rewritten; disabling capture affects future events.
         func setDomainCaptureEnabled(_ enabled: Bool, host: String) {
@@ -44,11 +75,11 @@
             guard !normalized.isEmpty else { return }
             guard canEditMonitoringRules() else { return }
 
-            var domains = configuredExcludedDomains
+            var domains = settingsStore.configuredExcludedDomains
             if enabled {
                 // A parent rule covers every subdomain. Never widen capture silently, never no-op silently.
                 if let parent = Self.excludingParentDomain(for: host, excluded: domains) {
-                    alert = DashboardAlert(
+                    alertStore.alert = DashboardAlert(
                         kind: .information,
                         title: "Ce site est exclu par une règle plus large",
                         message:
@@ -59,20 +90,20 @@
                 domains.removeAll {
                     SharingSubjectKey.normalizedHost($0) == normalized
                 }
-                if !configuredIncludedDomains.isEmpty {
-                    var included = configuredIncludedDomains
+                if !settingsStore.configuredIncludedDomains.isEmpty {
+                    var included = settingsStore.configuredIncludedDomains
                     if !included.contains(where: {
                         SharingSubjectKey.normalizedHost($0) == normalized
                     }) {
                         included.append(normalized)
                     }
-                    settingsDraft.includedDomainsText = included.sorted().joined(separator: "\n")
+                    settingsStore.settingsDraft.includedDomainsText = included.sorted().joined(separator: "\n")
                 }
             } else if !domains.contains(where: {
                 SharingSubjectKey.normalizedHost($0) == normalized
             }) {
-                if !configuredIncludedDomains.isEmpty {
-                    let included = configuredIncludedDomains.filter {
+                if !settingsStore.configuredIncludedDomains.isEmpty {
+                    let included = settingsStore.configuredIncludedDomains.filter {
                         SharingSubjectKey.normalizedHost($0) != normalized
                     }
                     // Keep the allow-list: an exclusion overrides it, including its last item.
@@ -83,8 +114,8 @@
                 }
             }
 
-            settingsDraft.excludedDomainsText = domains.sorted().joined(separator: "\n")
-            if !applyRecordingChoice(settingsDraft) { discardSettingsChanges() }
+            settingsStore.settingsDraft.excludedDomainsText = domains.sorted().joined(separator: "\n")
+            if !applyRecordingChoice(settingsStore.settingsDraft) { discardSettingsChanges() }
         }
 
         /// Updates the recorder's persistent excluded-application list from the Activity screen.
@@ -98,27 +129,27 @@
             }
             guard canEditMonitoringRules() else { return }
 
-            var applications = configuredExcludedApplications
+            var applications = settingsStore.configuredExcludedApplications
             if enabled {
                 applications.removeAll {
                     $0.caseInsensitiveCompare(normalized) == .orderedSame
                 }
-                if !configuredIncludedApplications.isEmpty {
-                    var included = configuredIncludedApplications
+                if !settingsStore.configuredIncludedApplications.isEmpty {
+                    var included = settingsStore.configuredIncludedApplications
                     if !included.contains(where: {
                         $0.caseInsensitiveCompare(normalized) == .orderedSame
                     }) {
                         included.append(normalized)
                     }
-                    settingsDraft.includedApplicationsText = included
+                    settingsStore.settingsDraft.includedApplicationsText = included
                         .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
                         .joined(separator: "\n")
                 }
             } else if !applications.contains(where: {
                 $0.caseInsensitiveCompare(normalized) == .orderedSame
             }) {
-                if !configuredIncludedApplications.isEmpty {
-                    let included = configuredIncludedApplications.filter {
+                if !settingsStore.configuredIncludedApplications.isEmpty {
+                    let included = settingsStore.configuredIncludedApplications.filter {
                         $0.caseInsensitiveCompare(normalized) != .orderedSame
                     }
                     _ = included
@@ -128,10 +159,10 @@
                 }
             }
 
-            settingsDraft.excludedApplicationsText = applications
+            settingsStore.settingsDraft.excludedApplicationsText = applications
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
                 .joined(separator: "\n")
-            if !applyRecordingChoice(settingsDraft) { discardSettingsChanges() }
+            if !applyRecordingChoice(settingsStore.settingsDraft) { discardSettingsChanges() }
         }
 
         func hideWebsiteInEveryShare(_ host: String) {
@@ -141,8 +172,8 @@
         }
 
         private func canEditMonitoringRules() -> Bool {
-            guard !settingsHaveChanges else {
-                alert = DashboardAlert(
+            guard !settingsStore.settingsHaveChanges else {
+                alertStore.alert = DashboardAlert(
                     kind: .information,
                     title: "Enregistrez ou abandonnez d’abord vos modifications",
                     message:
@@ -151,34 +182,6 @@
                 return false
             }
             return true
-        }
-
-        private var configuredExcludedDomains: [String] {
-            settingsDraft.excludedDomainsText
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-        }
-
-        private var configuredExcludedApplications: [String] {
-            settingsDraft.excludedApplicationsText
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-        }
-
-        private var configuredIncludedDomains: [String] {
-            settingsDraft.includedDomainsText
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-        }
-
-        private var configuredIncludedApplications: [String] {
-            settingsDraft.includedApplicationsText
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
         }
     }
 #endif

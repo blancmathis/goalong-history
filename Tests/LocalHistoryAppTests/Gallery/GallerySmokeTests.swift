@@ -200,8 +200,8 @@ final class GallerySmokeTests: XCTestCase {
         let image = try GalleryRenderer.render(activity, theme: .light, size: activity.sizes[0], ctx: ctx)
         XCTAssertEqual(image.status, .ok, "\(activity.id): \(image.detail ?? "")")
         let model = try XCTUnwrap(ctx.retained.lazy.compactMap { $0 as? DashboardViewModel }.first)
-        XCTAssertTrue(GalleryClock.calendar.isDate(model.selectedDay, inSameDayAs: GalleryClock.now),
-                      "Activité left the gallery day for \(model.selectedDay): a view read the real clock")
+        XCTAssertTrue(GalleryClock.calendar.isDate(model.navigationStore.selectedDay, inSameDayAs: GalleryClock.now),
+                      "Activité left the gallery day for \(model.navigationStore.selectedDay): a view read the real clock")
     }
 
     /// `GalleryRenderer.render` builds an entry's view up to six times in one image, with no HOME reset between the

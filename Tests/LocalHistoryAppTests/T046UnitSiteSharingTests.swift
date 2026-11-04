@@ -65,7 +65,7 @@ final class T046UnitSiteSharingTests: XCTestCase {
         model.hideWebsiteInEveryShare("WWW.Example.COM")
         let key = SharingSubjectKey.website(host: "WWW.Example.COM")
         XCTAssertEqual(store.rules[key], .hidden)
-        XCTAssertEqual(model.sharingRules[key], .hidden)
+        XCTAssertEqual(model.settingsStore.sharingRules[key], .hidden)
         XCTAssertEqual(store.rules.count, 1)
     }
 

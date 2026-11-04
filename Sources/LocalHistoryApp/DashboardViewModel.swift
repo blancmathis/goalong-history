@@ -2,7 +2,6 @@ import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Ambiance
-    import Combine
     import Foundation
     import LocalHistoryCore
     import UniformTypeIdentifiers
@@ -114,7 +113,9 @@ import AppleScreenTime
 
     typealias ShareExportWriter = (_ job: ShareExportJob, _ cancellation: @escaping () -> Bool) throws -> Void
 
-    final class DashboardViewModel: ObservableObject {
+    /// R14b: the model acts; no view observes it. Each view observes the stores its body reads (`navigationStore`,
+    /// `snapshotStore`…), so a publication re-evaluates only the views that show it.
+    final class DashboardViewModel {
         typealias SaveConfiguration = (RecorderConfig) throws -> RecorderConfig
         typealias DeleteDetails = (Date?, @escaping (Result<Int, Error>) -> Void) -> Void
         typealias DeleteTargetedDetails = (
@@ -122,48 +123,104 @@ import AppleScreenTime
             @escaping (Result<Int, Error>) -> Void
         ) -> Void
 
-        @Published var selectedSection: DashboardSection = .overview
-        @Published var settingsPane: SettingsPane = .home
-        /// Where a secondary page (Temps d’écran, Confidentialité, Terminal…) returns:
-        /// the page, and Settings pane, it was opened from.
-        @Published private(set) var secondaryReturn: DashboardSecondaryReturn?
-        @Published var showingWebsiteShare = false
+        /// R14b: page, Settings pane, day, welcome and sheet. A view reads it through its own `@ObservedObject`.
+        let navigationStore: DashboardNavigation
+        // R14b: shortcuts for this file only (a view reads the store, so it observes it). An unchanged value
+        // publishes nothing.
+        private var selectedSection: DashboardSection {
+            get { navigationStore.selectedSection }
+            set { if navigationStore.selectedSection != newValue { navigationStore.selectedSection = newValue } }
+        }
+        private var settingsPane: SettingsPane {
+            get { navigationStore.settingsPane }
+            set { if navigationStore.settingsPane != newValue { navigationStore.settingsPane = newValue } }
+        }
+        private var showingWebsiteShare: Bool {
+            get { navigationStore.showingWebsiteShare }
+            set { if navigationStore.showingWebsiteShare != newValue { navigationStore.showingWebsiteShare = newValue } }
+        }
+        private var showWelcome: Bool {
+            get { navigationStore.showWelcome }
+            set { if navigationStore.showWelcome != newValue { navigationStore.showWelcome = newValue } }
+        }
+        private var selectedDay: Date {
+            get { navigationStore.selectedDay }
+            set { navigationStore.setSelectedDay(newValue) }
+        }
+        private var secondaryReturn: DashboardSecondaryReturn? {
+            get { navigationStore.secondaryReturn }
+            set { navigationStore.setSecondaryReturn(newValue) }
+        }
         /// The profile studio outlives any settings pane or page that opens it.
         @MainActor lazy var profileStudio = GoalongProfileStudioHost()
-        @Published private(set) var runtime: RuntimePresentation = .unavailable
-        /// Free space of the history volume, refreshed at most once a minute while visible.
-        @Published private(set) var freeDiskBytes: Int64?
+        /// R14b: the recording status, the free space and the window's visibility. A view reads them through its own
+        /// `@ObservedObject`.
+        let runtimeStore = DashboardRuntimeState()
         private var freeDiskCheckedAt: Date?
-        @Published private(set) var snapshot: DashboardDaySnapshot
-        @Published private(set) var snapshotGeneration: UInt64 = 0
-        @Published private(set) var isRefreshing = false
-        @Published private(set) var isExportingShare = false
-        @Published var selectedSessionID: String?
-        @Published var activitySearch = ""
-        @Published var activityFilter: ActivityFilter = .all
-        @Published var usageSearch = ""
-        @Published private(set) var sharingRules: [String: SharingVisibility]
-        @Published private(set) var defaultSharingVisibility: SharingVisibility
-        @Published var settingsDraft: DashboardSettingsDraft
-        @Published var alert: DashboardAlert?
-        @Published var showWelcome: Bool
-        @Published private(set) var historyDeletionGeneration = 0
+        /// R14b: the selected day's data. A view reads it through its own `@ObservedObject`.
+        let snapshotStore: DashboardSnapshotStore
+        // R14b: shortcuts for this file only (a view reads the store, so it observes it).
+        private var runtime: RuntimePresentation { runtimeStore.runtime }
+        private var freeDiskBytes: Int64? { runtimeStore.freeDiskBytes }
+        private var snapshot: DashboardDaySnapshot { snapshotStore.snapshot }
+        private var snapshotGeneration: UInt64 { snapshotStore.snapshotGeneration }
+        private var isRefreshing: Bool { snapshotStore.isRefreshing }
+        private var historyDeletionGeneration: Int { snapshotStore.historyDeletionGeneration }
+        private var dashboardIsVisible: Bool { runtimeStore.dashboardIsVisible }
+        private var dashboardStatusIsVisible: Bool { runtimeStore.dashboardStatusIsVisible }
+        // R14b: no view reads these three (searched by name in Sources and Tests): they do not publish.
+        var selectedSessionID: String?
+        var activitySearch = ""
+        var activityFilter: ActivityFilter = .all
+        /// R14b: settings draft, sharing rules and config.json state. A view reads it through its own `@ObservedObject`.
+        let settingsStore: DashboardSettingsState
+        // R14b: shortcuts for this file only (a view reads the store, so it observes it). An unchanged value
+        // publishes nothing.
+        private var usageSearch: String {
+            get { settingsStore.usageSearch }
+            set { if settingsStore.usageSearch != newValue { settingsStore.usageSearch = newValue } }
+        }
+        private var settingsDraft: DashboardSettingsDraft {
+            get { settingsStore.settingsDraft }
+            set { if settingsStore.settingsDraft != newValue { settingsStore.settingsDraft = newValue } }
+        }
+        private var sharingRules: [String: SharingVisibility] {
+            get { settingsStore.sharingRules }
+            set { settingsStore.setSharing(rules: newValue) }
+        }
+        private var defaultSharingVisibility: SharingVisibility {
+            get { settingsStore.defaultSharingVisibility }
+            set { settingsStore.setSharing(rules: settingsStore.sharingRules, defaultVisibility: newValue) }
+        }
+        private var savedSettingsDraft: DashboardSettingsDraft {
+            get { settingsStore.savedSettingsDraft }
+            set { settingsStore.setSavedSettingsDraft(newValue) }
+        }
+        private var configNotice: String? { settingsStore.configNotice }
+        private var configLocked: Bool { settingsStore.configLocked }
+        private var configBackupName: String? { settingsStore.configBackupName }
+        /// R14b: the alert and the export flag. A view reads them through its own `@ObservedObject`.
+        let alertStore = DashboardAlertCenter()
+        // R14b: shortcuts for this file only. Setting the same alert, or nil over nil, publishes nothing.
+        private var alert: DashboardAlert? {
+            get { alertStore.alert }
+            set { if newValue?.id != alertStore.alert?.id { alertStore.alert = newValue } }
+        }
+        private var isExportingShare: Bool {
+            get { alertStore.isExportingShare }
+            set { alertStore.setExportingShare(newValue) }
+        }
 
-        @Published private(set) var deviceID: String
-        /// Nil while the identity is degraded and no earlier device ID is known: Screen Time and ChatGPT stay off.
-        @Published private(set) var knownDeviceID: String?
-        @Published private(set) var deviceTrustTier: String
-        @Published private(set) var deviceAlgorithm: String
-        @Published private(set) var deviceProtectionTitle: String
-        @Published private(set) var deviceProtectionSummary: String
-        /// Changed or degraded trust state (rotation, sealing suspended), shown in the integrity section.
-        @Published private(set) var trustNotices: [String] = []
-        /// Shown in Settings while config.json is unreadable.
-        @Published private(set) var configNotice: String?
-        /// config.json was unreadable at launch: recording is paused and saves are refused.
-        @Published private(set) var configLocked = false
-        /// Name of the damaged config.json kept aside by the last reset.
-        @Published private(set) var configBackupName: String?
+        /// R14b: what this Mac is identified as. A view reads it through its own `@ObservedObject`.
+        let deviceStore: DashboardDeviceState
+        // R14b: shortcuts for this file only (a view reads the store, so it observes it).
+        private var deviceID: String { deviceStore.deviceID }
+        private var knownDeviceID: String? { deviceStore.knownDeviceID }
+        private var deviceTrustTier: String { deviceStore.deviceTrustTier }
+        private var deviceAlgorithm: String { deviceStore.deviceAlgorithm }
+        private var deviceProtectionTitle: String { deviceStore.deviceProtectionTitle }
+        private var deviceProtectionSummary: String { deviceStore.deviceProtectionSummary }
+        private var trustNotices: [String] { deviceStore.trustNotices }
         private var configObserver: NSObjectProtocol?
         private let onReloadConfiguration: () -> Bool
         private let onResetConfiguration: () throws -> String?
@@ -175,13 +232,11 @@ import AppleScreenTime
             supportDirectory: { AppPaths.applicationSupportDirectory }
         )
 
-        private(set) var selectedDay: Date
         /// The date of `selectedDay`. A time zone change moves `selectedDay` to this date's new midnight.
         private var selectedCalendarDay: GoalongCalendarDay
         /// The « aujourd’hui » this model last saw; `followToday` compares it with the clock.
         private var seenToday: GoalongCalendarDay
         private var clockObservers: [NSObjectProtocol] = []
-        private(set) var savedSettingsDraft: DashboardSettingsDraft
 
         private let state: CaptureState
         private let permissions: PermissionManager
@@ -214,11 +269,8 @@ import AppleScreenTime
             qos: .utility
         )
         private let shareQueue = DispatchQueue(label: "ai.goalong.localhistory.dashboard-share", qos: .userInitiated)
-        @Published private(set) var dashboardIsVisible = false
-        /// The window can be seen, with or without the keyboard: only the cheap status is kept live.
-        @Published private(set) var dashboardStatusIsVisible = false
         /// The recording status is fresh: the banner and the page bodies show it only then.
-        var recordingStatusIsLive: Bool { dashboardIsVisible || dashboardStatusIsVisible }
+        private var recordingStatusIsLive: Bool { runtimeStore.recordingStatusIsLive }
         private var dataRequestSequence: UInt64 = 0
         private var metadataRequestSequence: UInt64 = 0
         private var activeDataRequest:
@@ -266,15 +318,8 @@ import AppleScreenTime
             self.configManager = configManager
             self.sharingRulesStore = sharingRulesStore
             self.agentActivityRuntime = agentActivityRuntime
-            self.sharingRules = sharingRulesStore.rules
-            self.defaultSharingVisibility = sharingRulesStore.defaultVisibility
             self.onRetryKeychain = onRetryKeychain
-            self.deviceID = deviceInfo.deviceID
-            self.knownDeviceID = deviceInfo.knownDeviceID
-            self.deviceTrustTier = deviceInfo.trustTier
-            self.deviceAlgorithm = deviceInfo.algorithm
-            self.deviceProtectionTitle = deviceInfo.protectionTitle
-            self.deviceProtectionSummary = deviceInfo.protectionSummary
+            self.deviceStore = DashboardDeviceState(deviceInfo)
             self.eventTapStatus = eventTapStatus
             self.currentSuppression = currentSuppression
             self.captureHealthSnapshot = captureHealthSnapshot
@@ -294,14 +339,14 @@ import AppleScreenTime
             self.analyticsReader = analyticsReader
 
             let today = Calendar.current.startOfDay(for: now())
-            selectedDay = today
+            navigationStore = DashboardNavigation(
+                day: today, showWelcome: !defaults.bool(forKey: "didShowLocalHistoryConsentOnboardingV5"), now: now)
             selectedCalendarDay = GoalongCalendarDay(today)
             seenToday = selectedCalendarDay
-            snapshot = .empty(day: today)
-            let draft = DashboardSettingsDraft(config: configManager.config)
-            settingsDraft = draft
-            savedSettingsDraft = draft
-            showWelcome = !defaults.bool(forKey: "didShowLocalHistoryConsentOnboardingV5")
+            snapshotStore = DashboardSnapshotStore(day: today)
+            settingsStore = DashboardSettingsState(
+                draft: DashboardSettingsDraft(config: configManager.config), sharingRules: sharingRulesStore.rules,
+                defaultSharingVisibility: sharingRulesStore.defaultVisibility)
             refreshTrustNotices()
             trustObserver = NotificationCenter.default.addObserver(
                 forName: DeviceTrustState.didChange, object: nil, queue: .main
@@ -326,9 +371,9 @@ import AppleScreenTime
         }
 
         func refreshConfigStatus() {
-            configNotice = configManager.statusNotice
-            configLocked = configManager.isFailClosed
-            configBackupName = configNotice == nil ? configManager.lastDamagedBackupName : nil
+            let notice = configManager.statusNotice
+            settingsStore.setConfigStatus(notice: notice, locked: configManager.isFailClosed,
+                backupName: notice == nil ? configManager.lastDamagedBackupName : nil)
         }
 
         /// The active config changed outside Settings (reload, reset): show what is applied.
@@ -370,20 +415,16 @@ import AppleScreenTime
             refreshRuntime()
         }
 
+
         func refreshTrustNotices() {
-            trustNotices = [
+            deviceStore.setTrustNotices([
                 DeviceTrustState.shared.sealingSuspendedNotice,
                 DeviceIdentityRotation.load(defaults: defaults)?.notice,
-            ].compactMap { $0 }
+            ].compactMap { $0 })
         }
 
         func updateDeviceInfo(_ info: DeviceIdentityInfo) {
-            deviceID = info.deviceID
-            knownDeviceID = info.knownDeviceID
-            deviceTrustTier = info.trustTier
-            deviceAlgorithm = info.algorithm
-            deviceProtectionTitle = info.protectionTitle
-            deviceProtectionSummary = info.protectionSummary
+            deviceStore.update(info)
         }
 
         deinit {
@@ -396,9 +437,7 @@ import AppleScreenTime
             cancelShareExport()
         }
 
-        var isTodaySelected: Bool {
-            Calendar.current.isDate(selectedDay, inSameDayAs: now())
-        }
+        private var isTodaySelected: Bool { navigationStore.isTodaySelected }
 
         var filteredSessions: [ActivitySession] {
             let query = activitySearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -460,9 +499,7 @@ import AppleScreenTime
             }
         }
 
-        var settingsHaveChanges: Bool {
-            settingsDraft != savedSettingsDraft
-        }
+        private var settingsHaveChanges: Bool { settingsStore.settingsHaveChanges }
 
         /// After midnight or a time zone change, a page left on the old « aujourd’hui » moves to the new one.
         /// A day chosen by the user keeps its date: after a time zone change it moves to that date's new midnight.
@@ -547,21 +584,8 @@ import AppleScreenTime
             if destination.section == .settings { settingsPane = destination.pane }
         }
 
-        var secondaryReturnTitle: String {
-            switch secondaryReturn?.section ?? selectedSection.defaultReturnSection {
-            case .settings: return "Retour aux réglages"
-            case .history: return "Retour à l’historique"
-            case .monitoring: return "Retour à Jev"
-            // Same « ‹ Activité » as the return inside Activity's own detail views (UI-13B).
-            default: return "Activité"
-            }
-        }
-
-        /// A secondary page keeps the sidebar on the destination it was opened from.
-        var highlightedSidebarSection: DashboardSection {
-            guard selectedSection.isSecondary else { return selectedSection.sidebarParent }
-            return (secondaryReturn?.section ?? selectedSection.defaultReturnSection).sidebarParent
-        }
+        private var secondaryReturnTitle: String { navigationStore.secondaryReturnTitle }
+        private var highlightedSidebarSection: DashboardSection { navigationStore.highlightedSidebarSection }
 
         func refreshEverything() {
             guard dashboardIsVisible else { return }
@@ -575,7 +599,7 @@ import AppleScreenTime
 
         func dashboardDidBecomeVisible() {
             guard !dashboardIsVisible else { return }
-            dashboardIsVisible = true
+            runtimeStore.setDashboardVisible(true)
             followToday()
             agentActivityRuntime.dashboardDidBecomeVisible()
             refreshRuntime()
@@ -594,7 +618,7 @@ import AppleScreenTime
         /// without the data and metadata readers that `dashboardDidBecomeVisible` starts.
         func dashboardStatusDidBecomeVisible() {
             guard !dashboardStatusIsVisible else { return }
-            dashboardStatusIsVisible = true
+            runtimeStore.setStatusVisible(true)
             // With the keyboard, dashboardDidBecomeVisible already read the status and armed the timers.
             guard !dashboardIsVisible else { return }
             refreshRuntime()
@@ -603,7 +627,7 @@ import AppleScreenTime
 
         func dashboardStatusDidBecomeHidden() {
             guard dashboardStatusIsVisible else { return }
-            dashboardStatusIsVisible = false
+            runtimeStore.setStatusVisible(false)
             guard !dashboardIsVisible else { return }
             updateRefreshSchedule()
         }
@@ -620,7 +644,7 @@ import AppleScreenTime
                 if discardContents { discardVisibleSnapshot() }
                 return
             }
-            dashboardIsVisible = false
+            runtimeStore.setDashboardVisible(false)
             refreshScheduler.deactivate()
             updateRefreshSchedule()
             dataRequestSequence &+= 1
@@ -631,7 +655,7 @@ import AppleScreenTime
             // or hiding the window is not a reason to drop it. Only a real close stops it.
             discardShareCache()
             dataRefreshPending = false
-            isRefreshing = false
+            snapshotStore.setRefreshing(false)
             if discardContents { discardVisibleSnapshot() }
             agentActivityRuntime.dashboardDidBecomeHidden()
             let reader = dataReader
@@ -654,8 +678,14 @@ import AppleScreenTime
         }
 
         private func discardVisibleSnapshot() {
-            snapshot = .empty(day: selectedDay)
-            snapshotGeneration &+= 1
+            snapshotStore.discard(day: selectedDay)
+        }
+
+        /// R14b: shows a read unless it equals the shown one on every field (the 60 s pass on a quiet day publishes
+        /// nothing). The first read after the placeholder is always shown, so the generation tells a read from it.
+        @discardableResult
+        func publishSnapshot(_ next: DashboardDaySnapshot) -> Bool {
+            snapshotStore.show(next)
         }
 
         func togglePause() {
@@ -936,9 +966,6 @@ import AppleScreenTime
             }
         }
 
-        /// The Privacy screen reports persisted choices, never an unsaved editor draft.
-        var appliedSettings: DashboardSettingsDraft { savedSettingsDraft }
-
         @discardableResult
         func saveOnboardingRecordingChoices() -> Bool {
             do {
@@ -995,7 +1022,7 @@ import AppleScreenTime
             count <= 1 ? "\(count) élément local supprimé." : "\(count) éléments locaux supprimés."
         }
 
-        var mostRecentActivitySession: ActivitySession? {
+        private var mostRecentActivitySession: ActivitySession? {
             snapshot.sessions.first
         }
 
@@ -1008,7 +1035,7 @@ import AppleScreenTime
                     guard let self else { return }
                     switch result {
                     case .success(let count):
-                        self.historyDeletionGeneration &+= 1
+                        self.snapshotStore.historyWasDeleted()
                         self.selectedSessionID = nil
                         self.alert = DashboardAlert(
                             kind: .information,
@@ -1077,7 +1104,7 @@ import AppleScreenTime
             if freeDiskCheckedAt.map({ now().throttleElapsed(since: $0) >= 60 }) ?? true {
                 freeDiskCheckedAt = now()
                 let free = availableBytes()
-                if free != freeDiskBytes { freeDiskBytes = free }
+                runtimeStore.setFreeDiskBytes(free)
             }
 
             let next = RuntimePresentation(
@@ -1093,7 +1120,7 @@ import AppleScreenTime
                 captureHealth: health,
                 storageInterruptedSince: health.state == .storageUnavailable ? healthSnapshot.storageInterruptedSince : nil
             )
-            if next != runtime { runtime = next }
+            runtimeStore.setRuntime(next)
         }
 
         private func refreshData(force: Bool) {
@@ -1110,7 +1137,7 @@ import AppleScreenTime
             }
             // The 60 s timer pass (force == false) stays silent: toggling the spinner would
             // republish the whole dashboard twice a minute for no visible gain.
-            if force, !isRefreshing { isRefreshing = true }
+            if force { snapshotStore.setRefreshing(true) }
             dataRequestSequence &+= 1
             let requestSequence = dataRequestSequence
             let day = selectedDay
@@ -1124,7 +1151,7 @@ import AppleScreenTime
                 DispatchQueue.main.async {
                     guard self.dataRequestSequence == requestSequence else { return }
                     self.activeDataRequest = nil
-                    if self.isRefreshing { self.isRefreshing = false }
+                    self.snapshotStore.setRefreshing(false)
                     let shouldCatchUp = self.dataRefreshPending
                     self.dataRefreshPending = false
                     guard self.dashboardIsVisible, !token.isCancelled, let next else { return }
@@ -1132,8 +1159,7 @@ import AppleScreenTime
                         self.refreshData(force: true)
                         return
                     }
-                    self.snapshot = next
-                    self.snapshotGeneration &+= 1
+                    self.publishSnapshot(next)
                     if let selected = self.selectedSessionID,
                         !self.filteredSessions.contains(where: { $0.id == selected })
                     {
@@ -1168,8 +1194,7 @@ import AppleScreenTime
                     guard self.metadataRequestSequence == requestSequence else { return }
                     self.activeMetadataRequest = nil
                     guard self.dashboardIsVisible, !token.isCancelled, updated else { return }
-                    self.snapshot = self.dataReader.applyingCachedMetadata(to: self.snapshot)
-                    self.snapshotGeneration &+= 1
+                    self.snapshotStore.applyMetadata(self.dataReader.applyingCachedMetadata(to: self.snapshot))
                 }
             }
             activeMetadataRequest = (token, workItem)

@@ -6,7 +6,10 @@ import AppleScreenTime
 
 /// A supplemental source, never added to the Goalong foreground measurements.
 struct GoalongActivityAppleCard: View {
-    @ObservedObject var model: DashboardViewModel
+    let model: DashboardViewModel
+    @ObservedObject var deviceStore: DashboardDeviceState
+    @ObservedObject var alertStore: DashboardAlertCenter
+    @ObservedObject var runtimeStore: DashboardRuntimeState
     let day: Date
     let refreshRevision: Int
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
@@ -14,9 +17,10 @@ struct GoalongActivityAppleCard: View {
     @State private var accessDenied = false
 
     init(model: DashboardViewModel, day: Date, refreshRevision: Int = 0) {
-        self.model = model; self.day = day; self.refreshRevision = refreshRevision
+        let deviceStore = model.deviceStore
+        self.model = model; _deviceStore = ObservedObject(wrappedValue: deviceStore); _alertStore = ObservedObject(wrappedValue: model.alertStore); _runtimeStore = ObservedObject(wrappedValue: model.runtimeStore); self.day = day; self.refreshRevision = refreshRevision
         _screenTime = StateObject(wrappedValue: AppleScreenTimeDashboardModel(
-            rootDirectory: AppPaths.screenTimeDirectory, deviceID: model.deviceID, selectedDay: day,
+            rootDirectory: AppPaths.screenTimeDirectory, deviceID: deviceStore.deviceID, selectedDay: day,
             accessEnabled: GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime),
             includesUnfilteredSummary: true))
     }
@@ -41,12 +45,12 @@ struct GoalongActivityAppleCard: View {
             }
         }
         .accessibilityIdentifier("activity-apple-source")
-        .onAppearWhenShown { screenTime.setActive(model.dashboardIsVisible) }
+        .onAppearWhenShown { screenTime.setActive(runtimeStore.dashboardIsVisible) }
         .onDisappear { screenTime.setActive(false) }
         .onChange(of: day) { screenTime.selectDay($0) }
-        .onChange(of: model.dashboardIsVisible) { screenTime.setActive($0) }
+        .onChange(of: runtimeStore.dashboardIsVisible) { screenTime.setActive($0) }
         .onChange(of: refreshRevision) { _ in
-            if model.dashboardIsVisible && consents.isEnabled(.appleScreenTime) { screenTime.refresh() }
+            if runtimeStore.dashboardIsVisible && consents.isEnabled(.appleScreenTime) { screenTime.refresh() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .goalongCapabilityConsentDidChange)) { _ in
             let enabled = consents.isEnabled(.appleScreenTime)
@@ -59,7 +63,7 @@ struct GoalongActivityAppleCard: View {
             let saved = consents.set(.appleScreenTime, enabled: false, surface: .settings)
             screenTime.setAccessEnabled(false)
             if !saved {
-                model.alert = DashboardAlert(kind: .error, title: "Accès Temps d’écran indisponible",
+                alertStore.alert = DashboardAlert(kind: .error, title: "Accès Temps d’écran indisponible",
                     message: "La lecture a été arrêtée, mais le réglage n’a pas pu être enregistré. Vérifiez Temps d’écran dans les réglages.")
             }
         }
