@@ -455,28 +455,31 @@ import XCTest
             DashboardKeptPagesView.preheatDelay = 60
             defer { DashboardKeptPagesView.preheatDelay = delay }
             let source = Source(), counts = Counts()
-            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-                                       styleMask: [.titled], backing: .buffered, defer: true)
-            window.isReleasedWhenClosed = false
-            defer { window.contentView = nil; window.close() }
-            let host = DashboardWindowContent(rootView: CloseRoot(source: source, selected: "a", counts: counts))
-            window.contentView = host
-            spin(host)
-            host.setRootView(CloseRoot(source: source, selected: "b", counts: counts))
-            spin(host)
-            let pages = try XCTUnwrap(Self.keptView(in: host))
-            XCTAssertEqual(Set(pages.hosts.keys), ["a", "b"])
-            XCTAssertTrue(pages.preheatScheduled)
-            // In their own pools: a reference autoreleased here would live until the test ends, not the page.
+            // From the window's creation to its close in one pool: AppKit 15 autoreleases the page (CI, leaks
+            // --traceTree: `<@autoreleasepool content>`), and the test's own pool drains only when the test ends. The
+            // app's event loop drains it every turn. Out of the pool, the page is held only weakly.
+            var window: GalleryWindow!, host: DashboardWindowContent!, pages: DashboardKeptPagesView!
             weak var former: DashboardKeptHost?
             var address = ""
-            autoreleasepool {
+            try autoreleasepool {
+                window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                                       styleMask: [.titled], backing: .buffered, defer: true)
+                window.isReleasedWhenClosed = false
+                host = DashboardWindowContent(rootView: CloseRoot(source: source, selected: "a", counts: counts))
+                window.contentView = host
+                spin(host)
+                host.setRootView(CloseRoot(source: source, selected: "b", counts: counts))
+                spin(host)
+                pages = try XCTUnwrap(Self.keptView(in: host))
+                XCTAssertEqual(Set(pages.hosts.keys), ["a", "b"])
+                XCTAssertTrue(pages.preheatScheduled)
                 former = pages.hosts["a"]
                 if let page = former { address = "\(Unmanaged.passUnretained(page).toOpaque())" }
+                window.contentView = nil
+                XCTAssertTrue(pages.hosts.isEmpty, "a kept page outlived its window")
+                XCTAssertFalse(pages.preheatScheduled, "the timer of the pages built at rest outlived the window")
             }
-            autoreleasepool { window.contentView = nil }
-            XCTAssertTrue(pages.hosts.isEmpty, "a kept page outlived its window")
-            XCTAssertFalse(pages.preheatScheduled, "the timer of the pages built at rest outlived the window")
+            defer { window.contentView = nil; window.close() }
             // Freed once SwiftUI ends its pending work (a loaded runner takes longer: wait for it, bounded).
             spin(host, until: { former == nil })
             if former != nil { Self.traceRetainers(of: address) }
