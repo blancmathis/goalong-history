@@ -451,8 +451,10 @@ import XCTest
             let pages = try XCTUnwrap(Self.keptView(in: host))
             XCTAssertEqual(Set(pages.hosts.keys), ["a", "b"])
             XCTAssertTrue(pages.preheatScheduled)
-            weak var former = pages.hosts["a"]
-            window.contentView = nil
+            // In their own pools: a reference autoreleased here would live until the test ends, not the page.
+            weak var former: DashboardKeptHost?
+            autoreleasepool { former = pages.hosts["a"] }
+            autoreleasepool { window.contentView = nil }
             XCTAssertTrue(pages.hosts.isEmpty, "a kept page outlived its window")
             XCTAssertFalse(pages.preheatScheduled, "the timer of the pages built at rest outlived the window")
             // Freed once SwiftUI ends its pending work (a loaded runner takes longer: wait for it, bounded).
