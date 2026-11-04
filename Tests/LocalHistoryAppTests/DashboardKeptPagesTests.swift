@@ -456,7 +456,8 @@ import XCTest
             window.contentView = nil
             XCTAssertTrue(pages.hosts.isEmpty, "a kept page outlived its window")
             XCTAssertFalse(pages.preheatScheduled, "the timer of the pages built at rest outlived the window")
-            spin(host, 0.05)
+            // Freed once SwiftUI ends its pending work (a loaded runner takes longer: wait for it, bounded).
+            spin(host, until: { former == nil })
             XCTAssertNil(former, "a kept page is still in memory once its window closed")
             window.contentView = host
             spin(host)
