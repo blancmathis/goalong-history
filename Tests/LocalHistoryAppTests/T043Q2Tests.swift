@@ -39,6 +39,20 @@ import XCTest
         XCTAssertNil(other.importedFirstDay, "an empty injected folder gives no imported day, whatever the real folder holds")
     }
 
+    /// R14c-N3: the switch bench waits for the preloads of its own run. A preload finished before the run (another
+    /// test, an earlier pass) must not end the wait; one started after the count taken at the start does.
+    func testPreloadWaitCountsOnlyThePreloadsOfThisRun() async throws {
+        let root = try folder(healthDays: [])
+        defer { try? FileManager.default.removeItem(at: root) }
+        await GoalongAnalyticsModel(root: root).preloadOtherPeriods(day: date(12), count: 1, verdicts: GoalongWorkVerdicts())
+        let baseline = GoalongAnalyticsModel.preloadsStarted
+        XCTAssertGreaterThan(baseline, 0)
+        XCTAssertFalse(GoalongAnalyticsModel.preloadsSettled(since: baseline),
+                       "a preload of an earlier run ends nothing: the cumulative count alone would have said done")
+        await GoalongAnalyticsModel(root: root).preloadOtherPeriods(day: date(12), count: 7, verdicts: GoalongWorkVerdicts())
+        XCTAssertTrue(GoalongAnalyticsModel.preloadsSettled(since: baseline), "a preload of this run, over, ends the wait")
+    }
+
     /// R272b-1: the page steps through the model, which always passes the bound. In 7 days the last step back
     /// ends on first day + 6; in 28 days on first day + 27; nothing earlier. The preview has no bound.
     func testPageStepStopsAtTheFirstDayOfEverySource() async throws {

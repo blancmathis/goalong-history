@@ -175,6 +175,7 @@ final class ViewSwitchBudgetTests: XCTestCase {
             let ctx = GalleryContext()
             try GalleryStateReset.all(home: ctx.home)
             defer { ctx.finish() }
+            let preloadBase = GoalongAnalyticsModel.preloadsStarted
             let (model, window, host, _, _) = try ViewSwitchTimingTests.memberDashboard(ctx, days: 35)
             defer { window.contentView = nil; window.close() }
             ViewSwitchTimingTests.draw(host)
@@ -186,7 +187,7 @@ final class ViewSwitchBudgetTests: XCTestCase {
             }
             XCTAssertEqual(pages.preheatPending, 0, "the main pages were never built at rest")
             _ = ViewSwitchTimingTests.settle(host, model: model, timeout: 20)
-            ViewSwitchTimingTests.waitForPreloads(host, model: model)
+            ViewSwitchTimingTests.waitForPreloads(host, model: model, since: preloadBase)
 
             var samples: [ViewSwitchTimingTests.Sample] = []
             var references: [Double] = [Self.referenceMs()]

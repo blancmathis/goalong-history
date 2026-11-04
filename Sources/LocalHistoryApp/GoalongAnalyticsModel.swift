@@ -411,6 +411,9 @@ actor GoalongAnalyticsReader {
     /// R14c: background reads of the other periods, started and running. The switch bench starts its clicks once they are
     /// over, so each first click is measured on the stored read a member gets (not on a race with this preload).
     private(set) static var preloadsStarted = 0, preloadsInFlight = 0
+    /// R14c-N3: true once a preload started after `baseline` (a value of `preloadsStarted` taken before the run) and none
+    /// runs any more. A count taken at the start of the run, so an earlier test's preload never ends the wait.
+    static func preloadsSettled(since baseline: Int) -> Bool { preloadsStarted > baseline && preloadsInFlight == 0 }
 
     /// R13c: the last complete read of each period (key: last day and count), shown again at once when the user
     /// comes back to it, then read again. An entry is shown only while its verdicts, its day, the history-clear

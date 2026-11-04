@@ -34,6 +34,7 @@ final class ViewSwitchTimingTests: XCTestCase {
             let ctx = GalleryContext()
             try GalleryStateReset.all(home: ctx.home)
             defer { ctx.finish() }
+            let preloadBase = GoalongAnalyticsModel.preloadsStarted
             let (model, window, host, written, summaries) = try Self.memberDashboard(ctx, days: 35)
             log("fixture: \(written.events) events, \(written.bytes / 1_000_000) MB journals, \(summaries) summary files")
             defer { window.contentView = nil; window.close() }
@@ -55,7 +56,7 @@ final class ViewSwitchTimingTests: XCTestCase {
                            before, Self.footprintMB()))
             }
 
-            Self.waitForPreloads(host, model: model)
+            Self.waitForPreloads(host, model: model, since: preloadBase)
             // R14c: a trace of the clicks alone (GOALONG_SWITCH_GATE=<dir>): « ready » written here, clicks once « go » exists.
             if let gate = environment["GOALONG_SWITCH_GATE"], !gate.isEmpty {
                 FileManager.default.createFile(atPath: gate + "/ready", contents: nil)
@@ -172,14 +173,13 @@ final class ViewSwitchTimingTests: XCTestCase {
     /// R14c: the other periods are read in the background after the first display. The first clicks wait for that, as a
     /// member's would after a moment on the page; otherwise a click races the preload and measures a loading state
     /// (the 2 ms 28-day cold seen on CI at dc8d178).
-    @MainActor static func waitForPreloads(_ host: NSView, model: DashboardViewModel) {
+    /// `baseline` is `GoalongAnalyticsModel.preloadsStarted` read before this run built its dashboard (R14c-N3).
+    @MainActor static func waitForPreloads(_ host: NSView, model: DashboardViewModel, since baseline: Int) {
         let deadline = ProcessInfo.processInfo.systemUptime + 30
-        while GoalongAnalyticsModel.preloadsStarted == 0 || GoalongAnalyticsModel.preloadsInFlight > 0,
-              ProcessInfo.processInfo.systemUptime < deadline {
+        while !GoalongAnalyticsModel.preloadsSettled(since: baseline), ProcessInfo.processInfo.systemUptime < deadline {
             _ = settle(host, model: model, timeout: 0.05) { _ in }
         }
-        XCTAssertTrue(GoalongAnalyticsModel.preloadsStarted > 0 && GoalongAnalyticsModel.preloadsInFlight == 0,
-                      "the other periods were never read in the background")
+        XCTAssertTrue(GoalongAnalyticsModel.preloadsSettled(since: baseline), "the other periods were never read in the background")
         _ = settle(host, model: model, timeout: 10) { _ in }
     }
 
