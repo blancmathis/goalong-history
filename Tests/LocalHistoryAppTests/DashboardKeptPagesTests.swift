@@ -13,6 +13,19 @@ import XCTest
         var tasks: [String: Int] = [:], timeline: [String: Int] = [:]
         /// The appear logic under the rule of kept pages (`onAppearWhenShown`, `taskWhenShown`).
         var shownAppears: [String: Int] = [:], shownTasks: [String: Int] = [:]
+        /// Each value of `goalongMotionPaused` the page's brand mark was evaluated with.
+        var motionPaused: [String: [Bool]] = [:]
+    }
+
+    /// Records what the brand mark beside it reads.
+    struct MotionPausedProbe: View {
+        let name: String
+        let counts: Counts
+        @Environment(\.goalongMotionPaused) private var paused
+        var body: some View {
+            let _ = counts.motionPaused[name, default: []].append(paused)
+            return Color.clear.frame(width: 1, height: 1)
+        }
     }
 
     struct Probe: View {
@@ -30,6 +43,9 @@ import XCTest
                     let _ = counts.timeline[name, default: 0] += 1
                     Text("t \(context.date.timeIntervalSince1970)")
                 }
+            }
+            .overlay(alignment: .topTrailing) {
+                HStack { GoalongActivityMark(isActive: true, width: 16); MotionPausedProbe(name: name, counts: counts) }
             }
             .onReceiveWhileShown(timer) { _ in counts.ticks[name, default: 0] += 1 }
             .onAppear { counts.appears[name, default: 0] += 1 }  // own layout: measures the plain modifiers
@@ -82,6 +98,9 @@ import XCTest
             let plus = try XCTUnwrap(ViewSwitchAX.first(in: host) { $0 == "a-plus" })
             XCTAssertEqual(ViewSwitchAX.flag(plus, "accessibilityPerformPress"), true)
             spin(host)
+            // Its appear logic ran once while shown (a loaded runner starts the task late: wait for it, bounded).
+            spin(host, until: { counts.shownAppears["a"] == 1 && counts.shownTasks["a"] == 1 })
+            XCTAssertEqual(counts.shownAppears["a"], 1); XCTAssertEqual(counts.shownTasks["a"], 1)
             host.setRootView(Root(source: source, selected: "b", counts: counts))
             // The new page is in the window after one layout pass, with no turn of the main loop: no frame shows the
             // old page under the new selection.
@@ -180,6 +199,9 @@ import XCTest
             // R14a correction: its appear logic did not run (the rule of kept pages, `KeptPageGate`).
             XCTAssertNil(counts.shownAppears["b"], "a page built at rest ran its appear logic")
             XCTAssertNil(counts.shownTasks["b"], "a page built at rest ran its task")
+            // Its active brand mark was paused from its first evaluation (no motion while built at rest).
+            XCTAssertFalse(counts.motionPaused["b", default: []].isEmpty)
+            XCTAssertFalse(counts.motionPaused["b", default: []].contains(false), "a page built at rest animated its mark")
             let bodies = counts.bodies["b"] ?? 0
             XCTAssertGreaterThan(bodies, 0)
             for _ in 0..<3 { source.value += 1; spin(host, 0.05) }
@@ -194,6 +216,7 @@ import XCTest
             XCTAssertEqual(counts.appears["b"], 2); XCTAssertEqual(counts.tasks["b"], 2)
             // Its first real showing runs its appear logic, as a visit did before pages were kept.
             XCTAssertEqual(counts.shownAppears["b"], 1); XCTAssertEqual(counts.shownTasks["b"], 1)
+            XCTAssertEqual(counts.motionPaused["b"]?.last, false, "the mark stayed paused once its page was shown")
             XCTAssertNotNil(ViewSwitchAX.first(in: host) { $0 == "b 3 kept 0" }, "the page showed stale values")
             spin(host, until: { (counts.ticks["b"] ?? 0) > 0 })
             XCTAssertGreaterThan(counts.ticks["b"] ?? 0, 0, "the page's timer never started on its first visit")
@@ -375,7 +398,8 @@ import XCTest
     }
 
     /// N1, every page: no appear logic of the app runs outside the gate of its page (`KeptPageGate`). A plain
-    /// `onAppear` or `.task` is allowed only on a view that writes its own state from its own layout (`// own layout`).
+    /// `onAppear` or `.task` is allowed only on a view that writes its own state from its own layout (`// own layout`) or on the brand mark,
+    /// compiled alone, that drives only its own motion (`// own state`).
     func testEveryAppearLogicGoesThroughTheGateOfItsPage() throws {
         let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/LocalHistoryApp")
@@ -386,7 +410,8 @@ import XCTest
         var offending: [String] = []
         for file in files {
             let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
-            for (index, line) in lines.enumerated() where !line.contains("// own layout") {
+            for (index, line) in lines.enumerated() where !line.contains("// own layout")
+                && !(line.contains("// own state") && file.lastPathComponent == "GoalongMotionView.swift") {
                 if plain.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil {
                     offending.append("\(file.lastPathComponent):\(index + 1)")
                 }

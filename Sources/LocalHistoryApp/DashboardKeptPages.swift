@@ -108,8 +108,9 @@
     /// `onAppearWhenShown` and `taskWhenShown` instead of `onAppear` and `.task`. Closed at rest, they do nothing; the
     /// page's first real showing runs them, as a visit did before pages were kept, and so does each return (a return
     /// re-runs `onAppear` and `.task`, measured). Outside a kept page the gate is always open: no change. Only a view
-    /// that writes its own state from its own layout keeps a plain `onAppear` (marked `// own layout`); a test scans the
-    /// sources for any other (DashboardKeptPagesTests).
+    /// that writes its own state from its own layout keeps a plain `onAppear` (marked `// own layout`), and so does the
+    /// brand mark, compiled alone by scripts/test_brand_motion.sh, which drives only its own motion (`// own state`); a
+    /// test scans the sources for any other (DashboardKeptPagesTests).
     final class KeptPageGate: @unchecked Sendable {
         static let alwaysOpen = KeptPageGate()
         let open = CurrentValueSubject<Bool, Never>(true)
@@ -184,6 +185,16 @@
             }.switchToLatest(), perform: action)
         }
     }
+    /// Pauses the brand mark's motion (`goalongMotionPaused`) while the gate of its page is closed: a page built at
+    /// rest or hidden never animates a mark, even laid out in the window (R14a, N1).
+    private struct KeptPageMotionPause: ViewModifier {
+        @Environment(\.keptPageGate) private var gate
+        @State private var seenOpen: Bool?
+        func body(content: Content) -> some View {
+            content.environment(\.goalongMotionPaused, !(seenOpen ?? gate.isOpen))
+                .onReceive(gate.open.removeDuplicates()) { seenOpen = $0 }
+        }
+    }
     private struct DashboardToastsAbovePagesKey: EnvironmentKey { static let defaultValue = false }
 
     /// What a kept page takes from the environment above it (DashboardKeptPagesTests compares each one with the
@@ -214,6 +225,7 @@
                 .environment(\.colorScheme, colorScheme).environment(\._colorSchemeContrast, contrast)
                 .environment(\.controlActiveState, controlActiveState).environment(\.goalongReduceMotion, reduceMotion)
                 .environment(\.goalongRecordingModel, recording).environment(\.sourceAccessCheck, accessCheck)
+                .modifier(KeptPageMotionPause())
                 .environment(\.keptPageGate, gate))
         }
     }
