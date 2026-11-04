@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import EventKit
 import Foundation
 import LocalHistoryCore
@@ -70,10 +71,47 @@ final class GoalongEventKitBackend: GoalongCalendarBackend, @unchecked Sendable 
         default: return .noData // permission not yet requested, or calendar write-only access
         }
     }
+    /// R14c: `authorizationStatus` is a synchronous call to the calendar daemon (30–40 ms after a pause), and the
+    /// Activité page reads it several times per body. The answer is kept here and forgotten each time it can change:
+    /// app reactivation (the only way to reach System Settings), store change, and our own request. Forgetting is
+    /// immediate, so no read after one of these sees the old answer; a background re-read then fills it again. A read
+    /// that comes before that re-read is done asks the daemon itself and waits for it. A read started before a forget
+    /// is returned but not kept. The old answer is not shown during the re-read: pages read the status again on return.
+    private var known: [EKEntityType: GoalongSystemSourceStatus] = [:]
+    private var watchers: [NSObjectProtocol] = []
+    private let readStatus: @Sendable (EKEntityType) -> EKAuthorizationStatus
+    private let center: NotificationCenter
+    private let refresh: @Sendable (@escaping @Sendable () -> Void) -> Void
+    private let ask: (@Sendable (EKEntityType) async -> Void)?
+    /// The defaults are the system. Tests inject the status source, the notification center, where the background
+    /// re-read runs, and the access request (R14c-N4).
+    init(readStatus: @escaping @Sendable (EKEntityType) -> EKAuthorizationStatus = { EKEventStore.authorizationStatus(for: $0) },
+         center: NotificationCenter = .default,
+         refresh: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.global(qos: .userInitiated).async(execute: $0) },
+         ask: (@Sendable (EKEntityType) async -> Void)? = nil) {
+        self.readStatus = readStatus; self.center = center; self.refresh = refresh; self.ask = ask
+    }
     func authorization(for entity: EKEntityType) -> GoalongSystemSourceStatus {
-        Self.status(EKEventStore.authorizationStatus(for: entity))
+        lock.lock(); let hit = known[entity]; let generation = forgotten; lock.unlock()
+        if let hit { return hit }
+        let status = Self.status(readStatus(entity))
+        lock.lock(); if forgotten == generation { known[entity] = status }; watchLocked(); lock.unlock()
+        return status
+    }
+    private var forgotten = 0
+    private func forget() {
+        lock.lock(); known = [:]; forgotten += 1; lock.unlock()
+        refresh { [self] in for entity in [EKEntityType.event, .reminder] { _ = authorization(for: entity) } }
+    }
+    private func watchLocked() {
+        guard watchers.isEmpty else { return }
+        watchers = [NSApplication.didBecomeActiveNotification, .EKEventStoreChanged].map {
+            center.addObserver(forName: $0, object: nil, queue: nil) { [weak self] _ in self?.forget() }
+        }
     }
     func requestAccess(for entity: EKEntityType) async {
+        defer { forget() }
+        if let ask { await ask(entity); return }
         let store = store
         _ = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             let done: (Bool, Error?) -> Void = { granted, _ in continuation.resume(returning: granted) }

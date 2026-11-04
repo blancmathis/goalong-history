@@ -1,5 +1,6 @@
 #if os(macOS)
 import XCTest
+import AppKit
 import EventKit
 import Foundation
 import LocalHistoryCore
@@ -248,5 +249,85 @@ final class GoalongCalendarSourceTests: XCTestCase {
         let second = await source.read(day: noon, enabled: true, calendar: zoned)
         XCTAssertEqual(second.events.map(\.id), ["second"])
     }
+
+    // MARK: R14c-N4: the kept EventKit status, over an injected status source
+
+    /// The daemon's answer, how often it was asked, and the background re-reads not yet run.
+    private final class StatusSource: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: EKAuthorizationStatus = .authorized, asked = 0, waiting: [@Sendable () -> Void] = []
+        var onRead: (@Sendable () -> Void)?
+        func set(_ status: EKAuthorizationStatus) { lock.lock(); value = status; lock.unlock() }
+        var reads: Int { lock.lock(); defer { lock.unlock() }; return asked }
+        /// Answers what the daemon held when the read began, then runs `onRead` (once) while the read is still out.
+        func read() -> EKAuthorizationStatus {
+            lock.lock(); asked += 1; let answer = value, hook = onRead; onRead = nil; lock.unlock()
+            hook?()
+            return answer
+        }
+        func later(_ work: @escaping @Sendable () -> Void) { lock.lock(); waiting.append(work); lock.unlock() }
+        func runLater() { lock.lock(); let all = waiting; waiting = []; lock.unlock(); all.forEach { $0() } }
+        var pending: Int { lock.lock(); defer { lock.unlock() }; return waiting.count }
+    }
+    private func keptBackend(ask: (@Sendable (EKEntityType) async -> Void)? = nil)
+        -> (GoalongEventKitBackend, StatusSource, NotificationCenter) {
+        let source = StatusSource(), center = NotificationCenter()
+        let backend = GoalongEventKitBackend(readStatus: { _ in source.read() }, center: center,
+                                             refresh: { source.later($0) }, ask: ask)
+        return (backend, source, center)
+    }
+
+    func testKeptStatusAsksTheDaemonOnceUntilSomethingCanChangeIt() {
+        let (backend, source, _) = keptBackend()
+        XCTAssertEqual(backend.authorization(for: .event), .ready)
+        XCTAssertEqual(backend.authorization(for: .event), .ready)
+        XCTAssertEqual(source.reads, 1, "the second read is the kept answer")
+        source.set(.denied)
+        XCTAssertEqual(backend.authorization(for: .event), .ready, "nothing told it: still the kept answer")
+    }
+
+    /// Each of the 3 triggers forgets at once (the next read asks again and sees the new answer), then queues one
+    /// background re-read of both entities that fills the cache again.
+    func testKeptStatusIsForgottenOnReturnStoreChangeAndOwnRequest() async {
+        let triggers: [(String, (GoalongEventKitBackend, NotificationCenter) async -> Void)] = [
+            ("return to the app", { _, center in center.post(name: NSApplication.didBecomeActiveNotification, object: nil) }),
+            ("store change", { _, center in center.post(name: .EKEventStoreChanged, object: nil) }),
+            ("own request", { backend, _ in await backend.requestAccess(for: .event) }),
+        ]
+        for (name, trigger) in triggers {
+            let asked = AsyncFlag()
+            let (backend, source, center) = keptBackend(ask: { _ in asked.set() })
+            XCTAssertEqual(backend.authorization(for: .event), .ready, name)
+            source.set(.denied)
+            await trigger(backend, center)
+            XCTAssertEqual(source.pending, 1, "\(name): one background re-read queued")
+            let before = source.reads
+            XCTAssertEqual(backend.authorization(for: .event), .permissionDenied, "\(name): forgotten at once, no old answer")
+            XCTAssertEqual(source.reads, before + 1, name)
+            source.set(.notDetermined)
+            source.runLater()
+            let filled = source.reads
+            XCTAssertEqual(backend.authorization(for: .reminder), .noData, "\(name): the re-read read the new answer")
+            XCTAssertEqual(source.reads, filled, "\(name): the background re-read filled the cache, no wait")
+            if name == "own request" { XCTAssertTrue(asked.value, "the injected request ran, not EventKit") }
+        }
+    }
+
+    /// A read that started before a forget answers its caller, but its answer is not kept: the next read asks again.
+    func testReadStartedBeforeAForgetIsNotKept() {
+        let (backend, source, center) = keptBackend()
+        XCTAssertEqual(backend.authorization(for: .event), .ready) // first read: kept, observers registered
+        center.post(name: .EKEventStoreChanged, object: nil) // the next read goes to the source
+        source.onRead = { source.set(.denied); center.post(name: .EKEventStoreChanged, object: nil) } // changes while out
+        XCTAssertEqual(backend.authorization(for: .event), .ready, "the started read answers with what it read")
+        XCTAssertEqual(backend.authorization(for: .event), .permissionDenied, "but it was not kept over the forget")
+    }
+}
+
+/// A Sendable boolean set from an injected closure.
+private final class AsyncFlag: @unchecked Sendable {
+    private let lock = NSLock(); private var on = false
+    func set() { lock.lock(); on = true; lock.unlock() }
+    var value: Bool { lock.lock(); defer { lock.unlock() }; return on }
 }
 #endif

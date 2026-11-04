@@ -12,7 +12,17 @@ import XCTest
 final class ViewSwitchTimingTests: XCTestCase {
     struct Sample: Codable { let view: String; let pass: Int; let firstMs: Double; let completeMs: Double; let maxStallMs: Double
         /// R13c: the first frame's layout alone (SwiftUI's own work), without the CPU bitmap draw of `cacheDisplay`.
-        var firstLayoutMs: Double? = nil }
+        var firstLayoutMs: Double? = nil
+        /// R14c: the longest main-thread block from the click to « complet » (the bench's CPU bitmap draw excluded).
+        /// A cold period click lays its content out when its data come in, after the selection's own layout.
+        var longestMs: Double? = nil
+        /// R14c: the click showed a stored read of the period (checked off the main thread) rather than its loading state.
+        var fromStore: Bool? = nil
+        /// R14c: main-thread CPU time from the click to the first layout (draw excluded). Far below `firstLayoutMs`
+        /// means the thread waited (preempted on a loaded Mac, or blocked), not that SwiftUI worked.
+        var blockCpuMs: Double? = nil
+        /// R14c: main-thread CPU inside the one slice timed as the block (wall `firstLayoutMs`).
+        var blockSliceCpuMs: Double? = nil }
 
     @MainActor func testMeasureViewSwitches() throws {
         let environment = ProcessInfo.processInfo.environment
@@ -24,6 +34,7 @@ final class ViewSwitchTimingTests: XCTestCase {
             let ctx = GalleryContext()
             try GalleryStateReset.all(home: ctx.home)
             defer { ctx.finish() }
+            let preloadBase = GoalongAnalyticsModel.preloadsStarted
             let (model, window, host, written, summaries) = try Self.memberDashboard(ctx, days: 35)
             log("fixture: \(written.events) events, \(written.bytes / 1_000_000) MB journals, \(summaries) summary files")
             defer { window.contentView = nil; window.close() }
@@ -45,6 +56,15 @@ final class ViewSwitchTimingTests: XCTestCase {
                            before, Self.footprintMB()))
             }
 
+            Self.waitForPreloads(host, model: model, since: preloadBase)
+            // R14c: a trace of the clicks alone (GOALONG_SWITCH_GATE=<dir>): « ready » written here, clicks once « go » exists.
+            if let gate = environment["GOALONG_SWITCH_GATE"], !gate.isEmpty {
+                FileManager.default.createFile(atPath: gate + "/ready", contents: nil)
+                let deadline = ProcessInfo.processInfo.systemUptime + 60
+                while !FileManager.default.fileExists(atPath: gate + "/go"), ProcessInfo.processInfo.systemUptime < deadline {
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                }
+            }
             var samples: [Sample] = []
             // Sidebar destinations present for this member, then the periods of Activité.
             let sections: [DashboardSection] = [.settings, .history, .work, .concentration, .ambiance, .overview]
@@ -54,6 +74,8 @@ final class ViewSwitchTimingTests: XCTestCase {
                         XCTFail("no period \(period)"); return
                     }
                     samples.append(Self.measure("activite-\(period)j", pass: pass, press: button, host: host, model: model))
+                    // R14c: a first click is measured on the stored read; a click without one measures something else.
+                    if pass == 0, samples.last?.fromStore != true { XCTFail("activite-\(period)j: first click without a stored read") }
                 }
                 for section in sections {
                     guard let button = Self.node("sidebar-\(section.rawValue)", in: host) else { continue }
@@ -63,7 +85,9 @@ final class ViewSwitchTimingTests: XCTestCase {
             // R14a: one model publication (`objectWillChange`) on each view, every page already visited: the cost a
             // periodic republication adds to the shown page (pages kept alive must not add theirs).
             var republish: [String: Double] = [:]
-            for target in ["activite-28j", "activite-7j", "activite-1j"] + sections.map(\.rawValue) {
+            // A profile of the clicks alone (R14c) leaves the republications out: GOALONG_SWITCH_SKIP_REPUBLISH=1.
+            let republished = environment["GOALONG_SWITCH_SKIP_REPUBLISH"] == nil
+            for target in ["activite-28j", "activite-7j", "activite-1j"] + sections.map(\.rawValue) where republished {
                 let period = target.hasPrefix("activite-") ? String(target.dropFirst(9).dropLast()) : nil
                 if period != nil, model.selectedSection != .overview, let back = Self.node("sidebar-overview", in: host) {
                     _ = Self.measure("overview", pass: -1, press: back, host: host, model: model)
@@ -82,14 +106,16 @@ final class ViewSwitchTimingTests: XCTestCase {
             if let pages = Self.keptPages(in: host) {
                 log(String(format: "kept pages: %d, footprint at the end %.0f MB", pages.hosts.count, Self.footprintMB()))
             }
-            log("view             block  first  complete  republish | cold block first complete")
+            // R14c: longest = the longest main-thread block from the click to complete (cold included).
+            log("view             block  first  complete longest republish | cold block first complete longest")
             for view in Set(samples.map(\.view)).sorted() {
                 let rows = samples.filter { $0.view == view }
                 let warm = rows.filter { $0.pass > 0 }
-                log(String(format: "%-16@ %6.1f %6.1f %8.1f %9.1f | %6.1f %6.1f %8.1f",
+                log(String(format: "%-16@ %6.1f %6.1f %8.1f %7.1f %9.1f | %6.1f %6.1f %8.1f %7.1f",
                            view as NSString, Self.median(warm.compactMap(\.firstLayoutMs)), Self.median(warm.map(\.firstMs)),
-                           Self.median(warm.map(\.completeMs)), republish[view] ?? -1,
-                           rows.first?.firstLayoutMs ?? 0, rows.first?.firstMs ?? 0, rows.first?.completeMs ?? 0))
+                           Self.median(warm.map(\.completeMs)), Self.median(warm.compactMap(\.longestMs)), republish[view] ?? -1,
+                           rows.first?.firstLayoutMs ?? 0, rows.first?.firstMs ?? 0, rows.first?.completeMs ?? 0,
+                           rows.first?.longestMs ?? 0))
             }
         }
     }
@@ -144,28 +170,62 @@ final class ViewSwitchTimingTests: XCTestCase {
     }
 
 
+    /// R14c: the other periods are read in the background after the first display. The first clicks wait for that, as a
+    /// member's would after a moment on the page; otherwise a click races the preload and measures a loading state
+    /// (the 2 ms 28-day cold seen on CI at dc8d178).
+    /// `baseline` is `GoalongAnalyticsModel.preloadsStarted` read before this run built its dashboard (R14c-N3).
+    @MainActor static func waitForPreloads(_ host: NSView, model: DashboardViewModel, since baseline: Int) {
+        let deadline = ProcessInfo.processInfo.systemUptime + 30
+        while !GoalongAnalyticsModel.preloadsSettled(since: baseline), ProcessInfo.processInfo.systemUptime < deadline {
+            _ = settle(host, model: model, timeout: 0.05) { _ in }
+        }
+        XCTAssertTrue(GoalongAnalyticsModel.preloadsSettled(since: baseline), "the other periods were never read in the background")
+        _ = settle(host, model: model, timeout: 10) { _ in }
+    }
+
+    /// R14c, proof of the guard (GOALONG_SWITCH_FAULT_MS=n): every other first 1-day click blocks n ms more, an
+    /// intermittent regression. Never set in CI.
+    @MainActor private static var faultCalls = 0
+
     @MainActor static func measure(_ view: String, pass: Int, press: NSObject, host: NSView, model: DashboardViewModel) -> Sample {
+        // R14c: a period click must build that period's content inside the measured window (see below).
+        let period = view.hasPrefix("activite-") ? Int(view.dropFirst(9).dropLast()) : nil
+        let builtBefore = period.map { GoalongAnalyticsContent.builtPeriods[$0, default: 0] } ?? 0
+        let cpuStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
         let started = ProcessInfo.processInfo.systemUptime
         XCTAssertTrue(ViewSwitchAX.flag(press, "accessibilityPerformPress") == true, "press \(view)")
+        if view == "activite-1j", pass == 0, let fault = Double(ProcessInfo.processInfo.environment["GOALONG_SWITCH_FAULT_MS"] ?? "") {
+            faultCalls += 1
+            let until = ProcessInfo.processInfo.systemUptime + (faultCalls % 2 == 1 ? fault / 1_000 : 0)
+            while ProcessInfo.processInfo.systemUptime < until {}
+        }
         let layout: Double
-        if GoalongAnalyticsModel.selectionsPending > 0 {
+        var blockCpuSlice = 0.0
+        let fromStore = GoalongAnalyticsModel.selectionsPending > 0
+        if fromStore {
             // R14a: a period seen before waits for its off-main source check, then goes on screen in one layout.
             // Blocage = the longest main-thread block from the press to that layout; 1re image counts the whole wait.
             var block = ProcessInfo.processInfo.systemUptime - started
+            blockCpuSlice = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1e9
             let deadline = started + 5
             while GoalongAnalyticsModel.selectionsPending > 0, ProcessInfo.processInfo.systemUptime < deadline {
-                let slice = ProcessInfo.processInfo.systemUptime
+                let slice = ProcessInfo.processInfo.systemUptime, sliceCpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
                 RunLoop.current.run(until: Date().addingTimeInterval(0.001))
-                block = max(block, ProcessInfo.processInfo.systemUptime - slice - 0.001)
+                let wall = ProcessInfo.processInfo.systemUptime - slice - 0.001
+                if wall > block { block = wall; blockCpuSlice = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - sliceCpu) / 1e9 }
             }
             XCTAssertEqual(GoalongAnalyticsModel.selectionsPending, 0, "\(view): the selection never committed")
-            let commit = ProcessInfo.processInfo.systemUptime
+            let commit = ProcessInfo.processInfo.systemUptime, commitCpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
             host.layoutSubtreeIfNeeded()
-            layout = max(block, ProcessInfo.processInfo.systemUptime - commit)
+            let after = ProcessInfo.processInfo.systemUptime - commit
+            if after > block { blockCpuSlice = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - commitCpu) / 1e9 }
+            layout = max(block, after)
         } else {
             host.layoutSubtreeIfNeeded()
             layout = ProcessInfo.processInfo.systemUptime - started
+            blockCpuSlice = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1e9
         }
+        let blockCpu = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1e9
         draw(host)
         let first = ProcessInfo.processInfo.systemUptime - started
         var stall = 0.0
@@ -175,8 +235,15 @@ final class ViewSwitchTimingTests: XCTestCase {
         let frame = ProcessInfo.processInfo.systemUptime
         draw(host)
         let total = (idleAt ?? frame) - started + (ProcessInfo.processInfo.systemUptime - frame)
+        // R14c: the longest block runs from the click to « complet ». A period without a stored read shows its loading
+        // state at the click and lays its content out when the data come in: that layout is in `stall`, not in `layout`.
+        // No silent pass: the content of the period clicked must have been built in this window.
+        if let period {
+            XCTAssertGreaterThan(GoalongAnalyticsContent.builtPeriods[period, default: 0], builtBefore,
+                                 "\(view): its \(period)-day content was not built between the click and complete; nothing measured")
+        }
         return Sample(view: view, pass: pass, firstMs: first * 1_000, completeMs: total * 1_000, maxStallMs: max(stall, first) * 1_000,
-                      firstLayoutMs: layout * 1_000)
+                      firstLayoutMs: layout * 1_000, longestMs: max(layout, stall) * 1_000, fromStore: fromStore, blockCpuMs: blockCpu * 1_000, blockSliceCpuMs: blockCpuSlice * 1_000)
     }
 
     /// One publication of the model with the page laid out and displayed: median of 3, minus nothing (an idle turn

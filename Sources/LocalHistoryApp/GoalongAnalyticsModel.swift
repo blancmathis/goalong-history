@@ -408,6 +408,12 @@ actor GoalongAnalyticsReader {
     private(set) static var loadsInFlight = 0
     /// Every read started, for the view-switch budget test (R13a).
     private(set) static var loadsStarted = 0
+    /// R14c: background reads of the other periods, started and running. The switch bench starts its clicks once they are
+    /// over, so each first click is measured on the stored read a member gets (not on a race with this preload).
+    private(set) static var preloadsStarted = 0, preloadsInFlight = 0
+    /// R14c-N3: true once a preload started after `baseline` (a value of `preloadsStarted` taken before the run) and none
+    /// runs any more. A count taken at the start of the run, so an earlier test's preload never ends the wait.
+    static func preloadsSettled(since baseline: Int) -> Bool { preloadsStarted > baseline && preloadsInFlight == 0 }
 
     /// R13c: the last complete read of each period (key: last day and count), shown again at once when the user
     /// comes back to it, then read again. An entry is shown only while its verdicts, its day, the history-clear
@@ -542,6 +548,8 @@ actor GoalongAnalyticsReader {
     /// After the first display: reads the other periods of the same day in the background, so that the first
     /// switch to them is shown from memory too. Not counted as a page read; stops with the calling task.
     func preloadOtherPeriods(day: Date, count: Int, verdicts: GoalongWorkVerdicts, counts: [Int] = [1, 7, 28]) async {
+        Self.preloadsStarted += 1; Self.preloadsInFlight += 1
+        defer { Self.preloadsInFlight -= 1 }
         for other in counts where other != count {
             guard !Task.isCancelled else { return }
             guard snapshots[Self.snapshotKey(day: day, count: other)] == nil else { continue }
