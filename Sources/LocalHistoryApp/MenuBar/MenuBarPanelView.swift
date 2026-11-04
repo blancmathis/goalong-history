@@ -285,7 +285,7 @@
                 .font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
                 .accessibilityHidden(true)
             }
-            .onAppear {
+            .onAppearWhenShown {
                 guard drawn == 0 else { return }
                 if reduceMotion { drawn = 1 } else { withAnimation(LHTheme.draw) { drawn = 1 } }
             }
@@ -485,7 +485,7 @@
                     .background(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous).fill(LHTheme.cardBackground))
                     .overlay(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous).strokeBorder(LHTheme.separator))
                     .animation(reduceMotion ? nil : LHTheme.settle, value: showsGrid)
-                    .onAppear { if let current = model.ambianceCurrent { tab = tabFor(current.kind) } }
+                    .onAppearWhenShown { if let current = model.ambianceCurrent { tab = tabFor(current.kind) } }
                 }
             }
         }

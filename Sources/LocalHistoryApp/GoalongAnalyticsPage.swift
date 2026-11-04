@@ -42,6 +42,11 @@ struct GoalongAnalyticsPage: View {
     @State private var showingPreview = false
     #endif
     @State private var previewNavigation = GoalongActivityNavigation()
+    /// R14a: the latest selection asked; a check that ends after a newer click is dropped.
+    @State private var pendingSelection = 0
+    /// The selection the last click asked for, while its check runs: the next click starts from it (R14a, N2: two quick
+    /// « jour suivant » give J+2). A reference, so that a click does not update the page by itself.
+    @State private var latestSelection = GoalongSelectionChain()
     private let refreshTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     /// Automatic refreshes of today wait at least ten times the last read duration, so a
     /// very busy day never keeps a core busy while the page is simply left open.
@@ -98,7 +103,8 @@ struct GoalongAnalyticsPage: View {
             }
             ScrollViewReader { scroller in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
+                    // R14a: lazy, so a click builds and measures what the window shows, not the whole period.
+                    LazyVStack(alignment: .leading, spacing: 24) {
                         Color.clear.frame(height: 0).id("activity-top")
                         if !previewActive {
                             GoalongRecordingStateNotice(model: model)
@@ -221,17 +227,17 @@ struct GoalongAnalyticsPage: View {
         } message: {
             Text("Choisissez le type d’analyse. Les sources et les autorisations restent à vérifier avant toute génération.")
         }
-        .onAppear {
+        .onAppearWhenShown {
             // The page is rebuilt on each section change: a day that turned while it was away counts too.
             followCalendarDay()
             model.selectDay(navigation.day)
         }
-        .task(id: "\(revision)|\(laneRevision)") {
+        .taskWhenShown(id: "\(revision)|\(laneRevision)") {
             // A Santé import or a new Temps d’écran day can move the first day back (R-265), read in the
             // model's own data folder, never AppPaths directly (R272b-2).
             await analytics.refreshImportedFirstDay()
         }
-        .task(id: loadRequest) {
+        .taskWhenShown(id: loadRequest) {
             let request = loadRequest
             guard request.permitsLoading else { return }
             let force = forceNextRead
@@ -257,14 +263,14 @@ struct GoalongAnalyticsPage: View {
                 await analytics.preloadOtherPeriods(day: request.day, count: request.count, verdicts: work.verdicts)
             }
         }
-        .task(id: laneKey) {
+        .taskWhenShown(id: laneKey) {
             // Day-only sources, read beside the observations; never mixed into active time.
             guard loadRequest.permitsLoading, !previewActive, selection.period == 1,
                   consents.isEnabled(.aiConversations) || consents.isEnabled(.developerActivity) else { return }
             let day = selection.day, overview = model.agentActivityRuntime.overview
             await developer.refresh(day: day, agents: Calendar.current.isDate(overview.day, inSameDayAs: day) ? overview : nil)
         }
-        .task(id: systemKey) {
+        .taskWhenShown(id: systemKey) {
             // Calls, agenda, other devices, Health and the note; the Mac's day gives its gaps.
             guard loadRequest.permitsLoading, let day = observedDay else { return }
             await system.refresh(day: day)
@@ -299,7 +305,7 @@ struct GoalongAnalyticsPage: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
             followCalendarDay()
         }
-        .onReceive(refreshTimer) { _ in
+        .onReceiveWhileShown(refreshTimer) { _ in
             // Also catches a missed day-change notification (sleep across midnight).
             followCalendarDay()
             // Visible-page refresh only. Completed days reuse the existing cache.
@@ -540,12 +546,27 @@ struct GoalongAnalyticsPage: View {
     }
 
     private func updateSelection(_ change: (inout GoalongActivityNavigation) -> Void) {
-        if previewActive { change(&previewNavigation) }
-        else {
-            change(&navigation); model.selectDay(navigation.day)
-            // R13c: the last complete read of the new period goes on screen in this same frame, read again after.
-            analytics.showSnapshot(day: navigation.day, count: navigation.period, verdicts: work.verdicts)
+        if previewActive { change(&previewNavigation); return }
+        var next = latestSelection.base(navigation); change(&next)
+        pendingSelection += 1
+        let token = pendingSelection
+        latestSelection.ask(next, token: token)
+        guard analytics.hasSnapshot(day: next.day, count: next.period) else { commitSelection(next, token: token); return }
+        // R14a: the last complete read of the new period is checked against its files off the main thread, then
+        // goes on screen in the same turn as the new selection (one layout, never a stale figure); read again after.
+        GoalongAnalyticsModel.selectionsPending += 1
+        let verdicts = work.verdicts
+        Task { @MainActor in
+            defer { GoalongAnalyticsModel.selectionsPending -= 1 }
+            let match = await analytics.verifySnapshot(day: next.day, count: next.period, verdicts: verdicts)
+            guard token == pendingSelection else { return }  // a newer click won
+            commitSelection(next, token: token)
+            analytics.showVerified(day: next.day, count: next.period, match: match)
         }
+    }
+    private func commitSelection(_ next: GoalongActivityNavigation, token: Int) {
+        latestSelection.committed(token: token)
+        navigation = next; model.selectDay(next.day)
     }
     private func openHistory(_ day: Date) {
         guard !previewActive else { return }
@@ -591,4 +612,19 @@ struct GoalongAnalyticsPreviewBanner: View {
 enum GoalongAgentSourceCopy {
     static let off = "Codex, Claude Code et T3 Code : nombre de conversations et de demandes par projet. Les messages sont lus sur ce Mac et restent dans leurs fichiers."
     static let on = "Codex et Claude Code : nombre de conversations par projet. Les messages sont lus sur ce Mac et restent dans leurs fichiers."
+}
+
+/// R14a (N2): the selection a click asked for while its check runs off the main thread. The next click starts from it,
+/// not from the selection still on screen, so two quick « jour suivant » give J+2. Cleared once the latest click is
+/// committed.
+final class GoalongSelectionChain {
+    private(set) var asked: GoalongActivityNavigation?
+    private var token = 0
+
+    /// Where the next click starts: the selection asked for last, or the one on screen.
+    func base(_ shown: GoalongActivityNavigation) -> GoalongActivityNavigation { asked ?? shown }
+
+    func ask(_ next: GoalongActivityNavigation, token: Int) { asked = next; self.token = token }
+
+    func committed(token: Int) { if token == self.token { asked = nil } }
 }

@@ -300,20 +300,20 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         await model.load(day: day, count: 7)
         XCTAssertEqual(model.payload?.current.days.count, 7)
         // Back to the day: shown at once, and no read is needed while nothing changed.
-        XCTAssertTrue(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertTrue(shown) }
         XCTAssertEqual(model.payload?.current.days.count, 1)
         XCTAssertEqual(model.payload?.updatedAt, first.updatedAt)
         await model.load(day: day, count: 7)
         // A changed journal (an import, a correction, a deletion of rows) is never shown from memory.
         let handle = try FileHandle(forWritingTo: events); try handle.seekToEnd(); try handle.write(contentsOf: Data("\n".utf8))
         try handle.close()
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
         XCTAssertEqual(model.payload?.current.days.count, 7)
         // A history clear (new barrier generation) and any change notification empty the memory too.
         await model.load(day: day, count: 1)
         await model.load(day: day, count: 7)
         DerivedHistoryWriteBarrier.shared.resume(DerivedHistoryWriteBarrier.shared.suspend())
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
         await model.load(day: day, count: 1)
         await model.load(day: day, count: 7)
         let generation = model.snapshotGeneration
@@ -321,7 +321,32 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         // Delivery hops to the main queue (R13d): wait for it.
         let deadline = Date().addingTimeInterval(5)
         while model.snapshotGeneration == generation, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
+    }
+
+    /// R14a step 4: the 30 s reread of a page whose sources did not change publishes nothing, so the shown page is
+    /// neither re-evaluated nor laid out; a changed journal is still read and shown.
+    @MainActor func testRereadOfUnchangedSourcesPublishesNothingAndAChangeIsStillShown() async throws {
+        let root = try root(); let events = try writeEvents(root: root)
+        let model = GoalongAnalyticsModel(root: root)
+        await model.load(day: day, count: 1)
+        let first = try XCTUnwrap(model.payload)
+        var publications = 0
+        let watch = model.objectWillChange.sink { publications += 1 }
+        defer { watch.cancel() }
+        await model.load(day: day, count: 1)
+        await model.load(day: day, count: 1)
+        XCTAssertEqual(publications, 0, "an unchanged reread published and laid out the page")
+        XCTAssertEqual(model.payload?.updatedAt, first.updatedAt)
+        XCTAssertFalse(model.busy); XCTAssertNil(model.error); XCTAssertFalse(model.paused)
+        let handle = try FileHandle(forWritingTo: events); try handle.seekToEnd(); try handle.write(contentsOf: Data("\n".utf8))
+        try handle.close()
+        // The click and the page's own read share one file check for 0.5 s (R13c); a reread comes later.
+        try await Task.sleep(nanoseconds: 600_000_000)
+        await model.load(day: day, count: 1)
+        XCTAssertGreaterThan(publications, 0, "a changed journal must be read again and shown")
+        XCTAssertNotEqual(model.payload?.updatedAt, first.updatedAt)
+        XCTAssertFalse(model.busy)
     }
 
     /// R13d: the day and time-zone notifications come from a system thread; the model must not trap there.
@@ -341,7 +366,7 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         let deadline = Date().addingTimeInterval(5)
         while model.snapshotGeneration < before + 2, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(model.snapshotGeneration, before + 2)
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
     }
 
     /// R13d: a read that started before `forgetSnapshots()` cannot put its result back in the memory.
@@ -355,10 +380,10 @@ final class GoalongActivityPersistenceTests: XCTestCase {
         XCTAssertGreaterThan(model.snapshotGeneration, old)
         model.storeSnapshot(payload, day: day, count: 1, verdicts: GoalongWorkVerdicts(),
                             admission: DerivedHistoryWriteBarrier.shared.admission(), generation: old)
-        XCTAssertFalse(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertFalse(shown) }
         model.storeSnapshot(payload, day: day, count: 1, verdicts: GoalongWorkVerdicts(),
                             admission: DerivedHistoryWriteBarrier.shared.admission(), generation: model.snapshotGeneration)
-        XCTAssertTrue(model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()))
+        do { let shown = await model.showSnapshot(day: day, count: 1, verdicts: GoalongWorkVerdicts()); XCTAssertTrue(shown) }
     }
 
     @MainActor func testActivityPageShowsPauseStateInsteadOfARetryableError() async throws {

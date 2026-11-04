@@ -51,7 +51,7 @@ import Foundation
             }
         }
         .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls() }
-        .onAppear(perform: refresh)
+        .onAppearWhenShown(perform: refresh)
         .sheet(isPresented: $retention, onDismiss: refresh) {
             HistoryRetentionSettingsSheet(legacyRetentionDays: model.appliedSettings.retentionDays).goalongControls()
         }

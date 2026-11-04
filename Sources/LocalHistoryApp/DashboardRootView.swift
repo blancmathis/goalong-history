@@ -10,7 +10,7 @@
         /// Activité's days stay read while the window is open, so coming back to the page
         /// shows them at once; closing the window releases them.
         @StateObject private var activity: GoalongAnalyticsModel
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @Environment(\.dashboardToastsAbovePages) private var toastsAbovePages
 
         /// `activityPeriod` (1, 7 or 28 days) lets the gallery open Activité on a week or a month.
         init(model: DashboardViewModel, activityPeriod: Int = 1) {
@@ -30,16 +30,27 @@
                         Rectangle()
                             .fill(LHTheme.separator)
                             .frame(width: 1)
-                        page
-                            // Changing destination is a short crossfade, never a slide.
-                            .id("\(model.selectedSection)|\(model.knownDeviceID ?? "")")
-                            .onAppear {
-                                // Activité closes its measure once its period is read (GoalongAnalyticsPage).
-                                let section = model.selectedSection
-                                GoalongSwitchTiming.end(section.rawValue, stage: "shown", last: section != .overview)
-                            }
-                            .transition(.opacity)
-                            .animation(reduceMotion ? nil : LHTheme.ease(0.16), value: model.selectedSection)
+                        // R14a: each page visited stays alive, out of the window while hidden; coming back shows it as
+                        // it was left, at once. No crossfade: it kept two pages laid out and drawn for 0.16 s.
+                        DashboardKeptPages(key: key(model.selectedSection),
+                                           // Another device frees the pages of the former one.
+                                           scope: model.knownDeviceID ?? "",
+                                           keep: model.selectedSection.keepsPage,
+                                           // What `page` takes by value; the rest comes through `model`.
+                                           inputs: inputs(model.selectedSection),
+                                           // The main pages not shown yet are built at rest after launch: the first
+                                           // click on one of them is a return.
+                                           preheat: preheated.compactMap { section in
+                                               section.keptPage == model.selectedSection.keptPage ? nil : DashboardKeptPageSeed(
+                                                   key: key(section), inputs: inputs(section)) { AnyView(styled(page(for: section))) }
+                                           },
+                                           onShown: {
+                            // Activité closes its measure once its period is read (GoalongAnalyticsPage).
+                            let section = model.selectedSection
+                            GoalongSwitchTiming.end(section.rawValue, stage: "shown", last: section != .overview)
+                        }) {
+                            styled(page(for: model.selectedSection))
+                        }
                             .safeAreaInset(edge: .top, spacing: 0) {
                                 VStack(spacing: 0) {
                                     GoalongGlobalPauseBanner(model: model)
@@ -70,7 +81,8 @@
                 }
             }
             .safeAreaInset(edge: .top, spacing: 0) { GoalongDevBanner() }
-            .overlay { GoalongToastHost() }
+            // In the app window the toasts sit above the kept pages (DashboardWindowContent).
+            .overlay { if !toastsAbovePages { GoalongToastHost() } }
             .environment(\.goalongRecordingModel, model)
             .sheet(isPresented: $model.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: model.selectedDay).goalongControls() }
             .onReceive(NotificationCenter.default.publisher(for: .goalongOpenRecordingSettings)) { _ in model.openRecordingSettings() }
@@ -90,8 +102,27 @@
             }
         }
 
-        @ViewBuilder private var page: some View {
-            switch model.selectedSection {
+        /// The kept page of a section: one per page and known device (another device never shows this one's data).
+        private func key(_ section: DashboardSection) -> String { "\(section.keptPage)|\(model.knownDeviceID ?? "")" }
+
+        /// The main pages this member reaches from the sidebar (a module turned off is not built).
+        private var preheated: [DashboardSection] {
+            let shown = DashboardSection.sidebarSections(modules: GoalongModuleStore.shared.enabled, showing: model.selectedSection)
+            return DashboardSection.preheated.filter(shown.contains)
+        }
+
+        private func inputs(_ section: DashboardSection) -> DashboardPageInputs {
+            DashboardPageInputs(section: section, navigation: activityNavigation, day: model.selectedDay,
+                                returnTitle: model.secondaryReturnTitle)
+        }
+
+        /// A kept page has its own hosting view: the styles of the window are applied again.
+        private func styled<Page: View>(_ page: Page) -> some View {
+            page.foregroundStyle(LHTheme.text).tint(LHTheme.accent).accentColor(LHTheme.accent).goalongControls()
+        }
+
+        @ViewBuilder private func page(for section: DashboardSection) -> some View {
+            switch section {
             case .overview, .analytics:
                 GoalongAnalyticsPage(model: model, navigation: $activityNavigation, analytics: activity)
             case .work:
@@ -137,6 +168,15 @@
         private var secondaryReturnBar: some View {
             SettingsBackBar(title: model.secondaryReturnTitle) { model.returnFromSecondaryPage() }
         }
+    }
+
+    /// The values `DashboardRootView.page` passes to a page by value: a change gives the shown page a new root
+    /// (DashboardKeptPages). A new value passed by value must be added here, or the page would keep the old one.
+    struct DashboardPageInputs: Equatable {
+        let section: DashboardSection
+        let navigation: GoalongActivityNavigation
+        let day: Date
+        let returnTitle: String
     }
 
     private struct DashboardSidebar: View {
@@ -190,7 +230,7 @@
                     .padding(.bottom, 16)
             }
             .background(LHTheme.sidebarBackground)
-            .onAppear {
+            .onAppearWhenShown {
                 updates.refreshAvailableUpdate()
             }
         }

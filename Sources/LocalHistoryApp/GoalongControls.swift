@@ -158,7 +158,7 @@
                 .stroke(LHTheme.progressTint, style: StrokeStyle(lineWidth: max(1.5, side / 7), lineCap: .round))
                 .rotationEffect(.degrees(turning ? 360 : 0))
                 .frame(width: side, height: side)
-                .onAppear {
+                .onAppearWhenShown {
                     guard !reduceMotion else { return }
                     withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) { turning = true }
                 }
@@ -1038,7 +1038,7 @@
             ScrollView {
                 content.background(GeometryReader { proxy in
                     Color.clear
-                        .onAppear { contentHeight = proxy.size.height }
+                        .onAppear { contentHeight = proxy.size.height }  // own layout
                         .onChange(of: proxy.size.height) { contentHeight = $0 }
                 })
             }

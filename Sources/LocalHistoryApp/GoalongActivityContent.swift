@@ -122,8 +122,9 @@ struct GoalongAnalyticsContent: View {
 
     var body: some View {
         let summary = self.summary
-        let tasks = current.tasks
-        VStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
+        let tasks = payload.tasks
+        // R14a: lazy inside the page's lazy stack: the sections under the window are built when scrolled to.
+        LazyVStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
             if let shown = detail.wrappedValue, isAvailable(shown) {
                 detailView(shown, summary: summary)
             } else if current.observedSeconds > 0 {
@@ -699,7 +700,7 @@ struct GoalongAnalyticsContent: View {
                     GoalongDailyClassChart(period: current, dateRange: dateRange, average: averageLine?.value,
                                            averageExcludesToday: averageLine?.excludesToday ?? false, onDay: onDay)
                     GoalongDisclosureGroup("Jours et valeurs") {
-                        VStack(spacing: 0) {
+                        LazyVStack(spacing: 0) {
                             ForEach(current.days) { day in
                                 Button { onDay(day.date) } label: {
                                     HStack {

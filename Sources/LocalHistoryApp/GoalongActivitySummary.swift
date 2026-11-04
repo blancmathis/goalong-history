@@ -45,6 +45,11 @@ struct GoalongActivitySummary {
     init(period: GoalongLocalAnalytics.Period, previous: GoalongLocalAnalytics.Period,
          calendar: Calendar = .current, now: Date = GoalongToday.now) {
         self.period = period; self.previous = previous; self.calendar = calendar; self.now = now
+        // R14a: kept, not recomputed by each average the page reads (a page evaluation read them a dozen times).
+        let observed = period.observedDays
+        let completed = observed.filter { !calendar.isDate($0.date, inSameDayAs: now) }
+        observedDays = observed
+        averagedDays = completed.isEmpty ? observed : completed
     }
 
     var isDay: Bool { period.days.count == 1 }
@@ -52,7 +57,7 @@ struct GoalongActivitySummary {
     var previousLabel: String {
         isDay ? "la veille" : "les \(GoalongUIFormat.count(period.days.count, "jour")) précédent\(period.days.count > 1 ? "s" : "")"
     }
-    var observedDays: [GoalongLocalAnalytics.Day] { period.observedDays }
+    let observedDays: [GoalongLocalAnalytics.Day]
     var activeSeconds: TimeInterval { period.activeSeconds }
     var workSeconds: TimeInterval { period.workSeconds }
     var otherSeconds: TimeInterval { period.otherSeconds }
@@ -60,10 +65,7 @@ struct GoalongActivitySummary {
 
     /// Days used for daily averages: observed days, without today while it is still in
     /// progress (a partial day would pull every average down), unless it is the only one.
-    var averagedDays: [GoalongLocalAnalytics.Day] {
-        let completed = observedDays.filter { !calendar.isDate($0.date, inSameDayAs: now) }
-        return completed.isEmpty ? observedDays : completed
-    }
+    let averagedDays: [GoalongLocalAnalytics.Day]
     var averageExcludesToday: Bool { averagedDays.count < observedDays.count }
 
     /// Average over days that actually have observations; nil when there are none.

@@ -161,7 +161,9 @@ final class T046C3RenderTests: XCTestCase {
             analysisConsentProvider: { true },
             dayOverviewReader: { _ in throw CodexAppServerError.generationFailed("journée de test") })
         let card = host(ChatGPTAccountConnectionCard(runtime: runtime))
-        // The card checks the account when it appears; with no Codex tool that ends at once, then the state is set.
+        // The card checks the account when it appears; with no Codex tool that ends off the main thread (R14a), then
+        // the state is set.
+        spin(until: { runtime.connectionState == .codexUnavailable })
         runtime.setConnectionStateForTesting(.signedOut)
         spin(until: { strings(of: card).contains("Connecter ChatGPT") })
         let seen = strings(of: card)

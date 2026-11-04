@@ -65,7 +65,7 @@ extension Notification.Name {
                 Button(!sender.enabled && sender.savedConfiguration != nil ? "Relire et reprendre…" : "Choisir les données…") { showsConnection = true }.buttonStyle(LHSecondaryButtonStyle()).disabled(!credentialAvailable)
             }
         }
-        .onAppear {
+        .onAppearWhenShown {
             refreshCredential()
             if defaults.bool(forKey: "goalong.website.openAfterPairing") {
                 defaults.set(false, forKey: "goalong.website.openAfterPairing"); showsConnection = true

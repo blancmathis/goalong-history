@@ -66,7 +66,7 @@ struct GoalongScreenTimePage: View {
             .padding(.bottom, LHTheme.pageBottomInset).frame(maxWidth: .infinity)
         }
         .background(LHTheme.pageBackground)
-        .onAppear {
+        .onAppearWhenShown {
             accessRevoked = false
             screenTime.setAccessEnabled(consents.isEnabled(.appleScreenTime))
             if screenTime.selectedDay != dashboard.selectedDay { screenTime.selectDay(dashboard.selectedDay) }

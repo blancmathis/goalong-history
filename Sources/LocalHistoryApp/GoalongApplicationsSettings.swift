@@ -244,7 +244,7 @@ enum GoalongKnownApplications {
                 }.padding(.top, 10)
             }.font(.system(size: 13))
         }
-        .onAppear { catalog.load() }
+        .onAppearWhenShown { catalog.load() }
         .alert("Reconnaître ce site pour l’exclure ?", isPresented: Binding(get: { pendingDomain != nil }, set: { if !$0 { pendingDomain = nil } })) {
             Button("Annuler", role: .cancel) { pendingDomain = nil }
             Button("Exclure le site") {

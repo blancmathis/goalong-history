@@ -59,9 +59,9 @@ struct GoalongActivityMark: View {
         .frame(width: width, height: width * 18 / 26)
         .background(GoalongMotionVisibility { windowVisible = $0 })
         .accessibilityHidden(true)
-        .onAppear { mounted = true }
+        .onAppear { mounted = true } // own state: compiled alone by test_brand_motion.sh, touches only this mark
         .onDisappear { mounted = false; ticking = false }
-        .task(id: isActive) {
+        .task(id: isActive) { // own state: drives only this mark's motion, stops on disappear
             guard isActive || motion.busy else { motion.settle(); ticking = false; return }
             motion.setBusy(isActive, at: time)
             ticking = true
@@ -141,7 +141,9 @@ struct GoalongProgressViewStyle: ProgressViewStyle {
 
 /// Stop the display clock when the owning window is hidden, miniaturized or occluded.
 /// Observes only its own AppKit window; no process/service is installed.
-private struct GoalongMotionVisibility: NSViewRepresentable {
+/// Visible = in a visible window and not hidden: a page laid out hidden (a kept page built at rest) never animates its
+/// mark (R14a, N1).
+struct GoalongMotionVisibility: NSViewRepresentable {
     let change: (Bool) -> Void
     func makeNSView(context: Context) -> Probe { Probe(change: change) }
     func updateNSView(_ view: Probe, context: Context) { view.change = change }
@@ -149,6 +151,8 @@ private struct GoalongMotionVisibility: NSViewRepresentable {
     final class Probe: NSView {
         var change: (Bool) -> Void
         private var observations: [NSObjectProtocol] = []
+        /// The last visibility reported (tests).
+        private(set) var lastVisible: Bool?
         init(change: @escaping (Bool) -> Void) {
             self.change = change
             super.init(frame: .zero)
@@ -168,8 +172,12 @@ private struct GoalongMotionVisibility: NSViewRepresentable {
             }
             report()
         }
+        override func viewDidHide() { super.viewDidHide(); report() }
+        override func viewDidUnhide() { super.viewDidUnhide(); report() }
         private func report() {
-            let visible = window.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
+            let visible = !isHiddenOrHasHiddenAncestor
+                && (window.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false)
+            lastVisible = visible
             DispatchQueue.main.async { [weak self] in self?.change(visible) }
         }
         func stop() {

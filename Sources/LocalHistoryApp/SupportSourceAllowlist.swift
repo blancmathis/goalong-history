@@ -86,6 +86,7 @@ enum SupportSourceAllowlist {
         "ContextReadParameters.swift",
         "DashboardComponents.swift",
         "DashboardDataReader.swift",
+        "DashboardKeptPages.swift",
         "DashboardModels.swift",
         "DashboardRootView.swift",
         "DashboardViewModel.swift",

@@ -24,74 +24,148 @@ final class ViewSwitchTimingTests: XCTestCase {
             let ctx = GalleryContext()
             try GalleryStateReset.all(home: ctx.home)
             defer { ctx.finish() }
-            try AppPaths.prepareApplicationStorage(applicationSupportDirectory: AppPaths.applicationSupportDirectory)
-            GalleryFixtureHome.enableRecording()
-            let written = try BusyMemberFixture.install(days: 35)
-            // The app's own backfill writes the finished days' summaries 3 minutes after launch: a member who used
-            // Goalong for weeks has them. A separate reader, so the window's own day cache starts cold.
-            BusyMemberFixture.writeSummaries(days: 35)
-            let summaries = (try? FileManager.default.contentsOfDirectory(atPath:
-                AppPaths.applicationSupportDirectory.appendingPathComponent("activity-days").path)) ?? []
-            log("fixture: \(written.events) events, \(written.bytes / 1_000_000) MB journals, \(summaries.count) summary files")
-
-            ctx.environment.usedBytes = Int64(written.bytes)
-            var options = GalleryFixtures.DashboardOptions()
-            options.section = .overview
-            let model = try GalleryFixtures.dashboardModel(ctx, options)
-            let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 790),
-                                       styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)
-            DashboardWindowController.configure(window)
-            let root = LocalHistoryDashboardView(model: model)
-                .defaultAppStorage(ctx.defaults)
-                .environment(\.goalongDefaults, ctx.defaults)
-                .environment(\.locale, GalleryClock.locale)
-                .environment(\.timeZone, GalleryClock.timeZone)
-                .environment(\.calendar, GalleryClock.calendar)
-            let host = NSHostingView(rootView: root)
-            host.sizingOptions = DashboardWindowController.hostingSizing
-            window.contentView = host
-            window.setContentSize(NSSize(width: 1180, height: 790))
+            let (model, window, host, written, summaries) = try Self.memberDashboard(ctx, days: 35)
+            log("fixture: \(written.events) events, \(written.bytes / 1_000_000) MB journals, \(summaries) summary files")
             defer { window.contentView = nil; window.close() }
-            draw(host)
-            XCTAssertNotNil(settle(host, model: model, timeout: 30), "Activité never finished its first read")
+            Self.draw(host)
+            XCTAssertNotNil(Self.settle(host, model: model, timeout: 30), "Activité never finished its first read")
+            // R14a: the main pages are built at rest after launch. The member's first click comes after that (a member
+            // reads Activité first); the time it takes, its longest block and its memory are logged.
+            if let pages = Self.keptPages(in: host), pages.preheatPending > 0 {
+                let before = Self.footprintMB(), start = ProcessInfo.processInfo.systemUptime
+                var longest = 0.0
+                let deadline = start + 30
+                while pages.preheatPending > 0, ProcessInfo.processInfo.systemUptime < deadline {
+                    _ = Self.settle(host, model: model, timeout: 0.05) { longest = max(longest, $0) }
+                }
+                XCTAssertEqual(pages.preheatPending, 0, "the main pages were never built at rest")
+                _ = Self.settle(host, model: model, timeout: 10) { longest = max(longest, $0) }
+                log(String(format: "preheat: %d pages in %.0f ms after the first read, longest block %.0f ms, footprint %.0f -> %.0f MB",
+                           pages.hosts.count - 1, (ProcessInfo.processInfo.systemUptime - start) * 1_000, longest * 1_000,
+                           before, Self.footprintMB()))
+            }
 
             var samples: [Sample] = []
             // Sidebar destinations present for this member, then the periods of Activité.
             let sections: [DashboardSection] = [.settings, .history, .work, .concentration, .ambiance, .overview]
             for pass in 0..<passes {
                 for period in ["7", "28", "1"] {
-                    guard let button = periodButton(period, in: host) else {
+                    guard let button = Self.periodButton(period, in: host) else {
                         XCTFail("no period \(period)"); return
                     }
-                    samples.append(measure("activite-\(period)j", pass: pass, press: button, host: host, model: model))
+                    samples.append(Self.measure("activite-\(period)j", pass: pass, press: button, host: host, model: model))
                 }
                 for section in sections {
-                    guard let button = node("sidebar-\(section.rawValue)", in: host) else { continue }
-                    samples.append(measure(section.rawValue, pass: pass, press: button, host: host, model: model))
+                    guard let button = Self.node("sidebar-\(section.rawValue)", in: host) else { continue }
+                    samples.append(Self.measure(section.rawValue, pass: pass, press: button, host: host, model: model))
                 }
+            }
+            // R14a: one model publication (`objectWillChange`) on each view, every page already visited: the cost a
+            // periodic republication adds to the shown page (pages kept alive must not add theirs).
+            var republish: [String: Double] = [:]
+            for target in ["activite-28j", "activite-7j", "activite-1j"] + sections.map(\.rawValue) {
+                let period = target.hasPrefix("activite-") ? String(target.dropFirst(9).dropLast()) : nil
+                if period != nil, model.selectedSection != .overview, let back = Self.node("sidebar-overview", in: host) {
+                    _ = Self.measure("overview", pass: -1, press: back, host: host, model: model)
+                }
+                guard let button = period.map({ Self.periodButton($0, in: host) }) ?? Self.node("sidebar-\(target)", in: host) else { continue }
+                _ = Self.measure(target, pass: -1, press: button, host: host, model: model)
+                republish[target] = Self.republish(host, model: model)
             }
             let directory = URL(fileURLWithPath: output, isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(samples).write(to: directory.appendingPathComponent("switch-timing.json"))
+            try encoder.encode(republish).write(to: directory.appendingPathComponent("switch-republish.json"))
+            // R14a: the columns of the T-043 report. Block = click + layout on the main thread (no draw);
+            // first = first drawn frame (CPU bitmap draw included); complete = data read + frame; republish = one publication.
+            if let pages = Self.keptPages(in: host) {
+                log(String(format: "kept pages: %d, footprint at the end %.0f MB", pages.hosts.count, Self.footprintMB()))
+            }
+            log("view             block  first  complete  republish | cold block first complete")
             for view in Set(samples.map(\.view)).sorted() {
                 let rows = samples.filter { $0.view == view }
                 let warm = rows.filter { $0.pass > 0 }
-                log(String(format: "%-16@ cold first %6.1f complete %7.1f | warm first med %6.1f (%5.1f–%5.1f) complete med %7.1f stall med %6.1f",
-                           view as NSString, rows.first?.firstMs ?? 0, rows.first?.completeMs ?? 0,
-                           median(warm.map(\.firstMs)), warm.map(\.firstMs).min() ?? 0, warm.map(\.firstMs).max() ?? 0,
-                           median(warm.map(\.completeMs)), median(warm.map(\.maxStallMs))))
+                log(String(format: "%-16@ %6.1f %6.1f %8.1f %9.1f | %6.1f %6.1f %8.1f",
+                           view as NSString, Self.median(warm.compactMap(\.firstLayoutMs)), Self.median(warm.map(\.firstMs)),
+                           Self.median(warm.map(\.completeMs)), republish[view] ?? -1,
+                           rows.first?.firstLayoutMs ?? 0, rows.first?.firstMs ?? 0, rows.first?.completeMs ?? 0))
             }
         }
     }
 
     // MARK: Measure
+    /// The busy member's dashboard (R13a): `days` days of journals and their summaries, the real window content,
+    /// a window never ordered on screen. Shared by the timing (opt-in) and its CI guard (ViewSwitchBudgetTests).
+    @MainActor static func memberDashboard(_ ctx: GalleryContext, days: Int, section: DashboardSection = .overview) throws
+        -> (DashboardViewModel, GalleryWindow, NSView, (events: Int, bytes: Int), Int) {
+        try AppPaths.prepareApplicationStorage(applicationSupportDirectory: AppPaths.applicationSupportDirectory)
+        GalleryFixtureHome.enableRecording()
+        let written = try BusyMemberFixture.install(days: days)
+        // The app's own backfill writes the finished days' summaries 3 minutes after launch: a member who used
+        // Goalong for weeks has them. A separate reader, so the window's own day cache starts cold.
+        BusyMemberFixture.writeSummaries(days: days)
+        let summaries = (try? FileManager.default.contentsOfDirectory(atPath:
+            AppPaths.applicationSupportDirectory.appendingPathComponent("activity-days").path)) ?? []
 
-    @MainActor private func measure(_ view: String, pass: Int, press: NSObject, host: NSView, model: DashboardViewModel) -> Sample {
+        ctx.environment.usedBytes = Int64(written.bytes)
+        var options = GalleryFixtures.DashboardOptions()
+        options.section = section
+        let model = try GalleryFixtures.dashboardModel(ctx, options)
+        let window = GalleryWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 790),
+                                   styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)
+        DashboardWindowController.configure(window)
+        let root = LocalHistoryDashboardView(model: model)
+            .defaultAppStorage(ctx.defaults)
+            .environment(\.goalongDefaults, ctx.defaults)
+            .environment(\.locale, GalleryClock.locale)
+            .environment(\.timeZone, GalleryClock.timeZone)
+            .environment(\.calendar, GalleryClock.calendar)
+        let host = DashboardWindowContent(rootView: root)
+        window.contentView = host
+        window.setContentSize(NSSize(width: 1180, height: 790))
+        return (model, window, host, written, summaries.count)
+    }
+
+    @MainActor static func keptPages(in view: NSView) -> DashboardKeptPagesView? {
+        if let pages = view as? DashboardKeptPagesView { return pages }
+        for child in view.subviews { if let pages = keptPages(in: child) { return pages } }
+        return nil
+    }
+
+    /// The process's memory as Activity Monitor counts it (phys_footprint).
+    static func footprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    }
+
+
+    @MainActor static func measure(_ view: String, pass: Int, press: NSObject, host: NSView, model: DashboardViewModel) -> Sample {
         let started = ProcessInfo.processInfo.systemUptime
         XCTAssertTrue(ViewSwitchAX.flag(press, "accessibilityPerformPress") == true, "press \(view)")
-        host.layoutSubtreeIfNeeded()
-        let layout = ProcessInfo.processInfo.systemUptime - started
+        let layout: Double
+        if GoalongAnalyticsModel.selectionsPending > 0 {
+            // R14a: a period seen before waits for its off-main source check, then goes on screen in one layout.
+            // Blocage = the longest main-thread block from the press to that layout; 1re image counts the whole wait.
+            var block = ProcessInfo.processInfo.systemUptime - started
+            let deadline = started + 5
+            while GoalongAnalyticsModel.selectionsPending > 0, ProcessInfo.processInfo.systemUptime < deadline {
+                let slice = ProcessInfo.processInfo.systemUptime
+                RunLoop.current.run(until: Date().addingTimeInterval(0.001))
+                block = max(block, ProcessInfo.processInfo.systemUptime - slice - 0.001)
+            }
+            XCTAssertEqual(GoalongAnalyticsModel.selectionsPending, 0, "\(view): the selection never committed")
+            let commit = ProcessInfo.processInfo.systemUptime
+            host.layoutSubtreeIfNeeded()
+            layout = max(block, ProcessInfo.processInfo.systemUptime - commit)
+        } else {
+            host.layoutSubtreeIfNeeded()
+            layout = ProcessInfo.processInfo.systemUptime - started
+        }
         draw(host)
         let first = ProcessInfo.processInfo.systemUptime - started
         var stall = 0.0
@@ -105,9 +179,23 @@ final class ViewSwitchTimingTests: XCTestCase {
                       firstLayoutMs: layout * 1_000)
     }
 
+    /// One publication of the model with the page laid out and displayed: median of 3, minus nothing (an idle turn
+    /// is logged beside it, ~1 ms). Same method as the T-043 report.
+    @MainActor static func republish(_ host: NSView, model: DashboardViewModel) -> Double {
+        func once(_ send: Bool) -> Double {
+            let started = ProcessInfo.processInfo.systemUptime
+            if send { model.objectWillChange.send() }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.001))
+            host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+            return (ProcessInfo.processInfo.systemUptime - started) * 1_000
+        }
+        _ = once(false)
+        return (0..<3).map { _ in once(true) }.sorted()[1]
+    }
+
     /// Runs the main loop in 2 ms slices until every read is over and no loading view is left for five slices.
     /// Returns when the quiet streak began (the last read over, its frame laid out), or nil on timeout.
-    @MainActor private func settle(_ host: NSView, model: DashboardViewModel, timeout: TimeInterval,
+    @MainActor static func settle(_ host: NSView, model: DashboardViewModel, timeout: TimeInterval,
                                    stall: (Double) -> Void = { _ in }) -> TimeInterval? {
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         var quiet = 0, quietSince = 0.0
@@ -131,13 +219,13 @@ final class ViewSwitchTimingTests: XCTestCase {
     }
 
     /// One whole drawn frame: layout, then every layer drawn into a bitmap.
-    @MainActor private func draw(_ host: NSView) {
+    @MainActor static func draw(_ host: NSView) {
         host.layoutSubtreeIfNeeded()
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
         host.cacheDisplay(in: host.bounds, to: rep)
     }
 
-    private func median(_ values: [Double]) -> Double {
+    static func median(_ values: [Double]) -> Double {
         let sorted = values.sorted()
         guard !sorted.isEmpty else { return 0 }
         return sorted.count % 2 == 1 ? sorted[sorted.count / 2] : (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
@@ -147,14 +235,14 @@ final class ViewSwitchTimingTests: XCTestCase {
 
     // MARK: Accessibility tree
 
-    @MainActor private func periodButton(_ days: String, in view: NSView) -> NSObject? {
+    @MainActor static func periodButton(_ days: String, in view: NSView) -> NSObject? {
         let label = days == "1" ? "Jour" : days + " jours"
         return ViewSwitchAX.first(in: view) { text in
             text.replacingOccurrences(of: "\u{00A0}", with: " ").replacingOccurrences(of: "\u{202F}", with: " ") == label
         }
     }
 
-    @MainActor private func node(_ identifier: String, in view: NSView) -> NSObject? { ViewSwitchAX.first(in: view) { $0 == identifier } }
+    @MainActor static func node(_ identifier: String, in view: NSView) -> NSObject? { ViewSwitchAX.first(in: view) { $0 == identifier } }
 }
 
 /// Accessibility lookups shared by the switch timing and its CI guard.

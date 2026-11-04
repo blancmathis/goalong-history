@@ -247,7 +247,7 @@
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Exemple : une journée dessinée comme un fil, en trois couleurs : travail, hors travail, à classer")
-            .onAppear {
+            .onAppearWhenShown {
                 guard traced == 0, !still else { traced = 1; return }
                 withAnimation(LHTheme.draw.delay(0.2)) { traced = 1 }
             }

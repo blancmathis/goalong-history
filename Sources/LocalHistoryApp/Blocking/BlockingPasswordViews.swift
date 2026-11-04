@@ -129,7 +129,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         .font(.system(size: 13))
         .padding(28).frame(width: 480)
         .background(LHTheme.pageBackground)
-        .onAppear { focused = true }
+        .onAppearWhenShown { focused = true }
     }
 
     /// The point of the password: someone else keeps it.

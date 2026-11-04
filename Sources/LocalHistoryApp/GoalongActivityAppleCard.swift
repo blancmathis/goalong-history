@@ -41,7 +41,7 @@ struct GoalongActivityAppleCard: View {
             }
         }
         .accessibilityIdentifier("activity-apple-source")
-        .onAppear { screenTime.setActive(model.dashboardIsVisible) }
+        .onAppearWhenShown { screenTime.setActive(model.dashboardIsVisible) }
         .onDisappear { screenTime.setActive(false) }
         .onChange(of: day) { screenTime.selectDay($0) }
         .onChange(of: model.dashboardIsVisible) { screenTime.setActive($0) }

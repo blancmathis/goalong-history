@@ -64,7 +64,7 @@ import LocalHistoryCore
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
-        .onAppear { selection = .load(); runtime.configure(deviceID: model.knownDeviceID ?? "") }
+        .onAppearWhenShown { selection = .load(); runtime.configure(deviceID: model.knownDeviceID ?? "") }
         .sheet(item: $presentation) { request in
             GoalongAnalysisSelectionSheet(model: model, selection: selection, initialTab: request.tab) { selection = $0 }.id(request.id)
                 .goalongControls()

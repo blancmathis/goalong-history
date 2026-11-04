@@ -209,7 +209,7 @@
                     .overlay(Capsule(style: .continuous).fill(LHTheme.controlBorder)
                         .overlay(Capsule(style: .continuous).fill(LHTheme.elevatedBackground).padding(1)))
             }
-            .onAppear {
+            .onAppearWhenShown {
                 if reduceMotion { drawn = 1 } else { withAnimation(LHTheme.ease(0.3).delay(0.12)) { drawn = 1 } }
             }
         }

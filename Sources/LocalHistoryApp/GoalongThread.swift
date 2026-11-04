@@ -161,7 +161,7 @@
             let still = systemReduceMotion || localReduceMotion
             content
                 .mask(alignment: .leading) { Rectangle().scaleEffect(x: still ? 1 : traced, anchor: .leading) }
-                .onAppear {
+                .onAppearWhenShown {
                     guard traced == 0, !still else { traced = 1; return }
                     withAnimation(LHTheme.draw.delay(0.08)) { traced = 1 }
                 }
@@ -200,7 +200,7 @@
                     }
                     .frame(height: 26)
                     .background(GeometryReader { proxy in
-                        Color.clear.onAppear { width = proxy.size.width }
+                        Color.clear.onAppear { width = proxy.size.width }  // own layout
                             .onChange(of: proxy.size.width) { width = $0 }
                     })
                     .contentShape(Rectangle())

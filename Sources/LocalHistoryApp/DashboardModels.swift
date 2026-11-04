@@ -24,6 +24,27 @@
 
         var id: String { rawValue }
 
+        /// R14a: the kept page of this section (DashboardKeptPages). Sections drawn by the same page share it.
+        var keptPage: String {
+            switch self {
+            case .overview, .analytics: return "activity"
+            case .concentration, .distractions, .blocking: return "concentration"
+            case .settings, .monitoring: return "settings"
+            default: return rawValue
+            }
+        }
+
+        /// R14a: only the main pages stay alive once left; the secondary ones are released (memory kept bounded).
+        var keepsPage: Bool {
+            switch self {
+            case .overview, .analytics, .work, .history, .concentration, .distractions, .blocking, .settings, .monitoring: return true
+            default: return false
+            }
+        }
+
+        /// R14a: the main pages built at rest after launch (DashboardKeptPages `preheat`), in this order.
+        static let preheated: [DashboardSection] = [.overview, .history, .work, .concentration, .settings]
+
         var title: String {
             switch self {
             case .overview: return "Activité"

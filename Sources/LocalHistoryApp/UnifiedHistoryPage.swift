@@ -38,7 +38,7 @@
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .background(LHTheme.pageBackground)
-            .onAppear {
+            .onAppearWhenShown {
                 synchronizeSources(with: model.selectedDay)
                 screenTime.setActive(model.dashboardIsVisible && source == .screenTime)
                 if source == .conversations {

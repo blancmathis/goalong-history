@@ -239,7 +239,7 @@ extension Notification.Name {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .onAppear {
+        .onAppearWhenShown {
             NotificationCenter.default.post(name: .goalongPermissionGuideDidOpen, object: nil)
             refreshAdvice()
             DispatchQueue.global(qos: .utility).async {
@@ -247,7 +247,7 @@ extension Notification.Name {
                 DispatchQueue.main.async { signatureValid = valid; refreshAdvice() }
             }
         }
-        .onReceive(timer) { _ in refreshAdvice() }
+        .onReceiveWhileShown(timer) { _ in refreshAdvice() }
         .onChange(of: status) { _ in refreshAdvice() }
     }
 

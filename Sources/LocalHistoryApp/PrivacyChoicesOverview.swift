@@ -100,7 +100,7 @@ import LocalHistoryCore
                 }.fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .onAppear { refreshRetention(); analysisSelection = .load(); pause = .load() }
+        .onAppearWhenShown { refreshRetention(); analysisSelection = .load(); pause = .load() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongRetentionPolicyDidChange)) { _ in refreshRetention() }
         .sheet(isPresented: $showingSharing) { GoalongWebsiteSharingSheet().goalongControls() }

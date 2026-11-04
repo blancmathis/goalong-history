@@ -109,7 +109,7 @@
                 .padding(.bottom, 60)
             }
             .background(LHTheme.pageBackground)
-            .onAppear {
+            .onAppearWhenShown {
                 recapRuntime.configure(deviceID: model.knownDeviceID ?? "")
                 recapRuntime.selectDay(model.selectedDay)
                 if consents.isEnabled(.chatGPTAnalysis) {

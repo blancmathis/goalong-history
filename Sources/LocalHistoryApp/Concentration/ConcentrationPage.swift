@@ -90,7 +90,7 @@ import AppleScreenTime
                     .padding(.horizontal, LHTheme.pageInset).padding(.top, 20).padding(.bottom, LHTheme.pageBottomInset)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .onAppear { openRequestedEditor(controller.requestedEditor, proxy: proxy) }
+                .onAppearWhenShown { openRequestedEditor(controller.requestedEditor, proxy: proxy) }
                 .onChange(of: controller.requestedEditor) { kind in openRequestedEditor(kind, proxy: proxy) }
             }
         }
@@ -1132,7 +1132,7 @@ struct FocusThreadModel: Equatable {
         } label: {
             Text("Réglages").font(LHTheme.sectionTitleFont).tracking(-0.2)
         }
-        .onAppear(perform: load)
+        .onAppearWhenShown(perform: load)
         .accessibilityIdentifier("concentration-settings")
     }
 

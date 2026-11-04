@@ -671,7 +671,7 @@
                 }
                 .padding(.bottom, 8)
             }
-            .task(id: timelineRefreshID) {
+            .taskWhenShown(id: timelineRefreshID) {
                 refreshTimeline()
             }
             .onDisappear(perform: timelineModel.clear)

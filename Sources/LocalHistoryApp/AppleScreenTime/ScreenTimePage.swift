@@ -63,7 +63,7 @@
                 .padding(.bottom, 50)
             }
             .background(LHTheme.pageBackground)
-            .onAppear { screenTime.setActive(dashboard.dashboardIsVisible) }
+            .onAppearWhenShown { screenTime.setActive(dashboard.dashboardIsVisible) }
             .onDisappear { screenTime.setActive(false) }
             .onChange(of: dashboard.dashboardIsVisible) { screenTime.setActive($0) }
             .alert(item: $screenTime.alert) { item in

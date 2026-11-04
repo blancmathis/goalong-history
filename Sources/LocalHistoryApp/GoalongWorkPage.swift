@@ -49,7 +49,7 @@ import SwiftUI
         }
         .background(LHTheme.pageBackground)
         .accessibilityIdentifier("work-page")
-        .onAppear { runtime.refreshAccount() }
+        .onAppearWhenShown { runtime.refreshAccount() }
         .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
             // A new definition re-classifies today straight away when the user allowed it.
             if work.automatic { agent.classify(day: GoalongToday.now, userInitiated: false) }
@@ -367,7 +367,7 @@ import SwiftUI
             }
         }
         .onChange(of: day) { value in if review.loadedDay != nil { review.load(day: value) } }
-        .onAppear { if loadsOnAppear && review.loadedDay == nil && !review.loading { review.load(day: day) } }
+        .onAppearWhenShown { if loadsOnAppear && review.loadedDay == nil && !review.loading { review.load(day: day) } }
         .alert("Nouvelle tâche", isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
             TextField("Nom de la tâche", text: $name)
             Button("Annuler", role: .cancel) { naming = nil }

@@ -52,7 +52,7 @@
             .padding(.top, 18)
             .padding(.bottom, 22)
             .background(LHTheme.pageBackground)
-            .onAppear {
+            .onAppearWhenShown {
                 refreshVisibleAnalysis(day: model.selectedDay)
             }
             .onChange(of: model.selectedDay) { day in
