@@ -101,4 +101,48 @@
             return (secondaryReturn?.section ?? selectedSection.defaultReturnSection).sidebarParent
         }
     }
+
+    /// The recording settings being edited, the sharing rules and the state of config.json.
+    final class DashboardSettingsState: ObservableObject {
+        @Published var settingsDraft: DashboardSettingsDraft
+        /// What config.json holds: the draft differs from it while changes are pending.
+        @Published private(set) var savedSettingsDraft: DashboardSettingsDraft
+        @Published var usageSearch = ""
+        @Published private(set) var sharingRules: [String: SharingVisibility]
+        @Published private(set) var defaultSharingVisibility: SharingVisibility
+        /// Shown in Settings while config.json is unreadable.
+        @Published private(set) var configNotice: String?
+        /// config.json was unreadable at launch: recording is paused and saves are refused.
+        @Published private(set) var configLocked = false
+        /// Name of the damaged config.json kept aside by the last reset.
+        @Published private(set) var configBackupName: String?
+
+        init(draft: DashboardSettingsDraft, sharingRules: [String: SharingVisibility], defaultSharingVisibility: SharingVisibility) {
+            settingsDraft = draft
+            savedSettingsDraft = draft
+            self.sharingRules = sharingRules
+            self.defaultSharingVisibility = defaultSharingVisibility
+        }
+
+        var settingsHaveChanges: Bool { settingsDraft != savedSettingsDraft }
+
+        func sharingVisibility(for subjectID: String) -> SharingVisibility {
+            sharingRules[subjectID] ?? defaultSharingVisibility
+        }
+
+        func setSavedSettingsDraft(_ draft: DashboardSettingsDraft) {
+            if savedSettingsDraft != draft { savedSettingsDraft = draft }
+        }
+
+        func setSharing(rules: [String: SharingVisibility], defaultVisibility: SharingVisibility? = nil) {
+            if let defaultVisibility, defaultSharingVisibility != defaultVisibility { defaultSharingVisibility = defaultVisibility }
+            if sharingRules != rules { sharingRules = rules }
+        }
+
+        func setConfigStatus(notice: String?, locked: Bool, backupName: String?) {
+            if configNotice != notice { configNotice = notice }
+            if configLocked != locked { configLocked = locked }
+            if configBackupName != backupName { configBackupName = backupName }
+        }
+    }
 #endif

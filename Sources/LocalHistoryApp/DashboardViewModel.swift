@@ -165,10 +165,32 @@ import AppleScreenTime
         var selectedSessionID: String?
         var activitySearch = ""
         var activityFilter: ActivityFilter = .all
-        @Published var usageSearch = ""
-        @Published private(set) var sharingRules: [String: SharingVisibility]
-        @Published private(set) var defaultSharingVisibility: SharingVisibility
-        @Published var settingsDraft: DashboardSettingsDraft
+        /// R14b: settings draft, sharing rules and config.json state. A view reads it through its own `@ObservedObject`.
+        let settingsStore: DashboardSettingsState
+        // R14b façade (removed at step 8). Setting an unchanged value publishes nothing.
+        var usageSearch: String {
+            get { settingsStore.usageSearch }
+            set { if settingsStore.usageSearch != newValue { settingsStore.usageSearch = newValue } }
+        }
+        var settingsDraft: DashboardSettingsDraft {
+            get { settingsStore.settingsDraft }
+            set { if settingsStore.settingsDraft != newValue { settingsStore.settingsDraft = newValue } }
+        }
+        private(set) var sharingRules: [String: SharingVisibility] {
+            get { settingsStore.sharingRules }
+            set { settingsStore.setSharing(rules: newValue) }
+        }
+        private(set) var defaultSharingVisibility: SharingVisibility {
+            get { settingsStore.defaultSharingVisibility }
+            set { settingsStore.setSharing(rules: settingsStore.sharingRules, defaultVisibility: newValue) }
+        }
+        private(set) var savedSettingsDraft: DashboardSettingsDraft {
+            get { settingsStore.savedSettingsDraft }
+            set { settingsStore.setSavedSettingsDraft(newValue) }
+        }
+        var configNotice: String? { settingsStore.configNotice }
+        var configLocked: Bool { settingsStore.configLocked }
+        var configBackupName: String? { settingsStore.configBackupName }
         /// R14b: the alert and the export flag. A view reads them through its own `@ObservedObject`.
         let alertStore = DashboardAlertCenter()
         // R14b façade (removed at step 8). Setting the same alert, or nil over nil, publishes nothing.
@@ -194,12 +216,6 @@ import AppleScreenTime
         var trustNotices: [String] { deviceStore.trustNotices }
         /// R14b façade: each store's publication is relayed to the model until step 8.
         private var storeRelays: [AnyCancellable] = []
-        /// Shown in Settings while config.json is unreadable.
-        @Published private(set) var configNotice: String?
-        /// config.json was unreadable at launch: recording is paused and saves are refused.
-        @Published private(set) var configLocked = false
-        /// Name of the damaged config.json kept aside by the last reset.
-        @Published private(set) var configBackupName: String?
         private var configObserver: NSObjectProtocol?
         private let onReloadConfiguration: () -> Bool
         private let onResetConfiguration: () throws -> String?
@@ -216,7 +232,6 @@ import AppleScreenTime
         /// The « aujourd’hui » this model last saw; `followToday` compares it with the clock.
         private var seenToday: GoalongCalendarDay
         private var clockObservers: [NSObjectProtocol] = []
-        private(set) var savedSettingsDraft: DashboardSettingsDraft
 
         private let state: CaptureState
         private let permissions: PermissionManager
@@ -302,8 +317,6 @@ import AppleScreenTime
             self.configManager = configManager
             self.sharingRulesStore = sharingRulesStore
             self.agentActivityRuntime = agentActivityRuntime
-            self.sharingRules = sharingRulesStore.rules
-            self.defaultSharingVisibility = sharingRulesStore.defaultVisibility
             self.onRetryKeychain = onRetryKeychain
             self.deviceStore = DashboardDeviceState(deviceInfo)
             self.eventTapStatus = eventTapStatus
@@ -330,9 +343,9 @@ import AppleScreenTime
             selectedCalendarDay = GoalongCalendarDay(today)
             seenToday = selectedCalendarDay
             snapshot = .empty(day: today)
-            let draft = DashboardSettingsDraft(config: configManager.config)
-            settingsDraft = draft
-            savedSettingsDraft = draft
+            settingsStore = DashboardSettingsState(
+                draft: DashboardSettingsDraft(config: configManager.config), sharingRules: sharingRulesStore.rules,
+                defaultSharingVisibility: sharingRulesStore.defaultVisibility)
             relayStores()
             refreshTrustNotices()
             trustObserver = NotificationCenter.default.addObserver(
@@ -358,9 +371,9 @@ import AppleScreenTime
         }
 
         func refreshConfigStatus() {
-            configNotice = configManager.statusNotice
-            configLocked = configManager.isFailClosed
-            configBackupName = configNotice == nil ? configManager.lastDamagedBackupName : nil
+            let notice = configManager.statusNotice
+            settingsStore.setConfigStatus(notice: notice, locked: configManager.isFailClosed,
+                backupName: notice == nil ? configManager.lastDamagedBackupName : nil)
         }
 
         /// The active config changed outside Settings (reload, reset): show what is applied.
@@ -404,7 +417,8 @@ import AppleScreenTime
 
         /// R14b façade (removed at step 8): a store's publication republishes the model, for the views not migrated.
         private func relayStores() {
-            let stores: [ObservableObjectPublisher] = [deviceStore.objectWillChange, alertStore.objectWillChange, navigationStore.objectWillChange]
+            let stores: [ObservableObjectPublisher] = [deviceStore.objectWillChange, alertStore.objectWillChange, navigationStore.objectWillChange,
+                settingsStore.objectWillChange]
             storeRelays = stores.map { $0.sink { [weak self] _ in self?.objectWillChange.send() } }
         }
 
@@ -491,9 +505,7 @@ import AppleScreenTime
             }
         }
 
-        var settingsHaveChanges: Bool {
-            settingsDraft != savedSettingsDraft
-        }
+        var settingsHaveChanges: Bool { settingsStore.settingsHaveChanges }
 
         /// After midnight or a time zone change, a page left on the old « aujourd’hui » moves to the new one.
         /// A day chosen by the user keeps its date: after a time zone change it moves to that date's new midnight.

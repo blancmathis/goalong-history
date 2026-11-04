@@ -98,6 +98,21 @@ final class DashboardRepublicationTests: XCTestCase {
         XCTAssertFalse(model.navigationStore.isTodaySelected)
     }
 
+    /// Step 6: the settings live in their own object; re-reading an unchanged config.json publishes nothing.
+    func testSettingsPublishOnlyAChange() throws {
+        let model = try dashboardModel()
+        var publications = 0
+        let watch = model.settingsStore.objectWillChange.sink { publications += 1 }
+        defer { watch.cancel() }
+        model.refreshConfigStatus()
+        model.configurationDidChange()
+        model.settingsDraft = model.settingsDraft
+        XCTAssertEqual(publications, 0, "an unchanged config published")
+        XCTAssertFalse(model.settingsStore.settingsHaveChanges)
+        model.usageSearch = "safari"
+        XCTAssertEqual(publications, 1)
+    }
+
     // MARK: Helpers
 
     func dashboardModel() throws -> DashboardViewModel {
