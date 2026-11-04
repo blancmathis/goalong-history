@@ -55,6 +55,7 @@ final class ViewSwitchTimingTests: XCTestCase {
                            before, Self.footprintMB()))
             }
 
+            Self.waitForPreloads(host, model: model)
             // R14c: a trace of the clicks alone (GOALONG_SWITCH_GATE=<dir>): « ready » written here, clicks once « go » exists.
             if let gate = environment["GOALONG_SWITCH_GATE"], !gate.isEmpty {
                 FileManager.default.createFile(atPath: gate + "/ready", contents: nil)
@@ -72,6 +73,8 @@ final class ViewSwitchTimingTests: XCTestCase {
                         XCTFail("no period \(period)"); return
                     }
                     samples.append(Self.measure("activite-\(period)j", pass: pass, press: button, host: host, model: model))
+                    // R14c: a first click is measured on the stored read; a click without one measures something else.
+                    if pass == 0, samples.last?.fromStore != true { XCTFail("activite-\(period)j: first click without a stored read") }
                 }
                 for section in sections {
                     guard let button = Self.node("sidebar-\(section.rawValue)", in: host) else { continue }
@@ -166,6 +169,24 @@ final class ViewSwitchTimingTests: XCTestCase {
     }
 
 
+    /// R14c: the other periods are read in the background after the first display. The first clicks wait for that, as a
+    /// member's would after a moment on the page; otherwise a click races the preload and measures a loading state
+    /// (the 2 ms 28-day cold seen on CI at dc8d178).
+    @MainActor static func waitForPreloads(_ host: NSView, model: DashboardViewModel) {
+        let deadline = ProcessInfo.processInfo.systemUptime + 30
+        while GoalongAnalyticsModel.preloadsStarted == 0 || GoalongAnalyticsModel.preloadsInFlight > 0,
+              ProcessInfo.processInfo.systemUptime < deadline {
+            _ = settle(host, model: model, timeout: 0.05) { _ in }
+        }
+        XCTAssertTrue(GoalongAnalyticsModel.preloadsStarted > 0 && GoalongAnalyticsModel.preloadsInFlight == 0,
+                      "the other periods were never read in the background")
+        _ = settle(host, model: model, timeout: 10) { _ in }
+    }
+
+    /// R14c, proof of the guard (GOALONG_SWITCH_FAULT_MS=n): every other first 1-day click blocks n ms more, an
+    /// intermittent regression. Never set in CI.
+    @MainActor private static var faultCalls = 0
+
     @MainActor static func measure(_ view: String, pass: Int, press: NSObject, host: NSView, model: DashboardViewModel) -> Sample {
         // R14c: a period click must build that period's content inside the measured window (see below).
         let period = view.hasPrefix("activite-") ? Int(view.dropFirst(9).dropLast()) : nil
@@ -173,6 +194,11 @@ final class ViewSwitchTimingTests: XCTestCase {
         let cpuStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
         let started = ProcessInfo.processInfo.systemUptime
         XCTAssertTrue(ViewSwitchAX.flag(press, "accessibilityPerformPress") == true, "press \(view)")
+        if view == "activite-1j", pass == 0, let fault = Double(ProcessInfo.processInfo.environment["GOALONG_SWITCH_FAULT_MS"] ?? "") {
+            faultCalls += 1
+            let until = ProcessInfo.processInfo.systemUptime + (faultCalls % 2 == 1 ? fault / 1_000 : 0)
+            while ProcessInfo.processInfo.systemUptime < until {}
+        }
         let layout: Double
         var blockCpuSlice = 0.0
         let fromStore = GoalongAnalyticsModel.selectionsPending > 0

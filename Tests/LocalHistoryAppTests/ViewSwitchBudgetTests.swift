@@ -123,43 +123,54 @@ final class ViewSwitchBudgetTests: XCTestCase {
     /// member of the bench (35 days). Never opt-in, never skipped: it runs on every `swift test`, PR CI included
     /// (and release.yml, which runs the same tests through build_app.sh).
     ///
-    /// Budget = ratio × reference. The reference is timed in the same run, on the same runner, after each pass of clicks
-    /// (median of the 5): each time the median of 7 rebuilds of a fixed lazy page (scroll view, lazy stack, rows of text
+    /// Budget = ratio × reference. The reference is timed in the same run, on the same runner, before the first pass of
+    /// clicks and after each (median of the 6): each time the median of 7 rebuilds of a fixed lazy page (scroll view, lazy stack, rows of text
     /// and plain buttons), the same kind of work as a page switch. Chosen out of four candidates measured on this Mac and
     /// on PR CI (35251da): its ratios move least between the two (CI/Mac 0.5-0.76 per view); an eager 240-row stack
     /// moved ×0.35, a kept page swapped by state ×0.7 (same as lazy), a plain CPU sort ×1.4-1.7.
-    /// Warm = median of passes 1-4. Cold = pass 0, the first click of each view on a new dashboard; its process-wide
-    /// first use (fonts, type metadata) depends on the tests run before it: alone it costs up to ×2 more than in the
-    /// full suite, where CI sees cold ≈ warm.
-    /// Ratios = highest ratio seen / 0.7 (≥ 30 % margin), over 5 runs on this Mac (debug build, test alone, so the
-    /// coldest), 1 full `make check` and PR CI. Highest warm/cold ratios seen, Mac | CI 35251da:
-    /// 1 j 2.48/6.8 | 1.56/1.52 · 7 j 2.15/9.8 | 1.51/1.79 · 28 j 4.64/13.7 | 3.48/3.66 · overview 1.29/7.2 | 0.91/0.87
-    /// settings 1.12/0.92 | 0.78/0.42 · history 1.39/0.58 | 0.68/0.40 · work 0.77/0.61 | 0.50/0.33 · concentration 0.52/0.42 | 0.24/0.22
-    /// The cold overview is two-moded (2.9-3.3 or 7.2 × ref: 45 or 95 ms), hence its wide budget.
-    /// The Mac bounds every ratio: a click ~45 % slower fails here, about ×2 slower on CI.
+    /// Warm = median of passes 1-4, against the median reference. Cold = pass 0, the first click of each view on a new
+    /// dashboard once the other periods are stored (R14c); for Activité and the overview, from the click to « complet »
+    /// (longest block), for the other pages the block at the click; against the
+    /// reference timed just before and after that pass.
+    /// Warm ratios (R14a) = highest seen / 0.7 over 5 Mac runs, 1 `make check` and PR CI 35251da. Highest warm seen
+    /// again at R14c (4 Mac runs, debug, test alone): 1 j 2.37 · 7 j 2.16 · 28 j 4.57 · overview 1.25 · settings 1.10 ·
+    /// history 1.39 · work 0.71 · concentration 0.39.
+    /// Cold ratios (R14c) = highest seen / 0.7 over those 4 runs and 2 more (load 17-22): 1 j 2.53 · 7 j 3.30 ·
+    /// 28 j 7.43 · overview 1.19. The sidebar pages other than the overview are not Activité's: their cold stays the
+    /// block at the click (R14a; their own later reads are two-moded, history 20 or 37 ms), highest seen settings 0.89 ·
+    /// history 0.60 · work 0.91 · concentration 0.55 (work and concentration widened to keep 30 %). Before R14c the first Activité click waited on
+    /// EventKit's permission answer (×2-3 in cold): its budgets were 9.7-20 × ref and let that wait through.
     static let switchBudgetRatios: [String: (warm: Double, cold: Double)] = [
-        "activite-1j": (warm: 3.6, cold: 9.7), "activite-7j": (warm: 3.3, cold: 14), "activite-28j": (warm: 6.8, cold: 20),
-        "overview": (warm: 1.9, cold: 10.3), "settings": (warm: 1.7, cold: 1.5), "history": (warm: 2.1, cold: 0.9),
-        "work": (warm: 1.15, cold: 1.0), "concentration": (warm: 0.75, cold: 0.65),
+        "activite-1j": (warm: 3.6, cold: 3.6), "activite-7j": (warm: 3.3, cold: 4.7), "activite-28j": (warm: 6.8, cold: 10.6),
+        "overview": (warm: 1.9, cold: 1.7), "settings": (warm: 1.7, cold: 1.5), "history": (warm: 2.1, cold: 0.9),
+        "work": (warm: 1.15, cold: 1.3), "concentration": (warm: 0.75, cold: 0.8),
     ]
 
+    /// R14c: the reference is timed 6 times in a run (before the first pass, then after each). When the slowest of the
+    /// 6 is more than `steadyReferenceSpread` × the fastest, the runner's load changed during the run.
+    static let steadyReferenceSpread = 1.6
+
     @MainActor func testEachViewSwitchStaysWithinItsBudget() throws {
-        // A real regression is slow every time; a busy runner (or Mac) is slow now and then. So a run over budget is
-        // measured again, from a new dashboard, up to 3 runs in all; the test fails only if every run is over budget.
+        // A busy runner (or Mac) is slow now and then, and its reference moves with it: a run over budget whose
+        // reference moved is measured again, from a new dashboard, up to 3 runs in all. A run over budget on a steady
+        // reference fails at once: an intermittent regression (one slow click in two) is not hidden by a retry (R14c).
         // Each run is logged: a retry is never silent.
         var over: [String] = []
         for attempt in 1...3 {
-            over = try Self.measureSwitchBudgets(attempt: attempt)
+            let run = try Self.measureSwitchBudgets(attempt: attempt)
+            over = run.over
             if over.isEmpty { break }
-            Self.budgetLog("run \(attempt) over budget: " + over.joined(separator: "; "))
+            Self.budgetLog("run \(attempt) over budget (reference \(run.moved ? "moved: measured again" : "steady: no retry")): "
+                + over.joined(separator: "; "))
+            if !run.moved { break }
         }
         for failure in over { XCTFail(failure) }
     }
 
     /// One run: a new member dashboard, 5 passes over the views, the reference timed after each pass (same load as the
     /// clicks around it; its median is used). Returns the views over budget.
-    @MainActor private static func measureSwitchBudgets(attempt: Int) throws -> [String] {
-        var over: [String] = []
+    @MainActor private static func measureSwitchBudgets(attempt: Int) throws -> (over: [String], moved: Bool) {
+        var over: [String] = [], moved = false
         try GalleryRenderer.withPreparedApplication {
             let ctx = GalleryContext()
             try GalleryStateReset.all(home: ctx.home)
@@ -175,9 +186,10 @@ final class ViewSwitchBudgetTests: XCTestCase {
             }
             XCTAssertEqual(pages.preheatPending, 0, "the main pages were never built at rest")
             _ = ViewSwitchTimingTests.settle(host, model: model, timeout: 20)
+            ViewSwitchTimingTests.waitForPreloads(host, model: model)
 
             var samples: [ViewSwitchTimingTests.Sample] = []
-            var references: [Double] = []
+            var references: [Double] = [Self.referenceMs()]
             let sections: [DashboardSection] = [.settings, .history, .work, .concentration, .overview]
             for pass in 0..<5 {
                 for period in ["7", "28", "1"] {
@@ -192,8 +204,13 @@ final class ViewSwitchBudgetTests: XCTestCase {
                 references.append(Self.referenceMs())
             }
             let reference = ViewSwitchTimingTests.median(references)
-            XCTAssertTrue(reference.isFinite && reference > 0, "the reference page was not timed")
-            Self.budgetLog(String(format: "run %d reference %.2f ms (median of 5 passes: %@)", attempt, reference,
+            // The first clicks are one sample each: their reference is the one timed just before and just after them.
+            let coldReference = (references[0] + references[1]) / 2
+            XCTAssertTrue(reference.isFinite && reference > 0 && coldReference > 0, "the reference page was not timed")
+            let spread = (references.max() ?? 0) / max(references.min() ?? 1, 0.001)
+            moved = spread > Self.steadyReferenceSpread
+            Self.budgetLog(String(format: "run %d reference %.2f ms, first clicks %.2f ms, spread ×%.2f (%@; before and after each pass: %@)",
+                                  attempt, reference, coldReference, spread, moved ? "moved" : "steady",
                                   references.map { String(format: "%.1f", $0) }.joined(separator: " ")))
             for (view, ratio) in Self.switchBudgetRatios.sorted(by: { $0.key < $1.key }) {
                 let rows = samples.filter { $0.view == view }
@@ -202,18 +219,22 @@ final class ViewSwitchBudgetTests: XCTestCase {
                 // R14c: the first click is guarded from the click to « complet » (its longest main-thread block). A cold
                 // period lays its content out when its data come in, after the selection's own layout: the former
                 // window (press + that layout) saw 2 ms for a 28-day first click on CI (dc8d178).
-                let cold = rows.first { $0.pass == 0 }?.longestMs ?? .infinity
-                let warmBudget = ratio.warm * reference, coldBudget = ratio.cold * reference
+                let first = rows.first { $0.pass == 0 }
+                let cold = (view.hasPrefix("activite-") || view == "overview" ? first?.longestMs : first?.firstLayoutMs) ?? .infinity
+                if view.hasPrefix("activite-"), rows.first(where: { $0.pass == 0 })?.fromStore != true {
+                    over.append("\(view): the first click had no stored read; its cold was not measured")
+                }
+                let warmBudget = ratio.warm * reference, coldBudget = ratio.cold * coldReference
                 Self.budgetLog(String(format: "run %d %@ warm %.1f ms / budget %.1f ms (%.2f × ref, margin %.0f %%), cold %.1f ms / budget %.1f ms (%.2f × ref, margin %.0f %%, block at the click %.1f ms%@)",
                     attempt, view, warm, warmBudget, warm / reference, (1 - warm / warmBudget) * 100,
-                    cold, coldBudget, cold / reference, (1 - cold / coldBudget) * 100,
+                    cold, coldBudget, cold / coldReference, (1 - cold / coldBudget) * 100,
                     rows.first { $0.pass == 0 }?.firstLayoutMs ?? -1,
                     rows.first { $0.pass == 0 }?.fromStore == true ? ", stored read" : ""))
                 if !(warm < warmBudget) { over.append("\(view): a warm click blocks \(Int(warm)) ms, budget \(Int(warmBudget)) ms") }
                 if !(cold < coldBudget) { over.append("\(view): the first click blocks \(Int(cold)) ms, budget \(Int(coldBudget)) ms") }
             }
         }
-        return over
+        return (over, moved)
     }
 
     /// The calibration page: 240 rows of icon, text and a plain button in a lazy stack under a scroll view (only the
