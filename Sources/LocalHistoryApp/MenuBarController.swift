@@ -14,7 +14,10 @@
         private var redScreenMenu: AnyObject?
         /// T-048 C4: an empty window under the helper's icon, so the panel opens below it.
         private var relayAnchor: NSPanel?
-        private var relayFrame: CGRect?
+        /// When the panel last closed. A click on the helper's icon closes a transient popover at mouse down
+        /// (a click in another process), and the relayed click then arrives: it must not reopen the panel.
+        private var panelClosedAt: TimeInterval?
+        static let reopenGuard: TimeInterval = 0.3
         private let privacyItem = NSMenuItem(title: "Confidentialité", action: nil, keyEquivalent: "")
 
         private let state: CaptureState
@@ -148,12 +151,15 @@
                 panelTimer?.invalidate(); panelTimer = nil
                 panelModel?.stopRefreshing()
                 relayAnchor?.orderOut(nil)
+                panelClosedAt = ProcessInfo.processInfo.systemUptime
             }
         }
 
-        @MainActor func showClassicMenu() {
+        /// `helperFrame`: the click came from the helper's icon at that frame; the menu opens under it, even
+        /// before the helper's first `placed` report.
+        @MainActor func showClassicMenu(helperFrame: CGRect? = nil) {
             closePanel()
-            if MenuBarHelperHost.shared.isHosting, let frame = relayFrame, !frame.isEmpty {
+            if let frame = helperFrame, !frame.isEmpty {
                 // Our own item is parked off screen: open the menu under the helper's icon.
                 menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: frame.minY), in: nil)
                 return
@@ -187,9 +193,16 @@
         /// T-048 C4: a click on the helper's icon, at its screen frame. Same menu and panel as our own.
         @MainActor func showFromHelper(menu: Bool, frame: CGRect) {
             guard !frame.isEmpty else { return }
-            relayFrame = frame
-            if menu || panelModel == nil { showClassicMenu(); return }
+            if menu || panelModel == nil { showClassicMenu(helperFrame: frame); return }
+            if Self.isReopenBounce(closedAt: panelClosedAt, now: ProcessInfo.processInfo.systemUptime) { return }
             togglePanel(relativeTo: relayAnchorView(at: frame))
+        }
+
+        /// A relayed click right after the panel closed is the same click that closed it.
+        /// Times are `systemUptime` values (monotonic: a clock change cannot open or shut the window).
+        static func isReopenBounce(closedAt: TimeInterval?, now: TimeInterval) -> Bool {
+            guard let closedAt else { return false }
+            return now - closedAt < reopenGuard
         }
 
         @MainActor private func relayAnchorView(at frame: CGRect) -> NSView {
@@ -214,7 +227,7 @@
         @MainActor func helperState() -> MenuBarRelay.State {
             let button = statusItem.button
             return MenuBarRelay.State(
-                image: GoalongBrandAssets.menuBarImage.tiffRepresentation ?? Data(),
+                image: GoalongBrandAssets.menuBarImageData,
                 title: (button?.title ?? "").trimmingCharacters(in: .whitespaces),
                 toolTip: button?.toolTip ?? ProductIdentity.displayName,
                 help: button?.accessibilityHelp() ?? "",

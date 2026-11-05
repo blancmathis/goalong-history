@@ -82,7 +82,7 @@ final class MenuBarHelperRelayTests: XCTestCase {
         let host = MenuBarHelperHost(hostID: "ai.goalong.localhistory",
                                      appURL: URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)/Goalong History.app"))
         host.appItemConfirmed(.parkedBySystem)
-        XCTAssertEqual(host.launches, MenuBarHelperHost.maxLaunches)
+        XCTAssertEqual(host.failures, MenuBarHelperHost.maxFailures)
         XCTAssertFalse(host.isHosting)
         host.appItemConfirmed(.underNotch)
         host.appItemConfirmed(nil)
@@ -115,6 +115,145 @@ final class MenuBarHelperRelayTests: XCTestCase {
         watch.record(.shown, frame: .zero)
         XCTAssertEqual(told.last, .some(nil))
         XCTAssertNil(watch.banner)
+    }
+
+    // MARK: - T-048 C4 fixes: helper exit detection
+
+    /// A fake launcher: records each launch, and lets the test finish it and end the helper by hand.
+    @MainActor private final class FakeLauncher {
+        var launches = 0
+        var pending: [@MainActor (MenuBarHelperHost.HelperProcess?, Error?) -> Void] = []
+        var exits: [@MainActor () -> Void] = []
+        var launcher: MenuBarHelperHost.Launcher {
+            { [self] _, _, completion in launches += 1; pending.append(completion) }
+        }
+        /// The helper started and runs as `pid`.
+        func started(pid: pid_t = 4242) {
+            pending.removeFirst()(MenuBarHelperHost.HelperProcess(pid: pid) { [self] onExit in
+                exits.append(onExit)
+                return {}
+            }, nil)
+        }
+        func failed() { pending.removeFirst()(nil, NSError(domain: NSCocoaErrorDomain, code: 4)) }
+        func helperProcessEnds() { exits.removeLast()() }
+    }
+
+    @MainActor private func makeHost(_ fake: FakeLauncher, in root: URL) throws -> MenuBarHelperHost {
+        let app = root.appendingPathComponent("Goalong History.app")
+        let contents = MenuBarRelay.helperURL(inApp: app).appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let plist: [String: Any] = ["CFBundleIdentifier": "ai.goalong.localhistory.menubar", "CFBundlePackageType": "APPL"]
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            .write(to: contents.appendingPathComponent("Info.plist"))
+        let host = MenuBarHelperHost(hostID: "ai.goalong.localhistory", appURL: app, launcher: fake.launcher)
+        host.itemName = "goalong-status"
+        return host
+    }
+
+    private func tempRoot() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("menubar-helper-\(UUID().uuidString)")
+    }
+
+    /// The blocking review point: the helper leaves (crash, its own 15 s exit) while the host believes it runs.
+    /// The host must forget it and start a new helper on the next parked reading.
+    @MainActor func testHelperExitForgetsItAndTheNextParkedReadingRelaunches() throws {
+        let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let fake = FakeLauncher()
+        let host = try makeHost(fake, in: root)
+        host.appItemConfirmed(.parkedBySystem)
+        fake.started()
+        host.appItemConfirmed(.parkedBySystem)
+        XCTAssertEqual(fake.launches, 1, "a running helper is not launched twice")
+
+        fake.helperProcessEnds()
+        host.appItemConfirmed(.parkedBySystem)
+        XCTAssertEqual(fake.launches, 2, "the helper left: the next parked reading starts a new one")
+    }
+
+    /// The banner must come back when the helper that carried the icon leaves.
+    @MainActor func testWatchShowsTheBannerAgainWhenTheHelperProcessEnds() throws {
+        let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let fake = FakeLauncher()
+        let host = try makeHost(fake, in: root)
+        let watch = MenuBarVisibilityWatch()
+        host.onHosting = { watch.helperShowsIcon = $0 }
+        watch.onConfirmed = { host.appItemConfirmed($0) }
+        watch.record(.parkedBySystem, frame: .zero); watch.record(.parkedBySystem, frame: .zero)
+        fake.started()
+        host.helperPlaced(.shown, frame: CGRect(x: 1211, y: 1084, width: 38, height: 33)) // a `.placed` report on screen
+        XCTAssertTrue(host.isHosting)
+        XCTAssertNil(watch.banner)
+        fake.helperProcessEnds()
+        XCTAssertEqual(watch.banner, .parkedBySystem, "the helper is gone: the member must be told again")
+    }
+
+    @MainActor func testOnlyFailuresCountTowardTheRelaunchCap() throws {
+        let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let fake = FakeLauncher()
+        let host = try makeHost(fake, in: root)
+        // Normal cycles: park, helper starts, icon comes back, helper stops. None is a failure.
+        for _ in 0..<5 {
+            host.appItemConfirmed(.parkedBySystem)
+            fake.started()
+            host.helperPlaced(.shown, frame: CGRect(x: 100, y: 100, width: 24, height: 24))
+            host.appItemConfirmed(nil)
+        }
+        XCTAssertEqual(fake.launches, 5, "normal park/return cycles never exhaust the cap")
+        XCTAssertEqual(host.failures, 0)
+        // Launches that fail do count.
+        for _ in 0..<MenuBarHelperHost.maxFailures {
+            host.appItemConfirmed(.parkedBySystem)
+            fake.failed()
+        }
+        XCTAssertEqual(host.failures, MenuBarHelperHost.maxFailures)
+        host.appItemConfirmed(.parkedBySystem)
+        XCTAssertEqual(fake.launches, 5 + MenuBarHelperHost.maxFailures, "the cap stops the loop")
+    }
+
+    @MainActor func testHelperThatLeavesBeforeShowingCountsAsAFailure() throws {
+        let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let fake = FakeLauncher()
+        let host = try makeHost(fake, in: root)
+        for _ in 0..<MenuBarHelperHost.maxFailures {
+            host.appItemConfirmed(.parkedBySystem)
+            fake.started()
+            fake.helperProcessEnds()
+        }
+        XCTAssertEqual(host.failures, MenuBarHelperHost.maxFailures)
+        host.appItemConfirmed(.parkedBySystem)
+        XCTAssertEqual(fake.launches, MenuBarHelperHost.maxFailures, "a helper that always dies is not relaunched for ever")
+    }
+
+    @MainActor func testIconBackWhileTheHelperIsStillStartingSendsItAwayWithoutWatching() throws {
+        let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let fake = FakeLauncher()
+        let host = try makeHost(fake, in: root)
+        host.appItemConfirmed(.parkedBySystem)
+        host.appItemConfirmed(nil)            // the app icon is back before the launch answered
+        fake.started()                        // late answer: the helper is not wanted any more
+        XCTAssertEqual(fake.exits.count, 0, "no exit watch for an unwanted helper")
+        host.appItemConfirmed(.parkedBySystem)
+        XCTAssertEqual(fake.launches, 2, "a new helper can start later")
+    }
+
+    // MARK: - T-048 C4 fixes: Retina icon, second click
+
+    func testHelperIconIsA3xBitmapThatStillReports18Points() throws {
+        let data = GoalongBrandAssets.menuBarImageData
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: data))
+        XCTAssertEqual(rep.pixelsWide, 54)
+        XCTAssertEqual(rep.pixelsHigh, 54)
+        XCTAssertEqual(rep.size, NSSize(width: 18, height: 18), "points stay 18: the extra pixels are Retina detail")
+        XCTAssertLessThan(data.count, 512 * 1024, "fits the relay payload limit")
+        XCTAssertNotNil(MenuBarRelay.Message(userInfo: MenuBarRelay.Message.state(
+            MenuBarRelay.State(image: data, title: "", toolTip: "", help: "", development: false)).userInfo))
+    }
+
+    func testRelayedClickRightAfterThePanelClosedIsTheSameClick() {
+        let now: TimeInterval = 5_000
+        XCTAssertFalse(MenuBarController.isReopenBounce(closedAt: nil, now: now))
+        XCTAssertTrue(MenuBarController.isReopenBounce(closedAt: now - 0.05, now: now))
+        XCTAssertFalse(MenuBarController.isReopenBounce(closedAt: now - 1, now: now))
     }
 }
 #endif
