@@ -70,8 +70,11 @@ enum MenuBarItemVisibility: String, Equatable {
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "ai.goalong.localhistory",
                                        category: "menubar-visibility")
 
-    func start(read: @escaping @MainActor () -> (frame: CGRect, screens: [MenuBarItemVisibility.Screen])) {
+    private var itemName = ""
+
+    func start(itemName: String, read: @escaping @MainActor () -> (frame: CGRect, screens: [MenuBarItemVisibility.Screen])) {
         guard self.read == nil else { return }
+        self.itemName = itemName
         self.read = read
         for delay in [3.0, 10.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in MainActor.assumeIsolated { self?.check() } }
@@ -88,9 +91,14 @@ enum MenuBarItemVisibility: String, Equatable {
         record(MenuBarItemVisibility.state(itemFrame: reading.frame, screens: reading.screens), frame: reading.frame)
     }
 
+    /// One `menubar-visibility` line: state, frame and the item's name (its Control Centre key).
+    nonisolated static func logLine(_ state: MenuBarItemVisibility, frame f: CGRect, item: String) -> String {
+        "state=\(state.rawValue) frame=\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height)) item=\(item.isEmpty ? "?" : item)"
+    }
+
     func record(_ state: MenuBarItemVisibility, frame: CGRect) {
-        let f = frame
-        Self.logger.notice("state=\(state.rawValue, privacy: .public) frame=\(Int(f.minX), privacy: .public),\(Int(f.minY), privacy: .public),\(Int(f.width), privacy: .public),\(Int(f.height), privacy: .public)")
+        let line = Self.logLine(state, frame: frame, item: itemName)
+        Self.logger.notice("\(line, privacy: .public)")
         if state.isHidden { if last?.isHidden == true { banner = state } } else { banner = nil }
         last = state
         if banner != nil, recheck == nil, read != nil {

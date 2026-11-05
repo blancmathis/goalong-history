@@ -446,7 +446,7 @@ import AppleScreenTime
                     self?.dashboardWindowController.show(section: .braise)
                 })
                 // T-048: tell the member when macOS hides the icon (frame only, nothing else read).
-                MenuBarVisibilityWatch.shared.start { [weak self] in
+                MenuBarVisibilityWatch.shared.start(itemName: menuBarController.statusItemName()) { [weak self] in
                     (self?.menuBarController.statusItemFrame() ?? .zero, NSScreen.screens.map(MenuBarItemVisibility.Screen.init))
                 }
             }

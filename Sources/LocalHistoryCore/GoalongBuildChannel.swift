@@ -98,6 +98,12 @@ public struct GoalongBuildChannel: Equatable {
     /// Distinct menu bar autosave names, so Control Centre keeps one placement per copy.
     public func menuBarAutosaveName(_ base: String) -> String { isDevelopment ? base + "-dev" : base }
 
+    /// The menu bar item's Control Centre key. T-048 C1 (2026-11-05): Control Centre put
+    /// `ai.goalong.localhistory-goalong-menu` on its blocked list (log « Moving host to blocked list »),
+    /// as it had done with `Item-0` before 2026-10-15. Never reuse an old name; never rename at run time.
+    public static let menuBarItemBaseName = "goalong-status"
+    public var menuBarItemName: String { menuBarAutosaveName(Self.menuBarItemBaseName) }
+
     /// `~/Library/Application Support`, the parent of both data roots.
     public static var applicationSupportBase: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

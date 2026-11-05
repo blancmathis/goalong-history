@@ -56,5 +56,12 @@ final class MenuBarItemVisibilityTests: XCTestCase {
         watch.record(.underNotch, frame: .zero); watch.record(.underNotch, frame: .zero); XCTAssertEqual(watch.banner, .underNotch)
         watch.record(.unknown, frame: .zero); XCTAssertNil(watch.banner, ".unknown never shows anything")
     }
+
+    /// T-048 C1: each reading names the item, so the log tells which Control Centre key was parked.
+    func testLogLineNamesTheItem() {
+        XCTAssertEqual(MenuBarVisibilityWatch.logLine(.parkedBySystem, frame: CGRect(x: 0, y: -17, width: 38, height: 22), item: "goalong-status"),
+                       "state=parkedBySystem frame=0,-17,38,22 item=goalong-status")
+        XCTAssertEqual(MenuBarVisibilityWatch.logLine(.shown, frame: .zero, item: ""), "state=shown frame=0,0,0,0 item=?")
+    }
 }
 #endif
