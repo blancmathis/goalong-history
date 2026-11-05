@@ -46,6 +46,14 @@ if [[ -e "$GUARD" || -e "$APP/Contents/Library/LaunchAgents" ]]; then
   [[ "$(ls "$APP/Contents/Library/LaunchAgents")" == "$BUNDLE.blocking-guard.plist" ]] \
     || { echo "Unexpected launch agent in the bundle (expected only $BUNDLE.blocking-guard.plist)." >&2; exit 1; }
 fi
+# T-048 C4: the nested menu bar helper app carries its own identifier under the same pinned certificate.
+MENUBAR="$APP/Contents/Helpers/Goalong Menu Bar.app"
+if [[ -e "$MENUBAR" ]]; then
+  MENUBAR_REQUIREMENT="identifier \"$BUNDLE.menubar\" and anchor apple generic and certificate leaf = H\"$IDENTITY\" and certificate leaf[subject.OU] = \"$TEAM\""
+  codesign --verify --all-architectures --strict "-R=$MENUBAR_REQUIREMENT" "$MENUBAR"
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$MENUBAR/Contents/Info.plist")" == "$BUNDLE.menubar" ]] \
+    || { echo "The menu bar helper must carry $BUNDLE.menubar." >&2; exit 1; }
+fi
 for component in app cli relauncher; do
   suffix=''
   case "$component" in
@@ -65,4 +73,4 @@ for component in app cli relauncher; do
       --pins "$ROOT/Distribution/permission-requirements.json" --component "$component"
   done
 done
-echo "Identity verified ($CHANNEL, $BUNDLE): pinned certificate and unchanged app/CLI/relauncher/guard requirements on every architecture."
+echo "Identity verified ($CHANNEL, $BUNDLE): pinned certificate and unchanged app/CLI/relauncher/guard/menu bar helper requirements on every architecture."

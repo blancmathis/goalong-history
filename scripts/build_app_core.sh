@@ -201,6 +201,9 @@ build_arch() {
   local guard_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-blocking-guard --arch "$arch" --scratch-path "$scratch")
   (cd "$ROOT_DIR" && "${guard_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
   cp "$bin_dir/goalong-blocking-guard" "$WORK_DIR/goalong-blocking-guard-$arch"
+  local menubar_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-menubar-helper --arch "$arch" --scratch-path "$scratch")
+  (cd "$ROOT_DIR" && "${menubar_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
+  cp "$bin_dir/goalong-menubar-helper" "$WORK_DIR/goalong-menubar-helper-$arch"
   python3 - "$OUTPUT_DIR/build-$arch-timing.json" "$started" "$arch" <<'PY'
 import json,sys,time
 from pathlib import Path
@@ -254,6 +257,45 @@ GUARD_BINARIES=()
 for arch in $ARCHS; do GUARD_BINARIES+=("$WORK_DIR/goalong-blocking-guard-$arch"); done
 lipo -create "${GUARD_BINARIES[@]}" -output "$CONTENTS/MacOS/goalong-blocking-guard"
 chmod 755 "$CONTENTS/MacOS/goalong-blocking-guard"
+# T-048 C4: the menu bar icon under its own bundle id ($BUNDLE_ID.menubar), opened by the app only
+# while Control Centre keeps the app's own item parked. A real nested app: Control Centre keys by bundle id.
+MENUBAR_HELPER_APP="$CONTENTS/Helpers/Goalong Menu Bar.app"
+mkdir -p "$MENUBAR_HELPER_APP/Contents/MacOS"
+MENUBAR_BINARIES=()
+for arch in $ARCHS; do MENUBAR_BINARIES+=("$WORK_DIR/goalong-menubar-helper-$arch"); done
+lipo -create "${MENUBAR_BINARIES[@]}" -output "$MENUBAR_HELPER_APP/Contents/MacOS/goalong-menubar-helper"
+chmod 755 "$MENUBAR_HELPER_APP/Contents/MacOS/goalong-menubar-helper"
+cat > "$MENUBAR_HELPER_APP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>fr</string>
+    <key>CFBundleExecutable</key>
+    <string>goalong-menubar-helper</string>
+    <key>CFBundleIdentifier</key>
+    <string>$BUNDLE_ID.menubar</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Goalong Menu Bar</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$VERSION</string>
+    <key>CFBundleVersion</key>
+    <string>$BUILD_NUMBER</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>
+PLIST
+plutil -lint "$MENUBAR_HELPER_APP/Contents/Info.plist" >/dev/null
 chmod 755 "$CONTENTS/MacOS/$EXECUTABLE_NAME"
 chmod 755 "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 
@@ -439,6 +481,8 @@ codesign "${SIGN_ARGS[@]}" "$CONTENTS/Frameworks/Sparkle.framework"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID" "$CONTENTS/MacOS/$CLI_PRODUCT_NAME"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID.relauncher" "$CONTENTS/MacOS/goalong-relauncher"
 codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID.blocking-guard" "$CONTENTS/MacOS/goalong-blocking-guard"
+# The nested helper app before the outer app; no entitlements.
+codesign "${SIGN_ARGS[@]}" --identifier "$BUNDLE_ID.menubar" "$MENUBAR_HELPER_APP"
 
 APP_SIGN_ARGS=(--force --sign "$SIGN_IDENTITY" --identifier "$BUNDLE_ID")
 if [[ "$SIGN_IDENTITY" != "-" ]]; then

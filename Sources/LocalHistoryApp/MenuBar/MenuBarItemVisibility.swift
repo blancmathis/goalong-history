@@ -60,6 +60,7 @@ enum MenuBarItemVisibility: String, Equatable {
 
 /// Reads the item 3 s and 10 s after launch and at each screen change. The banner shows after two hidden
 /// readings in a row, then a reading every 10 s hides it once the icon is back. `.unknown` never shows anything.
+/// While the helper shows the icon for a parked item, the banner stays away (T-048 C4).
 @MainActor final class MenuBarVisibilityWatch: ObservableObject {
     static let shared = MenuBarVisibilityWatch()
     @Published private(set) var banner: MenuBarItemVisibility?
@@ -96,15 +97,29 @@ enum MenuBarItemVisibility: String, Equatable {
         "state=\(state.rawValue) frame=\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height)) item=\(item.isEmpty ? "?" : item)"
     }
 
+    /// The app item's hidden state, confirmed by two readings in a row; nil once it shows again.
+    private(set) var confirmed: MenuBarItemVisibility?
+    /// T-048 C4: told each confirmed state, so the helper can carry the icon while ours is parked.
+    var onConfirmed: (@MainActor (MenuBarItemVisibility?) -> Void)?
+    /// The helper shows the icon: no banner then, the member sees Goalong in the bar.
+    var helperShowsIcon = false { didSet { publish() } }
+
     func record(_ state: MenuBarItemVisibility, frame: CGRect) {
         let line = Self.logLine(state, frame: frame, item: itemName)
         Self.logger.notice("\(line, privacy: .public)")
-        if state.isHidden { if last?.isHidden == true { banner = state } } else { banner = nil }
+        if state.isHidden { if last?.isHidden == true { confirmed = state } } else { confirmed = nil }
         last = state
-        if banner != nil, recheck == nil, read != nil {
+        publish()
+        if state != .unknown { onConfirmed?(confirmed) }
+        if confirmed != nil, recheck == nil, read != nil {
             let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.check() } }
             timer.tolerance = 2; RunLoop.main.add(timer, forMode: .common); recheck = timer
-        } else if banner == nil { recheck?.invalidate(); recheck = nil }
+        } else if confirmed == nil { recheck?.invalidate(); recheck = nil }
+    }
+
+    private func publish() {
+        let next = helperShowsIcon && confirmed == .parkedBySystem ? nil : confirmed
+        if banner != next { banner = next }
     }
 }
 

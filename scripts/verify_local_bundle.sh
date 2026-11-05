@@ -112,6 +112,21 @@ if [[ -f "$ROOT_DIR/Sources/GoalongRelauncher/main.swift" ]]; then
   /usr/bin/grep -Fxq "Identifier=$EXPECTED_BUNDLE_ID.relauncher" <<< "$RELAUNCHER_DETAILS"
 fi
 
+# T-048 C4: the nested menu bar helper app, its own bundle id, no entitlements.
+MENUBAR="$APP_PATH/Contents/Helpers/Goalong Menu Bar.app"
+if [[ -f "$ROOT_DIR/Sources/GoalongMenuBarHelper/main.swift" ]]; then
+  test -x "$MENUBAR/Contents/MacOS/goalong-menubar-helper"
+  test ! -L "$MENUBAR/Contents/MacOS/goalong-menubar-helper"
+  /usr/bin/codesign --verify --strict --verbose=2 "$MENUBAR"
+  /usr/bin/grep -Fxq "Identifier=$EXPECTED_BUNDLE_ID.menubar" <<< "$(/usr/bin/codesign -d --verbose=4 "$MENUBAR" 2>&1)"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$MENUBAR/Contents/Info.plist")" == "$EXPECTED_BUNDLE_ID.menubar"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$MENUBAR/Contents/Info.plist")" == true
+  if /usr/bin/codesign -d --entitlements - "$MENUBAR" 2>/dev/null | /usr/bin/grep -q '<key>'; then
+    echo "The menu bar helper must carry no entitlements." >&2
+    exit 1
+  fi
+fi
+
 GUARD="$APP_PATH/Contents/MacOS/goalong-blocking-guard"
 GUARD_PLIST="$APP_PATH/Contents/Library/LaunchAgents/$EXPECTED_BUNDLE_ID.blocking-guard.plist"
 if [[ -f "$ROOT_DIR/Sources/GoalongGuard/main.swift" ]]; then

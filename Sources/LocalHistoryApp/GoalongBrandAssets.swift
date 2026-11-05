@@ -18,6 +18,27 @@
             return image
         }()
 
+        /// The icon as a 3x bitmap that still reports 18 pt (144+ dpi), for the menu bar helper.
+        /// `tiffRepresentation` of the drawing-handler image would give a 1x bitmap, blurry on Retina.
+        /// Drawn once; the image never changes.
+        static let menuBarImageData: Data = renderedTIFF(of: menuBarImage, scale: 3)
+
+        static func renderedTIFF(of image: NSImage, scale: Int) -> Data {
+            let pixelsWide = Int(image.size.width) * scale, pixelsHigh = Int(image.size.height) * scale
+            guard let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: pixelsWide, pixelsHigh: pixelsHigh, bitsPerSample: 8, samplesPerPixel: 4,
+                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+            else { return image.tiffRepresentation ?? Data() }
+            // Set the point size before making the context: the context takes its scale from it.
+            rep.size = image.size
+            guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return image.tiffRepresentation ?? Data() }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            image.draw(in: NSRect(origin: .zero, size: image.size), from: .zero, operation: .sourceOver, fraction: 1)
+            NSGraphicsContext.restoreGraphicsState()
+            return rep.tiffRepresentation ?? image.tiffRepresentation ?? Data()
+        }
+
         private static func brandPath(in rect: NSRect) -> NSBezierPath {
             let path = NSBezierPath()
             func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {

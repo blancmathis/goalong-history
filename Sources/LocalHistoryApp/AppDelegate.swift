@@ -6,6 +6,7 @@ import AppleScreenTime
     import AppleSystemScreenTime
     import Foundation
     import GoalongGuardCore
+    import GoalongMenuBarRelay
     import LocalHistoryCore
     import LocalHistoryQueryCLI
 
@@ -446,6 +447,16 @@ import AppleScreenTime
                     self?.dashboardWindowController.show(section: .braise)
                 })
                 // T-048: tell the member when macOS hides the icon (frame only, nothing else read).
+                // T-048 C4: while Control Centre keeps our item parked, a nested helper app carries the icon.
+                let helperHost = MenuBarHelperHost.shared
+                helperHost.itemName = menuBarController.statusItemName()
+                helperHost.stateProvider = { [weak self] in
+                    self?.menuBarController.helperState()
+                        ?? MenuBarRelay.State(image: Data(), title: "", toolTip: "", help: "", development: false)
+                }
+                helperHost.onClick = { [weak self] menu, frame in self?.menuBarController.showFromHelper(menu: menu, frame: frame) }
+                helperHost.onHosting = { MenuBarVisibilityWatch.shared.helperShowsIcon = $0 }
+                MenuBarVisibilityWatch.shared.onConfirmed = { helperHost.appItemConfirmed($0) }
                 MenuBarVisibilityWatch.shared.start(itemName: menuBarController.statusItemName()) { [weak self] in
                     (self?.menuBarController.statusItemFrame() ?? .zero, NSScreen.screens.map(MenuBarItemVisibility.Screen.init))
                 }
@@ -724,7 +735,10 @@ import AppleScreenTime
                 GoalongDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
                 GoalongDefaults.standard.set(dashboardViewModel.navigationStore.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
-            MainActor.assumeIsolated { ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown() }
+            MainActor.assumeIsolated {
+                ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown()
+                MenuBarHelperHost.shared.stop()
+            }
             SoftwareUpdateManager.shared.stop()
             permissionTimer?.invalidate()
             flushCurrentScreenTimeDay()

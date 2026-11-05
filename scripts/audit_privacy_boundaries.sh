@@ -354,9 +354,14 @@ BLOCKING_ENFORCEMENT="$ROOT_DIR/Sources/LocalHistoryApp/Blocking/BlockingEnforce
 # while a severe block is armed. It never runs commands; the app may only kickstart its own agent.
 BLOCKING_GUARD="$ROOT_DIR/Sources/GoalongGuard/main.swift"
 GUARD_CLIENT="$ROOT_DIR/Sources/LocalHistoryApp/Blocking/GoalongGuardClient.swift"
+# T-048 C4: the app opens only its own nested menu bar helper, quietly, while Control Centre parks its item.
+MENUBAR_HOST="$ROOT_DIR/Sources/LocalHistoryApp/MenuBar/MenuBarHelperHost.swift"
+MENUBAR_HELPER_DIR="$ROOT_DIR/Sources/GoalongMenuBarHelper"
+MENUBAR_RELAY_DIR="$ROOT_DIR/Sources/GoalongMenuBarRelay"
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$RELAUNCHER" && "$file" != "$BLOCKING_ENFORCEMENT" && "$file" != "$BLOCKING_GUARD" ]]; then
+  if [[ "$file" != "$RELAUNCHER" && "$file" != "$BLOCKING_ENFORCEMENT" && "$file" != "$BLOCKING_GUARD" \
+    && "$file" != "$MENUBAR_HOST" ]]; then
     echo "Unreviewed application relaunch boundary: $match" >&2
     failed=true
   fi
@@ -419,6 +424,29 @@ if [[ -f "$BLOCKING_GUARD" ]]; then
   fi
   if grep -R -nE 'Process\(|URLSession|NSApplication\.shared|kill\([^,]*, *SIG(KILL|TERM)' "$BLOCKING_GUARD" "$ROOT_DIR/Sources/GoalongGuardCore"; then
     echo "The blocking guard must not run commands, use the network, become an app or stop processes." >&2; failed=true
+  fi
+fi
+if [[ -f "$MENUBAR_HOST" ]]; then
+  for fragment in 'guard let url = Self.helperURL(appURL: appURL, hostID: hostID) else' \
+    'Bundle(url: url)?.bundleIdentifier == MenuBarRelay.helperBundleID(host: hostID)' \
+    'configuration.activates = false' 'configuration.createsNewApplicationInstance = false' \
+    'configuration.promptsUserIfNeeded = false' \
+    'NSWorkspace.shared.openApplication(at: url, configuration: configuration)'; do
+    if ! grep -Fq "$fragment" "$MENUBAR_HOST"; then
+      echo "Menu bar helper launch confinement invariant is missing: $fragment" >&2; failed=true
+    fi
+  done
+  if [[ "$(grep -c 'NSWorkspace.shared.openApplication(' "$MENUBAR_HOST")" != 1 ]]; then
+    echo "The menu bar helper host added an unreviewed application launcher." >&2; failed=true
+  fi
+fi
+if [[ -d "$MENUBAR_HELPER_DIR" ]]; then
+  # The helper only draws what the app sends and hands clicks back: no command, network, launch,
+  # file write, history or permission API.
+  if grep -R -nE 'Process\(|URLSession|openApplication|NSWorkspace|FileManager|write\(to|tccutil|SecItem|CGRequest|AXIsProcessTrusted|CGPreflight|SCShareableContent|AVCapture|kill\(|LocalHistory' \
+    "$MENUBAR_HELPER_DIR" "$MENUBAR_RELAY_DIR"; then
+    echo "The menu bar helper must not run commands, use the network, open apps, write files or touch permissions." >&2
+    failed=true
   fi
 fi
 if [[ -f "$GUARD_CLIENT" ]]; then

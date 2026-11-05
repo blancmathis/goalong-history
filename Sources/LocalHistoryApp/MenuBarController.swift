@@ -1,6 +1,7 @@
 #if os(macOS)
     import AppKit
     import Foundation
+    import GoalongMenuBarRelay
     import LocalHistoryCore
     import SwiftUI
 
@@ -11,6 +12,12 @@
         private var panelModel: MenuBarPanelModel?
         private var panelTimer: Timer?
         private var redScreenMenu: AnyObject?
+        /// T-048 C4: an empty window under the helper's icon, so the panel opens below it.
+        private var relayAnchor: NSPanel?
+        /// When the panel last closed. A click on the helper's icon closes a transient popover at mouse down
+        /// (a click in another process), and the relayed click then arrives: it must not reopen the panel.
+        private var panelClosedAt: TimeInterval?
+        static let reopenGuard: TimeInterval = 0.3
         private let privacyItem = NSMenuItem(title: "Confidentialité", action: nil, keyEquivalent: "")
 
         private let state: CaptureState
@@ -143,11 +150,20 @@
             MainActor.assumeIsolated {
                 panelTimer?.invalidate(); panelTimer = nil
                 panelModel?.stopRefreshing()
+                relayAnchor?.orderOut(nil)
+                panelClosedAt = ProcessInfo.processInfo.systemUptime
             }
         }
 
-        @MainActor func showClassicMenu() {
+        /// `helperFrame`: the click came from the helper's icon at that frame; the menu opens under it, even
+        /// before the helper's first `placed` report.
+        @MainActor func showClassicMenu(helperFrame: CGRect? = nil) {
             closePanel()
+            if let frame = helperFrame, !frame.isEmpty {
+                // Our own item is parked off screen: open the menu under the helper's icon.
+                menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: frame.minY), in: nil)
+                return
+            }
             // Attach only during native menu tracking, leaving left clicks to the popover.
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
@@ -166,30 +182,82 @@
                     showClassicMenu()
                     return
                 }
-                guard let model = panelModel, let button = statusItem.button else {
+                guard let button = statusItem.button else {
                     showClassicMenu()
                     return
                 }
-                if popover.isShown { closePanel(); return }
-                model.refresh()
-                if let host = popover.contentViewController as? NSHostingController<MenuBarPanelView> {
-                    // With no sizing options, fittingSize is wrong; ask SwiftUI for the natural height.
-                    // A zero proposal returns the fixed-size content height (the outer frame never shrinks it).
-                    let ideal = host.sizeThatFits(in: NSSize(width: MenuBarPanelView.width, height: 0))
-                    if ideal.height > 0 {
-                        popover.contentSize = NSSize(width: MenuBarPanelView.width, height: ceil(ideal.height))
-                    }
-                }
-                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        guard let self, self.popover.isShown else { return }
-                        self.panelModel?.refresh()
-                    }
-                }
-                panelTimer = timer
-                RunLoop.main.add(timer, forMode: .common)
+                togglePanel(relativeTo: button)
             }
+        }
+
+        /// T-048 C4: a click on the helper's icon, at its screen frame. Same menu and panel as our own.
+        @MainActor func showFromHelper(menu: Bool, frame: CGRect) {
+            guard !frame.isEmpty else { return }
+            if menu || panelModel == nil { showClassicMenu(helperFrame: frame); return }
+            if Self.isReopenBounce(closedAt: panelClosedAt, now: ProcessInfo.processInfo.systemUptime) { return }
+            togglePanel(relativeTo: relayAnchorView(at: frame))
+        }
+
+        /// A relayed click right after the panel closed is the same click that closed it.
+        /// Times are `systemUptime` values (monotonic: a clock change cannot open or shut the window).
+        static func isReopenBounce(closedAt: TimeInterval?, now: TimeInterval) -> Bool {
+            guard let closedAt else { return false }
+            return now - closedAt < reopenGuard
+        }
+
+        @MainActor private func relayAnchorView(at frame: CGRect) -> NSView {
+            let panel = relayAnchor ?? {
+                let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+                panel.isOpaque = false
+                panel.backgroundColor = .clear
+                panel.hasShadow = false
+                panel.ignoresMouseEvents = true
+                panel.isReleasedWhenClosed = false
+                panel.level = .statusBar
+                panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
+                relayAnchor = panel
+                return panel
+            }()
+            panel.setFrame(frame, display: false)
+            panel.orderFrontRegardless()
+            return panel.contentView ?? NSView()
+        }
+
+        /// What the helper shows: the same template image, focus text, tooltip and help as our item.
+        @MainActor func helperState() -> MenuBarRelay.State {
+            let button = statusItem.button
+            return MenuBarRelay.State(
+                image: GoalongBrandAssets.menuBarImageData,
+                title: (button?.title ?? "").trimmingCharacters(in: .whitespaces),
+                toolTip: button?.toolTip ?? ProductIdentity.displayName,
+                help: button?.accessibilityHelp() ?? "",
+                development: GoalongDevChannelMarks.channel.isDevelopment)
+        }
+
+        @MainActor private func togglePanel(relativeTo button: NSView) {
+            guard let model = panelModel else {
+                showClassicMenu()
+                return
+            }
+            if popover.isShown { closePanel(); return }
+            model.refresh()
+            if let host = popover.contentViewController as? NSHostingController<MenuBarPanelView> {
+                // With no sizing options, fittingSize is wrong; ask SwiftUI for the natural height.
+                // A zero proposal returns the fixed-size content height (the outer frame never shrinks it).
+                let ideal = host.sizeThatFits(in: NSSize(width: MenuBarPanelView.width, height: 0))
+                if ideal.height > 0 {
+                    popover.contentSize = NSSize(width: MenuBarPanelView.width, height: ceil(ideal.height))
+                }
+            }
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.popover.isShown else { return }
+                    self.panelModel?.refresh()
+                }
+            }
+            panelTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
         }
 
         static func statusDisplay(
@@ -280,6 +348,7 @@
                 button.setAccessibilityLabel(ProductIdentity.displayName)
                 button.setAccessibilityHelp(display.description)
             }
+            Task { @MainActor in MenuBarHelperHost.shared.pushState() }
         }
 
         /// A running Concentration session shows its phase and minutes next to the mark.
@@ -297,6 +366,7 @@
                 button.title = ""
                 button.setAccessibilityValue(nil)
             }
+            Task { @MainActor in MenuBarHelperHost.shared.pushState() }
         }
 
         private func configureStatusItem() {
