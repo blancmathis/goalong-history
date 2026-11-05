@@ -10,6 +10,8 @@
         private let popover = NSPopover()
         private var panelModel: MenuBarPanelModel?
         private var panelTimer: Timer?
+        private var redScreenMenu: AnyObject?
+        private let privacyItem = NSMenuItem(title: "Confidentialité", action: nil, keyEquivalent: "")
 
         private let state: CaptureState
         private let permissions: PermissionManager
@@ -90,6 +92,18 @@
 
         func menuWillOpen(_ menu: NSMenu) {
             updateStatus()
+        }
+
+        /// The status item's window frame in screen coordinates; `.zero` when it has no window.
+        @MainActor func statusItemFrame() -> CGRect { statusItem.button?.window?.frame ?? .zero }
+
+        /// The « Écran rouge » block, right after Confidentialité. Same control as the panel line.
+        @MainActor func configureRedScreen(control: any RedScreenControlling, onOpenSettings: @escaping () -> Void) {
+            if let old = redScreenMenu as? RedScreenMenu { for item in old.items + [old.separator] { menu.removeItem(item) } }
+            let block = RedScreenMenu(control: control, onOpenSettings: onOpenSettings)
+            var index = menu.index(of: privacyItem) + 1
+            for item in [block.separator] + block.items { menu.insertItem(item, at: index); index += 1 }
+            redScreenMenu = block
         }
 
         @MainActor func configurePanel(model: MenuBarPanelModel) {
@@ -315,7 +329,6 @@
             let privacyMenu = NSMenu(title: "Confidentialité")
             privacyMenu.addItem(globalPauseItem)
             privacyMenu.addItem(pauseMenuItem)
-            let privacyItem = NSMenuItem(title: "Confidentialité", action: nil, keyEquivalent: "")
             privacyItem.submenu = privacyMenu
             menu.addItem(privacyItem)
             Task { @MainActor in JevMenuController.shared.install(in: self.menu, onOpenMonitoring: self.onOpenMonitoring) }

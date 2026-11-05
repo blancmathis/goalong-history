@@ -41,10 +41,11 @@ import ServiceManagement
             self.errorMessage = message; self.saveNow(); self.evaluate()
         }
         gamma.onDisplays = { [weak self] count in self?.displayCount = count }
+        // A crashed run's tables come back before anything else (its guardian restored them too).
+        gamma.recoverPending()
+        displayCount = gamma.onlineDisplayCount()
         if runsTimers {
             refreshLoginStatus()
-            GammaController.recoverPending(in: store.directory)
-            displayCount = GammaController.displays().count
             observe(NotificationCenter.default, names: [NSApplication.didChangeScreenParametersNotification,
                 .NSSystemTimeZoneDidChange, .NSCalendarDayChanged, Notification.Name("NSSystemClockDidChangeNotification")])
             observe(NSWorkspace.shared.notificationCenter, names: [NSWorkspace.didWakeNotification,
@@ -64,7 +65,7 @@ import ServiceManagement
                 if name == .NSSystemTimeZoneDidChange { NSTimeZone.resetSystemTimeZone() }
                 MainActor.assumeIsolated {
                     guard let self, self.running else { return }
-                    self.evaluate(); self.gamma.checkAfterSystemChange()
+                    self.handleSystemChange()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                         guard let self, self.running else { return }; self.gamma.checkAfterSystemChange()
                     }
@@ -72,6 +73,12 @@ import ServiceManagement
             }
             observers.append((center, token))
         }
+    }
+
+    /// A screen plugged or unplugged, a wake, a clock change: red on reaches every screen; red off touches none.
+    func handleSystemChange() {
+        guard running else { return }
+        evaluate(); gamma.checkAfterSystemChange()
     }
 
     func update(_ change: (inout Preferences) -> Void) {
@@ -158,6 +165,7 @@ import ServiceManagement
     func persistCommand() throws {
         saveNow(); if errorMessage != nil { throw GoalongFocusError.storageFailed }
     }
+    func probe() -> [[String: Any]] { gamma.probe() }
     var status: [String: Any] {
         let gains = ChannelGains(intensity: preferences.intensity, brightness: preferences.brightness)
         return ["schema": 1, "module": "braise", "enabled": true, "mode": preferences.mode.rawValue,

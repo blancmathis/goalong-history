@@ -12,36 +12,32 @@ import SwiftUI
     }
 
     @ObservedObject private var runtime = BraiseRuntime.shared
-    var onOpenModules: () -> Void = {}
-    /// Turns the module on right here; the module switch in Réglages › Modules does the same.
-    var onEnable: () -> Void = { GoalongModuleStore.shared.setEnabled(.braise, true) }
     var body: some View {
         if let controller = runtime.controller { BraisePageContent(controller: controller) }
-        else { BraiseUnavailableView(error: runtime.error, onRetry: { runtime.retry() }, onOpenModules: onOpenModules,
-                                          onEnable: onEnable) }
+        else { BraiseUnavailableView(error: runtime.error, onRetry: { runtime.retry() },
+                                     onTurnOn: { runtime.setRedScreen(true) }, onPrepare: { runtime.ensureController() }) }
     }
 }
 
-/// Module off, or a start that failed: the failure always offers a new attempt and the way to Modules.
+/// Never used yet (nothing runs), or a start that failed: the failure always offers a new attempt.
 @MainActor struct BraiseUnavailableView: View {
     let error: String?
     let onRetry: () -> Void
-    let onOpenModules: () -> Void
-    let onEnable: () -> Void
+    let onTurnOn: () -> Void
+    let onPrepare: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            Text("Braise").goalongPageTitle()
+            Text("Écran rouge").goalongPageTitle()
             if let error {
-                GoalongEmptyState(title: "Braise n’a pas pu démarrer", kind: .unavailable, message: error) {
+                GoalongEmptyState(title: "L’écran rouge n’a pas pu démarrer", kind: .unavailable, message: error) {
                     Button("Réessayer", action: onRetry).buttonStyle(LHPrimaryButtonStyle())
-                    Button("Ouvrir Réglages › Modules › Braise", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
                 }
             } else {
-                GoalongEmptyState(title: "Braise est désactivée", kind: .needsPermission,
-                                  message: "Le filtre rouge du soir s’active ici, ou dans Réglages › Modules.") {
-                    Button("Activer Braise", action: onEnable).buttonStyle(LHPrimaryButtonStyle())
+                GoalongEmptyState(title: "Écran rouge éteint", kind: .empty,
+                                  message: "Le filtre rouge du soir. Il s’allume aussi depuis le menu Goalong, dans la barre des menus.") {
+                    Button("Allumer l’écran rouge", action: onTurnOn).buttonStyle(LHPrimaryButtonStyle())
                         .accessibilityIdentifier("braise-enable")
-                    Button("Ouvrir Réglages › Modules › Braise", action: onOpenModules).buttonStyle(LHSecondaryButtonStyle())
+                    Button("Régler les horaires", action: onPrepare).buttonStyle(LHSecondaryButtonStyle())
                 }
             }
         }
@@ -53,13 +49,12 @@ import SwiftUI
 /// The dashboard and menu-bar panel use the same controls and controller.
 @MainActor struct BraisePageContent: View {
     @ObservedObject var controller: BraiseController
-    var compact = false
     @State private var editingRule: ScheduleRule?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Braise").goalongPageTitle()
+                    Text("Écran rouge").goalongPageTitle()
                     Text("Le filtre rouge, à vos horaires.").foregroundStyle(LHTheme.secondaryText)
                 }
                 VStack(alignment: .leading, spacing: 10) {
@@ -120,24 +115,24 @@ import SwiftUI
                 GoalongDisclosureGroup("Réglages et sécurité") {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Retour aux couleurs naturelles : ⌃ ⌥ ⌘ R")
-                        Text(controller.shortcutAvailable ? "Raccourci de secours global. Échap ferme le panneau sans changer le filtre." : "Raccourci indisponible ou déjà utilisé. Utilisez Rétablir les couleurs, ou le clic droit sur l’icône Braise.")
+                        Text(controller.shortcutAvailable ? "Raccourci de secours global. Il marche même quand Goalong n’est pas au premier plan." : "Raccourci indisponible ou déjà utilisé. Utilisez Rétablir les couleurs, ici ou dans le menu Goalong.")
                             .foregroundStyle(LHTheme.secondaryText)
                         Toggle("Lancer Goalong à l’ouverture de session", isOn: Binding(get: { controller.loginEnabled || controller.loginApprovalRequired }, set: { try? controller.setLogin($0) }))
                             .toggleStyle(.goalongSwitchInline)
-                        Text("Ce réglage concerne toute l’app Goalong. Braise suit ses horaires tant que Goalong est ouverte.")
+                        Text("Ce réglage concerne toute l’app Goalong. L’écran rouge suit ses horaires tant que Goalong est ouverte.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         if controller.loginApprovalRequired {
                             Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }.buttonStyle(LHQuietButtonStyle())
                         }
                         Text("\(FrenchCount.count(controller.displayCount, "écran", "écrans")). Le filtre est recalculé au réveil. Il ne réveille pas le Mac.").foregroundStyle(LHTheme.secondaryText)
-                        Text("Aucun réseau ni nouvel accès. Les couleurs sont restaurées à l’arrêt du module, à la fermeture de Goalong ou par un gardien après un crash. Le HDR et les autres filtres peuvent modifier le résultat ; zéro lumière bleue physiquement émise n’est pas garanti.")
+                        Text("Aucun réseau ni nouvel accès. Les couleurs sont restaurées à l’arrêt du rouge, à la fermeture de Goalong ou par un gardien après un crash. Le HDR et les autres filtres peuvent modifier le résultat ; zéro lumière bleue physiquement émise n’est pas garanti.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }.fixedSize(horizontal: false, vertical: true).padding(.top, 12)
                 }
                 .collapsedSummary("Secours : ⌃ ⌥ ⌘ R")
             }
             .font(.system(size: 13)).frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, compact ? 24 : LHTheme.pageInset).padding(.top, 28).padding(.bottom, 32)
+            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, 32)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)

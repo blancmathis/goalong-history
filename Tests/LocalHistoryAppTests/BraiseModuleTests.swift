@@ -31,20 +31,31 @@ final class BraiseModuleTests: XCTestCase {
         addTeardownBlock { defaults.removePersistentDomain(forName: name) }
         return GoalongModuleStore(defaults: defaults)
     }
+    private func defaults() throws -> UserDefaults {
+        let name = "braise-runtime-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        return defaults
+    }
     func testNavigationAndDefaultOff() throws {
         XCTAssertFalse(try modules().isEnabled(.braise))
         XCTAssertFalse(DashboardSection.sidebarSections(modules: []).contains(.braise))
-        XCTAssertEqual(DashboardSection.sidebarSections(modules: [.braise]).suffix(2), [.braise, .settings])
+        // T-048 B1: the red screen lives in the menu, not in Modules nor in the sidebar.
+        XCTAssertFalse(DashboardSection.sidebarSections(modules: [.braise]).contains(.braise))
+        XCTAssertEqual(DashboardSection.sidebarSections(modules: [], showing: .braise).suffix(2), [.braise, .settings])
+        XCTAssertFalse(GoalongModule.listed.contains(.braise))
+        XCTAssertEqual(GoalongModule.braise.title, "Écran rouge")
     }
-    @MainActor func testOffCreatesNothingAndForgedEnableDoesNotStartFactory() throws {
+    @MainActor func testNeverUsedStartsNothingAndAFailedStartThrows() throws {
         var creations = 0
-        let runtime = BraiseRuntime(presentsMenu: false, factory: { creations += 1; throw GoalongFocusError.storageFailed })
-        let modules = try modules(); runtime.start(modules: modules)
+        let runtime = BraiseRuntime(registersShortcut: false, defaults: try defaults(), factory: { creations += 1; throw GoalongFocusError.storageFailed })
+        runtime.start()
         XCTAssertNil(runtime.controller); XCTAssertEqual(creations, 0)
-        _ = try runtime.handle(.init(command: "braise status"))
-        XCTAssertThrowsError(try runtime.handle(.init(command: "braise on")))
-        XCTAssertThrowsError(try runtime.handle(.init(command: "braise enable", options: ["x": "y"])))
-        runtime.shutdown(); XCTAssertEqual(creations, 0)
+        _ = try runtime.handle(.init(command: "braise status")); _ = try runtime.handle(.init(command: "braise probe"))
+        XCTAssertEqual(creations, 0)
+        XCTAssertThrowsError(try runtime.handle(.init(command: "braise on"))); XCTAssertEqual(creations, 1)
+        XCTAssertNotNil(runtime.error)
+        runtime.shutdown(); XCTAssertEqual(creations, 1)
     }
     func testLegacySettingsImportedOnceReadOnlyAndOwnerPermissions() throws {
         let root = try root(), legacy = root.appendingPathComponent("legacy.json")
@@ -95,11 +106,11 @@ final class BraiseModuleTests: XCTestCase {
         XCTAssertNil(older.notice); XCTAssertEqual(older.preferences.mode, .auto); XCTAssertEqual(older.preferences.intensity, 0.5)
     }
     @MainActor func testModesPauseEmergencyDisableAndCLIStayLocal() throws {
-        let root = try root(), gamma = BraiseTestGamma(), modules = try modules()
+        let root = try root(), gamma = BraiseTestGamma(), defaults = try defaults()
         var now = Date(timeIntervalSince1970: 1_790_000_000)
         let store = BraiseStore(directory: root.appendingPathComponent("Braise"), legacySettings: root.appendingPathComponent("missing"))
-        let runtime = BraiseRuntime(presentsMenu: false, factory: { try BraiseController(store: store, gamma: gamma, runsTimers: false, clock: { now }) })
-        runtime.start(modules: modules)
+        let runtime = BraiseRuntime(registersShortcut: false, defaults: defaults, factory: { try BraiseController(store: store, gamma: gamma, runsTimers: false, clock: { now }) })
+        runtime.start(); XCTAssertNil(runtime.controller)
         _ = try runtime.handle(GoalongBraiseCLI.parse(["enable"]))
         let controller = try XCTUnwrap(runtime.controller)
         _ = try runtime.handle(GoalongBraiseCLI.parse(["on"])); XCTAssertTrue(controller.active)
@@ -115,9 +126,12 @@ final class BraiseModuleTests: XCTestCase {
         _ = try runtime.handle(GoalongBraiseCLI.parse(["show"])); XCTAssertTrue(opened)
         controller.emergencyOff(); XCTAssertFalse(controller.active); XCTAssertEqual(controller.preferences.mode, .off)
         _ = try runtime.handle(GoalongBraiseCLI.parse(["quit"])); XCTAssertNil(runtime.controller)
-        XCTAssertFalse(modules.isEnabled(.braise)); XCTAssertGreaterThanOrEqual(gamma.restores, 2)
+        XCTAssertFalse(defaults.bool(forKey: BraiseRuntime.armedKey)); XCTAssertGreaterThanOrEqual(gamma.restores, 2)
         let changes = gamma.changes.count; controller.evaluate(); XCTAssertEqual(gamma.changes.count, changes)
-        XCTAssertThrowsError(try runtime.handle(GoalongBraiseCLI.parse(["on"])))
+        // « on » needs no module: it starts the red screen again.
+        _ = try runtime.handle(GoalongBraiseCLI.parse(["on"])); XCTAssertEqual(runtime.controller?.active, true)
+        XCTAssertTrue(defaults.bool(forKey: BraiseRuntime.armedKey))
+        runtime.shutdown(); XCTAssertNil(runtime.controller)
     }
     @MainActor func testDefaultCalendarFollowsATimeZoneChangeWhileRunning() throws {
         let saved = NSTimeZone.default
@@ -179,21 +193,20 @@ final class BraiseModuleTests: XCTestCase {
         journal.start(); defer { journal.stop() }
         let store = BraiseStore(directory: root.appendingPathComponent("Braise", isDirectory: true), legacySettings: root.appendingPathComponent("missing"))
         var fails = true, attempts = 0
-        let runtime = BraiseRuntime(presentsMenu: false, diagnostics: journal, factory: {
+        defaults.set(true, forKey: BraiseRuntime.armedKey)
+        let runtime = BraiseRuntime(registersShortcut: false, diagnostics: journal, defaults: defaults, factory: {
             attempts += 1
             if fails { throw CocoaError(.fileWriteNoPermission, userInfo: [NSFilePathErrorKey: store.directory.path]) }
             return try BraiseController(store: store, gamma: BraiseTestGamma(), runsTimers: false)
         })
-        let modules = try modules(); modules.setEnabled(.braise, true)
-        runtime.start(modules: modules); defer { runtime.shutdown() }
+        runtime.start(); defer { runtime.shutdown() }
         XCTAssertNil(runtime.controller); XCTAssertNotNil(runtime.error)
         let failure = try XCTUnwrap(journal.snapshot().records.first { $0.event == .operationFailed })
         XCTAssertEqual(failure.values["errorCode"], .count(CocoaError.fileWriteNoPermission.rawValue))
         let line = String(decoding: try JSONEncoder().encode(failure), as: UTF8.self)
-        XCTAssertFalse(line.contains(root.lastPathComponent)); XCTAssertFalse(line.contains("Braise n"))
+        XCTAssertFalse(line.contains(root.lastPathComponent)); XCTAssertFalse(line.contains("rouge n"))
         fails = false; runtime.retry()
         XCTAssertNotNil(runtime.controller); XCTAssertNil(runtime.error); XCTAssertEqual(attempts, 2)
-        modules.setEnabled(.braise, false); runtime.retry(); XCTAssertEqual(attempts, 2)
     }
     func testUntrustedRecoveryTablesCannotBeWritten() {
         XCTAssertFalse(GammaTable(displayID: 0, red: [.nan, 1], green: [0, 1], blue: [0, 1]).isValid)

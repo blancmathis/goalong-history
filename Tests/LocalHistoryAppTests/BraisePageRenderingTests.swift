@@ -60,7 +60,6 @@ final class BraisePageRenderingTests: XCTestCase {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua); window.appearance = app.appearance
             let suffix = dark ? "dark" : "light"
             try render("braise-page-" + suffix, BraisePageContent(controller: controller), width: 900, height: 1050)
-            try render("braise-panel-" + suffix, BraisePageContent(controller: controller, compact: true), width: 480, height: 680)
             try render("braise-rule-" + suffix, BraiseRuleEditor(controller: controller, initial: controller.preferences.rules[0]), width: 650, height: 400)
         }
     }

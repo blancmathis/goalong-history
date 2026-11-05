@@ -25,7 +25,7 @@ struct BraiseStore {
         if Self.exists(settingsURL) {
             if let decoded = try? Self.decode(settingsURL) { value = decoded } else {
                 let name = try Self.moveDamagedFileAside(settingsURL)
-                notice = "Les réglages Braise étaient illisibles : ils ont été remis à zéro. L’ancien fichier est gardé dans \(directory.path)/\(name)."
+                notice = "Les réglages de l’écran rouge étaient illisibles : ils ont été remis à zéro. L’ancien fichier est gardé dans \(directory.path)/\(name)."
                 value = Preferences(); value.sanitize()
                 try save(value)
             }
@@ -33,7 +33,7 @@ struct BraiseStore {
             if Self.exists(legacySettings) {
                 if let decoded = try? Self.decode(legacySettings) { value = decoded } else {
                     value = Preferences()
-                    notice = "Les anciens réglages Braise sont illisibles : Braise démarre avec les réglages par défaut."
+                    notice = "Les anciens réglages Braise sont illisibles : l’écran rouge démarre avec les réglages par défaut."
                 }
             } else { value = Preferences() }
             value.sanitize()

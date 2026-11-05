@@ -56,7 +56,7 @@
             case .concentration: return "Concentration"
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"
-            case .braise: return "Braise"
+            case .braise: return "Écran rouge"
             case .activity: return "Enregistrement"
             case .screenTime: return "Temps d’écran Apple"
             case .agentActivity: return "Conversations IA"

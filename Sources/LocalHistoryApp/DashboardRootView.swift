@@ -63,6 +63,7 @@
                                 VStack(spacing: 0) {
                                     GoalongGlobalPauseBanner(model: model)
                                     GoalongAttentionBanner(model: model)
+                                    GoalongMenuBarVisibilityBanner(watch: .shared)
                                 }
                             }
                             .safeAreaInset(edge: .bottom, spacing: 0) { DashboardPendingChangesBar(model: model) }
@@ -146,7 +147,7 @@
                     model.returnFromSecondaryPage()
                 }
             case .braise:
-                BraisePage(onOpenModules: { model.openSettingsPane(.modules) })
+                BraisePage()
             case .ambiance:
                 AmbiancePage(model: model)
             case .settings, .monitoring:
@@ -473,7 +474,8 @@
         static func sidebarSections(modules: Set<GoalongModule>, showing: DashboardSection? = nil) -> [DashboardSection] {
             var sections = primarySections
             if modules.contains(.ambiance) || showing == .ambiance { sections.insert(.ambiance, at: sections.count - 1) }
-            if modules.contains(.braise) || showing == .braise { sections.insert(.braise, at: sections.count - 1) }
+            // No module: the page is listed while it is open (menu « Réglages de l’écran rouge… »).
+            if showing == .braise { sections.insert(.braise, at: sections.count - 1) }
             return sections
         }
 
@@ -487,7 +489,7 @@
             case .concentration: return "Concentration"
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"
-            case .braise: return "Braise"
+            case .braise: return "Écran rouge"
             case .activity: return "Enregistrement"
             case .screenTime: return "Temps d’écran"
             case .agentActivity: return "Conversations IA"

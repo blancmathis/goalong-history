@@ -436,9 +436,17 @@ import AppleScreenTime
                         self?.dashboardViewModel.selectDay(Date())
                         self?.dashboardWindowController.show(section: .overview)
                     },
-                    onShowClassicMenu: { [weak self] in self?.menuBarController.showClassicMenu() }
+                    onShowClassicMenu: { [weak self] in self?.menuBarController.showClassicMenu() },
+                    redScreen: BraiseRuntime.shared
                 )
                 menuBarController.configurePanel(model: panel)
+                menuBarController.configureRedScreen(control: BraiseRuntime.shared, onOpenSettings: { [weak self] in
+                    self?.dashboardWindowController.show(section: .braise)
+                })
+                // T-048: tell the member when macOS hides the icon (frame only, nothing else read).
+                MenuBarVisibilityWatch.shared.start { [weak self] in
+                    (self?.menuBarController.statusItemFrame() ?? .zero, NSScreen.screens.map(MenuBarItemVisibility.Screen.init))
+                }
             }
             eventTapMonitor.concentrationInputSink = { date, count in MainActor.assumeIsolated { ConcentrationRuntime.shared.noteInput(at: date, count: count) } }
             applyCapabilityConsents(recordTransition: false)

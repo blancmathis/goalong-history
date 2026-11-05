@@ -180,12 +180,9 @@ extension GalleryCatalog {
                 }
             }),
             panel("braise/page", width: 900, height: 1_050) { ctx in AnyView(BraisePageContent(controller: try braise(ctx))) },
-            panel("braise/panneau-compact", width: 480, height: 820) { ctx in
-                AnyView(BraisePageContent(controller: try braise(ctx), compact: true))
-            },
             panel("braise/echec-demarrage", width: 900, height: 420) { _ in
-                AnyView(BraiseUnavailableView(error: "Braise n’a pas pu démarrer. Aucun filtre n’a été appliqué.",
-                                              onRetry: {}, onOpenModules: {}, onEnable: {}))
+                AnyView(BraiseUnavailableView(error: "L’écran rouge n’a pas pu démarrer. Aucun filtre n’a été appliqué.",
+                                              onRetry: {}, onTurnOn: {}, onPrepare: {}))
             },
             panel("braise/editeur-de-regle", width: 650, height: 400) { ctx in
                 let controller = try braise(ctx)

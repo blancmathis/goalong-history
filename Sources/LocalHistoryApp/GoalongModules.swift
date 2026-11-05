@@ -11,6 +11,9 @@ enum GoalongModule: String, CaseIterable, Identifiable {
     case braise
 
     var id: String { rawValue }
+    /// Réglages › Modules. The red screen (`.braise`) needs no activation: it lives in Goalong's menu, so a
+    /// module switch would duplicate its on/off. The case stays only to migrate the old key (BraiseRuntime).
+    static let listed: [GoalongModule] = allCases.filter { $0 != .braise }
     var defaultsKey: String { "goalong.module.\(rawValue).enabled" }
 
     var title: String {
@@ -18,7 +21,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
         case .blocking: return "Blocage"
         case .concentration: return "Concentration"
         case .ambiance: return "Ambiance"
-        case .braise: return "Braise"
+        case .braise: return "Écran rouge"
         }
     }
 

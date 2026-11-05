@@ -116,12 +116,8 @@ extension GalleryCatalog {
             dashboard("concentration/page", section: .concentration, sizes: [.window, .full(1240)]),
             dashboard("distractions/page", section: .distractions),
             dashboard("programme/page", section: .blocking),
-            // R8-5: the module is on, so its sidebar entry exists and is the selected one.
-            dashboard("braise/page-fenetre", section: .braise, prepare: { ctx in
-                let wasOn = GoalongModuleStore.shared.isEnabled(.braise)
-                GoalongModuleStore.shared.setEnabled(.braise, true)
-                ctx.cleanups.append { GoalongModuleStore.shared.setEnabled(.braise, wasOn) }
-            }),
+            // R8-5: the open page has its sidebar entry, selected. T-048 B1: no module; never used yet.
+            dashboard("braise/page-fenetre", section: .braise),
             dashboard("ambiance/page-fenetre", section: .ambiance),
         ]
     }

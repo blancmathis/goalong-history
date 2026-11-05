@@ -24,6 +24,10 @@
                 AmbianceSection(model: model)
                 PanelDivider()
                 BlockingSection(model: model)
+                if model.hasRedScreen {
+                    PanelDivider()
+                    RedScreenSection(model: model)
+                }
                 PanelFooter(model: model)
             }
             .frame(width: Self.width)
@@ -653,6 +657,41 @@
                             BlockRow(list: list, model: model)
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: - Écran rouge
+
+    /// No module to enable: the switch turns red on, the slider changes it live.
+    private struct RedScreenSection: View {
+        @ObservedObject var model: MenuBarPanelModel
+
+        var body: some View {
+            PanelSection(title: "Écran rouge") {
+                Toggle("Écran rouge", isOn: Binding(get: { model.redScreen.on }, set: { model.setRedScreen($0) }))
+                    .toggleStyle(GoalongSwitchStyle(layout: .switchOnly))
+                    .controlSize(.small)
+                    .help(model.redScreen.on ? "Rétablir les couleurs (⌃⌥⌘R)" : "Passer l’écran au rouge")
+                    .accessibilityIdentifier("menubar-red-screen")
+            } content: {
+                HStack(spacing: 8) {
+                    Image(systemName: "sun.min").font(.system(size: 10)).accessibilityHidden(true)
+                    Slider(value: Binding(get: { model.redScreen.intensity }, set: { model.setRedScreenIntensity($0) }), in: 0...1)
+                        .controlSize(.small)
+                        .tint(LHTheme.secondaryText)
+                        .accessibilityLabel("Intensité de l’écran rouge")
+                        .accessibilityValue(GoalongUIFormat.percent(model.redScreen.intensity * 100))
+                        .accessibilityIdentifier("menubar-red-screen-intensity")
+                    Text(GoalongUIFormat.percent(model.redScreen.intensity * 100))
+                        .font(.system(size: 12).monospacedDigit())
+                        .frame(width: 36, alignment: .trailing)
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(LHTheme.secondaryText)
+                if model.redScreen.followsSchedule {
+                    Text("Suit vos horaires").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }

@@ -2647,3 +2647,9 @@ activite/traces-isolees--   # R14a étape 3 : LazyVStack dans Activité ; arrond
 agenda/acces-refuse--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
 agenda/jour-avec-donnees--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
 fenetre/espace-faible--   # R14a étape 3 : LazyVStack dans Activité ; arrondi au demi-point des hauteurs (bas de page décalé de 0,5-1 pt), aucun texte ni ordre changé
+braise/   # T-048 B1 : Braise devient « Écran rouge » (titres renommés, panneau compact supprimé, nouveau texte d’échec)
+settings/modules-   # T-048 B1 : Écran rouge sort de la liste Modules (ligne dans le menu de la barre)
+modules/   # T-048 B1 : Écran rouge sort de la liste Modules (une ligne de moins)
+bandeau/icone-   # T-048 B1 : bandeau « Icône Goalong masquée / sous l’encoche » (correctif icône validé)
+menubar-menu/ecran-rouge   # T-048 B1 : nouveau menu Écran rouge (clic droit)
+menubar/ecran-rouge-   # T-048 B1 : nouvelle ligne Écran rouge du panneau

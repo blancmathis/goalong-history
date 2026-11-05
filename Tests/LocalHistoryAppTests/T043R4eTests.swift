@@ -78,8 +78,10 @@ final class T043R4eTests: XCTestCase {
     func testUserDisabledModulesUseTheLockKind() throws {
         let hub = try source("Sources/LocalHistoryApp/Concentration/ConcentrationHubPage.swift")
         XCTAssertTrue(hub.contains("est désactivé\", kind: .needsPermission"))
+        // T-048 B1: the red screen has no module to switch off; never used yet is an empty state, not a lock.
         let braise = try source("Sources/LocalHistoryApp/Braise/BraisePage.swift")
-        XCTAssertTrue(braise.contains("est désactivée\", kind: .needsPermission"))
+        XCTAssertFalse(braise.contains("kind: .needsPermission"))
+        XCTAssertTrue(braise.contains("\"Écran rouge éteint\", kind: .empty"))
     }
 
     // Tour 2, point 2: a stop or an unreadable day is never « pas encore ».
