@@ -77,9 +77,11 @@
             self.onQuit = onQuit
 
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-            // Control Centre keeps a stale "blocked" record for the default key Item-0 that the
-            // Menu Bar setting no longer reaches (2026-10-15): a fixed name gives the item a fresh key.
-            statusItem.autosaveName = GoalongDevChannelMarks.autosaveName("goalong-menu")
+            // Control Centre keys the item by bundle id + autosave name and keeps "blocked" records the
+            // Menu Bar setting no longer reaches: Item-0 (2026-10-15), then goalong-menu (0.6.176, T-048 C1).
+            // AppKit offers no way to name the item before it exists, so the name goes on right after.
+            // Fixed name: never renamed at run time, so a member who turned Goalong off stays off.
+            statusItem.autosaveName = GoalongDevChannelMarks.menuBarItemName
             super.init()
 
             configureStatusItem()
@@ -96,6 +98,9 @@
 
         /// The status item's window frame in screen coordinates; `.zero` when it has no window.
         @MainActor func statusItemFrame() -> CGRect { statusItem.button?.window?.frame ?? .zero }
+
+        /// The item's autosave name, the key Control Centre shows or hides it by.
+        @MainActor func statusItemName() -> String { statusItem.autosaveName ?? "" }
 
         /// The « Écran rouge » block, right after Confidentialité. Same control as the panel line.
         @MainActor func configureRedScreen(control: any RedScreenControlling, onOpenSettings: @escaping () -> Void) {

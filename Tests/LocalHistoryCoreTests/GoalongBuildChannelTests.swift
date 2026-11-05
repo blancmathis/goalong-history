@@ -47,6 +47,20 @@ final class GoalongBuildChannelTests: XCTestCase {
         }
     }
 
+    /// T-048 C1: Control Centre keeps `goalong-menu` (0.6.176) and `Item-0` (2026-10-15) on its blocked list.
+    /// The release item takes a name never used before; Goalong Dev keeps its own.
+    func testMenuBarItemNameIsFreshAndDistinctPerChannel() {
+        let release = GoalongBuildChannel(info: nil)
+        let development = GoalongBuildChannel(info: dev)
+        XCTAssertEqual(release.menuBarItemName, "goalong-status")
+        for stale in ["goalong-menu", "Item-0", "goalong-menu-dev"] {
+            XCTAssertNotEqual(release.menuBarItemName, stale)
+            XCTAssertNotEqual(development.menuBarItemName, stale)
+        }
+        XCTAssertEqual(development.menuBarItemName, "goalong-status-dev")
+        XCTAssertNotEqual(development.menuBarItemName, release.menuBarItemName)
+    }
+
     func testGoalongDevLabelsAndAutosaveName() {
         let channel = GoalongBuildChannel(info: dev)
         XCTAssertEqual(channel.devDataMode, "clone")

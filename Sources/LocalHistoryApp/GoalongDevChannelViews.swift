@@ -7,8 +7,11 @@
     enum GoalongDevChannelMarks {
         static var channel: GoalongBuildChannel { .current }
 
-        /// `goalong-menu` in a release, `goalong-menu-dev` in Goalong Dev.
+        /// `<base>` in a release, `<base>-dev` in Goalong Dev.
         static func autosaveName(_ base: String) -> String { channel.menuBarAutosaveName(base) }
+
+        /// The main menu bar item: `goalong-status` in a release, `goalong-status-dev` in Goalong Dev.
+        static var menuBarItemName: String { channel.menuBarItemName }
 
         /// A small orange dot on a menu bar item. The template image stays untouched, so it keeps
         /// the system tint in light and dark menu bars and the item keeps its size.

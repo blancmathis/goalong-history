@@ -14,7 +14,7 @@ final class GoalongDevIsolationPathTests: XCTestCase {
         XCTAssertEqual(ProductIdentity.mainWindowTitle, ProductIdentity.displayName)
         XCTAssertEqual(ProductIdentity.bundleIdentifier, "ai.goalong.localhistory")
         XCTAssertEqual(PermissionRepair.bundleIdentifier, "ai.goalong.localhistory")
-        XCTAssertEqual(GoalongDevChannelMarks.autosaveName("goalong-menu"), "goalong-menu")
+        XCTAssertEqual(GoalongDevChannelMarks.menuBarItemName, "goalong-status")
         XCTAssertTrue(GoalongLoginItemGate.isAllowed)
     }
 
