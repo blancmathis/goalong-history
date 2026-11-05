@@ -41,6 +41,7 @@ if [[ -n "$LOCAL_DIST" ]]; then
   for executable in 'Goalong History' goalong goalong-relauncher goalong-blocking-guard; do
     lipo "$APP/Contents/MacOS/$executable" -verify_arch arm64 x86_64
   done
+  lipo "$APP/Contents/Helpers/Goalong Menu Bar.app/Contents/MacOS/goalong-menubar-helper" -verify_arch arm64 x86_64
 else
 gh run view "$RUN_ID" --repo "$REPO" --json conclusion,headSha,headBranch,workflowName > "$WORK/run.json"
 python3 - "$WORK/run.json" "$REVISION" <<'PY'
@@ -89,6 +90,7 @@ codesign "${SIGN[@]}" "$FRAMEWORK"
 codesign "${SIGN[@]}" --identifier ai.goalong.localhistory "$APP/Contents/MacOS/goalong"
 codesign "${SIGN[@]}" --identifier ai.goalong.localhistory.relauncher "$APP/Contents/MacOS/goalong-relauncher"
 codesign "${SIGN[@]}" --identifier ai.goalong.localhistory.blocking-guard "$APP/Contents/MacOS/goalong-blocking-guard"
+codesign "${SIGN[@]}" --identifier ai.goalong.localhistory.menubar "$APP/Contents/Helpers/Goalong Menu Bar.app"
 # Only the app bundle carries entitlements (as in build_app_core.sh); nested code gets none.
 codesign "${SIGN[@]}" --identifier ai.goalong.localhistory --entitlements "$ROOT/Distribution/GoalongHistory.entitlements" "$APP"
 bash scripts/verify_release_identity.sh "$APP"

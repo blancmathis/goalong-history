@@ -145,7 +145,11 @@ def linked_libraries(path: Path) -> list[str]:
 
 
 def executable_files(app: Path) -> list[Path]:
-    roots = [app / "Contents" / "MacOS", app / "Contents" / "Frameworks"]
+    roots = [
+        app / "Contents" / "MacOS",
+        app / "Contents" / "Frameworks",
+        app / "Contents" / "Helpers" / "Goalong Menu Bar.app" / "Contents" / "MacOS",
+    ]
     files: list[Path] = []
     for root in roots:
         if not root.exists():

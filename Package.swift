@@ -17,6 +17,7 @@ var appDependencies: [Target.Dependency] = [
     "AgentActivity",
     "LocalHistoryQueryCLI",
     "GoalongGuardCore",
+    "GoalongMenuBarRelay",
     .product(name: "Sparkle", package: "Sparkle"),
 ]
 let appExcludes: [String] = [
@@ -41,6 +42,7 @@ let package = Package(
         .executable(name: "goalong-relauncher", targets: ["GoalongRelauncher"]),
         .executable(name: "goalong-blocking-guard", targets: ["GoalongGuard"]),
         .executable(name: "goalong-guard-test-host", targets: ["GoalongGuardTestHost"]),
+        .executable(name: "goalong-menubar-helper", targets: ["GoalongMenuBarHelper"]),
         .library(name: "AppleScreenTime", targets: ["AppleScreenTime"]),
         .library(name: "AppleSystemScreenTime", targets: ["AppleSystemScreenTime"]),
         .library(name: "AgentActivity", targets: ["AgentActivity"]),
@@ -70,6 +72,14 @@ let package = Package(
                 .linkedFramework("AppKit", .when(platforms: [.macOS])),
                 .linkedFramework("Security", .when(platforms: [.macOS])),
             ]
+        ),
+        // T-048 C4: the menu bar icon under a second bundle id when Control Centre blocks the app's own.
+        .target(name: "GoalongMenuBarRelay", path: "Sources/GoalongMenuBarRelay"),
+        .executableTarget(
+            name: "GoalongMenuBarHelper",
+            dependencies: ["GoalongMenuBarRelay"],
+            path: "Sources/GoalongMenuBarHelper",
+            linkerSettings: [.linkedFramework("AppKit", .when(platforms: [.macOS]))]
         ),
         // Only for scripts/test_guard_launchd.sh (opt-in); never embedded in Goalong.
         .executableTarget(name: "GoalongGuardTestHost", path: "Sources/GoalongGuardTestHost"),
@@ -173,7 +183,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LocalHistoryAppTests",
-            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "Ambiance", "BraiseCore", "GoalongHeadlessTestSupport"],
+            dependencies: ["LocalHistoryApp", "LocalHistoryCore", "AppleScreenTime", "AppleSystemScreenTime", "Ambiance", "BraiseCore", "GoalongMenuBarRelay", "GoalongHeadlessTestSupport"],
             path: "Tests/LocalHistoryAppTests",
             exclude: appTestExcludes,
             swiftSettings: appSwiftSettings

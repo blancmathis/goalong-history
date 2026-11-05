@@ -213,6 +213,7 @@ enum SupportSourceAllowlist {
         "LocalOnlyCodexAppServerClient.swift",
         "LocalOnlySoftwareUpdateManager.swift",
         "MenuBarController.swift",
+        "MenuBarHelperHost.swift",
         "MenuBarItemVisibility.swift",
         "MenuBarPanelModel.swift",
         "MenuBarPanelView.swift",

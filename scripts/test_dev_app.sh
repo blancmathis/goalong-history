@@ -75,6 +75,14 @@ if [[ -n "${GOALONG_DEV_BUNDLE_CHECK:-}" ]]; then
   agents="$(ls "$GOALONG_DEV_BUNDLE_CHECK/Contents/Library/LaunchAgents")"
   [[ "$agents" == ai.goalong.localhistory.dev.blocking-guard.plist ]] || fail "dev bundle launch agents: $agents"
 fi
+# T-048 C4: the dev menu bar helper keeps its own id (.dev.menubar), derived from the bundle id.
+grep -qF '<string>$BUNDLE_ID.menubar</string>' "$ROOT/scripts/build_app_core.sh" \
+  && grep -qF -- '--identifier "$BUNDLE_ID.menubar"' "$ROOT/scripts/build_app_core.sh" \
+  || fail 'menu bar helper id is not derived from the bundle id'
+if [[ -n "${GOALONG_DEV_BUNDLE_CHECK:-}" ]]; then
+  helper_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$GOALONG_DEV_BUNDLE_CHECK/Contents/Helpers/Goalong Menu Bar.app/Contents/Info.plist")"
+  [[ "$helper_id" == ai.goalong.localhistory.dev.menubar ]] || fail "dev menu bar helper id: $helper_id"
+fi
 # Marker name shared by make dev and the app's guard.
 grep -qF 'let seedMarker = ".goalong-dev-seed-v3"' "$ROOT/scripts/dev_app.swift" \
   && grep -qF 'public static let seedMarker = ".goalong-dev-seed-v3"' "$ROOT/Sources/LocalHistoryCore/GoalongBuildChannel.swift" \
