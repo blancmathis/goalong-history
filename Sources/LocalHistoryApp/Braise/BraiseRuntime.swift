@@ -44,6 +44,10 @@ struct RedScreenState: Equatable {
     @Published private(set) var redScreen: RedScreenState
     var redScreenChanges: AnyPublisher<RedScreenState, Never> { $redScreen.removeDuplicates().eraseToAnyPublisher() }
     var onOpen: (() -> Void)?
+    /// Receives `BraiseController.guardUntil` once at start, then on every change (the app wires it to
+    /// `BlockingRuntime.setRedScreenGuard`). nil in tests: no marker, no guard.
+    var guardSink: (@MainActor (Date?) -> Void)?
+    private var reportedGuard: Date?? = .none
     private let factory: @MainActor () throws -> BraiseController
     private let registersShortcut: Bool
     private let diagnostics: SupportDiagnostics
@@ -67,6 +71,13 @@ struct RedScreenState: Equatable {
         let legacy = defaults.bool(forKey: Self.legacyModuleKey)
         if defaults.bool(forKey: Self.armedKey) || legacy { ensureController() }
         if legacy, controller != nil { defaults.removeObject(forKey: Self.legacyModuleKey) }
+        // Always once: until this report the blocking side keeps a marker a protected range left (relaunch).
+        reportGuard()
+    }
+    private func reportGuard() {
+        let until = controller?.guardUntil
+        guard reportedGuard != .some(until) else { return }
+        reportedGuard = .some(until); guardSink?(until)
     }
     /// The first explicit use builds the controller; later calls return it.
     @discardableResult func ensureController() -> BraiseController? {
@@ -91,7 +102,7 @@ struct RedScreenState: Equatable {
     private func stop(keepsSetting: Bool) {
         shortcut?.shutdown(); shortcut = nil
         controller?.shutdown(); controller = nil; error = nil
-        if !keepsSetting { defaults.set(false, forKey: Self.armedKey) }
+        if !keepsSetting { defaults.set(false, forKey: Self.armedKey); reportGuard() }
         redScreen.on = false
     }
     private func sync() {
@@ -105,6 +116,7 @@ struct RedScreenState: Equatable {
         let armed = p.mode == .on || controller.ranges.follows || !controller.ranges.holds.isEmpty
         if defaults.object(forKey: Self.armedKey) as? Bool != armed { defaults.set(armed, forKey: Self.armedKey) }
         if defaults.object(forKey: Self.intensityKey) as? Double != p.intensity { defaults.set(p.intensity, forKey: Self.intensityKey) }
+        reportGuard()
     }
 
     // MARK: RedScreenControlling

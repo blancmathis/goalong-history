@@ -65,6 +65,9 @@ import LocalHistoryQueryCLI
     /// Last end written to `guard-until` (spec K); a deleted file is rewritten while a severe block runs.
     private var guardMarker: Date?? = .none
     private let guardClient: GoalongGuardClienting?
+    /// A protected red-screen range in progress (wall frame), set by `BlockingRuntime`: it arms the guard exactly like a
+    /// severe block (T-048 B4). `.unknown` until the red screen has reported at launch: a marker it left stays.
+    var redScreen: RedScreenGuardDemand = .until(nil)
     /// The launch-at-login notice last shown in `error`: cleared there once the component is fine again.
     private var protectionNotice: String?
     private var lastGood: BlockingDocument?
@@ -101,7 +104,7 @@ import LocalHistoryQueryCLI
          calendar: Calendar = .autoupdatingCurrent, calendarProvider: (() -> Calendar)? = nil, continuous: @escaping () -> Double = BlockingClock.continuous,
          boot: @escaping () -> String = BlockingClock.bootID, runsTimers: Bool = false,
          appTriggerPollSeconds: TimeInterval = 5,
-         guardClient: GoalongGuardClienting? = nil,
+         guardClient: GoalongGuardClienting? = nil, redScreen: RedScreenGuardDemand = .until(nil),
          runningApps: @escaping () -> Set<String> = {
              Set(NSWorkspace.shared.runningApplications.filter { !$0.isTerminated }.compactMap(\.bundleIdentifier))
          }) {
@@ -111,7 +114,7 @@ import LocalHistoryQueryCLI
         self.calendarProvider = provider; self.calendar = Self.frozen(provider())
         self.continuous = continuous; self.boot = boot; self.runsTimers = runsTimers; self.appTriggerPollSeconds = appTriggerPollSeconds
         self.runningApps = runningApps
-        self.guardClient = guardClient
+        self.guardClient = guardClient; self.redScreen = redScreen
         if let store {
             do {
                 let loaded = try store.loadRecovering()
@@ -214,13 +217,20 @@ import LocalHistoryQueryCLI
             + lists.compactMap { $0.program.lockedUntil } + [freeze?.end].compactMap { $0 }
         return ends.filter { $0 > now }.max()
     }
+    /// End the guard holds (trusted frame): the latest severe block or protected red-screen range.
+    var guardUntil: Date? {
+        let now = clock()
+        var red: Date?
+        if case .until(let end?) = redScreen { red = trusted(end) }
+        return [severeUntil, red].compactMap { $0 }.filter { $0 > now }.max()
+    }
     /// Confirmations that can arm the guard first add `GuardConsent.text`.
     var guardNeedsConsent: Bool { guardClient?.needsConsent ?? false }
     /// « Retirer le service de protection »: hidden while any lock is running or planned, a weekly locked or
     /// password range included. A planned locked block was confirmed with the service in place: at its start
     /// the service would come back, with its macOS notification, and no new consent sentence (R5-garde-02).
     var canRemoveGuard: Bool {
-        guardClient?.canRemove == true && lockedUntil == nil
+        guardClient?.canRemove == true && lockedUntil == nil && guardUntil == nil
             && !lists.contains { $0.program.ranges.contains { effectiveLock($0.effectiveLock).protectsLists } }
     }
     /// « Réessayer » under a failed protection level (R-89).
@@ -953,10 +963,14 @@ import LocalHistoryQueryCLI
             // Memoize only a durable write: a failure retries on the next refresh, or uninstall.sh would miss the lock.
             if store.writeLockMarker(until: lockWanted) { lockMarker = .some(lockWanted) }
         }
-        let severe = severeUntil
+        var severe = guardUntil
         if let store, !storeFailed {
             let files = GoalongGuardFiles.files(for: store.directory)
-            let wanted = severe.map { GuardFiles.markerEnd(wallMarker($0), now: wall) }
+            var wanted = severe.map { GuardFiles.markerEnd(wallMarker($0), now: wall) }
+            // Launch, before the red screen reports: a later marker its protected range left is kept.
+            if case .unknown = redScreen, case .date(let kept) = files.readMarker(now: wall), kept > wall, kept > wanted ?? .distantPast {
+                wanted = kept; severe = trusted(kept)
+            }
             // The memo alone is not enough: a deleted, modified or planted marker is put right on every
             // refresh. The guard accepts any end from the healthy app, so a forged value must not stay.
             if Self.guardMarkerNeedsWrite(memo: guardMarker, wanted: wanted, files: files, now: wall) {
@@ -1491,7 +1505,26 @@ import LocalHistoryQueryCLI
     static let shared = BlockingRuntime()
     @Published private(set) var controller: BlockingController?
 
-    init(controller: BlockingController? = nil) { self.controller = controller }
+    init(controller: BlockingController? = nil, redScreenKeeper: @escaping @MainActor () -> RedScreenGuardKeeper? = RedScreenGuardKeeper.standard) {
+        self.controller = controller; self.makeKeeper = redScreenKeeper
+    }
+
+    /// The protected red-screen range (T-048 B4): it arms the guard like a severe block, module Blocage on or off.
+    private(set) var redScreen: RedScreenGuardDemand = .unknown
+    /// Writes the marker while the module is off; its client goes to the controller when the module is switched on.
+    private(set) var redScreenKeeper: RedScreenGuardKeeper?
+    private let makeKeeper: @MainActor () -> RedScreenGuardKeeper?
+    func setRedScreenGuard(until end: Date?) {
+        guard redScreen != .until(end) else { return }
+        redScreen = .until(end)
+        syncRedScreenGuard()
+    }
+    private func syncRedScreenGuard() {
+        if let controller { controller.redScreen = redScreen; controller.refresh(enforceLast: false); return }
+        guard case .until(let end) = redScreen, end != nil || redScreenKeeper != nil else { return }
+        if redScreenKeeper == nil { redScreenKeeper = makeKeeper() }
+        redScreenKeeper?.update(until: end)
+    }
 
     private var modules: GoalongModuleStore?
     private weak var monitor: ContextMonitor?
@@ -1514,9 +1547,11 @@ import LocalHistoryQueryCLI
     }
     func apply(enabled: Bool) {
         if enabled, controller == nil {
-            let guardClient = GoalongGuardClient.standard()
+            // The red screen's guard client carries on: one client, one armed state.
+            let adopted = redScreenKeeper?.adopt(); redScreenKeeper = nil
+            let guardClient: GoalongGuardClienting? = adopted ?? GoalongGuardClient.standard()
             let value = BlockingController(store: .standard, backend: StandardBlockingBackend(), runsTimers: true,
-                                           guardClient: guardClient ?? GoalongGuardMissing.make())
+                                           guardClient: guardClient ?? GoalongGuardMissing.make(), redScreen: redScreen)
             // From now on this process may lower or remove `guard-until` (an installed copy only).
             if guardClient != nil { GoalongGuardFiles.reportHealth() }
             controller = value
@@ -1543,6 +1578,7 @@ import LocalHistoryQueryCLI
             monitor?.blockingKeywords = nil
             monitor?.setBlockingObservationEnabled(false)
             self.controller = nil
+            syncRedScreenGuard()
         }
     }
 }

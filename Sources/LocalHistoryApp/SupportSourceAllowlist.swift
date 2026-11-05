@@ -230,6 +230,7 @@ enum SupportSourceAllowlist {
         "PrivacyPage.swift",
         "ProductIdentity.swift",
         "RecordingChoicesView.swift",
+        "RedScreenGuardKeeper.swift",
         "RedScreenMenu.swift",
         "RedScreenProgram.swift",
         "RichContextReader.swift",

@@ -406,6 +406,8 @@ import AppleScreenTime
                     lastSource: { ambiance.settings.lastSource })
                 ConcentrationRuntime.shared.start(monitor: contextMonitor)
                 BraiseRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .braise) }
+                // A protected red-screen range arms the guard like a severe block (T-048 B4).
+                BraiseRuntime.shared.guardSink = { BlockingRuntime.shared.setRedScreenGuard(until: $0) }
                 BraiseRuntime.shared.start()
                 let panel = MenuBarPanelModel(
                     state: captureState, modules: .shared, concentration: { ConcentrationRuntime.shared.controller },

@@ -372,6 +372,9 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     var stateLabel: String { isPaused ? "En pause" : active ? "Filtre actif" : "Couleurs naturelles" }
     /// The protected range in progress, if any.
     var protectedWindow: RedScreenWindow? { RedScreenRules.strongest(windows) }
+    /// End of the latest protected range in progress (wall frame; a hold's end follows the continuous clock).
+    /// Until then Goalong's guard is armed exactly as for a severe block (T-048 B4).
+    var guardUntil: Date? { windows.filter(\.isProtected).map(\.end).max() }
 
     func evaluate() {
         guard running else { return }
