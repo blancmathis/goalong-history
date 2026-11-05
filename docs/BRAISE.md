@@ -1,28 +1,67 @@
-# Braise — filtre rouge optionnel
+# Écran rouge (moteur Braise)
 
 Braise est porté depuis les sources locales `Sources/Braise` et `Sources/BraiseCore`
 de l’app Braise 1.0.1, conservées sans modification. Le moteur d’horaires et ses tests
-sont dans `Features/Braise`. Le contrôleur macOS, le gamma, la barre de menu et la page
-sont dans `Sources/LocalHistoryApp/Braise`. Ce module suit la même activation volontaire
-qu’Ambiance et Concentration.
+sont dans `Features/Braise`. Le contrôleur macOS, le gamma, le menu et la page
+sont dans `Sources/LocalHistoryApp/Braise`. L’interface s’appelle **Écran rouge**.
 
 ## Activer et utiliser
 
-Dans **Réglages › Modules**, activez **Braise**, puis cliquez sur **Ouvrir**.
-Son entrée apparaît dans la barre latérale et son icône dans la barre de menu.
-Un clic ouvre le panneau ; le clic droit propose les modes et le retour aux couleurs
-naturelles. Aucun panneau ne s’ouvre au démarrage.
+Aucun module à activer. La ligne **Écran rouge** est dans le panneau Goalong (clic
+gauche) et dans le menu Goalong (clic droit) : un interrupteur et un curseur d’intensité
+qui agit pendant le glissement. Le menu ajoute un sous-menu **Intensité** (25–100 %),
+**Suivre mes horaires**, **Rétablir les couleurs** et **Plages et réglages…**, qui ouvre
+**Garde-fous › Écran rouge**. Il n’y a qu’une icône Goalong : Braise n’a plus la sienne.
 
-- **Auto** suit l’union des horaires activés ; les plages voisines ou superposées
-  ne font pas clignoter les couleurs. Les jours choisis sont ceux du début : lundi
-  22:00–08:00 finit mardi matin. Les changements d’heure utilisent l’heure locale.
-- **Activé** conserve le filtre sans heure de fin ; **Désactivé** restaure les couleurs.
+Braise n’est plus dans **Réglages › Modules** : sans activation préalable, un interrupteur
+de module doublerait celui du menu. La clé `goalong.module.braise.enabled` d’une ancienne
+version est lue une fois au démarrage (le contrôleur démarre, couleurs inchangées), puis
+retirée.
+
+## Garde-fous et plages protégées (T-048 B2)
+
+La section **Garde-fous** de la barre latérale (⌘5) contient **Blocages** et **Écran
+rouge**. Les **plages protégées** de l’écran rouge (« tous les jours de 22 h à 7 h, rouge
+à 80 % », jours au choix) utilisent le modèle des blocages : `BlockProgram` et
+`BlockProgramRange` (jours ISO, lundi = 1), le même éditeur de plage et le même verrou
+(Libre / Difficile / Mot de passe / Verrouillé, voir `docs/BLOCKING.md` « Range lock »).
+Code : `RedScreenProgram.swift` (modèle et règles pures), `BraiseController.swift`.
+
+- **Manuel et plages se cumulent** : l’intensité la plus forte gagne. Couper le manuel ne
+  coupe jamais une plage en cours.
+- **Pendant une plage protégée**, tout affaiblissement suit la règle d’un blocage actif :
+  pas de minute perdue, pas de verrou abaissé, pas d’intensité qui baisse, « Suivre mes
+  horaires » reste coché. « Difficile » demande de taper le texte, « Mot de passe » le mot
+  de passe des blocages ; sans mot de passe, la plage compte comme verrouillée. Renforcer
+  est toujours libre. Les commandes de l’écran rouge (menu, panneau, ⌃ ⌥ ⌘ R, CLI `off`)
+  sont alors des affaiblissements : « Rétablir les couleurs » est grisé. Hors plage, elles
+  agissent tout de suite.
+- Une plage en cours est **tenue jusqu’à sa fin** sur une échéance monotone : avancer
+  l’horloge, changer de fuseau ou modifier le fichier ne l’abrège pas. Au changement
+  d’heure, la fin prend la seconde occurrence de l’heure répétée.
+- La **luminosité** est un confort : jamais verrouillée.
+- Une **panne technique** (écran incompatible, gamma refusé, gardien perdu) rend les
+  couleurs tout de suite, même pendant une plage verrouillée.
+- 32 plages au maximum. Une plage qui passe minuit compte pour le jour où elle commence.
+
+Stockage : `Braise/ranges.json` (mêmes protections que `settings.json`). À la première
+lecture, chaque horaire Braise devient une plage : jours convertis (Braise 1 = dimanche →
+ISO 7), fin 00:00 → 24:00, horaire désactivé ou invalide gardé comme plage éteinte,
+intensité reprise, mode Auto → « Suivre mes horaires ». `settings.json` n’est pas modifié :
+une version plus ancienne de Goalong retrouve ses horaires. Un `ranges.json` abîmé est mis
+de côté puis reconstruit depuis `settings.json`. Tests : `RedScreenRangesTests`.
+
+Écrans : l’origine gamma de chaque écran est gardée par clé stable (fabricant, modèle,
+numéro de série). Un écran rebranché pendant le rouge retrouve sa vraie origine. Sans clé,
+une table lue déjà rouge déclenche une remise ColorSync puis une relecture de toutes les
+origines. Tests : `RedScreenGammaOriginTests` (faux pilote).
+
 - Intensité 0–100 %, luminosité logicielle 20–100 %. À intensité 100 %, les canaux
   vert et bleu de la table gamma sont à zéro. La luminosité matérielle ne change pas.
-- **Pause 15 min**, **Reprendre**, ajout, modification, suppression et activation
-  des horaires (32 maximum) sont accessibles dans le panneau et la page.
-- **⌃ ⌥ ⌘ R** restaure immédiatement les couleurs et passe en mode Désactivé.
-  Une collision de raccourci est signalée ; le bouton et le clic droit restent disponibles.
+- Ajout, modification, suppression et activation des plages sont dans
+  **Garde-fous › Écran rouge**.
+- **⌃ ⌥ ⌘ R** restaure immédiatement les couleurs hors plage protégée.
+  Une collision de raccourci est signalée ; le menu et le panneau restent disponibles.
 - Le réglage de démarrage à la connexion concerne **toute l’app Goalong** et utilise
   son élément de connexion existant. Aucune inscription automatique lors de l’activation.
 
@@ -33,10 +72,12 @@ de zéro lumière bleue physiquement émise.
 
 ## Cycle de vie et restauration
 
-Le module est **désactivé par défaut**, clé `goalong.module.braise.enabled`.
-Éteint : aucun contrôleur, timer, observateur, raccourci, menu, fichier ouvert ou processus.
-Le gate `BraiseRuntime` ne consulte son dossier qu’après activation explicite (ou au
-démarrage suivant, si le membre l’a laissé activé).
+L’écran rouge est **éteint par défaut**. Jamais utilisé : aucun contrôleur, timer,
+observateur, raccourci, fichier ouvert, processus ni appel gamma. Le contrôleur naît au
+premier allumage. `goalong.redScreen.armed` (mode autre que Désactivé) et
+`goalong.redScreen.intensity` survivent au redémarrage ; armé, le contrôleur redémarre
+avec Goalong. Rouge éteint, un écran branché ou débranché ne provoque aucun appel gamma ;
+rouge allumé, le nouvel écran passe au rouge lui aussi.
 
 Le pilote utilise les API publiques CoreGraphics de tables gamma. Il lit les tables
 originales, les sauvegarde et démarre un gardien avant de modifier les écrans. Ce gardien
@@ -46,9 +87,10 @@ Un acquittement confirme son démarrage. Il dort sur un pipe ; sa fermeture, y c
 après SIGKILL du parent, restaure les couleurs. Aucun polling dans ce sous-processus.
 Chaque activation a un fichier unique : un ancien gardien ne lit pas celui de la suivante.
 
-Désactivation du module et fermeture normale de Goalong : restauration immédiate,
-annulation des timers et sauvegardes différées, retrait des observateurs, du raccourci
-et du menu. Le gardien est désarmé. Les fichiers de récupération résiduels sont traités
+Arrêt du rouge et fermeture normale de Goalong : restauration immédiate, annulation des
+timers et sauvegardes différées, retrait des observateurs et du raccourci. Le gardien est
+désarmé. La fermeture garde le réglage ; au relancement, les tables laissées par un crash
+sont restaurées avant toute lecture, puis le rouge revient si le réglage est allumé. Les fichiers de récupération résiduels sont traités
 à l’activation suivante. Un écran incompatible, un filtre rejeté ou un gardien indisponible
 laisse le filtre désactivé et expose une erreur française.
 
@@ -91,12 +133,13 @@ goalong braise login on | off
 goalong braise quit
 ```
 
-Jours : 1=dimanche, 2=lundi … 7=samedi. `show` ouvre le panneau de barre de menu.
-`off` restaure les couleurs en gardant le module chargé. `quit` est un alias de `disable` :
-il arrête **Braise seulement**, en gardant Goalong ouverte. `enable` est l’allumage
-explicite du module ; `on` ne contourne pas un module désactivé. `status` indique
-`enabled:false` sans créer de contrôleur. `probe` lit les tables des écrans, uniquement
-si le module est activé. `login` configure le démarrage de Goalong.
+Jours en entrée de `schedule add` : 1=dimanche, 2=lundi … 7=samedi (syntaxe Braise).
+`schedule list` répond en jours ISO (1=lundi … 7=dimanche). Les commandes `schedule`
+agissent sur les plages et suivent les mêmes règles de verrou. `show` ouvre Garde-fous › Écran rouge.
+`off` restaure les couleurs en gardant le contrôleur chargé. `quit` est un alias de `disable` :
+il arrête **l’écran rouge seulement**, en gardant Goalong ouverte. `on` et `enable`
+démarrent le contrôleur au besoin. `status` indique `enabled:false` sans créer de
+contrôleur. `probe` renvoie `[]` tant que le contrôleur n’existe pas. `login` configure le démarrage de Goalong.
 
 ## Frontières et vérification
 
@@ -109,11 +152,16 @@ de sécurité et l’allowlist des sources de diagnostic incluent Braise.
 Contrôles : `swift build`, `swift test`, `scripts/verify_source_security.sh`, les audits
 de dépendance, Jev et envoi au site appelés par les scripts du dépôt. Les tests utilisent
 des dossiers temporaires et un pilote gamma factice ; ils ne modifient pas les écrans.
+`RedScreenGuaranteeTests` prouve avec de faux écrans le retour des couleurs à l’arrêt,
+à la fermeture et après un crash (gardien puis relancement), le branchement et le
+débranchement d’écran, l’absence d’appel gamma rouge éteint et la persistance du réglage.
+Construire le vrai pilote (`CoreGraphicsDisplays`) sous XCTest hors CI
+(`GITHUB_ACTIONS=true`) le laisse inerte et fait échouer le test en cours.
 Le moteur d’horaires conserve les tests Braise, notamment chevauchements et changements
 d’heure. Les rendus natifs utilisent les mêmes vues avec un pilote factice :
 
 ```sh
-GOALONG_BRAISE_SNAPSHOTS=/tmp/goalong-braise-renders swift test --filter BraisePageRenderingTests
+GOALONG_BRAISE_SNAPSHOTS=/tmp/goalong-braise-renders make check FILTER=BraisePageRenderingTests
 GOALONG_DESIGN_AUDIT_ONLY=settings-modules scripts/verify_design_audit.sh /tmp/goalong-braise-settings
 ```
 

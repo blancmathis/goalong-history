@@ -324,11 +324,17 @@ struct FocusComposerDraft: Equatable {
         }
         .alert("Verrouiller chaque phase de travail ?", isPresented: $confirmingLock) {
             Button("Annuler", role: .cancel) {}
-            Button("Verrouiller") { begin() }
+            Button("Verrouiller") { BlockingRuntime.shared.recordGuardConsent(); begin() }
         } message: {
-            Text(GuardConsent.message("Pendant le travail, ni la séance ni le blocage ne pourront être arrêtés ou passés avant la fin de la phase. Quitter Goalong ou redémarrer ne les arrête pas.",
-                                      needed: BlockingRuntime.shared.controller?.guardNeedsConsent ?? false))
+            Text(Self.lockMessage(BlockingRuntime.shared))
         }
+    }
+
+    /// The lock confirmation: it shows `GuardConsent.text` from the runtime's state, module Blocage on or off, the
+    /// same state `recordGuardConsent` reads (T-048 B6): « Verrouiller » records a consent only where it was shown.
+    static func lockMessage(_ runtime: BlockingRuntime) -> String {
+        GuardConsent.message("Pendant le travail, ni la séance ni le blocage ne pourront être arrêtés ou passés avant la fin de la phase. Quitter Goalong ou redémarrer ne les arrête pas.",
+                             needed: runtime.guardNeedsConsent)
     }
 
     private var startTitle: String {

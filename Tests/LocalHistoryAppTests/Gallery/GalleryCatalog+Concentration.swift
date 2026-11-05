@@ -180,16 +180,15 @@ extension GalleryCatalog {
                 }
             }),
             panel("braise/page", width: 900, height: 1_050) { ctx in AnyView(BraisePageContent(controller: try braise(ctx))) },
-            panel("braise/panneau-compact", width: 480, height: 820) { ctx in
-                AnyView(BraisePageContent(controller: try braise(ctx), compact: true))
-            },
             panel("braise/echec-demarrage", width: 900, height: 420) { _ in
-                AnyView(BraiseUnavailableView(error: "Braise n’a pas pu démarrer. Aucun filtre n’a été appliqué.",
-                                              onRetry: {}, onOpenModules: {}, onEnable: {}))
+                AnyView(BraiseUnavailableView(error: "L’écran rouge n’a pas pu démarrer. Aucun filtre n’a été appliqué.",
+                                              onRetry: {}, onTurnOn: {}, onPrepare: {}))
             },
-            panel("braise/editeur-de-regle", width: 650, height: 400) { ctx in
+            panel("braise/editeur-de-regle", width: 650, height: 640) { ctx in
                 let controller = try braise(ctx)
-                return AnyView(BraiseRuleEditor(controller: controller, initial: controller.preferences.rules[0]))
+                // The range saved by `braise(_:)` (weekdays 21:00–07:00, 80 %), not the default one.
+                guard let range = controller.ranges.program.ranges.last else { throw CocoaError(.coderValueNotFound) }
+                return AnyView(RedScreenRangeEditor(controller: controller, initial: RedScreenRangeDraft(range: range, intensity: controller.ranges.intensity(of: range.id), enabled: true, existed: true)))
             },
         ]
     }
@@ -199,8 +198,8 @@ extension GalleryCatalog {
         let store = BraiseStore(directory: root, legacySettings: root.appendingPathComponent("missing"))
         let controller = try BraiseController(store: store, gamma: BraiseTestGamma(), runsTimers: false,
                                              clock: { GalleryClock.at(15, 10) })
-        controller.setMode(.on)
-        try controller.saveRule(ScheduleRule(weekdays: Set(2...6), startMinute: 21 * 60, endMinute: 7 * 60))
+        controller.setManual(true)
+        try controller.saveRange(BlockProgramRange(weekdays: Set(1...5), startMinute: 21 * 60, endMinute: 7 * 60, lock: nil), intensity: 0.8)
         ctx.keep(controller)
         ctx.cleanups.append { controller.shutdown() }
         return controller

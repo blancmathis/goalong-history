@@ -25,7 +25,7 @@ struct BraiseStore {
         if Self.exists(settingsURL) {
             if let decoded = try? Self.decode(settingsURL) { value = decoded } else {
                 let name = try Self.moveDamagedFileAside(settingsURL)
-                notice = "Les réglages Braise étaient illisibles : ils ont été remis à zéro. L’ancien fichier est gardé dans \(directory.path)/\(name)."
+                notice = "Les réglages de l’écran rouge étaient illisibles : ils ont été remis à zéro. L’ancien fichier est gardé dans \(directory.path)/\(name)."
                 value = Preferences(); value.sanitize()
                 try save(value)
             }
@@ -33,7 +33,7 @@ struct BraiseStore {
             if Self.exists(legacySettings) {
                 if let decoded = try? Self.decode(legacySettings) { value = decoded } else {
                     value = Preferences()
-                    notice = "Les anciens réglages Braise sont illisibles : Braise démarre avec les réglages par défaut."
+                    notice = "Les anciens réglages Braise sont illisibles : l’écran rouge démarre avec les réglages par défaut."
                 }
             } else { value = Preferences() }
             value.sanitize()
@@ -43,6 +43,30 @@ struct BraiseStore {
         var ids = Set<UUID>()
         value.rules = value.rules.filter { ids.insert($0.id).inserted }
         return (value, notice)
+    }
+
+    var rangesURL: URL { directory.appendingPathComponent("ranges.json") }
+
+    /// The red screen's ranges (T-048 B2). Absent: migrated once from the Braise rules of `preferences`
+    /// and written. Unreadable: set aside, migrated again from the rules, and said in `notice`.
+    func loadRanges(migratingFrom preferences: Preferences) throws -> (ranges: RedScreenProgram, notice: String?) {
+        var notice: String?
+        if Self.exists(rangesURL) {
+            if var decoded = try? JSONDecoder().decode(RedScreenProgram.self, from: Self.read(rangesURL, maximumBytes: 256 * 1024)),
+               decoded.version <= RedScreenProgram.currentVersion {
+                decoded.sanitize(); return (decoded, nil)
+            }
+            let name = try Self.moveDamagedFileAside(rangesURL, base: "ranges")
+            notice = "Les plages de l’écran rouge étaient illisibles : elles ont été reprises des anciens horaires. L’ancien fichier est gardé dans \(directory.path)/\(name)."
+        }
+        let value = RedScreenProgram.migrated(from: preferences)
+        try saveRanges(value)
+        return (value, notice)
+    }
+
+    func saveRanges(_ value: RedScreenProgram) throws {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try Self.write(encoder.encode(value), to: rangesURL)
     }
 
     /// Compares paths, not URLs: macOS 15 resolves an absent folder without its trailing slash, so URL
@@ -61,12 +85,12 @@ struct BraiseStore {
     }
 
     /// Keeps the unreadable file (or link) next to the settings, under a dated name.
-    static func moveDamagedFileAside(_ url: URL) throws -> String {
+    static func moveDamagedFileAside(_ url: URL, base: String = "settings") throws -> String {
         let fm = FileManager.default
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
         let folder = url.deletingLastPathComponent()
-        var name = "settings.damaged-\(stamp).json", index = 1
-        while exists(folder.appendingPathComponent(name)) { name = "settings.damaged-\(stamp)-\(index).json"; index += 1 }
+        var name = "\(base).damaged-\(stamp).json", index = 1
+        while exists(folder.appendingPathComponent(name)) { name = "\(base).damaged-\(stamp)-\(index).json"; index += 1 }
         try fm.moveItem(at: url, to: folder.appendingPathComponent(name, isDirectory: false))
         return name
     }

@@ -83,13 +83,13 @@ final class DashboardRestTests: XCTestCase {
             let variants: [(section: DashboardSection, page: String, inner: Set<String>, store: String)] = [
                 (.overview, "activite", [], "snapshot"),
                 (.concentration, "concentration", ["concentration-maintenant"], "navigation"),
-                (.blocking, "concentration", ["blocage"], "navigation"),
+                (.blocking, "safeguards", ["blocage"], "navigation"),
                 (.settings, "reglages", [], "settings"),
             ]
             for variant in variants { show(variant.section) }
             DashboardBodyProbe.counting = false
             XCTAssertNotNil(ViewSwitchTimingTests.keptPages(in: host), "the pages are not kept")
-            for probe in ["activite", "concentration", "concentration-maintenant", "blocage", "reglages", "historique", "travail"] {
+            for probe in ["activite", "concentration", "concentration-maintenant", "safeguards", "blocage", "reglages", "historique", "travail"] {
                 XCTAssertGreaterThan(DashboardBodyProbe.counts[probe] ?? 0, 0, "the page \(probe) was never built")
             }
 

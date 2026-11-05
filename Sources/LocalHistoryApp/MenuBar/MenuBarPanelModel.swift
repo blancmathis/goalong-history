@@ -105,6 +105,20 @@ import LocalHistoryCore
     @Published var blockingEnabled = false
     @Published var blockLists: [BlockList] = []
 
+    /// The « Écran rouge » line. Always shown: no module to enable. Changes apply at once.
+    @Published private(set) var redScreen = RedScreenState()
+    var hasRedScreen: Bool { redScreenControl != nil }
+    func setRedScreen(_ on: Bool) { redScreenControl?.setRedScreen(on) }
+    func setRedScreenIntensity(_ value: Double) {
+        guard value.isFinite else { return }
+        redScreenControl?.setRedScreenIntensity(value)
+        // A protected range may hold the value (same state, nothing published): redraw so the thumb goes back to it.
+        objectWillChange.send()
+    }
+    func openRedScreenSettings() { onOpenSection(.braise) }
+    private let redScreenControl: (any RedScreenControlling)?
+    private var redScreenWatch: AnyCancellable?
+
     private let state: CaptureState
     private let modules: GoalongModuleStore
     private let concentration: () -> ConcentrationController?
@@ -142,7 +156,9 @@ import LocalHistoryCore
          playAmbiance: @escaping @MainActor (AmbianceController, AmbianceSource) -> Void = { $0.play($1) },
          onTogglePause: @escaping () -> Void, onOpenSection: @escaping (DashboardSection) -> Void,
          onOpenSettingsPane: ((SettingsPane) -> Void)? = nil,
-         onOpenDay: @escaping () -> Void, onShowClassicMenu: @escaping () -> Void) {
+         onOpenDay: @escaping () -> Void, onShowClassicMenu: @escaping () -> Void,
+         redScreen: (any RedScreenControlling)? = nil) {
+        self.redScreenControl = redScreen
         self.state = state; self.modules = modules; self.concentration = concentration
         self.ambianceModule = ambianceModule; self.blocking = blocking
         self.health = health; self.suppression = suppression; self.localHistoryEnabled = localHistoryEnabled
@@ -152,6 +168,10 @@ import LocalHistoryCore
         self.onTogglePause = onTogglePause; self.onOpenSection = onOpenSection
         self.onOpenSettingsPane = onOpenSettingsPane ?? { _ in onOpenSection(.settings) }
         self.onOpenDay = onOpenDay; self.onShowClassicMenu = onShowClassicMenu
+        if let redScreen {
+            self.redScreen = redScreen.redScreen
+            redScreenWatch = redScreen.redScreenChanges.sink { [weak self] in self?.redScreen = $0 }
+        }
     }
 
     /// Called on opening, then once a second only while the popover is visible.

@@ -39,8 +39,8 @@ final class BraisePageRenderingTests: XCTestCase {
         let controller = try BraiseController(store: store, gamma: BraiseTestGamma(), runsTimers: false,
                                              clock: { Date(timeIntervalSince1970: 1_790_000_000) })
         defer { controller.shutdown() }
-        controller.setMode(.on)
-        try controller.saveRule(ScheduleRule(weekdays: Set(2...6), startMinute: 21 * 60, endMinute: 7 * 60))
+        controller.setManual(true)
+        try controller.saveRange(BlockProgramRange(weekdays: Set(1...5), startMinute: 21 * 60, endMinute: 7 * 60, lock: nil), intensity: 0.8)
         let app = NSApplication.shared; app.setActivationPolicy(.accessory); app.finishLaunching()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 1000), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -60,8 +60,7 @@ final class BraisePageRenderingTests: XCTestCase {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua); window.appearance = app.appearance
             let suffix = dark ? "dark" : "light"
             try render("braise-page-" + suffix, BraisePageContent(controller: controller), width: 900, height: 1050)
-            try render("braise-panel-" + suffix, BraisePageContent(controller: controller, compact: true), width: 480, height: 680)
-            try render("braise-rule-" + suffix, BraiseRuleEditor(controller: controller, initial: controller.preferences.rules[0]), width: 650, height: 400)
+            try render("braise-rule-" + suffix, RedScreenRangeEditor(controller: controller, initial: RedScreenRangeDraft(range: controller.ranges.program.ranges[0], intensity: controller.ranges.intensity(of: controller.ranges.program.ranges[0].id), enabled: true, existed: true)), width: 650, height: 400)
         }
     }
 }

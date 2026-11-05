@@ -172,16 +172,19 @@ import XCTest
                        "whole days: the capped file does not change on every refresh")
     }
 
-    /// K1-kill-05: the SIGTERM handler refreshes the live controller and reads `severeUntil`.
+    /// K1-kill-05: the SIGTERM handler refreshes the live controller and reads the « protégé » predicate.
     func testSigtermHandlerReadsTheLiveController() throws {
         let (locked, _, _) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked, start: -60)])) { [now] in now }
         let (free, _, _) = try controller(BlockingDocument(lists: [list], sessions: [session(.free, start: -60)])) { [now] in now }
-        XCTAssertFalse(AppDelegate.honoursTerminationSignal(controller: locked, sessionEnding: false, senderPID: 4242, installOverride: false))
-        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: free, sessionEnding: false, senderPID: 4242, installOverride: false))
-        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: nil, sessionEnding: false, senderPID: nil, installOverride: false))
-        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: locked, sessionEnding: true, senderPID: 4242, installOverride: false))
-        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: locked, sessionEnding: false, senderPID: 1, installOverride: false))
-        XCTAssertTrue(AppDelegate.honoursTerminationSignal(controller: locked, sessionEnding: false, senderPID: 4242, installOverride: true))
+        let lockedRuntime = BlockingRuntime(controller: locked, redScreenKeeper: { nil })
+        let freeRuntime = BlockingRuntime(controller: free, redScreenKeeper: { nil })
+        let offRuntime = BlockingRuntime(controller: nil, redScreenKeeper: { nil })
+        XCTAssertFalse(AppDelegate.honoursTerminationSignal(runtime: lockedRuntime, sessionEnding: false, senderPID: 4242, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(runtime: freeRuntime, sessionEnding: false, senderPID: 4242, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(runtime: offRuntime, sessionEnding: false, senderPID: nil, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(runtime: lockedRuntime, sessionEnding: true, senderPID: 4242, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(runtime: lockedRuntime, sessionEnding: false, senderPID: 1, installOverride: false))
+        XCTAssertTrue(AppDelegate.honoursTerminationSignal(runtime: lockedRuntime, sessionEnding: false, senderPID: 4242, installOverride: true))
     }
 
     /// K1-safe-01 / K1-safe-05: the override token is fresh only briefly and written only during a severe block.

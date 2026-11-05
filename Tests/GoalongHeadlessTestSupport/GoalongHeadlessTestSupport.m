@@ -17,6 +17,7 @@
 #import <string.h>
 #import <unistd.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 
 static const void *kLogicalAlpha = &kLogicalAlpha;
 static const void *kLogicalIgnoresMouse = &kLogicalIgnoresMouse;
@@ -761,6 +762,48 @@ static void useThrowawayHomeIfNone(void) {
     atexit(removeThrowawayHome);
 }
 
+// T-048 B1: the real gamma driver (Braise CoreGraphicsDisplays) built under XCTest outside GitHub Actions
+// would change the colors of this Mac. It stays inert and posts this notification; the running test fails
+// here. Without a running test (setUp of a class, static init), the run exits 1 at the end.
+static id currentTestCase;
+static int realGammaBuildsOutsideTests;
+@interface GoalongRealGammaObserver : NSObject
+@end
+@implementation GoalongRealGammaObserver
+- (void)testCaseWillStart:(id)testCase { currentTestCase = testCase; }
+- (void)testCaseDidFinish:(id)testCase { currentTestCase = nil; }
+@end
+
+static void failIfRealGammaDriverBuilt(void) {
+    if (realGammaBuildsOutsideTests == 0) return;
+    fprintf(stderr, "[headless-tests] FAILED: the real gamma driver was built %d time(s) outside a test\n", realGammaBuildsOutsideTests);
+    _exit(1);
+}
+
+static void failOnRealGammaDriver(void) {
+    Class centerClass = NSClassFromString(@"XCTestObservationCenter");
+    Protocol *observation = NSProtocolFromString(@"XCTestObservation");
+    if (centerClass && observation) {
+        class_addProtocol(GoalongRealGammaObserver.class, observation);
+        id center = ((id (*)(id, SEL))objc_msgSend)(centerClass, NSSelectorFromString(@"sharedTestObservationCenter"));
+        static GoalongRealGammaObserver *observer;
+        observer = [GoalongRealGammaObserver new];
+        ((void (*)(id, SEL, id))objc_msgSend)(center, NSSelectorFromString(@"addTestObserver:"), observer);
+    }
+    [NSNotificationCenter.defaultCenter addObserverForName:@"ai.goalong.tests.realGammaDriverBuilt" object:nil queue:nil
+                                                usingBlock:^(NSNotification *note) {
+        SEL record = NSSelectorFromString(@"recordFailureWithDescription:inFile:atLine:expected:");
+        id test = currentTestCase;
+        if (test && [test respondsToSelector:record]) {
+            ((void (*)(id, SEL, NSString *, NSString *, NSUInteger, BOOL))objc_msgSend)(test, record,
+                @"The real gamma driver was built under XCTest outside CI (GITHUB_ACTIONS=true). Use a fake GammaDisplayDriving.",
+                @__FILE__, (NSUInteger)__LINE__, NO);
+        } else {
+            realGammaBuildsOutsideTests++;
+        }
+    }];
+}
+
 @interface GoalongHeadlessTestSupport : NSObject
 @end
 
@@ -772,8 +815,10 @@ static void useThrowawayHomeIfNone(void) {
     trackSuites();
     GoalongHeadlessSweepOrphanedTestPreferences();
     isolateStandardDefaults();
+    atexit(failIfRealGammaDriverBuilt);
     atexit(failIfWindowsShowed);   // atexit runs in reverse: this exits 1 after the suite cleanup
     atexit(cleanAtExit);
+    if (![environment[@"GITHUB_ACTIONS"] isEqualToString:@"true"]) failOnRealGammaDriver();
     static const int signals[] = {SIGINT, SIGTERM, SIGHUP, SIGABRT, SIGTRAP, SIGSEGV, SIGBUS, SIGILL};
     for (size_t i = 0; i < sizeof signals / sizeof signals[0]; i++) signal(signals[i], cleanOnSignal);
     if ([environment[@"GOALONG_TESTS_VISIBLE"] isEqualToString:@"1"]) return;

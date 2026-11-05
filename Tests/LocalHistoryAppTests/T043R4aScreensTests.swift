@@ -61,7 +61,7 @@ final class T043R4aScreensTests: XCTestCase {
     func testOpenDisabledModuleKeepsItsSidebarEntry() {
         XCTAssertTrue(DashboardSection.sidebarSections(modules: [], showing: .ambiance).contains(.ambiance))
         XCTAssertFalse(DashboardSection.sidebarSections(modules: [], showing: .overview).contains(.ambiance))
-        XCTAssertEqual(DashboardSection.sidebarSections(modules: [], showing: .braise).suffix(2), [.braise, .settings])
+        XCTAssertEqual(DashboardSection.sidebarSections(modules: [], showing: .braise).suffix(2), [.blocking, .settings])
     }
 
     // R-79: the last onboarding step says the real state.

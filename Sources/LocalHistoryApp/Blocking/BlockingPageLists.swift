@@ -311,6 +311,7 @@ import SwiftUI
                             .popover(isPresented: $lockingProgram) {
                                 BlockingProgramLock(current: list.program.lockedUntil, now: now,
                                                     consent: controller.guardNeedsConsent) { date in
+                                    controller.recordGuardConsent()
                                     controller.lockProgram(listID: list.id, until: date)
                                     lockingProgram = false
                                 }
@@ -687,7 +688,7 @@ struct BlockingActionPicture: View {
 struct BlockingProgramLock: View {
     let current: Date?
     let now: Date
-    /// Shows `GuardConsent.text` while the guard was never registered.
+    /// Shows `GuardConsent.text` while consent is needed (`guardNeedsConsent`).
     var consent = false
     var onLock: (Date) -> Void
     @State private var until: Date

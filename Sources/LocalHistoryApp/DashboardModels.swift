@@ -28,7 +28,9 @@
         var keptPage: String {
             switch self {
             case .overview, .analytics: return "activity"
-            case .concentration, .distractions, .blocking: return "concentration"
+            case .concentration, .distractions: return "concentration"
+            // T-048 B2: Garde-fous = Blocages + Écran rouge, one page.
+            case .blocking, .braise: return "safeguards"
             case .settings, .monitoring: return "settings"
             default: return rawValue
             }
@@ -37,7 +39,7 @@
         /// R14a: only the main pages stay alive once left; the secondary ones are released (memory kept bounded).
         var keepsPage: Bool {
             switch self {
-            case .overview, .analytics, .work, .history, .concentration, .distractions, .blocking, .settings, .monitoring: return true
+            case .overview, .analytics, .work, .history, .concentration, .distractions, .blocking, .braise, .settings, .monitoring: return true
             default: return false
             }
         }
@@ -52,11 +54,11 @@
             case .work: return "Mon travail"
             case .history: return "Historique"
             case .monitoring: return "Jev"
-            case .blocking: return "Blocage"
+            case .blocking: return "Garde-fous"
             case .concentration: return "Concentration"
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"
-            case .braise: return "Braise"
+            case .braise: return "Écran rouge"
             case .activity: return "Enregistrement"
             case .screenTime: return "Temps d’écran Apple"
             case .agentActivity: return "Conversations IA"
@@ -75,7 +77,7 @@
             case .work: return "briefcase"
             case .history: return "clock.arrow.circlepath"
             case .monitoring: return "eye.circle"
-            case .blocking: return "lock"
+            case .blocking: return "shield.lefthalf.filled"
             case .concentration: return "scope"
             case .distractions: return "hand.raised.slash"
             case .ambiance: return "waveform"

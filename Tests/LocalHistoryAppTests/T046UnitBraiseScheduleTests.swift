@@ -5,6 +5,10 @@ import BraiseCore
 @testable import LocalHistoryApp
 
 /// T-046 L9 lot 2 : horaires et réglages de Braise, par le contrôleur (sans vue ni écran réel).
+private extension BlockProgramRange {
+    func with(_ change: (inout BlockProgramRange) -> Void) -> BlockProgramRange { var copy = self; change(&copy); return copy }
+}
+
 @MainActor final class T046UnitBraiseScheduleTests: XCTestCase {
     private func controller() throws -> (BraiseController, URL) {
         let root = URL(fileURLWithPath: "/private/tmp/t046-braise-" + UUID().uuidString)
@@ -12,7 +16,6 @@ import BraiseCore
         let store = BraiseStore(directory: root.appendingPathComponent("Braise"), legacySettings: root.appendingPathComponent("missing"))
         let c = try BraiseController(store: store, gamma: BraiseTestGamma(), runsTimers: false,
                                      clock: { Date(timeIntervalSince1970: 1_790_000_000) })
-        c.update { $0.rules = [] } // l'installation neuve contient un horaire d'exemple
         return (c, root)
     }
 
@@ -22,39 +25,51 @@ import BraiseCore
         XCTAssertTrue(night.crossesMidnight); XCTAssertEqual(night.hours, "22:00 – 07:00")
         XCTAssertFalse(day.crossesMidnight); XCTAssertEqual(day.hours, "09:00 – 17:00")
     }
-    func testEnableSwitchFlipsOnlyThatRuleAndPersistsIt() throws {
+    private func range(_ start: Int, _ end: Int, days: Set<Int> = Set(1...7)) -> BlockProgramRange {
+        BlockProgramRange(weekdays: days, startMinute: start, endMinute: end, lock: nil)
+    }
+    private func clearRanges(_ c: BraiseController) throws {
+        for range in c.ranges.program.ranges { try c.deleteRange(range.id) }
+    }
+    /// T-048 B2: the Braise rules became the red screen's ranges (BlockProgram model).
+    func testEnableSwitchFlipsOnlyThatRangeAndPersistsIt() throws {
         let (c, root) = try controller(); defer { c.shutdown(); try? FileManager.default.removeItem(at: root) }
-        let a = ScheduleRule(startMinute: 60, endMinute: 120), b = ScheduleRule(startMinute: 300, endMinute: 360)
-        try c.saveRule(a); try c.saveRule(b)
-        c.update { p in if let i = p.rules.firstIndex(where: { $0.id == a.id }) { p.rules[i].enabled = false } }
-        XCTAssertEqual(c.preferences.rules.map(\.enabled), [false, true])
+        try clearRanges(c)
+        let a = range(60, 120), b = range(300, 360)
+        try c.saveRange(a, intensity: 1); try c.saveRange(b, intensity: 1)
+        try c.setRangeEnabled(a.id, false)
+        XCTAssertEqual(c.ranges.disabled, [a.id])
         c.saveNow()
         let reloaded = try BraiseController(store: BraiseStore(directory: root.appendingPathComponent("Braise"),
                                                                legacySettings: root.appendingPathComponent("missing")),
                                             gamma: BraiseTestGamma(), runsTimers: false)
         defer { reloaded.shutdown() }
-        XCTAssertEqual(reloaded.preferences.rules.map(\.enabled), [false, true])
+        XCTAssertEqual(reloaded.ranges.program.ranges.map(\.id), [a.id, b.id]); XCTAssertEqual(reloaded.ranges.disabled, [a.id])
     }
-    func testAddRuleStopsAtThirtyTwoAndEditingAnExistingOneStillWorks() throws {
+    func testAddRangeStopsAtThirtyTwoAndEditingAnExistingOneStillWorks() throws {
         let (c, root) = try controller(); defer { c.shutdown(); try? FileManager.default.removeItem(at: root) }
-        var first: ScheduleRule?
+        try clearRanges(c)
+        var first: BlockProgramRange?
         for i in 0..<32 {
-            let rule = ScheduleRule(startMinute: i, endMinute: i + 30)
-            if first == nil { first = rule }
-            try c.saveRule(rule)
+            let item = range(i, i + 30)
+            if first == nil { first = item }
+            try c.saveRange(item, intensity: 1)
         }
-        XCTAssertEqual(c.preferences.rules.count, 32)
-        XCTAssertThrowsError(try c.saveRule(ScheduleRule(startMinute: 600, endMinute: 700)))
+        XCTAssertEqual(c.ranges.program.ranges.count, 32)
+        XCTAssertThrowsError(try c.saveRange(range(600, 700), intensity: 1))
         var edited = try XCTUnwrap(first); edited.endMinute = 500
-        XCTAssertNoThrow(try c.saveRule(edited))
-        XCTAssertEqual(c.preferences.rules.count, 32)
-        XCTAssertEqual(c.preferences.rules.first { $0.id == edited.id }?.endMinute, 500)
+        XCTAssertNoThrow(try c.saveRange(edited, intensity: 0.5))
+        XCTAssertEqual(c.ranges.program.ranges.count, 32)
+        XCTAssertEqual(c.ranges.program.ranges.first { $0.id == edited.id }?.endMinute, 500)
+        XCTAssertEqual(c.ranges.intensity(of: edited.id), 0.5, accuracy: 0.0001)
     }
     func testSaveRefusesAnEmptyRangeOrNoDay() throws {
         let (c, root) = try controller(); defer { c.shutdown(); try? FileManager.default.removeItem(at: root) }
-        XCTAssertThrowsError(try c.saveRule(ScheduleRule(startMinute: 600, endMinute: 600)))
-        XCTAssertThrowsError(try c.saveRule(ScheduleRule(weekdays: [], startMinute: 60, endMinute: 120)))
-        XCTAssertTrue(c.preferences.rules.isEmpty)
+        try clearRanges(c)
+        XCTAssertThrowsError(try c.saveRange(range(600, 600), intensity: 1))
+        XCTAssertThrowsError(try c.saveRange(range(60, 120, days: []), intensity: 1))
+        XCTAssertThrowsError(try c.saveRange(range(0, 1_440).with { $0.startMinute = 0; $0.endMinute = 0 }, intensity: 1))
+        XCTAssertTrue(c.ranges.program.ranges.isEmpty)
     }
     func testDayPresetsMatchTheirLabels() {
         let all = ScheduleRule(weekdays: Set(1...7)), week = ScheduleRule(weekdays: Set(2...6)), weekend = ScheduleRule(weekdays: Set([1, 7]))
@@ -70,12 +85,13 @@ import BraiseCore
         rule.weekdays.insert(7); XCTAssertTrue(rule.isValid)
         XCTAssertEqual(ScheduleRule(weekdays: [0, 8, 3]).weekdays, [3])
     }
-    func testDeleteRemovesOnlyThatRule() throws {
+    func testDeleteRemovesOnlyThatRange() throws {
         let (c, root) = try controller(); defer { c.shutdown(); try? FileManager.default.removeItem(at: root) }
-        let a = ScheduleRule(startMinute: 60, endMinute: 120), b = ScheduleRule(startMinute: 300, endMinute: 360)
-        try c.saveRule(a); try c.saveRule(b)
-        c.deleteRule(a.id)
-        XCTAssertEqual(c.preferences.rules.map(\.id), [b.id])
+        try clearRanges(c)
+        let a = range(60, 120), b = range(300, 360)
+        try c.saveRange(a, intensity: 1); try c.saveRange(b, intensity: 1)
+        try c.deleteRange(a.id)
+        XCTAssertEqual(c.ranges.program.ranges.map(\.id), [b.id])
     }
     func testSlidersAreClampedBySanitize() throws {
         let (c, root) = try controller(); defer { c.shutdown(); try? FileManager.default.removeItem(at: root) }

@@ -21,9 +21,9 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 - `UserDefaults` key `goalong.module.blocking.enabled`, default `false`. Read through
   `GoalongModuleStore` (`Sources/LocalHistoryApp/GoalongModules.swift`), cheap, never starts anything.
 - Off: no `BlockingController`, no timer, no observer, no window, no file under `Blocking/`, no
-  permission request, no system component. There is no sidebar entry: Concentration › Programme
-  stays visible and only offers the switch.
-- On: Concentration › Programme can start blocks and programs. Turning the module on creates
+  permission request, no system component. The sidebar entry **Garde-fous** (⌘5, T-048 B2) holds
+  **Blocages** and **Écran rouge**; Blocages stays visible and only offers the switch.
+- On: Garde-fous › Blocages can start blocks and programs. Turning the module on creates
   the controller and reads the store; nothing is blocked until the member starts a block or a
   program.
 - Off is refused while anything is locked (locked session, locked program, freeze) and while any
@@ -53,7 +53,8 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 | List (Cold Turkey "block") | Liste |
 | Mode block / allowlist | « Bloquer ces éléments » / « Tout bloquer sauf ces éléments » |
 | Manual session | Blocage (« Bloquer maintenant ») |
-| Weekly windows | Programme |
+| Weekly windows | Programme (blocking) / Plages protégées (red screen) |
+| Sidebar section holding both | Garde-fous |
 | Lock kinds | Libre / Difficile / Mot de passe / Verrouillé |
 | Program lock | « Programme verrouillé jusqu'au … » |
 | Quota | « X min par jour » |
@@ -61,6 +62,9 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 | Frozen Turkey | « Geler le Mac » |
 | Friction instead of a block | « Ralentir » (list action), « Renoncer » / « Continuer » |
 | Protection level | Standard / Renforcée |
+
+The red screen reuses this program model (`BlockProgram`, range locks, `programWeakening`) for its
+own ranges, with one intensity per range: see `docs/BRAISE.md` « Garde-fous et plages protégées ».
 
 ## Data model
 

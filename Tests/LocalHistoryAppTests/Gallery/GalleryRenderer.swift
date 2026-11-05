@@ -112,6 +112,7 @@ struct GalleryImage {
         _ = GoalongWebsiteAutoSender.shared
         _ = JevInterventionPreferences.shared
         _ = SupportDiagnostics.shared
+        _ = BraiseRuntime.shared
         _ = JevMonitoringPreferences.shared
         _ = GoalongModuleStore.shared
         _ = EnvironmentValues().goalongDefaults

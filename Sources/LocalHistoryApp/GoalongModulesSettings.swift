@@ -24,9 +24,9 @@ import SwiftUI
         VStack(alignment: .leading, spacing: 12) {
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
-                    ForEach(GoalongModule.allCases) { module in
+                    ForEach(GoalongModule.listed) { module in
                         row(module)
-                        if module != GoalongModule.allCases.last { GoalongRowDivider() }
+                        if module != GoalongModule.listed.last { GoalongRowDivider() }
                     }
                 }
             }

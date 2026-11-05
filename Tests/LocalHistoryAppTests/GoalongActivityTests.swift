@@ -38,7 +38,7 @@ final class GoalongActivityTests: XCTestCase {
     }
 
     func testNavigationHasOnlyOneActivityDestination() {
-        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .concentration, .settings])
+        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .concentration, .blocking, .settings])
         XCTAssertEqual(DashboardSection.work.simpleTitle, "Mon travail")
         XCTAssertEqual(DashboardSection.overview.simpleTitle, "Activité")
         XCTAssertEqual(DashboardSection.analytics.sidebarParent, .overview)

@@ -63,6 +63,7 @@
                                 VStack(spacing: 0) {
                                     GoalongGlobalPauseBanner(model: model)
                                     GoalongAttentionBanner(model: model)
+                                    GoalongMenuBarVisibilityBanner(watch: .shared)
                                 }
                             }
                             .safeAreaInset(edge: .bottom, spacing: 0) { DashboardPendingChangesBar(model: model) }
@@ -119,8 +120,10 @@
                 GoalongWorkPage(model: model)
             case .history:
                 UnifiedHistoryPage(model: model)
-            case .concentration, .distractions, .blocking:
+            case .concentration, .distractions:
                 ConcentrationHubPage(model: model)
+            case .blocking, .braise:
+                SafeguardsPage(model: model)
             case .activity:
                 ActivityPage(
                     model: model,
@@ -145,8 +148,6 @@
                 CLIHelpPage {
                     model.returnFromSecondaryPage()
                 }
-            case .braise:
-                BraisePage(onOpenModules: { model.openSettingsPane(.modules) })
             case .ambiance:
                 AmbiancePage(model: model)
             case .settings, .monitoring:
@@ -438,7 +439,7 @@
     }
 
     extension DashboardSection {
-        static let primarySections: [DashboardSection] = [.overview, .work, .history, .concentration, .settings]
+        static let primarySections: [DashboardSection] = [.overview, .work, .history, .concentration, .blocking, .settings]
 
         /// R-80: « 1 modification en attente : clics » or « 3 modifications en attente : clics, défilement… ».
         /// R-73 (R4d-9): the one global sign of a sound download, on Ambiance's row; the page keeps its own text.
@@ -468,12 +469,11 @@
         }
 
         /// An enabled module's page joins the sidebar before Réglages; a disabled one has no entry.
-        /// Blocage and Surveillance live in Concentration's tabs, which is always there.
+        /// Garde-fous (Blocages, Écran rouge) has its own entry; Distractions lives in Concentration's tabs.
         /// R-73 (R9A-33): a disabled module's page that is open keeps its entry, selected, until the user leaves it.
         static func sidebarSections(modules: Set<GoalongModule>, showing: DashboardSection? = nil) -> [DashboardSection] {
             var sections = primarySections
             if modules.contains(.ambiance) || showing == .ambiance { sections.insert(.ambiance, at: sections.count - 1) }
-            if modules.contains(.braise) || showing == .braise { sections.insert(.braise, at: sections.count - 1) }
             return sections
         }
 
@@ -483,11 +483,11 @@
             case .work: return "Mon travail"
             case .history: return "Historique"
             case .monitoring: return "Jev"
-            case .blocking: return "Blocage"
+            case .blocking: return "Garde-fous"
             case .concentration: return "Concentration"
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"
-            case .braise: return "Braise"
+            case .braise: return "Écran rouge"
             case .activity: return "Enregistrement"
             case .screenTime: return "Temps d’écran"
             case .agentActivity: return "Conversations IA"
@@ -503,9 +503,9 @@
             switch self {
             case .overview, .analytics, .chatGPTRecap, .share:
                 return .overview
-            case .concentration, .distractions, .blocking:
+            case .concentration, .distractions:
                 return .concentration
-            case .braise: return .braise
+            case .blocking, .braise: return .blocking
             case .ambiance:
                 return .ambiance
             case .work:

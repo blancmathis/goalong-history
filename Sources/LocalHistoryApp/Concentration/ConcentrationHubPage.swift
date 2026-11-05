@@ -16,12 +16,12 @@ import SwiftUI
         _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
     }
 
-    nonisolated static let tabs: [DashboardSection] = [.concentration, .distractions, .blocking]
+    /// T-048 B2: the weekly program moved to Garde-fous › Blocages.
+    nonisolated static let tabs: [DashboardSection] = [.concentration, .distractions]
 
     nonisolated static func tabTitle(_ section: DashboardSection) -> String {
         switch section {
         case .distractions: return "Distractions"
-        case .blocking: return "Programme"
         default: return "Maintenant"
         }
     }
@@ -34,7 +34,6 @@ import SwiftUI
             Group {
                 switch tab {
                 case .distractions: DistractionsPage()
-                case .blocking: BlockingPage(onOpenLists: { model.selectSection(.distractions) })
                 default: ConcentrationPage()
                 }
             }

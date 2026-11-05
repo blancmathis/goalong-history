@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Combine
 import Ambiance
 import Foundation
 import SwiftUI
@@ -10,10 +11,11 @@ import SwiftUI
 extension GalleryCatalog {
     static var menuBarEntries: [GalleryEntry] {
         func state(_ name: String, themes: [GalleryTheme] = GalleryTheme.standard,
+                   redScreen: RedScreenState? = nil,
                    _ configure: @escaping @MainActor (MenuBarPanelModel) -> Void = { _ in }) -> GalleryEntry {
             panel("menubar/\(name)", width: MenuBarPanelView.width, themes: themes, clock: .injected,
                   note: "Contenu du panneau ; le vrai popover ajoute son matériau translucide.") { ctx in
-                let model = menuBarModel(ctx)
+                let model = menuBarModel(ctx, redScreen: redScreen)
                 configure(model)
                 return AnyView(MenuBarPanelView(model: model))
             }
@@ -53,6 +55,15 @@ extension GalleryCatalog {
                 model.blockLists[0] = .init(id: "social", title: "Réseaux sociaux", detail: "Verrouillé jusqu’à 16:34",
                                             isActive: true, isLocked: true)
             },
+            state("ecran-rouge-eteint", themes: GalleryTheme.withContrast, redScreen: RedScreenState()),
+            state("ecran-rouge-allume", redScreen: RedScreenState(on: true, intensity: 0.7, followsSchedule: true)),
+            GalleryEntry("menubar-menu/ecran-rouge", sizes: [.fixed(300, 220)], clock: .none,
+                         note: "Lignes du menu clic droit ; le vrai menu ajoute son fond système.") { ctx in
+                let control = GalleryRedScreen(RedScreenState(on: true, intensity: 0.7))
+                let menu = RedScreenMenu(control: control, onOpenSettings: {})
+                ctx.keep(control); ctx.keep(menu)
+                return AnyView(GalleryMenuItems(items: menu.items))
+            },
             GalleryEntry("menubar-bouton/repos", sizes: [.fixed(40, 24)], clock: .none) { _ in
                 AnyView(GalleryStatusButton(title: nil))
             },
@@ -69,6 +80,8 @@ extension GalleryCatalog {
                 GoalongToastCenter.shared.setForTesting("Données à analyser enregistrées")
                 return AnyView(GoalongToastHost())
             },
+            panel("bandeau/icone-masquee", width: 900) { _ in AnyView(MenuBarVisibilityNotice(state: .parkedBySystem)) },
+            panel("bandeau/icone-encoche", width: 900) { _ in AnyView(MenuBarVisibilityNotice(state: .underNotch)) },
         ] + supportEntries
     }
 
@@ -96,7 +109,9 @@ extension GalleryCatalog {
     }
 
     /// The panel model with fixed data: an ordinary Friday morning, nothing read from the Mac.
-    @MainActor static func menuBarModel(_ ctx: GalleryContext) -> MenuBarPanelModel {
+    @MainActor static func menuBarModel(_ ctx: GalleryContext, redScreen: RedScreenState? = nil) -> MenuBarPanelModel {
+        let control = redScreen.map(GalleryRedScreen.init)
+        if let control { ctx.keep(control) }
         let support = AppPaths.applicationSupportDirectory
         let model = MenuBarPanelModel(
             state: CaptureState(isGloballyPaused: { false }), modules: GoalongModuleStore(defaults: ctx.defaults),
@@ -104,7 +119,8 @@ extension GalleryCatalog {
             ambianceModule: AmbianceModule(settings: AmbianceSettings(defaults: ctx.defaults), supportDirectory: { support }),
             blocking: { nil }, globalPause: { GoalongGlobalPause() }, clock: { GalleryClock.now },
             calendar: GalleryClock.calendar,
-            onTogglePause: {}, onOpenSection: { _ in }, onOpenDay: {}, onShowClassicMenu: {})
+            onTogglePause: {}, onOpenSection: { _ in }, onOpenDay: {}, onShowClassicMenu: {},
+            redScreen: control)
         let sources = [("ambre", "Ambre", AmbianceSource.Kind.focus, true), ("canopee", "Canopée", .focus, true),
                        ("meridien", "Méridien", .focus, true), ("sillage", "Sillage", .focus, true),
                        ("filigrane", "Filigrane", .focus, true), ("orbit", "Orbite", .focus, false),
@@ -155,5 +171,46 @@ struct GalleryStatusButton: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSButton, context: Context) {}
+}
+
+/// A fixed red screen for the gallery: no controller, no gamma call.
+@MainActor final class GalleryRedScreen: RedScreenControlling {
+    private let subject: CurrentValueSubject<RedScreenState, Never>
+    init(_ state: RedScreenState) { subject = CurrentValueSubject(state) }
+    var redScreen: RedScreenState { subject.value }
+    var redScreenChanges: AnyPublisher<RedScreenState, Never> { subject.eraseToAnyPublisher() }
+    func setRedScreen(_ on: Bool) { subject.value.on = on }
+    func setRedScreenIntensity(_ value: Double) { subject.value.intensity = value }
+    func setRedScreenFollowsSchedule(_ on: Bool) { subject.value.followsSchedule = on }
+    func restoreColors() { subject.value.on = false }
+}
+
+/// Menu items drawn as plain rows (an NSMenu cannot be drawn offscreen); view items show their real view.
+struct GalleryMenuItems: NSViewRepresentable {
+    let items: [NSMenuItem]
+
+    func makeNSView(context: Context) -> NSStackView {
+        let stack = NSStackView()
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
+        for item in items where !item.isHidden { // as the real menu: a hidden item takes no row
+            if item.isSeparatorItem { let line = NSBox(); line.boxType = .separator; stack.addArrangedSubview(line); continue }
+            if let view = item.view { item.view = nil; stack.addArrangedSubview(view); continue }
+            let mark = item.state == .on ? "✓ " : "   "
+            var key = ""
+            if !item.keyEquivalent.isEmpty {
+                let mask = item.keyEquivalentModifierMask
+                key = (mask.contains(.control) ? "⌃" : "") + (mask.contains(.option) ? "⌥" : "") + (mask.contains(.shift) ? "⇧" : "")
+                    + (mask.contains(.command) ? "⌘" : "") + item.keyEquivalent.uppercased()
+            }
+            let row = NSTextField(labelWithString: mark + item.title + (item.submenu == nil ? "" : "  ›") + (key.isEmpty ? "" : "    " + key))
+            row.font = .menuFont(ofSize: 0)
+            row.textColor = item.isEnabled ? .labelColor : .disabledControlTextColor
+            stack.addArrangedSubview(row)
+        }
+        return stack
+    }
+
+    func updateNSView(_ nsView: NSStackView, context: Context) {}
 }
 #endif

@@ -141,9 +141,9 @@ final class T043R4bTests: XCTestCase {
 
     // R-93: two Braise rules at the same hours have distinct switch labels.
     func testBraiseRuleSwitchLabelsAreDistinct() {
-        let weekdays = ScheduleRule(weekdays: Set(2...6), startMinute: 22 * 60, endMinute: 7 * 60)
-        let weekend = ScheduleRule(weekdays: [1, 7], startMinute: 22 * 60, endMinute: 7 * 60)
-        XCTAssertNotEqual(BraisePage.ruleSwitchLabel(weekdays), BraisePage.ruleSwitchLabel(weekend))
+        let weekdays = BlockProgramRange(weekdays: Set(1...5), startMinute: 22 * 60, endMinute: 7 * 60, lock: nil)
+        let weekend = BlockProgramRange(weekdays: [6, 7], startMinute: 22 * 60, endMinute: 7 * 60, lock: nil)
+        XCTAssertNotEqual(BraisePage.rangeSwitchLabel(weekdays), BraisePage.rangeSwitchLabel(weekend))
     }
 
     // MARK: Helpers
